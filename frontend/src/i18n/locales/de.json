@@ -8138,6 +8138,22 @@
         "filled": "ausgefüllt ist",
         "empty": "leer ist",
         "mixed": "Dieser Text enthält eigene Bedingungen. Eine Regel hier ersetzt die Bedingung um die ganze Klausel."
+      },
+      "publishedBy": "veröffentlicht von {{name}}",
+      "publishedBySystem": "mitgeliefert",
+      "compare": {
+        "withPrevious": "Mit vorheriger vergleichen",
+        "title": "Änderungen in v{{version}}",
+        "subtitle": "v{{from}} → v{{to}}",
+        "none": "Keine Unterschiede.",
+        "position": "Position {{from}} → {{to}}",
+        "at": "Position {{position}}",
+        "types": {
+          "added": "Neu",
+          "removed": "Entfernt",
+          "moved": "Verschoben",
+          "changed": "Geändert"
+        }
       }
     },
     "attachments": {

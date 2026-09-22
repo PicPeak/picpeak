@@ -45,6 +45,7 @@ const get = vi.fn();
 const saveDraft = vi.fn();
 const publish = vi.fn();
 const check = vi.fn();
+const version = vi.fn();
 vi.mock('../../../../services/contractTemplates.service', async () => {
   const actual = await vi.importActual<typeof import('../../../../services/contractTemplates.service')>(
     '../../../../services/contractTemplates.service',
@@ -56,6 +57,7 @@ vi.mock('../../../../services/contractTemplates.service', async () => {
       saveDraft: (...args: unknown[]) => saveDraft(...args),
       publish: (...args: unknown[]) => publish(...args),
       check: (...args: unknown[]) => check(...args),
+      version: (...args: unknown[]) => version(...args),
       placeholders: vi.fn(async () => ({
         placeholders: [
           { key: 'event_date', category: 'event', conditional: true, label: { en: 'Event date', de: 'Datum' }, sample: { en: '12.06.2027', de: '12.06.2027' } },
@@ -223,4 +225,28 @@ it('"Show only if…" wraps the clause in every language and saves it', async ()
   await waitFor(() => expect(saveDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({
     items: [{ kind: 'block', blockId: 7, body: {} }],
   })));
+});
+
+it('the version history names the publisher and compares a version with the one before', async () => {
+  const user = userEvent.setup();
+  const published = (n: number, text: string) => ({
+    id: 20 + n, version: n, status: n === 2 ? 'published' : 'superseded', title: 'Hochzeitsvertrag', introText: {}, outroText: {},
+    contentSha256: 'f'.repeat(64), publishedAt: '2026-09-01T10:00:00Z', createdAt: '2026-09-01T09:00:00Z',
+    publishedBy: n === 2 ? { id: 1, username: 'luca' } : null,
+    items: [{ kind: 'text', blockId: null, section: 'closing', heading: 'Frist', body: { de: text }, snapshot: {} }],
+    attachments: [],
+  });
+  get.mockResolvedValue({ ...detail(), versions: [published(2, 'Zahlbar in 14 Tagen'), published(1, 'Zahlbar in 30 Tagen')] });
+  version.mockImplementation(async (_id: number, n: number) => published(n, n === 2 ? 'Zahlbar in 14 Tagen' : 'Zahlbar in 30 Tagen'));
+  renderPage();
+  expect(await screen.findByText(/published by luca/)).toBeInTheDocument();
+  expect(screen.getByText(/built in/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Compare with previous' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Changes in v2' });
+  expect(version).toHaveBeenCalledWith(5, 1);
+  expect(version).toHaveBeenCalledWith(5, 2);
+  expect(dialog).toHaveTextContent('Frist');
+  expect(dialog.querySelector('del')).toHaveTextContent('30');
+  expect(dialog.querySelector('ins')).toHaveTextContent('14');
 });

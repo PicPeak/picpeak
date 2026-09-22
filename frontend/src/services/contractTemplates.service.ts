@@ -67,6 +67,9 @@ export interface ContractTemplateVersion {
   outroText: LocaleText;
   contentSha256: string | null;
   publishedAt: string | null;
+  createdAt?: string | null;
+  /** Who published it; null for the seeded system version. */
+  publishedBy?: { id: number; username: string } | null;
   items?: ContractTemplateItem[];
   /** PDFs sent with contracts from this version, in order. */
   attachments?: IncludedAttachment[];
@@ -139,6 +142,11 @@ export const contractTemplatesService = {
   async create(payload: { name: string; description?: string | null; useCase?: string | null }): Promise<ContractTemplateDetail> {
     const { data } = await api.post(base, payload);
     return unwrap(data);
+  },
+  /** One version with its clauses (for comparing versions). */
+  async version(id: number, version: number): Promise<ContractTemplateVersion> {
+    const { data } = await api.get(`${base}/${id}/versions/${version}`);
+    return unwrap<{ version: ContractTemplateVersion }>(data).version;
   },
   async saveDraft(id: number, payload: ContractTemplateDraftPayload): Promise<ContractTemplateDetail> {
     const { data } = await api.put(`${base}/${id}/draft`, payload);

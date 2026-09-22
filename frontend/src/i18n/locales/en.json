@@ -8137,6 +8137,22 @@
         "filled": "is filled in",
         "empty": "is empty",
         "mixed": "This text has conditions of its own. Choosing a rule here replaces the one around the whole clause."
+      },
+      "publishedBy": "published by {{name}}",
+      "publishedBySystem": "built in",
+      "compare": {
+        "withPrevious": "Compare with previous",
+        "title": "Changes in v{{version}}",
+        "subtitle": "v{{from}} → v{{to}}",
+        "none": "No differences.",
+        "position": "position {{from}} → {{to}}",
+        "at": "position {{position}}",
+        "types": {
+          "added": "Added",
+          "removed": "Removed",
+          "moved": "Moved",
+          "changed": "Changed"
+        }
       }
     },
     "attachments": {

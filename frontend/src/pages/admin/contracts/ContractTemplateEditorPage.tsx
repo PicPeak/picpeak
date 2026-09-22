@@ -29,6 +29,8 @@ import {
 import { TemplateCheckPanel } from './TemplateCheckPanel';
 import { PlaceholderPicker, placeholderLang, useContractPlaceholders } from './PlaceholderPicker';
 import { applyCondition, readCondition, unwrapCondition, type ClauseCondition } from './clauseCondition';
+import { VersionCompareModal } from './VersionCompareModal';
+import type { ComparableVersion } from './templateDiff';
 
 /** Ask a text field to show a language and take the focus ("Go to" from the check). */
 interface FocusRequest {
@@ -252,6 +254,8 @@ export const ContractTemplateEditorPage: React.FC = () => {
   const [check, setCheck] = useState<TemplatePublishCheck | null>(null);
   const [checkStale, setCheckStale] = useState(false);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
+  // "Compare with previous": the two versions, once loaded.
+  const [comparing, setComparing] = useState<{ before: ComparableVersion; after: ComparableVersion; from: number; to: number } | null>(null);
   const [pickBlockId, setPickBlockId] = useState('');
 
   // Load the draft (or the published version) whenever the server copy changes.
@@ -415,6 +419,24 @@ export const ContractTemplateEditorPage: React.FC = () => {
     try {
       store(await contractTemplatesService.draftFromVersion(templateId, version, lockVersion));
       toast.success(t('contracts.templates.draftCreated', 'Draft created from version {{version}}', { version }));
+    } catch (err) {
+      fail(err, t('contracts.templates.actionFailed', 'That didn\'t work. Please try again.') as string);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCompare = async (version: number, previous: number) => {
+    setBusy(true);
+    try {
+      const [before, after] = await Promise.all([
+        contractTemplatesService.version(templateId, previous),
+        contractTemplatesService.version(templateId, version),
+      ]);
+      const comparable = (v: typeof before): ComparableVersion => ({
+        title: v.title, introText: v.introText, outroText: v.outroText, items: v.items || [], attachments: v.attachments || [],
+      });
+      setComparing({ before: comparable(before), after: comparable(after), from: previous, to: version });
     } catch (err) {
       fail(err, t('contracts.templates.actionFailed', 'That didn\'t work. Please try again.') as string);
     } finally {
@@ -677,12 +699,16 @@ export const ContractTemplateEditorPage: React.FC = () => {
           <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('contracts.templates.noVersions', 'Not published yet.')}</p>
         ) : (
           <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
-            {detail.versions.map((v) => (
+            {detail.versions.map((v, index) => (
               <li key={v.id} className="py-2 flex flex-wrap items-center gap-3 text-sm">
                 <span className="font-medium text-neutral-900 dark:text-neutral-100">v{v.version}</span>
                 <span className="text-neutral-600 dark:text-neutral-400">
                   {v.status === 'published' ? t('contracts.templates.versionCurrent', 'Current') : t('contracts.templates.versionEarlier', 'Earlier')}
                   {v.publishedAt ? ` · ${formatDateTime(v.publishedAt)}` : ''}
+                  {' · '}
+                  {v.publishedBy
+                    ? t('contracts.templates.publishedBy', 'published by {{name}}', { name: v.publishedBy.username })
+                    : t('contracts.templates.publishedBySystem', 'built in')}
                 </span>
                 {v.contentSha256 && (
                   <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400" title={v.contentSha256}>
@@ -690,6 +716,11 @@ export const ContractTemplateEditorPage: React.FC = () => {
                   </span>
                 )}
                 <span className="flex-1" />
+                {detail.versions[index + 1] && (
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => onCompare(v.version, detail.versions[index + 1].version)}>
+                    {t('contracts.templates.compare.withPrevious', 'Compare with previous')}
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" disabled={busy} onClick={() => onPreview(v.version)}>
                   {t('contracts.templates.preview', 'Preview PDF')}
                 </Button>
@@ -705,6 +736,16 @@ export const ContractTemplateEditorPage: React.FC = () => {
           </ul>
         )}
       </Card>
+
+      {comparing && (
+        <VersionCompareModal
+          before={comparing.before}
+          after={comparing.after}
+          title={t('contracts.templates.compare.title', 'Changes in v{{version}}', { version: comparing.to })}
+          subtitle={t('contracts.templates.compare.subtitle', 'v{{from}} → v{{to}}', { from: comparing.from, to: comparing.to }) as string}
+          onClose={() => setComparing(null)}
+        />
+      )}
     </div>
   );
 };

@@ -111,6 +111,12 @@ function versionToApi(version, items, attachmentRows) {
     outroText: content.parseLocaleMap(version.outro_text),
     contentSha256: version.content_sha256 || null,
     publishedAt: version.published_at || null,
+    createdAt: version.created_at || null,
+    // Who published it (#1445 version history). Null for the seeded system
+    // version, and for a publisher whose account is gone.
+    publishedBy: version.published_by_admin_id && version.publisher_username
+      ? { id: version.published_by_admin_id, username: version.publisher_username }
+      : null,
     ...(items ? { items: items.map(itemToApi) } : {}),
     ...(attachmentRows ? { attachments: attachmentRows.map(attachments.inclusionToApi) } : {}),
   };
@@ -152,10 +158,17 @@ async function listTemplates() {
   }));
 }
 
+/** A template's versions with their publisher's username. */
+function versionsWithPublisher(conn = db) {
+  return conn('contract_template_versions as v')
+    .leftJoin('admin_users as pub', 'pub.id', 'v.published_by_admin_id')
+    .select('v.*', 'pub.username as publisher_username');
+}
+
 async function getTemplate(id) {
   const template = await db('contract_templates').where({ id }).first();
   if (!template) throw notFound();
-  const versions = await db('contract_template_versions').where({ template_id: id }).orderBy('version_number', 'desc');
+  const versions = await versionsWithPublisher().where('v.template_id', id).orderBy('v.version_number', 'desc');
   const draftRow = versions.find((v) => v.status === 'draft') || null;
   const publishedRow = versions.find((v) => v.status === 'published') || null;
   return {
@@ -171,8 +184,8 @@ async function getTemplate(id) {
 }
 
 async function getVersion(templateId, versionNumber) {
-  const version = await db('contract_template_versions')
-    .where({ template_id: templateId, version_number: versionNumber })
+  const version = await versionsWithPublisher()
+    .where({ 'v.template_id': templateId, 'v.version_number': versionNumber })
     .first();
   if (!version) throw new AppError('Template version not found', 404, 'TEMPLATE_VERSION_NOT_FOUND');
   return versionToApi(version, await loadItems(version.id), await attachments.loadVersionAttachments(version.id));
