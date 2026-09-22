@@ -12,11 +12,13 @@
  * (see backend/src/utils/anonymousFeedbackIdentity.js).
  */
 const request = require('supertest');
+const express = require('express');
+const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const knex = require('knex');
 const crypto = require('crypto');
 const { randomUUID } = require('crypto');
-const { bootCrmDb, seedMinimal, buildRouteApp } = require('./helpers/crmDb');
+const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 const pgUrl = process.env.PICPEAK_PG_TEST_URL;
 let db; let cleanup; let app; let eventId; let photoId; let token; let owner; let schema;
@@ -44,7 +46,13 @@ beforeAll(async () => {
   photoId = photo.id ?? photo;
   await db('event_feedback_settings').insert({ event_id: eventId, feedback_enabled: true, identity_mode: 'simple',
     allow_likes: true, allow_favorites: true, moderate_comments: false, require_moderation: false });
-  app = buildRouteApp('/api/gallery', require('../../src/routes/galleryFeedback'));
+  app = express();
+  // trust proxy: lets X-Forwarded-For below pin req.ip to a known value, so
+  // the legacy sha256(ip:userAgent) hash this suite seeds is reproducible.
+  app.set('trust proxy', true);
+  app.use(express.json());
+  app.use(cookieParser());
+  app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
   token = jwt.sign({ eventId, eventSlug: 'legacy-identity', type: 'gallery', jti: randomUUID() }, process.env.JWT_SECRET,
     { issuer: 'picpeak-auth', expiresIn: '1h' });
 });
