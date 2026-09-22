@@ -1951,6 +1951,34 @@ describe('a failed invitation after the send committed', () => {
     expect((await db('contracts').where({ id }).first()).follow_up_error).toBeNull();
   });
 
+  test('the admin sending the link again settles the failed invitation', async () => {
+    const id = await newContract();
+    const spy = failInvitations();
+    try {
+      await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toMatch(/^invitation:/);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/signers/${signer.id}/resend`).set(auth));
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toBeNull();
+  });
+
+  test('the sweep drops an invitation failure once everyone who may sign holds a link', async () => {
+    const id = await newContract();
+    await sendContract(id);
+    const signingV2 = require('../../src/services/contract/signingV2');
+    await signingV2.recordFollowUpFailure(id, 'next_invitation', new Error('queue down'));
+    await require('../../src/services/contract/expiry').runContractSigningSweep();
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toBeNull();
+
+    // A reminder failure is not an invitation's: the sweep leaves it.
+    await signingV2.recordFollowUpFailure(id, 'reminder', new Error('queue down'));
+    await require('../../src/services/contract/expiry').runContractSigningSweep();
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toMatch(/^reminder:/);
+  });
+
   test('a clean send carries no warning', async () => {
     const id = await newContract();
     const res = await sendContract(id);

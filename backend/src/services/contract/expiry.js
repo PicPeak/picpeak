@@ -143,6 +143,12 @@ async function remindDue(now) {
       } catch (err) {
         await signingV2.recordFollowUpFailure(contract.id, 'invitation', err);
       }
+    } else if (/^(invitation|next_invitation):/.test(contract.follow_up_error || '')) {
+      // Everyone who may sign holds a link — the admin sent one again, or a
+      // signature invited the next signer — so the failed invitation is
+      // settled. Left, it would warn the admin for as long as the contract
+      // stays open.
+      await signingV2.clearFollowUpFailure(contract.id, { steps: ['invitation', 'next_invitation'] });
     }
     if (!steps.length) continue;
     // Only whoever may sign now: in a sequential contract, the next signer.

@@ -551,6 +551,12 @@ async function reissueInvitation(contractId, signerId, { actor, event, payload =
 async function resendInvitation(contractId, signerId, adminId) {
   const actor = await adminActor(adminId);
   await reissueInvitation(contractId, signerId, { actor: { ...actor, type: 'admin' }, event: 'invitation_resent' });
+  // The admin's resend settles a failed invitation once nobody who may sign
+  // is left without a link; the page shouldn't keep warning until the sweep.
+  const contract = await db('contracts').where({ id: contractId }).first();
+  if (contract && !dueSigners(contract, await signers.listSigners(contractId)).some((r) => r.status === 'pending')) {
+    await clearFollowUpFailure(contractId, { steps: ['invitation', 'next_invitation'] });
+  }
   return { resent: true };
 }
 
