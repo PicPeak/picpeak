@@ -471,6 +471,7 @@
         "POST /:id/bill-combined",
         "POST /:id/trigger-monthly-bill",
         "GET /:id/monthly-draft",
+        "GET /:id/activity",
         "GET /:id/documents",
         "POST /:id/documents",
         "PATCH /:id/documents/:docId",

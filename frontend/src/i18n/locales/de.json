@@ -3815,7 +3815,15 @@
       "bulkDeleteCompleted_other": "Massen-Löschung abgeschlossen: {{count}} Events entfernt",
       "bulkArchiveCompleted_one": "Massen-Archivierung abgeschlossen: {{count}} Event archiviert",
       "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert",
-      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
+      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes",
+      "customerDocumentUploaded": "Kundendokument hochgeladen",
+      "customerDocumentShared": "Dokument für einen Kunden freigegeben",
+      "customerDocumentUnshared": "Freigabe eines Kundendokuments aufgehoben",
+      "customerDocumentReviewed": "Kundendokument geprüft",
+      "customerDocumentLinked": "Verknüpfungen eines Kundendokuments geändert",
+      "customerDocumentDeleted": "Kundendokument gelöscht",
+      "customerDocumentDownloaded": "Kundendokument heruntergeladen",
+      "customerDocumentScanRejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4126,7 +4134,15 @@
       "newsletter_completed": "Newsletter abgeschlossen — {{sent}} gesendet, {{failed}} fehlgeschlagen",
       "newsletter_deleted": "Newsletter-Kampagne gelöscht",
       "customer_marketing_opt_out": "Newsletter-Einwilligung des Kunden geändert",
-      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
+      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes",
+      "customer_document_uploaded": "Kundendokument hochgeladen",
+      "customer_document_shared": "Dokument für einen Kunden freigegeben",
+      "customer_document_unshared": "Freigabe eines Kundendokuments aufgehoben",
+      "customer_document_reviewed": "Kundendokument geprüft",
+      "customer_document_linked": "Verknüpfungen eines Kundendokuments geändert",
+      "customer_document_deleted": "Kundendokument gelöscht",
+      "customer_document_downloaded": "Kundendokument heruntergeladen",
+      "customer_document_scan_rejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -5375,7 +5391,21 @@
       "detailsAria": "Details zu {{name}}",
       "notAvailable": "Noch nicht verfügbar",
       "expiredTitle": "Abgelaufene Galerien",
-      "expiredHint": "Diese Galerien sind abgelaufen und lassen sich nicht mehr öffnen. Wenden Sie sich an Ihren Fotografen, wenn Sie die Fotos noch brauchen."
+      "expiredHint": "Diese Galerien sind abgelaufen und lassen sich nicht mehr öffnen. Wenden Sie sich an Ihren Fotografen, wenn Sie die Fotos noch brauchen.",
+      "documentRejected": "{{name}} wurde nicht angenommen — laden Sie eine korrigierte Fassung hoch",
+      "viewDocument": "Dokument ansehen",
+      "recentTitle": "Neuigkeiten",
+      "recent": {
+        "documentShared": "Neues Dokument: {{title}}",
+        "documentUploaded": "Sie haben {{title}} hochgeladen",
+        "documentAccepted": "{{title}} wurde angenommen",
+        "documentRejected": "{{title}} wurde nicht angenommen",
+        "contractSent": "Vertrag {{title}} wurde Ihnen zugestellt",
+        "contractSigned": "Sie haben den Vertrag {{title}} unterschrieben",
+        "quoteSent": "Angebot {{title}} wurde Ihnen zugestellt",
+        "invoiceSent": "Rechnung {{title}} wurde Ihnen zugestellt",
+        "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung"
+      }
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -6064,6 +6094,16 @@
         "overGroupLimit_one": "{{count}} ausgewählter Kunde wäre in mehr als {{max}} Gruppen. Nehmen Sie ihn aus der Auswahl oder zuerst aus anderen Gruppen heraus.",
         "overGroupLimit_other": "{{count}} ausgewählte Kunden wären in mehr als {{max}} Gruppen. Nehmen Sie sie aus der Auswahl oder zuerst aus anderen Gruppen heraus."
       }
+    },
+    "activity": {
+      "title": "Aktivität",
+      "hint": "Was im Konto und bei den Dokumenten dieses Kunden geschehen ist, neueste zuerst.",
+      "loadError": "Die Aktivität konnte nicht geladen werden.",
+      "empty": "Noch keine Aktivität.",
+      "byCustomer": "Durch den Kunden",
+      "byAdmin": "Durch {{name}}",
+      "bySystem": "Automatisch",
+      "more": "Ältere anzeigen"
     },
     "emptyFiltered": "Keine Kunden entsprechen diesen Filtern.",
     "clearFilters": "Filter zurücksetzen",

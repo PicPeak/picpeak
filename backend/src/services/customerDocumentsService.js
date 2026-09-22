@@ -325,6 +325,11 @@ async function listForCustomer(customerId, { eventId = null, contractIds = [], p
   return (await q).map(toCustomerDto);
 }
 
+/** The raw rows behind listForCustomer, for the dashboard's "Recent". */
+async function listVisibleRows(customerId) {
+  return customerVisibleQuery(customerId).orderBy('customer_documents.id', 'desc');
+}
+
 async function getForCustomer(customerId, documentId) {
   return customerVisibleQuery(customerId).where('customer_documents.id', documentId).first();
 }
@@ -486,7 +491,12 @@ async function createDocument({
   await logActivity('customer_document_uploaded',
     { documentId: id, customerId, uploaderType, sizeBytes: size, status },
     resolved.eventId, actor);
-  return db('customer_documents').where({ id }).first();
+  const row = await db('customer_documents').where({ id }).first();
+  // Shared on the way in: a share like any other, so the timeline shows it.
+  if (row.shared_at) {
+    await logActivity('customer_document_shared', { documentId: id, customerId }, resolved.eventId, actor);
+  }
+  return row;
 }
 
 async function setShared(customerId, documentId, shared, admin) {
@@ -709,6 +719,7 @@ module.exports = {
   getUsageBytes,
   parseOptionalId,
   listForCustomer,
+  listVisibleRows,
   getForCustomer,
   getStateForCustomer,
   listForAdmin,

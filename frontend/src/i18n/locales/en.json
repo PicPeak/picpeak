@@ -3343,7 +3343,15 @@
       "bulkDeleteCompleted_other": "Bulk delete completed: {{count}} events removed",
       "bulkArchiveCompleted_one": "Bulk archive completed: {{count}} event archived",
       "bulkArchiveCompleted_other": "Bulk archive completed: {{count}} events archived",
-      "cssTemplateRemoteUrlsRemoved": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
+      "cssTemplateRemoteUrlsRemoved": "Remote URLs removed from {{count}} CSS template(s) — see the release notes",
+      "customerDocumentUploaded": "Customer document uploaded",
+      "customerDocumentShared": "Document shared with a customer",
+      "customerDocumentUnshared": "Document no longer shared with a customer",
+      "customerDocumentReviewed": "Customer document reviewed",
+      "customerDocumentLinked": "Customer document links changed",
+      "customerDocumentDeleted": "Customer document deleted",
+      "customerDocumentDownloaded": "Customer document downloaded",
+      "customerDocumentScanRejected": "A customer document failed the security check"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -3656,7 +3664,15 @@
       "newsletter_completed": "Newsletter finished — {{sent}} sent, {{failed}} failed",
       "newsletter_deleted": "Newsletter campaign deleted",
       "customer_marketing_opt_out": "Customer newsletter consent changed",
-      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
+      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes",
+      "customer_document_uploaded": "Customer document uploaded",
+      "customer_document_shared": "Document shared with a customer",
+      "customer_document_unshared": "Document no longer shared with a customer",
+      "customer_document_reviewed": "Customer document reviewed",
+      "customer_document_linked": "Customer document links changed",
+      "customer_document_deleted": "Customer document deleted",
+      "customer_document_downloaded": "Customer document downloaded",
+      "customer_document_scan_rejected": "A customer document failed the security check"
     },
     "people": {
       "title": "People in this gallery",
@@ -5375,7 +5391,21 @@
       "detailsAria": "Details for {{name}}",
       "notAvailable": "Not available yet",
       "expiredTitle": "Expired galleries",
-      "expiredHint": "These galleries have expired and can no longer be opened. Contact your photographer if you still need the photos."
+      "expiredHint": "These galleries have expired and can no longer be opened. Contact your photographer if you still need the photos.",
+      "documentRejected": "{{name}} was not accepted — upload a corrected version",
+      "viewDocument": "View document",
+      "recentTitle": "Recent",
+      "recent": {
+        "documentShared": "New document: {{title}}",
+        "documentUploaded": "You uploaded {{title}}",
+        "documentAccepted": "{{title}} was accepted",
+        "documentRejected": "{{title}} was not accepted",
+        "contractSent": "Contract {{title}} was sent to you",
+        "contractSigned": "You signed contract {{title}}",
+        "quoteSent": "Quote {{title}} was sent to you",
+        "invoiceSent": "Invoice {{title}} was sent to you",
+        "galleryAssigned": "Gallery {{title}} is now available to you"
+      }
     },
     "layout": {
       "greeting": "Hi, {{name}}"
@@ -6064,6 +6094,16 @@
         "overGroupLimit_one": "{{count}} selected customer would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.",
         "overGroupLimit_other": "{{count}} selected customers would be in more than {{max}} groups. Take them out of the selection, or out of other groups first."
       }
+    },
+    "activity": {
+      "title": "Activity",
+      "hint": "What happened on this customer's account and documents, newest first.",
+      "loadError": "Could not load the activity.",
+      "empty": "No activity yet.",
+      "byCustomer": "By the customer",
+      "byAdmin": "By {{name}}",
+      "bySystem": "Automatic",
+      "more": "Show older"
     },
     "emptyFiltered": "No customers match these filters.",
     "clearFilters": "Clear filters",

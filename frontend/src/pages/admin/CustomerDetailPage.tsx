@@ -32,6 +32,7 @@ import { businessProfileService } from '../../services/businessProfile.service';
 import { CustomerCrmPanels } from '../../components/admin/CustomerCrmPanels';
 import { HoursSection } from '../../components/admin/HoursSection';
 import { CustomerDocumentsCard } from '../../components/admin/CustomerDocumentsCard';
+import { CustomerActivityCard } from '../../components/admin/CustomerActivityCard';
 import { PermissionGate } from '../../components/admin/PermissionGate';
 import { formatMoney } from '../../components/admin/LineItemsTable';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -589,6 +590,11 @@ export const CustomerDetailPage: React.FC = () => {
           />
         </PermissionGate>
       )}
+
+      {/* The customer's timeline (#1444): documents, account, groups. */}
+      <PermissionGate permission="customers.view">
+        <CustomerActivityCard customerId={customer.id} />
+      </PermissionGate>
 
       {/* Per-customer feature flags (#354 follow-up). Sits
           second-to-last by request — admins glance at these least

@@ -205,7 +205,24 @@ export interface CustomerInvitationSummary {
  */
 const unwrap = (payload: any): any => (payload && payload.data !== undefined ? payload.data : payload);
 
+/** One row of a customer's timeline (GET /admin/customers/:id/activity, #1444). */
+export interface CustomerActivityEntry {
+  id: number;
+  /** activity_logs.activity_type — labelled via admin.activities.<type>. */
+  type: string;
+  at: string | null;
+  actorType: string;
+  actorName: string | null;
+  eventId: number | null;
+  metadata: { documentId?: number; status?: string; eventId?: number; requestId?: number; count?: number };
+}
+
 export const customerAdminService = {
+  async activity(id: number, beforeId?: number | null): Promise<{ entries: CustomerActivityEntry[]; nextBeforeId: number | null }> {
+    const { data } = await api.get(`/admin/customers/${id}/activity`, { params: beforeId ? { beforeId } : {} });
+    return data;
+  },
+
   async list(options: CustomerListOptions = {}): Promise<CustomerAccountSummary[]> {
     // The filters are server-side (#1443); the overview keeps filtering the
     // answer by its search box. Defaults are left out of the request.

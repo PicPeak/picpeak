@@ -167,8 +167,25 @@ export interface CustomerDashboard {
       id: number; invoiceNumber: string; status: string; dueDate: string | null; overdue: boolean;
       eventName: string | null; totalAmountMinor: number; openAmountMinor: number; currency: string;
     }>;
+    /** The customer's own rejected uploads — upload a corrected one, or delete it. */
+    documents?: Array<{ id: number; name: string; reviewNote: string | null }>;
   };
+  /** Newest first, from the same visibility rules as the lists they link to. */
+  recent?: CustomerRecentItem[];
   galleries: { active: CustomerEvent[]; expired: CustomerEvent[] };
+}
+
+export type CustomerRecentKind =
+  | 'document_shared' | 'document_uploaded' | 'document_accepted' | 'document_rejected'
+  | 'contract_sent' | 'contract_signed' | 'quote_sent' | 'invoice_sent' | 'gallery_assigned';
+
+export interface CustomerRecentItem {
+  kind: CustomerRecentKind;
+  id: number;
+  title: string;
+  at: string;
+  /** A portal path. */
+  link: string;
 }
 
 export interface CustomerEventOverview {

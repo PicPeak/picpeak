@@ -16,6 +16,7 @@
 const { db } = require('../database/db');
 const { isGalleryAvailable, isGalleryExpired } = require('../utils/galleryLifecycle');
 const { toIso } = require('../utils/dateNormalize');
+const { toMillis } = require('../utils/queueTimestamps');
 const customerAccountsService = require('./customerAccountsService');
 const customerDocumentsService = require('./customerDocumentsService');
 
@@ -62,7 +63,7 @@ const money = (v) => Number(v) || 0;
 
 async function needsActionFor(customerId, features) {
   const today = todayDateOnly();
-  const out = { quotes: [], contracts: [], invoices: [] };
+  const out = { quotes: [], contracts: [], invoices: [], documents: [] };
 
   if (features.quotes) {
     const rows = await db('quotes')
@@ -127,7 +128,83 @@ async function needsActionFor(customerId, features) {
     });
   }
 
+  if (features.documents) {
+    // Only what the customer can act on: a rejected upload of theirs (upload
+    // a corrected one, or delete it). A pending upload waits on the studio.
+    const rows = await db('customer_documents')
+      .where({ customer_account_id: customerId, uploader_type: 'customer', status: 'rejected' })
+      .whereNull('deleted_at')
+      .orderBy('id', 'desc')
+      .select('id', 'original_name', 'review_note');
+    out.documents = rows.map((d) => ({ id: d.id, name: d.original_name, reviewNote: d.review_note || null }));
+  } else {
+    out.documents = [];
+  }
+
   return out;
+}
+
+/**
+ * What happened lately, for the dashboard's "Recent" (#1444 slice 6).
+ *
+ * Derived from the source tables — not from activity_logs — with the same
+ * visibility rules as the lists each item links to. That is what keeps it
+ * from drifting from "Needs action" and keeps studio-side actions (a review
+ * note being edited, a document unshared) out of it: an unshared document
+ * simply no longer matches customerVisibleQuery.
+ *
+ * Each item: { kind, id, title, at, link }.
+ */
+async function recentFor(customerId, features, limit = 10) {
+  const items = [];
+  const push = (kind, id, title, at, link) => {
+    const ms = toMillis(at);
+    if (ms !== null) items.push({ kind, id, title, at: new Date(ms).toISOString(), link });
+  };
+
+  if (features.documents) {
+    const docs = await customerDocumentsService.listVisibleRows(customerId);
+    for (const d of docs) {
+      const link = `/customer/documents/${d.id}`;
+      if (d.uploader_type === 'customer') {
+        push('document_uploaded', d.id, d.original_name, d.created_at, link);
+        if (d.reviewed_at && (d.status === 'clean' || d.status === 'rejected')) {
+          push(d.status === 'clean' ? 'document_accepted' : 'document_rejected', d.id, d.original_name, d.reviewed_at, link);
+        }
+      } else {
+        push('document_shared', d.id, d.original_name, d.shared_at, link);
+      }
+    }
+  }
+  if (features.contracts) {
+    const rows = await db('contracts').where({ customer_account_id: customerId }).whereNot('status', 'draft')
+      .select('id', 'contract_number', 'sent_at', 'signed_by_customer_at');
+    for (const c of rows) {
+      push('contract_sent', c.id, c.contract_number, c.sent_at, '/customer/contracts');
+      push('contract_signed', c.id, c.contract_number, c.signed_by_customer_at, '/customer/contracts');
+    }
+  }
+  if (features.quotes) {
+    const rows = await db('quotes').where({ customer_account_id: customerId }).whereNot('status', 'draft')
+      .select('id', 'quote_number', 'sent_at');
+    for (const q of rows) push('quote_sent', q.id, q.quote_number, q.sent_at, '/customer/quotes');
+  }
+  if (features.bills) {
+    // Same visibility as GET /api/customer/invoices.
+    const rows = await db('invoices').where({ customer_account_id: customerId })
+      .whereNotIn('status', ['scheduled', 'skipped'])
+      .andWhere((q) => q.whereNot('status', 'cancelled').orWhereNotNull('cancellation_storno_id'))
+      .select('id', 'invoice_number', 'sent_at');
+    for (const i of rows) push('invoice_sent', i.id, i.invoice_number, i.sent_at, '/customer/bills');
+  }
+  const events = (await customerAccountsService.listEventsForCustomer(customerId))
+    .filter((e) => !isTrue(e.is_draft));
+  for (const e of events) {
+    push('gallery_assigned', e.id, e.event_name, e.assigned_at, `/customer/events/${encodeURIComponent(e.slug)}`);
+  }
+
+  items.sort((a, b) => (b.at < a.at ? -1 : b.at > a.at ? 1 : 0));
+  return items.slice(0, limit);
 }
 
 async function getDashboard(customerId) {
@@ -135,6 +212,7 @@ async function getDashboard(customerId) {
   const events = (await customerAccountsService.listEventsForCustomer(customerId)).map(shapeEvent);
   return {
     needsAction: await needsActionFor(customerId, features),
+    recent: await recentFor(customerId, features),
     galleries: {
       active: events.filter((e) => e.availability !== 'expired'),
       expired: events.filter((e) => e.availability === 'expired'),
@@ -289,5 +367,5 @@ async function getEventOverview(customerId, slug) {
 }
 
 module.exports = {
-  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor },
+  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor, recentFor },
 };

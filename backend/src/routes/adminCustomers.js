@@ -34,6 +34,7 @@ const { NotFoundError, AppError } = require('../utils/errors');
 const { getAppSetting } = require('../utils/appSettings');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
+const customerActivityService = require('../services/customerActivityService');
 const customerGroupsService = require('../services/customerGroupsService');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 
@@ -1000,6 +1001,28 @@ router.get('/:id/monthly-draft', [
   validateRequest(req);
   const draft = await invoiceService.getMonthlyDraft(parseInt(req.params.id, 10));
   successResponse(res, { draft });
+}));
+
+// ---- customer activity (#1444) -------------------------------------------
+// The customer's timeline: document, account and group activity from
+// activity_logs, newest first. ?limit (1-200, default 50) and ?beforeId (the
+// previous page's nextBeforeId). Unknown customer → 404.
+router.get('/:id/activity', [
+  adminAuth,
+  requirePermission('customers.view'),
+  param('id').isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 200 }),
+  query('beforeId').optional().isInt({ min: 1 }),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const customerId = parseInt(req.params.id, 10);
+  const customer = await db('customer_accounts').where({ id: customerId }).first('id');
+  if (!customer) throw new NotFoundError('Customer', customerId);
+  const result = await customerActivityService.listForCustomer(customerId, {
+    limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
+    beforeId: req.query.beforeId ? parseInt(req.query.beforeId, 10) : null,
+  });
+  successResponse(res, result);
 }));
 
 // ---- customer documents (#1444) ------------------------------------------

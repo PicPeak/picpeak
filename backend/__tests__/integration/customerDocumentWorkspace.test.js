@@ -523,3 +523,128 @@ describe('document notifications', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slice 6 — admin timeline, portal Recent
+// ---------------------------------------------------------------------------
+
+describe('customer activity (admin)', () => {
+  let me;
+  let other;
+  const activity = (id, qs = '', tok = superTok) => asAdmin(request(adminApp).get(`/api/admin/customers/${id}/activity${qs}`), tok);
+
+  beforeAll(async () => {
+    me = await newCustomer();
+    other = await newCustomer();
+  });
+
+  it('lists this customer\'s document activity newest first, with ids and no personal fields', async () => {
+    const up = await adminUpload(me, 'timeline.pdf', { share: 'true' });
+    await asAdmin(request(adminApp).post(adminDoc(me, up.body.document.id, '/unshare')));
+    await adminUpload(other, 'not-mine.pdf');
+    // A login carries the address and the IP in its metadata.
+    await require('../../src/database/db').logActivity('customer_login',
+      { customerId: me, email: 'x@example.com', ipAddress: '203.0.113.9' }, null, { type: 'customer', id: me, name: 'x@example.com' });
+
+    const res = await activity(me);
+    expect(res.status).toBe(200);
+    const types = res.body.entries.map((e) => e.type);
+    expect(types.slice(0, 4)).toEqual([
+      'customer_login', 'customer_document_unshared', 'customer_document_shared', 'customer_document_uploaded',
+    ]);
+    for (const e of res.body.entries) {
+      expect(e.metadata.documentId === undefined || typeof e.metadata.documentId === 'number').toBe(true);
+    }
+    const raw = JSON.stringify(res.body);
+    expect(raw).not.toContain('203.0.113.9');
+    expect(raw).not.toContain('x@example.com');
+    expect(raw).not.toContain('timeline.pdf');
+    // Other customers' rows never appear.
+    const otherDoc = await db('customer_documents').where({ customer_account_id: other }).first('id');
+    expect(res.body.entries.some((e) => e.metadata.documentId === otherDoc.id)).toBe(false);
+  });
+
+  it('pages by id', async () => {
+    const first = await activity(me, '?limit=1');
+    expect(first.body.entries).toHaveLength(1);
+    expect(first.body.nextBeforeId).toBe(first.body.entries[0].id);
+    const second = await activity(me, `?limit=1&beforeId=${first.body.nextBeforeId}`);
+    expect(second.body.entries[0].id).toBeLessThan(first.body.entries[0].id);
+  });
+
+  it('needs customers.view and answers 404 for an unknown customer', async () => {
+    const role = await db('roles').whereNotIn('name', ['super_admin', 'admin']).first();
+    const perm = await db('permissions').where({ name: 'customers.view' }).first('id');
+    const granted = await db('role_permissions').where({ role_id: role.id, permission_id: perm.id }).first();
+    const limitedId = idOf(await db('admin_users').insert({
+      username: `noview-${Date.now()}`, email: `noview-${Date.now()}@example.com`, password_hash: 'x',
+      must_change_password: false, created_at: nowIso(), role_id: role.id,
+    }).returning('id'));
+    const tok = mintAdminToken(limitedId);
+    if (granted) await db('role_permissions').where({ role_id: role.id, permission_id: perm.id }).del();
+    try {
+      require('../../src/middleware/permissions').clearPermissionCache();
+      expect((await activity(me, '', tok)).status).toBe(403);
+    } finally {
+      if (granted) await db('role_permissions').insert({ role_id: role.id, permission_id: perm.id });
+      require('../../src/middleware/permissions').clearPermissionCache();
+    }
+    expect((await activity(99999999)).status).toBe(404);
+  });
+});
+
+describe('portal dashboard: Recent and Needs action', () => {
+  let me;
+  let other;
+  const dashboard = (id) => asCustomer(request(customerApp).get('/api/customer/dashboard'), id);
+
+  beforeAll(async () => {
+    me = await newCustomer();
+    other = await newCustomer();
+  });
+
+  it('shows shared, uploaded and reviewed documents, newest first', async () => {
+    const shared = await adminUpload(me, 'recent-shared.pdf', { share: 'true' });
+    const own = await uploadAs(me, 'recent-own.pdf');
+    await asAdmin(request(adminApp).post(adminDoc(me, own.body.document.id, '/review')))
+      .send({ status: 'rejected', note: 'Blurry' });
+    const res = await dashboard(me);
+    expect(res.status).toBe(200);
+    const kinds = res.body.recent.map((r) => `${r.kind}:${r.id}`);
+    expect(kinds).toEqual(expect.arrayContaining([
+      `document_shared:${shared.body.document.id}`,
+      `document_uploaded:${own.body.document.id}`,
+      `document_rejected:${own.body.document.id}`,
+    ]));
+    expect(res.body.recent.find((r) => r.kind === 'document_shared').link)
+      .toBe(`/customer/documents/${shared.body.document.id}`);
+    const times = res.body.recent.map((r) => r.at);
+    expect([...times].sort().reverse()).toEqual(times);
+
+    // The rejected upload is something the customer can act on.
+    expect(res.body.needsAction.documents).toEqual([
+      { id: own.body.document.id, name: 'recent-own.pdf', reviewNote: 'Blurry' },
+    ]);
+  });
+
+  it('drops an unshared document from Recent at once, and never shows another customer\'s items', async () => {
+    const up = await adminUpload(me, 'soon-gone.pdf', { share: 'true' });
+    const theirs = await adminUpload(other, 'theirs.pdf', { share: 'true' });
+    expect((await dashboard(me)).body.recent.some((r) => r.id === up.body.document.id)).toBe(true);
+    await asAdmin(request(adminApp).post(adminDoc(me, up.body.document.id, '/unshare')));
+    const after = await dashboard(me);
+    expect(after.body.recent.some((r) => r.kind.startsWith('document_') && r.id === up.body.document.id)).toBe(false);
+    expect(after.body.recent.some((r) => r.kind.startsWith('document_') && r.id === theirs.body.document.id)).toBe(false);
+  });
+
+  it('leaves document items out when documents are off for the customer', async () => {
+    await db('customer_accounts').where({ id: me }).update({ feature_documents: 0 });
+    try {
+      const res = await dashboard(me);
+      expect(res.body.recent.filter((r) => r.kind.startsWith('document_'))).toEqual([]);
+      expect(res.body.needsAction.documents).toEqual([]);
+    } finally {
+      await db('customer_accounts').where({ id: me }).update({ feature_documents: 1 });
+    }
+  });
+});

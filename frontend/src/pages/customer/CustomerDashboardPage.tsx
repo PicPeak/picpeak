@@ -3,8 +3,12 @@
  *
  * Top to bottom:
  *   - Needs action — quotes waiting for an answer, contracts waiting for the
- *     customer's signature, invoices due or overdue. Only sections for the
- *     customer's effective features are filled (server-side).
+ *     customer's signature, invoices due or overdue, own uploads that were
+ *     not accepted. Only sections for the customer's effective features are
+ *     filled (server-side).
+ *   - Recent — what happened lately (shared/uploaded/reviewed documents,
+ *     contracts, quotes, invoices, galleries), derived server-side from the
+ *     same visibility rules as the lists, so it can't show what those hide.
  *   - Galleries — inline rows with Open + Download, a sort dropdown, and a
  *     Details link to the per-event page.
  *   - Expired galleries — a history list with each gallery's expiry date.
@@ -19,15 +23,18 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, Calendar, Clock, Download, ExternalLink, ImageIcon, Info } from 'lucide-react';
+import { AlertCircle, Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button, Loading } from '../../components/common';
 import { formatMoneyMinor } from '../../utils/money';
-import { customerService, type CustomerDashboard, type CustomerEvent } from '../../services/customer.service';
+import {
+  customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem,
+} from '../../services/customer.service';
 import { galleryService } from '../../services/gallery.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 
@@ -54,7 +61,8 @@ const surfaceStyle = {
 const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ items }) => {
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
-  const total = items.quotes.length + items.contracts.length + items.invoices.length;
+  const documents = items.documents ?? [];
+  const total = items.quotes.length + items.contracts.length + items.invoices.length + documents.length;
   if (total === 0) return null;
 
   return (
@@ -105,6 +113,57 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
             <Link to="/customer/bills" className="text-sm underline text-theme">
               {t('customer.dashboard.viewInvoice', 'View invoice')}
             </Link>
+          </li>
+        ))}
+        {documents.map((d) => (
+          <li key={`d-${d.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-theme break-all">
+              {t('customer.dashboard.documentRejected', '{{name}} was not accepted — upload a corrected version', { name: d.name })}
+              {d.reviewNote && <span className="block text-xs text-muted-theme">{d.reviewNote}</span>}
+            </span>
+            <Link to={`/customer/documents/${d.id}`} className="text-sm underline text-theme">
+              {t('customer.dashboard.viewDocument', 'View document')}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+function recentLabel(t: TFunction, item: CustomerRecentItem): string {
+  const vars = { title: item.title };
+  switch (item.kind) {
+    case 'document_shared': return t('customer.dashboard.recent.documentShared', 'New document: {{title}}', vars);
+    case 'document_uploaded': return t('customer.dashboard.recent.documentUploaded', 'You uploaded {{title}}', vars);
+    case 'document_accepted': return t('customer.dashboard.recent.documentAccepted', '{{title}} was accepted', vars);
+    case 'document_rejected': return t('customer.dashboard.recent.documentRejected', '{{title}} was not accepted', vars);
+    case 'contract_sent': return t('customer.dashboard.recent.contractSent', 'Contract {{title}} was sent to you', vars);
+    case 'contract_signed': return t('customer.dashboard.recent.contractSigned', 'You signed contract {{title}}', vars);
+    case 'quote_sent': return t('customer.dashboard.recent.quoteSent', 'Quote {{title}} was sent to you', vars);
+    case 'invoice_sent': return t('customer.dashboard.recent.invoiceSent', 'Invoice {{title}} was sent to you', vars);
+    case 'gallery_assigned': return t('customer.dashboard.recent.galleryAssigned', 'Gallery {{title}} is now available to you', vars);
+    default: return item.title;
+  }
+}
+
+const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
+  const { t } = useTranslation();
+  const { format: fmtDate } = useLocalizedDate();
+  if (items.length === 0) return null;
+  return (
+    <section aria-labelledby="recent-title" className="rounded-xl border mb-6 overflow-hidden" style={surfaceStyle}>
+      <h2 id="recent-title" className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
+        <History className="w-5 h-5" />
+        {t('customer.dashboard.recentTitle', 'Recent')}
+      </h2>
+      <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+        {items.map((item) => (
+          <li key={`${item.kind}-${item.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-all">
+              {recentLabel(t, item)}
+            </Link>
+            <time dateTime={item.at} className="text-xs text-muted-theme whitespace-nowrap">{fmtDate(item.at)}</time>
           </li>
         ))}
       </ul>
@@ -221,6 +280,7 @@ export const CustomerDashboardPage: React.FC = () => {
       ) : (
         <>
           <NeedsAction items={data.needsAction} />
+          <Recent items={data.recent ?? []} />
 
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
             <div>
