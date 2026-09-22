@@ -3171,7 +3171,8 @@
         "LINE_HEIGHT_TIGHT": "A line height of {{value}} is tight; {{limit}} or more reads better.",
         "LINE_TOO_LONG": "Lines run to about {{value}} characters; above {{limit}} they get hard to follow. Wider margins or larger text help."
       },
-      "uploadedFonts": "Your fonts"
+      "uploadedFonts": "Your fonts",
+      "fontUnavailable": "{{name}} (no longer available)"
     },
     "pdfFonts": {
       "title": "Your fonts for PDFs",

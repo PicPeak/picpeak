@@ -169,8 +169,12 @@ test('a document rendered with an uploaded font is byte-stable, and an archived 
   expect(check.body.findings).toEqual(expect.arrayContaining([
     expect.objectContaining({ code: 'FONT_MISSING', severity: 'warning', key: font.family }),
   ]));
-  // An archived font can't be picked again.
+  // An archived font can't be picked again…
   expect((await request(app).put('/api/admin/pdf-themes/quote').set(auth).send({ settings: { fontFamily: font.family } })).status).toBe(400);
+  // …but the theme that already names it still saves and previews an unrelated change.
+  const kept = { fontFamily: font.family, colors: { accent: '#224466' } };
+  expect((await request(app).put('/api/admin/pdf-themes/default').set(auth).send({ settings: kept })).status).toBe(200);
+  expect((await request(app).post('/api/admin/pdf-themes/default/preview').set(auth).send({ settings: kept })).status).toBe(200);
   await request(app).put('/api/admin/pdf-themes/default').set(auth).send({ settings: {} });
 });
 

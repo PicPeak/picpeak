@@ -140,6 +140,10 @@ export const PdfThemeCard: React.FC = () => {
 
   const inherit = (value: string | number) => t('branding.pdfTheme.inherit', 'Inherit ({{value}})', { value });
   const familyLabel = (dir: string) => dir.replace(/-/g, ' ');
+  // The stored font when it is no longer offered (an archived upload): shown
+  // as what it is, so the picker never looks set to something else.
+  const staleFont = !!draft.fontFamily && !(data?.fontFamilies || []).includes(draft.fontFamily)
+    && !(data?.uploadedFonts || []).some((f) => f.family === draft.fontFamily);
   const footerMode = draft.footer?.mode;
 
   return (
@@ -245,6 +249,11 @@ export const PdfThemeCard: React.FC = () => {
               <optgroup label={t('branding.pdfTheme.uploadedFonts', 'Your fonts') as string}>
                 {(data?.uploadedFonts || []).map((f) => <option key={f.family} value={f.family}>{f.name}</option>)}
               </optgroup>
+            )}
+            {staleFont && (
+              <option value={draft.fontFamily}>
+                {t('branding.pdfTheme.fontUnavailable', '{{name}} (no longer available)', { name: familyLabel(draft.fontFamily as string) })}
+              </option>
             )}
           </select>
         </div>

@@ -3641,7 +3641,8 @@
         "LINE_HEIGHT_TIGHT": "Eine Zeilenhöhe von {{value}} ist eng; ab {{limit}} liest es sich besser.",
         "LINE_TOO_LONG": "Zeilen umfassen etwa {{value}} Zeichen; über {{limit}} werden sie schwer lesbar. Breitere Ränder oder grössere Schrift helfen."
       },
-      "uploadedFonts": "Ihre Schriften"
+      "uploadedFonts": "Ihre Schriften",
+      "fontUnavailable": "{{name}} (nicht mehr verfügbar)"
     },
     "pdfFonts": {
       "title": "Ihre Schriften für PDFs",

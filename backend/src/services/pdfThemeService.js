@@ -20,6 +20,18 @@ async function allFamilies() {
 }
 
 /**
+ * The families a scope's settings may name: every usable one, plus the one
+ * the scope already stores. A font archived while a theme uses it stays
+ * savable there — the document falls back and reports it — so an unrelated
+ * change to that theme is not refused for it.
+ */
+async function familiesFor(scope) {
+  const { byScope } = await loadRows();
+  const stored = byScope[scope] && byScope[scope].fontFamily;
+  return [...(await allFamilies()), ...(stored ? [String(stored)] : [])];
+}
+
+/**
  * A resolved theme with its uploaded font's files attached (#1445): the
  * renderer runs in a worker without a database, so an `upload-<id>` family
  * reaches it as server-resolved paths. An archived or missing font resolves
@@ -81,7 +93,7 @@ function assertScope(scope) {
 /** Replace a scope's settings. An empty object clears the scope. */
 async function saveTheme(scope, settings, adminId) {
   assertScope(scope);
-  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await allFamilies() });
+  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await familiesFor(scope) });
   const now = new Date();
   const values = { settings: JSON.stringify(clean), updated_by_admin_id: adminId || null, updated_at: now };
   const updated = await db('pdf_themes').where({ scope }).update(values);
@@ -106,7 +118,7 @@ async function saveTheme(scope, settings, adminId) {
  */
 async function resolveDraftTheme(scope, settings) {
   assertScope(scope);
-  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await allFamilies() });
+  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await familiesFor(scope) });
   const { byScope } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
   const rows = { ...byScope, [scope]: clean };
