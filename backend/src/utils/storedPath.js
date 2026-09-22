@@ -16,7 +16,9 @@
  * every read goes through `resolveStoredPath`, which accepts both shapes:
  *
  *   - relative (`business-docs/contract/2026/C-1.pdf`): joined onto the
- *     current storage root;
+ *     current storage root; when nothing is there, a path relative to the
+ *     working directory that lands inside the storage root (written under a
+ *     relative STORAGE_PATH before 233) is used when that file exists;
  *   - absolute under the current storage root: used as it is;
  *   - absolute under another storage root: mapped onto the current root by
  *     its storage-relative part, the suffix from a top-level storage folder
@@ -94,28 +96,39 @@ function storageSuffixes(absPath) {
 
 /**
  * The value to record for a file this install just wrote: relative to the
- * storage root when the file is inside it, unchanged otherwise.
+ * storage root when the file is inside it, unchanged otherwise. A relative
+ * writer path is relative to the working directory (a relative STORAGE_PATH
+ * such as `./storage` makes `path.join(getStoragePath(), ...)` one).
  */
 function toStoredPath(filePath) {
-  if (!filePath || typeof filePath !== 'string' || !path.isAbsolute(filePath)) return filePath;
+  if (!filePath || typeof filePath !== 'string') return filePath;
   const abs = path.resolve(filePath);
   const root = storageRoot();
   return isInside(abs, root) ? toPosix(path.relative(root, abs)) : filePath;
 }
 
+const isStorageRelative = (value) => !path.isAbsolute(value)
+  && STORAGE_FOLDERS.includes(value.split(/[\\/]/)[0]);
+
 /**
  * A stored value rewritten for this install: relative to the storage root
  * when it is under it, else its storage-relative suffix when it has one
- * (a path recorded by another install). `exists(relative)` picks between
- * suffixes when there is more than one. Anything else comes back unchanged.
+ * (a path recorded by another install, absolute or relative to that
+ * install's working directory). `exists(relative)` picks between suffixes;
+ * when it is given and the archive carries none of them, the value is kept
+ * as it was, so the read-side fallbacks (resolveStoredPath) still apply to
+ * it. Anything else comes back unchanged.
  */
 function relocateStoredPath(value, exists = null) {
-  if (!value || typeof value !== 'string' || !path.isAbsolute(value)) return value;
-  const own = toStoredPath(value);
-  if (own !== value) return own;
+  if (!value || typeof value !== 'string' || isStorageRelative(value)) return value;
+  if (path.isAbsolute(value)) {
+    const own = toStoredPath(value);
+    if (own !== value) return own;
+  }
   const suffixes = storageSuffixes(value);
   if (!suffixes.length) return value;
-  return (exists && suffixes.find((s) => exists(s))) || suffixes[0];
+  if (!exists) return suffixes[0];
+  return suffixes.find((s) => exists(s)) || value;
 }
 
 /**
@@ -129,7 +142,13 @@ function resolveStoredPath(value) {
   const root = storageRoot();
   if (!path.isAbsolute(value)) {
     const abs = path.resolve(root, value);
-    return isInside(abs, root) ? abs : null;
+    const inside = isInside(abs, root);
+    if (inside && fs.existsSync(abs)) return abs;
+    // Recorded relative to the working directory: a relative STORAGE_PATH
+    // (`./storage`) made the writers produce `storage/business-docs/...`.
+    const fromCwd = path.resolve(value);
+    if ((isInside(fromCwd, root) || isInside(fromCwd, legacyRoot())) && fs.existsSync(fromCwd)) return fromCwd;
+    return inside ? abs : null;
   }
   const abs = path.resolve(value);
   if (isInside(abs, root)) return abs;
