@@ -749,6 +749,7 @@ export interface ContractSendPreview {
   problems: Array<{ code: string; severity: 'error' | 'warning'; message: string; attachmentId?: number; keys?: string[] }>;
   /** What was reviewed; sending with it is refused if the contract changed since. */
   reviewToken: string;
+  lockVersion: number;
 }
 
 /**

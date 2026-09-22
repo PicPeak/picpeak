@@ -165,7 +165,9 @@ async function buildPublicView(contractId) {
   // commercial terms, and re-reading the live quote here would show a signer
   // figures that are not the ones in the document they are signing.
   const snapshot = require('./renderContext').parseContentSnapshot(data.contract.rendered_content);
-  view.commercial = snapshot && snapshot.quote ? commercialView(snapshot.quote) : null;
+  // Hidden by "Show only if" on the price clause: the PDF has no prices then.
+  view.commercial = snapshot && snapshot.quote && !display.priceHidden ? commercialView(snapshot.quote) : null;
+  Object.defineProperty(view, 'priceHidden', { value: display.priceHidden, enumerable: false });
   return view;
 }
 

@@ -78,7 +78,7 @@ it('waits for a slow quote template before preselecting, and never overrides a m
   renderDialog(8);
   const select = await screen.findByRole('combobox', { name: 'Contract template' });
   // The list is there, the quote template is not: no default forced in yet.
-  expect(select).toHaveValue('1'); // the browser shows the first option, but nothing was chosen
+  expect(select).toHaveValue(''); // nothing chosen yet, and the picker says so
   expect(screen.getByRole('button', { name: 'Draft the contract' })).toBeDisabled();
   release();
   await waitFor(() => expect(select).toHaveValue('2'));
@@ -87,4 +87,16 @@ it('waits for a slow quote template before preselecting, and never overrides a m
   await user.selectOptions(select, '1');
   await new Promise((r) => setTimeout(r, 20));
   expect(select).toHaveValue('1');
+});
+
+it('when the quote template cannot be loaded it preselects nothing, so the server decides', async () => {
+  const user = userEvent.setup();
+  getTemplate.mockImplementationOnce(async () => { throw new Error('offline'); });
+  const onConvert = renderDialog(8);
+  const select = await screen.findByRole('combobox', { name: 'Contract template' });
+  await waitFor(() => expect(getTemplate).toHaveBeenCalled());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Draft the contract' })).toBeEnabled());
+  expect(select).toHaveValue('');
+  await user.click(screen.getByRole('button', { name: 'Draft the contract' }));
+  expect(onConvert).toHaveBeenCalledWith(null);
 });

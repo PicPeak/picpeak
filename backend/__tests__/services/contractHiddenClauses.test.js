@@ -90,3 +90,15 @@ test('the quote table stays with an empty text, and goes when its "Show only if"
   expect(await names('{{#if event_name}}Für {{event_name}}{{/if}}')).toEqual([]);
   expect(await names('{{#unless event_name}}Ohne Anlass{{/unless}}')).toEqual(['Preise']);
 });
+
+test('a price clause hidden by its rule takes the prices off the signing page too', async () => {
+  const { buildPublicView } = require('../../src/services/contract/publicView');
+  void buildPublicView;
+  const display = await resolveDisplayContent({ rendered_content: JSON.stringify({
+    format: 3, title: 'V', introText: '', outroText: '', placeholders: { event_name: '' },
+    clauses: [{ kind: 'block', blockId: 5, section: 'scope', position: 1, slug: 'quote_line_items_table', name: 'Preise', body: { de: '{{#if event_name}}x{{/if}}' } }],
+  }) }, [], [], 'de');
+  expect(display.priceHidden).toBe(true);
+  const shown = await resolveDisplayContent({ rendered_content: snapshot({ event_name: '', source_quote_number: '' }) }, [], [], 'de');
+  expect(shown.priceHidden).toBe(false);
+});

@@ -192,3 +192,38 @@ test('a send from the review is refused when the contract changed since, and goe
   await ok(request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth).send({ reviewToken: fresh.reviewToken }));
   expect((await db('contracts').where({ id: contractId }).first()).status).toBe('sent');
 });
+
+test('the review covers the dates and the customer address, and a save during the send is caught', async () => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  const token = async () => (await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth))).reviewToken;
+  const first = await token();
+  await db('contracts').where({ id: contractId }).update({ valid_until: '2099-12-31' });
+  const second = await token();
+  expect(second).not.toBe(first);
+  const before = await db('customer_accounts').where({ id: customerId }).first();
+  const addressKey = Object.keys(before).find((k) => /address|city/i.test(k));
+  await db('customer_accounts').where({ id: customerId }).update({ [addressKey]: 'Neue Strasse 1' });
+  try {
+    expect(await token()).not.toBe(second);
+    // A save lands while the send prepares its signers.
+    const reviewed = await token();
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const real = signingV2.prepareSend;
+    const spy = jest.spyOn(signingV2, 'prepareSend').mockImplementation(async (c) => {
+      const out = await real(c);
+      const current = await db('contracts').where({ id: contractId }).first();
+      await db('contracts').where({ id: contractId })
+        .update({ intro_text: 'Dazwischen', lock_version: Number(current.lock_version || 1) + 1 });
+      return out;
+    });
+    try {
+      const res = await request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth).send({ reviewToken: reviewed });
+      expect(res.status).toBe(409);
+      expect((await db('contracts').where({ id: contractId }).first()).status).toBe('draft');
+    } finally {
+      spy.mockRestore();
+    }
+  } finally {
+    await db('customer_accounts').where({ id: customerId }).update({ [addressKey]: before[addressKey] });
+  }
+});

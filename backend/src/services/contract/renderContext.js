@@ -319,7 +319,9 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     const out = renderTemplatedBody(template, placeholders, { output: legacy ? 'text' : 'markdown' });
     return legacy && typeof out === 'string' ? out.replace(/\\/g, '\\\\') : out;
   };
+  let priceHidden = false;
   return {
+    get priceHidden() { return priceHidden; },
     title: snapshot ? snapshot.title : (contract.title || ''),
     introText: intro ? render(intro) : null,
     outroText: outro ? render(outro) : null,
@@ -353,8 +355,13 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
       })
       // A contract sent before format 3 printed such a clause with its
       // heading, and is read the way it was sent (see `legacy` above).
-      .filter((clause) => legacy || clause.body.trim() !== ''
-        || (clause.slug === 'quote_line_items_table' && !clause.ruled))
+      .filter((clause) => {
+        const shown = legacy || clause.body.trim() !== ''
+          || (clause.slug === 'quote_line_items_table' && !clause.ruled);
+        // The price table and totals go with the clause (see priceHidden).
+        if (!shown && clause.slug === 'quote_line_items_table') priceHidden = true;
+        return shown;
+      })
       .map(({ ruled, ...clause }) => clause),
     (clause) => clause),
   };

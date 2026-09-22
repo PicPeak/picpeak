@@ -23,7 +23,7 @@ export const ConvertToContractDialog: React.FC<{
     queryFn: () => contractTemplatesService.list(),
     retry: false,
   });
-  const { data: quoteTemplate, isFetched: quoteTemplateSettled } = useQuery({
+  const { data: quoteTemplate, isFetched: quoteTemplateSettled, isError: quoteTemplateFailed } = useQuery({
     queryKey: ['quote-template', sourceTemplateId],
     queryFn: () => quoteCatalogService.getTemplate(sourceTemplateId as number),
     enabled: !!sourceTemplateId,
@@ -40,11 +40,13 @@ export const ConvertToContractDialog: React.FC<{
   const waitingForQuoteTemplate = !!sourceTemplateId && !quoteTemplateSettled;
 
   useEffect(() => {
-    if (touched || choice || !usable.length || waitingForQuoteTemplate) return;
+    // Lookup failed: no preselection — sent as none, the server applies the
+    // quote template's contract template itself.
+    if (touched || choice || !usable.length || waitingForQuoteTemplate || quoteTemplateFailed) return;
     const fromQuote = quoteTemplate?.template.defaultContractTemplateId;
     const preferred = usable.find((tpl) => tpl.id === fromQuote) || usable.find((tpl) => tpl.isDefault) || usable[0];
     setChoice(String(preferred.id));
-  }, [touched, choice, usable, quoteTemplate, waitingForQuoteTemplate]);
+  }, [touched, choice, usable, quoteTemplate, waitingForQuoteTemplate, quoteTemplateFailed]);
 
   const fromQuoteName = usable.find((tpl) => tpl.id === quoteTemplate?.template.defaultContractTemplateId)?.name;
 
@@ -74,6 +76,9 @@ export const ConvertToContractDialog: React.FC<{
           </label>
           <select id="convert-contract-template" value={choice} onChange={(e) => { setTouched(true); setChoice(e.target.value); }}
             className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100">
+            {!choice && (
+              <option value="">{t('quotes.contractTemplateAuto', 'As the quote\'s template says (else the default)')}</option>
+            )}
             {usable.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
                 {tpl.name}{tpl.isDefault ? ` — ${t('contracts.templates.default', 'Default')}` : ''}

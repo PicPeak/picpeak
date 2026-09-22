@@ -28,6 +28,8 @@ async function renderContractPdfBuffer(contractId) {
  * with a signature slot per signer, persist it, and invite the signers
  * (signatures v2, #1446 — each signer gets their own link).
  */
+const ensureIntOr = (v) => (v == null ? 1 : Number(v));
+
 async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // Self-heal: dev installs that ran migration 130 BEFORE we added
   // contract_fully_signed to the seed list won't have all three
@@ -42,14 +44,6 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   if (!['draft'].includes(contract.status)) {
     throw new AppError(`Cannot send a contract with status '${contract.status}'`, 409);
   }
-  // Sent from the pre-send review (#1445): only what was reviewed goes out.
-  if (reviewToken) {
-    const { buildSendPreview } = require('./sendPreview');
-    if ((await buildSendPreview(id)).reviewToken !== reviewToken) {
-      throw new AppError('The contract changed since the review. Review it again before sending.', 409, 'CONTRACT_REVIEW_STALE');
-    }
-  }
-
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   ensureCustomerActive(customer);
 
@@ -59,6 +53,18 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   const { slots: signatureSlots } = await signingV2.prepareSend(contract);
 
   const refreshed = await getContractById(id);
+
+  // Sent from the pre-send review (#1445): only what was reviewed goes out.
+  // Checked after `refreshed` is read, and the token covers the lock version:
+  // a save between the two changes the token, and one after it fails the
+  // lock claim in completeSend, which uses `refreshed`'s lock.
+  if (reviewToken) {
+    const { buildSendPreview } = require('./sendPreview');
+    const current = await buildSendPreview(id);
+    if (current.reviewToken !== reviewToken || current.lockVersion !== ensureIntOr(refreshed.contract.lock_version)) {
+      throw new AppError('The contract changed since the review. Review it again before sending.', 409, 'CONTRACT_REVIEW_STALE');
+    }
+  }
 
   // What the send freezes: every included block's body in every language
   // (#1445; only EN and DE were frozen before), plus the content — clauses,

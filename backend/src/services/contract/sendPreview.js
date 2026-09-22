@@ -46,7 +46,8 @@ async function buildSendPreview(contractId) {
     outroText: view.outroText,
     sections: view.sections,
     recipient: view.recipient,
-    commercial: quote ? publicView.commercialView(quote) : null,
+    // Not when "Show only if" hides the price clause: the PDF then has none.
+    commercial: quote && !view.priceHidden ? publicView.commercialView(quote) : null,
   };
   // Placeholders the templates use that nothing fills in. Read from the
   // contract's own texts, not the rendered ones: a customer called
@@ -116,13 +117,22 @@ async function buildSendPreview(contractId) {
     totals: content.commercial ? { currency: content.commercial.currency, ...content.commercial.totals } : null,
     template,
   };
+  // Not shown here but printed in the PDF or deciding the signing window:
+  // the dates, the lock (any saved change), and the customer's address.
+  const lockVersion = contract.lock_version == null ? 1 : Number(contract.lock_version);
+  const recipient = customer ? Object.fromEntries(Object.entries(customer)
+    .filter(([key]) => /name|email|address|postal|city|country|company|phone|vat/i.test(key) && !/hash/i.test(key))) : null;
+  const fingerprint = {
+    ...review, lockVersion, issueDate: contract.issue_date || null, validUntil: contract.valid_until || null, recipient,
+  };
   return {
     ...review,
     problems,
+    lockVersion,
     // What was reviewed, as a hash: the send compares it with the contract
     // as it stands then, so a change made elsewhere while the review was open
     // (the text, a signer, an attachment, the customer) needs a new review.
-    reviewToken: canonicalSha256(review),
+    reviewToken: canonicalSha256(fingerprint),
   };
 }
 
