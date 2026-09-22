@@ -78,3 +78,15 @@ test('a contract sent before format 3 keeps a clause emptied by a condition, as 
   expect(earlier.sections.map((s) => [s.section, s.blocks.map((b) => b.name)]))
     .toEqual([['scope', ['Leistung', 'Anlass']], ['nda', ['Geheim']]]);
 });
+
+test('the quote table stays with an empty text, and goes when its "Show only if" rule does not hold', async () => {
+  const table = (body) => JSON.stringify({
+    format: 3, title: 'Vertrag', introText: '', outroText: '', placeholders: { event_name: '' },
+    clauses: [{ kind: 'block', blockId: 5, section: 'scope', position: 1, slug: 'quote_line_items_table', name: 'Preise', body: { de: body } }],
+  });
+  const names = async (body) => (await resolveDisplayContent({ rendered_content: table(body) }, [], [], 'de'))
+    .sections.flatMap((s) => s.blocks.map((b) => b.name));
+  expect(await names('')).toEqual(['Preise']);
+  expect(await names('{{#if event_name}}Für {{event_name}}{{/if}}')).toEqual([]);
+  expect(await names('{{#unless event_name}}Ohne Anlass{{/unless}}')).toEqual(['Preise']);
+});

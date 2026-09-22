@@ -334,21 +334,28 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     // placeholder values, from which visibility follows; the PDF, the
     // signing page and every re-render all derive it here, from the same
     // frozen data, so they cannot disagree. The line-table block prints its
-    // table below an empty text, so it stays.
+    // table below its text, so an empty text alone doesn't hide it — only a
+    // "Show only if" rule around that text that doesn't hold.
     sections: groupSections(clauses
-      .map((clause) => ({
-        blockId: clause.blockId,
-        position: clause.position,
-        kind: clause.kind,
-        slug: clause.slug,
-        name: clause.name,
-        section: clause.section,
-        body: String(render(content.pickLocale(clause.body, locale)) || '')
-          .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
-      }))
+      .map((clause) => {
+        const text = content.pickLocale(clause.body, locale);
+        return {
+          blockId: clause.blockId,
+          position: clause.position,
+          kind: clause.kind,
+          slug: clause.slug,
+          name: clause.name,
+          section: clause.section,
+          body: String(render(text) || '')
+            .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
+          ruled: /^\s*\{\{\s*#(?:if|unless)\s/.test(String(text || '')),
+        };
+      })
       // A contract sent before format 3 printed such a clause with its
       // heading, and is read the way it was sent (see `legacy` above).
-      .filter((clause) => legacy || clause.slug === 'quote_line_items_table' || clause.body.trim() !== ''),
+      .filter((clause) => legacy || clause.body.trim() !== ''
+        || (clause.slug === 'quote_line_items_table' && !clause.ruled))
+      .map(({ ruled, ...clause }) => clause),
     (clause) => clause),
   };
 }
