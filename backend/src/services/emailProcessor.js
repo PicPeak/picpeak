@@ -12,20 +12,32 @@ const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
 const businessProfileService = require('./businessProfileService');
-const fs = require('fs');
-const path = require('path');
 const { resolveStoredPath } = require('../utils/storedPath');
+const { resolveStoredPathStrict } = require('../utils/safePath');
 
 /**
- * The file a queued attachment names. Rows in the queue carry the path the
- * sender saw; one queued before a restore onto another storage path names the
- * old root, so a path that is not there is placed on this install's storage
- * root when the file is there (storedPath.js). Anything else is sent as given.
+ * The file a queued attachment names, or a refusal.
+ *
+ * Every sender queues a file it wrote under the storage root (business-docs
+ * or uploads; none attaches from a temp directory), and the row carries the
+ * path the sender saw. email_queue rows travel in a .picpeak archive, so a
+ * path is placed on this install's storage root (a row queued before a
+ * restore names the old root) and checked with symlinks followed. A path
+ * outside the storage root is refused: the email fails with that reason in
+ * its queue row instead of mailing whatever file the row names. A file that
+ * is simply missing keeps its placed path, and the send fails on it as before.
  */
-function attachmentFile(file) {
-  if (!file || (path.isAbsolute(file) && fs.existsSync(file))) return file;
-  const placed = resolveStoredPath(file);
-  return placed && fs.existsSync(placed) ? placed : file;
+function attachmentFile(file, filename) {
+  if (!file) return file;
+  let placed;
+  try {
+    placed = resolveStoredPathStrict(file);
+  } catch (err) {
+    const refused = new Error(`Attachment "${filename || 'file'}" was refused: it is not a file under the storage directory`);
+    refused.code = 'ATTACHMENT_REFUSED';
+    throw refused;
+  }
+  return placed || resolveStoredPath(file);
 }
 
 /**
@@ -977,7 +989,7 @@ async function sendTemplateEmail(to, templateKey, variables, { usageEligible = t
         .filter((a) => a && (a.contentPath || a.path || a.content))
         .map((a) => ({
           filename: a.filename,
-          path: attachmentFile(a.contentPath || a.path),
+          path: attachmentFile(a.contentPath || a.path, a.filename),
           content: a.content,
           contentType: a.contentType,
         }))
@@ -1108,7 +1120,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
   const atts = Array.isArray(attachments)
     ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
-      .map((a) => ({ filename: a.filename, path: attachmentFile(a.contentPath || a.path), content: a.content, contentType: a.contentType }))
+      .map((a) => ({ filename: a.filename, path: attachmentFile(a.contentPath || a.path, a.filename), content: a.content, contentType: a.contentType }))
     : undefined;
   const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,
@@ -1355,6 +1367,17 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         logger.info(`Email ${email.id} sent successfully`);
       } catch (error) {
         result.failed += 1;
+        // A refused attachment will be refused on every retry: fail the row
+        // now, with the reason, rather than retrying or sending without it.
+        if (error && error.code === 'ATTACHMENT_REFUSED') {
+          try {
+            await db('email_queue').where('id', email.id).update({ status: 'failed', error_message: error.message });
+          } catch (updateError) {
+            logger.error(`Failed to mark email ${email.id} failed:`, updateError);
+          }
+          logger.error(`Email ${email.id} not sent: ${error.message}`);
+          continue;
+        }
         // Increment retry count. The variables stay in the clear on
         // failure: a row past the cap can still be re-queued (Messages
         // "retry" resets retry_count, ignoreSchedule skips the cap) and a

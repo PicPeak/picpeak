@@ -201,6 +201,34 @@ test('documents open and re-hash after a restore onto another storage path', asy
   expect(report.summary.missingFiles).toBe(0);
   expect(report.summary.hashMismatches).toBe(0);
   expect(report.summary.verifiedOk).toBeGreaterThanOrEqual(4);
+
+  // 6. The completion emails queued before the export name the old root.
+  //    Restored with the queue, they still go out with the restored files.
+  const queued = await db('email_queue').where({ email_type: 'contract_fully_signed', status: 'pending' }).select('id');
+  expect(queued.length).toBeGreaterThanOrEqual(2);
+  const transport = require('../../src/services/emailWebhookTransport');
+  process.env.EMAIL_FROM = 'noreply@example.com';
+  const mails = [];
+  const enabled = jest.spyOn(transport, 'isEnabled').mockReturnValue(true);
+  const deliver = jest.spyOn(transport, 'send').mockImplementation(async (mail) => { mails.push(mail); return { messageId: `m-${mails.length}` }; });
+  try {
+    const { processEmailQueue } = require('../../src/services/emailProcessor');
+    for (const { id } of queued) await processEmailQueue({ ignoreSchedule: true, onlyId: id });
+  } finally {
+    enabled.mockRestore();
+    deliver.mockRestore();
+  }
+  for (const { id } of queued) expect((await db('email_queue').where({ id }).first()).status).toBe('sent');
+  const signedHashes = new Set([expected[current].signed_pdf_sha256, expected[legacy].signed_pdf_sha256]);
+  const attached = mails.flatMap((m) => m.attachments || []);
+  // The audit certificate is a best-effort second attachment on this release
+  // (it does not render under Jest + SQLite, whose Date writes land as
+  // "[object Object]"); the signed PDF is always there.
+  expect(attached.length).toBeGreaterThanOrEqual(queued.length);
+  for (const a of attached) expect(a.path.startsWith(fs.realpathSync(newRoot))).toBe(true);
+  const signedAttached = attached.filter((a) => /-signed\.pdf$/.test(a.filename));
+  expect(signedAttached.length).toBe(queued.length);
+  for (const a of signedAttached) expect(signedHashes.has(sha256(fs.readFileSync(a.path)))).toBe(true);
 });
 
 test('a stored path that climbs out of the storage root is not served', async () => {
