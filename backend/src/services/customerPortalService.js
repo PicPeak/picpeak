@@ -133,9 +133,23 @@ async function needsActionFor(customerId, features) {
   if (features.documents) {
     // Only what the customer can act on: a rejected upload of theirs (upload
     // a corrected one, or delete it). A pending upload waits on the studio.
+    //
+    // A contract-linked upload can't be deleted by the customer and is kept
+    // for the contract, so once a later upload for the same contract is in
+    // (awaiting review or accepted) the rejected one is answered and drops
+    // out — otherwise it would sit under Needs action for good.
     const rows = await db('customer_documents')
       .where({ customer_account_id: customerId, uploader_type: 'customer', status: 'rejected' })
       .whereNull('deleted_at')
+      .andWhere((q) => q.whereNull('contract_id').orWhereNotExists(function replaced() {
+        this.from('customer_documents as later')
+          .whereColumn('later.contract_id', 'customer_documents.contract_id')
+          .whereColumn('later.customer_account_id', 'customer_documents.customer_account_id')
+          .whereColumn('later.id', '>', 'customer_documents.id')
+          .where('later.uploader_type', 'customer')
+          .whereIn('later.status', ['pending', 'clean'])
+          .whereNull('later.deleted_at');
+      }))
       .orderBy('id', 'desc')
       .select('id', 'original_name', 'review_note');
     out.documents = rows.map((d) => ({ id: d.id, name: d.original_name, reviewNote: d.review_note || null }));

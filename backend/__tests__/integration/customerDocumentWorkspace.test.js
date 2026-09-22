@@ -724,6 +724,27 @@ describe('portal dashboard: Recent and Needs action', () => {
     ]);
   });
 
+  it('drops a rejected contract upload from Needs action once a replacement is in', async () => {
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-NA-${Date.now()}`, customer_account_id: me, title: 'Signed',
+      status: 'sent', language: 'de', issue_date: new Date().toISOString().slice(0, 10), created_at: nowIso(),
+    }).returning('id'));
+    const first = await uploadAs(me, 'contract-v1.pdf', { contractId });
+    await asAdmin(request(adminApp).post(adminDoc(me, first.body.document.id, '/review'))).send({ status: 'rejected' });
+    const ids = async () => (await dashboard(me)).body.needsAction.documents.map((d) => d.id);
+    expect(await ids()).toContain(first.body.document.id);
+
+    const second = await uploadAs(me, 'contract-v2.pdf', { contractId });
+    expect(await ids()).not.toContain(first.body.document.id);
+    // Rejected too: the first one counts as unanswered again, beside it.
+    await asAdmin(request(adminApp).post(adminDoc(me, second.body.document.id, '/review'))).send({ status: 'rejected' });
+    expect(await ids()).toEqual(expect.arrayContaining([first.body.document.id, second.body.document.id]));
+
+    await db('customer_documents').whereIn('id', [first.body.document.id, second.body.document.id])
+      .update({ contract_id: null, deleted_at: nowIso() });
+    await db('contracts').where({ id: contractId }).del();
+  });
+
   it('drops an unshared document from Recent at once, and never shows another customer\'s items', async () => {
     const up = await adminUpload(me, 'soon-gone.pdf', { share: 'true' });
     const theirs = await adminUpload(other, 'theirs.pdf', { share: 'true' });
