@@ -6,7 +6,7 @@
  * isn't available must not offer a download, and an upload failure has to
  * name the file and say what to do.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -58,6 +58,7 @@ const makeDoc = (over: Partial<CustomerDocument>): CustomerDocument => ({
 let docs: CustomerDocument[] = [];
 const downloadSpy = vi.fn(async () => undefined);
 const uploadSpy = vi.fn(async (): Promise<CustomerDocument> => makeDoc({ id: 99 }));
+const listEventsMock = vi.fn(async (): Promise<Array<{ id: number; eventName: string }>> => []);
 
 vi.mock('../../../services/customer.service', () => ({
   customerService: {
@@ -65,7 +66,7 @@ vi.mock('../../../services/customer.service', () => ({
       documents: docs,
       limits: { maxUploadBytes: 25 * 1024 * 1024, quotaBytes: 250 * 1024 * 1024, usedBytes: 4096 },
     })),
-    listEvents: vi.fn(async () => []),
+    listEvents: (...a: unknown[]) => listEventsMock(...(a as [])),
     uploadDocument: (...a: unknown[]) => uploadSpy(...(a as [])),
     downloadDocument: (...a: unknown[]) => downloadSpy(...(a as [])),
   },
@@ -167,6 +168,46 @@ describe('CustomerDocumentsPage', () => {
       expect(chip).toMatch(/\bstatus-chip\b/);
       expect(chip).not.toMatch(/\bbg-(green|amber|red)-\d{2,3}\b/);
     }
+  });
+
+  it('fits a 390px phone: controls stack, rows wrap, long names break, nothing is wider than the screen', async () => {
+    // jsdom does no layout, so this pins the classes a 390px viewport relies
+    // on (below Tailwind's `sm` breakpoint, 640px, only unprefixed classes
+    // apply). A screenshot is still the real check; this catches the
+    // regression that makes one necessary — a fixed width, a row that can't
+    // wrap, a filename that pushes the page sideways.
+    window.innerWidth = 390;
+    window.dispatchEvent(new Event('resize'));
+    docs = [makeDoc({
+      id: 5, name: 'Vertrag_Hochzeit_Anna_und_Ben_Mueller_final_unterschrieben_v3.pdf',
+      status: 'clean', downloadable: true, uploadedBy: 'studio', eventName: 'Wedding',
+    })];
+    listEventsMock.mockResolvedValueOnce([{ id: 1, eventName: 'Wedding' }]);
+    const { container } = renderPage();
+
+    const name = await screen.findByText(/^Vertrag_Hochzeit/);
+    expect(name.className).toMatch(/\bbreak-all\b/);
+    const row = name.closest('li')!;
+    expect(row.className).toMatch(/\bflex-wrap\b/);
+    expect(within(row).getByRole('button', { name: /^Download / })).toBeInTheDocument();
+
+    // The upload controls are a column on a phone, a row from `sm` up.
+    const input = screen.getByLabelText('PDF file');
+    const controls = input.closest('label')!.parentElement!;
+    expect(controls.className).toMatch(/(^|\s)flex-col(\s|$)/);
+    expect(controls.className).toMatch(/\bsm:flex-row\b/);
+    // The event select is full width on a phone and only narrows from `sm`.
+    const select = await screen.findByRole('combobox');
+    expect(select.className).toMatch(/(^|\s)w-full(\s|$)/);
+    expect(select.className).not.toMatch(/(^|\s)w-(56|64|72|80|96|\[\d+px\])(\s|$)/);
+
+    // No unprefixed fixed width or min-width anywhere on the page that could
+    // exceed 390px.
+    const tooWide = /(^|\s)(min-w|w)-(\[\d{3,}px\]|screen-\w+|9[0-9]|[1-9]\d{2,})(\s|$)/;
+    const offenders = Array.from(container.querySelectorAll<HTMLElement>('[class]'))
+      .map((el) => el.getAttribute('class') || '')
+      .filter((cls) => tooWide.test(cls));
+    expect(offenders).toEqual([]);
   });
 
   it('confirms a received upload as awaiting review', async () => {
