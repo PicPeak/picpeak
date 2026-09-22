@@ -107,6 +107,8 @@ router.put(
     body('consents.*.key').optional().isString().isLength({ max: 40 }),
     body('consents.*.required').optional().isBoolean(),
     body('consents.*.text').optional().isObject(),
+    body('consents.*.text.en').optional().isString().isLength({ min: 1, max: 1000 }),
+    body('consents.*.text.de').optional().isString().isLength({ min: 1, max: 1000 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);

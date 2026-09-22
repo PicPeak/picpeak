@@ -74,8 +74,13 @@ function sanitizeConsents(input, previous = []) {
     if (seen.has(key)) throw invalid(`${label}: the key "${key}" is used twice`);
     seen.add(key);
     const text = {};
+    if (entry.text != null && (typeof entry.text !== 'object' || Array.isArray(entry.text))) {
+      throw invalid(`${label}: the wording must be text per language`);
+    }
     for (const locale of LOCALES) {
-      const value = entry.text && entry.text[locale] != null ? String(entry.text[locale]).trim() : '';
+      const raw = entry.text ? entry.text[locale] : undefined;
+      if (raw != null && typeof raw !== 'string') throw invalid(`${label}: the wording must be text per language`);
+      const value = raw == null ? '' : raw.trim();
       if (value.length > MAX_TEXT) throw invalid(`${label}: the text is limited to ${MAX_TEXT} characters`);
       if (value) text[locale] = value;
     }

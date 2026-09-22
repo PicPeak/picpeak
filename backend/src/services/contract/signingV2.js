@@ -661,6 +661,14 @@ async function openSession(contractId, signer, via) {
 async function sessionContext(sessionToken) {
   const context = await signers.findSession(sessionToken);
   assertReachable(context.contract, context.signer);
+  // The deadline is checked on every call, as on the portal path: an open
+  // session must not sign past it just because the hourly sweep hasn't run.
+  if (OPEN_STATUSES.includes(context.contract.status)) {
+    const deadline = await signers.signingDeadline(context.contract);
+    if (deadline != null && deadline <= Date.now()) {
+      throw new AppError('The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED');
+    }
+  }
   return context;
 }
 

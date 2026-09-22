@@ -1303,10 +1303,15 @@ describe('collect-then-freeze', () => {
     // The customer sees the details were taken, not the contract.
     expect((await sessionView(session)).dataRequest.submitted).toBe(true);
 
+    // The admin corrects what the customer typed on the customer record,
+    // then finishes the send: the contract is frozen with the correction.
+    const customersApp = buildRouteApp('/api/admin/customers', require('../../src/routes/adminCustomers'));
+    await ok(request(customersApp).put(`/api/admin/customers/${customerId}`).set(auth).send({ city: 'Winterthur' }));
     await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
     const sent = await db('contracts').where({ id }).first();
     expect(sent.status).toBe('sent');
     expect(sent.follow_up_failed_at).toBeNull();
+    expect(parsed(sent.rendered_content).placeholders.customer_address).toContain('Winterthur');
   });
 
   test('only the account holder as first signer can be asked for details, and the clock runs', async () => {
@@ -1488,4 +1493,33 @@ test('cancelling is conditional: a status that changed in between is never overw
   const refused = await request(contractsApp).post(`/api/admin/contracts/${expired}/cancel`).set(auth);
   expect(refused.body.code).toBe('CONTRACT_NOT_CANCELLABLE');
   expect((await db('contracts').where({ id: expired }).first()).status).toBe('expired');
+});
+
+test('a declaration\'s wording must be text, per language', async () => {
+  const tplUrl = '/api/admin/contract-templates';
+  const created = await ok(request(templatesApp).post(tplUrl).set(auth).send({ name: `Typed ${Date.now()}` }));
+  const bad = [
+    { en: { nested: 'x' } },
+    { en: '' },
+    { de: 'x'.repeat(1001) },
+    ['I agree'],
+  ];
+  for (const text of bad) {
+    const res = await request(templatesApp).put(`${tplUrl}/${created.template.id}/draft`).set(auth)
+      .send({ lockVersion: created.template.lockVersion, consents: [{ key: 'acceptance', required: true, text }] });
+    expect(res.status).toBe(400);
+  }
+  const { sanitizeConsents } = require('../../src/services/contract/consents');
+  expect(() => sanitizeConsents([{ key: 'a', required: true, text: { en: 5 } }])).toThrow(/text per language/);
+});
+
+test('an open session can\'t sign past the deadline before the sweep has run', async () => {
+  const { id, session } = await sentWithSession();
+  await db('contracts').where({ id }).update({ valid_until: dateOnly(daysAgo(20)) });
+  const view = await asSigner(request(signingApp).get('/api/public/contract-signing/session')).set('X-Signing-Session', session);
+  expect(view.status).toBe(410);
+  expect(view.body.code).toBe('CONTRACT_EXPIRED');
+  const res = await sign(session, { name: 'Anna Muster', mode: 'typed' });
+  expect(res.status).toBe(410);
+  expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('invited');
 });

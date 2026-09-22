@@ -136,7 +136,12 @@ function payloadOf(draft: EditorDraft): Omit<ContractTemplateDraftPayload, 'lock
       ? { kind: 'block', blockId: item.blockId, body: item.body }
       : { kind: 'text', section: item.section, heading: item.heading.trim() || null, body: item.body })),
     attachments: draft.attachments.map((a) => ({ attachmentId: a.attachmentId, delivery: a.delivery })),
-    consents: draft.consents.map((c) => ({ key: c.key, required: c.required, text: c.text })),
+    consents: draft.consents.map((c) => ({
+      key: c.key,
+      required: c.required,
+      // Only languages with wording: each one sent is 1–1000 characters.
+      text: Object.fromEntries(Object.entries(c.text).filter(([, v]) => v && v.trim())),
+    })),
   };
 }
 
