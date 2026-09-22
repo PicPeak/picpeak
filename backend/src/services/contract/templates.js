@@ -554,6 +554,9 @@ async function publishTemplate(id, { lockVersion }, adminId) {
       // Attachments are bound to the version by their bytes.
       attachments: versionAttachments.map((a) => ({ position: a.position, delivery: a.delivery, sha256: a.sha256 })),
       // And the declarations a signer confirms, by their wording (#1446).
+      // Versions published before declarations existed carry
+      // consents_backfilled_at (migration 252): their content_sha256
+      // predates the declarations and does not cover them.
       consents: draftConsents,
     });
 

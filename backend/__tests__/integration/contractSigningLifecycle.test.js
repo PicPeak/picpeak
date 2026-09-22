@@ -489,7 +489,12 @@ describe('consents', () => {
     const migration = require('../../migrations/core/252_contract_consents');
     await migration.up(db);
     await migration.up(db);
-    const [entry] = parsed((await db('contract_template_versions').where({ id: version.id }).first()).consents);
+    const row = await db('contract_template_versions').where({ id: version.id }).first();
+    // Marked: this version's content hash predates the declarations.
+    expect(row.consents_backfilled_at).toBeTruthy();
+    const untouched = await db('contract_template_versions').whereNot({ id: version.id }).whereNotNull('consents_backfilled_at');
+    expect(untouched).toHaveLength(0);
+    const [entry] = parsed(row.consents);
     expect(entry).toEqual({
       key: 'acceptance', required: true, version: 1,
       text: {

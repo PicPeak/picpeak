@@ -21,7 +21,9 @@
  * the rows that have none yet — atomic, and a re-run finds nothing to do.
  * Published versions keep the content_sha256 they were published with: it
  * was computed before declarations existed, and rewriting it would rewrite
- * what that version recorded.
+ * what that version recorded. `consents_backfilled_at` marks those rows, so
+ * their hash is known not to cover the declarations; versions published
+ * after this cover them.
  */
 
 const DEFAULT_CONSENTS = [{
@@ -40,9 +42,12 @@ exports.up = async function up(knex) {
     if (!(await knex.schema.hasColumn('contract_template_versions', 'consents'))) {
       await knex.schema.alterTable('contract_template_versions', (t) => t.text('consents'));
     }
+    if (!(await knex.schema.hasColumn('contract_template_versions', 'consents_backfilled_at'))) {
+      await knex.schema.alterTable('contract_template_versions', (t) => t.timestamp('consents_backfilled_at'));
+    }
     await knex('contract_template_versions')
       .whereNull('consents')
-      .update({ consents: JSON.stringify(DEFAULT_CONSENTS) });
+      .update({ consents: JSON.stringify(DEFAULT_CONSENTS), consents_backfilled_at: new Date().toISOString() });
   }
 
   if (await knex.schema.hasTable('contract_signers') && !(await knex.schema.hasTable('contract_signer_consents'))) {
@@ -63,8 +68,10 @@ exports.up = async function up(knex) {
 
 exports.down = async function down(knex) {
   await knex.schema.dropTableIfExists('contract_signer_consents');
-  if (await knex.schema.hasTable('contract_template_versions')
-    && await knex.schema.hasColumn('contract_template_versions', 'consents')) {
-    await knex.schema.alterTable('contract_template_versions', (t) => t.dropColumn('consents'));
+  for (const column of ['consents_backfilled_at', 'consents']) {
+    if (await knex.schema.hasTable('contract_template_versions')
+      && await knex.schema.hasColumn('contract_template_versions', column)) {
+      await knex.schema.alterTable('contract_template_versions', (t) => t.dropColumn(column));
+    }
   }
 };
