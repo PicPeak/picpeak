@@ -201,15 +201,21 @@ async function clearGuestCredits(guestIds, trx = db) {
 async function settleGuestCredit(photoId, credit) {
   const guestId = credit && Number(credit.uploader_guest_id);
   if (!photoId || !Number.isFinite(guestId)) return;
-  const guest = await db('gallery_guests').where({ id: guestId }).first('is_deleted');
-  const gone = !guest || guest.is_deleted === true || Number(guest.is_deleted) === 1;
-  if (!gone) return;
-  await db('photos')
-    .where({ id: photoId, uploader_guest_id: guestId, credit_source: 'guest' })
-    .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
-  await db('photos')
-    .where({ id: photoId, uploader_guest_id: guestId })
-    .update({ uploader_guest_id: null });
+  // Never fails the upload: the photo row is already in, and the caller's
+  // cleanup would take the file away from under it.
+  try {
+    const guest = await db('gallery_guests').where({ id: guestId }).first('is_deleted');
+    const gone = !guest || guest.is_deleted === true || Number(guest.is_deleted) === 1;
+    if (!gone) return;
+    await db('photos')
+      .where({ id: photoId, uploader_guest_id: guestId, credit_source: 'guest' })
+      .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
+    await db('photos')
+      .where({ id: photoId, uploader_guest_id: guestId })
+      .update({ uploader_guest_id: null });
+  } catch (error) {
+    logger.warn('Could not re-check the uploader of a new photo', { photoId, guestId, error: error.message });
+  }
 }
 
 /**

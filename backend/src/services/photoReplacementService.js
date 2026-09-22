@@ -284,9 +284,10 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
 
     await db('photos').where({ id: existingPhoto.id }).update(updates);
     if (autoCredit) {
-      // Fenced like the upload worker: a manual credit set meanwhile wins.
+      // Fenced like the upload worker: a manual credit set meanwhile wins,
+      // and so does a replacement that installed another file since.
       await db('photos')
-        .where({ id: existingPhoto.id })
+        .where({ id: existingPhoto.id, path: updates.path, filename: updates.filename })
         .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'exif'))
         .update({ credit_name: autoCredit.credit_name || null, credit_source: autoCredit.credit_source || null });
     }
