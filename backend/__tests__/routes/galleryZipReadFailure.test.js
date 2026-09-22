@@ -109,7 +109,7 @@ describe('gallery ZIP with a failing storage read', () => {
 
   // How the response ended: 'complete' (a clean end), 'aborted' (connection
   // broken) or 'timeout' (still hanging).
-  const outcome = (method, url, body, timeoutMs = 3000) => new Promise((resolve) => {
+  const outcome = (method, url, body, timeoutMs = 3000, { pauseMs = 0 } = {}) => new Promise((resolve) => {
     const server = http.createServer(app);
     server.listen(0, '127.0.0.1', () => {
       const done = (result) => {
@@ -123,7 +123,14 @@ describe('gallery ZIP with a failing storage read', () => {
         host: '127.0.0.1', port: server.address().port, path: url, method,
         headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {},
       }, (res) => {
-        res.on('data', () => {});
+        // A slow client pauses after every chunk, so the socket stays full
+        // and the tail of the archive is still queued server-side when the
+        // archive itself has ended.
+        res.on('data', () => {
+          if (!pauseMs) return;
+          res.pause();
+          setTimeout(() => res.resume(), pauseMs);
+        });
         res.on('aborted', () => done('aborted'));
         res.on('error', () => done('aborted'));
         res.on('end', () => done(res.complete ? 'complete' : 'aborted'));
@@ -154,5 +161,25 @@ describe('gallery ZIP with a failing storage read', () => {
       mockMode.value = 'none';
       expect(await outcome(...args())).toBe('complete');
     });
+
+    it('still completes for a slow client when the download log write fails', async () => {
+      // The archive is built but not yet drained when the access_logs insert
+      // runs; its failure must not destroy the response.
+      mockMode.value = 'none';
+      // Large enough that the socket buffers can't absorb the whole archive.
+      const saved = new Map(mockBodies);
+      for (const key of saved.keys()) mockBodies.set(key, crypto.randomBytes(2 * 1024 * 1024));
+      const origInsert = db.client.query.bind(db.client);
+      db.client.query = async (conn, obj) => {
+        if (/^insert into [`"]?access_logs/i.test(obj.sql || '')) throw new Error('log table unavailable');
+        return origInsert(conn, obj);
+      };
+      try {
+        expect(await outcome(...args(), 20000, { pauseMs: 5 })).toBe('complete');
+      } finally {
+        db.client.query = origInsert;
+        for (const [key, value] of saved) mockBodies.set(key, value);
+      }
+    }, 30000);
   });
 });
