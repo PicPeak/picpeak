@@ -142,6 +142,8 @@ function transformInvitation(inv) {
 // a reorder loop should be handed from a request.
 const MAX_GROUP_IDS = 100;
 const MAX_REORDER_IDS = 500;
+// One bulk change covers at most this many customers.
+const MAX_BULK_CUSTOMERS = 500;
 
 /**
  * `?groupIds=1,2` or `?groupIds=1&groupIds=2` → [1, 2]. Anything that isn't a
@@ -198,6 +200,29 @@ router.post('/groups/reorder', [
   validateRequest(req);
   const groups = await customerGroupsService.reorder(req.body.orderedIds, req.admin);
   return successResponse(res, { groups });
+}));
+
+// All or nothing, before /groups/:groupId like reorder. `dryRun` answers the
+// same numbers without writing — the preview the admin confirms.
+router.post('/groups/bulk-assign', [
+  adminAuth,
+  requireGroupManage,
+  body('customerIds').isArray({ min: 1, max: MAX_BULK_CUSTOMERS }),
+  body('customerIds.*').isInt({ min: 1 }).toInt(),
+  body('addGroupIds').optional().isArray({ max: MAX_GROUP_IDS }),
+  body('addGroupIds.*').isInt({ min: 1 }).toInt(),
+  body('removeGroupIds').optional().isArray({ max: MAX_GROUP_IDS }),
+  body('removeGroupIds.*').isInt({ min: 1 }).toInt(),
+  body('dryRun').optional().isBoolean().toBoolean(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const result = await customerGroupsService.bulkAssign({
+    customerIds: req.body.customerIds,
+    addGroupIds: req.body.addGroupIds,
+    removeGroupIds: req.body.removeGroupIds,
+    dryRun: req.body.dryRun === true,
+  }, req.admin);
+  return successResponse(res, result);
 }));
 
 router.put('/groups/:groupId', [

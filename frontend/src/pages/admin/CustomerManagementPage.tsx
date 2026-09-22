@@ -24,6 +24,7 @@ import {
 import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreate';
 import { CustomerGroupChipList, CustomerGroupFilter } from '../../components/admin/CustomerGroupChips';
 import { CustomerGroupsPanel } from '../../components/admin/CustomerGroupsPanel';
+import { BulkGroupAssignModal } from '../../components/admin/BulkGroupAssignModal';
 import { useMutationWithToast } from '../../hooks';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -158,6 +159,14 @@ export const CustomerManagementPage: React.FC = () => {
     placeholderData: keepPreviousData,
   });
 
+  // Bulk group changes (#1443): only for customers.groups.manage. The
+  // selection is of rows on screen, so it is dropped whenever the filter or
+  // the search changes what is on screen.
+  const canManageGroups = hasPermission('customers.groups.manage');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkMode, setBulkMode] = useState<'add' | 'remove' | null>(null);
+  useEffect(() => { setSelectedIds([]); }, [listFilter, debouncedTerm]);
+
   const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({
     queryKey: ['admin-customer-invitations'],
     queryFn: () => customerAdminService.listInvitations(),
@@ -193,6 +202,12 @@ export const CustomerManagementPage: React.FC = () => {
     const term = debouncedTerm.trim().toLowerCase();
     return list.filter((i) => i.email.toLowerCase().includes(term));
   }, [invitations, debouncedTerm]);
+
+  const visibleIds = filteredCustomers.map((c) => c.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const toggleSelected = (id: number) => setSelectedIds((current) => (
+    current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+  ));
 
   const deactivateMutation = useMutationWithToast({
     mutationFn: (id: number) => customerAdminService.deactivate(id),
@@ -409,68 +424,119 @@ export const CustomerManagementPage: React.FC = () => {
               </div>
             )
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-neutral-500 dark:text-neutral-400">
-                    {/* On a phone the row is name + groups + email + status:
-                        the columns that only make sense side by side are
-                        hidden, and the groups move under the name so they are
-                        visible without scrolling the table sideways. */}
-                    <th className="px-3 py-2 font-medium">{t('customers.table.name', 'Name')}</th>
-                    <th className="px-3 py-2 font-medium">{t('customers.table.email', 'Email')}</th>
-                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
-                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
-                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
-                    <th className="hidden md:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
-                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
-                    <th className="hidden sm:table-cell px-3 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCustomers.map((c) => (
-                    <tr key={c.id} className="border-t border-neutral-200 dark:border-neutral-700">
-                      <td className="px-3 py-3">
-                        <Link to={`/admin/clients/accounts/${c.id}`} className="text-neutral-900 dark:text-neutral-100 hover:underline">
-                          {renderCustomerName(c)}
-                        </Link>
-                        {/* Phone only: the groups sit under the name, where the
-                            Groups column is hidden. */}
-                        {c.groups && c.groups.length > 0 && (
-                          <span className="mt-1 flex sm:hidden">
-                            <CustomerGroupChipList groups={c.groups} max={2} />
-                          </span>
-                        )}
-                        {/* …and the status, so a phone row is name, groups,
-                            state and email without scrolling sideways. */}
-                        <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
-                      </td>
-                      {/* Wraps on a phone instead of pushing the row sideways. */}
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400 break-all max-w-[38vw] sm:max-w-none sm:break-normal">{c.email}</td>
-                      <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
-                      <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
-                      <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
-                      <td className="hidden md:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
-                      <td className="hidden sm:table-cell px-3 py-3">
-                        {renderStatus(c)}
-                      </td>
-                      <td className="hidden sm:table-cell px-3 py-3 text-right">
-                        {c.isActive && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            leftIcon={<Trash2 className="w-4 h-4" />}
-                            onClick={() => setConfirm({ kind: 'deactivate', id: c.id, name: c.email })}
-                          >
-                            {t('customers.deactivate.button', 'Deactivate')}
-                          </Button>
-                        )}
-                      </td>
+            <div>
+              {canManageGroups && selectedIds.length > 0 && (
+                <div
+                  className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+                  role="region"
+                  aria-label={t('customers.groups.bulk.barLabel', 'Selected customers')}
+                >
+                  <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                    {t('customers.groups.bulk.selected', {
+                      count: selectedIds.length,
+                      defaultValue_one: '{{count}} selected',
+                      defaultValue_other: '{{count}} selected',
+                    })}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => setBulkMode('add')}>
+                    {t('customers.groups.bulk.add', 'Add to groups…')}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setBulkMode('remove')}>
+                    {t('customers.groups.bulk.remove', 'Remove from groups…')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
+                    {t('customers.groups.bulk.clearSelection', 'Clear selection')}
+                  </Button>
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                      {/* On a phone the row is name + groups + email + status:
+                          the columns that only make sense side by side are
+                          hidden, and the groups move under the name so they are
+                          visible without scrolling the table sideways. */}
+                      <th className="px-3 py-2 font-medium">
+                        {/* The selection checkbox lives in the name cell, so it
+                            is there on a phone too, where the other columns
+                            are hidden. */}
+                        <span className="inline-flex items-center gap-2">
+                          {canManageGroups && (
+                            <input
+                              type="checkbox"
+                              checked={allVisibleSelected}
+                              onChange={() => setSelectedIds(allVisibleSelected ? [] : visibleIds)}
+                              aria-label={t('customers.groups.bulk.selectAll', 'Select all shown customers')}
+                            />
+                          )}
+                          {t('customers.table.name', 'Name')}
+                        </span>
+                      </th>
+                      <th className="px-3 py-2 font-medium">{t('customers.table.email', 'Email')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
+                      <th className="hidden md:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredCustomers.map((c) => (
+                      <tr key={c.id} className="border-t border-neutral-200 dark:border-neutral-700">
+                        <td className="px-3 py-3">
+                          <span className="inline-flex items-center gap-2">
+                            {canManageGroups && (
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.includes(c.id)}
+                                onChange={() => toggleSelected(c.id)}
+                                aria-label={t('customers.groups.bulk.selectOne', 'Select {{email}}', { email: c.email })}
+                              />
+                            )}
+                            <Link to={`/admin/clients/accounts/${c.id}`} className="text-neutral-900 dark:text-neutral-100 hover:underline">
+                              {renderCustomerName(c)}
+                            </Link>
+                          </span>
+                          {/* Phone only: the groups sit under the name, where the
+                              Groups column is hidden. */}
+                          {c.groups && c.groups.length > 0 && (
+                            <span className="mt-1 flex sm:hidden">
+                              <CustomerGroupChipList groups={c.groups} max={2} />
+                            </span>
+                          )}
+                          {/* …and the status, so a phone row is name, groups,
+                              state and email without scrolling sideways. */}
+                          <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
+                        </td>
+                        {/* Wraps on a phone instead of pushing the row sideways. */}
+                        <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400 break-all max-w-[38vw] sm:max-w-none sm:break-normal">{c.email}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                        <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
+                        <td className="hidden md:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
+                        <td className="hidden sm:table-cell px-3 py-3">
+                          {renderStatus(c)}
+                        </td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-right">
+                          {c.isActive && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              leftIcon={<Trash2 className="w-4 h-4" />}
+                              onClick={() => setConfirm({ kind: 'deactivate', id: c.id, name: c.email })}
+                            >
+                              {t('customers.deactivate.button', 'Deactivate')}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )
         ) : (
@@ -558,6 +624,16 @@ export const CustomerManagementPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {bulkMode && (
+        <BulkGroupAssignModal
+          mode={bulkMode}
+          customers={filteredCustomers.filter((c) => selectedIds.includes(c.id))}
+          groups={groups || []}
+          onClose={() => setBulkMode(null)}
+          onDone={() => { setBulkMode(null); setSelectedIds([]); }}
+        />
       )}
 
       {confirm && (

@@ -39,6 +39,22 @@ export interface CustomerGroupCatalogue {
   ungroupedCount: number;
 }
 
+export interface CustomerGroupBulkPayload {
+  customerIds: number[];
+  addGroupIds?: number[];
+  removeGroupIds?: number[];
+  dryRun?: boolean;
+}
+
+/** The effective change: memberships that exist already aren't counted. */
+export interface CustomerGroupBulkResult {
+  customers: number;
+  added: number;
+  removed: number;
+  perGroup: { groupId: number; added: number; removed: number }[];
+  dryRun: boolean;
+}
+
 export type CustomerStatusFilter = 'all' | 'active' | 'inactive';
 export type CustomerGroupMatch = 'any' | 'all';
 
@@ -236,6 +252,15 @@ export const customerAdminService = {
   async reorderGroups(orderedIds: number[]): Promise<CustomerGroup[]> {
     const response = await api.post('/admin/customers/groups/reorder', { orderedIds });
     return unwrap(response.data).groups;
+  },
+
+  /**
+   * Add customers to groups and take them out of others, all or nothing.
+   * With `dryRun` nothing is written; the answer is the preview.
+   */
+  async bulkAssignGroups(payload: CustomerGroupBulkPayload): Promise<CustomerGroupBulkResult> {
+    const response = await api.post('/admin/customers/groups/bulk-assign', payload);
+    return unwrap(response.data);
   },
 
   /** Replace a customer's groups with exactly these ids. */

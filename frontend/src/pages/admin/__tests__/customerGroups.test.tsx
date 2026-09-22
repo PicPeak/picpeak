@@ -57,6 +57,7 @@ const listGroups = vi.fn();
 let ungroupedCount = 1;
 const createGroup = vi.fn();
 const deleteGroup = vi.fn();
+const bulkAssignGroups = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
   customerAdminService: {
     list: (...a: unknown[]) => list(...a),
@@ -68,6 +69,7 @@ vi.mock('../../../services/customerAdmin.service', () => ({
     deleteGroup: (...a: unknown[]) => deleteGroup(...a),
     reorderGroups: vi.fn(),
     setCustomerGroups: vi.fn(),
+    bulkAssignGroups: (...a: unknown[]) => bulkAssignGroups(...a),
     createDirect: vi.fn(),
     sendInvite: vi.fn(),
     deactivate: vi.fn(),
@@ -330,6 +332,84 @@ describe('filters in the URL', () => {
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(await screen.findByText('grouped@example.com')).toBeInTheDocument();
     expect(currentSearch()).toBe('');
+  });
+});
+
+describe('bulk group changes', () => {
+  const rowBox = (email: string) => screen.getByRole('checkbox', { name: `Select ${email}` });
+
+  it('offers no selection without customers.groups.manage', async () => {
+    hasPermission.mockImplementation((name) => name !== 'customers.groups.manage');
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('selects all the rows the filter shows, and drops the selection when the filter changes', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin/clients/accounts?q=ungrouped');
+    await screen.findByText('ungrouped@example.com');
+    expect(screen.queryByText('grouped@example.com')).toBeNull();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all shown customers' }));
+    expect(rowBox('ungrouped@example.com')).toBeChecked();
+    expect(within(screen.getByRole('region', { name: 'Selected customers' })).getByText('1 selected')).toBeInTheDocument();
+
+    const filter = screen.getByRole('group', { name: 'Filter by group' });
+    await user.click(within(filter).getByRole('button', { name: /Press/ }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Selected customers' })).toBeNull());
+  });
+
+  it('previews the effective change, confirms with the consequence, and clears the selection', async () => {
+    bulkAssignGroups.mockImplementation(async (payload: { dryRun?: boolean }) => ({
+      customers: 2, added: 1, removed: 0, perGroup: [{ groupId: 1, added: 1, removed: 0 }], dryRun: !!payload.dryRun,
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    await user.click(rowBox('grouped@example.com'));
+    await user.click(rowBox('ungrouped@example.com'));
+    await user.click(screen.getByRole('button', { name: 'Add to groups…' }));
+
+    const dialog = screen.getByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: /Add \d+ membership/ });
+    expect(confirm).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: /VIP/ }));
+    expect(await within(dialog).findByText('Adds 1 membership.')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 customer is already in VIP.')).toBeInTheDocument();
+    expect(bulkAssignGroups).toHaveBeenCalledWith({ customerIds: [10, 11], addGroupIds: [1], dryRun: true });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Add 1 membership' }));
+    await waitFor(() => expect(bulkAssignGroups).toHaveBeenLastCalledWith({ customerIds: [10, 11], addGroupIds: [1] }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('region', { name: 'Selected customers' })).toBeNull();
+  });
+
+  it('keeps the confirm button off when the change would do nothing', async () => {
+    bulkAssignGroups.mockResolvedValue({
+      customers: 1, added: 0, removed: 0, perGroup: [{ groupId: 1, added: 0, removed: 0 }], dryRun: true,
+    });
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    await user.click(rowBox('grouped@example.com'));
+    await user.click(screen.getByRole('button', { name: 'Add to groups…' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox', { name: /VIP/ }));
+    expect(await within(dialog).findByText('Adds 0 memberships.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Add 0 memberships' })).toBeDisabled();
+    expect(bulkAssignGroups).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers for removal only the groups the selection carries', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    await user.click(rowBox('grouped@example.com'));
+    await user.click(screen.getByRole('button', { name: 'Remove from groups…' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('checkbox', { name: /VIP/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: /Press/ })).toBeNull();
   });
 });
 

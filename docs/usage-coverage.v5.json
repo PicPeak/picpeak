@@ -443,6 +443,7 @@
         "GET /groups",
         "POST /groups",
         "POST /groups/reorder",
+        "POST /groups/bulk-assign",
         "PUT /groups/:groupId",
         "DELETE /groups/:groupId",
         "PUT /:id/groups",

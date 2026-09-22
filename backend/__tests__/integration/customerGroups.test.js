@@ -690,3 +690,116 @@ describe('groups on a new customer', () => {
     expect(await db('customer_accounts').where({ email: 'created-unknown@example.com' }).first()).toBeUndefined();
   });
 });
+
+describe('bulk assign and remove', () => {
+  const bulk = (body, token = superToken) => request(adminApp)
+    .post('/api/admin/customers/groups/bulk-assign').set(auth(token)).send(body);
+  const membersOf = async (groupId) => (await db('customer_group_members').where({ group_id: groupId })
+    .pluck('customer_account_id')).map(Number).sort((x, y) => x - y);
+  const bulkLogs = async () => (await db('activity_logs').where({ activity_type: 'customer_groups_bulk_assigned' }))
+    .map((row) => ({ ...row, meta: typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata }));
+
+  it('counts only the effective change: an existing membership is not added twice, a missing one not removed', async () => {
+    const vip = bodyOf(await createGroup({ name: 'Bulk VIP' })).group;
+    const old = bodyOf(await createGroup({ name: 'Bulk old' })).group;
+    const [c1, c2, c3] = [await createCustomer(), await createCustomer(), await createCustomer()];
+    await setGroups(c1, [vip.id]);
+    await setGroups(c2, [old.id]);
+
+    const res = await bulk({ customerIds: [c1, c2, c3], addGroupIds: [vip.id], removeGroupIds: [old.id] });
+    expect(res.status).toBe(200);
+    expect(bodyOf(res)).toMatchObject({
+      customers: 3,
+      added: 2,
+      removed: 1,
+      perGroup: expect.arrayContaining([
+        { groupId: vip.id, added: 2, removed: 0 },
+        { groupId: old.id, added: 0, removed: 1 },
+      ]),
+    });
+    expect(await membersOf(vip.id)).toEqual([c1, c2, c3].sort((x, y) => x - y));
+    expect(await membersOf(old.id)).toEqual([]);
+
+    // The same again is a no-op, and says so.
+    const again = await bulk({ customerIds: [c1, c2, c3], addGroupIds: [vip.id], removeGroupIds: [old.id] });
+    expect(bodyOf(again)).toMatchObject({ added: 0, removed: 0 });
+    expect(await membersOf(vip.id)).toHaveLength(3);
+  });
+
+  it('previews with dryRun and writes and logs nothing', async () => {
+    const group = bodyOf(await createGroup({ name: 'Bulk dry' })).group;
+    const [c1, c2] = [await createCustomer(), await createCustomer()];
+    const before = (await bulkLogs()).length;
+
+    const preview = await bulk({ customerIds: [c1, c2], addGroupIds: [group.id], dryRun: true });
+    expect(preview.status).toBe(200);
+    expect(bodyOf(preview)).toMatchObject({ customers: 2, added: 2, removed: 0, dryRun: true });
+    expect(await membersOf(group.id)).toEqual([]);
+    expect((await bulkLogs()).length).toBe(before);
+  });
+
+  it('applies nothing when any id is unknown, or a group to add is archived', async () => {
+    const live = bodyOf(await createGroup({ name: 'Bulk live' })).group;
+    const retired = bodyOf(await createGroup({ name: 'Bulk retired' })).group;
+    const carrier = await createCustomer();
+    await setGroups(carrier, [retired.id]);
+    await request(adminApp).put(`/api/admin/customers/groups/${retired.id}`)
+      .set(auth(superToken)).send({ isArchived: true });
+    const customer = await createCustomer();
+    const rowsBefore = await db('customer_group_members').count({ count: '*' });
+
+    const unknownCustomer = await bulk({ customerIds: [customer, 999999], addGroupIds: [live.id] });
+    expect(unknownCustomer.status).toBe(404);
+    expect(unknownCustomer.body.code).toBe('CUSTOMER_NOT_FOUND');
+    const unknownGroup = await bulk({ customerIds: [customer], addGroupIds: [live.id, 999999] });
+    expect(unknownGroup.status).toBe(404);
+    expect(unknownGroup.body.code).toBe('GROUP_NOT_FOUND');
+    const archived = await bulk({ customerIds: [customer], addGroupIds: [live.id, retired.id] });
+    expect(archived.status).toBe(400);
+    expect(archived.body.code).toBe('GROUP_ARCHIVED');
+    expect(await db('customer_group_members').count({ count: '*' })).toEqual(rowsBefore);
+
+    // Taking customers out of an archived group is how it is emptied.
+    const out = await bulk({ customerIds: [carrier], removeGroupIds: [retired.id] });
+    expect(bodyOf(out)).toMatchObject({ removed: 1 });
+  });
+
+  it('refuses nothing to do, and a group in both lists', async () => {
+    const group = bodyOf(await createGroup({ name: 'Bulk both' })).group;
+    const customer = await createCustomer();
+    const nothing = await bulk({ customerIds: [customer], addGroupIds: [], removeGroupIds: [] });
+    expect(nothing.status).toBe(400);
+    expect(nothing.body.code).toBe('BULK_NOTHING_TO_DO');
+    const both = await bulk({ customerIds: [customer], addGroupIds: [group.id], removeGroupIds: [group.id] });
+    expect(both.status).toBe(400);
+    expect(both.body.code).toBe('BULK_GROUP_IN_BOTH');
+  });
+
+  it('logs one entry with the admin and ids only', async () => {
+    const group = bodyOf(await createGroup({ name: 'Bulk logged' })).group;
+    const [c1, c2] = [await createCustomer('bulk-log-1@example.com'), await createCustomer('bulk-log-2@example.com')];
+    await bulk({ customerIds: [c1, c2], addGroupIds: [group.id] });
+
+    const rows = (await bulkLogs()).filter((row) => row.meta.addGroupIds?.includes(group.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actor_type: 'admin', actor_id: adminId });
+    expect(rows[0].meta).toEqual({
+      addGroupIds: [group.id], removeGroupIds: [], customerIds: [c1, c2], added: 2, removed: 0,
+    });
+    expect(JSON.stringify(rows[0].meta)).not.toContain('@example.com');
+    expect(JSON.stringify(rows[0].meta)).not.toContain('Bulk logged');
+  });
+
+  it('needs customers.groups.manage, and caps the request', async () => {
+    const group = bodyOf(await createGroup({ name: 'Bulk capped' })).group;
+    const customer = await createCustomer();
+    expect((await bulk({ customerIds: [customer], addGroupIds: [group.id] }, viewerToken)).status).toBe(403);
+    expect(await membersOf(group.id)).toEqual([]);
+
+    const tooMany = await bulk({ customerIds: Array.from({ length: 501 }, (_, i) => i + 1), addGroupIds: [group.id] });
+    expect(tooMany.status).toBe(400);
+    const tooManyGroups = await bulk({ customerIds: [customer], addGroupIds: Array.from({ length: 101 }, (_, i) => i + 1) });
+    expect(tooManyGroups.status).toBe(400);
+    expect((await bulk({ customerIds: [], addGroupIds: [group.id] })).status).toBe(400);
+  });
+});
