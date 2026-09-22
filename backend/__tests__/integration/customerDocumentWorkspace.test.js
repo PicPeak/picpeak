@@ -458,6 +458,43 @@ describe('document notifications', () => {
     expect((await queued('customer_document_shared', 'notify-me@example.com')).length).toBe(before + 1);
   });
 
+  it('does nothing on a second share of a shared document: no mail, no log, no workflow', async () => {
+    const workflows = require('../../src/services/workflows');
+    const up = await adminUpload(me, 'twice-shared.pdf');
+    const id = up.body.document.id;
+    const shareLogs = async () => (await db('activity_logs').where({ activity_type: 'customer_document_shared' }))
+      .map((r) => meta(r.metadata)).filter((m) => m.documentId === id).length;
+    expect((await share(me, id)).body.notification).toBe('queued');
+    const first = await db('customer_documents').where({ id }).first();
+    const mailsBefore = (await queued('customer_document_shared', 'notify-me@example.com')).length;
+
+    const spy = jest.spyOn(workflows, 'emitWorkflowEvent').mockResolvedValue([]);
+    try {
+      // A double click: both at once, then once more.
+      const both = await Promise.all([share(me, id), share(me, id)]);
+      const again = await share(me, id);
+      for (const res of [...both, again]) {
+        expect(res.status).toBe(200);
+        expect(res.body.notification).toBe('skipped');
+      }
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await queued('customer_document_shared', 'notify-me@example.com')).length).toBe(mailsBefore);
+    expect(await shareLogs()).toBe(1);
+    const after = await db('customer_documents').where({ id }).first();
+    expect(String(after.shared_at)).toBe(String(first.shared_at));
+
+    // Unshare twice logs once; sharing again after that is a real share.
+    await asAdmin(request(adminApp).post(adminDoc(me, id, '/unshare')));
+    await asAdmin(request(adminApp).post(adminDoc(me, id, '/unshare')));
+    const unshares = (await db('activity_logs').where({ activity_type: 'customer_document_unshared' }))
+      .map((r) => meta(r.metadata)).filter((m) => m.documentId === id).length;
+    expect(unshares).toBe(1);
+    expect((await share(me, id)).body.notification).toBe('queued');
+  });
+
   it('keeps the share when the mail cannot be queued, and says so', async () => {
     const emailProcessor = require('../../src/services/emailProcessor');
     const spy = jest.spyOn(emailProcessor, 'queueEmail').mockRejectedValueOnce(new Error('queue down'));

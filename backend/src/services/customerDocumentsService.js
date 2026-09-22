@@ -553,18 +553,30 @@ async function createDocument({
   return row;
 }
 
+/**
+ * Share or unshare. Resolves `{ row, changed }`: sharing a document that is
+ * already shared (a second click, a retry) or unsharing one that isn't
+ * shared changes nothing — no timestamp, no log row — so the caller sends
+ * no second mail and fires no second workflow. The update is conditional,
+ * so two clicks landing together still change it once.
+ */
 async function setShared(customerId, documentId, shared, admin) {
   const row = await getForAdmin(customerId, documentId);
   if (shared && row.status !== 'clean') {
     throw new AppError('Mark the document clean before sharing it', 409, 'DOCUMENT_NOT_CLEAN');
   }
   const now = new Date().toISOString();
-  await db('customer_documents').where({ id: row.id }).update(shared
-    ? { shared_at: now, unshared_at: null, updated_at: now }
-    : { unshared_at: now, updated_at: now });
-  await logActivity(shared ? 'customer_document_shared' : 'customer_document_unshared',
-    { documentId: row.id, customerId }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
-  return db('customer_documents').where({ id: row.id }).first();
+  const q = db('customer_documents').where({ id: row.id });
+  const changed = shared
+    ? await q.andWhere((w) => w.whereNull('shared_at').orWhereNotNull('unshared_at'))
+      .update({ shared_at: now, unshared_at: null, updated_at: now })
+    : await q.whereNotNull('shared_at').whereNull('unshared_at')
+      .update({ unshared_at: now, updated_at: now });
+  if (changed > 0) {
+    await logActivity(shared ? 'customer_document_shared' : 'customer_document_unshared',
+      { documentId: row.id, customerId }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
+  }
+  return { row: await db('customer_documents').where({ id: row.id }).first(), changed: changed > 0 };
 }
 
 async function review(customerId, documentId, { status, note }, admin) {

@@ -1128,9 +1128,13 @@ router.post('/:id/documents/:docId/share', [
   body('notify').optional({ nullable: true }).isBoolean(),
 ], handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
-  const row = await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), true, req.admin);
-  const notification = await customerDocumentNotifications.notifyShared(row, { notify: parseNotify(req.body.notify) });
-  await customerDocumentNotifications.emitDocumentWorkflow('document.shared', row, String(row.shared_at));
+  const { row, changed } = await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), true, req.admin);
+  // Already shared: nothing happened, so nothing is announced again.
+  let notification = 'skipped';
+  if (changed) {
+    notification = await customerDocumentNotifications.notifyShared(row, { notify: parseNotify(req.body.notify) });
+    await customerDocumentNotifications.emitDocumentWorkflow('document.shared', row, String(row.shared_at));
+  }
   successResponse(res, { shared: true, notification });
 }));
 
