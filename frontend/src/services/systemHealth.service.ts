@@ -70,6 +70,12 @@ export interface SystemHealthFailures {
     /** True when there was more evidence than this endpoint reads. */
     scanTruncated?: boolean;
   };
+  /** Enumeration / replay signals on the signing links, last 24 h (#1446). */
+  signingSignals?: {
+    since: string;
+    byKind: Record<string, number>;
+    alerts: Array<{ hour: string; kind: string; count: number }>;
+  } | null;
 }
 
 export const systemHealthService = {

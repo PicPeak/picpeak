@@ -573,7 +573,13 @@ async function requestCode(token) {
 async function verifyCode(token, code) {
   const { signer, contract } = await signers.findInvitation(token);
   assertInvitable(contract, signer);
-  await signers.verifyOtp(signer.id, code);
+  try {
+    await signers.verifyOtp(signer.id, code);
+  } catch (err) {
+    // Wrong codes are counted per contract (signingSignals).
+    err.signalContractId = contract.id;
+    throw err;
+  }
   const session = await openSession(contract.id, signer, 'otp');
   return { sessionToken: session.token, expiresAt: session.expiresAt };
 }
@@ -746,7 +752,12 @@ async function sessionPdf(sessionToken) {
 
 async function sessionAttachment(sessionToken, attachmentId) {
   const { contract } = await sessionContext(sessionToken);
-  return require('./attachments').openContractAttachment(contract.id, attachmentId);
+  try {
+    return await require('./attachments').openContractAttachment(contract.id, attachmentId);
+  } catch (err) {
+    err.signalContractId = contract.id;
+    throw err;
+  }
 }
 
 /** A customer signer signs. Idempotent per `idempotencyKey`. */
@@ -765,10 +776,10 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
       // or a different mode is not the request that succeeded, and answering
       // "done" would report a signature nobody made that way.
       if (signerName(signer) !== name || (signer.signature_mode || null) !== mode) {
-        throw new AppError(
+        throw Object.assign(new AppError(
           'This signature was already recorded with different details. Reload the page to see where the contract stands.',
           409, 'IDEMPOTENCY_KEY_REUSED',
-        );
+        ), { signalContractId: contract.id });
       }
       return { status: contract.status, signedAt: signer.signed_at, replayed: true };
     }

@@ -1180,6 +1180,9 @@ async function startServer() {
     // Contract signing sweep (#1446): expire contracts whose time to sign has
     // run out, and remove signing codes and sessions a month after they end.
     require('./src/services/contract/expiry').startContractSigningSweep();
+    // Enumeration and replay signals on the public signing routes (#1446):
+    // flush the counts, check the thresholds, alert once per kind per hour.
+    require('./src/services/contract/signingSignals').startSigningSignals();
     // Custom-resolution download archives (#858) are disposable renditions —
     // sweep them once their TTL passes so .download-cache doesn't grow forever.
     // Best-effort, as before the scheduler refactor: a transient DB error on

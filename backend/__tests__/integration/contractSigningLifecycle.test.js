@@ -931,3 +931,102 @@ describe('integrity report', () => {
     expect((await PDFDocument.load(pdf.body)).getPageCount()).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 10 — enumeration and replay signals
+// ---------------------------------------------------------------------
+
+describe('enumeration and replay signals', () => {
+  const signals = () => require('../../src/services/contract/signingSignals');
+  const fromIp = (req, ip) => req.set('X-Forwarded-For', ip);
+  const unknownToken = () => require('crypto').randomBytes(32).toString('hex');
+
+  beforeEach(async () => {
+    await signals().flush();
+    await db('contract_signing_signals').del();
+    await db('contract_signing_alerts').del();
+  });
+
+  test('refusals are counted per kind, with nothing sensitive in the rows', async () => {
+    const probe = unknownToken();
+    for (let i = 0; i < 3; i += 1) {
+      const res = await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${probe}`), '203.0.113.9');
+      expect(res.status).toBe(404);
+    }
+    // Wrong codes, on a real link.
+    const { id } = await sentWithSession();
+    const link = linkToken(await lastMail('contract_sent', customerEmail));
+    await minuteLater();
+    await ok(asSigner(request(signingApp).post(`/api/public/contract-signing/invite/${link}/code`)));
+    const { code } = await lastMail('contract_signing_code', customerEmail);
+    const wrong = code === '000000' ? '111111' : '000000';
+    await fromIp(request(signingApp).post(`/api/public/contract-signing/invite/${link}/verify`), '203.0.113.9').send({ code: wrong });
+    // A session asking for a file that isn't its contract's.
+    const session = await verifiedSession(link, customerEmail);
+    await fromIp(request(signingApp).get('/api/public/contract-signing/session/attachments/999999'), '203.0.113.9')
+      .set('X-Signing-Session', session);
+    // Tick the rate limit: 30 views a minute per client.
+    for (let i = 0; i < 31; i += 1) {
+      await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${probe}`), '203.0.113.77');
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+
+    await signals().flush();
+    const rows = await db('contract_signing_signals');
+    const sum = (kind, where = () => true) => rows.filter((r) => r.kind === kind && where(r)).reduce((a, r) => a + Number(r.count), 0);
+    expect(sum('unknown_token', (r) => r.ip_hash === signals()._internal.ipHash('203.0.113.9'))).toBe(3);
+    expect(sum('otp_failure', (r) => Number(r.contract_id) === id)).toBe(1);
+    expect(sum('cross_contract', (r) => Number(r.contract_id) === id)).toBe(1);
+    expect(sum('rate_limited')).toBeGreaterThanOrEqual(1);
+    const text = JSON.stringify(rows);
+    for (const secret of ['203.0.113.9', '203.0.113.77', probe, link, session, code]) expect(text).not.toContain(secret);
+    expect(rows.every((r) => r.ip_hash === null || /^[0-9a-f]{64}$/.test(r.ip_hash))).toBe(true);
+
+    const summary = await signals().summary();
+    expect(summary.byKind.unknown_token).toBeGreaterThanOrEqual(3);
+  });
+
+  test('a threshold alerts the admin once per kind per hour, however many replicas check', async () => {
+    await setSetting('crm_contracts_alert_unknown_tokens_per_ip', 3);
+    const mails = () => db('email_queue').where({ email_type: 'contract_signing_suspicious_admin_notification' });
+    const before = (await mails()).length;
+    try {
+      for (let i = 0; i < 3; i += 1) {
+        await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${unknownToken()}`), '203.0.113.50');
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+      await signals().flush();
+      const [a, b] = await Promise.all([signals().checkThresholds(), signals().checkThresholds()]);
+      expect([...a, ...b]).toEqual(['unknown_token']);
+      // Another flush in the same hour, more of the same: still once.
+      await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${unknownToken()}`), '203.0.113.50');
+      await new Promise((resolve) => setImmediate(resolve));
+      await signals().flush();
+      expect(await signals().checkThresholds()).toEqual([]);
+
+      expect(await db('contract_signing_alerts')).toHaveLength(1);
+      expect((await mails()).length).toBe(before + 1);
+      const entries = await db('activity_logs').where({ activity_type: 'contract_signing_suspicious' });
+      expect(entries).toHaveLength(1);
+      expect(parsed(entries[0].metadata)).toEqual(expect.objectContaining({ kind: 'unknown_token', count: 3, limit: 3 }));
+      expect(JSON.stringify(entries[0])).not.toContain('203.0.113.50');
+      expect((await signals().summary()).alerts).toEqual([expect.objectContaining({ kind: 'unknown_token' })]);
+    } finally {
+      await setSetting('crm_contracts_alert_unknown_tokens_per_ip', 20);
+    }
+  });
+
+  test('with "store IP" off, no client is kept at all', async () => {
+    await setSetting('crm_contracts_store_ip', false);
+    try {
+      await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${unknownToken()}`), '203.0.113.60');
+      await new Promise((resolve) => setImmediate(resolve));
+      await signals().flush();
+      const rows = await db('contract_signing_signals').where({ kind: 'unknown_token' });
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => r.ip_hash === null)).toBe(true);
+    } finally {
+      await setSetting('crm_contracts_store_ip', true);
+    }
+  });
+});

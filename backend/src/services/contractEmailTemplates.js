@@ -183,6 +183,29 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'Der Vertrag {{contract_number}} wartet noch auf Ihre Unterschrift.\n\nÖffnen: {{response_url}}\n\nDies ist ein neuer Link; Links aus früheren E-Mails funktionieren nicht mehr.{{#if valid_until}} Bitte unterzeichnen bis {{valid_until}}.{{/if}}',
     },
   },
+  // #1446: enumeration or replay on the public signing routes
+  // (services/contract/signingSignals.js). Once per kind per hour. No IP, no
+  // token, no code in it.
+  contract_signing_suspicious_admin_notification: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['kind', 'hour', 'count', 'limit', 'contract_number'],
+    en: {
+      subject: 'Unusual activity on contract signing links',
+      body_html: `<h2>Unusual activity on signing links</h2>
+<p>In the hour from {{hour}}, the signing pages saw <strong>{{count}}</strong> events of the kind <code>{{kind}}</code> from one source{{#if contract_number}} on contract {{contract_number}}{{/if}} — the alert threshold is {{limit}}.</p>
+<p>This can be someone trying signing links or codes they were not sent. The links themselves stay protected by their codes and rate limits; nothing was disclosed. If it continues, check the System Health page and your reverse proxy's logs.</p>
+<p style="font-size: 13px; color: #666;">You get at most one of these per kind per hour. The thresholds are in Settings → CRM → Contracts.</p>`,
+      body_text: 'In the hour from {{hour}}, the signing pages saw {{count}} events of the kind {{kind}} from one source{{#if contract_number}} on contract {{contract_number}}{{/if}} (threshold {{limit}}). Nothing was disclosed; check System Health if it continues.',
+    },
+    de: {
+      subject: 'Auffällige Aktivität bei Links zur Vertragsunterzeichnung',
+      body_html: `<h2>Auffällige Aktivität bei Unterzeichnungslinks</h2>
+<p>In der Stunde ab {{hour}} gab es auf den Unterzeichnungsseiten <strong>{{count}}</strong> Ereignisse der Art <code>{{kind}}</code> von einer Quelle{{#if contract_number}} beim Vertrag {{contract_number}}{{/if}} – die Alarmschwelle liegt bei {{limit}}.</p>
+<p>Das kann jemand sein, der Links oder Codes ausprobiert, die ihm nicht geschickt wurden. Die Links bleiben durch ihre Codes und Ratenbegrenzungen geschützt; es wurde nichts offengelegt. Hält es an, prüfen Sie die Systemstatus-Seite und die Protokolle Ihres Reverse Proxys.</p>
+<p style="font-size: 13px; color: #666;">Sie erhalten höchstens eine solche Nachricht pro Art und Stunde. Die Schwellen finden Sie unter Einstellungen → CRM → Verträge.</p>`,
+      body_text: 'In der Stunde ab {{hour}} gab es {{count}} Ereignisse der Art {{kind}} von einer Quelle{{#if contract_number}} beim Vertrag {{contract_number}}{{/if}} (Schwelle {{limit}}). Es wurde nichts offengelegt; prüfen Sie den Systemstatus, wenn es anhält.',
+    },
+  },
   // #1446: the time to sign ran out (services/contract/expiry.js).
   contract_expired_admin_notification: {
     category: 'contracts', feature_flag: 'contracts',

@@ -722,6 +722,19 @@
       "hint": "IP-Adressen und Browser der Unterzeichnenden werden mit diesem Schlüssel verschlüsselt gespeichert. Ohne ihn lassen sich diese Nachweise nicht lesen; Unterschriften und PDFs bleiben gültig.",
       "mismatch": "Bereits gespeicherte Nachweise wurden mit dem Schlüssel {{stored}} verschlüsselt und können nicht mehr gelesen werden – die betroffenen Namen und E-Mail-Adressen der Unterzeichner bleiben leer. Betroffen sind {{unreadable}} von {{total}} gespeicherten Werten. Legen Sie den früheren Schlüssel zurück, oder rechnen Sie bei zuvor unterschriebenen Verträgen mit leeren Namen.",
       "olderKeys": "{{count}} von {{total}} gespeicherten Werten liegen noch unter einem älteren, weiterhin lesbaren Schlüssel. Führen Sie scripts/rotate-evidence-key.js aus, um sie auf den aktuellen Schlüssel zu übertragen, und behalten Sie den älteren Schlüssel, bis das Skript keine mehr meldet."
+    },
+    "signingSignals": {
+      "title": "Unterzeichnungslinks: auffällige Aktivität (24 Std.)",
+      "kind": {
+        "unknown_token": "Unbekannte Links oder Sitzungen",
+        "stale_token": "Zurückgezogene, ersetzte oder abgelaufene Links",
+        "otp_failure": "Falsche Codes",
+        "rate_limited": "Durch die Ratenbegrenzung abgewiesene Anfragen",
+        "idempotency_reuse": "Mit anderen Angaben wiederholte Signaturschlüssel",
+        "cross_contract": "Dateien vom falschen Vertrag angefordert"
+      },
+      "alerts": "{{count}} Alarm(e) in den letzten 24 Stunden an die Geschäfts-E-Mail gesendet.",
+      "hint": "Pro Stunde gezählt, ohne Adresse, Link oder Code zu speichern. Eine überschrittene Schwelle meldet sich einmal pro Art und Stunde; die Schwellen finden Sie unter Einstellungen → CRM."
     }
   },
   "common": {
@@ -7701,6 +7714,12 @@
     "crm_contracts_reminder_days": {
       "label": "Erinnerungen zur Unterzeichnung (Tage nach dem letzten Link)",
       "help": "Kommagetrennt, z. B. 3,7: eine Erinnerung mit neuem Link 3 Tage nach dem letzten, dann 7 Tage danach. Leer lassen für keine Erinnerungen."
+    },
+    "crm_contracts_alert_unknown_tokens_per_ip": {
+      "label": "Alarm ab unbekannten Unterzeichnungslinks pro Client und Stunde"
+    },
+    "crm_contracts_alert_otp_failures_per_contract": {
+      "label": "Alarm ab falschen Codes pro Vertrag und Stunde"
     },
     "customer_documents_notify_on_share": {
       "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"

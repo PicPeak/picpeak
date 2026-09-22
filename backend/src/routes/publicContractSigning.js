@@ -35,12 +35,25 @@ const { getAppSetting } = require('../utils/appSettings');
 const { getStoragePath } = require('../config/storage');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const signingV2 = require('../services/contract/signingV2');
+const signingSignals = require('../services/contract/signingSignals');
 
 const router = express.Router();
 // With contracts switched off, signing is off too — same code as the admin routes.
 router.use(requireFeatureFlag('contracts', 'CONTRACTS_DISABLED'));
 
-const limiter = (windowMs, max) => rateLimit({ windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
+// A refused request is also counted as a signal (#1446), then answered the
+// way the limiter always has.
+const limiter = (windowMs, max) => rateLimit({
+  windowMs,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: rateLimitKey,
+  handler: (req, res, next, options) => {
+    signingSignals.record('rate_limited', { clientKey: rateLimitKey(req) });
+    res.status(options.statusCode).send(options.message);
+  },
+});
 const viewLimiter = limiter(60 * 1000, 30);
 const codeLimiter = limiter(10 * 60 * 1000, 5);
 const verifyLimiter = limiter(10 * 60 * 1000, 20);
@@ -197,5 +210,13 @@ router.post('/session/upload-signed-pdf', signLimiter, uploadGuards, signedPdfUp
   const result = await contractService.attachSignedPdfUpload(req.signing.contract.id, req.file.path, 'customer');
   return successResponse(res, { status: result.status });
 }));
+
+// Unknown and dead links, wrong codes, a replayed key, a session reaching for
+// another contract's file: counted for the enumeration and replay alerts
+// (#1446), then answered as before.
+router.use((err, req, res, next) => {
+  signingSignals.observe(err, req);
+  next(err);
+});
 
 module.exports = router;

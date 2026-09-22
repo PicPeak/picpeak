@@ -72,6 +72,9 @@ const SETTING_KEYS = [
   // Reminder ladder for unsigned signers (#1446): days after the last link,
   // comma-separated. Default "3,7"; empty = off.
   'crm_contracts_reminder_days',
+  // Alert thresholds for probing of the signing links (#1446).
+  'crm_contracts_alert_unknown_tokens_per_ip',
+  'crm_contracts_alert_otp_failures_per_contract',
   // Dashboard CRM-overview tile visibility (per-tile). Default ON;
   // explicit false hides the tile. Stored as one boolean per tile so
   // admins can mix-and-match — e.g. someone who only bills hourly
@@ -518,6 +521,14 @@ export const CrmSettingsPage: React.FC = () => {
               {t('crmSettings.crm_contracts_reminder_days.help', 'Comma-separated, e.g. 3,7: a reminder with a new link 3 days after the last one, then 7 days after that. Leave empty for no reminders.')}
             </p>
           </div>
+          <Input type="number" min={1} max={10000}
+            label={t('crmSettings.crm_contracts_alert_unknown_tokens_per_ip.label', 'Alert after unknown signing links per client and hour') as string}
+            value={values.crm_contracts_alert_unknown_tokens_per_ip ?? 20}
+            onChange={(e) => setVal('crm_contracts_alert_unknown_tokens_per_ip', Number(e.target.value))} />
+          <Input type="number" min={1} max={10000}
+            label={t('crmSettings.crm_contracts_alert_otp_failures_per_contract.label', 'Alert after wrong codes per contract and hour') as string}
+            value={values.crm_contracts_alert_otp_failures_per_contract ?? 10}
+            onChange={(e) => setVal('crm_contracts_alert_otp_failures_per_contract', Number(e.target.value))} />
           <Input
             label={t('crmSettings.crm_contracts_number_format.label', 'Contract number format') as string}
             value={values.crm_contracts_number_format ?? ''}

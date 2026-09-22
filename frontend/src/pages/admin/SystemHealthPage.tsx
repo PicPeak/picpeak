@@ -13,7 +13,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, FileCheck, KeyRound, Mail, MailX } from 'lucide-react';
+import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, FileCheck, KeyRound, Mail, MailX, ShieldAlert } from 'lucide-react';
 import { Button, Card, Loading } from '../../components/common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../hooks';
@@ -303,6 +303,39 @@ export const SystemHealthPage: React.FC = () => {
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {t('systemHealth.evidenceKey.hint',
                   'Signers\' IP addresses and browsers are stored encrypted with this key. Without it that evidence can\'t be read; the signatures and PDFs stay valid.')}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Probing of the signing links, last 24 hours (#1446): unknown and dead
+          links, wrong codes, rate-limit hits, replayed keys, sessions reaching
+          for another contract's file. Counts only — no addresses. */}
+      {!isLoading && flags.contracts && data?.signingSignals && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className={`w-5 h-5 mt-0.5 shrink-0 ${data.signingSignals.alerts.length
+              ? 'text-red-600 dark:text-red-400' : 'text-neutral-500 dark:text-neutral-400'}`} />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                {t('systemHealth.signingSignals.title', 'Signing links: unusual activity (24 h)')}
+              </h2>
+              <ul className="text-sm mt-1 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 text-neutral-700 dark:text-neutral-300">
+                {Object.entries(data.signingSignals.byKind).map(([kind, count]) => (
+                  <li key={kind} className="flex justify-between gap-3">
+                    <span>{t(`systemHealth.signingSignals.kind.${kind}`, kind)}</span>
+                    <span className="tabular-nums">{count}</span>
+                  </li>
+                ))}
+              </ul>
+              {data.signingSignals.alerts.length > 0 && (
+                <p role="alert" className="text-sm mt-2 text-red-700 dark:text-red-300">
+                  {t('systemHealth.signingSignals.alerts', '{{count}} alert(s) sent to the business email in the last 24 hours.', { count: data.signingSignals.alerts.length })}
+                </p>
+              )}
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t('systemHealth.signingSignals.hint', 'Counted per hour without storing any address, token or code. A threshold crossed mails you once per kind and hour; thresholds are in Settings → CRM.')}
               </p>
             </div>
           </div>
