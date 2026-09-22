@@ -87,6 +87,9 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
     enabled: wantsGroups && canListGroups,
   });
   const groupIds: number[] = Array.isArray(config.groupIds) ? config.groupIds : [];
+  // Ids of groups deleted since, listed so they can be unticked: kept
+  // invisibly, they would make an "all of them" condition always false.
+  const missingGroupIds = groups ? groupIds.filter((id) => !groups.some((g) => g.id === id)) : [];
 
   return (
     <div className="space-y-3">
@@ -180,6 +183,16 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
                           })}
                         />
                         {g.name}
+                      </label>
+                    ))}
+                    {missingGroupIds.map((id) => (
+                      <label key={`missing-${id}`} className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                        <input
+                          type="checkbox"
+                          checked
+                          onChange={() => set({ groupIds: groupIds.filter((x) => x !== id) })}
+                        />
+                        <span className="line-through">{t('customers.groups.deletedGroup', 'Deleted group')}</span>
                       </label>
                     ))}
                   </div>

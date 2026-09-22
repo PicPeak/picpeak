@@ -60,6 +60,13 @@ describe('customer_in_group condition', () => {
     expect(onChange).toHaveBeenLastCalledWith({ condition: 'customer_in_group', groupIds: [], match: 'all' });
   });
 
+  it('lists a deleted group still in groupIds so it can be unticked', async () => {
+    const user = userEvent.setup();
+    const onChange = renderPanel({ condition: 'customer_in_group', groupIds: [1, 99], match: 'all' });
+    await user.click(await screen.findByRole('checkbox', { name: 'Deleted group' }));
+    expect(onChange).toHaveBeenLastCalledWith({ condition: 'customer_in_group', groupIds: [1], match: 'all' });
+  });
+
   it('explains instead of listing without customers.view', () => {
     renderPanel({ condition: 'customer_in_group', groupIds: [1] }, vi.fn(), []);
     expect(screen.getByText(/needs the customers.view permission/)).toBeInTheDocument();
