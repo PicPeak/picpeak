@@ -712,9 +712,9 @@ describe('newsletter campaigns', () => {
       await expect(seedCampaign({ recipientMode: 'groups', groupIds: [] }))
         .rejects.toMatchObject({ statusCode: 400 });
       await expect(seedCampaign({ recipientMode: 'groups', groupIds: [999999] }))
-        .rejects.toMatchObject({ statusCode: 404 });
+        .rejects.toMatchObject({ statusCode: 404, code: 'GROUP_NOT_FOUND' });
       await expect(seedCampaign({ recipientMode: 'groups', groupIds: [archived] }))
-        .rejects.toMatchObject({ statusCode: 400 });
+        .rejects.toMatchObject({ statusCode: 400, code: 'GROUP_ARCHIVED' });
 
       const live = await seedGroup();
       const campaign = await seedCampaign({ recipientMode: 'groups', groupIds: [live] });
@@ -749,6 +749,27 @@ describe('newsletter campaigns', () => {
       await newsletterService.queueCampaign(campaign.id, adminId);
       const sent = (await db('email_campaign_recipients').where({ campaign_id: campaign.id }).pluck('email')).sort();
       expect(sent).toEqual(['a@example.com', 'b@example.com']);
+    });
+
+    it('lets a group archived after the draft was saved contribute nobody, with any and with all', async () => {
+      const kept = await seedGroup();
+      const retired = await seedGroup();
+      const both = await seedCustomer({ email: 'both@example.com' });
+      const onlyRetired = await seedCustomer({ email: 'only-retired@example.com' });
+      await join(kept, both.id); await join(retired, both.id); await join(retired, onlyRetired.id);
+      const any = await seedCampaign({ recipientMode: 'groups', groupIds: [kept, retired] });
+      const all = await seedCampaign({ recipientMode: 'groups', groupIds: [kept, retired], groupMatch: 'all' });
+      expect(await emails(all)).toEqual(['both@example.com']);
+
+      await db('customer_groups').where({ id: retired }).update({ is_archived: true });
+
+      // any: only the live group's members are left.
+      expect(await emails(any)).toEqual(['both@example.com']);
+      // all: nobody can be in a retired group any more, so nobody matches and
+      // the campaign refuses to queue rather than going out to a narrower set.
+      expect(await emails(all)).toEqual([]);
+      await expect(newsletterService.queueCampaign(all.id, adminId))
+        .rejects.toMatchObject({ statusCode: 400, message: 'Campaign has no recipients' });
     });
 
     it('refuses to queue when the groups have nobody left in them', async () => {

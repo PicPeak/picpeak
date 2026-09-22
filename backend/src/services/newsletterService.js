@@ -424,19 +424,26 @@ async function resolveRecipients(campaign, conn = db) {
 
   // Groups: the all_active rule narrowed to the members of the groups, as
   // they are now. This is what queueCampaign sends to, so membership is
-  // evaluated when the campaign is queued — never taken from the composer —
-  // and a group deleted since the draft was saved contributes nobody. The
-  // email_campaign_recipients rows written at queue time are the record of
-  // who it went to; a later group change does not touch them.
+  // evaluated when the campaign is queued — never taken from the composer.
+  // A group deleted or archived since the draft was saved contributes
+  // nobody. With `all`, such a group can't be matched any more, so the result
+  // is empty and queueing stops at "Campaign has no recipients" — intended:
+  // "in all of these groups" no longer describes anyone once one of them is
+  // retired. The email_campaign_recipients rows written at queue time are
+  // the record of who it went to; a later group change does not touch them.
   const base = () => {
     const q = conn('customer_accounts').where('is_active', formatBoolean(true));
     if (campaign.recipient_mode === 'manual') q.whereIn('id', ids);
     if (campaign.recipient_mode === 'groups') {
-      const members = conn('customer_group_members').whereIn('group_id', groupIds);
+      const members = conn('customer_group_members')
+        .join('customer_groups', 'customer_groups.id', 'customer_group_members.group_id')
+        .where('customer_groups.is_archived', formatBoolean(false))
+        .whereIn('customer_group_members.group_id', groupIds);
       if (match === 'all') {
-        members.groupBy('customer_account_id').havingRaw('COUNT(DISTINCT group_id) = ?', [groupIds.length]);
+        members.groupBy('customer_group_members.customer_account_id')
+          .havingRaw('COUNT(DISTINCT customer_group_members.group_id) = ?', [groupIds.length]);
       }
-      q.whereIn('id', members.select('customer_account_id'));
+      q.whereIn('id', members.select('customer_group_members.customer_account_id'));
     }
     return q;
   };
@@ -564,9 +571,9 @@ async function assertGroupRule(recipientFilter) {
   const { groupIds } = parseGroupFilter({ recipient_filter: recipientFilter });
   if (groupIds.length === 0) throw new AppError('Pick at least one customer group', 400);
   const groups = await db('customer_groups').whereIn('id', groupIds);
-  if (groups.length !== groupIds.length) throw new AppError('Customer group not found', 404);
+  if (groups.length !== groupIds.length) throw new AppError('Customer group not found', 404, 'GROUP_NOT_FOUND');
   const archived = groups.find((g) => g.is_archived === true || g.is_archived === 1 || g.is_archived === '1');
-  if (archived) throw new AppError(`"${archived.name}" is archived and can't be targeted`, 400);
+  if (archived) throw new AppError(`"${archived.name}" is archived and can't be targeted`, 400, 'GROUP_ARCHIVED');
 }
 
 /**
