@@ -107,17 +107,23 @@ async function integrityReport(contractId, { adminId = null } = {}) {
     checks.push(compare('signature_image', row.signature_sha256, fileSha(row.signature_path), { subject: row.slot_key }));
   }
 
-  if (contract.rendered_content_sha256) {
+  // The hashes frozen at send are also in the `sent` event: a column that
+  // lost its value still has a hash to be checked against, and fails.
+  const sentPayload = (sentEvent && sentEvent.payload) || {};
+  const contentSha256 = contract.rendered_content_sha256 || sentPayload.contentSha256 || null;
+  const manifestSha256 = contract.attachment_manifest_sha256 || sentPayload.manifestSha256 || null;
+  if (contentSha256) {
     const snapshot = parseJson(contract.rendered_content);
     if (contract.rendered_content_redacted_at) {
       // Erasure cleared the customer's details out of the text and kept the
       // hash it was signed against: not checkable, and not a tampering.
       checks.push({
-        check: 'content', subject: null, ok: null, expected: contract.rendered_content_sha256,
+        check: 'content', subject: null, ok: null, expected: contentSha256,
         actual: snapshot ? canonicalSha256(snapshot) : null, note: 'redacted_on_erasure',
       });
     } else {
-      checks.push(compare('content', contract.rendered_content_sha256, snapshot ? canonicalSha256(snapshot) : null));
+      checks.push(compare('content', contract.rendered_content_sha256, snapshot ? canonicalSha256(snapshot) : null,
+        contract.rendered_content_sha256 ? {} : { expected: contentSha256, note: 'hash_missing' }));
     }
   }
 
@@ -134,8 +140,9 @@ async function integrityReport(contractId, { adminId = null } = {}) {
     } catch (_) { /* missing or outside the store: reported as missing */ }
     checks.push(compare('attachment', entry.sha256, actual, { subject: entry.name }));
   }
-  if (contract.attachment_manifest_sha256) {
-    checks.push(compare('manifest', contract.attachment_manifest_sha256, manifest ? attachments.manifestSha256(manifest) : null));
+  if (manifestSha256) {
+    checks.push(compare('manifest', contract.attachment_manifest_sha256, manifest ? attachments.manifestSha256(manifest) : null,
+      contract.attachment_manifest_sha256 ? {} : { expected: manifestSha256, note: 'hash_missing' }));
   }
 
   if (events.length || contract.audit_chain_head) {

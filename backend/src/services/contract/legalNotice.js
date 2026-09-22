@@ -16,13 +16,15 @@ const { getAppSetting } = require('../../utils/appSettings');
 const MAX = 2000;
 
 const DEFAULT_LEGAL_NOTICE = Object.freeze({
-  en: 'Signed with a simple electronic signature: each signer confirmed their email address with a one-time code, '
-    + 'and every step is recorded in a hash-chained signing log. This is not an advanced or qualified electronic '
-    + 'signature. Contracts that the law requires in written form must be signed on paper.',
-  de: 'Unterzeichnet mit einer einfachen elektronischen Signatur: Jede unterzeichnende Person hat ihre E-Mail-Adresse '
-    + 'mit einem Einmalcode bestätigt, und jeder Schritt ist in einem hash-verketteten Protokoll festgehalten. Dies ist '
-    + 'keine fortgeschrittene oder qualifizierte elektronische Signatur. Verträge, für die das Gesetz die Schriftform '
-    + 'verlangt, müssen auf Papier unterzeichnet werden.',
+  en: 'Signed with a simple electronic signature: each customer signer was verified, either with a one-time code '
+    + 'sent to their email address or by signing in to their customer account, and every step is recorded in a '
+    + 'hash-chained signing log. This is not an advanced or qualified electronic signature. Contracts that the law '
+    + 'requires in written form must be signed on paper.',
+  de: 'Unterzeichnet mit einer einfachen elektronischen Signatur: Jede unterzeichnende Person auf Kundenseite wurde '
+    + 'geprüft, entweder mit einem Einmalcode an ihre E-Mail-Adresse oder durch die Anmeldung in ihrem Kundenkonto, '
+    + 'und jeder Schritt ist in einem hash-verketteten Protokoll festgehalten. Dies ist keine fortgeschrittene oder '
+    + 'qualifizierte elektronische Signatur. Verträge, für die das Gesetz die Schriftform verlangt, müssen auf Papier '
+    + 'unterzeichnet werden.',
 });
 
 /** The notice as configured now, every language filled in. */

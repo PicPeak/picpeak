@@ -1101,6 +1101,12 @@ describe('integrity report', () => {
     await db('contracts').where({ id }).update({ signed_pdf_path: null });
     expect(await failing(id)).toEqual(['completed_artifact', 'signed_pdf']);
     await db('contracts').where({ id }).update({ signed_pdf_path: contract.signed_pdf_path });
+    // A frozen hash column emptied: the send in the log still carries it.
+    await db('contracts').where({ id }).update({ rendered_content_sha256: null });
+    expect(await failing(id)).toEqual(['content']);
+    await db('contracts').where({ id }).update({ rendered_content_sha256: contract.rendered_content_sha256, attachment_manifest_sha256: null });
+    expect(await failing(id)).toEqual(['manifest']);
+    await db('contracts').where({ id }).update({ attachment_manifest_sha256: contract.attachment_manifest_sha256 });
     // The unsigned PDF with both its columns cleared: the send in the log still requires it.
     await db('contracts').where({ id }).update({ pdf_path: null, pdf_sha256: null });
     expect(await failing(id)).toEqual(['unsigned_pdf']);
