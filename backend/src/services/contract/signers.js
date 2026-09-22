@@ -115,6 +115,11 @@ async function readSendInputsSha256(conn, contract, { lock = false, signerRows =
   const themes = (await conn.schema.hasTable('pdf_themes'))
     ? await locked(conn('pdf_themes').whereIn('scope', ['default', 'contract']).select('scope', 'settings').orderBy('scope', 'asc'))
     : [];
+  // Whether an uploaded font a theme names is still usable: archiving one
+  // switches the render to the fallback without touching the theme row.
+  const fonts = (await conn.schema.hasTable('pdf_fonts'))
+    ? await locked(conn('pdf_fonts').select('id', 'is_active').orderBy('id', 'asc'))
+    : [];
   const plain = (value) => JSON.parse(JSON.stringify(value === undefined ? null : value));
   const { updated_at: _u, ...issuer } = profile || {};
   return require('../../utils/canonicalJson').canonicalSha256({
@@ -123,6 +128,7 @@ async function readSendInputsSha256(conn, contract, { lock = false, signerRows =
     issuer: plain(profile ? issuer : null),
     settings: plain(settings),
     themes: plain(themes),
+    fonts: plain(fonts.map((f) => ({ id: Number(f.id), active: !!f.is_active }))),
   });
 }
 
