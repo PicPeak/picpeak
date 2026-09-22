@@ -72,6 +72,73 @@ function getPageMetrics(orientation) {
   return orientation === 'landscape' ? PAGE_LANDSCAPE : PAGE;
 }
 
+/**
+ * The page metrics of a letter drawn with `theme` (#1445 layout): its left,
+ * right and bottom margins in mm, or PAGE's 40 pt where it sets none. The
+ * top margin stays: the address window and the issuer block set it.
+ */
+function pageMetricsFor(theme) {
+  const margins = theme && theme.layout && theme.layout.margins;
+  if (!margins) return PAGE;
+  const left = margins.left != null ? margins.left * MM : PAGE.marginLeft;
+  const right = margins.right != null ? margins.right * MM : PAGE.marginRight;
+  const bottom = margins.bottom != null ? margins.bottom * MM : PAGE.marginBottom;
+  return Object.freeze({
+    ...PAGE, marginLeft: left, marginRight: right, marginBottom: bottom, contentWidth: PAGE.width - left - right,
+  });
+}
+
+/**
+ * A contract's signature page is drawn with these metrics, never the
+ * theme's: pdfStampService stamps signatures at CONTRACT_SIGNATURE_LAYOUT's
+ * coordinates, which are derived from them.
+ */
+const SIGNATURE_PAGE = PAGE;
+
+/** The metrics the document being drawn uses (set by its renderer). */
+const pageOf = (doc) => (doc && doc._page) || PAGE;
+
+/**
+ * Running text in the theme's size and line height (#1445): the size, and
+ * the PDFKit text options that give the line height. A theme without a line
+ * height keeps PDFKit's natural one — no option at all, so the bytes of an
+ * unchanged theme stay what they were.
+ */
+function bodyText(doc) {
+  const theme = (doc && doc._theme) || {};
+  const size = theme.bodySize || 10;
+  // PDFKit's natural line is ~1.15 em; lineGap adds the rest.
+  const options = theme.lineHeight ? { lineGap: Math.max(0, (theme.lineHeight - 1.15) * size) } : {};
+  return { size, options };
+}
+
+const addressWindowOn = (doc) => !(doc && doc._theme && doc._theme.layout && doc._theme.layout.addressWindow === false);
+
+/**
+ * A logo the theme places at the left or the centre of the page top, above
+ * the letter (#1445). With the address window on, it is kept above the
+ * window. Returns the y below it, or null when the logo sits in the issuer
+ * column (the built-in look) or there is none.
+ */
+function drawPageLogo(doc, issuer) {
+  const logo = (doc && doc._theme && doc._theme.logo) || THEME_BUILT_IN.logo;
+  if (!logo || logo.position === 'right') return null;
+  const file = issuer.showLogo !== false && issuer.logoPath ? issuer.logoPath : null;
+  if (!file) return null;
+  const P = pageOf(doc);
+  let height = Math.max(24, Math.min(200, Number(issuer.logoHeight) || 56));
+  if (addressWindowOn(doc)) height = Math.min(height, ADDR_WINDOW.top - 8 - P.marginTop);
+  const width = logo.position === 'center' ? P.contentWidth : 220;
+  try {
+    doc.image(file, P.marginLeft, P.marginTop, { fit: [width, height], align: logo.position === 'center' ? 'center' : 'left' });
+  } catch (err) {
+    require('../utils/logger').warn('PDFKit failed to embed logo image', { path: file, err: err.message });
+    reportFinding(doc, { code: 'LOGO_MISSING', severity: 'warning' });
+    return null;
+  }
+  return P.marginTop + height + 8;
+}
+
 // DIN 5008 Form B address window — the standard window position for
 // envelopes commonly used in DACH (B5 / C5-6 / DL with window). The
 // window's top-left corner sits 45mm from the top and 20mm from the
@@ -326,7 +393,10 @@ function localeForIntl(locale, issuerCountryCode) {
  */
 function drawIssuerBlock(doc, issuer, x, y, width, locale) {
   const startY = y;
-  const showLogo = issuer.showLogo !== false; // default true
+  // A logo the theme puts at the left or centre of the page is drawn there
+  // (drawPageLogo), not in this column.
+  const themeLogo = (doc._theme && doc._theme.logo) || THEME_BUILT_IN.logo;
+  const showLogo = issuer.showLogo !== false && themeLogo.position === 'right'; // default true
   const showName = issuer.showCompanyName !== false; // default true
 
   // ---- top banner: logo (left) + company name (right of it) -----
@@ -363,11 +433,21 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale) {
   // name branch is skipped and the name is rendered as a regular
   // address line right before the street address (handled below).
   let logoDrawn = false;
-  if (logoFound) {
+  // The theme can put the logo beside the name instead of above it (#1445).
+  const besideName = themeLogo.stack === 'inline' && showName && issuer.companyName && !inlineName;
+  if (logoFound && besideName) {
+    const logoW = Math.min(width * 0.45, bannerH * 2);
+    logoDrawn = drawLogoSafely(logoFound, { x, y, w: logoW, h: bannerH });
+    if (logoDrawn) {
+      doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(12).fillColor(themeColor(doc, 'text'))
+        .text(issuer.companyName, x + logoW + 6, y + Math.max(0, bannerH / 2 - 8), { width: width - logoW - 6, align: 'left' });
+      y = Math.max(y + bannerH, doc.y) + 6;
+    }
+  } else if (logoFound) {
     logoDrawn = drawLogoSafely(logoFound, { x, y, w: width, h: bannerH });
     if (logoDrawn) y += bannerH + 4;
   }
-  if (showName && issuer.companyName && !inlineName) {
+  if (showName && issuer.companyName && !inlineName && !(besideName && logoDrawn)) {
     // Bold-title branch — the standard letterhead look. Skipped when
     // the admin opted into the inline-name variant.
     doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(12).fillColor(themeColor(doc, 'text'))
@@ -472,12 +552,16 @@ function vatIdLabel(locale, countryCode) {
  * AFTER the address window (useful when drawing the horizontal
  * divider below).
  */
-function drawRecipientBlock(doc, recipient, locale) {
-  const x = ADDR_WINDOW.left;
+function drawRecipientBlock(doc, recipient, locale, { flowY = null } = {}) {
+  // With the theme's address window off (#1445) the block sits in the flow
+  // at the left margin — a letter handed over digitally needs no envelope
+  // window, and no return-address line for one.
+  const inWindow = flowY == null;
+  const x = inWindow ? ADDR_WINDOW.left : pageOf(doc).marginLeft;
   const w = ADDR_WINDOW.width;
 
   // ---- tiny return address line at top of window ----------------
-  if (recipient.issuerLine) {
+  if (inWindow && recipient.issuerLine) {
     doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(7.5).fillColor('#555');
     doc.text(recipient.issuerLine, x, ADDR_WINDOW.returnLineY, {
       width: w, align: 'left', lineBreak: false,
@@ -485,7 +569,7 @@ function drawRecipientBlock(doc, recipient, locale) {
   }
 
   // ---- recipient address ----------------------------------------
-  let y = ADDR_WINDOW.addressY;
+  let y = inWindow ? ADDR_WINDOW.addressY : flowY;
 
   doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(11).fillColor(themeColor(doc, 'text'));
   if (recipient.companyName) {
@@ -516,7 +600,7 @@ function drawRecipientBlock(doc, recipient, locale) {
   }
   // Return position just below the address window so the caller
   // can position the date row / title underneath.
-  return Math.max(y, ADDR_WINDOW.top + ADDR_WINDOW.height);
+  return inWindow ? Math.max(y, ADDR_WINDOW.top + ADDR_WINDOW.height) : y;
 }
 
 /**
@@ -631,6 +715,10 @@ function drawLineItems(doc, ctx) {
   const widths = showDiscount
     ? (hasUnits ? [30, 205, 75, 50, 75, 80] : [30, 225, 55, 50, 75, 80])
     : (hasUnits ? [30, 255, 75, 70, 85] : [30, 275, 55, 70, 85]);
+  // Wider theme margins (#1445) narrow the table: the description column
+  // gives up the difference, the numeric columns keep their width.
+  const contentWidth = pageOf(doc).contentWidth;
+  widths[1] += contentWidth - PAGE.contentWidth;
 
   // Per-row padding — tight rows. 3pt top + 3pt bottom keeps each
   // line item compact, with just enough vertical breathing room
@@ -851,7 +939,7 @@ function drawLineItems(doc, ctx) {
   }
 
   const table = new Table({
-    width: PAGE.contentWidth,
+    width: contentWidth,
     rows: [headerRow, ...dataRows],
   });
   table.attachTo(doc);
@@ -1189,7 +1277,8 @@ function drawFooter(doc, issuer, locale) {
   const lineH = 12;
   const hasFooterLine = !!issuer.footerLine;
   const reserved = hasFooterLine ? lineH * 2 + 4 : lineH;
-  const footerY = doc.page.height - PAGE.marginBottom - reserved;
+  const P = pageOf(doc);
+  const footerY = doc.page.height - P.marginBottom - reserved;
 
   const cc = issuer.countryCode ? String(issuer.countryCode).toUpperCase() : '';
   const pc = issuer.postalCode || '';
@@ -1205,12 +1294,12 @@ function drawFooter(doc, issuer, locale) {
     // before falling back to the COUNTRY_NAMES lookup.
     issuer.countryName || countryName(issuer.countryCode, locale),
   ]).filter(Boolean);
-  doc.text(parts.join(', '), PAGE.marginLeft, footerY, {
-    width: PAGE.contentWidth, align: 'center', lineBreak: false,
+  doc.text(parts.join(', '), P.marginLeft, footerY, {
+    width: P.contentWidth, align: 'center', lineBreak: false,
   });
   if (hasFooterLine) {
-    doc.text(issuer.footerLine, PAGE.marginLeft, footerY + lineH, {
-      width: PAGE.contentWidth, align: 'center', lineBreak: false,
+    doc.text(issuer.footerLine, P.marginLeft, footerY + lineH, {
+      width: P.contentWidth, align: 'center', lineBreak: false,
     });
   }
   // Reset fill colour so any code that runs after the footer (e.g.
@@ -1480,9 +1569,10 @@ function stampPageNumbers(doc, locale, { beforeStamp, insertedBeforeLast = 0 } =
     const isLast = n === pages.length - 1;
     const label = t(locale, 'page_of', { current: isLast ? total : n + 1, total });
     const centred = position === 'bottom-center';
-    const labelW = centred ? PAGE.contentWidth : 120;
-    const labelX = centred ? PAGE.marginLeft : doc.page.width - PAGE.marginRight - labelW;
-    doc.text(label, labelX, doc.page.height - PAGE.marginBottom + 8, {
+    const P = pageOf(doc);
+    const labelW = centred ? P.contentWidth : 120;
+    const labelX = centred ? P.marginLeft : doc.page.width - P.marginRight - labelW;
+    doc.text(label, labelX, doc.page.height - P.marginBottom + 8, {
       width: labelW, align: centred ? 'center' : 'right', lineBreak: false,
     });
     doc.fillColor(themeColor(doc, 'text'));
@@ -1574,6 +1664,8 @@ function renderDocument(type, context) {
     (async () => {
       try {
         const ctx = normaliseContext(type, context);
+        // The theme's margins (#1445); every PAGE below is this letter's.
+        const PAGE = pageMetricsFor(ctx.theme);
         const doc = new PDFDocument({
           size: 'A4',
           // bufferPages: true keeps every page open in memory after
@@ -1626,8 +1718,10 @@ function renderDocument(type, context) {
         // The theme (#1445) adds colours, the title size, the footer and
         // page-number settings, and an italic face for line comments.
         doc._theme = ctx.theme;
+        doc._page = PAGE;
         doc._fonts = registerThemeFonts(doc, ctx.issuer, ctx.theme);
         ctx.fonts = doc._fonts;
+        const body = bodyText(doc);
 
         // ---- header layout (DIN 5008 Form B) -------------------------
         //   - recipient block in the address window (top-left,
@@ -1645,15 +1739,22 @@ function renderDocument(type, context) {
         const issuerX = PAGE.width - PAGE.marginRight - issuerWidth;
         const issuerY = PAGE.marginTop + 16;
 
-        const issuerEndY = drawIssuerBlock(doc, ctx.issuer, issuerX, issuerY, issuerWidth, ctx.locale);
-        const recipientEndY = drawRecipientBlock(doc, ctx.recipient, ctx.locale);
+        // A logo the theme places at the left or centre (#1445) goes first;
+        // the issuer column and a recipient in the flow start below it.
+        const logoBottom = drawPageLogo(doc, ctx.issuer);
+        const centredLogo = logoBottom != null && ctx.theme.logo && ctx.theme.logo.position === 'center';
+        const issuerEndY = drawIssuerBlock(doc, ctx.issuer, issuerX, centredLogo ? Math.max(issuerY, logoBottom) : issuerY,
+          issuerWidth, ctx.locale);
+        const windowOn = addressWindowOn(doc);
+        const recipientEndY = drawRecipientBlock(doc, ctx.recipient, ctx.locale,
+          windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) });
         // Start the body content below the header blocks AND the
         // address-window bottom edge — never let the date/title row
         // cut through the window region. The title position isn't
         // dictated by DIN 5008 (the spec only fixes the address window
         // position), so we pull it tight against the window's bottom
         // edge to give the body more vertical room.
-        let y = Math.max(issuerEndY, recipientEndY, ADDR_WINDOW.top + ADDR_WINDOW.height) + 6;
+        let y = Math.max(issuerEndY, recipientEndY, windowOn ? ADDR_WINDOW.top + ADDR_WINDOW.height : 0) + 6;
 
         // Storno discriminator. Drives:
         //   - page title swap ("Stornorechnung" instead of "Rechnung")
@@ -1808,21 +1909,22 @@ function renderDocument(type, context) {
         // dictionary ("Sehr geehrte Damen und Herren,").
         const greeting = personalSalutation(ctx.locale, ctx.recipient?.salutation, ctx.recipient?.lastName)
         || t(ctx.locale, 'salutation');
-        doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10).fillColor(themeColor(doc, 'text'));
-        doc.text(greeting, leftX, y, { width: PAGE.contentWidth });
+        doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(body.size).fillColor(themeColor(doc, 'text'));
+        doc.text(greeting, leftX, y, { width: PAGE.contentWidth, ...body.options });
         y = doc.y + 4;
         doc.font(doc._fonts ? doc._fonts.body : FONT_BODY);
         const leadIn = type === 'quote'
           ? t(ctx.locale, 'lead_in_quote')
           : t(ctx.locale, 'lead_in_invoice');
-        doc.text(leadIn, leftX, y, { width: PAGE.contentWidth });
+        doc.text(leadIn, leftX, y, { width: PAGE.contentWidth, ...body.options });
         y = doc.y + 16;
 
         // ---- intro text override (admin-customisable) -----------------
         if (ctx.doc.introText) {
-          doc.text(ctx.doc.introText, leftX, y, { width: PAGE.contentWidth });
+          doc.text(ctx.doc.introText, leftX, y, { width: PAGE.contentWidth, ...body.options });
           y = doc.y + 12;
         }
+        doc.fontSize(10);
 
         // ---- line items table ----------------------------------------
         // Small top padding — tight against the lead-in text since the
@@ -1903,9 +2005,10 @@ function renderDocument(type, context) {
 
         // ---- outro text -----------------------------------------------
         if (ctx.doc.outroText) {
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'text'));
-          doc.text(ctx.doc.outroText, leftX, y, { width: PAGE.contentWidth });
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(body.size).fillColor(themeColor(doc, 'text'));
+          doc.text(ctx.doc.outroText, leftX, y, { width: PAGE.contentWidth, ...body.options });
           y = doc.y + 12;
+          doc.fontSize(10);
         }
 
         // ---- payment conditions + IBAN block --------------------------
@@ -2072,6 +2175,10 @@ function renderContractInProcess(context) {
         // A footer (theme) sits in the bottom margin, so the margin grows
         // by its height and body text never runs into it.
         const footerReserve = theme.footer.mode === 'none' ? 0 : ((ctx.issuer || {}).footerLine ? 28 : 12);
+        // The theme's margins (#1445) for the letter pages. The signature
+        // page keeps SIGNATURE_PAGE — stamped signatures land at its fixed
+        // coordinates, whatever the margins are.
+        const PAGE = pageMetricsFor(theme);
         const doc = new PDFDocument({
           size: 'A4',
           bufferPages: true,
@@ -2092,18 +2199,27 @@ function renderContractInProcess(context) {
         doc.on('error', reject);
 
         doc._theme = theme;
+        doc._page = PAGE;
         doc._findings = findings;
         doc._fonts = registerThemeFonts(doc, ctx.issuer || {}, theme);
         const currentPage = () => doc.bufferedPageRange().count;
+        const body = bodyText(doc);
 
         // ---- header: issuer + recipient blocks (DIN 5008) ------------
         const issuerWidth = 180;
         const issuerX = PAGE.width - PAGE.marginRight - issuerWidth;
         const issuerY = PAGE.marginTop + 16;
 
-        const issuerEndY = drawIssuerBlock(doc, ctx.issuer || {}, issuerX, issuerY, issuerWidth, locale);
-        const recipientEndY = drawRecipientBlock(doc, ctx.recipient || {}, locale);
-        let y = Math.max(issuerEndY, recipientEndY, ADDR_WINDOW.top + ADDR_WINDOW.height) + 6;
+        // A logo the theme places at the left or centre (#1445) goes first;
+        // the issuer column and a recipient in the flow start below it.
+        const logoBottom = drawPageLogo(doc, ctx.issuer || {});
+        const centredLogo = logoBottom != null && theme.logo && theme.logo.position === 'center';
+        const issuerEndY = drawIssuerBlock(doc, ctx.issuer || {}, issuerX, centredLogo ? Math.max(issuerY, logoBottom) : issuerY,
+          issuerWidth, locale);
+        const windowOn = addressWindowOn(doc);
+        const recipientEndY = drawRecipientBlock(doc, ctx.recipient || {}, locale,
+          windowOn ? {} : { flowY: Math.max(issuerY, logoBottom || 0) });
+        let y = Math.max(issuerEndY, recipientEndY, windowOn ? ADDR_WINDOW.top + ADDR_WINDOW.height : 0) + 6;
         // Folding marks on the letter page, when the contract theme has them.
         drawFoldingMarks(doc, theme.foldingMarks);
 
@@ -2179,9 +2295,9 @@ function renderContractInProcess(context) {
 
         // ---- intro text ---------------------------------------------
         if (ctx.doc?.introText) {
-          doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
+          doc.font(doc._fonts.body).fontSize(body.size).fillColor(themeColor(doc, 'text'));
           ensureSpace(40);
-          renderBodyMarkdown(ctx.doc.introText, { width: PAGE.contentWidth, align: 'left' });
+          renderBodyMarkdown(ctx.doc.introText, { width: PAGE.contentWidth, align: 'left', ...body.options });
           y = doc.y + 12;
         }
 
@@ -2213,8 +2329,8 @@ function renderContractInProcess(context) {
               });
               y = doc.y + 4;
             }
-            doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
-            renderBodyMarkdown(block.body, { width: PAGE.contentWidth, align: 'left' });
+            doc.font(doc._fonts.body).fontSize(body.size).fillColor(themeColor(doc, 'text'));
+            renderBodyMarkdown(block.body, { width: PAGE.contentWidth, align: 'left', ...body.options });
             y = doc.y + 10;
             // If text rendering pushed past page bottom, PDFKit
             // auto-paginated — sync y to the new doc.y for the next
@@ -2292,8 +2408,8 @@ function renderContractInProcess(context) {
         // ---- outro text ---------------------------------------------
         if (ctx.doc?.outroText) {
           ensureSpace(40);
-          doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
-          renderBodyMarkdown(ctx.doc.outroText, { width: PAGE.contentWidth, align: 'left' });
+          doc.font(doc._fonts.body).fontSize(body.size).fillColor(themeColor(doc, 'text'));
+          renderBodyMarkdown(ctx.doc.outroText, { width: PAGE.contentWidth, align: 'left', ...body.options });
           y = doc.y + 16;
         }
 
@@ -2317,18 +2433,18 @@ function renderContractInProcess(context) {
 
         // Title row
         doc.font(doc._fonts.bold).fontSize(16).fillColor(themeColor(doc, 'text'));
-        doc.text(t(locale, 'signature_page_title'), PAGE.marginLeft, L.titleY, {
-          width: PAGE.contentWidth, align: 'left',
+        doc.text(t(locale, 'signature_page_title'), SIGNATURE_PAGE.marginLeft, L.titleY, {
+          width: SIGNATURE_PAGE.contentWidth, align: 'left',
         });
         doc.strokeColor(themeColor(doc, 'rule')).lineWidth(0.5)
-          .moveTo(PAGE.marginLeft, L.titleY + 22)
-          .lineTo(PAGE.marginLeft + PAGE.contentWidth, L.titleY + 22)
+          .moveTo(SIGNATURE_PAGE.marginLeft, L.titleY + 22)
+          .lineTo(SIGNATURE_PAGE.marginLeft + SIGNATURE_PAGE.contentWidth, L.titleY + 22)
           .stroke();
 
         // Closing prompt — generic line so unsigned doc reads coherently
         doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
-        doc.text(t(locale, 'signature_page_prompt'), PAGE.marginLeft, L.promptY, {
-          width: PAGE.contentWidth, align: 'left',
+        doc.text(t(locale, 'signature_page_prompt'), SIGNATURE_PAGE.marginLeft, L.promptY, {
+          width: SIGNATURE_PAGE.contentWidth, align: 'left',
         });
 
         // Signature slots (#1445): one per signer, customers first and the

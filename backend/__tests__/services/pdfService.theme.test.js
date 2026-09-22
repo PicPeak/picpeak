@@ -206,3 +206,117 @@ test('a clause that is one 20 000-character paragraph flows over pages and keeps
   expect(drawn.find((d) => d.text === t('de', 'signature_page_title')).page).toBe(pages - 1);
   expect(drawn.find((d) => d.text === paragraph)).toBeDefined();
 });
+
+// ---------------------------------------------------------------------
+// Layout in the theme (#1445 plan slice 8)
+// ---------------------------------------------------------------------
+
+const MM = 2.834645669;
+const withLayout = (settings) => resolveTheme('contract', { contract: settings });
+
+test('the margins move the letter text; the signature slots stay put for every margin combination', async () => {
+  const L = pdfService.CONTRACT_SIGNATURE_LAYOUT;
+  const reference = (await pdfService.renderContractWithSlots(contractContext())).slots;
+  expect(reference[0]).toEqual(expect.objectContaining({ x: L.customerX, y: L.boxY }));
+  for (const left of [20, 25, 30]) {
+    for (const right of [10, 25]) {
+      for (const bottom of [15, 30]) {
+        const { slots } = await pdfService.renderContractWithSlots(contractContext({
+          theme: withLayout({ layout: { margins: { left, right, bottom } } }),
+        }));
+        expect(slots.map(({ x, y, width, height, captionY }) => ({ x, y, width, height, captionY })))
+          .toEqual(reference.map(({ x, y, width, height, captionY }) => ({ x, y, width, height, captionY })));
+      }
+    }
+  }
+  // The clause heading starts at the theme's left margin.
+  const calls = [];
+  const text = PDFDocument.prototype.text;
+  jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (str, x, ...rest) {
+    calls.push({ text: String(str), x });
+    return text.call(this, str, x, ...rest);
+  });
+  await pdfService.renderContractToBuffer(contractContext({ theme: withLayout({ layout: { margins: { left: 30 } } }) }));
+  expect(calls.find((c) => c.text === 'Leistung').x).toBeCloseTo(30 * MM, 3);
+  // The signature page title stays at the fixed margin.
+  const { t } = pdfService._internal;
+  expect(calls.find((c) => c.text === t('de', 'signature_page_title')).x).toBe(pdfService.PAGE.marginLeft);
+});
+
+test('a custom layout renders the same bytes twice', async () => {
+  const at = '2026-09-14T10:00:00Z';
+  const custom = withLayout({
+    layout: { margins: { left: 25, right: 15, bottom: 20 }, addressWindow: false },
+    logo: { position: 'center' }, bodySize: 11, lineHeight: 1.4,
+  });
+  const a = await pdfService.renderContractToBuffer(contractContext({ theme: custom, generatedAt: at }));
+  const b = await pdfService.renderContractToBuffer(contractContext({ theme: custom, generatedAt: at }));
+  expect(sha256(a)).toBe(sha256(b));
+  const q1 = await pdfService.renderQuoteToBuffer(quoteContext(resolveTheme('quote', { quote: { layout: { margins: { left: 25 } } } }), { generatedAt: at }));
+  const q2 = await pdfService.renderQuoteToBuffer(quoteContext(resolveTheme('quote', { quote: { layout: { margins: { left: 25 } } } }), { generatedAt: at }));
+  expect(sha256(q1)).toBe(sha256(q2));
+  // …and differs from the built-in layout.
+  expect(sha256(q1)).not.toBe(sha256(await pdfService.renderQuoteToBuffer(quoteContext(builtInTheme('quote'), { generatedAt: at }))));
+});
+
+test('with the address window off the recipient moves into the flow and loses the return-address line', async () => {
+  const calls = [];
+  const text = PDFDocument.prototype.text;
+  jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (str, x, y, ...rest) {
+    calls.push({ text: String(str), x, y });
+    return text.call(this, str, x, y, ...rest);
+  });
+  const recipient = { companyName: 'Kunde AG', issuerLine: 'Studio Test · Weg 1 · 9490 Vaduz' };
+  await pdfService.renderContractToBuffer(contractContext({ recipient }));
+  const inWindow = calls.find((c) => c.text === 'Kunde AG');
+  expect(inWindow.y).toBeCloseTo(52 * MM, 1);
+  expect(calls.some((c) => c.text === recipient.issuerLine)).toBe(true);
+  calls.length = 0;
+  await pdfService.renderContractToBuffer(contractContext({ recipient, theme: withLayout({ layout: { addressWindow: false } }) }));
+  const inFlow = calls.find((c) => c.text === 'Kunde AG');
+  expect(inFlow.x).toBe(pdfService.PAGE.marginLeft);
+  expect(inFlow.y).toBeLessThan(inWindow.y);
+  expect(calls.some((c) => c.text === recipient.issuerLine)).toBe(false);
+});
+
+test('body size and line height reach the running text', async () => {
+  const sizes = spyOn('fontSize');
+  const drawn = [];
+  const text = PDFDocument.prototype.text;
+  jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (str, ...rest) {
+    const options = rest.find((r) => r && typeof r === 'object');
+    drawn.push({ text: String(str), lineGap: options && options.lineGap });
+    return text.call(this, str, ...rest);
+  });
+  await pdfService.renderContractToBuffer(contractContext({ theme: withLayout({ bodySize: 11.5, lineHeight: 1.5 }) }));
+  expect(sizes()).toContain(11.5);
+  expect(drawn.find((d) => d.text === 'Text').lineGap).toBeCloseTo((1.5 - 1.15) * 11.5, 5);
+});
+
+test('the logo can sit left or centred above the letter, or beside the name', async () => {
+  const logoPath = require('path').resolve(__dirname, '../../../frontend/public/favicon-32x32.png');
+  const place = async (logo) => {
+    jest.restoreAllMocks();
+    const calls = [];
+    const image = PDFDocument.prototype.image;
+    jest.spyOn(PDFDocument.prototype, 'image').mockImplementation(function (src, x, y, options) {
+      calls.push({ x, y, options });
+      return image.call(this, src, x, y, options);
+    });
+    await pdfService.renderContractToBuffer(contractContext({
+      issuer: { ...issuer, logoPath }, theme: withLayout({ logo }),
+    }));
+    return calls[0];
+  };
+  const right = await place({});
+  expect(right.x).toBeGreaterThan(300);
+  const left = await place({ position: 'left' });
+  expect(left.x).toBe(pdfService.PAGE.marginLeft);
+  expect(left.options.align).toBe('left');
+  const centre = await place({ position: 'center' });
+  expect(centre.options.align).toBe('center');
+  // Above the address window, however tall the logo is set.
+  expect(centre.y + centre.options.fit[1]).toBeLessThanOrEqual(45 * MM);
+  const beside = await place({ stack: 'inline' });
+  expect(beside.options.fit[0]).toBeLessThan(180);
+});

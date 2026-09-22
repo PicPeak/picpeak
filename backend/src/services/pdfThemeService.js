@@ -36,12 +36,17 @@ async function listThemes() {
   const { byScope, updatedAt } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
   return {
-    themes: themeModel.SCOPES.map((scope) => ({
-      scope,
-      settings: byScope[scope] || {},
-      updatedAt: updatedAt[scope] || null,
-      resolved: themeModel.resolveTheme(scope, byScope, profile),
-    })),
+    themes: themeModel.SCOPES.map((scope) => {
+      const resolved = themeModel.resolveTheme(scope, byScope, profile);
+      return {
+        scope,
+        settings: byScope[scope] || {},
+        updatedAt: updatedAt[scope] || null,
+        resolved,
+        // Readability warnings (#1445): shown next to the form, never enforced.
+        warnings: themeModel.themeWarnings(resolved),
+      };
+    }),
     fontFamilies: availableFamilies(),
   };
 }

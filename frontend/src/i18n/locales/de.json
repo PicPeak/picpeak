@@ -3593,13 +3593,54 @@
         "none": "Keine Fußzeile"
       },
       "footerText": "Fußzeilentext",
-      "marginsNote": "Die Ränder folgen dem Briefformat nach DIN 5008 und lassen sich nicht anpassen.",
+      "marginsNote": "Den oberen Rand bestimmen Adressfenster und Briefkopf. Die Unterschriftenseite eines Vertrags behält ihr festes Layout unabhängig von den Rändern, damit Unterschriften immer in ihren Feldern landen.",
       "preview": "PDF-Vorschau",
       "resetScope": "Auf übernommene Werte zurücksetzen",
       "save": "Design speichern",
       "saved": "PDF-Design gespeichert",
       "saveFailed": "Das PDF-Design konnte nicht gespeichert werden",
-      "previewFailed": "Die Vorschau konnte nicht erstellt werden"
+      "previewFailed": "Die Vorschau konnte nicht erstellt werden",
+      "presets": "Mit einer Vorlage beginnen",
+      "presetsHint": "Eine Vorlage füllt das Formular aus; gespeichert wird erst, wenn Sie das Design speichern.",
+      "preset": {
+        "classic": "Klassisch",
+        "modern": "Modern",
+        "compact": "Kompakt",
+        "largePrint": "Grosse Schrift"
+      },
+      "layout": "Layout",
+      "margin": {
+        "left": "Rand links",
+        "right": "Rand rechts",
+        "bottom": "Rand unten"
+      },
+      "marginStandard": "Standard",
+      "addressWindow": "Adressfenster",
+      "addressWindowOption": {
+        "on": "Für Fensterkuverts (DIN 5008)",
+        "off": "Aus — die Adresse folgt dem Briefkopf"
+      },
+      "logoPosition": "Position des Logos",
+      "logoPositionOption": {
+        "right": "Rechts, im Briefkopf",
+        "left": "Oben links",
+        "center": "Oben mittig"
+      },
+      "logoStack": "Logo und Firmenname",
+      "logoStackOption": {
+        "above": "Logo über dem Namen",
+        "inline": "Logo neben dem Namen"
+      },
+      "bodySize": "Schriftgrösse Fliesstext",
+      "lineHeight": "Zeilenhöhe",
+      "lineHeightStandard": "Standard",
+      "warningsTitle": "Lesbarkeit",
+      "warnings": {
+        "CONTRAST_LOW": "{{color}}: Kontrast {{value}}:1 gegenüber Weiss liegt unter {{limit}}:1.",
+        "BODY_SIZE_SMALL": "Fliesstext mit {{value}} pt ist schwer lesbar; empfohlen sind mindestens {{limit}} pt.",
+        "LINE_HEIGHT_TIGHT": "Eine Zeilenhöhe von {{value}} ist eng; ab {{limit}} liest es sich besser.",
+        "LINE_TOO_LONG": "Zeilen umfassen etwa {{value}} Zeichen; über {{limit}} werden sie schwer lesbar. Breitere Ränder oder grössere Schrift helfen."
+      }
     }
   },
   "admin": {

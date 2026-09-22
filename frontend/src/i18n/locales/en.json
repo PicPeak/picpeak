@@ -3123,13 +3123,54 @@
         "none": "No footer"
       },
       "footerText": "Footer text",
-      "marginsNote": "Margins follow the DIN 5008 letter layout and aren't adjustable.",
+      "marginsNote": "The top margin is set by the address window and the letterhead. A contract's signature page keeps its fixed layout whatever the margins are, so signatures always land in their boxes.",
       "preview": "Preview PDF",
       "resetScope": "Reset to inherited",
       "save": "Save theme",
       "saved": "PDF theme saved",
       "saveFailed": "Could not save the PDF theme",
-      "previewFailed": "Could not render the preview"
+      "previewFailed": "Could not render the preview",
+      "presets": "Start from a preset",
+      "presetsHint": "A preset fills in the form; nothing is saved until you save the theme.",
+      "preset": {
+        "classic": "Classic",
+        "modern": "Modern",
+        "compact": "Compact",
+        "largePrint": "Large print"
+      },
+      "layout": "Layout",
+      "margin": {
+        "left": "Left margin",
+        "right": "Right margin",
+        "bottom": "Bottom margin"
+      },
+      "marginStandard": "standard",
+      "addressWindow": "Address window",
+      "addressWindowOption": {
+        "on": "For window envelopes (DIN 5008)",
+        "off": "Off — the address follows the letterhead"
+      },
+      "logoPosition": "Logo position",
+      "logoPositionOption": {
+        "right": "Right, in the letterhead",
+        "left": "Top left",
+        "center": "Top centre"
+      },
+      "logoStack": "Logo and company name",
+      "logoStackOption": {
+        "above": "Logo above the name",
+        "inline": "Logo beside the name"
+      },
+      "bodySize": "Body text size",
+      "lineHeight": "Line height",
+      "lineHeightStandard": "standard",
+      "warningsTitle": "Readability",
+      "warnings": {
+        "CONTRAST_LOW": "{{color}}: contrast {{value}}:1 against white is below {{limit}}:1.",
+        "BODY_SIZE_SMALL": "Body text of {{value}} pt is hard to read; {{limit}} pt or more is recommended.",
+        "LINE_HEIGHT_TIGHT": "A line height of {{value}} is tight; {{limit}} or more reads better.",
+        "LINE_TOO_LONG": "Lines run to about {{value}} characters; above {{limit}} they get hard to follow. Wider margins or larger text help."
+      }
     }
   },
   "admin": {

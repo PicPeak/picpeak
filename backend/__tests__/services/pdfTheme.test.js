@@ -100,3 +100,66 @@ describe('sanitizeThemeSettings', () => {
     expect(codeOf(() => theme.sanitizeThemeSettings(input, { availableFamilies }))).toBe('PDF_THEME_INVALID');
   });
 });
+
+describe('layout (#1445)', () => {
+  test('margins, address window, logo, body size and line height are validated within their bounds', () => {
+    expect(theme.sanitizeThemeSettings({
+      layout: { margins: { left: 25, right: 15, bottom: 20 }, addressWindow: false },
+      logo: { position: 'center', stack: 'inline' },
+      bodySize: 11,
+      lineHeight: 1.4,
+    })).toEqual({
+      layout: { margins: { left: 25, right: 15, bottom: 20 }, addressWindow: false },
+      logo: { position: 'center', stack: 'inline' },
+      bodySize: 11,
+      lineHeight: 1.4,
+    });
+    for (const bad of [
+      { layout: { margins: { left: 19 } } }, { layout: { margins: { left: 31 } } },
+      { layout: { margins: { right: 9 } } }, { layout: { margins: { right: 26 } } },
+      { layout: { margins: { bottom: 14 } } }, { layout: { margins: { bottom: 31 } } },
+      { layout: { margins: { top: 20 } } },
+      { layout: { addressWindow: 'no' } },
+      { logo: { position: 'top' } }, { logo: { stack: 'behind' } },
+      { bodySize: 8.5 }, { bodySize: 12.5 }, { lineHeight: 1.1 }, { lineHeight: 1.7 },
+    ]) {
+      const code = codeOf(() => theme.sanitizeThemeSettings(bad));
+      // `top` is not a setting: it is dropped, not refused.
+      if (bad.layout && bad.layout.margins && 'top' in bad.layout.margins) {
+        expect(theme.sanitizeThemeSettings(bad)).toEqual({});
+      } else {
+        expect(code).toBe('PDF_THEME_INVALID');
+      }
+    }
+  });
+
+  test('the built-in layout is the old one, and a scope inherits margins key by key', () => {
+    const quote = theme.resolveTheme('quote', {}, null);
+    expect(quote.layout).toEqual({ margins: null, addressWindow: true });
+    expect(quote.logo).toEqual({ position: 'right', stack: 'above' });
+    expect(quote.bodySize).toBe(10);
+    expect(quote.lineHeight).toBeNull();
+
+    const contract = theme.resolveTheme('contract', {
+      default: { layout: { margins: { left: 25, bottom: 20 } }, bodySize: 11 },
+      contract: { layout: { margins: { left: 30 }, addressWindow: false } },
+    }, null);
+    expect(contract.layout).toEqual({ margins: { left: 30, bottom: 20 }, addressWindow: false });
+    expect(contract.bodySize).toBe(11);
+  });
+
+  test('readability warnings: contrast, small text, tight lines, long lines — none for the built-in look', () => {
+    expect(theme.themeWarnings(theme.resolveTheme('quote', {}, null))).toEqual([]);
+    const codes = (settings) => theme.themeWarnings(theme.resolveTheme('quote', { quote: settings }, null))
+      .map((w) => `${w.code}${w.key ? `:${w.key}` : ''}`);
+    expect(codes({ colors: { text: '#999999' } })).toContain('CONTRAST_LOW:text');
+    expect(codes({ colors: { muted: '#aaaaaa' } })).toContain('CONTRAST_LOW:muted');
+    expect(codes({ colors: { accent: '#dddddd' } })).toContain('CONTRAST_LOW:accent');
+    expect(codes({ colors: { accent: '#777777' } })).not.toContain('CONTRAST_LOW:accent');
+    expect(codes({ bodySize: 9 })).toEqual(expect.arrayContaining(['BODY_SIZE_SMALL', 'LINE_TOO_LONG']));
+    expect(codes({ lineHeight: 1.25 })).toContain('LINE_HEIGHT_TIGHT');
+    expect(codes({ lineHeight: 1.4 })).toEqual([]);
+    // Wider margins shorten the line again.
+    expect(codes({ bodySize: 9, layout: { margins: { left: 30, right: 25 } } })).not.toContain('LINE_TOO_LONG');
+  });
+});

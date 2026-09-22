@@ -19,8 +19,9 @@ const { getStoragePath } = require('../config/storage');
 const { resolveFontFiles } = require('./pdf/fonts');
 
 // Bumped when the renderer's output for the same inputs changes on purpose
-// (4: placeholder values escaped in contract bodies, #1445).
-const RENDERER_VERSION = '4';
+// (4: placeholder values escaped in contract bodies; 5: layout in the theme —
+// margins, address window, logo placement, body size and line height, #1445).
+const RENDERER_VERSION = '5';
 const DOC_TYPES = ['quote', 'invoice', 'contract'];
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');

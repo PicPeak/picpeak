@@ -57,6 +57,10 @@ const resolved = (scope: string, extra: Record<string, unknown> = {}) => ({
   footer: { mode: scope === 'contract' ? 'none' : 'address', text: '' },
   pageNumbers: 'bottom-right',
   foldingMarks: 'none',
+  layout: { margins: null, addressWindow: true },
+  logo: { position: 'right', stack: 'above' },
+  bodySize: 10,
+  lineHeight: null,
   ...extra,
 });
 
@@ -117,4 +121,31 @@ it('previews with the unsaved settings', async () => {
 
   await waitFor(() => expect(previewUrl).toHaveBeenCalledWith('default', { footer: { mode: 'custom', text: 'Studio Test' } }));
   expect(open).toHaveBeenCalledWith('blob:preview', '_blank', 'noopener');
+});
+
+it('a preset fills in the layout, which is saved with the theme (#1445)', async () => {
+  const user = userEvent.setup();
+  save.mockResolvedValue(themes);
+  renderCard();
+  await screen.findByRole('button', { name: 'Large print' });
+  await user.click(screen.getByRole('button', { name: 'Large print' }));
+  expect(screen.getByLabelText('Body text size')).toHaveValue('12');
+  expect(screen.getByLabelText(/Left margin/)).toHaveValue(25);
+  await user.click(screen.getByRole('button', { name: 'Save theme' }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith('default', expect.objectContaining({
+    bodySize: 12, lineHeight: 1.5, layout: { margins: { left: 25, right: 20, bottom: 20 } },
+  })));
+});
+
+it('a margin outside its bounds blocks saving; readability warnings inform without blocking', async () => {
+  const user = userEvent.setup();
+  renderCard();
+  const left = await screen.findByLabelText(/Left margin/);
+  await user.type(left, '12');
+  expect(screen.getByRole('button', { name: 'Save theme' })).toBeDisabled();
+  await user.clear(left);
+  await user.selectOptions(screen.getByLabelText('Body text size'), '9');
+  expect(screen.getByText(/Body text of 9 pt is hard to read/)).toBeInTheDocument();
+  expect(screen.getByText(/Lines run to about \d+ characters/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save theme' })).toBeEnabled();
 });

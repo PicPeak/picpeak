@@ -145,3 +145,21 @@ test('a sent quote records its PDF with sha256, pages and the theme it used', as
   expect(snapshot.fontFamily).toBe('Jost');
   expect(snapshot.fontSha256.italic).toMatch(/^[0-9a-f]{64}$/);
 });
+
+test('layout settings save within their bounds and come back with readability warnings (#1445)', async () => {
+  let res = await request(app).put('/api/admin/pdf-themes/contract').set(auth).send({
+    settings: { layout: { margins: { left: 25, right: 15 }, addressWindow: false }, bodySize: 9, colors: { muted: '#bbbbbb' } },
+  });
+  expect(res.status).toBe(200);
+  const contract = res.body.themes.find((t) => t.scope === 'contract');
+  expect(contract.resolved.layout).toEqual({ margins: { left: 25, right: 15 }, addressWindow: false });
+  expect(contract.warnings.map((w) => w.code)).toEqual(expect.arrayContaining(['CONTRAST_LOW', 'BODY_SIZE_SMALL']));
+
+  res = await request(app).put('/api/admin/pdf-themes/contract').set(auth)
+    .send({ settings: { layout: { margins: { left: 12 } } } });
+  expect(res.status).toBe(400);
+  expect(res.body.code).toBe('PDF_THEME_INVALID');
+
+  res = await request(app).put('/api/admin/pdf-themes/contract').set(auth).send({ settings: {} });
+  expect(res.body.themes.find((t) => t.scope === 'contract').warnings).toEqual([]);
+});
