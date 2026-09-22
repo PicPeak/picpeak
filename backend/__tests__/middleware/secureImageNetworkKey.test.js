@@ -121,6 +121,11 @@ describe('admin IP block list (adminImageSecurity.js)', () => {
     expect(blocked.suspiciousIPs.size).toBe(0);
   });
 
+  it('accepts the bracketed form a proxy forwards', async () => {
+    await request(app).post('/sec/block-ip').send({ ip: '[2001:db8:1:2::5]:443' }).expect(200);
+    expect([...blocked.suspiciousIPs]).toEqual(['2001:db8:1:2::/64']);
+  });
+
   it('refuses input that is not an address instead of reporting it blocked', async () => {
     for (const ip of ['not-an-ip', '203.0.113.0/24', '2001:db8::/48', { a: 1 }, '   ']) {
       await request(app).post('/sec/block-ip').send({ ip }).expect(400);

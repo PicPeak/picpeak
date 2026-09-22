@@ -365,7 +365,11 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
     // A /64 in CIDR form (as the list stores it) is accepted too; anything
     // else that is not an address would be stored and never match, so it is
     // refused instead of reported as blocked.
-    const text = typeof ip === 'string' ? ip.trim() : '';
+    // A proxy-forwarded IPv6 address can be logged in URI form
+    // ([2001:db8::1] or [2001:db8::1]:443); rateLimitKey accepts that too.
+    const raw = typeof ip === 'string' ? ip.trim() : '';
+    const bracketed = raw.match(/^\[([^\]]+)\](?::\d+)?$/);
+    const text = bracketed ? bracketed[1] : raw;
     const cidr = text.match(/^(.+)\/64$/);
     const address = cidr ? cidr[1] : text;
     if (net.isIP(address) === 0 || (cidr && net.isIPv6(address) === false)) {
