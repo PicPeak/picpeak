@@ -31,7 +31,8 @@ const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const {
-  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, settleWhenDone, responseDelivered,
+  downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
+  settleWhenDone, responseDelivered,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
 /**
@@ -43,12 +44,28 @@ const fs = require('fs');
  */
 function releaseUnshipped(res, eventId, quota) {
   const shipped = [];
-  settleWhenDone(res, eventId, quota, () => shipped);
+  // Archiver writes its entries in append order and fires 'entry' once one is
+  // complete. Bytes after the last complete entry belong to the next one, so a
+  // cancel in the middle of a large photo still charges it: what went out
+  // cannot be taken back.
+  const appended = [];
+  let bytesSinceEntry = 0;
+  settleWhenDone(res, eventId, quota, () => {
+    if (bytesSinceEntry === 0) return shipped;
+    const done = new Set(shipped.map(Number));
+    const inProgress = appended.find((id) => !done.has(Number(id)));
+    return inProgress == null ? shipped : [...shipped, inProgress];
+  });
   return {
     track(archive) {
+      archive.on('data', (chunk) => { bytesSinceEntry += chunk.length; });
       archive.on('entry', (entry) => {
+        bytesSinceEntry = 0;
         if (entry && entry.photoId != null) shipped.push(entry.photoId);
       });
+    },
+    appended(photoId) {
+      appended.push(photoId);
     },
   };
 }
@@ -499,7 +516,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // stream below knows that set; the prebuilt archive does not have to match
     // it, so a limited gallery always streams.
     const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos
-      || !!downloadLimitOf(req.event);
+      || !!(await currentDownloadLimit(req.event));
     const zipInfo = streamOnly
       ? null
       : await downloadZipService.getZipInfo(req.event.id);
@@ -688,6 +705,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName, photoId: photo.id });
         }
         appendedIds.push(photo.id);
+        releaseAll.appended(photo.id);
       } catch (err) {
         logger.warn('Skipping photo in bulk download due to error', {
           slug: req.params.slug,
@@ -882,6 +900,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           archive.file(resolvePhotoFilePath(req.event, photo), { name, photoId: photo.id });
         }
         appendedIds.push(photo.id);
+        releaseSelected.appended(photo.id);
       } catch (err) {
         logger.warn('Skipping selected photo due to error', {
           slug: req.params.slug,
@@ -1086,7 +1105,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 
     // Download limit (issue 1560). A limited gallery must know what it is
     // handing over, so an unreadable manifest refuses rather than ships.
-    if (downloadLimitOf(req.event) && !req.isAdminPreview) {
+    if (!req.isAdminPreview && await currentDownloadLimit(req.event)) {
       if (!Array.isArray(deliveredIds) || deliveredIds.length === 0) {
         return res.status(409).json({
           error: 'This gallery changed since the download was prepared — please request it again',

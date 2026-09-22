@@ -45,6 +45,17 @@ function downloadLimitOf(event) {
 }
 
 /**
+ * The limit as it stands now. The request may have loaded the event before
+ * an admin set one, so an unlimited snapshot is read again; a limited one is
+ * re-read under the lock where it matters (grantDownloads).
+ */
+async function currentDownloadLimit(event) {
+  const limit = downloadLimitOf(event);
+  if (limit || !event || !event.id) return limit;
+  return downloadLimitOf(await db('events').where({ id: event.id }).first('download_limit'));
+}
+
+/**
  * Photo ids already granted for this event. Joined to photos so a grant for a
  * photo that has since been deleted neither counts nor shows up: SQLite does
  * not run the ON DELETE CASCADE.
@@ -122,12 +133,8 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
   if (isAdminPreview) return { ok: true, newIds: [] };
   const ids = uniqueIds(photoIds);
   if (ids.length === 0) return { ok: true, newIds: [] };
-  // Unlimited as loaded — but the request may have been loaded before an
-  // admin set a limit, and no byte has gone out yet. Re-read before skipping.
-  if (!downloadLimitOf(event)) {
-    const fresh = await db('events').where({ id: event.id }).first('download_limit');
-    if (!downloadLimitOf(fresh)) return { ok: true, newIds: [] };
-  }
+  // No byte has gone out yet, so a limit set since the event was loaded counts.
+  if (!(await currentDownloadLimit(event))) return { ok: true, newIds: [] };
 
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
@@ -299,6 +306,7 @@ async function isOriginalWithheld(event, photo, { isAdminPreview = false } = {})
 module.exports = {
   normaliseDownloadLimit,
   downloadLimitOf,
+  currentDownloadLimit,
   grantedPhotoIds,
   getQuota,
   checkDownloads,

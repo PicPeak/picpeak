@@ -351,6 +351,42 @@ describe('Download limit (issue 1560)', () => {
       expect((await quota.grantDownloads(event, photoIds.slice(0, 2))).ok).toBe(false);
     });
 
+    it('a zip cancelled in the middle of a photo still charges that photo', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 3, photos: 2 });
+      // Incompressible and large, so its bytes flow before its entry completes.
+      const big = require('crypto').randomBytes(8 * 1024 * 1024);
+      const rows = await db('photos').whereIn('id', photoIds).orderBy('uploaded_at', 'desc');
+      await fs.promises.writeFile(path.join(process.env.STORAGE_PATH, 'events', 'active', rows[0].path), big);
+
+      const http = require('http');
+      const server = app.listen(0);
+      try {
+        await new Promise((resolve, reject) => {
+          const req = http.request({
+            port: server.address().port,
+            method: 'POST',
+            path: `/api/gallery/${event.slug}/download-selected`,
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          }, (res) => {
+            res.once('data', () => { req.destroy(); resolve(); });
+          });
+          req.on('error', () => resolve());
+          req.on('timeout', reject);
+          req.end(JSON.stringify({ photo_ids: [rows[0].id] }));
+        });
+        // The first photo started going out and stays charged.
+        let granted = [];
+        for (let i = 0; i < 50; i += 1) {
+          granted = [...(await quota.grantedPhotoIds(event.id, null, undefined, { deliveredOnly: true }))];
+          if (granted.length) break;
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        expect(granted).toEqual([rows[0].id]);
+      } finally {
+        await new Promise((r) => server.close(r));
+      }
+    });
+
     it('a HEAD probe of download-all takes none of the quota', async () => {
       const { event, token } = await makeEvent({ limit: 10, photos: 3 });
       const res = await request(app)
