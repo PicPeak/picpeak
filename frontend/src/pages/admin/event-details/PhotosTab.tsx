@@ -52,8 +52,9 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState<{ photo: AdminPhoto; index: number } | null>(null);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<number[]>([]);
 
-  // Names on this event's photos, for the credit filter (#1561). The credit
-  // edits and uploads invalidate ['admin-photo-credits', eventId].
+  // Names on this event's photos, for the credit filter (#1561). Credit
+  // edits, uploads, imports and deletions invalidate
+  // ['admin-photo-credits', eventId].
   const eventId = parseInt(id!);
   const { data: creditSummary } = useQuery({
     queryKey: ['admin-photo-credits', eventId],
@@ -174,6 +175,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           onPhotosDeleted={() => {
             refetchPhotos();
             queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
+            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
           }}
           onSelectionChange={setSelectedPhotoIds}
           categories={categories}
@@ -190,6 +192,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           onPhotoDeleted={() => {
             refetchPhotos();
             queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
+            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
             setSelectedPhoto(null);
           }}
           categories={categories}
@@ -234,6 +237,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
                     toast.success(t('toast.saveSuccess'));
                     queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
                     queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
+                    queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
                     setShowExternalImport(false);
                   } catch (e: any) {
                     toast.error(e?.response?.data?.error || 'Import failed');

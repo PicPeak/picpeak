@@ -628,10 +628,12 @@ async function processPhoto(photoId) {
   await db('photos').where({ id: photoId }).update(updateData);
 
   // Separate, fenced write: an admin who set a credit while this row was in
-  // the queue made the final call, and this must not overwrite it.
+  // the queue made the final call, and this must not overwrite it. Fenced on
+  // the file that was read too, as the backfill is: a replacement meanwhile
+  // swapped it, and this name describes the old one.
   if (exifCredit) {
     await db('photos')
-      .where({ id: photoId })
+      .where({ id: photoId, path: photo.path, filename: photo.filename })
       .whereNull('credit_source')
       .update({ credit_name: exifCredit, credit_source: 'exif' });
   }
