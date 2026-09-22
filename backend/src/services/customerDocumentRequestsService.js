@@ -30,7 +30,9 @@ function toAdminDto(row) {
     status: row.status,
     eventId: row.event_id || null,
     contractId: row.contract_id || null,
-    fulfilledDocumentId: row.fulfilled_document_id || null,
+    // Kept on an open request as its last answer (restoreForDocument);
+    // only a fulfilled one has an answer to show.
+    fulfilledDocumentId: row.status === 'fulfilled' ? (row.fulfilled_document_id || null) : null,
     fulfilledAt: toIso(row.fulfilled_at) || null,
     cancelledAt: toIso(row.cancelled_at) || null,
     reminderCount: Number(row.reminder_count) || 0,
@@ -176,6 +178,9 @@ async function fulfilInTransaction(trx, customerId, requestId, documentId) {
  * The document that answered a request was rejected or deleted: the request
  * is open again, so "Needs action" and the reminders pick it up once more —
  * with the ladder starting over from now, not from the original request.
+ * fulfilled_document_id stays as the last answer, so accepting that same
+ * document after all (restoreForDocument) closes the request again; a new
+ * upload answering it replaces the id, and a cancel ends it either way.
  */
 async function reopenForDocument(documentId, conn = db) {
   const now = new Date().toISOString();
@@ -183,7 +188,6 @@ async function reopenForDocument(documentId, conn = db) {
     .where({ fulfilled_document_id: documentId, status: 'fulfilled' })
     .update({
       status: 'open',
-      fulfilled_document_id: null,
       fulfilled_at: null,
       reminder_count: 0,
       ladder_started_at: now,
@@ -191,8 +195,17 @@ async function reopenForDocument(documentId, conn = db) {
     });
 }
 
+/** A rejected answer was accepted after all: its open request is fulfilled again. */
+async function restoreForDocument(documentId, conn = db) {
+  const now = new Date().toISOString();
+  return conn('customer_document_requests')
+    .where({ fulfilled_document_id: documentId, status: 'open' })
+    .update({ status: 'fulfilled', fulfilled_at: now, updated_at: now });
+}
+
 module.exports = {
   reopenForDocument,
+  restoreForDocument,
   toAdminDto,
   toCustomerDto,
   listForAdmin,

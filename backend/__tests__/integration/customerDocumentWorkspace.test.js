@@ -1158,6 +1158,34 @@ describe('document requests', () => {
     expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('open');
   });
 
+  it('is fulfilled again when a rejected answer is accepted after all, unless another answered it since', async () => {
+    const review = (id, status) => asAdmin(request(adminApp).post(adminDoc(me, id, '/review'))).send({ status });
+    const reqRow = (id) => db('customer_document_requests').where({ id }).first();
+
+    const req = (await createRequest(me, { title: 'Proof' })).body.request;
+    const first = (await uploadAs(me, 'proof.pdf', { requestId: req.id })).body.document.id;
+    await review(first, 'rejected');
+    expect((await reqRow(req.id)).status).toBe('open');
+    await review(first, 'clean');
+    expect(await reqRow(req.id)).toMatchObject({ status: 'fulfilled' });
+    expect(Number((await reqRow(req.id)).fulfilled_document_id)).toBe(first);
+
+    const other = (await createRequest(me, { title: 'Proof 2' })).body.request;
+    const old = (await uploadAs(me, 'proof-2a.pdf', { requestId: other.id })).body.document.id;
+    await review(old, 'rejected');
+    const replacement = (await uploadAs(me, 'proof-2b.pdf', { requestId: other.id })).body.document.id;
+    await review(old, 'clean');
+    expect(Number((await reqRow(other.id)).fulfilled_document_id)).toBe(replacement);
+
+    // Cancelled in between: accepting the old answer doesn't bring it back.
+    const third = (await createRequest(me, { title: 'Proof 3' })).body.request;
+    const doc3 = (await uploadAs(me, 'proof-3.pdf', { requestId: third.id })).body.document.id;
+    await review(doc3, 'rejected');
+    await asAdmin(request(adminApp).delete(`/api/admin/customers/${me}/document-requests/${third.id}`));
+    await review(doc3, 'clean');
+    expect((await reqRow(third.id)).status).toBe('cancelled');
+  });
+
   it('links the answer to the request\'s contract, even one still in draft', async () => {
     const contractId = idOf(await db('contracts').insert({
       contract_number: `K-REQ-${Date.now()}`, customer_account_id: me, title: 'Draft',

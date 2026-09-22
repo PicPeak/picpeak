@@ -603,6 +603,9 @@ async function review(customerId, documentId, { status, note }, admin) {
   // A rejected file is never left shared.
   if (status === 'rejected' && isShared(row)) update.unshared_at = now;
   await db('customer_documents').where({ id: row.id }).update(update);
+  // Accepted after all (a rejection reversed): the request it answered, if
+  // still open and not answered by another upload since, is fulfilled again.
+  if (status === 'clean') await customerDocumentRequestsService.restoreForDocument(row.id);
   await logActivity('customer_document_reviewed',
     { documentId: row.id, customerId, status }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
   return db('customer_documents').where({ id: row.id }).first();
