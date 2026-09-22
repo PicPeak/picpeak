@@ -466,11 +466,16 @@ module.exports = (router) => {
         logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
       }
       // Their customer groups (#1443) — only for an admin who may read
-      // customers; this route is guarded by events.view alone.
+      // customers; this route is guarded by events.view alone. Decoration:
+      // a failure here leaves the groups out rather than failing the page.
       let groupsByCustomer = null;
-      if (customerAccounts.length > 0 && await userHasAnyPermission(req.admin.id, ['customers.view'])) {
-        groupsByCustomer = await require('../../services/customerGroupsService')
-          .groupsForCustomers(customerAccounts.map((c) => c.id));
+      try {
+        if (customerAccounts.length > 0 && await userHasAnyPermission(req.admin.id, ['customers.view'])) {
+          groupsByCustomer = await require('../../services/customerGroupsService')
+            .groupsForCustomers(customerAccounts.map((c) => c.id));
+        }
+      } catch (e) {
+        logger.warn('Failed to load customer groups for event', { eventId: id, error: e.message });
       }
 
       res.json(withoutForeignEventSecrets(mapEventForApi({

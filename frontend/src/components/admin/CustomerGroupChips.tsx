@@ -85,7 +85,9 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
       )}
       {rest.length > 0 && expandable && (
         <>
-          <span id={restId} className="contents" hidden={!expanded}>
+          {/* `contents` keeps the chips in the parent's wrapping row; the
+              region is empty while collapsed, so nothing needs hiding. */}
+          <span id={restId} className="contents">
             {expanded && rest.map((group) => <CustomerGroupChip key={group.id} group={group} />)}
           </span>
           <button
@@ -190,15 +192,14 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
       {selectedIds.length >= 2 && (
         <span
           className="inline-flex overflow-hidden rounded-full border border-neutral-200 text-xs dark:border-neutral-700"
-          role="radiogroup"
+          role="group"
           aria-label={t('customers.groups.matchLabel', 'Customers in')}
         >
           {(['any', 'all'] as const).map((value) => (
             <button
               key={value}
               type="button"
-              role="radio"
-              aria-checked={match === value}
+              aria-pressed={match === value}
               onClick={() => onMatchChange(value)}
               className={`px-2.5 py-1 ${
                 match === value

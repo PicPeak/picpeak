@@ -99,6 +99,18 @@ it('carries the groups on the event detail, only with customers.view', async () 
   expect(assigned).not.toHaveProperty('groups');
 });
 
+it('still answers the event detail, without groups, when the group lookup fails', async () => {
+  const service = require('../../src/services/customerGroupsService');
+  const spy = jest.spyOn(service, 'groupsForCustomers').mockRejectedValue(new Error('boom'));
+  try {
+    const res = await request(app).get(`/api/admin/events/${eventId}`).set(auth(superToken));
+    expect(res.status).toBe(200);
+    expect(res.body.customer_accounts.find((c) => c.id === customerId)).not.toHaveProperty('groups');
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 it('carries the customer\'s groups on the project cockpit, only with customers.view', async () => {
   const withView = await request(app).get(`/api/admin/projects/${projectId}/overview`).set(auth(superToken));
   expect(withView.status).toBe(200);

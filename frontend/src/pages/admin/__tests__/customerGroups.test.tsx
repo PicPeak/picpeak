@@ -259,7 +259,7 @@ describe('filters in the URL', () => {
     const filter = screen.getByRole('group', { name: 'Filter by group' });
     expect(within(filter).getByRole('button', { name: /VIP/ })).toHaveAttribute('aria-pressed', 'true');
     expect(within(filter).getByRole('button', { name: /Press/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(filter).getByRole('radio', { name: 'All of them' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(filter).getByRole('button', { name: 'All of them' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('active');
   });
 
@@ -271,10 +271,10 @@ describe('filters in the URL', () => {
 
     await user.click(within(filter).getByRole('button', { name: /VIP/ }));
     await waitFor(() => expect(currentSearch()).toBe('?groups=1'));
-    expect(within(filter).queryByRole('radio')).toBeNull();
+    expect(within(filter).queryByRole('button', { name: 'All of them' })).toBeNull();
 
     await user.click(within(filter).getByRole('button', { name: /Press/ }));
-    await user.click(within(filter).getByRole('radio', { name: 'All of them' }));
+    await user.click(within(filter).getByRole('button', { name: 'All of them' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'inactive');
     await waitFor(() => expect(new URLSearchParams(currentSearch() || '').toString())
       .toBe(new URLSearchParams({ groups: '1,2', match: 'all', status: 'inactive' }).toString()));
