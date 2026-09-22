@@ -3172,6 +3172,7 @@
         "LINE_TOO_LONG": "Lines run to about {{value}} characters; above {{limit}} they get hard to follow. Wider margins or larger text help."
       },
       "uploadedFonts": "Your fonts",
+      "uploadedFont": "Uploaded font",
       "fontUnavailable": "{{name}} (no longer available)"
     },
     "pdfFonts": {

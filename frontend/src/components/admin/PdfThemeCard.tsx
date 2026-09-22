@@ -140,6 +140,10 @@ export const PdfThemeCard: React.FC = () => {
 
   const inherit = (value: string | number) => t('branding.pdfTheme.inherit', 'Inherit ({{value}})', { value });
   const familyLabel = (dir: string) => dir.replace(/-/g, ' ');
+  // An archived upload is no longer listed, so its name is unknown here: say
+  // what it was rather than showing the internal `upload-<id>` family.
+  const fontLabel = (family: string) => (data?.uploadedFonts || []).find((f) => f.family === family)?.name
+    || (/^upload-\d+$/.test(family) ? t('branding.pdfTheme.uploadedFont', 'Uploaded font') : familyLabel(family));
   // The stored font when it is no longer offered (an archived upload): shown
   // as what it is, so the picker never looks set to something else.
   const staleFont = !!draft.fontFamily && !(data?.fontFamilies || []).includes(draft.fontFamily)
@@ -242,7 +246,7 @@ export const PdfThemeCard: React.FC = () => {
           <select id="pdf-theme-font" className={fieldClass} value={draft.fontFamily ?? ''}
             onChange={(e) => setField('fontFamily', e.target.value || undefined)}>
             <option value="">{inherit(resolved?.fontFamily
-              ? ((data?.uploadedFonts || []).find((f) => f.family === resolved.fontFamily)?.name || familyLabel(resolved.fontFamily))
+              ? fontLabel(resolved.fontFamily)
               : 'Helvetica')}</option>
             {(data?.fontFamilies || []).map((dir) => <option key={dir} value={dir}>{familyLabel(dir)}</option>)}
             {(data?.uploadedFonts || []).length > 0 && (
@@ -252,7 +256,7 @@ export const PdfThemeCard: React.FC = () => {
             )}
             {staleFont && (
               <option value={draft.fontFamily}>
-                {t('branding.pdfTheme.fontUnavailable', '{{name}} (no longer available)', { name: familyLabel(draft.fontFamily as string) })}
+                {t('branding.pdfTheme.fontUnavailable', '{{name}} (no longer available)', { name: fontLabel(draft.fontFamily as string) })}
               </option>
             )}
           </select>

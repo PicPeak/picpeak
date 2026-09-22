@@ -149,3 +149,17 @@ it('a margin outside its bounds blocks saving; readability warnings inform witho
   expect(screen.getByText(/Lines run to about \d+ characters/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Save theme' })).toBeEnabled();
 });
+
+it('names an archived uploaded font as an uploaded font, not by its internal id', async () => {
+  list.mockResolvedValue({
+    ...themes,
+    themes: themes.themes.map((th) => (th.scope === 'default'
+      ? { ...th, settings: { fontFamily: 'upload-1' }, resolved: resolved('default', { fontFamily: 'upload-1' }) }
+      : { ...th, resolved: { ...th.resolved, fontFamily: 'upload-1' } })),
+    uploadedFonts: [],
+  });
+  renderCard();
+  const select = await screen.findByLabelText('Font');
+  await waitFor(() => expect(select).toHaveDisplayValue('Uploaded font (no longer available)'));
+  expect(screen.queryByText(/upload 1/)).toBeNull();
+});

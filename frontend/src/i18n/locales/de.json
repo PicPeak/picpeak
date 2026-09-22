@@ -3642,6 +3642,7 @@
         "LINE_TOO_LONG": "Zeilen umfassen etwa {{value}} Zeichen; über {{limit}} werden sie schwer lesbar. Breitere Ränder oder grössere Schrift helfen."
       },
       "uploadedFonts": "Ihre Schriften",
+      "uploadedFont": "Hochgeladene Schrift",
       "fontUnavailable": "{{name}} (nicht mehr verfügbar)"
     },
     "pdfFonts": {
