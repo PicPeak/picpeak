@@ -140,6 +140,14 @@ describe('publicQuotes routes', () => {
         .set('X-Forwarded-For', '203.0.113.10');
       expect(locked.status).toBe(429);
       expect(locked.body.code).toBe('TOKEN_LOOKUP_LOCKED');
+      // A different person sharing this IP can still use their valid link.
+      const validToken = await createPublicToken(db, 'quote_action_tokens', { quote_id: quoteId });
+      const validRow = await db('quote_action_tokens').where({ token: validToken }).first();
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const valid = await request(app).get(`/api/public/quotes/${validToken}`)
+        .set('X-Forwarded-For', '203.0.113.10')
+        .set('X-Document-Access', verification.issueGrant('quote', validRow, validToken));
+      expect(valid.status).toBe(200);
     }, 30000);
   });
 

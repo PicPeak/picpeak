@@ -35,7 +35,7 @@ const mockTokenRow = {
 };
 // Models the post-054/pre-057 window: `roles` exists, admin_users.role_id
 // does not — so the row has no role_id, and a projection naming it rejects.
-const mockAdminRow = { id: 9, username: 'owner', email: 'o@example.com' };
+const mockAdminRow = { id: 9, username: 'owner', email: 'o@example.com', must_change_password: false };
 
 // The join names admin_users.role_id in its ON clause, so it fails the same way.
 const missingRoleId = () => Object.assign(
@@ -62,6 +62,17 @@ function makeRes() {
 }
 
 describe('apiTokenAuth roles fallback with admin_users.role_id missing', () => {
+  afterEach(() => { mockAdminRow.must_change_password = false; });
+  it('enforces required password changes even in the roles fallback', async () => {
+    mockAdminRow.must_change_password = true;
+    const req = { headers: { authorization: `Bearer ${TOKEN}` } };
+    const res = makeRes();
+    const next = jest.fn();
+    await apiTokenAuth(req, res, next);
+    expect(res.statusCode).toBe(403);
+    expect(res.body.code).toBe('MUST_CHANGE_PASSWORD');
+    expect(next).not.toHaveBeenCalled();
+  });
   it('authenticates instead of 500ing when the column that triggered the fallback is absent', async () => {
     const req = { headers: { authorization: `Bearer ${TOKEN}` } };
     const res = makeRes();

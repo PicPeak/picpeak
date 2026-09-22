@@ -2,7 +2,7 @@
 
 const bcrypt = require('bcrypt');
 const { db } = require('../src/database/db');
-const { generateReadablePassword } = require('../src/utils/passwordGenerator');
+const { generateSecurePassword } = require('../src/utils/passwordGenerator');
 const fs = require('fs').promises;
 const path = require('path');
 const readline = require('readline');
@@ -72,17 +72,11 @@ async function resetAdminPassword() {
     }
 
     // Generate new password
-    const newPassword = generateReadablePassword();
+    const newPassword = generateSecurePassword(16);
     const passwordHash = await bcrypt.hash(newPassword, 12);
 
     // Update the admin user
-    await db('admin_users')
-      .where({ username: 'admin' })
-      .update({
-        password_hash: passwordHash,
-        must_change_password: true,
-        updated_at: new Date()
-      });
+    await require('../src/services/adminPasswordReset').setAdminPasswordForReset(admin.id, passwordHash);
 
     // Save to file
     const credentialsDir = path.dirname(resolvedCredentialsFile);

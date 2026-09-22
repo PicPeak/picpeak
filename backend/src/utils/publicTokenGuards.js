@@ -41,24 +41,41 @@ const logger = require('./logger');
 const BAD_ATTEMPT_LIMIT = 20;
 const BAD_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const badAttempts = new Map();
+const MAX_BAD_ATTEMPT_IPS = 10000;
+let lastPrunedAt = 0;
+const bucketKey = (ip, scope) => `${scope}:${ip}`;
 
-function recordBadAttempt(ip) {
+function pruneExpired(now) {
+  if (now - lastPrunedAt < 60000) return;
+  for (const [key, entry] of badAttempts) {
+    if (now - entry.firstAt >= BAD_ATTEMPT_WINDOW_MS) badAttempts.delete(key);
+  }
+  lastPrunedAt = now;
+}
+
+function recordBadAttempt(ip, scope = 'public') {
   if (!ip) return;
   const now = Date.now();
-  const entry = badAttempts.get(ip);
+  pruneExpired(now);
+  const key = bucketKey(ip, scope);
+  const entry = badAttempts.get(key);
   if (!entry || (now - entry.firstAt) > BAD_ATTEMPT_WINDOW_MS) {
-    badAttempts.set(ip, { count: 1, firstAt: now });
+    if (!badAttempts.has(key) && badAttempts.size >= MAX_BAD_ATTEMPT_IPS) {
+      badAttempts.delete(badAttempts.keys().next().value);
+    }
+    badAttempts.set(key, { count: 1, firstAt: now });
     return;
   }
   entry.count += 1;
 }
 
-function isIpLocked(ip) {
+function isIpLocked(ip, scope = 'public') {
   if (!ip) return false;
-  const entry = badAttempts.get(ip);
+  const key = bucketKey(ip, scope);
+  const entry = badAttempts.get(key);
   if (!entry) return false;
   if ((Date.now() - entry.firstAt) > BAD_ATTEMPT_WINDOW_MS) {
-    badAttempts.delete(ip);
+    badAttempts.delete(key);
     return false;
   }
   return entry.count >= BAD_ATTEMPT_LIMIT;
@@ -79,17 +96,15 @@ async function loadActionToken(req, res, opts) {
   const { tableName, token, requireUnused = false } = opts;
   const ip = clientIpForAudit(req);
 
-  if (isIpLocked(ip)) {
-    res.status(429).json({
-      error: 'Too many invalid token attempts. Try again in 15 minutes.',
-      code: 'TOKEN_LOOKUP_LOCKED',
-    });
-    return null;
-  }
-
+  // Look up the capability before applying the bad-guess penalty: someone
+  // behind the same NAT must not be able to disable an already-valid link.
   const row = await db(tableName).where({ token }).first();
   if (!row) {
-    recordBadAttempt(ip);
+    if (isIpLocked(ip, tableName)) {
+      res.status(429).json({ error: 'Too many invalid token attempts. Try again in 15 minutes.', code: 'TOKEN_LOOKUP_LOCKED' });
+      return null;
+    }
+    recordBadAttempt(ip, tableName);
     res.status(404).json({ error: 'Not found' });
     return null;
   }
@@ -153,5 +168,5 @@ module.exports = {
   preMulterTokenGuard,
   // Exported for tests + future routes that need the same lock
   // surface (e.g. payment-check actions).
-  _internal: { recordBadAttempt, isIpLocked, badAttempts },
+  _internal: { recordBadAttempt, isIpLocked, badAttempts, MAX_BAD_ATTEMPT_IPS },
 };

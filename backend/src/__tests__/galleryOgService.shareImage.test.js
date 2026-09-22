@@ -197,6 +197,30 @@ describe('buildOgMetadata — share-image opt-in', () => {
 
 // ---- handleGalleryOgCover: unauthenticated 404 contract ----------------
 
+describe('public preview welcome text', () => {
+  test('withholds welcome text until a password-free gallery is revealed', async () => {
+    mockResolveSlug({ id: 1, slug: 'hidden', event_name: 'Surprise',
+      require_password: false, reveal_mode: true, welcome_message: 'PRIVATE SURPRISE' });
+    mockBranding();
+    expect(JSON.stringify(await buildOgMetadata('hidden', '/gallery/hidden'))).not.toContain('PRIVATE SURPRISE');
+  });
+  test.each([true, 1, '1', 'true', 'false', null, undefined])('withholds protected/legacy welcome text (%p)', async (requirePassword) => {
+    mockResolveSlug({ id: 1, slug: 'private', event_name: 'Private event',
+      require_password: requirePassword, welcome_message: 'PRIVATE ACCESS DETAILS' });
+    mockBranding();
+    const meta = await buildOgMetadata('private', '/gallery/private');
+    expect(JSON.stringify(meta)).not.toContain('PRIVATE ACCESS DETAILS');
+    expect(meta.description).toBe('Photo gallery from Private event.');
+  });
+
+  test.each([false, 0, '0'])('preserves public gallery welcome text (%p)', async (requirePassword) => {
+    mockResolveSlug({ id: 1, slug: 'public', event_name: 'Public event',
+      require_password: requirePassword, welcome_message: 'Public welcome' });
+    mockBranding();
+    expect((await buildOgMetadata('public', '/gallery/public')).description).toBe('Public welcome');
+  });
+});
+
 function makeRes() {
   const res = { headers: {} };
   res.status = jest.fn().mockReturnValue(res);

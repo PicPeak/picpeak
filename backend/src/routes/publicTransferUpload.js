@@ -49,7 +49,9 @@ const TOKEN_RE = /^[A-Za-z0-9]{4,16}$/;
 
 async function loadUploadTransfer(req, res) {
   const ip = clientIpForAudit(req);
-  if (tokenLock.isIpLocked(ip)) {
+  // Short upload codes retain their pre-lookup lockout, isolated from the
+  // high-entropy document links so one surface cannot disable the other.
+  if (tokenLock.isIpLocked(ip, 'transfer_uploads')) {
     res.status(429).json({ error: 'Too many invalid attempts. Try again later.', code: 'TOKEN_LOOKUP_LOCKED' });
     return null;
   }
@@ -60,7 +62,7 @@ async function loadUploadTransfer(req, res) {
   }
   const transfer = await transferService.getTransferByUploadToken(token);
   if (!transfer) {
-    tokenLock.recordBadAttempt(ip);
+    tokenLock.recordBadAttempt(ip, 'transfer_uploads');
     res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' });
     return null;
   }

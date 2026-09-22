@@ -36,18 +36,21 @@ describe('shared colour tag (#1197)', () => {
     { expiresIn: '1h', issuer: 'picpeak-auth' }
   );
 
-  // Two different devices: distinct UA strings give distinct
-  // generateGuestIdentifier hashes, which is exactly how `simple` mode tells
-  // two anonymous guests apart.
+  // Each device retains its server-issued anonymous identity cookie.
+  const devices = new Map();
+  const device = (name) => {
+    if (!devices.has(name)) devices.set(name, request.agent(app));
+    return devices.get(name);
+  };
   const asGuest = (ua) => ({ 'Authorization': `Bearer ${galleryToken()}`, 'User-Agent': ua });
 
-  const tag = (ua, color, id = photoId) => request(app)
+  const tag = (ua, color, id = photoId) => device(ua)
     .post(`/api/gallery/${SLUG}/photos/${id}/feedback`)
     .set(asGuest(ua))
     .send({ feedback_type: 'color_label', color_label: color });
 
   const photosFor = async (ua, query = '') => {
-    const res = await request(app)
+    const res = await device(ua)
       .get(`/api/gallery/${SLUG}/photos${query}`)
       .set(asGuest(ua));
     expect(res.status).toBe(200);
@@ -56,7 +59,7 @@ describe('shared colour tag (#1197)', () => {
   const photoFor = async (ua) => (await photosFor(ua)).find((p) => p.id === photoId);
 
   const feedbackFor = async (ua) => {
-    const res = await request(app)
+    const res = await device(ua)
       .get(`/api/gallery/${SLUG}/photos/${photoId}/feedback`)
       .set(asGuest(ua));
     expect(res.status).toBe(200);
@@ -122,6 +125,7 @@ describe('shared colour tag (#1197)', () => {
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   beforeEach(async () => {
+    devices.clear();
     await db('photo_feedback').where({ event_id: eventId }).del();
     await db('photos').where('event_id', eventId).update({ color_label_count: 0, like_count: 0 });
     await setMode('shared');
@@ -359,7 +363,7 @@ describe('shared colour tag (#1197)', () => {
         // rating_count. The shared tag has a reserved identifier rather than a
         // person's, so counting it made tagging a photo look like a second
         // guest had left feedback — and inflated the exported rating count.
-        await request(app)
+        await device('device-A')
           .post(`/api/gallery/${SLUG}/photos/${photoId}/feedback`)
           .set(asGuest('device-A'))
           .send({ feedback_type: 'rating', rating: 5 });
@@ -392,7 +396,7 @@ describe('shared colour tag (#1197)', () => {
 
   describe('the mode is scoped to the colour tag', () => {
     it('keeps likes per-guest in shared mode', async () => {
-      const like = (ua) => request(app)
+      const like = (ua) => device(ua)
         .post(`/api/gallery/${SLUG}/photos/${photoId}/feedback`)
         .set(asGuest(ua))
         .send({ feedback_type: 'like' });

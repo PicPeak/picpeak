@@ -7270,6 +7270,9 @@
     }
   },
   "messages": {
+    "remoteContentBlocked": "External images are blocked to protect your privacy.",
+    "loadRemoteContent": "Load external images",
+    "emailBody": "Email body",
     "title": "Messages",
     "subtitle": "Sent, automated and incoming mail — one place.",
     "sync": "Sync",

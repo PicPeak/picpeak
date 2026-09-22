@@ -169,8 +169,7 @@ router.put('/:id', [
   param('id').isInt({ min: 1 }).withMessage('Valid user ID is required'),
   body('username').optional().trim().isLength({ min: 3, max: 50 }).withMessage('Username must be 3-50 characters'),
   body('email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL).withMessage('Valid email is required'),
-  body('role_id').optional().isInt({ min: 1 }).withMessage('Valid role ID is required'),
-  body('is_active').optional().isBoolean().withMessage('is_active must be boolean')
+  body('role_id').optional().isInt({ min: 1 }).withMessage('Valid role ID is required')
 ], handleAsync(async (req, res) => {
   validateRequest(req);
 

@@ -65,6 +65,7 @@ class MockOidcProvider {
     this.server = http.createServer((req, res) => this.handle(req, res));
     await new Promise((resolve) => this.server.listen(0, '127.0.0.1', resolve));
     this.issuer = `http://127.0.0.1:${this.server.address().port}`;
+    process.env.INTEGRATION_PRIVATE_ORIGINS = [process.env.INTEGRATION_PRIVATE_ORIGINS, this.issuer].filter(Boolean).join(',');
     return this.issuer;
   }
 
