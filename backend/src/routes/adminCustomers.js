@@ -37,7 +37,8 @@ const customerDocumentNotifications = require('../services/customerDocumentNotif
 const customerActivityService = require('../services/customerActivityService');
 const customerDocumentRequestsService = require('../services/customerDocumentRequestsService');
 const customerGroupsService = require('../services/customerGroupsService');
-const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
+const { receiveDocumentUpload, discardTempFile, sendDocumentAttachment } = require('../middleware/customerDocumentUpload');
+const documentFormats = require('../services/documentFormats');
 
 const router = express.Router();
 
@@ -1065,7 +1066,8 @@ router.get('/:id/documents', documentGuards, handleAsync(async (req, res) => {
   const usedBytes = await customerDocumentsService.getUsageBytes(customerId);
   // The default for the card's "Notify the customer" checkbox.
   const notifyOnShare = (await getAppSetting('customer_documents_notify_on_share', true)) !== false;
-  successResponse(res, { documents, limits: { ...limits, usedBytes }, settings: { notifyOnShare } });
+  const allowedFormats = await documentFormats.getAllowedFormats();
+  successResponse(res, { documents, limits: { ...limits, usedBytes }, settings: { notifyOnShare }, allowedFormats });
 }));
 
 // multipart: file (PDF), share?, notify?, eventId?, projectId?, contractId?
@@ -1076,7 +1078,10 @@ router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
   const limits = await customerDocumentsService.getLimits();
   let file = null;
   try {
-    file = await receivePdfUpload(req, res, { maxBytes: limits.maxUploadBytes });
+    file = await receiveDocumentUpload(req, res, {
+      maxBytes: limits.maxUploadBytes,
+      allowedFormats: await documentFormats.getAllowedFormats(),
+    });
     if (!file) return res.status(400).json({ error: 'No file was uploaded', code: 'NO_FILE' });
     const share = req.body.share === true || req.body.share === 'true' || req.body.share === '1';
     const row = await customerDocumentsService.createDocument({
@@ -1163,7 +1168,7 @@ router.get('/:id/documents/:docId/download', documentItemGuards, handleAsync(asy
   await customerDocumentsService.recordView(row.id, 'admin', req.admin.id);
   await logActivity('customer_document_downloaded',
     { documentId: row.id, customerId }, row.event_id || null, adminActor(req.admin));
-  sendPdfAttachment(res, stream, row.original_name);
+  sendDocumentAttachment(res, stream, row);
 }));
 
 // Soft delete: hidden from the customer and the list at once; the retention

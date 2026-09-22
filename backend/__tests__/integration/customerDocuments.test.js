@@ -217,7 +217,9 @@ describe('with the documents flag on', () => {
   it('rejects a file whose name is not .pdf before it is written', async () => {
     const res = await uploadAs(customerA, PDF, 'contract.html');
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('NOT_A_PDF');
+    // One code for every extension the install doesn't accept, since formats
+    // beyond PDF can be allowed (#1444 slice 7).
+    expect(res.body.code).toBe('FORMAT_NOT_ALLOWED');
   });
 
   it('rejects a password-protected PDF', async () => {

@@ -27,7 +27,8 @@ const { getClientIp } = require('../utils/requestIp');
 const { customerAuth } = require('../middleware/customerAuth');
 const { setGalleryAuthCookies } = require('../utils/tokenUtils');
 const rateLimit = require('express-rate-limit');
-const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
+const { receiveDocumentUpload, discardTempFile, sendDocumentAttachment } = require('../middleware/customerDocumentUpload');
+const documentFormats = require('../services/documentFormats');
 const customerAccountsService = require('../services/customerAccountsService');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
@@ -1146,7 +1147,10 @@ router.get('/documents', customerAuth, requireDocumentsFeature, async (req, res)
     const documents = await customerDocumentsService.listForCustomer(req.customer.id);
     const limits = await customerDocumentsService.getLimits();
     const usedBytes = await customerDocumentsService.getUsageBytes(req.customer.id);
-    res.json({ documents, limits: { ...limits, usedBytes } });
+    // Drives the upload control's accept list and copy, so it can't drift
+    // from what the server accepts.
+    const allowedFormats = await documentFormats.getAllowedFormats();
+    res.json({ documents, limits: { ...limits, usedBytes }, allowedFormats });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to load documents');
   }
@@ -1168,7 +1172,10 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
       await customerDocumentAbuse.record(req.customer.id, 'quota_exceeded');
       return res.status(413).json({ error: 'Your document storage is full.', code: 'QUOTA_EXCEEDED' });
     }
-    file = await receivePdfUpload(req, res, { maxBytes: limits.maxUploadBytes });
+    file = await receiveDocumentUpload(req, res, {
+      maxBytes: limits.maxUploadBytes,
+      allowedFormats: await documentFormats.getAllowedFormats(),
+    });
     if (!file) return res.status(400).json({ error: 'No file was uploaded.', code: 'NO_FILE' });
     // The quota is counted again where the row is written, in the same
     // transaction: the check above runs before the body arrives, so uploads
@@ -1301,7 +1308,7 @@ router.get('/documents/:id/download', customerAuth, requireDocumentsFeature, asy
       row.event_id || null,
       { type: 'customer', id: req.customer.id, name: req.customer.email }
     );
-    sendPdfAttachment(res, stream, row.original_name);
+    sendDocumentAttachment(res, stream, row);
   } catch (error) {
     sendDocumentError(res, error, 'Failed to download document');
   }

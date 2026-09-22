@@ -16,6 +16,7 @@ import { settingsService } from '../../../services/settings.service';
 import { quotesService } from '../../../services/quotes.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../../hooks';
+import { ALL_DOCUMENT_FORMATS, normaliseFormats } from '../../../utils/documentFormats';
 
 const SETTING_KEYS = [
   'crm_quotes_pdf_attachment_enabled',
@@ -81,6 +82,7 @@ const SETTING_KEYS = [
   'customer_documents_notify_on_share',
   'customer_documents_forbidden_alert_threshold',
   'customer_documents_request_reminder_days',
+  'customer_documents_allowed_formats',
 ];
 
 export const CrmSettingsPage: React.FC = () => {
@@ -525,6 +527,36 @@ export const CrmSettingsPage: React.FC = () => {
             value={values.customer_documents_forbidden_alert_threshold ?? 20}
             onChange={(e) => setVal('customer_documents_forbidden_alert_threshold', Number(e.target.value))} />
         </div>
+        {/* The formats are a fixed, inspected allowlist (backend
+            services/documentFormats); this picks which of them the install
+            accepts. PDF is the default. */}
+        <fieldset className="mt-3">
+          <legend className="text-sm font-medium text-neutral-800 dark:text-neutral-200 mb-1">
+            {t('crmSettings.customer_documents_allowed_formats.label', 'File types customers can upload')}
+          </legend>
+          <p className="text-xs text-neutral-500 mb-2">
+            {t('crmSettings.customer_documents_allowed_formats.help',
+              'Every file is checked by its content. Word and Excel files with macros, embedded code or links to outside content (including web links) are refused. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet.')}
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {ALL_DOCUMENT_FORMATS.map((f) => {
+              const current = normaliseFormats(values.customer_documents_allowed_formats);
+              return (
+                <label key={f} className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+                  <input
+                    type="checkbox"
+                    checked={current.includes(f)}
+                    onChange={(e) => {
+                      const next = e.target.checked ? [...current, f] : current.filter((x) => x !== f);
+                      setVal('customer_documents_allowed_formats', normaliseFormats(next));
+                    }}
+                  />
+                  <span>{f.toUpperCase()}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
         <div className="mt-3">
           <Input
             label={t('crmSettings.customer_documents_request_reminder_days.label', 'Remind about requested documents after (days, comma-separated; empty = off)') as string}

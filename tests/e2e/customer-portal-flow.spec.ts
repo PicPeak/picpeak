@@ -293,7 +293,7 @@ test.describe('Customer portal — login + gallery handoff', () => {
       await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 20000 });
 
       await page.goto('/customer/documents');
-      await page.getByLabel(/PDF file|PDF-Datei/i).setInputFiles({
+      await page.getByLabel(/^(File|Datei)$/i).setInputFiles({
         name: 'signed-contract.pdf',
         mimeType: 'application/pdf',
         buffer: onePagePdf(),

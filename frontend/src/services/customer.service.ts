@@ -406,10 +406,12 @@ export const customerService = {
   },
 
   // ---- documents (#1444) ----
-  async listDocuments(): Promise<{ documents: CustomerDocument[]; limits: CustomerDocumentLimits }> {
-    const response = await api.get<{ documents: CustomerDocument[]; limits: CustomerDocumentLimits }>(
-      '/customer/documents'
-    );
+  async listDocuments(): Promise<{
+    documents: CustomerDocument[]; limits: CustomerDocumentLimits; allowedFormats?: string[];
+  }> {
+    const response = await api.get<{
+      documents: CustomerDocument[]; limits: CustomerDocumentLimits; allowedFormats?: string[];
+    }>('/customer/documents');
     return response.data;
   },
 

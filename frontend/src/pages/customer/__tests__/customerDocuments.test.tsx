@@ -56,6 +56,7 @@ const makeDoc = (over: Partial<CustomerDocument>): CustomerDocument => ({
 });
 
 let docs: CustomerDocument[] = [];
+let formats: string[] | undefined;
 const downloadSpy = vi.fn(async () => undefined);
 const uploadSpy = vi.fn(async (): Promise<CustomerDocument> => makeDoc({ id: 99 }));
 const deleteSpy = vi.fn(async () => undefined);
@@ -66,6 +67,7 @@ vi.mock('../../../services/customer.service', () => ({
     listDocuments: vi.fn(async () => ({
       documents: docs,
       limits: { maxUploadBytes: 25 * 1024 * 1024, quotaBytes: 250 * 1024 * 1024, usedBytes: 4096 },
+      allowedFormats: formats,
     })),
     listEvents: (...a: unknown[]) => listEventsMock(...(a as [])),
     uploadDocument: (...a: unknown[]) => uploadSpy(...(a as [])),
@@ -144,19 +146,54 @@ describe('CustomerDocumentsPage', () => {
     expect(downloadSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 2, name: 'offer.pdf' }));
   });
 
-  it('refuses a file that is not a PDF before sending it', async () => {
+  it('refuses a file type the server does not accept before sending it', async () => {
     renderPage();
-    const input = await screen.findByLabelText('PDF file');
+    const input = await screen.findByLabelText('File');
     fireEvent.change(input, { target: { files: [new File(['x'], 'holiday.jpg', { type: 'image/jpeg' })] } });
-    expect(await screen.findByText('holiday.jpg is not a PDF. Only PDF documents can be uploaded.')).toBeInTheDocument();
+    expect(await screen.findByText('holiday.jpg is not a file type you can upload here. Accepted: PDF.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Upload/ })).toBeDisabled();
     expect(uploadSpy).not.toHaveBeenCalled();
+  });
+
+  it('takes the accepted formats from the server: accept list, copy and the first check (#1444)', async () => {
+    formats = ['pdf', 'docx', 'csv'];
+    renderPage();
+    const input = await screen.findByLabelText('File');
+    expect(input.getAttribute('accept')).toBe(
+      '.pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.csv,text/csv',
+    );
+    expect(screen.getByText(/^Accepted: PDF, DOCX, CSV, up to/)).toBeInTheDocument();
+    await userEvent.upload(input, new File(['a,b'], 'list.csv', { type: 'text/csv' }));
+    expect(screen.getByRole('button', { name: /Upload/ })).toBeEnabled();
+    fireEvent.change(input, { target: { files: [new File(['x'], 'old.doc', { type: 'application/msword' })] } });
+    expect(await screen.findByText('old.doc is not a file type you can upload here. Accepted: PDF, DOCX, CSV.')).toBeInTheDocument();
+    formats = undefined;
+  });
+
+  it('names each office refusal with what to do about it (#1444)', async () => {
+    for (const [code, expected] of [
+      ['DOCUMENT_ACTIVE_CONTENT', /macros, embedded code or links[\s\S]*Save it as PDF/],
+      ['DOCUMENT_NOT_VALID', /is not a valid file of its type/],
+      ['DOCUMENT_ENCRYPTED', /is password-protected/],
+      ['DOCUMENT_TOO_COMPLEX', /could not be checked\. Save it as PDF/],
+      ['DOCUMENT_NOT_TEXT', /not a plain UTF-8 text file/],
+    ] as const) {
+      formats = ['pdf', 'docx'];
+      uploadSpy.mockRejectedValueOnce({ response: { status: 400, data: { code } } });
+      const view = renderPage();
+      await userEvent.upload(await screen.findByLabelText('File'), new File(['x'], 'offer.docx', { type: 'application/octet-stream' }));
+      await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(expected));
+      expect(screen.getByRole('status')).toHaveTextContent('offer.docx');
+      view.unmount();
+    }
+    formats = undefined;
   });
 
   it('names the file in a server rejection and offers a retry', async () => {
     uploadSpy.mockRejectedValueOnce({ response: { status: 400, data: { code: 'PDF_ENCRYPTED' } } });
     renderPage();
-    const input = await screen.findByLabelText('PDF file');
+    const input = await screen.findByLabelText('File');
     await userEvent.upload(input, new File(['%PDF-1.4'], 'locked.pdf', { type: 'application/pdf' }));
     await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
 
@@ -177,7 +214,7 @@ describe('CustomerDocumentsPage', () => {
     ] as const) {
       uploadSpy.mockRejectedValueOnce({ response: { status: 400, data: { code } } });
       const view = renderPage();
-      const input = await screen.findByLabelText('PDF file');
+      const input = await screen.findByLabelText('File');
       await userEvent.upload(input, new File(['%PDF-1.4'], 'scan.pdf', { type: 'application/pdf' }));
       await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
       await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(expected));
@@ -223,7 +260,7 @@ describe('CustomerDocumentsPage', () => {
     expect(within(row).getByRole('button', { name: /^Download / })).toBeInTheDocument();
 
     // The upload controls are a column on a phone, a row from `sm` up.
-    const input = screen.getByLabelText('PDF file');
+    const input = screen.getByLabelText('File');
     const controls = input.closest('label')!.parentElement!;
     expect(controls.className).toMatch(/(^|\s)flex-col(\s|$)/);
     expect(controls.className).toMatch(/\bsm:flex-row\b/);
@@ -243,7 +280,7 @@ describe('CustomerDocumentsPage', () => {
 
   it('confirms a received upload as awaiting review', async () => {
     renderPage();
-    const input = await screen.findByLabelText('PDF file');
+    const input = await screen.findByLabelText('File');
     await userEvent.upload(input, new File(['%PDF-1.4'], 'scan.pdf', { type: 'application/pdf' }));
     await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
 

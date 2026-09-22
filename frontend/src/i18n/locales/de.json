@@ -5596,13 +5596,13 @@
     },
     "documents": {
       "title": "Dokumente",
-      "subtitle": "Dateien, die Ihr Fotograf mit Ihnen geteilt hat, und PDFs, die Sie ihm geschickt haben.",
+      "subtitle": "Dateien, die Ihr Fotograf mit Ihnen geteilt hat, und Dokumente, die Sie gesendet haben.",
       "disabled": "Dokumente sind für Ihr Konto nicht verfügbar.",
       "loadError": "Ihre Dokumente konnten nicht geladen werden.",
       "uploadTitle": "Dokument senden",
-      "uploadHint": "Nur PDF, bis {{size}} pro Datei. {{used}} von {{quota}} belegt.",
-      "uploadHintShort": "Nur PDF.",
-      "fileLabel": "PDF-Datei",
+      "uploadHint": "Erlaubt: {{formats}}, bis {{size}} pro Datei. {{used}} von {{quota}} belegt.",
+      "uploadHintShort": "Erlaubt: {{formats}}.",
+      "fileLabel": "Datei",
       "eventLabel": "Event (optional)",
       "noEvent": "Kein Event",
       "cancel": "Abbrechen",
@@ -5641,7 +5641,13 @@
         "notFound": "{{name}} wurde nicht gefunden.",
         "contractLinked": "{{name}} gehört zu einem Vertrag und kann nicht gelöscht werden. Wenden Sie sich an Ihren Fotografen, wenn es entfernt werden soll.",
         "delete": "{{name}} konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
-        "requestGone": "Die Anforderung für {{name}} ist nicht mehr offen. Laden Sie die Datei ohne Anforderung hoch oder fragen Sie Ihren Fotografen."
+        "requestGone": "Die Anforderung für {{name}} ist nicht mehr offen. Laden Sie die Datei ohne Anforderung hoch oder fragen Sie Ihren Fotografen.",
+        "formatNotAllowed": "{{name}} ist kein Dateityp, der hier hochgeladen werden kann. Erlaubt: {{formats}}.",
+        "notValid": "{{name}} ist keine gültige Datei dieses Typs. Speichern Sie sie im erstellenden Programm erneut und laden Sie diese Datei hoch.",
+        "officeActiveContent": "{{name}} enthält Makros, eingebetteten Code oder Verweise auf externe Inhalte und kann nicht hochgeladen werden. Speichern Sie sie als PDF und laden Sie diese Datei hoch.",
+        "documentEncrypted": "{{name}} ist passwortgeschützt. Entfernen Sie das Passwort und laden Sie die Datei erneut hoch.",
+        "documentTooComplex": "{{name}} konnte nicht geprüft werden. Speichern Sie sie als PDF und laden Sie diese Datei hoch.",
+        "notText": "{{name}} ist keine reine UTF-8-Textdatei. Speichern Sie sie als UTF-8-Text und laden Sie sie erneut hoch."
       },
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteBody": "{{name}} wird aus Ihren Dokumenten entfernt. Ihr Fotograf hat es möglicherweise bereits heruntergeladen.",
@@ -5986,9 +5992,9 @@
     },
     "documents": {
       "title": "Dokumente",
-      "hint": "PDFs, die mit diesem Kunden in seinem Portal geteilt sind, und die Dateien, die er Ihnen geschickt hat. Ein Kunden-Upload bleibt für ihn gesperrt, bis Sie ihn als unbedenklich markieren.",
+      "hint": "Dokumente, die im Portal mit diesem Kunden geteilt werden, und die Dateien, die er Ihnen gesendet hat ({{formats}}). Ein Kunden-Upload bleibt für ihn gesperrt, bis Sie ihn als sauber markieren.",
       "usage": "Kunden-Uploads: {{used}} von {{quota}}.",
-      "fileLabel": "PDF zum Teilen",
+      "fileLabel": "Zu teilendes Dokument",
       "eventLabel": "Event",
       "contractLabel": "Vertrag",
       "noLink": "Keine",
@@ -7607,6 +7613,10 @@
     },
     "customer_documents_request_reminder_days": {
       "label": "An angeforderte Dokumente erinnern nach (Tage, durch Komma getrennt; leer = aus)"
+    },
+    "customer_documents_allowed_formats": {
+      "label": "Dateitypen, die Kunden hochladen können",
+      "help": "Jede Datei wird anhand ihres Inhalts geprüft. Word- und Excel-Dateien mit Makros, eingebettetem Code oder Verweisen auf externe Inhalte (auch Weblinks) werden abgewiesen. CSV-Dateien werden unverändert weitergegeben: Eine Formel darin wird ausgeführt, wenn jemand die Datei in einer Tabellenkalkulation öffnet."
     }
   },
   "quoteResponse": {

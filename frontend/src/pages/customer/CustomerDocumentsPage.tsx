@@ -1,7 +1,8 @@
 /**
  * Customer portal → Documents (#1444).
  *
- * PDFs the photographer shared, plus the customer's own uploads. An upload
+ * Documents the photographer shared, plus the customer's own uploads. Which
+ * file types can be uploaded comes from the server (`allowedFormats`). An upload
  * stays "Awaiting review" until the studio has checked it; only available
  * documents can be downloaded, and always as a file, never opened in the
  * browser. The upload shows progress, can be cancelled, keeps the file
@@ -19,6 +20,9 @@ import { toast } from 'react-toastify';
 import { Button, Card, Loading, useConfirm } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
+import {
+  acceptFor, allowedFormatOf, formatList, normaliseFormats,
+} from '../../utils/documentFormats';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
 
 /** Error code from an API error. Blob responses (downloads) carry JSON too. */
@@ -30,10 +34,25 @@ export async function readErrorCode(err: any): Promise<string | undefined> {
   return data?.code;
 }
 
-export function uploadErrorMessage(t: TFunction, code: string | undefined, name: string, maxBytes?: number): string {
+export function uploadErrorMessage(
+  t: TFunction, code: string | undefined, name: string, maxBytes?: number, formats = 'PDF',
+): string {
   switch (code) {
+    case 'FORMAT_NOT_ALLOWED':
+      return t('customer.documents.errors.formatNotAllowed', '{{name}} is not a file type you can upload here. Accepted: {{formats}}.', { name, formats });
     case 'NOT_A_PDF':
       return t('customer.documents.errors.notPdf', '{{name}} is not a PDF. Only PDF documents can be uploaded.', { name });
+    case 'DOCUMENT_NOT_VALID':
+      return t('customer.documents.errors.notValid', '{{name}} is not a valid file of its type. Save it again from the program that made it and upload that file.', { name });
+    case 'DOCUMENT_ACTIVE_CONTENT':
+      return t('customer.documents.errors.officeActiveContent',
+        '{{name}} contains macros, embedded code or links to outside content and cannot be uploaded. Save it as PDF and upload that file.', { name });
+    case 'DOCUMENT_ENCRYPTED':
+      return t('customer.documents.errors.documentEncrypted', '{{name}} is password-protected. Remove the password and upload it again.', { name });
+    case 'DOCUMENT_TOO_COMPLEX':
+      return t('customer.documents.errors.documentTooComplex', '{{name}} could not be checked. Save it as PDF and upload that file.', { name });
+    case 'DOCUMENT_NOT_TEXT':
+      return t('customer.documents.errors.notText', '{{name}} is not a plain UTF-8 text file. Save it as UTF-8 text and upload it again.', { name });
     case 'PDF_ENCRYPTED':
       return t('customer.documents.errors.encrypted', '{{name}} is password-protected. Remove the password and upload it again.', { name });
     case 'FILE_TOO_LARGE':
@@ -257,6 +276,8 @@ export const CustomerDocumentsPage: React.FC = () => {
 
   const documents = data?.documents ?? [];
   const limits = data?.limits;
+  const formats = normaliseFormats(data?.allowedFormats);
+  const formatNames = formatList(formats);
   const uploading = progress !== null;
   const selectedRequest = requests.find((r) => r.id === requestId) || null;
 
@@ -272,8 +293,8 @@ export const CustomerDocumentsPage: React.FC = () => {
     setResult(null);
     if (!next) { setFile(null); return; }
     // Checked again on the server, which decides by content.
-    if (!/\.pdf$/i.test(next.name)) {
-      setResult({ kind: 'error', message: uploadErrorMessage(t, 'NOT_A_PDF', next.name) });
+    if (!allowedFormatOf(next.name, formats)) {
+      setResult({ kind: 'error', message: uploadErrorMessage(t, 'FORMAT_NOT_ALLOWED', next.name, undefined, formatNames) });
       setFile(null);
       return;
     }
@@ -314,7 +335,10 @@ export const CustomerDocumentsPage: React.FC = () => {
       if (err?.code === 'ERR_CANCELED') {
         setResult({ kind: 'error', message: t('customer.documents.cancelled', 'Upload of {{name}} cancelled.', { name: file.name }) });
       } else {
-        setResult({ kind: 'error', message: uploadErrorMessage(t, await readErrorCode(err), file.name, limits?.maxUploadBytes) });
+        setResult({
+          kind: 'error',
+          message: uploadErrorMessage(t, await readErrorCode(err), file.name, limits?.maxUploadBytes, formatNames),
+        });
       }
     } finally {
       setProgress(null);
@@ -330,7 +354,7 @@ export const CustomerDocumentsPage: React.FC = () => {
           {t('customer.documents.title', 'Documents')}
         </h1>
         <p className="text-sm text-muted-theme mt-1">
-          {t('customer.documents.subtitle', 'Files your photographer shared with you, and PDFs you sent them.')}
+          {t('customer.documents.subtitle', 'Files your photographer shared with you, and documents you sent them.')}
         </p>
       </div>
 
@@ -383,20 +407,21 @@ export const CustomerDocumentsPage: React.FC = () => {
         )}
         <p className="text-xs text-muted-theme mb-3">
           {limits
-            ? t('customer.documents.uploadHint', 'PDF only, up to {{size}} per file. {{used}} of {{quota}} used.', {
+            ? t('customer.documents.uploadHint', 'Accepted: {{formats}}, up to {{size}} per file. {{used}} of {{quota}} used.', {
+              formats: formatNames,
               size: formatFileSize(limits.maxUploadBytes),
               used: formatFileSize(limits.usedBytes),
               quota: formatFileSize(limits.quotaBytes),
             })
-            : t('customer.documents.uploadHintShort', 'PDF only.')}
+            : t('customer.documents.uploadHintShort', 'Accepted: {{formats}}.', { formats: formatNames })}
         </p>
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <label className="flex-1 min-w-0 text-sm text-theme">
-            <span className="block mb-1">{t('customer.documents.fileLabel', 'PDF file')}</span>
+            <span className="block mb-1">{t('customer.documents.fileLabel', 'File')}</span>
             <input
               ref={inputRef}
               type="file"
-              accept="application/pdf,.pdf"
+              accept={acceptFor(formats)}
               disabled={uploading}
               onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm"

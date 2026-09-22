@@ -25,6 +25,7 @@ import { usePermissions } from '../../contexts/PermissionsContext';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
+import { acceptFor, formatList, normaliseFormats } from '../../utils/documentFormats';
 import { contractsService } from '../../services/contracts.service';
 import {
   customerDocumentsAdminService,
@@ -191,6 +192,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
 
   const documents = data?.documents ?? [];
   const limits = data?.limits;
+  const formats = normaliseFormats(data?.allowedFormats);
   const contracts = contractsRes?.contracts ?? [];
 
   const statusLabel = (status: AdminCustomerDocument['status']) => (
@@ -208,7 +210,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
         {t('customers.documents.title', 'Documents')}
       </h2>
       <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
-        {t('customers.documents.hint', 'PDFs shared with this customer in their portal, and the files they sent you. A customer upload stays unavailable to them until you mark it clean.')}
+        {t('customers.documents.hint', 'Documents shared with this customer in their portal, and the files they sent you ({{formats}}). A customer upload stays unavailable to them until you mark it clean.', { formats: formatList(formats) })}
         {limits && (
           <> {t('customers.documents.usage', 'Customer uploads: {{used}} of {{quota}}.', {
             used: formatFileSize(limits.usedBytes),
@@ -220,11 +222,11 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
       <PermissionGate permission={PERMISSION}>
         <div className="flex flex-col md:flex-row md:items-end gap-3 mb-4">
           <label className="flex-1 min-w-0 text-sm text-neutral-700 dark:text-neutral-300">
-            <span className="block mb-1">{t('customers.documents.fileLabel', 'PDF to share')}</span>
+            <span className="block mb-1">{t('customers.documents.fileLabel', 'Document to share')}</span>
             <input
               ref={inputRef}
               type="file"
-              accept="application/pdf,.pdf"
+              accept={acceptFor(formats)}
               disabled={uploading}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm text-neutral-700 dark:text-neutral-300"

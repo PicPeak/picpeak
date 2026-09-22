@@ -84,7 +84,7 @@ describe('CustomerDocumentsPage — document requests', () => {
   it('preselects the request from the link in the mail and sends it with the upload', async () => {
     renderAt('/customer/documents?request=4');
     expect(await screen.findByText('This upload answers: Signed contract')).toBeInTheDocument();
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf());
+    await userEvent.upload(screen.getByLabelText('File'), pdf());
     await userEvent.click(screen.getByRole('button', { name: /^Upload$/ }));
     await waitFor(() => expect(svc.uploadDocument).toHaveBeenCalledWith(
       expect.any(File), expect.objectContaining({ requestId: 4 }),
@@ -97,7 +97,7 @@ describe('CustomerDocumentsPage — document requests', () => {
     expect(screen.getByText('This upload answers: ID copy')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Not for this request' }));
     expect(screen.queryByText(/This upload answers/)).toBeNull();
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf());
+    await userEvent.upload(screen.getByLabelText('File'), pdf());
     await userEvent.click(screen.getByRole('button', { name: /^Upload$/ }));
     await waitFor(() => expect(svc.uploadDocument).toHaveBeenCalledWith(
       expect.any(File), expect.objectContaining({ requestId: null }),
@@ -108,7 +108,7 @@ describe('CustomerDocumentsPage — document requests', () => {
     svc.uploadDocument.mockRejectedValueOnce({ response: { status: 404, data: { code: 'DOCUMENT_REQUEST_NOT_FOUND' } } });
     renderAt('/customer/documents?request=4');
     await screen.findByText('This upload answers: Signed contract');
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf());
+    await userEvent.upload(screen.getByLabelText('File'), pdf());
     await userEvent.click(screen.getByRole('button', { name: /^Upload$/ }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(
       'The request for contract.pdf is no longer open.',

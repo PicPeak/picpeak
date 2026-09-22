@@ -8,8 +8,9 @@
  * caller hands the file to customerDocumentsService, which checks the content,
  * moves it into storage, and the caller then removes the temp copy.
  *
- * The name and declared type are checked here only as a first filter. The
- * content check (`%PDF-` signature) in the service is the one that decides.
+ * The name and declared type are checked here only as a first filter,
+ * against the formats the install accepts (services/documentFormats). The
+ * content check in the service is the one that decides.
  */
 
 const fs = require('fs');
@@ -21,8 +22,7 @@ const { AppError } = require('../utils/errors');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 
-// Browsers on some platforms send an empty type or octet-stream for PDFs.
-const ALLOWED_DECLARED_TYPES = new Set(['application/pdf', 'application/x-pdf', 'application/octet-stream', '']);
+const { FORMATS, formatForName, contentTypeFor, formatForStorageKey } = require('../services/documentFormats');
 
 const tempStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -37,9 +37,12 @@ const tempStorage = multer.diskStorage({
 
 /**
  * Resolves with the multer file (or null when the request carried none) and
- * leaves the text fields on req.body. Rejects with an AppError carrying a 4xx.
+ * leaves the text fields on req.body. The file carries `documentFormat`, the
+ * registry key its LAST extension selects. Rejects with an AppError carrying
+ * a 4xx: FORMAT_NOT_ALLOWED when the extension is not one of
+ * `allowedFormats`, or the declared type doesn't fit it.
  */
-function receivePdfUpload(req, res, { maxBytes }) {
+function receiveDocumentUpload(req, res, { maxBytes, allowedFormats = ['pdf'] }) {
   const upload = multer({
     storage: tempStorage,
     // Browsers send the filename as UTF-8; multer's latin1 default turns
@@ -48,10 +51,12 @@ function receivePdfUpload(req, res, { maxBytes }) {
     // One `file` part and a few plain fields; no array-indexed field names.
     limits: { fileSize: maxBytes, files: 1, fields: 10, fieldArrayIndexLimit: 0 },
     fileFilter: (_req, file, cb) => {
-      const ext = path.extname(file.originalname || '').toLowerCase();
-      if (ext !== '.pdf' || !ALLOWED_DECLARED_TYPES.has(file.mimetype || '')) {
-        return cb(new AppError('Only PDF documents can be uploaded', 400, 'NOT_A_PDF'));
+      const format = formatForName(file.originalname);
+      if (!format || !allowedFormats.includes(format) || !FORMATS[format].declaredTypes.has(file.mimetype || '')) {
+        return cb(new AppError('This file type cannot be uploaded', 400, 'FORMAT_NOT_ALLOWED'));
       }
+      // eslint-disable-next-line no-param-reassign
+      file.documentFormat = format;
       return cb(null, true);
     },
   }).single('file');
@@ -71,11 +76,13 @@ function receivePdfUpload(req, res, { maxBytes }) {
 
 /**
  * Send a stored document. Always an attachment, never rendered inline: the
- * bytes came from a customer, so the browser must not interpret them.
+ * bytes came from a customer, so the browser must not interpret them. The
+ * content type comes from the format registry by the generated storage key —
+ * never from what the upload declared.
  */
-function sendPdfAttachment(res, stream, filename) {
-  res.set('Content-Type', 'application/pdf');
-  res.set('Content-Disposition', buildContentDisposition(filename, 'attachment'));
+function sendDocumentAttachment(res, stream, row) {
+  res.set('Content-Type', contentTypeFor(formatForStorageKey(row.storage_key)));
+  res.set('Content-Disposition', buildContentDisposition(row.original_name, 'attachment'));
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Content-Security-Policy', 'default-src \'none\'; sandbox');
   res.set('Cache-Control', 'no-store');
@@ -89,4 +96,4 @@ function discardTempFile(file) {
   } catch (_) { /* best effort */ }
 }
 
-module.exports = { receivePdfUpload, discardTempFile, sendPdfAttachment };
+module.exports = { receiveDocumentUpload, discardTempFile, sendDocumentAttachment };

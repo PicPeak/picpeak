@@ -74,6 +74,7 @@ export const customerDocumentsAdminService = {
     documents: AdminCustomerDocument[];
     limits: AdminCustomerDocumentLimits;
     settings?: { notifyOnShare: boolean };
+    allowedFormats?: string[];
   }> {
     const { data } = await api.get(base(customerId));
     return data;

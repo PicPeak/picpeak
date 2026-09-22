@@ -1,13 +1,14 @@
 /**
- * customerDocumentsService — PDFs exchanged between the studio and a customer
- * in the portal (#1444, migration 225).
+ * customerDocumentsService — documents exchanged between the studio and a
+ * customer in the portal (#1444, migration 225).
  *
  * Rules the routes rely on (every read here is scoped by customer_account_id;
  * the routes never look a document up by id alone):
  *
- *  - Uploads are PDF only (decision #24a). The content decides: the first
- *    bytes must be the `%PDF-` signature, and an encrypted PDF is refused
- *    because nothing can inspect it.
+ *  - Uploads are one of the formats the install accepts (documentFormats:
+ *    PDF by default; docx, xlsx, odt, ods, txt, csv once an admin opts in).
+ *    The content decides, by a format-specific check (assertContent); an
+ *    encrypted file is refused because nothing can inspect it.
  *  - Customer uploads start `pending` and stay unavailable for download until
  *    an admin marks them clean or rejects them (decision #24b). Admin uploads
  *    are recorded clean by the uploading admin, unless a registered scanner
@@ -16,7 +17,7 @@
  *    them that are clean. They can download only clean ones.
  *  - Unsharing and deleting take effect on the next request. Delete is soft;
  *    the retention sweep removes the bytes later and keeps the row.
- *  - Bytes live under business-docs/customer-documents/<customer>/<uuid>.pdf,
+ *  - Bytes live under business-docs/customer-documents/<customer>/<uuid>.<ext>,
  *    a generated key. The uploaded filename is display text only.
  */
 
@@ -33,11 +34,16 @@ const { toIso } = require('../utils/dateNormalize');
 const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
 const { filterOwnedEventIds, ownedProjectIds } = require('../middleware/ownership');
 const documentScanService = require('./documentScanService');
+const documentFormats = require('./documentFormats');
+const { validateOffice } = require('../utils/officeValidation');
+const { inspectText } = require('../utils/officeInspect');
 const customerDocumentRequestsService = require('./customerDocumentRequestsService');
 const logger = require('../utils/logger');
 
 const STORAGE_PREFIX = 'business-docs/customer-documents';
-const STORAGE_KEY_RE = /^business-docs\/customer-documents\/\d+\/[0-9a-f-]{36}\.pdf$/;
+const STORAGE_KEY_RE = new RegExp(
+  `^business-docs/customer-documents/\\d+/[0-9a-f-]{36}\\.(${documentFormats.ALL_FORMATS.join('|')})$`,
+);
 const MB = 1024 * 1024;
 // A signed contract, a scanned appendix — generous, and far below what the
 // inspector's own budgets would let through anyway.
@@ -74,18 +80,25 @@ async function getUsageBytes(customerId, conn = db) {
 
 const isShared = (row) => !!row.shared_at && !row.unshared_at;
 
-/** Display name: the uploaded basename without control characters or path separators. */
-function cleanDisplayName(originalName) {
-  let name = path.basename(String(originalName || ''))
+/**
+ * Display name: the uploaded basename without control characters or path
+ * separators, rebuilt as `<clean base>.<registry extension>` — whatever
+ * extension the upload carried, the one the format registry gives is what
+ * the name ends in.
+ */
+function cleanDisplayName(originalName, format = 'pdf') {
+  const ext = documentFormats.FORMATS[format] ? documentFormats.FORMATS[format].ext : '.pdf';
+  let base = path.basename(String(originalName || ''))
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1F\x7F]/g, '')
     .replace(/[/\\]/g, '_')
     .replace(/^\.+/, '')
+    .trim()
+    .replace(/\.[A-Za-z0-9]+$/, '')
     .trim();
-  if (!name) name = 'document.pdf';
-  if (!/\.pdf$/i.test(name)) name = `${name}.pdf`;
-  if (name.length > 200) name = `${name.slice(0, 196)}.pdf`;
-  return name;
+  if (!base) base = 'document';
+  if (base.length + ext.length > 200) base = base.slice(0, 200 - ext.length);
+  return `${base}${ext}`;
 }
 
 function parseOptionalId(value, field) {
@@ -173,6 +186,25 @@ function documentPdfError(err) {
     + 'Please print it to PDF and upload that file.',
     400, 'PDF_ACTIVE_CONTENT',
   );
+}
+
+/**
+ * The content check for `format`, which decides. Each maps its refusals onto
+ * the portal's {error, code} vocabulary.
+ */
+async function assertContent(localPath, format, { maxBytes = null } = {}) {
+  if (format === 'pdf') return assertPdf(localPath, { maxBytes });
+  const { size } = await fs.promises.stat(localPath);
+  if (format === 'txt' || format === 'csv') {
+    try {
+      await inspectText(localPath, { maxBytes });
+    } catch (err) {
+      throw new AppError(err.message, 400, err.code || 'DOCUMENT_NOT_TEXT');
+    }
+    return { size, pages: null };
+  }
+  await validateOffice(localPath, format);
+  return { size, pages: null };
 }
 
 function assertStorageKey(key) {
@@ -429,7 +461,14 @@ async function createDocument({
   const linkInput = { ...(links || {}) };
   if (request && !linkInput.eventId && request.event_id) linkInput.eventId = request.event_id;
   const resolved = await resolveLinks(customerId, linkInput, { admin });
-  const { size } = await assertPdf(file.path, { maxBytes: maxUploadBytes });
+  // The route's filter already chose the format from the name; checked again
+  // here against the setting, so no caller can store a format the install
+  // doesn't accept.
+  const format = file.documentFormat || documentFormats.formatForName(file.originalname);
+  if (!format || !(await documentFormats.getAllowedFormats()).includes(format)) {
+    throw new AppError('This file type cannot be uploaded', 400, 'FORMAT_NOT_ALLOWED');
+  }
+  const { size } = await assertContent(file.path, format, { maxBytes: maxUploadBytes });
   const sha256 = await sha256OfFile(file.path);
   const verdict = await documentScanService.scanFile(file.path);
   if (verdict === 'rejected') {
@@ -449,7 +488,7 @@ async function createDocument({
   const status = verdict === 'clean' || vouched ? 'clean' : 'pending';
   const now = new Date().toISOString();
 
-  const key = `${STORAGE_PREFIX}/${customerId}/${crypto.randomUUID()}.pdf`;
+  const key = `${STORAGE_PREFIX}/${customerId}/${crypto.randomUUID()}.${format}`;
   const storage = getStorage();
   await storage.putFromFile(key, file.path);
 
@@ -473,9 +512,9 @@ async function createDocument({
         contract_id: resolved.contractId,
         uploader_type: uploaderType,
         uploader_id: uploaderId || null,
-        original_name: cleanDisplayName(file.originalname),
+        original_name: cleanDisplayName(file.originalname, format),
         storage_key: key,
-        mime_type: 'application/pdf',
+        mime_type: documentFormats.contentTypeFor(format).split(';')[0],
         size_bytes: size,
         sha256,
         status,
@@ -675,11 +714,14 @@ async function markErasedForCustomer(customerId, trx) {
     .whereNull('purged_at')
     .whereNull('contract_id')
     .select('id', 'storage_key');
-  if (doomed.length > 0) {
-    await trx('customer_documents').whereIn('id', doomed.map((d) => d.id)).update({
+  // The replacement name keeps the file's own extension (erased.docx), taken
+  // from the generated storage key.
+  const erasedName = (row) => `erased.${documentFormats.formatForStorageKey(row.storage_key) || 'pdf'}`;
+  for (const d of doomed) {
+    await trx('customer_documents').where({ id: d.id }).update({
       deleted_at: now,
       unshared_at: now,
-      original_name: 'erased.pdf',
+      original_name: erasedName(d),
       updated_at: now,
     });
   }
@@ -687,11 +729,14 @@ async function markErasedForCustomer(customerId, trx) {
   // record, but the name the customer gave the file is their data too
   // ("Scan_Anna_Muster_Pass.pdf") and erasure has to reach it as well. The
   // bytes and the storage key are what the record needs.
-  await trx('customer_documents')
+  const linked = await trx('customer_documents')
     .where({ customer_account_id: customerId })
     .whereNotNull('contract_id')
     .whereNull('purged_at')
-    .update({ original_name: 'erased.pdf', updated_at: now });
+    .select('id', 'storage_key');
+  for (const d of linked) {
+    await trx('customer_documents').where({ id: d.id }).update({ original_name: erasedName(d), updated_at: now });
+  }
   await trx('customer_documents')
     .where({ customer_account_id: customerId })
     .whereNotNull('contract_id')
@@ -759,5 +804,5 @@ module.exports = {
   purgeFiles,
   toCustomerDto,
   // exported for tests
-  _internal: { cleanDisplayName, assertPdf, assertStorageKey },
+  _internal: { cleanDisplayName, assertPdf, assertContent, assertStorageKey },
 };

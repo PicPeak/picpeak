@@ -5596,13 +5596,13 @@
     },
     "documents": {
       "title": "Documents",
-      "subtitle": "Files your photographer shared with you, and PDFs you sent them.",
+      "subtitle": "Files your photographer shared with you, and documents you sent them.",
       "disabled": "Documents are not available for your account.",
       "loadError": "Could not load your documents.",
       "uploadTitle": "Send a document",
-      "uploadHint": "PDF only, up to {{size}} per file. {{used}} of {{quota}} used.",
-      "uploadHintShort": "PDF only.",
-      "fileLabel": "PDF file",
+      "uploadHint": "Accepted: {{formats}}, up to {{size}} per file. {{used}} of {{quota}} used.",
+      "uploadHintShort": "Accepted: {{formats}}.",
+      "fileLabel": "File",
       "eventLabel": "Event (optional)",
       "noEvent": "No event",
       "cancel": "Cancel",
@@ -5641,7 +5641,13 @@
         "notFound": "{{name}} could not be found.",
         "contractLinked": "{{name}} is part of a contract and cannot be deleted. Contact your photographer if it should be removed.",
         "delete": "{{name}} could not be deleted. Please try again.",
-        "requestGone": "The request for {{name}} is no longer open. Upload it without choosing a request, or ask your photographer."
+        "requestGone": "The request for {{name}} is no longer open. Upload it without choosing a request, or ask your photographer.",
+        "formatNotAllowed": "{{name}} is not a file type you can upload here. Accepted: {{formats}}.",
+        "notValid": "{{name}} is not a valid file of its type. Save it again from the program that made it and upload that file.",
+        "officeActiveContent": "{{name}} contains macros, embedded code or links to outside content and cannot be uploaded. Save it as PDF and upload that file.",
+        "documentEncrypted": "{{name}} is password-protected. Remove the password and upload it again.",
+        "documentTooComplex": "{{name}} could not be checked. Save it as PDF and upload that file.",
+        "notText": "{{name}} is not a plain UTF-8 text file. Save it as UTF-8 text and upload it again."
       },
       "deleteTitle": "Delete this document?",
       "deleteBody": "{{name}} will be removed from your documents. Your photographer may already have downloaded it.",
@@ -5986,9 +5992,9 @@
     },
     "documents": {
       "title": "Documents",
-      "hint": "PDFs shared with this customer in their portal, and the files they sent you. A customer upload stays unavailable to them until you mark it clean.",
+      "hint": "Documents shared with this customer in their portal, and the files they sent you ({{formats}}). A customer upload stays unavailable to them until you mark it clean.",
       "usage": "Customer uploads: {{used}} of {{quota}}.",
-      "fileLabel": "PDF to share",
+      "fileLabel": "Document to share",
       "eventLabel": "Event",
       "contractLabel": "Contract",
       "noLink": "None",
@@ -7606,6 +7612,10 @@
     },
     "customer_documents_request_reminder_days": {
       "label": "Remind about requested documents after (days, comma-separated; empty = off)"
+    },
+    "customer_documents_allowed_formats": {
+      "label": "File types customers can upload",
+      "help": "Every file is checked by its content. Word and Excel files with macros, embedded code or links to outside content (including web links) are refused. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet."
     }
   },
   "quoteResponse": {
