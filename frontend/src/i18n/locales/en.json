@@ -7133,7 +7133,8 @@
       "validityDays": "Valid for (days)",
       "versions": "Published versions",
       "contractTemplate": "Contract template",
-      "contractTemplateDefault": "— The default contract template —"
+      "contractTemplateDefault": "— The default contract template —",
+      "contractTemplateUnavailable": "{{name}} (no longer available)"
     },
     "textBlocks": {
       "insert": "Insert text block…"

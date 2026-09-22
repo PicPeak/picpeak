@@ -159,10 +159,15 @@ test('converting a quote: the template asked for, else the quote template\'s, el
   expect(refused.status).toBe(400);
   expect((await db('quotes').where({ id: quoteId }).first()).converted_contract_id || null).toBeNull();
 
-  // A quote template can't point at an archived contract template.
-  const bad = await request(catalogApp).put(`/api/admin/quote-catalog/templates/${qt.template.id}`).set(auth)
+  // A quote template can't be pointed at an archived contract template…
+  const other = await ok(request(catalogApp).post('/api/admin/quote-catalog/templates').set(auth).send({ name: 'Portrait' }));
+  const bad = await request(catalogApp).put(`/api/admin/quote-catalog/templates/${other.template.id}`).set(auth)
     .send({ defaultContractTemplateId: fromQuoteTemplate });
   expect(bad.status).toBe(400);
+  // …but one that already points at it can still be saved.
+  const kept = await request(catalogApp).put(`/api/admin/quote-catalog/templates/${qt.template.id}`).set(auth)
+    .send({ description: 'Neu', defaultContractTemplateId: fromQuoteTemplate });
+  expect(kept.status).toBe(200);
 });
 
 test('a new system revision on an archived standard template adds the version and leaves it archived', async () => {

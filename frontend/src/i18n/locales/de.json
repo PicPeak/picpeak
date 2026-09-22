@@ -7133,7 +7133,8 @@
       "validityDays": "Gültig für (Tage)",
       "versions": "Veröffentlichte Versionen",
       "contractTemplate": "Vertragsvorlage",
-      "contractTemplateDefault": "— Die Standard-Vertragsvorlage —"
+      "contractTemplateDefault": "— Die Standard-Vertragsvorlage —",
+      "contractTemplateUnavailable": "{{name}} (nicht mehr verfügbar)"
     },
     "textBlocks": {
       "insert": "Textbaustein einfügen…"

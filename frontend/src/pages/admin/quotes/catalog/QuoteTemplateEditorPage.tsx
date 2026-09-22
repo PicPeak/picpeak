@@ -130,6 +130,12 @@ export const QuoteTemplateEditorPage: React.FC = () => {
     retry: false,
   });
   const usableContractTemplates = (contractTemplates?.templates || []).filter((ct) => ct.status !== 'archived' && ct.currentVersionId);
+  // The stored choice when it is no longer offered (archived): shown as what it
+  // is, so the picker never looks set to the default while saving another id.
+  const staleContractTemplate = meta.contractTemplateId && !usableContractTemplates.some((ct) => String(ct.id) === meta.contractTemplateId)
+    ? ((contractTemplates?.templates || []).find((ct) => String(ct.id) === meta.contractTemplateId)
+      || { name: `#${meta.contractTemplateId}` })
+    : null;
   const [draft, setDraft] = useState<TemplateDraft | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -293,6 +299,11 @@ export const QuoteTemplateEditorPage: React.FC = () => {
                 onChange={(e) => setMeta({ ...meta, contractTemplateId: e.target.value })}>
                 <option value="">{t('quotes.templates.contractTemplateDefault', '— The default contract template —')}</option>
                 {usableContractTemplates.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                {staleContractTemplate && (
+                  <option value={meta.contractTemplateId}>
+                    {t('quotes.templates.contractTemplateUnavailable', '{{name}} (no longer available)', { name: staleContractTemplate.name })}
+                  </option>
+                )}
               </select>
             </div>
           )}

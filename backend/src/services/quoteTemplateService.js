@@ -234,8 +234,12 @@ async function loadEditableTemplate(id) {
 
 /** Save metadata and/or the working copy. Published versions are untouched. */
 async function updateTemplate(id, payload) {
-  await loadEditableTemplate(id);
-  await assertContractTemplate(payload.default_contract_template_id);
+  const template = await loadEditableTemplate(id);
+  // A reference that is already stored stays savable after its contract
+  // template is archived: an unrelated edit must not be refused for it.
+  if (Number(payload.default_contract_template_id) !== Number(template.default_contract_template_id)) {
+    await assertContractTemplate(payload.default_contract_template_id);
+  }
   await db('quote_templates').where({ id }).update({ ...templateColumns(payload), updated_at: new Date() });
 }
 
