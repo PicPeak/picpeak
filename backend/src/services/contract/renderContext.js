@@ -309,16 +309,28 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
     // Placeholders filled in, then a leading `**Title**` line dropped: the
     // clause name is already printed as its heading. Inline `**bold**`
     // stays for the PDF (the signing page strips it).
-    sections: groupSections(clauses, (clause) => ({
-      blockId: clause.blockId,
-      position: clause.position,
-      kind: clause.kind,
-      slug: clause.slug,
-      name: clause.name,
-      section: clause.section,
-      body: renderTemplatedBody(content.pickLocale(clause.body, locale), placeholders)
-        .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
-    })),
+    //
+    // A clause whose text comes out empty — hidden by "Show only if"
+    // (#1445) — is left out with its heading, and a section left without
+    // clauses with its section heading. This happens here, after the
+    // snapshot: what is frozen and hashed is the clause templates and the
+    // placeholder values, from which visibility follows; the PDF, the
+    // signing page and every re-render all derive it here, from the same
+    // frozen data, so they cannot disagree. The line-table block prints its
+    // table below an empty text, so it stays.
+    sections: groupSections(clauses
+      .map((clause) => ({
+        blockId: clause.blockId,
+        position: clause.position,
+        kind: clause.kind,
+        slug: clause.slug,
+        name: clause.name,
+        section: clause.section,
+        body: String(renderTemplatedBody(content.pickLocale(clause.body, locale), placeholders) || '')
+          .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
+      }))
+      .filter((clause) => clause.slug === 'quote_line_items_table' || clause.body.trim() !== ''),
+    (clause) => clause),
   };
 }
 
