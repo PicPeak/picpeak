@@ -13,10 +13,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Download, FolderOpen, Upload, X } from 'lucide-react';
+import { Download, FolderOpen, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import { Button, Card, Loading } from '../../components/common';
+import { Button, Card, Loading, useConfirm } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { formatFileSize } from '../../utils/fileSize';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
@@ -84,6 +84,38 @@ export function statusLabel(t: TFunction, status: CustomerDocument['status']): s
   return t('customer.documents.status.rejected', 'Rejected');
 }
 
+/**
+ * Delete one of the customer's own uploads, after a confirmation that says
+ * the photographer may already have it. Resolves true once it is gone.
+ */
+export function useDeleteOwnDocument(): (doc: CustomerDocument) => Promise<boolean> {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  return async (doc) => {
+    const ok = await confirm({
+      title: t('customer.documents.deleteTitle', 'Delete this document?'),
+      message: t('customer.documents.deleteBody', '{{name}} will be removed from your documents. Your photographer may already have downloaded it.', { name: doc.name }),
+      confirmLabel: t('customer.documents.delete', 'Delete'),
+      variant: 'danger',
+    });
+    if (!ok) return false;
+    try {
+      await customerService.deleteDocument(doc.id);
+      toast.success(t('customer.documents.deleted', '{{name}} was deleted.', { name: doc.name }));
+      await queryClient.invalidateQueries({ queryKey: ['customer-documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+      return true;
+    } catch (err: any) {
+      const code = await readErrorCode(err);
+      toast.error(code === 'DOCUMENT_CONTRACT_LINKED'
+        ? t('customer.documents.errors.contractLinked', '{{name}} is part of a contract and cannot be deleted. Contact your photographer if it should be removed.', { name: doc.name })
+        : t('customer.documents.errors.delete', '{{name}} could not be deleted. Please try again.', { name: doc.name }));
+      return false;
+    }
+  };
+}
+
 /** The document list, shared with the per-event page. */
 export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; showEvent?: boolean }> = ({
   documents, showEvent = true,
@@ -91,6 +123,7 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const deleteOwn = useDeleteOwnDocument();
 
   const download = async (doc: CustomerDocument) => {
     setBusyId(doc.id);
@@ -137,19 +170,37 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
               </p>
             )}
           </div>
-          {doc.downloadable && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => download(doc)}
-              disabled={busyId === doc.id}
-              leftIcon={<Download className="w-4 h-4" />}
-              aria-label={t('customer.documents.downloadAria', 'Download {{name}}', { name: doc.name })}
-            >
-              {t('customer.documents.download', 'Download')}
-            </Button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {doc.downloadable && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => download(doc)}
+                disabled={busyId === doc.id}
+                leftIcon={<Download className="w-4 h-4" />}
+                aria-label={t('customer.documents.downloadAria', 'Download {{name}}', { name: doc.name })}
+              >
+                {t('customer.documents.download', 'Download')}
+              </Button>
+            )}
+            {doc.canDelete && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  setBusyId(doc.id);
+                  try { await deleteOwn(doc); } finally { setBusyId(null); }
+                }}
+                disabled={busyId === doc.id}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+                aria-label={t('customer.documents.deleteAria', 'Delete {{name}}', { name: doc.name })}
+              >
+                {t('customer.documents.delete', 'Delete')}
+              </Button>
+            )}
+          </div>
         </li>
       ))}
     </ul>

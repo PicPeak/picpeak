@@ -39,6 +39,8 @@ const asCustomer = (req, id) => req.set('Cookie', cookieFor(id));
 const asAdmin = (req, tok = superTok) => req.set('Authorization', `Bearer ${tok}`);
 const idOf = (inserted) => (typeof inserted[0] === 'object' ? inserted[0].id : inserted[0]);
 const nowIso = () => new Date().toISOString();
+// activity_logs.metadata is JSON text on SQLite and jsonb on PostgreSQL.
+const meta = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
 
 async function setFlag(key, on) {
   await db('feature_flags').where({ key }).update({ value: on ? 1 : 0 });
@@ -65,6 +67,17 @@ function adminUpload(customerId, filename = 'offer.pdf', fields = {}) {
   let req = asAdmin(request(adminApp).post(`/api/admin/customers/${customerId}/documents`));
   for (const [k, v] of Object.entries(fields)) req = req.field(k, String(v));
   return req.attach('file', PDF, { filename, contentType: 'application/pdf' });
+}
+
+// The portal's upload limit (20 per 10 minutes, per customer) covers deletes
+// too, so each block of tests works as a customer of its own.
+let customerSeq = 0;
+async function newCustomer(overrides = {}) {
+  customerSeq += 1;
+  return idOf(await db('customer_accounts').insert({
+    email: `ws-${customerSeq}@example.com`, display_name: `Customer ${customerSeq}`, password_hash: 'x',
+    preferred_language: 'en', is_active: 1, created_at: nowIso(), ...overrides,
+  }).returning('id'));
 }
 
 const adminDoc = (customerId, id, suffix = '') => `/api/admin/customers/${customerId}/documents/${id}${suffix}`;
@@ -202,5 +215,102 @@ describe('GET /api/customer/documents/:id', () => {
       const res = await getDoc(customerA, id);
       expect(res.status).toBe(404);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 4 — customers delete their own uploads
+// ---------------------------------------------------------------------------
+
+describe('DELETE /api/customer/documents/:id', () => {
+  const remove = (customerId, id) => asCustomer(request(customerApp).delete(`/api/customer/documents/${id}`), customerId);
+  let me;
+  const usage = () => require('../../src/services/customerDocumentsService').getUsageBytes(me);
+  beforeAll(async () => { me = await newCustomer(); });
+
+  it('deletes the customer\'s own upload in any status, frees the quota and logs it', async () => {
+    const pending = await uploadAs(me, 'mine-pending.pdf');
+    const clean = await uploadAs(me, 'mine-clean.pdf');
+    await asAdmin(request(adminApp).post(adminDoc(me, clean.body.document.id, '/review'))).send({ status: 'clean' });
+    const rejected = await uploadAs(me, 'mine-rejected.pdf');
+    await asAdmin(request(adminApp).post(adminDoc(me, rejected.body.document.id, '/review'))).send({ status: 'rejected' });
+
+    for (const up of [pending, clean, rejected]) {
+      const id = up.body.document.id;
+      expect(up.body.document.canDelete).toBe(true);
+      const before = await usage();
+      const res = await remove(me, id);
+      expect(res.status).toBe(200);
+      expect(await usage()).toBe(before - PDF.length);
+      const row = await db('customer_documents').where({ id }).first();
+      expect(row.deleted_at).toBeTruthy();
+      expect(row.purged_at).toBeFalsy();
+      expect((await getDoc(me, id)).body.code).toBe('DOCUMENT_REMOVED');
+    }
+    const logged = await db('activity_logs').where({ activity_type: 'customer_document_deleted' })
+      .whereRaw('actor_type = ?', ['customer']);
+    const mine = logged.map((e) => meta(e.metadata)).filter((m) => m.customerId === me);
+    expect(mine).toHaveLength(3);
+    for (const m of mine) expect(m).toEqual({ documentId: expect.any(Number), customerId: me });
+  });
+
+  it('answers 404 for a document the studio shared, another customer\'s, an unknown id and a second delete', async () => {
+    const shared = await adminUpload(me, 'studio.pdf', { share: 'true' });
+    const theirs = await uploadAs(customerB, 'theirs.pdf');
+    const mine = await uploadAs(me, 'twice.pdf');
+    expect((await remove(me, mine.body.document.id)).status).toBe(200);
+
+    for (const [who, id] of [
+      [me, shared.body.document.id],
+      [me, theirs.body.document.id],
+      [me, 99999999],
+      [me, mine.body.document.id],
+    ]) {
+      const res = await remove(who, id);
+      expect({ status: res.status, body: res.body })
+        .toEqual({ status: 404, body: { error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' } });
+    }
+    expect((await db('customer_documents').where({ id: shared.body.document.id }).first()).deleted_at).toBeFalsy();
+    expect((await db('customer_documents').where({ id: theirs.body.document.id }).first()).deleted_at).toBeFalsy();
+  });
+
+  it('refuses a contract-linked upload with 409 until it is unlinked', async () => {
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-SELF-${Date.now()}`, customer_account_id: me, title: 'Signed',
+      status: 'sent', language: 'de', issue_date: new Date().toISOString().slice(0, 10), created_at: nowIso(),
+    }).returning('id'));
+    const up = await uploadAs(me, 'signed.pdf', { contractId });
+    expect(up.status).toBe(201);
+    expect(up.body.document.canDelete).toBe(false);
+
+    const res = await remove(me, up.body.document.id);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('DOCUMENT_CONTRACT_LINKED');
+    expect((await db('customer_documents').where({ id: up.body.document.id }).first()).deleted_at).toBeFalsy();
+
+    await db('customer_documents').where({ id: up.body.document.id }).update({ contract_id: null });
+    expect((await remove(me, up.body.document.id)).status).toBe(200);
+    await db('contracts').where({ id: contractId }).del();
+  });
+
+  it('is refused cross-site by the CSRF gate before it reaches the route', async () => {
+    const express = require('express');
+    const cookieParser = require('cookie-parser');
+    const app = express();
+    app.use(express.json());
+    app.use(cookieParser());
+    app.use('/api', require('../../src/middleware/csrf'));
+    app.use('/api/customer', require('../../src/routes/customer'));
+
+    const up = await uploadAs(me, 'csrf.pdf');
+    const id = up.body.document.id;
+    const crossSite = await request(app).delete(`/api/customer/documents/${id}`)
+      .set('Cookie', cookieFor(me)).set('Origin', 'https://evil.example');
+    expect(crossSite.status).toBe(403);
+    expect((await db('customer_documents').where({ id }).first()).deleted_at).toBeFalsy();
+
+    const sameSite = await request(app).delete(`/api/customer/documents/${id}`)
+      .set('Cookie', cookieFor(me)).set('sec-fetch-site', 'same-origin');
+    expect(sameSite.status).toBe(200);
   });
 });

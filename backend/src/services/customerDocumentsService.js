@@ -245,6 +245,8 @@ function toCustomerDto(row) {
     createdAt: toIso(row.created_at) || null,
     sharedAt: own ? null : (toIso(row.shared_at) || null),
     reviewedAt: own ? (toIso(row.reviewed_at) || null) : null,
+    // Own uploads only, and not while part of a contract (softDeleteByCustomer).
+    canDelete: own && !row.contract_id,
   };
 }
 
@@ -551,6 +553,38 @@ async function softDelete(customerId, documentId, admin) {
     { documentId: row.id, customerId }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
 }
 
+/**
+ * A customer deleting their own upload (#1444). Only rows they uploaded and
+ * haven't deleted qualify — a document the studio shared, another
+ * customer's, or an unknown id is the same 404 the portal gives everywhere.
+ * Pending, rejected and accepted uploads can all be deleted; a
+ * contract-linked one cannot, like on the admin side. The quota frees at
+ * once (it counts undeleted rows); the bytes go with the retention sweep.
+ */
+async function softDeleteByCustomer(customerId, documentId, actor) {
+  const row = await db('customer_documents')
+    .where({ id: documentId, customer_account_id: customerId, uploader_type: 'customer' })
+    .whereNull('deleted_at')
+    .first();
+  if (!row) throw new AppError('Document not found', 404, 'DOCUMENT_NOT_FOUND');
+  assertNotContractLinked(row);
+  const now = new Date().toISOString();
+  // contract_id and deleted_at asserted again: a link or a delete landing
+  // between the read and this write wins.
+  const changed = await db('customer_documents')
+    .where({ id: row.id })
+    .whereNull('deleted_at')
+    .whereNull('contract_id')
+    .update({ deleted_at: now, updated_at: now });
+  if (changed === 0) {
+    const current = await db('customer_documents').where({ id: row.id }).first('contract_id', 'deleted_at');
+    if (current && current.contract_id && !current.deleted_at) assertNotContractLinked(current);
+    throw new AppError('Document not found', 404, 'DOCUMENT_NOT_FOUND');
+  }
+  await logActivity('customer_document_deleted',
+    { documentId: row.id, customerId }, row.event_id, actor);
+}
+
 // ---------------------------------------------------------------------------
 // Download
 // ---------------------------------------------------------------------------
@@ -671,6 +705,7 @@ module.exports = {
   review,
   updateLinks,
   softDelete,
+  softDeleteByCustomer,
   openStream,
   recordView,
   markErasedForCustomer,

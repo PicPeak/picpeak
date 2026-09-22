@@ -5581,8 +5581,15 @@
         "activeContent": "{{name}} enthält aktive Inhalte (ein Skript, eine eingebettete Datei oder eine Formularaktion) und kann nicht hochgeladen werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
         "tooComplex": "{{name}} konnte nicht geprüft werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
         "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen.",
-        "notFound": "{{name}} wurde nicht gefunden."
-      }
+        "notFound": "{{name}} wurde nicht gefunden.",
+        "contractLinked": "{{name}} gehört zu einem Vertrag und kann nicht gelöscht werden. Wenden Sie sich an Ihren Fotografen, wenn es entfernt werden soll.",
+        "delete": "{{name}} konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
+      },
+      "deleteTitle": "Dieses Dokument löschen?",
+      "deleteBody": "{{name}} wird aus Ihren Dokumenten entfernt. Ihr Fotograf hat es möglicherweise bereits heruntergeladen.",
+      "delete": "Löschen",
+      "deleteAria": "{{name}} löschen",
+      "deleted": "{{name}} wurde gelöscht."
     },
     "event": {
       "notFound": "Dieses Event wurde nicht gefunden, oder Sie haben keinen Zugriff mehr darauf.",
@@ -5609,7 +5616,7 @@
       "disabledTitle": "Dokumente sind nicht verfügbar",
       "errorTitle": "Das Dokument konnte nicht geladen werden",
       "errorBody": "Bitte versuchen Sie es gleich noch einmal.",
-      "pendingBody": "Dieses Dokument wartet auf die Prüfung. {{studio}} prüft jeden Upload, bevor er verfügbar wird.",
+      "pendingBody": "Dieses Dokument wartet auf die Prüfung. Jeder Upload wird von {{studio}} geprüft, bevor er verfügbar wird.",
       "rejectedBody": "Dieses Dokument wurde nicht angenommen: {{reason}}",
       "rejectedNoReason": "Dieses Dokument wurde nicht angenommen. Wenden Sie sich an {{studio}}, wenn Sie nicht wissen, warum.",
       "uploadedBy": "Von",

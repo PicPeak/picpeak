@@ -143,6 +143,8 @@ export interface CustomerDocument {
   sharedAt: string | null;
   /** When the studio reviewed the customer's own upload. */
   reviewedAt?: string | null;
+  /** Own upload that isn't part of a contract: the customer may delete it. */
+  canDelete?: boolean;
 }
 
 export interface CustomerDocumentLimits {
@@ -400,6 +402,11 @@ export const customerService = {
   async getDocument(id: number): Promise<CustomerDocument> {
     const response = await api.get<{ document: CustomerDocument }>(`/customer/documents/${id}`);
     return response.data.document;
+  },
+
+  /** Deletes one of the customer's own uploads. */
+  async deleteDocument(id: number): Promise<void> {
+    await api.delete(`/customer/documents/${id}`);
   },
 
   /** Downloads the document as an attachment (never opened inline). */

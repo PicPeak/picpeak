@@ -1222,6 +1222,24 @@ router.get('/documents/:id', customerAuth, requireDocumentsFeature, async (req, 
   }
 });
 
+/**
+ * DELETE /documents/:id — the customer deletes their own upload. Only their
+ * own uploads (anything else is the portal's usual 404), and not while it is
+ * linked to a contract (409 DOCUMENT_CONTRACT_LINKED). Shares the upload
+ * rate limit.
+ */
+router.delete('/documents/:id', customerAuth, requireDocumentsFeature, documentUploadLimiter, async (req, res) => {
+  try {
+    const id = documentIdParam(req);
+    if (!id) return res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+    await customerDocumentsService.softDeleteByCustomer(req.customer.id, id,
+      { type: 'customer', id: req.customer.id, name: req.customer.email });
+    return res.json({ deleted: true });
+  } catch (error) {
+    return sendDocumentError(res, error, 'Failed to delete document');
+  }
+});
+
 router.get('/documents/:id/download', customerAuth, requireDocumentsFeature, async (req, res) => {
   try {
     const row = await loadCustomerDocument(req, res);

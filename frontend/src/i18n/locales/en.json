@@ -5581,8 +5581,15 @@
         "activeContent": "{{name}} contains active content (a script, an embedded file or a form action) and cannot be uploaded. Open it and print it to PDF, then upload that file.",
         "tooComplex": "{{name}} could not be checked. Open it and print it to PDF, then upload that file.",
         "tooManyPages": "{{name}} has too many pages to upload.",
-        "notFound": "{{name}} could not be found."
-      }
+        "notFound": "{{name}} could not be found.",
+        "contractLinked": "{{name}} is part of a contract and cannot be deleted. Contact your photographer if it should be removed.",
+        "delete": "{{name}} could not be deleted. Please try again."
+      },
+      "deleteTitle": "Delete this document?",
+      "deleteBody": "{{name}} will be removed from your documents. Your photographer may already have downloaded it.",
+      "delete": "Delete",
+      "deleteAria": "Delete {{name}}",
+      "deleted": "{{name}} was deleted."
     },
     "event": {
       "notFound": "This event was not found, or you no longer have access to it.",
@@ -5609,7 +5616,7 @@
       "disabledTitle": "Documents are not available",
       "errorTitle": "Could not load the document",
       "errorBody": "Please try again in a moment.",
-      "pendingBody": "This document is waiting for review. {{studio}} checks every upload before it becomes available.",
+      "pendingBody": "This document is waiting for review. Every upload is checked by {{studio}} before it becomes available.",
       "rejectedBody": "This document was not accepted: {{reason}}",
       "rejectedNoReason": "This document was not accepted. Contact {{studio}} if you are unsure why.",
       "uploadedBy": "From",

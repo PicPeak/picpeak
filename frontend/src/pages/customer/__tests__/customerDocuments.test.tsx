@@ -58,6 +58,7 @@ const makeDoc = (over: Partial<CustomerDocument>): CustomerDocument => ({
 let docs: CustomerDocument[] = [];
 const downloadSpy = vi.fn(async () => undefined);
 const uploadSpy = vi.fn(async (): Promise<CustomerDocument> => makeDoc({ id: 99 }));
+const deleteSpy = vi.fn(async () => undefined);
 const listEventsMock = vi.fn(async (): Promise<Array<{ id: number; eventName: string }>> => []);
 
 vi.mock('../../../services/customer.service', () => ({
@@ -68,17 +69,21 @@ vi.mock('../../../services/customer.service', () => ({
     })),
     listEvents: (...a: unknown[]) => listEventsMock(...(a as [])),
     uploadDocument: (...a: unknown[]) => uploadSpy(...(a as [])),
+    deleteDocument: (...a: unknown[]) => deleteSpy(...(a as [])),
     downloadDocument: (...a: unknown[]) => downloadSpy(...(a as [])),
   },
 }));
 
+import { ConfirmDialogProvider } from '../../../components/common';
 import { CustomerDocumentsPage } from '../CustomerDocumentsPage';
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter><CustomerDocumentsPage /></MemoryRouter>
+      <ConfirmDialogProvider>
+        <MemoryRouter><CustomerDocumentsPage /></MemoryRouter>
+      </ConfirmDialogProvider>
     </QueryClientProvider>
   );
 }
@@ -111,6 +116,26 @@ describe('CustomerDocumentsPage', () => {
     renderPage();
     expect(await screen.findByRole('link', { name: 'signed-contract.pdf' })).toHaveAttribute('href', '/customer/documents/1');
     expect(screen.getByRole('link', { name: 'offer.pdf' })).toHaveAttribute('href', '/customer/documents/2');
+  });
+
+  it('offers Delete only on own uploads the server allows, and confirms first (#1444)', async () => {
+    docs = [
+      makeDoc({ id: 1, name: 'mine.pdf', canDelete: true }),
+      makeDoc({ id: 2, name: 'signed.pdf', canDelete: false, contractId: 4 }),
+      makeDoc({ id: 3, name: 'offer.pdf', uploadedBy: 'studio', status: 'clean', downloadable: true }),
+    ];
+    deleteSpy.mockClear();
+    renderPage();
+    const del = await screen.findByRole('button', { name: 'Delete mine.pdf' });
+    expect(screen.queryByRole('button', { name: 'Delete signed.pdf' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete offer.pdf' })).toBeNull();
+
+    await userEvent.click(del);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Your photographer may already have downloaded it.');
+    expect(deleteSpy).not.toHaveBeenCalled();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
   });
 
   it('downloads through the service', async () => {

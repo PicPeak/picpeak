@@ -7,7 +7,7 @@
  * afterwards.
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -44,13 +44,14 @@ vi.mock('../../../hooks/usePublicSettings', () => ({
   usePublicSettings: () => ({ data: { branding_company_name: 'Studio Nord' } }),
 }));
 
-const { getDocument, downloadDocument, auth } = vi.hoisted(() => ({
+const { getDocument, downloadDocument, deleteDocument, auth } = vi.hoisted(() => ({
   getDocument: vi.fn(),
   downloadDocument: vi.fn(async () => undefined),
+  deleteDocument: vi.fn(async () => undefined),
   auth: { isAuthenticated: true },
 }));
 vi.mock('../../../services/customer.service', () => ({
-  customerService: { getDocument, downloadDocument },
+  customerService: { getDocument, downloadDocument, deleteDocument },
 }));
 vi.mock('../../../contexts/CustomerAuthContext', () => ({
   useCustomerAuth: () => ({
@@ -63,6 +64,7 @@ vi.mock('../../../contexts/CustomerAuthContext', () => ({
   }),
 }));
 
+import { ConfirmDialogProvider } from '../../../components/common';
 import { CustomerDocumentPage } from '../CustomerDocumentPage';
 import { CustomerLayout } from '../CustomerLayout';
 import { safeCustomerReturnTo } from '../CustomerLoginPage';
@@ -84,15 +86,18 @@ function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
-        <Here />
-        <Routes>
-          <Route path="/customer/login" element={<div>login page</div>} />
-          <Route path="/customer" element={<CustomerLayout />}>
-            <Route path="documents/:id" element={<CustomerDocumentPage />} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
+      <ConfirmDialogProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <Here />
+          <Routes>
+            <Route path="/customer/login" element={<div>login page</div>} />
+            <Route path="/customer" element={<CustomerLayout />}>
+              <Route path="documents" element={<div>documents list</div>} />
+              <Route path="documents/:id" element={<CustomerDocumentPage />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ConfirmDialogProvider>
     </QueryClientProvider>,
   );
 }
@@ -118,8 +123,24 @@ describe('CustomerDocumentPage', () => {
     expect(downloadDocument).toHaveBeenCalledWith(expect.objectContaining({ id: 5 }));
   });
 
+  it('deletes an own upload after confirming and returns to the list', async () => {
+    getDocument.mockResolvedValue(makeDoc({ status: 'pending', canDelete: true }));
+    renderAt('/customer/documents/5');
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete contract.pdf' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('documents list')).toBeInTheDocument();
+    expect(deleteDocument).toHaveBeenCalledWith(5);
+  });
+
+  it('offers no Delete on a studio document', async () => {
+    getDocument.mockResolvedValue(makeDoc({ uploadedBy: 'studio', status: 'clean', downloadable: true }));
+    renderAt('/customer/documents/5');
+    await screen.findByRole('heading', { name: 'contract.pdf' });
+    expect(screen.queryByRole('button', { name: /^Delete/ })).toBeNull();
+  });
+
   it.each([
-    ['pending', makeDoc({ status: 'pending' }), /waiting for review\. Studio Nord checks every upload/],
+    ['pending', makeDoc({ status: 'pending' }), /waiting for review\. Every upload is checked by Studio Nord/],
     ['rejected with a note', makeDoc({ status: 'rejected', rejectionReason: 'Unsigned' }), /was not accepted: Unsigned/],
     ['rejected without a note', makeDoc({ status: 'rejected' }), /was not accepted\. Contact Studio Nord/],
   ])('explains a %s upload and offers no download', async (_label, doc, text) => {

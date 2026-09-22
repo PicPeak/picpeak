@@ -12,11 +12,11 @@
  * authorised again for whoever logged in.
  */
 import React, { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Download, FileText } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Loading } from '../../components/common';
@@ -25,7 +25,7 @@ import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { formatFileSize } from '../../utils/fileSize';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
 import {
-  STATUS_STYLE, statusLabel, readErrorCode, downloadErrorMessage,
+  STATUS_STYLE, statusLabel, readErrorCode, downloadErrorMessage, useDeleteOwnDocument,
 } from './CustomerDocumentsPage';
 
 type Unavailable = 'unshared' | 'removed' | 'notFound' | 'disabled' | 'error';
@@ -83,7 +83,7 @@ function statusPanel(t: TFunction, doc: CustomerDocument, studio: string): { ton
   if (doc.status === 'pending') {
     return {
       tone: 'hue-warning',
-      text: t('customer.document.pendingBody', 'This document is waiting for review. {{studio}} checks every upload before it becomes available.', { studio }),
+      text: t('customer.document.pendingBody', 'This document is waiting for review. Every upload is checked by {{studio}} before it becomes available.', { studio }),
     };
   }
   if (doc.status === 'rejected') {
@@ -106,6 +106,9 @@ export const CustomerDocumentPage: React.FC = () => {
   const { data: settings } = usePublicSettings();
   const studio = settings?.branding_company_name?.trim() || t('customer.document.yourPhotographer', 'your photographer');
   const [downloading, setDownloading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const navigate = useNavigate();
+  const deleteOwn = useDeleteOwnDocument();
 
   const { data: doc, isLoading, error } = useQuery({
     queryKey: ['customer-document', documentId],
@@ -174,18 +177,37 @@ export const CustomerDocumentPage: React.FC = () => {
               {statusLabel(t, doc.status)}
             </span>
           </div>
-          {doc.downloadable && (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={download}
-              disabled={downloading}
-              leftIcon={<Download className="w-4 h-4" />}
-              aria-label={t('customer.documents.downloadAria', 'Download {{name}}', { name: doc.name })}
-            >
-              {t('customer.documents.download', 'Download')}
-            </Button>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            {doc.downloadable && (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={download}
+                disabled={downloading}
+                leftIcon={<Download className="w-4 h-4" />}
+                aria-label={t('customer.documents.downloadAria', 'Download {{name}}', { name: doc.name })}
+              >
+                {t('customer.documents.download', 'Download')}
+              </Button>
+            )}
+            {doc.canDelete && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  const gone = await deleteOwn(doc);
+                  setDeleting(false);
+                  if (gone) navigate('/customer/documents');
+                }}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+                aria-label={t('customer.documents.deleteAria', 'Delete {{name}}', { name: doc.name })}
+              >
+                {t('customer.documents.delete', 'Delete')}
+              </Button>
+            )}
+          </div>
         </div>
 
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">

@@ -1451,6 +1451,7 @@
         "GET /documents",
         "POST /documents",
         "GET /documents/:id",
+        "DELETE /documents/:id",
         "GET /documents/:id/download"
       ]
     },
