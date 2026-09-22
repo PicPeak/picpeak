@@ -83,7 +83,8 @@ function recipientFields(customer) {
 /**
  * What a send depends on that no contract lock covers (#1445): the customer's
  * printed fields and whether it is active, the signer rows, the issuer
- * (business profile) and the settings the placeholders and dates read. None
+ * (business profile), the settings the placeholders and dates read and the
+ * contract's PDF theme. None
  * of them bumps contracts.lock_version, so the send takes this when it
  * renders and compares it again, rows locked, inside the transaction that
  * marks the contract sent.
@@ -106,6 +107,10 @@ async function readSendInputsSha256(conn, contract, { lock = false, signerRows =
   const profile = await locked(conn('business_profile').where({ id: 1 })).first();
   const settings = await locked(conn('app_settings').whereIn('setting_key', SEND_SETTINGS)
     .select('setting_key', 'setting_value').orderBy('setting_key', 'asc'));
+  // The PDF themes (a contract's footer text, layout): the render reads them.
+  const themes = (await conn.schema.hasTable('pdf_themes'))
+    ? await locked(conn('pdf_themes').whereIn('scope', ['default', 'contract']).select('scope', 'settings').orderBy('scope', 'asc'))
+    : [];
   const plain = (value) => JSON.parse(JSON.stringify(value === undefined ? null : value));
   const { updated_at: _u, ...issuer } = profile || {};
   return require('../../utils/canonicalJson').canonicalSha256({
@@ -113,6 +118,7 @@ async function readSendInputsSha256(conn, contract, { lock = false, signerRows =
     signers: plain(rows),
     issuer: plain(profile ? issuer : null),
     settings: plain(settings),
+    themes: plain(themes),
   });
 }
 

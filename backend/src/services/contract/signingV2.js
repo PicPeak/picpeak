@@ -299,7 +299,11 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
       query.where({ id: contractId, status: 'draft' });
       if (lockVersion != null) query.where('lock_version', lockVersion);
     };
-    const draft = await trx('contracts').modify(claim).first();
+    // Locked first on PostgreSQL, before the signer rows below: setSigners
+    // takes the contract, then the signers, and the other order deadlocks.
+    const draftQuery = trx('contracts').modify(claim);
+    if (trx.client.config.client === 'pg') draftQuery.forUpdate();
+    const draft = await draftQuery.first();
     if (!draft) {
       throw new AppError(
         'This contract changed while it was being sent. Reload it and send again.',
