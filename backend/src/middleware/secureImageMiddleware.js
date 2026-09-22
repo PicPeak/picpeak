@@ -2,6 +2,7 @@ const { requestLogPath } = require('../utils/requestLogPath');
 const { db } = require('../database/db');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 /**
  * Enhanced secure image middleware with comprehensive protection
@@ -35,11 +36,20 @@ class SecureImageMiddleware {
       const userAgent = req.get('User-Agent') || '';
       const clientFingerprint = secureImageService.createClientFingerprint(req);
 
-      // Create client info object
+      // Create client info object.
+      //
+      // Two keys per client (issue 1564). `fingerprint` binds secure image
+      // tokens to one device and stays per address. The rate-limit windows,
+      // the violation counter and both block lists count against
+      // `rateLimitFingerprint` / `rateLimitAddress` instead, where an IPv6
+      // /64 is one client: keyed per address, rotating through the /64
+      // reset the limit and escaped a block.
       req.clientInfo = {
         ip: clientIP,
         userAgent,
         fingerprint: clientFingerprint,
+        rateLimitFingerprint: secureImageService.createRateLimitFingerprint(req),
+        rateLimitAddress: rateLimitKey(req) || clientIP,
         timestamp: startTime
       };
 
@@ -86,13 +96,13 @@ class SecureImageMiddleware {
     const { photoId } = req.params;
 
     // 1. Check if IP is blocked
-    if (this.suspiciousIPs.has(clientInfo.ip)) {
+    if (this.suspiciousIPs.has(clientInfo.rateLimitAddress)) {
       await this.logSecurityEvent('blocked_ip_access', req, { reason: 'IP on block list' });
       return { passed: false, status: 403, message: 'Access denied' };
     }
 
     // 2. Check if fingerprint is blocked
-    if (this.blockedFingerprints.has(clientInfo.fingerprint)) {
+    if (this.blockedFingerprints.has(clientInfo.rateLimitFingerprint)) {
       await this.logSecurityEvent('blocked_fingerprint_access', req, { reason: 'Fingerprint blocked' });
       return { passed: false, status: 403, message: 'Access denied' };
     }
@@ -157,20 +167,20 @@ class SecureImageMiddleware {
 
     for (const window of windows) {
       const allowed = secureImageService.checkRateLimit(
-        `${clientInfo.fingerprint}_${window.duration}`,
+        `${clientInfo.rateLimitFingerprint}_${window.duration}`,
         window.limit,
         window.duration
       );
 
       if (!allowed) {
         // Track violations
-        const violationKey = `${clientInfo.fingerprint}_violations`;
+        const violationKey = `${clientInfo.rateLimitFingerprint}_violations`;
         const violations = this.rateLimitViolations.get(violationKey) || 0;
         this.rateLimitViolations.set(violationKey, violations + 1);
 
         // Block after multiple violations
         if (violations >= 5) {
-          this.blockedFingerprints.add(clientInfo.fingerprint);
+          this.blockedFingerprints.add(clientInfo.rateLimitFingerprint);
           logger.warn('Client fingerprint blocked due to repeated violations', {
             fingerprint: clientInfo.fingerprint,
             violations: violations + 1
@@ -320,14 +330,14 @@ class SecureImageMiddleware {
    * Flag suspicious activity for monitoring
    */
   flagSuspiciousActivity(clientInfo) {
-    const key = `suspicious_${clientInfo.fingerprint}`;
+    const key = `suspicious_${clientInfo.rateLimitFingerprint}`;
     const existing = this.rateLimitViolations.get(key) || 0;
     
     this.rateLimitViolations.set(key, existing + 1);
     
     // Add to suspicious IPs after multiple flags
     if (existing >= 3) {
-      this.suspiciousIPs.add(clientInfo.ip);
+      this.suspiciousIPs.add(clientInfo.rateLimitAddress);
       logger.warn('IP added to suspicious list', {
         ip: clientInfo.ip,
         fingerprint: clientInfo.fingerprint,
