@@ -834,7 +834,8 @@ async function previewContent(id, { version: versionNumber } = {}) {
     outroText: view.outroText,
     sections: view.sections,
     recipient: view.recipient,
-    commercial: publicView.commercialView(inputs.quote),
+    // None when "Show only if" hides the price clause, as in the PDF.
+    commercial: display.priceHidden ? null : publicView.commercialView(inputs.quote),
     version: version.status === 'draft' ? null : ensureInt(version.version_number),
   };
 }
