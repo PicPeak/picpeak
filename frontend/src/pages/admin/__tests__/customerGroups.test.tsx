@@ -237,6 +237,32 @@ describe('the overview', () => {
   });
 });
 
+describe('the overview states', () => {
+  it('shows a spinner while the customers load', async () => {
+    list.mockReturnValue(new Promise(() => {}));
+    const { container } = renderPage();
+    await waitFor(() => expect(container.querySelector('.animate-spin')).not.toBeNull());
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('says so when the customers cannot be loaded', async () => {
+    list.mockRejectedValue(new Error('boom'));
+    renderPage();
+    expect(await screen.findByText('Could not load customers')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('shows markup in a group name as text, never as an element', async () => {
+    const markup = '<img src=x onerror=alert(1)>';
+    list.mockResolvedValue([customer(13, 'markup@example.com', [group(9, markup)])]);
+    listGroups.mockResolvedValue([group(9, markup)]);
+    const { container } = renderPage();
+    await screen.findByText('markup@example.com');
+    expect(screen.getAllByText(markup).length).toBeGreaterThan(0);
+    expect(container.querySelector('img')).toBeNull();
+  });
+});
+
 describe('the catalogue tab', () => {
   const openGroupsTab = async (user: ReturnType<typeof userEvent.setup>) => {
     await screen.findByText('grouped@example.com');

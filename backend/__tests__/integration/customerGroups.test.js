@@ -15,6 +15,8 @@
  *    and takes no customer with it
  *  - the catalogue needs customers.groups.manage, reading needs customers.view
  *  - every change reaches activity_logs
+ *  - markup in names is stored as text, protected fields can't be sent,
+ *    unknown ids answer 404, and no token or no customers.view gets nothing
  */
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
@@ -292,8 +294,15 @@ describe('deletion', () => {
     expect(await db('customer_group_members').where({ group_id: group.id })).toHaveLength(1);
     // The database refuses it too, where it enforces foreign keys: an
     // assignment landing between the check and the delete must not cascade.
-    const fks = await db.raw('PRAGMA foreign_key_list(customer_group_members)');
-    expect(fks.find((fk) => fk.table === 'customer_groups').on_delete).toBe('RESTRICT');
+    if (db.client.config.client === 'pg') {
+      // confdeltype 'r' is ON DELETE RESTRICT.
+      const { rows } = await db.raw(`SELECT confdeltype FROM pg_constraint
+        WHERE conrelid = 'customer_group_members'::regclass AND confrelid = 'customer_groups'::regclass`);
+      expect(rows.map((row) => row.confdeltype)).toEqual(['r']);
+    } else {
+      const fks = await db.raw('PRAGMA foreign_key_list(customer_group_members)');
+      expect(fks.find((fk) => fk.table === 'customer_groups').on_delete).toBe('RESTRICT');
+    }
 
     await setGroups(customer, []);
     expect((await request(adminApp).delete(`/api/admin/customers/groups/${group.id}`).set(auth(superToken))).status).toBe(200);
@@ -335,7 +344,11 @@ describe('assignment under a race', () => {
     expect((await setGroups(customer, [group.id])).status).toBe(200);
     await db('customer_group_members').where({ customer_account_id: customer }).del();
     const both = await Promise.all([setGroups(customer, [group.id]), setGroups(customer, [group.id])]);
-    expect(both.map((res) => res.status)).toEqual([200, 200]);
+    // SQLite serialises the two; on PostgreSQL they can really race, and the
+    // loser gets the 409 above instead. Never a 500, never two rows.
+    const statuses = both.map((res) => res.status);
+    expect(statuses).toContain(200);
+    for (const status of statuses) expect([200, 409]).toContain(status);
     expect(await db('customer_group_members').where({ customer_account_id: customer })).toHaveLength(1);
   });
 });
@@ -405,5 +418,98 @@ describe('permissions and the log', () => {
       expect(row).toMatchObject({ actor_type: 'admin', actor_id: adminId });
       expect(row.actor_name).toBeTruthy();
     }
+  });
+});
+
+describe('hardening', () => {
+  it('stores markup in a name and a description as text, byte for byte, through create, list and the customer payload', async () => {
+    const markup = '<img src=x onerror=alert(1)>';
+    const created = await createGroup({ name: markup, description: `${markup} "quoted" & more` });
+    expect(created.status).toBe(201);
+    const group = bodyOf(created).group;
+    expect(group).toMatchObject({ name: markup, description: `${markup} "quoted" & more` });
+
+    const listed = bodyOf(await listGroups()).groups.find((g) => g.id === group.id);
+    expect(listed).toMatchObject({ name: markup, description: `${markup} "quoted" & more` });
+
+    const customer = await createCustomer();
+    await setGroups(customer, [group.id]);
+    const row = (await listCustomers()).body.customers.find((c) => c.id === customer);
+    expect(row.groups[0].name).toBe(markup);
+    const detail = await request(adminApp).get(`/api/admin/customers/${customer}`).set(auth(superToken));
+    expect(detail.body.customer.groups[0].name).toBe(markup);
+  });
+
+  it('ignores protected fields sent with a new group', async () => {
+    const created = await createGroup({
+      name: 'Mass assignment',
+      id: 987654,
+      sortOrder: -5,
+      sort_order: -5,
+      isArchived: true,
+      is_archived: true,
+      created_by_admin_id: 999999,
+      name_key: 'something else',
+    });
+    expect(created.status).toBe(201);
+    const group = bodyOf(created).group;
+    expect(group.id).not.toBe(987654);
+    expect(group.isArchived).toBe(false);
+    expect(group.sortOrder).toBeGreaterThan(0);
+
+    const row = await db('customer_groups').where({ id: group.id }).first();
+    expect(row.name_key).toBe('mass assignment');
+    expect(Number(row.created_by_admin_id)).toBe(adminId);
+    expect(!!row.is_archived).toBe(false);
+  });
+
+  it('answers 404 for a customer or a group that does not exist, and changes nothing', async () => {
+    const group = bodyOf(await createGroup({ name: 'Not found checks' })).group;
+    const noCustomer = await setGroups(999999, [group.id]);
+    expect(noCustomer.status).toBe(404);
+    expect(noCustomer.body.code).toBe('CUSTOMER_NOT_FOUND');
+
+    const customer = await createCustomer();
+    const noGroup = await setGroups(customer, [group.id, 999999]);
+    expect(noGroup.status).toBe(404);
+    expect(noGroup.body.code).toBe('GROUP_NOT_FOUND');
+    expect(await db('customer_group_members').where({ customer_account_id: customer })).toHaveLength(0);
+  });
+
+  it('answers 401 without a token on every group route', async () => {
+    const base = '/api/admin/customers';
+    const calls = [
+      request(adminApp).get(`${base}/groups`),
+      request(adminApp).post(`${base}/groups`).send({ name: 'Anonymous' }),
+      request(adminApp).post(`${base}/groups/reorder`).send({ orderedIds: [1] }),
+      request(adminApp).put(`${base}/groups/1`).send({ name: 'Anonymous' }),
+      request(adminApp).delete(`${base}/groups/1`),
+      request(adminApp).put(`${base}/1/groups`).send({ groupIds: [] }),
+      request(adminApp).get(`${base}?groupIds=1`),
+    ];
+    for (const res of await Promise.all(calls)) expect(res.status).toBe(401);
+    expect(await db('customer_groups').where({ name: 'Anonymous' }).first()).toBeUndefined();
+  });
+
+  it('refuses the catalogue and the overview to an admin without customers.view', async () => {
+    const roleId = idOf(await db('roles').insert({
+      name: 'no-customers', display_name: 'No customers', is_system: false,
+    }).returning('id'));
+    const outsiderId = idOf(await db('admin_users').insert({
+      username: 'groups-outsider',
+      email: 'groups-outsider@example.com',
+      password_hash: 'x',
+      must_change_password: false,
+      role_id: roleId,
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const outsiderToken = mintAdminToken(outsiderId);
+
+    const groups = await listGroups('', outsiderToken);
+    expect(groups.status).toBe(403);
+    expect(bodyOf(groups).groups).toBeUndefined();
+    const overview = await listCustomers('', outsiderToken);
+    expect(overview.status).toBe(403);
+    expect(overview.body.customers).toBeUndefined();
   });
 });

@@ -22,6 +22,7 @@ vi.mock('react-i18next', async () => {
 vi.mock('react-toastify', () => ({
   toast: { success: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
+import { toast } from 'react-toastify';
 
 const listGroups = vi.fn();
 const setCustomerGroups = vi.fn();
@@ -93,5 +94,23 @@ describe('CustomerGroupsCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Change groups' }));
     expect(await screen.findByRole('checkbox', { name: /Press/ })).not.toBeChecked();
+  });
+
+  it('keeps the picker open with the selection intact when the save fails, and says why', async () => {
+    const conflict = 'This customer\'s groups were changed by someone else just now. Reload and try again.';
+    setCustomerGroups.mockRejectedValue(Object.assign(new Error('Request failed with status code 409'), {
+      response: { status: 409, data: { error: conflict, code: 'GROUP_ASSIGNMENT_CONFLICT' } },
+    }));
+    const user = userEvent.setup();
+    renderCard(true);
+    await user.click(screen.getByRole('button', { name: 'Change groups' }));
+    await user.click(await screen.findByRole('checkbox', { name: /Press/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(conflict));
+    expect(screen.getByRole('checkbox', { name: /Press/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /VIP/ })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
