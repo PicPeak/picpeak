@@ -6,6 +6,7 @@ const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
+const { hasColumnCached } = require('../../utils/schemaCache');
 
 
 const SECTIONS_ORDER = ['basics', 'scope', 'privacy', 'commercial', 'nda', 'closing'];
@@ -123,6 +124,37 @@ function ensureCustomerActive(customer) {
     throw new AppError('Customer is deactivated', 409);
   }
 }
+
+// Statuses a contract can die into without ever being signed, that should
+// release the source quote's converted_contract_id back-pointer so a
+// replacement contract can be created from it. Scoped to what this branch
+// can actually produce today: signatures v2 (#1446, decline included)
+// hasn't landed on stable, so a contract here never reaches 'declined' —
+// only 'cancelled' applies. When signatures v2 backports to stable, add
+// 'declined' here (see main's helpers.js for the two-status version). PR
+// 1577's 'expired' status doesn't exist on this branch either.
+const QUOTE_RELEASING_CONTRACT_STATUSES = ['cancelled'];
+
+/**
+ * Release a quote's converted_contract_id back-pointer when the contract
+ * it points at dies unsigned (cancelled — see
+ * QUOTE_RELEASING_CONTRACT_STATUSES above). Must run in the same
+ * transaction as the contract's status change.
+ *
+ * The `where` guards on both the quote id AND the current back-pointer
+ * value so a race can't clobber a different quote's newer pointer (e.g.
+ * the quote was already re-converted to a fresh contract by the time this
+ * transition lands).
+ */
+async function releaseQuoteOnDeadContract(trx, contractId, sourceQuoteId) {
+  if (!sourceQuoteId) return;
+  const hasBackPointer = await hasColumnCached('quotes', 'converted_contract_id');
+  if (!hasBackPointer) return;
+  await trx('quotes')
+    .where({ id: sourceQuoteId, converted_contract_id: contractId })
+    .update({ converted_contract_id: null, updated_at: new Date().toISOString() });
+}
+
 module.exports = {
   SECTIONS_ORDER,
   adminActor,
@@ -131,4 +163,6 @@ module.exports = {
   maybeStoreIp,
   nextContractNumber,
   ensureCustomerActive,
+  QUOTE_RELEASING_CONTRACT_STATUSES,
+  releaseQuoteOnDeadContract,
 };
