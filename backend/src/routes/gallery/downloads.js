@@ -705,7 +705,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           const stream = await storage.get(storageKey);
           archive.append(guard.track(stream), { name: archiveName, photoId: photo.id });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName, photoId: photo.id });
+          // append, not file(): file() stats in parallel and can reorder
+          // entries, and the limit's settlement relies on append order.
+          if (!await guard.acquire()) break;
+          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: archiveName, photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseAll.appended(photo.id);
@@ -900,7 +903,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           const stream = await selectedStorage.get(storageKey);
           archive.append(selectedGuard.track(stream), { name, photoId: photo.id });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name, photoId: photo.id });
+          // append, not file(): see download-all.
+          if (!await selectedGuard.acquire()) break;
+          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name, photoId: photo.id });
         }
         appendedIds.push(photo.id);
         releaseSelected.appended(photo.id);

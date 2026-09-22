@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   DOWNLOAD_QUOTA_CHANGED_EVENT,
+  DOWNLOAD_LIMIT_SHOWN_EVENT,
   UNLIMITED_QUOTA,
   downloadCost,
   quotaAllows,
@@ -53,8 +54,14 @@ export const DownloadQuotaProvider: React.FC<DownloadQuotaProviderProps> = ({ sl
       if ((e as CustomEvent<{ slug?: string }>).detail?.slug !== slug) return;
       queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     };
+    // A refusal decided from the cached quota: it may be stale.
+    const onShown = () => queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     window.addEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+    window.addEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, onShown);
+    return () => {
+      window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+      window.removeEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, onShown);
+    };
   }, [limited, slug, queryClient]);
 
   const value = useMemo(

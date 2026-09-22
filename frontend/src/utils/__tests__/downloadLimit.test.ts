@@ -13,12 +13,14 @@ vi.mock('i18next', () => ({
 import { toast } from 'react-toastify';
 import {
   DOWNLOAD_QUOTA_CHANGED_EVENT,
+  DOWNLOAD_LIMIT_SHOWN_EVENT,
   DownloadLimitError,
   downloadCost,
   markGalleryLimited,
   quotaAllows,
   quotaFromEvent,
   readDownloadLimitError,
+  showDownloadLimitReached,
   withDownloadLimit,
 } from '../downloadLimit';
 
@@ -109,5 +111,15 @@ describe('withDownloadLimit', () => {
     await withDownloadLimit('g', () => Promise.resolve('ok'));
     expect(onChanged).toHaveBeenCalledTimes(1);
     window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
+  });
+});
+
+describe('a refusal decided from the cached quota', () => {
+  it('asks the gallery to re-read its quota, which an admin may have reset', () => {
+    const listener = vi.fn();
+    window.addEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, listener);
+    showDownloadLimitReached({ remaining: 0 });
+    window.removeEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, listener);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

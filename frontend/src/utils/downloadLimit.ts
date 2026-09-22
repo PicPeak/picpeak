@@ -14,6 +14,11 @@ export const DOWNLOAD_LIMIT_CODE = 'DOWNLOAD_LIMIT_REACHED';
 // gallery, so the gallery re-reads its quota. detail: { slug }.
 export const DOWNLOAD_QUOTA_CHANGED_EVENT = 'picpeak:download-quota-changed';
 
+// Fired on window whenever the limit message is shown, including refusals the
+// UI decided on from its cached quota. The gallery re-reads its quota, so an
+// admin's reset or raise is picked up by the next try instead of a reload.
+export const DOWNLOAD_LIMIT_SHOWN_EVENT = 'picpeak:download-limit-shown';
+
 export interface DownloadLimitInfo {
   limit?: number;
   used?: number;
@@ -99,6 +104,7 @@ export function showDownloadLimitReached(info?: DownloadLimitInfo): void {
     : downloadLimitReachedMessage();
   // One toast however many buttons raced into the refusal.
   toastify.error(message, { toastId: 'download-limit-reached' });
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(DOWNLOAD_LIMIT_SHOWN_EVENT));
 }
 
 export function notifyDownloadQuotaChanged(slug: string): void {

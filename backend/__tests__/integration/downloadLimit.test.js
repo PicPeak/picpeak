@@ -27,6 +27,8 @@ const sharp = require('sharp');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'download-limit-test-secret';
+const EXTERNAL_ROOT = fs.mkdtempSync(path.join(require('os').tmpdir(), 'picpeak-limit-ext-'));
+process.env.EXTERNAL_MEDIA_ROOT = EXTERNAL_ROOT;
 
 // A deterministic fingerprint, so a token minted below verifies on the
 // secure-image serve route.
@@ -385,6 +387,27 @@ describe('Download limit (issue 1560)', () => {
       } finally {
         await new Promise((r) => server.close(r));
       }
+    });
+
+    it('zips external photos and charges each one it shipped', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 3, photos: 2 });
+      await fs.promises.mkdir(path.join(EXTERNAL_ROOT, event.slug), { recursive: true });
+      for (const [i, id] of photoIds.entries()) {
+        await fs.promises.writeFile(path.join(EXTERNAL_ROOT, event.slug, `ext-${i}.jpg`), jpeg);
+        await db('photos').where({ id }).update({ source_origin: 'external', external_relpath: `${event.slug}/ext-${i}.jpg` });
+      }
+      const res = await request(app)
+        .post(`/api/gallery/${event.slug}/download-selected`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ photo_ids: photoIds })
+        .buffer(true).parse(drain);
+      expect(res.status).toBe(200);
+      let delivered = [];
+      for (let i = 0; i < 50 && delivered.length < 2; i += 1) {
+        delivered = [...(await quota.grantedPhotoIds(event.id, null, undefined, { deliveredOnly: true }))];
+        if (delivered.length < 2) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(delivered.sort()).toEqual([...photoIds].sort());
     });
 
     it('a HEAD probe of download-all takes none of the quota', async () => {
