@@ -300,6 +300,24 @@ describe('Photo credits (issue 1561)', () => {
         .toMatchObject({ credit_name: null, credit_source: 'manual' });
     }, 30000);
 
+    it('a replacement re-reads an automatic credit and keeps a manual one', async () => {
+      const { replacePhoto } = require('../../src/services/photoReplacementService');
+      const { event } = await makeEvent();
+      const exifId = await addPhoto(event, { credit_name: 'Old Studio', credit_source: 'exif' });
+      const manualId = await addPhoto(event, { credit_name: 'Chosen', credit_source: 'manual' });
+      for (const id of [exifId, manualId]) {
+        const temp = path.join(process.env.STORAGE_PATH, `replace-${id}.jpg`);
+        await fs.promises.writeFile(temp, artistJpeg);
+        const existing = await db('photos').where({ id }).first();
+        const result = await replacePhoto(existing, temp, { originalFilename: 'new.jpg', mimeType: 'image/jpeg', event });
+        expect(result.success).toBe(true);
+      }
+      expect(await db('photos').where({ id: exifId }).first())
+        .toMatchObject({ credit_name: 'Studio Lumen', credit_source: 'exif' });
+      expect(await db('photos').where({ id: manualId }).first())
+        .toMatchObject({ credit_name: 'Chosen', credit_source: 'manual' });
+    });
+
     it('the backfill fills undecided rows and leaves decided ones alone', async () => {
       const { event } = await makeEvent();
       const open = await addPhoto(event, { uploaded_by: 'admin' }, artistJpeg);

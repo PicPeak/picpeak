@@ -34,7 +34,7 @@ interface UserPhotoUploadProps {
 // GuestIdentityProvider, this dialog included, so its state would be lost.
 // What must survive that remount is parked here, per gallery, and picked up
 // by the next mount.
-const carriedOver = new Map<string, { files: File[]; nameError?: string }>();
+const carriedOver = new Map<string, { files: File[]; nameError?: string; uploadIds: string[] }>();
 
 export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   eventId,
@@ -70,6 +70,9 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   const [files, setFiles] = useState<File[]>(() => carried?.files ?? []);
   const [uploading, setUploading] = useState(false);
   const submittingRef = useRef(false);
+  // Upload groups already queued by an attempt that stopped to ask for the
+  // name again; handed to onUploadComplete with the attempt that finishes.
+  const pendingUploadIdsRef = useRef<string[]>(carried?.uploadIds ?? []);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   // Per-file processing state — flips to true once axios reports
   // bytes-on-wire for that file, so the UI can show "Processing…"
@@ -227,11 +230,17 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
   // "Not you?": drop the identity on this device only. The guest row and its
   // feedback stay; this is the shared-phone case, not "forget me".
-  const handleNotYou = (nameErrorAfter?: string, keepFiles: File[] = files) => {
+  const handleNotYou = (nameErrorAfter?: string, keepFiles: File[] = files, uploadIds: string[] = []) => {
     if (!slug) return;
     if (identityContext && identityContext.slug === slug) {
       // Only a switch away from an established identity remounts the dialog.
-      if (identityContext.identity) carriedOver.set(slug, { files: keepFiles, nameError: nameErrorAfter });
+      if (identityContext.identity) {
+        carriedOver.set(slug, {
+          files: keepFiles,
+          nameError: nameErrorAfter,
+          uploadIds: [...pendingUploadIdsRef.current, ...uploadIds],
+        });
+      }
       identityContext.signOut();
     } else {
       clearGuestIdentity(slug);
@@ -353,7 +362,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           stoppedForName = true;
           // The files before this one went through; keep only the rest.
           const unsent = files.slice(index);
-          handleNotYou(t('upload.nameRequired'), unsent);
+          handleNotYou(t('upload.nameRequired'), unsent, uploadIds);
           setFiles(unsent);
           break;
         }
@@ -371,7 +380,14 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
-      onUploadComplete(uploadIds);
+    }
+    if (stoppedForName) {
+      // onUploadComplete closes the dialog, and the guest has a name to enter
+      // and files left to send. Report these groups with the next attempt.
+      pendingUploadIdsRef.current = [...pendingUploadIdsRef.current, ...uploadIds];
+    } else if (successCount > 0 || pendingUploadIdsRef.current.length > 0) {
+      onUploadComplete([...pendingUploadIdsRef.current, ...uploadIds]);
+      pendingUploadIdsRef.current = [];
     }
     
     if (failedCount > 0 && !stoppedAtPhotoCap && !stoppedForName) {

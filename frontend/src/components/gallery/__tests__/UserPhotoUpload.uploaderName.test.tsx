@@ -151,6 +151,44 @@ describe('UserPhotoUpload uploader name', () => {
     expect(postState.calls.filter((c) => c.url.endsWith('/guest'))).toHaveLength(1);
   });
 
+  it('stays open for the name when a later file finds the guest gone, and reports the sent ones afterwards', async () => {
+    storeGuestIdentity(SLUG, { id: 9, name: 'Bea', email: null, identifier: 'g-9' }, 'stale.token.x');
+    let sent = 0;
+    postState.upload = async () => {
+      sent += 1;
+      if (sent === 1) return { data: { upload_id: 'u1', count: 1 } };
+      if (sent === 2) {
+        throw Object.assign(new Error('400'), {
+          response: { status: 400, data: { error: 'name', code: 'UPLOADER_NAME_REQUIRED' } },
+        });
+      }
+      return { data: { upload_id: 'u2', count: 1 } };
+    };
+    const onUploadComplete = vi.fn();
+    const user = userEvent.setup();
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <GuestIdentityProvider slug={SLUG} identityMode="guest">
+          <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={onUploadComplete} onClose={vi.fn()} slug={SLUG} nameMode="required" />
+        </GuestIdentityProvider>
+      </QueryClientProvider>
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, [
+      new File([new Uint8Array([1])], 'a.png', { type: 'image/png' }),
+      new File([new Uint8Array([2])], 'b.png', { type: 'image/png' }),
+    ]);
+    await user.click(screen.getByRole('button', { name: /common\.upload/ }));
+    await waitFor(() => expect(screen.getByLabelText(/upload\.yourName/)).toBeInTheDocument());
+    expect(onUploadComplete).not.toHaveBeenCalled();
+    expect(screen.queryByText('a.png')).toBeNull();
+    expect(screen.getByText('b.png')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/upload\.yourName/), 'Cleo');
+    await user.click(screen.getByRole('button', { name: /common\.upload/ }));
+    await waitFor(() => expect(onUploadComplete).toHaveBeenCalledWith(['u1', 'u2']));
+  });
+
   it('keeps the selected files when the gallery signs a stale guest out', async () => {
     storeGuestIdentity(SLUG, { id: 9, name: 'Bea', email: null, identifier: 'g-9' }, 'stale.token.x');
     postState.upload = () => Promise.reject(Object.assign(new Error('400'), {
