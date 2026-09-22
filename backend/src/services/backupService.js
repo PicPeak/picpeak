@@ -383,6 +383,20 @@ async function getDatabaseBackupInfoInternal() {
   }
 }
 
+function isExcludedName(name, excludePatterns) {
+  return excludePatterns.some(pattern => {
+    if (pattern.includes('*')) {
+      // Escape regex metacharacters before expanding the glob star — the
+      // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
+      // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      const regex = new RegExp(`^${escaped}$`);
+      return regex.test(name);
+    }
+    return name === pattern;
+  });
+}
+
 async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) {
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -390,19 +404,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
       const fullPath = path.join(dirPath, entry.name);
       const relativePath = path.relative(basePath, fullPath);
 
-      const isExcluded = excludePatterns.some(pattern => {
-        if (pattern.includes('*')) {
-          // Escape regex metacharacters before expanding the glob star — the
-          // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
-          // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
-          const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-          const regex = new RegExp(`^${escaped}$`);
-          return regex.test(entry.name);
-        }
-        return entry.name === pattern;
-      });
-
-      if (isExcluded) {
+      if (isExcludedName(entry.name, excludePatterns)) {
         continue;
       }
 
@@ -689,8 +691,11 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     logger.warn(`Could not list documents stored outside the storage root: ${error.message}`);
   }
   for (const legacy of legacyFiles) {
-    const covered = targets.some((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
-    if (!covered) continue;
+    const target = targets.find((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
+    if (!target) continue;
+    // The walker's exclusions apply to every name below the backup path.
+    const below = legacy.rel.slice(target.path.length).split('/').filter(Boolean);
+    if (below.some((name) => isExcludedName(name, excludePatterns))) continue;
     const stats = await fs.stat(legacy.abs);
     files.push({
       path: legacy.abs,
