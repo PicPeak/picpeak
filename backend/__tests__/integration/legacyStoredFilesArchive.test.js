@@ -206,6 +206,30 @@ describe('legacy-root documents in archives', () => {
     expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(1);
   });
 
+  it('does not collect a legacy file the storage walk already archives through a symlinked legacy root', async () => {
+    const { collectLegacyStoredFiles } = require('../../src/utils/legacyStoredFiles');
+    const { root, legacy } = useInstall('source');
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'x.pdf'), 'ROOT-X');
+    fs.symlinkSync(root, legacy);
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({
+      original_filename: 'x', file_path: path.join(legacy, 'business-docs', 'inbound', '2026', 'x.pdf'),
+    });
+    expect(await collectLegacyStoredFiles(db)).toEqual([]);
+  });
+
+  it('a partial restore leaves a row whose storage-relative legacy file is still there', async () => {
+    const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
+    const { root } = useInstall('source');
+    // Legacy root inside the storage root: the row is relative to the root.
+    const value = 'app-dir/storage/business-docs/inbound/2026/rel.pdf';
+    write(path.join(root, ...value.split('/')), 'NEWER');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({ original_filename: 'rel', file_path: value });
+    const map = { [value]: 'business-docs/inbound/2026/legacy/rel.pdf' };
+    expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(0);
+  });
+
   it('refuses a map entry that is not a plain storage-relative path', async () => {
     const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
     await db('inbound_documents').del();
