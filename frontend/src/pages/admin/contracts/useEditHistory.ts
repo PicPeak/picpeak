@@ -22,7 +22,8 @@ type Action<T> =
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'reset'; value: T }
-  | { type: 'replace'; value: T };
+  | { type: 'replace'; value: T }
+  | { type: 'refresh'; update: (value: T) => T };
 
 function reducer<T>(state: State<T>, action: Action<T>): State<T> {
   switch (action.type) {
@@ -50,6 +51,10 @@ function reducer<T>(state: State<T>, action: Action<T>): State<T> {
     }
     case 'reset':
       return { past: [], present: action.value, future: [], lastKey: null, lastAt: 0 };
+    case 'refresh':
+      // Server-derived data in every step, not a step of its own: undo must
+      // not bring back what the server no longer says.
+      return { ...state, past: state.past.map(action.update), present: action.update(state.present), future: state.future.map(action.update) };
     case 'replace':
       // A new state that is itself a step (e.g. taking another admin's version): undo goes back.
       return { past: [...state.past, state.present].slice(-LIMIT), present: action.value, future: [], lastKey: null, lastAt: 0 };
@@ -69,6 +74,7 @@ export function useEditHistory<T>(initial: T) {
   const redo = useCallback(() => dispatch({ type: 'redo' }), []);
   const reset = useCallback((value: T) => dispatch({ type: 'reset', value }), []);
   const replace = useCallback((value: T) => dispatch({ type: 'replace', value }), []);
+  const refresh = useCallback((update: (value: T) => T) => dispatch({ type: 'refresh', update }), []);
   return {
     present: state.present,
     change,
@@ -76,6 +82,7 @@ export function useEditHistory<T>(initial: T) {
     redo,
     reset,
     replace,
+    refresh,
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
   };

@@ -302,6 +302,7 @@ it('"Show only if…" also wraps a language the clause inherits from the library
     block: { ...own.draft.items[0].block, bodies: { de: 'Bibliothekstext', en: 'Library text' } },
   }];
   get.mockResolvedValue(own);
+  saveDraft.mockResolvedValue({ ...own, template: { ...own.template, lockVersion: 4 } });
   renderPage();
   await screen.findByText('Leistung');
   if (!screen.queryByRole('combobox', { name: 'Show only if…' })) await user.click(screen.getByRole('button', { name: 'Text' }));
@@ -320,6 +321,28 @@ it('"Show only if…" also wraps a language the clause inherits from the library
   await waitFor(() => expect(saveDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({
     items: [{ kind: 'block', blockId: 7, body: { de: 'Eigener Text' } }],
   })));
+});
+
+it('after a save the editor shows the inherited text the server now uses', async () => {
+  const user = userEvent.setup();
+  // Published only: the editor starts from the version's frozen text.
+  const published = detail();
+  published.published = { ...published.draft, id: 12, status: 'published', items: [{
+    ...published.draft.items[0], snapshot: { de: 'Eingefrorener Text' },
+    block: { ...published.draft.items[0].block, bodies: { de: 'Neuer Bibliothekstext' } },
+  }] } as never;
+  published.draft = null as never;
+  get.mockResolvedValue(published);
+  // The draft the save creates reads the library.
+  saveDraft.mockResolvedValue({ ...detail(4), draft: { ...detail(4).draft, items: [{
+    ...detail(4).draft.items[0], snapshot: {}, block: { ...detail(4).draft.items[0].block, bodies: { de: 'Neuer Bibliothekstext' } },
+  }] } });
+  renderPage();
+  await screen.findByText('Leistung');
+  if (!screen.queryByRole('combobox', { name: 'Show only if…' })) await user.click(screen.getByRole('button', { name: 'Text' }));
+  expect(screen.getByPlaceholderText('Eingefrorener Text')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  expect(await screen.findByPlaceholderText('Neuer Bibliothekstext')).toBeInTheDocument();
 });
 
 it('the version history names the publisher and compares a version with the one before', async () => {

@@ -32,7 +32,7 @@ import {
 } from '../../../services/contracts.service';
 import {
   contractTemplatesService, templateError,
-  type ContractLocale, type ContractTemplateDetail, type ContractTemplateDraftPayload, type LocaleText,
+  type ContractLocale, type ContractTemplateDetail, type ContractTemplateDraftPayload, type ContractTemplateItem, type LocaleText,
   type TemplateFinding, type TemplatePublishCheck,
 } from '../../../services/contractTemplates.service';
 import { TemplateCheckPanel } from './TemplateCheckPanel';
@@ -90,6 +90,11 @@ function libraryBodies(block: ContractBlock): LocaleText {
   return out;
 }
 
+/** What a block clause inherits: its frozen text, else the library's. */
+const inheritedText = (item: ContractTemplateItem): LocaleText => (item.kind === 'block'
+  ? (item.snapshot && Object.keys(item.snapshot).length ? item.snapshot : item.block?.bodies || {})
+  : {});
+
 function draftFromDetail(detail: ContractTemplateDetail): EditorDraft {
   const source = detail.draft || detail.published;
   return {
@@ -107,9 +112,7 @@ function draftFromDetail(detail: ContractTemplateDetail): EditorDraft {
       name: item.block?.name || '',
       heading: item.heading || '',
       body: item.body || {},
-      baseText: item.kind === 'block'
-        ? (item.snapshot && Object.keys(item.snapshot).length ? item.snapshot : item.block?.bodies || {})
-        : {},
+      baseText: inheritedText(item),
       blockArchived: item.kind === 'block' && item.block ? !item.block.isActive : false,
     })),
     attachments: toAttachmentRows(source?.attachments),
@@ -178,7 +181,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
 
   const history = useEditHistory<EditorDraft>(EMPTY);
   const draft = history.present;
-  const { change, undo, redo, reset, replace } = history;
+  const { change, undo, redo, reset, replace, refresh } = history;
   const draftSerial = useMemo(() => serialize(draft), [draft]);
 
   // What the server has: the serialized draft and the lock it was saved with.
@@ -267,6 +270,27 @@ export const ContractTemplateEditorPage: React.FC = () => {
         setSavedAt(new Date());
         setSaveState('saved');
         store(saved);
+        // What the saved clauses inherit, as the server now has it: a draft
+        // made from a published version reads the library, not the version's
+        // frozen text. Edits made meanwhile are kept; only the inherited text
+        // and the library state of the clauses that were saved change.
+        const savedItems = saved.draft?.items || [];
+        if (savedItems.length === snapshot.items.length) {
+          const fresh = new Map(snapshot.items.map((item, i) => [item.key, savedItems[i]]));
+          refresh((current) => {
+            let changed = false;
+            const items = current.items.map((item) => {
+              const server = fresh.get(item.key);
+              if (!server || item.kind !== 'block' || server.kind !== 'block' || server.blockId !== item.blockId) return item;
+              const baseText = inheritedText(server);
+              const blockArchived = server.block ? !server.block.isActive : item.blockArchived;
+              if (JSON.stringify(baseText) === JSON.stringify(item.baseText) && blockArchived === item.blockArchived) return item;
+              changed = true;
+              return { ...item, baseText, blockArchived };
+            });
+            return changed ? { ...current, items } : current;
+          });
+        }
         return saved;
       } catch (err) {
         const { code, message } = templateError(err);
