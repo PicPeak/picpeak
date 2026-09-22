@@ -1097,7 +1097,7 @@ export const CreateEventPage: React.FC = () => {
               </label>
               <div className="flex items-center gap-2">
                 <div className="w-32">
-                  {/* Same 32-bit ceiling as photo_cap (migration 229). */}
+                  {/* Same 32-bit ceiling as photo_cap (migration 231). */}
                   <Input
                     id="create-download-limit"
                     type="number"

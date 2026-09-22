@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 229: per-event download limit (issue 1560).
+ * Migration 231: per-event download limit (issue 1560).
  *
  *   events.download_limit     Nullable integer, null = unlimited — which is
  *                             every existing event, so nothing changes until

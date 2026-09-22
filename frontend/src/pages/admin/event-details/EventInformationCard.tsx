@@ -424,7 +424,7 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                 value={editForm.download_limit}
                 onChange={(e) => setEditForm(prev => ({ ...prev, download_limit: parseInt(e.target.value) || 0 }))}
                 min={0}
-                // events.download_limit is a signed 32-bit int (migration 229).
+                // events.download_limit is a signed 32-bit int (migration 231).
                 max={2147483647}
                 className="w-24 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
               />
