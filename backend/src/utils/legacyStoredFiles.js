@@ -26,7 +26,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getStoragePath } = require('../config/storage');
-const { STORAGE_FOLDERS, STORED_PATH_COLUMNS, resolveStoredPath } = require('./storedPath');
+const {
+  STORAGE_FOLDERS, STORED_PATH_COLUMNS, resolveStoredPath, isStorageRelative, storageSuffixes,
+} = require('./storedPath');
 
 const toPosix = (p) => p.split(path.sep).join('/');
 
@@ -82,14 +84,22 @@ async function collectLegacyStoredFiles(knex) {
   let realLegacy;
   try { realLegacy = fs.realpathSync(legacy); } catch { return []; }
   const byAbs = new Map();
-  // Paths under the storage root other rows name, whether or not the file is
-  // there: a legacy document must not take one (a restore would hand that row
-  // the legacy document's bytes).
+  // Paths under the storage root other rows name or may be moved to (the
+  // import relocates a value to any of its storage suffixes), whether or not
+  // the file is there: a legacy document must not take one, or a restore
+  // would hand that row the legacy document's bytes.
   const reserved = new Set();
+  const reserve = (value, resolved) => {
+    if (resolved && isInside(resolved, root)) reserved.add(toPosix(path.relative(root, resolved)));
+    if (isStorageRelative(value)) reserved.add(toPosix(value));
+    else for (const suffix of storageSuffixes(value)) reserved.add(suffix);
+  };
   for (const value of values) {
     const resolved = resolveStoredPath(value);
-    if (resolved && isInside(resolved, root)) reserved.add(toPosix(path.relative(root, resolved)));
-    if (!resolved || !isInside(resolved, legacy) || covered.some((dir) => isInside(resolved, dir))) continue;
+    if (!resolved || !isInside(resolved, legacy) || covered.some((dir) => isInside(resolved, dir))) {
+      reserve(value, resolved);
+      continue;
+    }
     // The readers check the realpath (resolveStoredPathStrict); so does this,
     // so a symlink inside the legacy root cannot pull an outside file into
     // an archive.
@@ -166,12 +176,19 @@ async function holdsBytes(file, sha256) {
  *
  * @returns {Promise<number>} rows updated
  */
-async function applyStoredPathMap(knex, map, verify) {
+async function applyStoredPathMap(knex, map, verify, { onlyUnreadable = false } = {}) {
   if (!map || typeof map !== 'object') return 0;
   const entries = [];
   for (const [value, rel] of Object.entries(map)) {
+    if (typeof value !== 'string' || !value || !isPlaceablePath(rel)) continue;
+    // Without a restored database the row is the live one: while its own file
+    // is still readable, that file is newer than the archived copy.
+    if (onlyUnreadable) {
+      const current = resolveStoredPath(value);
+      if (current && fs.existsSync(current)) continue;
+    }
     // eslint-disable-next-line no-await-in-loop
-    if (typeof value === 'string' && value && isPlaceablePath(rel) && await verify(rel)) entries.push([value, rel]);
+    if (await verify(rel)) entries.push([value, rel]);
   }
   if (!entries.length) return 0;
   let updated = 0;

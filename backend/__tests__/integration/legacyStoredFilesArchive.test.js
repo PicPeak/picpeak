@@ -181,6 +181,26 @@ describe('legacy-root documents in archives', () => {
     ]);
     const [entry] = await collectLegacyStoredFiles(db);
     expect(entry.rel).toBe('business-docs/inbound/2026/legacy/gone.pdf');
+
+    // The same for a missing path the import would relocate onto that suffix.
+    await db('inbound_documents').where({ original_filename: 'missing' })
+      .update({ file_path: 'previous-storage/business-docs/inbound/2026/gone.pdf' });
+    const [again] = await collectLegacyStoredFiles(db);
+    expect(again.rel).toBe('business-docs/inbound/2026/legacy/gone.pdf');
+  });
+
+  it('a restore without the database leaves a row whose own document is still readable', async () => {
+    const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
+    const { legacy, root } = useInstall('source');
+    const live = path.join(legacy, 'business-docs', 'inbound', '2026', 'live.pdf');
+    write(live, 'NEWER');
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'legacy', 'live.pdf'), 'ARCHIVED');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({ original_filename: 'live', file_path: live });
+    const map = { [live]: 'business-docs/inbound/2026/legacy/live.pdf' };
+    expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(0);
+    fs.rmSync(live);
+    expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(1);
   });
 
   it('refuses a map entry that is not a plain storage-relative path', async () => {
