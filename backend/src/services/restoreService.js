@@ -5,7 +5,6 @@ const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream } = require('fs');
-const fsSync = require('fs');
 const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -463,11 +462,14 @@ class RestoreService {
       // restore only has both halves in place after the second one.
       if (manifest.metadata && manifest.metadata.stored_path_map) {
         try {
-          const { applyStoredPathMap } = require('../utils/legacyStoredFiles');
+          const { applyStoredPathMap, holdsBytes } = require('../utils/legacyStoredFiles');
           const { getStoragePath } = require('../config/storage');
           const root = getStoragePath();
-          const updated = await applyStoredPathMap(db, manifest.metadata && manifest.metadata.stored_path_map,
-            (rel) => fsSync.existsSync(path.join(root, ...rel.split('/'))));
+          const sums = manifest.metadata.stored_path_sha256 || {};
+          // Only where the backed-up bytes are actually there: after a partial
+          // restore a different file may sit at the mapped path.
+          const updated = await applyStoredPathMap(db, manifest.metadata.stored_path_map,
+            (rel) => holdsBytes(path.join(root, ...rel.split('/')), sums[rel]));
           if (updated) this.log('info', `Pointed ${updated} restored document path(s) at their backed-up location`);
         } catch (err) {
           this.log('warn', `Updating restored document paths failed: ${err.message}`);

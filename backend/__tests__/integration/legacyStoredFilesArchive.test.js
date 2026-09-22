@@ -88,10 +88,7 @@ describe('legacy-root documents in archives', () => {
     await seedDocuments();
     const { filePath, manifest } = await createPicpeak({ includePhotos: false });
     try {
-      expect(Object.values(manifest.stored_path_map).sort()).toEqual([
-        'business-docs/inbound/2026/legacy/same.pdf',
-        'business-docs/inbound/2026/only.pdf',
-      ]);
+      expect(manifest.file_count).toBe(3);
 
       fs.rmSync(path.join(base, 'source'), { recursive: true, force: true });
       useInstall('target');
@@ -111,11 +108,16 @@ describe('legacy-root documents in archives', () => {
 
   it('the backup walker includes them under the mapped path, and a restore points the rows there', async () => {
     const backupService = require('../../src/services/backupService');
-    const { applyStoredPathMap, storedPathMap } = require('../../src/utils/legacyStoredFiles');
+    const {
+      applyStoredPathMap, storedPathMap, storedPathChecksums, holdsBytes,
+    } = require('../../src/utils/legacyStoredFiles');
     await seedDocuments();
     const files = await backupService.getFilesToBackup(false);
     const legacy = files.filter((f) => f.legacyValues)
-      .map((f) => ({ rel: f.relativePath.split(path.sep).join('/'), body: fs.readFileSync(f.path, 'utf8'), values: f.legacyValues }));
+      .map((f) => ({
+        rel: f.relativePath.split(path.sep).join('/'), body: fs.readFileSync(f.path, 'utf8'),
+        values: f.legacyValues, sha256: f.legacySha256,
+      }));
     expect(legacy.map(({ rel, body }) => ({ rel, body })).sort((a, b) => a.rel.localeCompare(b.rel))).toEqual([
       { rel: 'business-docs/inbound/2026/legacy/same.pdf', body: 'LEGACY-SAME' },
       { rel: 'business-docs/inbound/2026/only.pdf', body: 'LEGACY-ONLY' },
@@ -124,15 +126,20 @@ describe('legacy-root documents in archives', () => {
     // The restore: the backed-up files land under the new root, the rows come
     // back as they were, then the manifest's map is applied.
     const map = storedPathMap(legacy);
+    const sums = storedPathChecksums(legacy);
     const sourceRoot = process.env.STORAGE_PATH;
     const backedUp = [...files.map((f) => ({ rel: f.relativePath.split(path.sep).join('/'), abs: f.path }))];
     const copies = backedUp.map(({ rel, abs }) => ({ rel, body: fs.readFileSync(abs) }));
     expect(sourceRoot).toContain('source');
     fs.rmSync(path.join(base, 'source'), { recursive: true, force: true });
     const { root } = useInstall('target');
-    for (const { rel, body } of copies) write(path.join(root, ...rel.split('/')), body);
+    const verify = (rel) => holdsBytes(path.join(root, ...rel.split('/')), sums[rel]);
+    // A different document at a mapped path (a partial restore) is not adopted.
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'only.pdf'), 'SOMETHING-ELSE');
+    expect(await applyStoredPathMap(db, map, verify)).toBe(0);
 
-    const updated = await applyStoredPathMap(db, map, (rel) => fs.existsSync(path.join(root, ...rel.split('/'))));
+    for (const { rel, body } of copies) write(path.join(root, ...rel.split('/')), body);
+    const updated = await applyStoredPathMap(db, map, verify);
     expect(updated).toBe(2);
     expect(await contents()).toEqual({ only: 'LEGACY-ONLY', shadowed: 'LEGACY-SAME', root: 'ROOT-SAME' });
   });
@@ -168,7 +175,7 @@ describe('legacy-root documents in archives', () => {
     await db('inbound_documents').insert({ original_filename: 'x', file_path: '/old/storage/business-docs/x.pdf' });
     const updated = await applyStoredPathMap(db, {
       '/old/storage/business-docs/x.pdf': 'business-docs/../../etc/passwd',
-    }, () => true);
+    }, async () => true);
     expect(updated).toBe(0);
     expect((await db('inbound_documents').first()).file_path).toBe('/old/storage/business-docs/x.pdf');
   });

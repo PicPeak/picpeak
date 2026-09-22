@@ -13,7 +13,7 @@ const logger = require('../utils/logger');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
-const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
+const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const packageJson = require('../../package.json');
 
@@ -703,6 +703,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
       size: stats.size,
       modified: stats.mtime,
       legacyValues: legacy.values,
+      legacySha256: legacy.sha256,
     });
   }
 
@@ -1193,10 +1194,11 @@ async function runBackupInternal(isManual = false) {
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
-      const legacyMap = storedPathMap(
-        (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
-          .map((file) => ({ rel: file.relativePath.split(path.sep).join('/'), values: file.legacyValues }))
-      );
+      const legacyBacked = (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
+        .map((file) => ({
+          rel: file.relativePath.split(path.sep).join('/'), values: file.legacyValues, sha256: file.legacySha256,
+        }));
+      const legacyMap = storedPathMap(legacyBacked);
       const manifestOptions = {
         backupType: previousBackup ? 'incremental' : 'full',
         backupPath: result.backupPath,
@@ -1208,7 +1210,9 @@ async function runBackupInternal(isManual = false) {
           backup_run_id: runId,
           destination_type: destinationType,
           retentionDays: config.backup_retention_days || 30,
-          ...(Object.keys(legacyMap).length ? { stored_path_map: legacyMap } : {})
+          ...(Object.keys(legacyMap).length
+            ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
+            : {})
         }
       };
 
