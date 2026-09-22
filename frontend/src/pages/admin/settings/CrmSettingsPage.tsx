@@ -75,6 +75,8 @@ const SETTING_KEYS = [
   // Alert thresholds for probing of the signing links (#1446).
   'crm_contracts_alert_unknown_tokens_per_ip',
   'crm_contracts_alert_otp_failures_per_contract',
+  // The legal notice frozen into every contract at send (#1446), { en, de }.
+  'crm_contracts_legal_notice',
   // Dashboard CRM-overview tile visibility (per-tile). Default ON;
   // explicit false hides the tile. Stored as one boolean per tile so
   // admins can mix-and-match — e.g. someone who only bills hourly
@@ -536,6 +538,29 @@ export const CrmSettingsPage: React.FC = () => {
             placeholder="C-{YEAR}-{SEQ:04d}"
           />
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+          {(['de', 'en'] as const).map((locale) => (
+            <div key={locale}>
+              <label htmlFor={`crm-legal-notice-${locale}`} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                {locale === 'de'
+                  ? t('crmSettings.crm_contracts_legal_notice.labelDe', 'Legal notice on signed contracts (German)')
+                  : t('crmSettings.crm_contracts_legal_notice.labelEn', 'Legal notice on signed contracts (English)')}
+              </label>
+              <textarea
+                id={`crm-legal-notice-${locale}`}
+                rows={4}
+                maxLength={2000}
+                className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm"
+                value={(values.crm_contracts_legal_notice && values.crm_contracts_legal_notice[locale]) || ''}
+                placeholder={t('crmSettings.crm_contracts_legal_notice.placeholder', 'Empty: the standard notice (simple electronic signature, not for contracts that need written form).') as string}
+                onChange={(e) => setVal('crm_contracts_legal_notice', { ...(values.crm_contracts_legal_notice || {}), [locale]: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-neutral-500 mt-1">
+          {t('crmSettings.crm_contracts_legal_notice.help', 'Frozen into each contract when it is sent, shown on the signing page and printed on the signing certificate. Changing it affects only contracts sent afterwards.')}
+        </p>
         <p className="text-xs text-neutral-500 mt-2">
           {t('crmSettings.crm_contracts_number_format.help',
             'Supported tokens: {YEAR}, {MONTH}, {SEQ:04d}. Example: LBM-C-{YEAR}-{SEQ:04d} → LBM-C-2026-0001.')}

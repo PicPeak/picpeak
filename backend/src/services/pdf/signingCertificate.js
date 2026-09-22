@@ -21,7 +21,7 @@ function iso(value) {
 }
 
 function renderSigningCertificate({
-  contract, signers = [], events = [], hashes = {}, attachments = [], chainHead = null,
+  contract, signers = [], events = [], hashes = {}, attachments = [], chainHead = null, legalNotice = null,
   locale = 'de', theme = null, issuer = {}, generatedAt = null,
 }) {
   const pdfService = require('../pdfService');
@@ -81,6 +81,12 @@ function renderSigningCertificate({
       doc.strokeColor(colors.rule).lineWidth(0.5).moveTo(left, ruleY).lineTo(left + width, ruleY).stroke();
       doc.y = ruleY + 10;
       doc.font(fonts.body).fontSize(9.5).fillColor(colors.text).text(t(locale, 'cert_intro'), left, doc.y, { width });
+      // The legal notice the contract was signed under, as frozen at send (#1446).
+      if (legalNotice) {
+        doc.moveDown(0.4);
+        doc.font(fonts.bold).fontSize(8.5).fillColor(colors.muted).text(t(locale, 'cert_legal_notice'), left, doc.y, { width });
+        doc.font(fonts.body).fontSize(8.5).fillColor(colors.text).text(legalNotice, left, doc.y, { width });
+      }
 
       heading(t(locale, 'cert_contract_section'));
       row(t(locale, 'audit_contract_number'), contract.contract_number);

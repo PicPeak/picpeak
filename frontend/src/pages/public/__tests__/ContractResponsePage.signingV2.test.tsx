@@ -606,3 +606,19 @@ it('asks for the details first, shows nothing of the contract, then opens it', a
     address_line1: 'Seestrasse 12', postal_code: '8001', city: 'Zürich', country_code: 'CH',
   }));
 });
+
+it('prints the frozen legal notice under the contract and on the sign step (#1446 slice 12)', async () => {
+  const user = userEvent.setup();
+  window.sessionStorage.setItem(
+    'picpeak.contractSigning.session.portal',
+    JSON.stringify({ sessionToken: SESSION_TOKEN, expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+  const view = sessionView({ verifiedVia: 'portal' });
+  session.mockResolvedValue({ contract: { ...view.contract, legalNotice: 'Simple electronic signature — not for written form.' } });
+  renderAt('/contract/signing');
+
+  await screen.findByRole('heading', { name: 'Wedding contract' });
+  expect(screen.getByText('Simple electronic signature — not for written form.')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Continue to signing' }));
+  expect(screen.getByText('Simple electronic signature — not for written form.')).toBeInTheDocument();
+});

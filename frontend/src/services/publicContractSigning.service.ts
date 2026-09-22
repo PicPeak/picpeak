@@ -81,6 +81,8 @@ export interface SigningSessionContract extends PublicContractView {
   };
   /** The declarations to confirm; null for a contract sent before they were frozen. */
   consents?: SigningConsent[] | null;
+  /** The legal notice frozen with the contract; null for one sent before (#1446). */
+  legalNotice?: string | null;
   /** Only while the contract collects the customer's details first (#1446). */
   dataRequest?: SigningDataRequest;
 }

@@ -589,6 +589,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
             </div>
           )}
         </div>
+        <LegalFooter notice={c.legalNotice} />
       </PageShell>
     );
   }
@@ -738,7 +739,20 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
       <SignerProgress contract={c} />
 
       <div className={`mt-6 ${CARD}`}>{action}</div>
+      <LegalFooter notice={c.legalNotice} />
     </PageShell>
+  );
+};
+
+/** The legal notice the contract is signed under, as frozen at send (#1446). */
+const LegalFooter: React.FC<{ notice?: string | null }> = ({ notice }) => {
+  const { t } = useTranslation();
+  if (!notice) return null;
+  return (
+    <footer className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="font-medium">{t('contractSigning.legalNotice.title', 'Legal notice')}</p>
+      <p className="whitespace-pre-line">{notice}</p>
+    </footer>
   );
 };
 

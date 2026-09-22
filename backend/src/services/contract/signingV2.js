@@ -727,6 +727,9 @@ async function sessionView(sessionToken) {
   view.consents = frozen ? frozen.map((c) => ({
     key: c.key, required: c.required, version: c.version, text: consents.pickText(c, contract.language || 'de'),
   })) : null;
+  // The legal notice as frozen at send (null for a contract sent before).
+  const snapshot = require('./renderContext').parseContentSnapshot(contract.rendered_content);
+  view.legalNotice = require('./legalNotice').pickNotice(snapshot && snapshot.legalNotice, contract.language || 'de');
   const recorded = await unsignedManifest(contract.id, db);
   view.manifest = {
     sha256: contract.attachment_manifest_sha256 || null,
@@ -1261,6 +1264,10 @@ async function issueCertificate(contractId, signedSha) {
         signed: signedSha,
       },
       attachments: (recorded && recorded.attachments) || [],
+      legalNotice: require('./legalNotice').pickNotice(
+        (require('./renderContext').parseContentSnapshot(contract.rendered_content) || {}).legalNotice,
+        contract.language || 'de',
+      ),
       chainHead: chain.head,
       locale: contract.language || 'de',
       theme: fontOptions.theme,

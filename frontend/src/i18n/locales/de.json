@@ -7722,6 +7722,12 @@
     "crm_contracts_alert_otp_failures_per_contract": {
       "label": "Alarm ab falschen Codes pro Vertrag und Stunde"
     },
+    "crm_contracts_legal_notice": {
+      "labelDe": "Rechtlicher Hinweis zu unterzeichneten Verträgen (Deutsch)",
+      "labelEn": "Rechtlicher Hinweis zu unterzeichneten Verträgen (Englisch)",
+      "placeholder": "Leer: der Standardhinweis (einfache elektronische Signatur, nicht für Verträge mit gesetzlicher Schriftform).",
+      "help": "Wird beim Versand in jeden Vertrag eingefroren, auf der Unterzeichnungsseite angezeigt und im Prüfprotokoll gedruckt. Eine Änderung betrifft nur später versandte Verträge."
+    },
     "customer_documents_notify_on_share": {
       "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"
     },
@@ -9151,6 +9157,9 @@
       "intro": "Der Vertrag wird mit diesen Angaben erstellt, sobald Sie sie senden; danach können Sie ihn gleich hier lesen und unterzeichnen.",
       "sending": "Vertrag wird erstellt …",
       "submit": "Angaben speichern und Vertrag erstellen"
+    },
+    "legalNotice": {
+      "title": "Rechtlicher Hinweis"
     }
   }
 }

@@ -7721,6 +7721,12 @@
     "crm_contracts_alert_otp_failures_per_contract": {
       "label": "Alert after wrong codes per contract and hour"
     },
+    "crm_contracts_legal_notice": {
+      "labelDe": "Legal notice on signed contracts (German)",
+      "labelEn": "Legal notice on signed contracts (English)",
+      "placeholder": "Empty: the standard notice (simple electronic signature, not for contracts that need written form).",
+      "help": "Frozen into each contract when it is sent, shown on the signing page and printed on the signing certificate. Changing it affects only contracts sent afterwards."
+    },
     "customer_documents_notify_on_share": {
       "label": "Email the customer when a document is shared with them (default for the checkbox on the customer record)"
     },
@@ -9150,6 +9156,9 @@
       "intro": "The contract is prepared with these details once you send them; then you can read and sign it right here.",
       "sending": "Preparing the contract…",
       "submit": "Save my details and prepare the contract"
+    },
+    "legalNotice": {
+      "title": "Legal notice"
     }
   }
 }

@@ -1190,3 +1190,36 @@ describe('collect-then-freeze', () => {
     expect((await db('contracts').where({ id: waiting }).first()).status).toBe('expired');
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 12 — the legal notice, frozen with what is signed
+// ---------------------------------------------------------------------
+
+describe('legal notice', () => {
+  test('the notice is frozen at send, shown to the signer and printed on the certificate', async () => {
+    const { DEFAULT_LEGAL_NOTICE } = require('../../src/services/contract/legalNotice');
+    await setSetting('crm_contracts_legal_notice', { en: 'Custom notice.', de: '' });
+    try {
+      const { id, session } = await sentWithSession();
+      const contract = await db('contracts').where({ id }).first();
+      const snapshot = parsed(contract.rendered_content);
+      // An empty language falls back to the default; the hash covers it.
+      expect(snapshot.legalNotice).toEqual({ en: 'Custom notice.', de: DEFAULT_LEGAL_NOTICE.de });
+      expect((await sessionView(session)).legalNotice).toBe(DEFAULT_LEGAL_NOTICE.de);
+
+      // Changing the setting afterwards changes nothing already sent.
+      await setSetting('crm_contracts_legal_notice', { en: 'Later.', de: 'Später.' });
+      expect((await sessionView(session)).legalNotice).toBe(DEFAULT_LEGAL_NOTICE.de);
+
+      await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+      const certificate = require('../../src/services/pdf/signingCertificate');
+      const spy = jest.spyOn(certificate, 'renderSigningCertificate');
+      await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+      expect(spy.mock.calls[0][0].legalNotice).toBe(DEFAULT_LEGAL_NOTICE.de);
+      spy.mockRestore();
+      expect((await db('contracts').where({ id }).first()).rendered_content_sha256).toBe(contract.rendered_content_sha256);
+    } finally {
+      await setSetting('crm_contracts_legal_notice', null);
+    }
+  });
+});
