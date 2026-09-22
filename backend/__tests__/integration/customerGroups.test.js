@@ -614,3 +614,79 @@ describe('filters v2: status, any/all, ungrouped', () => {
     expect((await listCustomers('?ungrouped=maybe')).status).toBe(400);
   });
 });
+
+describe('groups on a new customer', () => {
+  const createCustomerViaRoute = (email, groupIds, token = superToken) => request(adminApp)
+    .post('/api/admin/customers').set(auth(token))
+    .send({ email, prefill: { display_name: 'Created with groups' }, ...(groupIds ? { groupIds } : {}) });
+
+  it('creates the customer in the groups it was given, and logs one assignment with the admin', async () => {
+    const a = bodyOf(await createGroup({ name: 'Create A' })).group;
+    const b = bodyOf(await createGroup({ name: 'Create B' })).group;
+    const res = await createCustomerViaRoute('created-in-groups@example.com', [a.id, b.id]);
+    expect(res.status).toBe(201);
+    const created = bodyOf(res).customer;
+    expect(created.groups.map((g) => g.id).sort((x, y) => x - y)).toEqual([a.id, b.id].sort((x, y) => x - y));
+    expect((await db('customer_group_members').where({ customer_account_id: created.id })).length).toBe(2);
+
+    const logs = (await db('activity_logs').where({ activity_type: 'customer_groups_assigned' }))
+      .filter((row) => {
+        const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+        return meta.customerId === created.id;
+      });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ actor_type: 'admin', actor_id: adminId });
+  });
+
+  it('creates a customer in no group when none are sent', async () => {
+    const res = await createCustomerViaRoute('created-no-groups@example.com');
+    expect(res.status).toBe(201);
+    expect(bodyOf(res).customer.groups).toEqual([]);
+  });
+
+  it('refuses groups without customers.groups.manage, and creates nobody', async () => {
+    const group = bodyOf(await createGroup({ name: 'Create forbidden' })).group;
+    const roleId = idOf(await db('roles').insert({
+      name: 'customers-create-only', display_name: 'Create only', is_system: false,
+    }).returning('id'));
+    for (const name of ['customers.view', 'customers.create']) {
+      const permission = await db('permissions').where({ name }).first();
+      await db('role_permissions').insert({ role_id: roleId, permission_id: permission.id });
+    }
+    const creatorId = idOf(await db('admin_users').insert({
+      username: 'customers-creator',
+      email: 'customers-creator@example.com',
+      password_hash: 'x',
+      must_change_password: false,
+      role_id: roleId,
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const creatorToken = mintAdminToken(creatorId);
+    // The permission cache was filled before this role existed.
+    require('../../src/middleware/permissions').clearPermissionCache();
+
+    const refused = await createCustomerViaRoute('created-forbidden@example.com', [group.id], creatorToken);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('GROUPS_PERMISSION_REQUIRED');
+    expect(await db('customer_accounts').where({ email: 'created-forbidden@example.com' }).first()).toBeUndefined();
+
+    // Without groups the same admin still creates customers.
+    expect((await createCustomerViaRoute('created-by-creator@example.com', [], creatorToken)).status).toBe(201);
+  });
+
+  it('refuses an archived or unknown group, and creates nobody', async () => {
+    const group = bodyOf(await createGroup({ name: 'Create archived' })).group;
+    await request(adminApp).put(`/api/admin/customers/groups/${group.id}`)
+      .set(auth(superToken)).send({ isArchived: true });
+
+    const archived = await createCustomerViaRoute('created-archived@example.com', [group.id]);
+    expect(archived.status).toBe(400);
+    expect(archived.body.code).toBe('GROUP_ARCHIVED');
+    expect(await db('customer_accounts').where({ email: 'created-archived@example.com' }).first()).toBeUndefined();
+
+    const unknown = await createCustomerViaRoute('created-unknown@example.com', [999999]);
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.code).toBe('GROUP_NOT_FOUND');
+    expect(await db('customer_accounts').where({ email: 'created-unknown@example.com' }).first()).toBeUndefined();
+  });
+});

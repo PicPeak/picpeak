@@ -244,6 +244,21 @@ async function reorder(ids, admin = null) {
   return list({ includeArchived: true });
 }
 
+/**
+ * Refuse ids a new customer can't be put in — unknown or archived — before
+ * anything is written, so the caller never creates a customer and then drops
+ * the groups it was asked for.
+ */
+async function assertAssignable(groupIds) {
+  const wanted = [...new Set(groupIds.map((id) => Number(id)))];
+  const groups = wanted.length ? await db('customer_groups').whereIn('id', wanted) : [];
+  if (groups.length !== wanted.length) throw new AppError('Customer group not found', 404, 'GROUP_NOT_FOUND');
+  const archived = groups.find((g) => g.is_archived);
+  if (archived) {
+    throw new AppError(`"${archived.name}" is archived and can't be assigned. Restore it first.`, 400, 'GROUP_ARCHIVED');
+  }
+}
+
 /** The groups on one customer, archived ones included — they are history. */
 async function groupsForCustomer(customerId, conn = db) {
   const rows = await conn('customer_group_members')
@@ -349,5 +364,6 @@ module.exports = {
   groupsForCustomer,
   groupsForCustomers,
   setCustomerGroups,
+  assertAssignable,
   _internal: { normalizeColor, normalizeName, normalizeDescription, nameKey },
 };

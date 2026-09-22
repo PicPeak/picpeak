@@ -31,9 +31,10 @@ const toastSuccess = toast.success as ReturnType<typeof vi.fn>;
 const toastWarn = toast.warn as ReturnType<typeof vi.fn>;
 const toastInfo = toast.info as ReturnType<typeof vi.fn>;
 
+const hasPermission = vi.fn((_name: string) => true);
 vi.mock('../../../contexts/PermissionsContext', () => ({
   usePermissions: () => ({
-    hasPermission: () => true,
+    hasPermission: (name: string) => hasPermission(name),
     hasAnyPermission: () => true,
     hasAllPermissions: () => true,
     isSuperAdmin: true,
@@ -45,8 +46,11 @@ const list = vi.fn();
 const listInvitations = vi.fn();
 const createDirect = vi.fn();
 const sendInvite = vi.fn();
+const listGroups = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
   customerAdminService: {
+    listGroups: (...a: unknown[]) => listGroups(...a),
+    listGroupCatalogue: async () => ({ groups: await listGroups(), ungroupedCount: 0 }),
     list: (...a: unknown[]) => list(...a),
     listInvitations: (...a: unknown[]) => listInvitations(...a),
     createDirect: (...a: unknown[]) => createDirect(...a),
@@ -97,8 +101,10 @@ function renderWith(node: React.ReactElement) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  hasPermission.mockImplementation(() => true);
   listInvitations.mockResolvedValue([]);
   list.mockResolvedValue([]);
+  listGroups.mockResolvedValue([]);
 });
 
 // The badge is in the row twice: in the status column, and in the phone copy
@@ -301,5 +307,44 @@ describe('InlineCustomerCreate — what the toast may claim (#1261)', () => {
       expect(tooltip).not.toMatch(/invitation sent/i);
       expect(tooltip).toMatch(/not proof/i);
     }
+  });
+});
+
+describe('InlineCustomerCreate — groups for the new customer (#1443)', () => {
+  const group = (id: number, name: string, isArchived = false) => ({
+    id, name, description: null, color: '#2563EB', sortOrder: id, isArchived,
+  });
+  const fill = async () => {
+    await userEvent.type(screen.getByPlaceholderText('name@example.com'), 'new@example.com');
+    await userEvent.type(screen.getByLabelText(/Company name/i), 'Acme');
+  };
+
+  it('sends the groups picked in the form with the create call, and offers no archived one', async () => {
+    listGroups.mockResolvedValue([group(1, 'VIP'), group(2, 'Press'), group(3, 'Retired', true)]);
+    createDirect.mockResolvedValue({ id: 5, email: 'new@example.com' });
+
+    renderWith(<InlineCustomerCreate mode="passive" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(await screen.findByRole('checkbox', { name: /VIP/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Press/ }));
+    expect(screen.queryByRole('checkbox', { name: /Retired/ })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Save as passive customer/i }));
+
+    await waitFor(() => expect(createDirect).toHaveBeenCalledTimes(1));
+    expect(createDirect.mock.calls[0][2]).toEqual([1, 2]);
+  });
+
+  it('shows no group picker, and fetches no catalogue, without customers.groups.manage', async () => {
+    hasPermission.mockImplementation((name) => name !== 'customers.groups.manage');
+    listGroups.mockResolvedValue([group(1, 'VIP')]);
+    createDirect.mockResolvedValue({ id: 6, email: 'new@example.com' });
+
+    renderWith(<InlineCustomerCreate mode="passive" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    expect(screen.queryByRole('checkbox', { name: /VIP/ })).toBeNull();
+    expect(listGroups).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: /Save as passive customer/i }));
+    await waitFor(() => expect(createDirect).toHaveBeenCalledTimes(1));
+    expect(createDirect.mock.calls[0][2]).toEqual([]);
   });
 });

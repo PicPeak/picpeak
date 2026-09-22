@@ -402,10 +402,12 @@ export const customerAdminService = {
   async createDirect(
     email: string,
     prefill?: CustomerInvitePrefill,
+    /** Needs customers.groups.manage; the server refuses the whole create without it. */
+    groupIds?: number[],
   ): Promise<CustomerAccountDetail> {
     const response = await api.post<{ data: { customer: CustomerAccountDetail } } | { customer: CustomerAccountDetail }>(
       '/admin/customers',
-      { email, prefill },
+      groupIds && groupIds.length > 0 ? { email, prefill, groupIds } : { email, prefill },
     );
     return ((response.data as any).data ?? response.data).customer;
   },

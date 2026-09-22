@@ -35,7 +35,8 @@ import {
   type CustomerInvitePrefill,
 } from '../../services/customerAdmin.service';
 import { businessProfileService } from '../../services/businessProfile.service';
-import { useQuery } from '@tanstack/react-query';
+import { usePermissions } from '../../contexts/PermissionsContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
   /**
@@ -111,6 +112,20 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
   const { t } = useTranslation();
   const [form, setForm] = useState<FormState>(empty);
   const [busy, setBusy] = useState<'passive' | 'invite' | null>(null);
+  const queryClient = useQueryClient();
+
+  // Groups for the new customer (#1443). Only offered to an admin who may
+  // assign them — the server refuses the field otherwise — and only live
+  // groups: nothing new lands in an archived one.
+  const { hasPermission } = usePermissions();
+  const canAssignGroups = hasPermission('customers.groups.manage');
+  const [groupIds, setGroupIds] = useState<number[]>([]);
+  const { data: catalogue } = useQuery({
+    queryKey: ['admin-customer-groups'],
+    queryFn: () => customerAdminService.listGroups(true),
+    enabled: canAssignGroups,
+  });
+  const liveGroups = (catalogue || []).filter((group) => !group.isArchived);
 
   // Resolve a title + subtitle that matches the selected mode. The
   // 'both' branch keeps the legacy copy so inline (in-editor) callers
@@ -179,7 +194,8 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
     }
     setBusy(mode);
     try {
-      const customer = await customerAdminService.createDirect(form.email, buildPrefill(form));
+      const customer = await customerAdminService.createDirect(form.email, buildPrefill(form), groupIds);
+      if (groupIds.length > 0) queryClient.invalidateQueries({ queryKey: ['admin-customer-groups'] });
       if (mode === 'invite') {
         // Customer is now saved as passive. Fire the second call to
         // promote them. If THIS fails, keep the customer selected
@@ -371,6 +387,33 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
           </select>
         </div>
       </div>
+
+      {canAssignGroups && liveGroups.length > 0 && (
+        <fieldset>
+          <legend className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            {t('customers.detail.groupsSection', 'Groups')}
+          </legend>
+          <ul className="flex flex-wrap gap-x-4 gap-y-2">
+            {liveGroups.map((group) => (
+              <li key={group.id}>
+                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                  <input
+                    type="checkbox"
+                    checked={groupIds.includes(group.id)}
+                    onChange={(e) => setGroupIds((current) => (
+                      e.target.checked
+                        ? [...current, group.id]
+                        : current.filter((id) => id !== group.id)
+                    ))}
+                  />
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} aria-hidden="true" />
+                  <span>{group.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
 
       <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
         <Button variant="outline" onClick={onCancel} disabled={busy !== null}>

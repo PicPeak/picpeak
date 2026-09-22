@@ -10,7 +10,7 @@ const express = require('express');
 const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { filterOwnedEventIds } = require('../middleware/ownership');
 const { db, logActivity } = require('../database/db');
@@ -30,7 +30,7 @@ const customerHoursService = require('../services/customerHoursService');
 const combinedBillingService = require('../services/combinedBillingService');
 const invoiceService = require('../services/invoiceService');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
-const { NotFoundError } = require('../utils/errors');
+const { NotFoundError, AppError } = require('../utils/errors');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerGroupsService = require('../services/customerGroupsService');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
@@ -410,15 +410,37 @@ router.post('/', [
     }
     return true;
   }),
+  // Groups for the new customer (#1443). Placing a customer in a group is
+  // customers.groups.manage, checked in the handler because the field is
+  // optional on a route guarded by customers.create.
+  body('groupIds').optional().isArray({ max: MAX_GROUP_IDS }),
+  body('groupIds.*').isInt({ min: 1 }).toInt(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  const groupIds = [...new Set(req.body.groupIds || [])];
+  // Everything that could refuse the groups is checked before the customer
+  // exists, so a refusal never leaves a customer without the groups the
+  // admin picked.
+  if (groupIds.length > 0) {
+    if (!await userHasAnyPermission(req.admin.id, ['customers.groups.manage'])) {
+      throw new AppError('Placing a customer in a group needs the customers.groups.manage permission', 403, 'GROUPS_PERMISSION_REQUIRED');
+    }
+    await customerGroupsService.assertAssignable(groupIds);
+  }
+  // createDirect emits customer.created before the memberships below exist.
+  // A workflow condition reads membership when it is evaluated, so a delayed
+  // node sees the groups and an immediate one does not; moving the emit out
+  // of createDirect would change that, and is a separate change.
   const { id } = await customerAccountsService.createDirect({
     email: req.body.email,
     prefill: req.body.prefill,
     createdByAdminId: req.admin.id,
   });
+  const groups = groupIds.length > 0
+    ? await customerGroupsService.setCustomerGroups(id, groupIds, req.admin)
+    : [];
   const customer = await customerAccountsService.getCustomerById(id);
-  successResponse(res, { customer: transformCustomer(customer) }, 201);
+  successResponse(res, { customer: transformCustomer({ ...customer, groups }) }, 201);
 }));
 
 // ---- promote a passive customer to active (send portal invitation) ------
