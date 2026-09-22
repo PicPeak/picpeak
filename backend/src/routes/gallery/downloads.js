@@ -392,13 +392,20 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
  * complete 200, and a read that failed while still queued left the archive
  * and the response open forever (review of PR 1582). Destroying the response
  * breaks the connection, which every client reports as a failed download.
+ *
+ * Also used, without `err`, on a plain client disconnect (issue 1587): a
+ * guest closing the tab is not an error worth logging, but an archive.file()
+ * source (external photos) mid-copy needs the same unpipe/abort/resume to
+ * close its descriptor — the guard alone never sees that source.
  */
 function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
-  logger.error('Gallery archive aborted after a failed read', {
-    eventId,
-    route,
-    error: err?.code || err?.name || 'Error',
-  });
+  if (err) {
+    logger.error('Gallery archive aborted after a failed read', {
+      eventId,
+      route,
+      error: err?.code || err?.name || 'Error',
+    });
+  }
   guard.destroyAll();
   archive.unpipe(res);
   archive.abort();
@@ -407,7 +414,9 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
   // any more it would stay paused with its descriptor open. Discard the
   // rest instead, so that entry runs to its end and closes.
   archive.resume();
-  res.destroy(err instanceof Error ? err : new Error('archive failed'));
+  if (!res.destroyed) {
+    res.destroy(err instanceof Error ? err : undefined);
+  }
 }
 
 // finalize() settles on the archive's end or error, and an aborted archive may
@@ -568,8 +577,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     res.on('close', () => {
       if (!res.writableFinished) {
         cancelled = true;
-        guard.destroyAll();
-        archive.abort();
+        abortStreamingArchive({ archive, guard, res, eventId: req.event.id, route: 'download-all' });
       }
     });
 
@@ -779,8 +787,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     res.on('close', () => {
       if (!res.writableFinished) {
         selectedCancelled = true;
-        selectedGuard.destroyAll();
-        archive.abort();
+        abortStreamingArchive({
+          archive, guard: selectedGuard, res, eventId: req.event.id, route: 'download-selected',
+        });
       }
     });
 

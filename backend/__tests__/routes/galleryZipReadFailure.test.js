@@ -144,7 +144,7 @@ describe('gallery ZIP with a failing storage read', () => {
 
   // How the response ended: 'complete' (a clean end), 'aborted' (connection
   // broken) or 'timeout' (still hanging).
-  const outcome = (method, url, body, timeoutMs = 3000, { pauseMs = 0 } = {}) => new Promise((resolve) => {
+  const outcome = (method, url, body, timeoutMs = 3000, { pauseMs = 0, disconnectAfterMs = null } = {}) => new Promise((resolve) => {
     const server = http.createServer(app);
     server.listen(0, '127.0.0.1', () => {
       const done = (result) => {
@@ -161,7 +161,14 @@ describe('gallery ZIP with a failing storage read', () => {
         // A slow client pauses after every chunk, so the socket stays full
         // and the tail of the archive is still queued server-side when the
         // archive itself has ended.
+        let disconnectScheduled = false;
         res.on('data', () => {
+          // Simulate a guest closing the tab mid-download, once the archive
+          // has actually started streaming (not before headers land).
+          if (disconnectAfterMs !== null && !disconnectScheduled) {
+            disconnectScheduled = true;
+            setTimeout(() => req.destroy(), disconnectAfterMs);
+          }
           if (!pauseMs) return;
           res.pause();
           setTimeout(() => res.resume(), pauseMs);
@@ -192,6 +199,25 @@ describe('gallery ZIP with a failing storage read', () => {
     const before = openFds();
     // A slow client keeps the external copy running when the read fails.
     expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
+    let after = openFds();
+    for (let i = 0; i < 40 && after > before; i += 1) {
+      await new Promise((r) => setTimeout(r, 50));
+      after = openFds();
+    }
+    expect(after).toBeLessThanOrEqual(before);
+  });
+
+  it('closes an external file being copied when the client disconnects mid-copy', async () => {
+    // No induced read failure here (issue 1587): every read succeeds, but the
+    // guest closes the tab while archiver is still copying the external file.
+    // res.on('close') used to abort only the archive — archive.file() sources
+    // aren't in the guard, so the active entry stayed paused with its
+    // descriptor open once nothing read the archive any more.
+    mockMode.value = 'none';
+    const before = openFds();
+    expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, {
+      pauseMs: 5, disconnectAfterMs: 20,
+    })).toBe('aborted');
     let after = openFds();
     for (let i = 0; i < 40 && after > before; i += 1) {
       await new Promise((r) => setTimeout(r, 50));
