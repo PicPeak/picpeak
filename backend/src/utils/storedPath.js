@@ -128,6 +128,10 @@ function relocateStoredPath(value, exists = null) {
     // inside this one (`/data/storage` restored into `/data`) lands its files
     // at the storage suffix, not at the path relative to this root.
     if (own !== value && (!exists || exists(own))) return own;
+    // A file still in this install's legacy root is the one the row names;
+    // the archive (the configured root only) may carry a different file
+    // under the same suffix. resolveStoredPath reads it from there too.
+    if (own === value && isInside(path.resolve(value), legacyRoot()) && fs.existsSync(value)) return value;
   }
   const suffixes = storageSuffixes(value);
   if (!suffixes.length) return value;
