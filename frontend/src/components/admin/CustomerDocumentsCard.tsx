@@ -64,6 +64,14 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
   const canListProjects = !!flags.projects && (isSuperAdmin || hasPermission('events.view'));
 
   const queryKey = ['admin-customer-documents', customerId];
+  // Rejecting or deleting the answer to a request opens that request again,
+  // and every change here lands in the activity timeline: both cards refresh
+  // with this one.
+  const refresh = () => Promise.all([
+    qc.invalidateQueries({ queryKey }),
+    qc.invalidateQueries({ queryKey: ['admin-customer-document-requests', customerId] }),
+    qc.invalidateQueries({ queryKey: ['admin-customer-activity', customerId] }),
+  ]);
   const { data, isLoading, isError } = useQuery({
     queryKey,
     queryFn: () => customerDocumentsAdminService.list(customerId),
@@ -108,7 +116,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
     try {
       await action();
       toast.success(success);
-      await qc.invalidateQueries({ queryKey });
+      await refresh();
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -130,7 +138,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
       setFile(null);
       setUploadProjectId(null);
       if (inputRef.current) inputRef.current.value = '';
-      await qc.invalidateQueries({ queryKey });
+      await refresh();
     } catch (err) {
       toast.error(errorText(err));
     } finally {
@@ -178,7 +186,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
     } catch (err: any) {
       // Linked since this list was loaded: show the reason and the way out.
       if (err?.response?.data?.code === 'DOCUMENT_CONTRACT_LINKED') {
-        await qc.invalidateQueries({ queryKey });
+        await refresh();
         setBusyId(null);
         await offerUnlink(doc);
         return;
@@ -187,7 +195,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
     } finally {
       setBusyId(null);
     }
-    await qc.invalidateQueries({ queryKey });
+    await refresh();
   };
 
   const documents = data?.documents ?? [];
@@ -377,7 +385,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                             try {
                               announce(await customerDocumentsAdminService.share(customerId, doc.id, notify),
                                 t('customers.documents.sharedToast', 'Shared with the customer.'));
-                              await qc.invalidateQueries({ queryKey });
+                              await refresh();
                             } catch (err) {
                               toast.error(errorText(err));
                             } finally {
@@ -430,7 +438,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                           try {
                             announce(await customerDocumentsAdminService.review(customerId, doc.id, 'rejected', rejecting.note),
                               t('customers.documents.rejectedToast', 'Rejected.'));
-                            await qc.invalidateQueries({ queryKey });
+                            await refresh();
                             setRejecting(null);
                           } catch (err) {
                             toast.error(errorText(err));

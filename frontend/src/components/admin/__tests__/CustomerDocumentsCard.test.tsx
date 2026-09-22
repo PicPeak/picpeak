@@ -88,8 +88,7 @@ vi.mock('../../../services/contracts.service', () => ({ contractsService: { list
 import { ConfirmDialogProvider } from '../../common';
 import { CustomerDocumentsCard } from '../CustomerDocumentsCard';
 
-function renderCard() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderCard(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={qc}>
       <ConfirmDialogProvider>
@@ -133,11 +132,20 @@ describe('CustomerDocumentsCard — contract-linked documents', () => {
 
   it('deletes an unlinked document after the usual confirmation', async () => {
     docs = [makeDoc({ id: 3 })];
-    renderCard();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    renderCard(qc);
     await userEvent.click(await screen.findByRole('button', { name: /Delete/ }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(removeSpy).toHaveBeenCalledWith(5, 3));
     expect(setLinksSpy).not.toHaveBeenCalled();
+    // The upload may have answered a request, which is open again now.
+    await waitFor(() => {
+      const keys = invalidate.mock.calls.map(([filters]) => (filters as { queryKey: unknown[] }).queryKey);
+      expect(keys).toEqual(expect.arrayContaining([
+        ['admin-customer-documents', 5], ['admin-customer-document-requests', 5], ['admin-customer-activity', 5],
+      ]));
+    });
   });
 });
 
