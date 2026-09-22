@@ -14,7 +14,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('react-i18next', async () => {
@@ -54,6 +54,7 @@ vi.mock('../../../contexts/PermissionsContext', () => ({
 
 const list = vi.fn();
 const listGroups = vi.fn();
+let ungroupedCount = 1;
 const createGroup = vi.fn();
 const deleteGroup = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
@@ -61,6 +62,7 @@ vi.mock('../../../services/customerAdmin.service', () => ({
     list: (...a: unknown[]) => list(...a),
     listInvitations: vi.fn().mockResolvedValue([]),
     listGroups: (...a: unknown[]) => listGroups(...a),
+    listGroupCatalogue: async (...a: unknown[]) => ({ groups: await listGroups(...a), ungroupedCount }),
     createGroup: (...a: unknown[]) => createGroup(...a),
     updateGroup: vi.fn(),
     deleteGroup: (...a: unknown[]) => deleteGroup(...a),
@@ -100,17 +102,23 @@ const customer = (id: number, email: string, groups: unknown[] = []) => ({
   groups,
 });
 
+/** The query string the page has written, for the URL assertions. */
+const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+const currentSearch = () => screen.getByTestId('location').textContent;
+
 /** renderPage, plus a way to make the catalogue query see a changed catalogue. */
-function renderPageWithClient() {
+function renderPageWithClient(url = '/admin/clients/accounts') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const utils = render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[url]}>
         <CustomerManagementPage />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return {
+    ...utils,
     rerenderWithGroups: async (groups: unknown[]) => {
       listGroups.mockResolvedValue(groups);
       await qc.invalidateQueries({ queryKey: ['admin-customer-groups'] });
@@ -118,22 +126,19 @@ function renderPageWithClient() {
   };
 }
 
-function renderPage() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter>
-        <CustomerManagementPage />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
+const renderPage = (url?: string) => renderPageWithClient(url);
+
+/** What the page asks the service for, defaults filled in. */
+const listArgs = (overrides: Record<string, unknown> = {}) => ({
+  groupIds: [], groupMatch: 'any', ungrouped: false, status: 'all', ...overrides,
+});
 
 const vip = group(1, 'VIP', { color: '#B91C1C' });
 const press = group(2, 'Press', { color: '#15803D' });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  ungroupedCount = 1;
   hasPermission.mockImplementation(() => true);
   listGroups.mockResolvedValue([vip, press]);
   list.mockResolvedValue([
@@ -151,7 +156,7 @@ describe('the overview', () => {
     // The name is text, not only a colour.
     expect(screen.getAllByText('VIP').length).toBeGreaterThan(0);
     // No filter on the first load.
-    expect(list).toHaveBeenCalledWith(undefined, []);
+    expect(list).toHaveBeenCalledWith(listArgs());
   });
 
   it('filters by one group, then two, and clears again', async () => {
@@ -161,13 +166,13 @@ describe('the overview', () => {
 
     const filter = screen.getByRole('group', { name: 'Filter by group' });
     await user.click(within(filter).getByRole('button', { name: /VIP/ }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, [1]));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1] })));
 
     await user.click(within(filter).getByRole('button', { name: /Press/ }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, [1, 2]));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1, 2] })));
 
     await user.click(screen.getByRole('button', { name: 'Clear' }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, []));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs()));
   });
 
   it('says so when a filter matches nobody', async () => {
@@ -179,7 +184,7 @@ describe('the overview', () => {
     const filter = screen.getByRole('group', { name: 'Filter by group' });
     await user.click(within(filter).getByRole('button', { name: /Press/ }));
 
-    expect(await screen.findByText('No customers in the selected groups.')).toBeInTheDocument();
+    expect(await screen.findByText('No customers match these filters.')).toBeInTheDocument();
   });
 
   it('offers only live groups as a filter, and still shows an archived one on a customer', async () => {
@@ -228,12 +233,103 @@ describe('the overview', () => {
     const { rerenderWithGroups } = renderPageWithClient();
     await screen.findByText('grouped@example.com');
     await user.click(screen.getByRole('button', { name: /VIP/ }));
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, [1]));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1] })));
 
     // Archived from the Groups tab (or by another admin): no live group is left.
     await rerenderWithGroups([{ ...vip, isArchived: true }]);
-    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, []));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs()));
     expect(screen.getByText('ungrouped@example.com')).toBeInTheDocument();
+  });
+});
+
+describe('filters in the URL', () => {
+  it('reads a deep link into the filter and the request', async () => {
+    renderPage('/admin/clients/accounts?groups=1,2&match=all&status=active');
+    await screen.findByText('grouped@example.com');
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1, 2], groupMatch: 'all', status: 'active' })));
+    const filter = screen.getByRole('group', { name: 'Filter by group' });
+    expect(within(filter).getByRole('button', { name: /VIP/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(filter).getByRole('button', { name: /Press/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(filter).getByRole('radio', { name: 'All of them' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('active');
+  });
+
+  it('writes every change back to the URL, offers Any/All only for two groups, and Clear empties it', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    const filter = screen.getByRole('group', { name: 'Filter by group' });
+
+    await user.click(within(filter).getByRole('button', { name: /VIP/ }));
+    await waitFor(() => expect(currentSearch()).toBe('?groups=1'));
+    expect(within(filter).queryByRole('radio')).toBeNull();
+
+    await user.click(within(filter).getByRole('button', { name: /Press/ }));
+    await user.click(within(filter).getByRole('radio', { name: 'All of them' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'inactive');
+    await waitFor(() => expect(new URLSearchParams(currentSearch() || '').toString())
+      .toBe(new URLSearchParams({ groups: '1,2', match: 'all', status: 'inactive' }).toString()));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1, 2], groupMatch: 'all', status: 'inactive' })));
+
+    await user.type(screen.getByPlaceholderText('Search by email, name, or company'), 'grouped');
+    await waitFor(() => expect(currentSearch()).toContain('q=grouped'));
+
+    await user.click(within(filter).getByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(currentSearch()).toBe(''));
+    expect(screen.getByPlaceholderText('Search by email, name, or company')).toHaveValue('');
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs()));
+  });
+
+  it('keeps the tab in the URL', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin/clients/accounts?tab=groups');
+    expect(await screen.findByRole('button', { name: 'New group' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Customers/ }));
+    await waitFor(() => expect(currentSearch()).toBe(''));
+  });
+
+  it('drops a stale group id from the request and from the URL', async () => {
+    renderPage('/admin/clients/accounts?groups=1,99&match=all');
+    await screen.findByText('grouped@example.com');
+    await waitFor(() => expect(currentSearch()).toBe('?groups=1'));
+    expect(list).toHaveBeenLastCalledWith(listArgs({ groupIds: [1], groupMatch: 'any' }));
+    expect(list).not.toHaveBeenCalledWith(expect.objectContaining({ groupIds: [1, 99] }));
+  });
+
+  it('filters to the ungrouped customers, with their count, instead of any group', async () => {
+    ungroupedCount = 4;
+    const user = userEvent.setup();
+    renderPage('/admin/clients/accounts?groups=1');
+    await screen.findByText('grouped@example.com');
+    const filter = screen.getByRole('group', { name: 'Filter by group' });
+    const pill = within(filter).getByRole('button', { name: /Ungrouped/ });
+    expect(pill).toHaveTextContent('4');
+
+    await user.click(pill);
+    await waitFor(() => expect(currentSearch()).toBe('?ungrouped=1'));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs({ ungrouped: true })));
+    expect(within(filter).getByRole('button', { name: /VIP/ })).toHaveAttribute('aria-pressed', 'false');
+
+    // Picking a group again leaves "Ungrouped".
+    await user.click(within(filter).getByRole('button', { name: /VIP/ }));
+    await waitFor(() => expect(currentSearch()).toBe('?groups=1'));
+  });
+
+  it('tells "no customers yet" apart from "nobody matches", and offers a way back from the second', async () => {
+    list.mockResolvedValue([]);
+    const first = renderPage();
+    expect(await screen.findByText('No customers yet. Click "Invite customer" to add one.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    first.unmount();
+
+    // A search with no hits, and no group filter: not "no customers yet".
+    list.mockResolvedValue([customer(10, 'grouped@example.com', [vip])]);
+    const user = userEvent.setup();
+    renderPage('/admin/clients/accounts?q=nobody-by-this-name');
+    expect(await screen.findByText('No customers match these filters.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(await screen.findByText('grouped@example.com')).toBeInTheDocument();
+    expect(currentSearch()).toBe('');
   });
 });
 

@@ -513,3 +513,104 @@ describe('hardening', () => {
     expect(overview.body.customers).toBeUndefined();
   });
 });
+
+describe('filters v2: status, any/all, ungrouped', () => {
+  let a;
+  let b;
+  let inBoth;
+  let onlyA;
+  let onlyB;
+  let inactiveInBoth;
+
+  const ids = async (query) => {
+    const res = await listCustomers(query);
+    expect(res.status).toBe(200);
+    return res.body.customers.map((c) => c.id).sort((x, y) => x - y);
+  };
+  const sorted = (list) => [...list].sort((x, y) => x - y);
+
+  beforeAll(async () => {
+    a = bodyOf(await createGroup({ name: 'Match A' })).group;
+    b = bodyOf(await createGroup({ name: 'Match B' })).group;
+    inBoth = await createCustomer('match-both@example.com');
+    onlyA = await createCustomer('match-a@example.com');
+    onlyB = await createCustomer('match-b@example.com');
+    inactiveInBoth = await createCustomer('match-both-inactive@example.com');
+    await db('customer_accounts').where({ id: inactiveInBoth }).update({ is_active: false });
+    await setGroups(inBoth, [a.id, b.id]);
+    await setGroups(onlyA, [a.id]);
+    await setGroups(onlyB, [b.id]);
+    await setGroups(inactiveInBoth, [a.id, b.id]);
+
+    // Two events on the customer in both groups: under every filter the
+    // count has to stay 2, not 2 × the number of groups.
+    for (const slug of ['match-event-1', 'match-event-2']) {
+      const [event] = await db('events').insert({
+        slug, event_type: 'other', event_name: slug, event_date: '2026-09-01',
+        host_email: 'host@example.com', admin_email: 'admin@example.com', password_hash: 'x',
+        share_link: `${slug}-share`, expires_at: new Date(Date.now() + 86400000).toISOString(),
+      }).returning('id');
+      await db('event_customer_assignments').insert({
+        event_id: typeof event === 'object' ? event.id : event, customer_account_id: inBoth,
+      });
+    }
+  });
+
+  it('matches every selected group with groupMatch=all, and any of them by default', async () => {
+    expect(await ids(`?groupIds=${a.id},${b.id}&groupMatch=all`)).toEqual(sorted([inBoth, inactiveInBoth]));
+    expect(await ids(`?groupIds=${a.id},${b.id}&groupMatch=any`))
+      .toEqual(sorted([inBoth, onlyA, onlyB, inactiveInBoth]));
+    expect(await ids(`?groupIds=${a.id},${b.id}`)).toEqual(sorted([inBoth, onlyA, onlyB, inactiveInBoth]));
+    // A repeated id is one group, not two that nobody can be in twice.
+    expect(await ids(`?groupIds=${a.id},${a.id}&groupMatch=all`)).toEqual(sorted([inBoth, onlyA, inactiveInBoth]));
+  });
+
+  it('matches nobody with groupMatch=all when one of the groups has no members', async () => {
+    const empty = bodyOf(await createGroup({ name: 'Match empty' })).group;
+    expect(await ids(`?groupIds=${a.id},${empty.id}&groupMatch=all`)).toEqual([]);
+  });
+
+  it('lists exactly the customers in no group with ungrouped, and it wins over groupIds', async () => {
+    const expected = (await db('customer_accounts')
+      .whereNotIn('id', db('customer_group_members').select('customer_account_id'))
+      .pluck('id')).map(Number);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(await ids('?ungrouped=true')).toEqual(sorted(expected));
+    expect(await ids(`?ungrouped=1&groupIds=${a.id}&groupMatch=all`)).toEqual(sorted(expected));
+    expect(await ids('?ungrouped=false')).toEqual(await ids(''));
+  });
+
+  it('counts the ungrouped customers beside the catalogue, over every status', async () => {
+    const expected = await db('customer_accounts')
+      .whereNotIn('id', db('customer_group_members').select('customer_account_id'))
+      .count({ count: '*' });
+    expect(bodyOf(await listGroups()).ungroupedCount).toBe(Number(expected[0].count));
+  });
+
+  it('filters by status, together with the groups and with the search', async () => {
+    expect(await ids(`?groupIds=${a.id},${b.id}&groupMatch=all&status=active`)).toEqual([inBoth]);
+    expect(await ids(`?groupIds=${a.id},${b.id}&groupMatch=all&status=inactive`)).toEqual([inactiveInBoth]);
+    expect(await ids(`?groupIds=${a.id},${b.id}&groupMatch=all&status=all`)).toEqual(sorted([inBoth, inactiveInBoth]));
+    expect(await ids(`?groupIds=${a.id}&status=active&search=match-a`)).toEqual([onlyA]);
+    expect(await ids('?status=inactive&search=match-both')).toEqual([inactiveInBoth]);
+    const inactive = await ids('?status=inactive');
+    expect(inactive).toContain(inactiveInBoth);
+    expect(inactive).not.toContain(inBoth);
+  });
+
+  it('keeps the event count a count of events under every filter', async () => {
+    for (const query of [
+      '', `?groupIds=${a.id},${b.id}`, `?groupIds=${a.id},${b.id}&groupMatch=all`,
+      '?status=active', `?groupIds=${b.id}&status=active&search=match-both`,
+    ]) {
+      const row = (await listCustomers(query)).body.customers.find((c) => c.id === inBoth);
+      expect(row.eventCount).toBe(2);
+    }
+  });
+
+  it('refuses a groupMatch, status or ungrouped value it does not know', async () => {
+    expect((await listCustomers('?groupMatch=some')).status).toBe(400);
+    expect((await listCustomers('?status=deleted')).status).toBe(400);
+    expect((await listCustomers('?ungrouped=maybe')).status).toBe(400);
+  });
+});

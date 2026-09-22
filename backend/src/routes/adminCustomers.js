@@ -170,7 +170,10 @@ router.get('/groups', [
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const includeArchived = req.query.includeArchived === 'true' || req.query.includeArchived === '1';
-  return successResponse(res, { groups: await customerGroupsService.list({ includeArchived }) });
+  return successResponse(res, {
+    groups: await customerGroupsService.list({ includeArchived }),
+    ungroupedCount: await customerGroupsService.countUngrouped(),
+  });
 }));
 
 router.post('/groups', [
@@ -242,11 +245,17 @@ router.get('/', [
   query('search').optional().isString(),
   // Repeatable (?groupIds=1&groupIds=2) or comma-separated (?groupIds=1,2).
   query('groupIds').optional(),
+  query('groupMatch').optional().isIn(['any', 'all']),
+  query('ungrouped').optional().isBoolean(),
+  query('status').optional().isIn(['active', 'inactive', 'all']),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const customers = await customerAccountsService.listCustomers({
     search: req.query.search,
     groupIds: parseGroupIds(req.query.groupIds),
+    groupMatch: req.query.groupMatch || 'any',
+    ungrouped: req.query.ungrouped === 'true' || req.query.ungrouped === '1',
+    status: req.query.status || 'all',
   });
   const groupsByCustomer = await customerGroupsService.groupsForCustomers(customers.map((c) => c.id));
   res.json({

@@ -5941,7 +5941,6 @@
       "customColor": "Custom colour",
       "empty": "No groups yet. Create one to organise your customers.",
       "emptyCatalogue": "No groups yet. Create one under Customers → Groups.",
-      "emptyFiltered": "No customers in the selected groups.",
       "palette": {
         "blue": "Blue",
         "green": "Green",
@@ -5974,7 +5973,17 @@
       "more": "+{{count}}",
       "change": "Change groups",
       "noneAssigned": "This customer is in no group.",
-      "assignSaved": "Groups saved"
+      "assignSaved": "Groups saved",
+      "ungrouped": "Ungrouped",
+      "matchLabel": "Customers in",
+      "matchAny": "Any of them",
+      "matchAll": "All of them"
+    },
+    "emptyFiltered": "No customers match these filters.",
+    "clearFilters": "Clear filters",
+    "statusFilter": {
+      "label": "Status",
+      "all": "All statuses"
     }
   },
   "clients": {

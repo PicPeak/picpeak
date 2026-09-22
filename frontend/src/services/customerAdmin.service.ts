@@ -33,6 +33,25 @@ export interface CustomerGroupPayload {
   isArchived?: boolean;
 }
 
+export interface CustomerGroupCatalogue {
+  groups: CustomerGroup[];
+  /** Customers in no group, over every status — same basis as memberCount. */
+  ungroupedCount: number;
+}
+
+export type CustomerStatusFilter = 'all' | 'active' | 'inactive';
+export type CustomerGroupMatch = 'any' | 'all';
+
+export interface CustomerListOptions {
+  search?: string;
+  groupIds?: number[];
+  /** Only sent with two or more groups; `any` is the server default. */
+  groupMatch?: CustomerGroupMatch;
+  /** Customers in no group. Wins over `groupIds`. */
+  ungrouped?: boolean;
+  status?: CustomerStatusFilter;
+}
+
 export interface CustomerAccountSummary {
   id: number;
   email: string;
@@ -162,12 +181,18 @@ export interface CustomerInvitationSummary {
 const unwrap = (payload: any): any => (payload && payload.data !== undefined ? payload.data : payload);
 
 export const customerAdminService = {
-  async list(search?: string, groupIds?: number[]): Promise<CustomerAccountSummary[]> {
-    // The group filter is server-side (#1443): the overview asks for the
-    // selected groups and keeps filtering the answer by the search box.
+  async list(options: CustomerListOptions = {}): Promise<CustomerAccountSummary[]> {
+    // The filters are server-side (#1443); the overview keeps filtering the
+    // answer by its search box. Defaults are left out of the request.
+    const { search, groupIds, groupMatch, ungrouped, status } = options;
     const params: Record<string, string> = {};
     if (search) params.search = search;
-    if (groupIds && groupIds.length > 0) params.groupIds = groupIds.join(',');
+    if (ungrouped) params.ungrouped = 'true';
+    else if (groupIds && groupIds.length > 0) {
+      params.groupIds = groupIds.join(',');
+      if (groupMatch === 'all') params.groupMatch = 'all';
+    }
+    if (status && status !== 'all') params.status = status;
     const response = await api.get<{ customers: CustomerAccountSummary[] }>(
       '/admin/customers',
       { params: Object.keys(params).length > 0 ? params : undefined }
@@ -183,6 +208,15 @@ export const customerAdminService = {
       { params: includeArchived ? { includeArchived: 'true' } : undefined }
     );
     return unwrap(response.data).groups;
+  },
+
+  /** The catalogue plus the number of customers in no group at all. */
+  async listGroupCatalogue(includeArchived = false): Promise<CustomerGroupCatalogue> {
+    const response = await api.get('/admin/customers/groups', {
+      params: includeArchived ? { includeArchived: 'true' } : undefined,
+    });
+    const data = unwrap(response.data);
+    return { groups: data.groups, ungroupedCount: Number(data.ungroupedCount) || 0 };
   },
 
   async createGroup(payload: CustomerGroupPayload): Promise<CustomerGroup> {

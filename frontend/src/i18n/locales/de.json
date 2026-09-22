@@ -5941,7 +5941,6 @@
       "customColor": "Eigene Farbe",
       "empty": "Noch keine Gruppen. Lege eine an, um deine Kunden zu ordnen.",
       "emptyCatalogue": "Noch keine Gruppen. Lege eine unter Kunden → Gruppen an.",
-      "emptyFiltered": "Keine Kunden in den gewählten Gruppen.",
       "palette": {
         "blue": "Blau",
         "green": "Grün",
@@ -5974,7 +5973,17 @@
       "more": "+{{count}}",
       "change": "Gruppen ändern",
       "noneAssigned": "Dieser Kunde ist in keiner Gruppe.",
-      "assignSaved": "Gruppen gespeichert"
+      "assignSaved": "Gruppen gespeichert",
+      "ungrouped": "Ohne Gruppe",
+      "matchLabel": "Kunden in",
+      "matchAny": "Einer davon",
+      "matchAll": "Allen davon"
+    },
+    "emptyFiltered": "Keine Kunden entsprechen diesen Filtern.",
+    "clearFilters": "Filter zurücksetzen",
+    "statusFilter": {
+      "label": "Status",
+      "all": "Alle Status"
     }
   },
   "clients": {

@@ -106,6 +106,20 @@ async function list({ includeArchived = false } = {}) {
   return (await query).map(toApi);
 }
 
+/**
+ * Customers in no group at all, for the overview's "Ungrouped" filter. Same
+ * basis as `memberCount`: every customer, whatever their status, and not
+ * narrowed by the overview's search or status filter.
+ */
+async function countUngrouped() {
+  const [{ count }] = await db('customer_accounts')
+    .whereNotExists(db('customer_group_members')
+      .whereRaw('customer_group_members.customer_account_id = customer_accounts.id')
+      .select(db.raw('1')))
+    .count({ count: '*' });
+  return Number(count) || 0;
+}
+
 async function getById(id) {
   const row = await db('customer_groups').where({ id }).first();
   if (!row) throw new AppError('Customer group not found', 404, 'GROUP_NOT_FOUND');
@@ -327,6 +341,7 @@ async function setCustomerGroups(customerId, groupIds, admin = null) {
 module.exports = {
   DEFAULT_COLOR,
   list,
+  countUngrouped,
   create,
   update,
   remove,

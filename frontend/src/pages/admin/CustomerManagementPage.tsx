@@ -14,8 +14,8 @@
  * picker (customers don't have roles — access is boolean per event,
  * managed via the event form's CustomerAccountPicker).
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -32,10 +32,19 @@ import { Button, Card, Input, Loading } from '../../components/common';
 import {
   customerAdminService,
   type CustomerAccountSummary,
+  type CustomerGroupMatch,
   type CustomerInvitationSummary,
+  type CustomerStatusFilter,
 } from '../../services/customerAdmin.service';
 
 type TabType = 'customers' | 'invitations' | 'groups';
+const TABS: TabType[] = ['customers', 'invitations', 'groups'];
+const STATUSES: CustomerStatusFilter[] = ['all', 'active', 'inactive'];
+
+/** `groups=1,2` → [1, 2]; anything that isn't a positive integer is dropped. */
+const parseIds = (value: string | null) => [...new Set((value || '').split(',')
+  .map((id) => Number(id.trim()))
+  .filter((id) => Number.isInteger(id) && id > 0))];
 
 export const CustomerManagementPage: React.FC = () => {
   const { t } = useTranslation();
@@ -48,19 +57,43 @@ export const CustomerManagementPage: React.FC = () => {
     if (!iso) return '—';
     try { return fmtDate(new Date(iso)); } catch { return '—'; }
   };
-  const [activeTab, setActiveTab] = useState<TabType>('customers');
+  // The whole filter model lives in the URL (#1443), so a filtered overview
+  // survives a reload and can be pasted to another admin: `tab`, `q`,
+  // `groups=1,2`, `match=all` (left out for any), `ungrouped=1` and `status`.
+  // Allowlisted on the way in; defaults are left out on the way out.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const updateParams = useCallback((patch: Record<string, string | null>, replace = false) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null || value === '') next.delete(key);
+        else next.set(key, value);
+      }
+      return next;
+    }, { replace });
+  }, [setSearchParams]);
+
+  const tabParam = searchParams.get('tab') as TabType | null;
+  const activeTab: TabType = tabParam && TABS.includes(tabParam) ? tabParam : 'customers';
+  const setActiveTab = (tab: TabType) => updateParams({ tab: tab === 'customers' ? null : tab });
+  const statusParam = searchParams.get('status') as CustomerStatusFilter | null;
+  const statusFilter: CustomerStatusFilter = statusParam && STATUSES.includes(statusParam) ? statusParam : 'all';
+  const groupMatch: CustomerGroupMatch = searchParams.get('match') === 'all' ? 'all' : 'any';
+  const ungroupedFilter = searchParams.get('ungrouped') === '1';
+  const groupsParam = searchParams.get('groups');
+  const groupFilter = useMemo(() => parseIds(groupsParam), [groupsParam]);
+
   // `searchTerm` is the live controlled-input value (keeps the box
-  // responsive). `debouncedTerm` lags 250ms behind so the filter +
-  // table re-render only fire after the user pauses typing — matches
-  // the pattern used in CustomerPicker for the same reason. Filtering
-  // is client-side so this doesn't change network shape; the win is
-  // on the render side for installs with many rows.
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedTerm, setDebouncedTerm] = useState('');
+  // responsive). It reaches the URL — and with it the filter — 250ms after
+  // the admin pauses typing, replacing the history entry rather than adding
+  // one per keystroke. Filtering is client-side over the fetched list.
+  const debouncedTerm = searchParams.get('q') || '';
+  const [searchTerm, setSearchTerm] = useState(debouncedTerm);
   useEffect(() => {
-    const handle = window.setTimeout(() => setDebouncedTerm(searchTerm), 250);
+    if (searchTerm === debouncedTerm) return undefined;
+    const handle = window.setTimeout(() => updateParams({ q: searchTerm }, true), 250);
     return () => window.clearTimeout(handle);
-  }, [searchTerm]);
+  }, [searchTerm, debouncedTerm, updateParams]);
   // Single state drives the unified create/invite modal. Both header
   // buttons open the SAME modal (InlineCustomerCreate) — only the
   // mode-specific action button is rendered inside, so the admin's
@@ -70,30 +103,56 @@ export const CustomerManagementPage: React.FC = () => {
   const [createMode, setCreateMode] = useState<'passive' | 'invite' | null>(null);
   const [confirm, setConfirm] = useState<{ kind: 'deactivate'; id: number; name: string } | { kind: 'cancelInvite'; id: number; email: string } | null>(null);
 
-  // Group filter (#1443). Empty = every customer, which is what the page
-  // opens with; the server does the filtering so it survives a reload of the
-  // list rather than only hiding rows already fetched.
-  const [groupFilter, setGroupFilter] = useState<number[]>([]);
   const { hasPermission } = usePermissions();
 
-  const { data: groups } = useQuery({
-    queryKey: ['admin-customer-groups'],
-    queryFn: () => customerAdminService.listGroups(true),
+  const { data: catalogue, isError: catalogueFailed } = useQuery({
+    queryKey: ['admin-customer-groups', 'with-counts'],
+    queryFn: () => customerAdminService.listGroupCatalogue(true),
   });
+  const groups = catalogue?.groups;
   // Archived groups stay visible on the customers that carry them, but are
   // not offered as a filter: nothing new lands in them.
   const filterableGroups = useMemo(() => (groups || []).filter((g) => !g.isArchived), [groups]);
   // Only what the filter still offers. A selected group that was archived or
-  // deleted on the Groups tab would otherwise keep filtering the list with no
-  // pill left to switch it off — and no Clear once it was the last live one.
+  // deleted on the Groups tab (or a stale bookmark) would otherwise keep
+  // filtering the list with no pill left to switch it off.
   const activeGroupFilter = useMemo(
     () => (groups ? groupFilter.filter((id) => filterableGroups.some((g) => g.id === id)) : groupFilter),
     [groups, groupFilter, filterableGroups],
   );
+  // …and the URL follows, so a reload or a copied link doesn't bring it back.
+  useEffect(() => {
+    if (activeGroupFilter.length !== groupFilter.length) {
+      updateParams({ groups: activeGroupFilter.join(','), match: activeGroupFilter.length >= 2 ? searchParams.get('match') : null }, true);
+    }
+  }, [activeGroupFilter, groupFilter, updateParams, searchParams]);
 
-  const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
-    queryKey: ['admin-customers', activeGroupFilter],
-    queryFn: () => customerAdminService.list(undefined, activeGroupFilter),
+  const listFilter = useMemo(() => ({
+    groupIds: ungroupedFilter ? [] : activeGroupFilter,
+    groupMatch,
+    ungrouped: ungroupedFilter,
+    status: statusFilter,
+  }), [activeGroupFilter, groupMatch, ungroupedFilter, statusFilter]);
+  const hasServerFilter = listFilter.ungrouped || listFilter.groupIds.length > 0 || listFilter.status !== 'all';
+  const hasAnyFilter = hasServerFilter || debouncedTerm.trim() !== '';
+
+  const toggleGroup = (id: number) => {
+    const next = activeGroupFilter.includes(id)
+      ? activeGroupFilter.filter((value) => value !== id)
+      : [...activeGroupFilter, id];
+    updateParams({ groups: next.join(','), ungrouped: null, match: next.length >= 2 ? searchParams.get('match') : null });
+  };
+  const clearFilters = () => {
+    setSearchTerm('');
+    updateParams({ q: null, groups: null, match: null, ungrouped: null, status: null });
+  };
+
+  const { data: customers, isPending: customersLoading, error: customersError } = useQuery({
+    queryKey: ['admin-customers', listFilter],
+    queryFn: () => customerAdminService.list(listFilter),
+    // A group filter waits for the catalogue, so a stale id from a bookmark
+    // is dropped before the first request instead of after it.
+    enabled: groupFilter.length === 0 || ungroupedFilter || catalogue !== undefined || catalogueFailed,
     // Toggling a filter pill keeps the table up until the new list is in,
     // instead of swapping it for a spinner each time.
     placeholderData: keepPreviousData,
@@ -283,20 +342,42 @@ export const CustomerManagementPage: React.FC = () => {
 
         {activeTab !== 'groups' && (
           <div className="mb-4 space-y-3">
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
-              leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
-            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="flex-1">
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
+                  leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+                />
+              </div>
+              {activeTab === 'customers' && (
+                <select
+                  value={statusFilter}
+                  onChange={(e) => updateParams({ status: e.target.value === 'all' ? null : e.target.value })}
+                  aria-label={t('customers.statusFilter.label', 'Status')}
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                >
+                  <option value="all">{t('customers.statusFilter.all', 'All statuses')}</option>
+                  <option value="active">{t('customers.status.active', 'Active')}</option>
+                  <option value="inactive">{t('customers.status.inactive', 'Deactivated')}</option>
+                </select>
+              )}
+            </div>
             {activeTab === 'customers' && (
               <CustomerGroupFilter
                 groups={filterableGroups}
-                selectedIds={activeGroupFilter}
-                onToggle={(id) => setGroupFilter((current) => (
-                  current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
-                ))}
-                onClear={() => setGroupFilter([])}
+                selectedIds={ungroupedFilter ? [] : activeGroupFilter}
+                onToggle={toggleGroup}
+                ungrouped={ungroupedFilter}
+                ungroupedCount={catalogue?.ungroupedCount}
+                onToggleUngrouped={() => updateParams(ungroupedFilter
+                  ? { ungrouped: null }
+                  : { ungrouped: '1', groups: null, match: null })}
+                match={groupMatch}
+                onMatchChange={(match) => updateParams({ match: match === 'all' ? 'all' : null })}
+                showClear={hasAnyFilter}
+                onClear={clearFilters}
               />
             )}
           </div>
@@ -313,11 +394,20 @@ export const CustomerManagementPage: React.FC = () => {
               {t('customers.loadError', 'Could not load customers')}
             </div>
           ) : filteredCustomers.length === 0 ? (
-            <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-              {activeGroupFilter.length > 0
-                ? t('customers.groups.emptyFiltered', 'No customers in the selected groups.')
-                : t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
-            </div>
+            // "Nobody matches" and "there is nobody yet" are different
+            // answers: the first comes with a way back to the whole list.
+            hasAnyFilter ? (
+              <div className="flex flex-col items-center gap-3 text-center text-neutral-500 dark:text-neutral-400 py-12">
+                <span>{t('customers.emptyFiltered', 'No customers match these filters.')}</span>
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  {t('customers.clearFilters', 'Clear filters')}
+                </Button>
+              </div>
+            ) : (
+              <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
+                {t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
+              </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">

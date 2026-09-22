@@ -485,7 +485,9 @@ async function validateInvitationToken(token) {
  * many events each customer has access to, so the admin can spot orphaned
  * accounts at a glance.
  */
-async function listCustomers({ search, groupIds } = {}) {
+async function listCustomers({
+  search, groupIds, groupMatch = 'any', ungrouped = false, status = 'all',
+} = {}) {
   let q = db('customer_accounts')
     .leftJoin('event_customer_assignments', 'event_customer_assignments.customer_account_id', 'customer_accounts.id')
     .groupBy('customer_accounts.id')
@@ -533,14 +535,33 @@ async function listCustomers({ search, groupIds } = {}) {
     });
   }
 
-  // Group filter (#1443): a customer matches when they are in ANY of the
-  // selected groups, which is what "show me these groups" means in the
-  // overview. A subquery rather than a join, so the event COUNT above stays
-  // the number of events and not the number of (event × group) pairs.
+  if (status === 'active' || status === 'inactive') {
+    q = q.where('customer_accounts.is_active', formatBoolean(status === 'active'));
+  }
+
+  // Group filter (#1443). Subqueries rather than joins, so the event COUNT
+  // above stays the number of events and not the number of (event × group)
+  // pairs.
+  //  - `ungrouped`: customers with no membership at all. It wins over
+  //    `groupIds` when both are sent, so a stale bookmark shows a list rather
+  //    than an error.
+  //  - `groupMatch: 'any'` (default): in at least one of the selected groups.
+  //  - `groupMatch: 'all'`: in every one of them.
   const groups = (Array.isArray(groupIds) ? groupIds : [])
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0);
-  if (groups.length > 0) {
+  if (ungrouped) {
+    q = q.whereNotExists(db('customer_group_members')
+      .whereRaw('customer_group_members.customer_account_id = customer_accounts.id')
+      .select(db.raw('1')));
+  } else if (groups.length > 0 && groupMatch === 'all') {
+    const distinct = [...new Set(groups)];
+    q = q.whereIn('customer_accounts.id', db('customer_group_members')
+      .whereIn('group_id', distinct)
+      .groupBy('customer_account_id')
+      .havingRaw('COUNT(DISTINCT group_id) = ?', [distinct.length])
+      .select('customer_account_id'));
+  } else if (groups.length > 0) {
     q = q.whereIn('customer_accounts.id', db('customer_group_members')
       .whereIn('group_id', groups)
       .select('customer_account_id'));
