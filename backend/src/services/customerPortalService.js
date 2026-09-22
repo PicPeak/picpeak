@@ -143,14 +143,51 @@ async function getDashboard(customerId) {
 }
 
 /**
+ * The deal lineage of one event, for one customer: the deal_uuids of the
+ * quotes, contracts and invoices that point at the event, the contracts in
+ * those deals (or converted into the event), and the event's project when it
+ * is this customer's. Every lookup is scoped by customer_account_id.
+ *
+ * Quotes, contracts and invoices follow the deal through deal_uuid; a
+ * customer document has no deal_uuid and follows the links it already has —
+ * its contract and its project (#1444 slice 5).
+ */
+async function dealLineageForEvent(customerId, event) {
+  const deals = new Set();
+  const collect = (rows) => rows.forEach((r) => { if (r.deal_uuid) deals.add(r.deal_uuid); });
+  collect(await db('invoices').where({ customer_account_id: customerId, event_id: event.id }).select('deal_uuid'));
+  collect(await db('quotes').where({ customer_account_id: customerId, converted_event_id: event.id }).select('deal_uuid'));
+  collect(await db('contracts').where({ customer_account_id: customerId, converted_event_id: event.id }).select('deal_uuid'));
+  const dealUuids = [...deals];
+
+  const contractIds = (await db('contracts')
+    .where({ customer_account_id: customerId })
+    .andWhere((q) => {
+      q.where('converted_event_id', event.id);
+      if (dealUuids.length > 0) q.orWhereIn('deal_uuid', dealUuids);
+    })
+    .select('id')).map((r) => r.id);
+
+  let projectIds = [];
+  if (event.project_id) {
+    const project = await db('projects')
+      .where({ id: event.project_id, customer_account_id: customerId })
+      .first('id');
+    if (project) projectIds = [project.id];
+  }
+  return { dealUuids, contractIds, projectIds };
+}
+
+/**
  * Everything the customer has for one event: gallery state, quotes,
  * contracts, invoices and shared documents. Quotes, contracts and invoices
  * are matched on the event itself or through the deal lineage (deal_uuid) of
- * another document that points at it; a document is listed here only when it
- * names the event (`event_id`) — one attached to a contract shows on the
- * documents page. Returns null when the event is unknown,
- * archived or not assigned to this customer — the route answers 404 for all
- * three so the endpoint can't be used to probe for other customers' events.
+ * another document that points at it; a document when it names the event,
+ * or a contract or the project of that lineage (dealLineageForEvent) — still
+ * only among what the customer may see. Returns null when the event is
+ * unknown, archived or not assigned to this customer — the route answers 404
+ * for all three so the endpoint can't be used to probe for other customers'
+ * events.
  */
 async function getEventOverview(customerId, slug) {
   const event = await db('events').where({ slug }).first();
@@ -159,12 +196,8 @@ async function getEventOverview(customerId, slug) {
 
   const features = await customerAccountsService.getEffectiveFeaturesForCustomer(customerId);
 
-  const deals = new Set();
-  const collect = (rows) => rows.forEach((r) => { if (r.deal_uuid) deals.add(r.deal_uuid); });
-  collect(await db('invoices').where({ customer_account_id: customerId, event_id: event.id }).select('deal_uuid'));
-  collect(await db('quotes').where({ customer_account_id: customerId, converted_event_id: event.id }).select('deal_uuid'));
-  collect(await db('contracts').where({ customer_account_id: customerId, converted_event_id: event.id }).select('deal_uuid'));
-  const dealList = [...deals];
+  const lineage = await dealLineageForEvent(customerId, event);
+  const dealList = lineage.dealUuids;
   const linkedTo = (column) => (q) => {
     q.where(column, event.id);
     if (dealList.length > 0) q.orWhereIn('deal_uuid', dealList);
@@ -233,7 +266,11 @@ async function getEventOverview(customerId, slug) {
   }
 
   const documents = features.documents
-    ? await customerDocumentsService.listForCustomer(customerId, { eventId: event.id })
+    ? await customerDocumentsService.listForCustomer(customerId, {
+      eventId: event.id,
+      contractIds: lineage.contractIds,
+      projectIds: lineage.projectIds,
+    })
     : [];
 
   return {
@@ -251,4 +288,6 @@ async function getEventOverview(customerId, slug) {
   };
 }
 
-module.exports = { shapeEvent, getDashboard, getEventOverview, _internal: { toDateOnly, needsActionFor } };
+module.exports = {
+  shapeEvent, getDashboard, getEventOverview, dealLineageForEvent, _internal: { toDateOnly, needsActionFor },
+};

@@ -5967,7 +5967,8 @@
       "unlinked": "Vom Vertrag gelöst. Sie können das Dokument jetzt löschen.",
       "linkedTitle": "Mit einem Vertrag verknüpft",
       "linkedBody": "{{name}} ist mit einem Vertrag verknüpft und wird deshalb als Teil der Vertragsunterlagen aufbewahrt und kann nicht gelöscht werden. Lösen Sie es zuerst vom Vertrag und löschen Sie es dann.",
-      "unlinkContract": "Vom Vertrag lösen"
+      "unlinkContract": "Vom Vertrag lösen",
+      "projectLabel": "Projekt"
     },
     "groups": {
       "title": "Gruppen",

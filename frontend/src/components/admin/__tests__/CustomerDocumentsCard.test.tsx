@@ -28,13 +28,30 @@ vi.mock('react-i18next', async () => {
 });
 
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const env = vi.hoisted(() => ({
+  projects: false,
+  permissions: null as null | string[],
+}));
 vi.mock('../../../contexts/PermissionsContext', () => ({
-  usePermissions: () => ({
-    hasPermission: () => true, hasAnyPermission: () => true, hasAllPermissions: () => true, isSuperAdmin: true,
-  }),
+  usePermissions: () => {
+    const has = (p: string) => env.permissions === null || env.permissions.includes(p);
+    return {
+      hasPermission: has, hasAnyPermission: () => true, hasAllPermissions: () => true,
+      isSuperAdmin: env.permissions === null,
+    };
+  },
 }));
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({
-  useFeatureFlags: () => ({ flags: { contracts: false, projects: false } }),
+  useFeatureFlags: () => ({ flags: { contracts: false, projects: env.projects } }),
+}));
+vi.mock('../../../services/projects.service', () => ({
+  projectsService: {
+    list: vi.fn(async () => [
+      { id: 3, name: 'Own project', customerAccountId: 5 },
+      { id: 4, name: 'Another customer', customerAccountId: 9 },
+      { id: 6, name: 'No customer', customerAccountId: null },
+    ]),
+  },
 }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ format: (d: string) => d, formatDateTime: (d: string) => d }),
@@ -80,6 +97,8 @@ describe('CustomerDocumentsCard — contract-linked documents', () => {
   beforeEach(() => {
     removeSpy.mockClear();
     setLinksSpy.mockClear();
+    env.projects = false;
+    env.permissions = null;
   });
 
   it('explains why a linked document cannot be deleted and unlinks it, keeping the other links', async () => {
@@ -113,5 +132,38 @@ describe('CustomerDocumentsCard — contract-linked documents', () => {
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(removeSpy).toHaveBeenCalledWith(5, 3));
     expect(setLinksSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerDocumentsCard — project link (#1444)', () => {
+  beforeEach(() => {
+    setLinksSpy.mockClear();
+    env.projects = true;
+    env.permissions = null;
+  });
+
+  it('offers only this customer\'s projects and sends all three links together', async () => {
+    docs = [makeDoc({ id: 8, projectId: null, eventId: 7, contractId: 12, contractNumber: 'K-12' })];
+    renderCard();
+    await userEvent.click(await screen.findByRole('button', { name: /Link/ }));
+    const pickers = await screen.findAllByRole('combobox', { name: 'Project' });
+    const picker = pickers[pickers.length - 1];
+    await waitFor(() => expect(within(picker).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(['No project', 'Own project']));
+    await userEvent.selectOptions(picker, '3');
+    await userEvent.click(screen.getByRole('button', { name: 'Save links' }));
+    // The contract picker is not available here (contracts flag off), so the
+    // existing contract link is sent back unchanged rather than cleared.
+    await waitFor(() => expect(setLinksSpy).toHaveBeenCalledWith(5, 8, { eventId: 7, projectId: 3, contractId: 12 }));
+  });
+
+  it('hides the picker without events.view and keeps the existing project link', async () => {
+    env.permissions = ['customers.documents.manage'];
+    docs = [makeDoc({ id: 9, projectId: 3, eventId: null })];
+    renderCard();
+    await userEvent.click(await screen.findByRole('button', { name: /Link/ }));
+    expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Save links' }));
+    await waitFor(() => expect(setLinksSpy).toHaveBeenCalledWith(5, 9, { eventId: null, projectId: 3, contractId: null }));
   });
 });

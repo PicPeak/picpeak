@@ -314,3 +314,85 @@ describe('DELETE /api/customer/documents/:id', () => {
     expect(sameSite.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slice 5 — project link and the deal lineage on the event page
+// ---------------------------------------------------------------------------
+
+describe('event page documents follow the deal', () => {
+  let me;
+  let event;
+  let dealContract;
+  let otherDealContract;
+  let project;
+  const slug = 'ws-lineage';
+  const overview = () => asCustomer(request(customerApp).get(`/api/customer/events/${slug}/overview`), me);
+
+  beforeAll(async () => {
+    me = await newCustomer();
+    project = idOf(await db('projects').insert({ name: 'Lineage', customer_account_id: me, created_at: nowIso() }).returning('id'));
+    event = await insertEvent(slug);
+    await db('events').where({ id: event }).update({ project_id: project });
+    await db('event_customer_assignments').insert({ event_id: event, customer_account_id: me });
+
+    // The deal reaches the event through its invoice; the contract of the
+    // same deal names no event itself.
+    const deal = randomUUID();
+    await db('invoices').insert({
+      invoice_number: `I-LIN-${Date.now()}`, customer_account_id: me, status: 'sent',
+      issue_date: '2026-08-01', due_date: '2026-08-15', event_id: event, deal_uuid: deal,
+    });
+    dealContract = idOf(await db('contracts').insert({
+      contract_number: `K-LIN-${Date.now()}`, customer_account_id: me, status: 'sent',
+      issue_date: '2026-08-01', deal_uuid: deal,
+    }).returning('id'));
+    otherDealContract = idOf(await db('contracts').insert({
+      contract_number: `K-OTHER-${Date.now()}`, customer_account_id: me, status: 'sent',
+      issue_date: '2026-08-01', deal_uuid: randomUUID(),
+    }).returning('id'));
+  });
+
+  it('lists a document linked only to a contract of the event\'s deal', async () => {
+    const viaContract = await adminUpload(me, 'deal-contract.pdf', { share: 'true', contractId: dealContract });
+    const unrelated = await adminUpload(me, 'other-deal.pdf', { share: 'true', contractId: otherDealContract });
+    expect(viaContract.status).toBe(201);
+    const res = await overview();
+    expect(res.status).toBe(200);
+    const ids = res.body.documents.map((d) => d.id);
+    expect(ids).toContain(viaContract.body.document.id);
+    expect(ids).not.toContain(unrelated.body.document.id);
+  });
+
+  it('lists a document linked to the event\'s project', async () => {
+    const viaProject = await adminUpload(me, 'project.pdf', { share: 'true', projectId: project });
+    expect(viaProject.status).toBe(201);
+    const res = await overview();
+    expect(res.body.documents.map((d) => d.id)).toContain(viaProject.body.document.id);
+  });
+
+  it('still lists only what the customer may see', async () => {
+    const unshared = await adminUpload(me, 'not-shared.pdf', { contractId: dealContract });
+    const res = await overview();
+    expect(res.body.documents.map((d) => d.id)).not.toContain(unshared.body.document.id);
+  });
+
+  it('refuses linking a document to another customer\'s contract or project', async () => {
+    const foreignContract = idOf(await db('contracts').insert({
+      contract_number: `K-FOREIGN-${Date.now()}`, customer_account_id: customerB, status: 'sent', issue_date: '2026-08-01',
+    }).returning('id'));
+    const foreignProject = idOf(await db('projects').insert({
+      name: 'Theirs', customer_account_id: customerB, created_at: nowIso(),
+    }).returning('id'));
+    const customerLess = idOf(await db('projects').insert({ name: 'Nobody', created_at: nowIso() }).returning('id'));
+
+    expect((await adminUpload(me, 'x.pdf', { contractId: foreignContract })).status).toBe(400);
+    expect((await adminUpload(me, 'x.pdf', { projectId: foreignProject })).status).toBe(400);
+    expect((await adminUpload(me, 'x.pdf', { projectId: customerLess })).status).toBe(400);
+
+    const own = await adminUpload(me, 'relink.pdf');
+    const patch = await asAdmin(request(adminApp).patch(adminDoc(me, own.body.document.id)))
+      .send({ eventId: null, projectId: foreignProject, contractId: null });
+    expect(patch.status).toBe(400);
+    expect((await db('customer_documents').where({ id: own.body.document.id }).first()).project_id).toBeNull();
+  });
+});

@@ -307,9 +307,21 @@ function customerVisibleQuery(customerId) {
     });
 }
 
-async function listForCustomer(customerId, { eventId = null } = {}) {
+/**
+ * `eventId` narrows the list to one event: documents naming it, plus — when
+ * given — documents linked to one of `contractIds` / `projectIds` (the
+ * event's deal lineage). Always inside customerVisibleQuery, so the lineage
+ * can only select among what the customer may see anyway.
+ */
+async function listForCustomer(customerId, { eventId = null, contractIds = [], projectIds = [] } = {}) {
   const q = customerVisibleQuery(customerId).orderBy('customer_documents.id', 'desc');
-  if (eventId) q.where('customer_documents.event_id', eventId);
+  if (eventId) {
+    q.andWhere((w) => {
+      w.where('customer_documents.event_id', eventId);
+      if (contractIds.length > 0) w.orWhereIn('customer_documents.contract_id', contractIds);
+      if (projectIds.length > 0) w.orWhereIn('customer_documents.project_id', projectIds);
+    });
+  }
   return (await q).map(toCustomerDto);
 }
 

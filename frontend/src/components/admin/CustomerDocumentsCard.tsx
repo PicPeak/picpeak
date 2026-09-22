@@ -19,6 +19,7 @@ import {
 
 import { Button, Card, Loading, useConfirm } from '../common';
 import { PermissionGate } from './PermissionGate';
+import { ProjectSelect } from './ProjectSelect';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -55,6 +56,9 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
   const canManage = isSuperAdmin || hasPermission(PERMISSION);
   // The contract picker reads the contracts list, which checks contracts.view.
   const canListContracts = flags.contracts && (isSuperAdmin || hasPermission('contracts.view'));
+  // The project picker reads the projects list, which checks events.view.
+  // Without it the select would render empty, so it isn't rendered at all.
+  const canListProjects = !!flags.projects && (isSuperAdmin || hasPermission('events.view'));
 
   const queryKey = ['admin-customer-documents', customerId];
   const { data, isLoading, isError } = useQuery({
@@ -72,10 +76,13 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
   const [file, setFile] = useState<File | null>(null);
   const [share, setShare] = useState(true);
   const [uploadEventId, setUploadEventId] = useState('');
+  const [uploadProjectId, setUploadProjectId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState<{ id: number; note: string } | null>(null);
-  const [linking, setLinking] = useState<{ id: number; eventId: string; contractId: string } | null>(null);
+  const [linking, setLinking] = useState<{
+    id: number; eventId: string; projectId: number | null; contractId: string;
+  } | null>(null);
 
   if (!canManage) return null;
 
@@ -102,9 +109,11 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
       await customerDocumentsAdminService.upload(customerId, file, {
         share,
         eventId: uploadEventId ? Number(uploadEventId) : null,
+        projectId: canListProjects ? uploadProjectId : null,
       });
       toast.success(t('customers.documents.uploaded', '{{name}} uploaded.', { name: file.name }));
       setFile(null);
+      setUploadProjectId(null);
       if (inputRef.current) inputRef.current.value = '';
       await qc.invalidateQueries({ queryKey });
     } catch (err) {
@@ -215,6 +224,17 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                 {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.eventName}</option>)}
               </select>
             </label>
+          )}
+          {canListProjects && (
+            <ProjectSelect
+              value={uploadProjectId}
+              onChange={setUploadProjectId}
+              label={t('customers.documents.projectLabel', 'Project')}
+              customerAccountId={customerId}
+              strictCustomer
+              disabled={uploading}
+              className="text-sm md:w-48"
+            />
           )}
           <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 md:pb-2">
             <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} className="h-4 w-4" />
@@ -337,6 +357,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                         onClick={() => setLinking({
                           id: doc.id,
                           eventId: doc.eventId ? String(doc.eventId) : '',
+                          projectId: doc.projectId,
                           contractId: doc.contractId ? String(doc.contractId) : '',
                         })}
                       >
@@ -396,6 +417,16 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                           {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.eventName}</option>)}
                         </select>
                       </label>
+                      {canListProjects && (
+                        <ProjectSelect
+                          value={linking.projectId}
+                          onChange={(projectId) => setLinking({ ...linking, projectId })}
+                          label={t('customers.documents.projectLabel', 'Project')}
+                          customerAccountId={customerId}
+                          strictCustomer
+                          className="text-xs sm:w-48"
+                        />
+                      )}
                       {canListContracts && (
                         <label className="text-xs text-neutral-600 dark:text-neutral-400">
                           <span className="block mb-1">{t('customers.documents.contractLabel', 'Contract')}</span>
@@ -414,7 +445,9 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                         onClick={async () => {
                           await run(doc.id, () => customerDocumentsAdminService.setLinks(customerId, doc.id, {
                             eventId: linking.eventId ? Number(linking.eventId) : null,
-                            projectId: doc.projectId,
+                            // PATCH replaces all three links: keep an existing
+                            // project link when the picker isn't available.
+                            projectId: canListProjects ? linking.projectId : doc.projectId,
                             // Keep an existing contract link when the picker isn't available.
                             contractId: canListContracts
                               ? (linking.contractId ? Number(linking.contractId) : null)

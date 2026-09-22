@@ -54,11 +54,16 @@ export const customerDocumentsAdminService = {
     return data;
   },
 
-  async upload(customerId: number, file: File, options: { share: boolean; eventId?: number | null }): Promise<void> {
+  async upload(
+    customerId: number,
+    file: File,
+    options: { share: boolean; eventId?: number | null; projectId?: number | null },
+  ): Promise<void> {
     const form = new FormData();
     form.append('file', file);
     form.append('share', options.share ? 'true' : 'false');
     if (options.eventId) form.append('eventId', String(options.eventId));
+    if (options.projectId) form.append('projectId', String(options.projectId));
     await api.post(base(customerId), form);
   },
 

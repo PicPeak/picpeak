@@ -20,6 +20,12 @@ interface ProjectSelectProps {
   label?: string;
   /** Restrict the list to a single customer's projects when set. */
   customerAccountId?: number | null;
+  /**
+   * With customerAccountId: leave out projects that have no customer as
+   * well. For links the server checks against that customer (customer
+   * documents), where a customer-less project is refused with a 400.
+   */
+  strictCustomer?: boolean;
   disabled?: boolean;
   className?: string;
 }
@@ -29,6 +35,7 @@ export const ProjectSelect: React.FC<ProjectSelectProps> = ({
   onChange,
   label,
   customerAccountId,
+  strictCustomer = false,
   disabled,
   className,
 }) => {
@@ -46,7 +53,9 @@ export const ProjectSelect: React.FC<ProjectSelectProps> = ({
   if (!flags.projects) return null;
 
   const options = (projects || []).filter(
-    (p) => customerAccountId == null || p.customerAccountId == null || p.customerAccountId === customerAccountId,
+    (p) => customerAccountId == null
+      || p.customerAccountId === customerAccountId
+      || (!strictCustomer && p.customerAccountId == null),
   );
 
   return (
@@ -57,6 +66,7 @@ export const ProjectSelect: React.FC<ProjectSelectProps> = ({
         </label>
       )}
       <select
+        aria-label={label}
         value={value ?? ''}
         disabled={disabled || isLoading}
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
