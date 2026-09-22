@@ -52,9 +52,25 @@ describe('toStoredPath', () => {
     expect(toStoredPath('business-docs/x.pdf')).toBe('business-docs/x.pdf');
     expect(toStoredPath(null)).toBeNull();
   });
+
+  it('records a working-directory-relative writer path (relative STORAGE_PATH) relative to the root', () => {
+    process.env.STORAGE_PATH = './now/storage';
+    expect(toStoredPath('now/storage/business-docs/contract/2026/C-1.pdf')).toBe('business-docs/contract/2026/C-1.pdf');
+  });
 });
 
 describe('resolveStoredPath', () => {
+  it('finds a row recorded relative to the working directory under a relative STORAGE_PATH', () => {
+    const file = put(root, 'business-docs/contract/2026/C-1.pdf');
+    expect(resolveStoredPath('now/storage/business-docs/contract/2026/C-1.pdf')).toBe(file);
+    process.env.STORAGE_PATH = './now/storage';
+    expect(resolveStoredPath('now/storage/business-docs/contract/2026/C-1.pdf')).toBe(file);
+    // Only when that file exists and lands inside a storage root.
+    put(tmp, 'secret/x.pdf');
+    expect(resolveStoredPath('secret/x.pdf')).toBe(path.join(root, 'secret', 'x.pdf'));
+    expect(resolveStoredPath('../../secret/x.pdf')).toBeNull();
+  });
+
   it('joins a relative value onto the current root', () => {
     expect(resolveStoredPath('business-docs/quote/2026/Q-1.pdf')).toBe(path.join(root, 'business-docs', 'quote', '2026', 'Q-1.pdf'));
   });
@@ -106,6 +122,16 @@ describe('relocateStoredPath (restore)', () => {
     expect(relocateStoredPath(value)).toBe('business-docs/a.pdf');
     expect(relocateStoredPath(value, (rel) => rel === 'uploads/storage/business-docs/a.pdf'))
       .toBe('uploads/storage/business-docs/a.pdf');
+  });
+
+  it('keeps the value when the archive carries none of its candidates', () => {
+    const legacy = path.join(tmp, 'storage', 'business-docs', 'contract', '2026', 'C-1.pdf');
+    expect(relocateStoredPath(legacy, () => false)).toBe(legacy);
+  });
+
+  it('rewrites another install’s working-directory-relative path', () => {
+    expect(relocateStoredPath('storage/business-docs/a.pdf')).toBe('business-docs/a.pdf');
+    expect(relocateStoredPath('storage/business-docs/a.pdf', (rel) => rel === 'business-docs/a.pdf')).toBe('business-docs/a.pdf');
   });
 
   it('leaves relative, foreign and empty values as they are', () => {

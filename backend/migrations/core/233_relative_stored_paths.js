@@ -19,6 +19,9 @@
  * that root, so the file it names does not change. Anything else — a path
  * under another root, one outside any storage folder, a value that is
  * already relative — is left alone; the read-side resolver still handles it.
+ * A relative value that resolves from the working directory to inside that
+ * root (written under a relative STORAGE_PATH such as `./storage`) is
+ * rewritten the same way, unless it already starts with a storage folder.
  * Re-running converts nothing twice. Each row is updated only while it still
  * holds the value that was read, so a concurrent write is never overwritten.
  * Hashes are untouched.
@@ -47,6 +50,9 @@ const COLUMNS = [
   ['expenses', 'receipt_path'],
   ['events', 'hero_logo_path'],
 ];
+
+// Top-level storage folders a root-relative value starts with.
+const FOLDERS = ['business-docs', 'uploads'];
 
 // The same resolution as src/config/storage.js at the time of writing.
 const storageRoot = () => path.resolve(process.env.STORAGE_PATH || path.join(__dirname, '../../../storage'));
@@ -78,7 +84,22 @@ exports.up = async function(knex) {
       ? path.relative(root, value).split(path.sep).join('/')
       : value),
   );
-  if (changed) console.log(`233_relative_stored_paths: ${changed} stored path(s) made relative to ${root}`);
+  // A relative STORAGE_PATH (`./storage`) made the writers record paths
+  // relative to the working directory (`storage/business-docs/...`). Those
+  // that land inside the root are rewritten the same way. A value whose first
+  // segment is already a storage folder is relative to the root, not to the
+  // working directory, and is left alone.
+  const cwdRelative = await rewrite(
+    knex,
+    (query, column) => query.whereNot(column, 'like', '/%'),
+    (value) => {
+      if (path.isAbsolute(value) || FOLDERS.includes(value.split(/[\\/]/)[0])) return value;
+      const abs = path.resolve(value);
+      return abs.startsWith(prefix) ? path.relative(root, abs).split(path.sep).join('/') : value;
+    },
+  );
+  const total = changed + cwdRelative;
+  if (total) console.log(`233_relative_stored_paths: ${total} stored path(s) made relative to ${root}`);
 };
 
 exports.down = async function(knex) {
