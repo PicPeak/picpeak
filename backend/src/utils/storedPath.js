@@ -175,6 +175,8 @@ function resolveStoredPath(value) {
 module.exports = {
   STORAGE_FOLDERS,
   STORED_PATH_COLUMNS,
+  isStorageRelative,
+  storageSuffixes,
   toStoredPath,
   relocateStoredPath,
   resolveStoredPath,

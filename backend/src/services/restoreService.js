@@ -468,8 +468,11 @@ class RestoreService {
           const sums = manifest.metadata.stored_path_sha256 || {};
           // Only where the backed-up bytes are actually there: after a partial
           // restore a different file may sit at the mapped path.
+          // A files-only or selective restore leaves the live rows: those are
+          // moved only when the document they name is gone.
           const updated = await applyStoredPathMap(db, manifest.metadata.stored_path_map,
-            (rel) => holdsBytes(path.join(root, ...rel.split('/')), sums[rel]));
+            (rel) => holdsBytes(path.join(root, ...rel.split('/')), sums[rel]),
+            { onlyUnreadable: !['full', 'database'].includes(options.restoreType) });
           if (updated) this.log('info', `Pointed ${updated} restored document path(s) at their backed-up location`);
         } catch (err) {
           this.log('warn', `Updating restored document paths failed: ${err.message}`);
