@@ -486,7 +486,7 @@ export const contractsService = {
   async send(
     id: number,
     options: { reviewToken?: string; collectData?: boolean } = {},
-  ): Promise<{ token: string; pdfPath: string | null }> {
+  ): Promise<{ token: string; pdfPath: string | null; invitationFailed?: boolean }> {
     const payload = {
       ...(options.reviewToken ? { reviewToken: options.reviewToken } : {}),
       ...(options.collectData ? { collectData: true } : {}),

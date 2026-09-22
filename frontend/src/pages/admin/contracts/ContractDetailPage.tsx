@@ -137,8 +137,17 @@ export const ContractDetailPage: React.FC = () => {
   const sendMutation = useMutationWithToast({
     mutationFn: ({ reviewToken, askForDetails }: { reviewToken?: string; askForDetails?: boolean }) =>
       contractsService.send(numericId as number, { reviewToken, collectData: askForDetails === true }),
-    onSuccess: () => setReviewing(false),
-    successMessage: t('contracts.detail.sentToast', 'Contract sent.') as string,
+    onSuccess: (data) => {
+      setReviewing(false);
+      // Sent, but the invitation mail failed: a warning, not an error — the
+      // send went through, and a second one would go out again.
+      if (data?.invitationFailed) {
+        toast.warn(t('contracts.detail.sentInvitationFailedToast',
+          'Sent, but the email to the signer couldn\'t go out. It is retried automatically within the hour, so don\'t send again.'));
+      } else {
+        toast.success(t('contracts.detail.sentToast', 'Contract sent.'));
+      }
+    },
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
     errorMessage: (err: unknown) => {
       const data = (err as { response?: { data?: { code?: string; error?: string } } })?.response?.data;

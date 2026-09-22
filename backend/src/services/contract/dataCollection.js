@@ -141,11 +141,13 @@ async function requestData(contractId, adminId) {
       type: 'data_requested', actorType: 'admin', actorLabel: actor.name || null, payload: { fields: request.fields },
     });
   });
-  const invited = await signingV2.inviteDue(contractId, actor);
+  // The request is committed: a failed invitation is recorded and retried by
+  // the hourly sweep, not reported as a failed request.
+  const { invited, invitationFailed } = await signingV2.inviteAfterCommit(contractId, actor);
   try {
     await logActivity('contract_data_requested', { contractId, signersInvited: invited }, null, actor);
   } catch (_) { /* logging is best-effort */ }
-  return { status: 'awaiting_data', invited };
+  return invitationFailed ? { status: 'awaiting_data', invited, invitationFailed: true } : { status: 'awaiting_data', invited };
 }
 
 /** What the first signer sees during the step: the form, not the contract. */
@@ -222,13 +224,12 @@ async function freeze(contractId, adminId) {
     await signingV2.clearFollowUpFailure(contractId, { steps: ['data_freeze'] });
     return { status: 'sent', frozen: true };
   } catch (err) {
-    // The send commits before it invites anyone: a failed invitation after
-    // that is not a failed freeze. The contract is out, the signer's session
-    // opens it, and the hourly sweep invites whoever is still pending.
+    // A failed invitation doesn't reach here (the send records it and
+    // answers). The contract moved on anyway: another send froze it first
+    // — the admin's, racing this one — and this one lost its claim.
     const current = await db('contracts').where({ id: contractId }).first('status');
     if (current && current.status !== 'awaiting_data') {
       await signingV2.clearFollowUpFailure(contractId, { steps: ['data_freeze'] });
-      await signingV2.recordFollowUpFailure(contractId, 'invitation', err);
       return { status: current.status, frozen: true };
     }
     await signingV2.recordFollowUpFailure(contractId, 'data_freeze', err);

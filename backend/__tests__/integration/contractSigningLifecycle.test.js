@@ -1917,3 +1917,99 @@ test('the portal offers Sign only when it is the customer\'s turn and they haven
   expect(await listed(sequential)).toEqual(expect.objectContaining({ canSign: false, signerState: 'waiting', waitingFor: 'Ben Muster' }));
   expect((await detail(sequential)).canSign).toBe(false);
 });
+
+// ---------------------------------------------------------------------
+// A failed invitation after the send committed is a warning, not an error
+// ---------------------------------------------------------------------
+
+describe('a failed invitation after the send committed', () => {
+  const failInvitations = () => {
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    return jest.spyOn(emailProcessor, 'queueEmail').mockImplementation((...args) => (
+      ['contract_sent', 'contract_data_request'].includes(args[2]) ? Promise.reject(new Error('queue down')) : real(...args)
+    ));
+  };
+
+  test('the admin\'s send answers sent with a warning, and the sweep invites the signer', async () => {
+    const id = await newContract();
+    const spy = failInvitations();
+    let res;
+    try {
+      res = await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res).toEqual(expect.objectContaining({ invited: 0, invitationFailed: true }));
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('sent');
+    expect(contract.follow_up_error).toMatch(/^invitation:/);
+    expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('pending');
+
+    await require('../../src/services/contract/expiry').runContractSigningSweep();
+    expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('invited');
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toBeNull();
+  });
+
+  test('a clean send carries no warning', async () => {
+    const id = await newContract();
+    const res = await sendContract(id);
+    expect(res.invitationFailed).toBeUndefined();
+    expect(res.invited).toBe(1);
+  });
+
+  test('asking for details answers with a warning when the request mail fails', async () => {
+    await db('customer_accounts').where({ id: customerId })
+      .update({ address_line1: null, address_line2: null, postal_code: null, city: null, country_code: null, company_name: null });
+    const id = await newContract();
+    const spy = failInvitations();
+    let res;
+    try {
+      res = await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res).toEqual({ status: 'awaiting_data', invited: 0, invitationFailed: true });
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('awaiting_data');
+    expect(contract.follow_up_error).toMatch(/^invitation:/);
+  });
+
+  test('the workflow send step records the failed invitation instead of failing', async () => {
+    require('../../src/services/workflows/actions');
+    const action = require('../../src/services/workflows/registry').getAction('send_document');
+    const id = await newContract();
+    const spy = failInvitations();
+    let out;
+    try {
+      out = await action({
+        db, node: { config: { document: 'contract' } }, vars: { preparedContractId: id },
+        run: { entity_type: 'contract', entity_id: id, workflow_id: null },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(out).toEqual({ contract_sent: id, invitation_failed: true });
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('sent');
+    expect(contract.follow_up_error).toMatch(/^invitation:/);
+  });
+
+  test('a freeze that lost to a concurrent send records no invitation failure', async () => {
+    const id = await newContract();
+    const sending = require('../../src/services/contract/sending');
+    const spy = jest.spyOn(sending, 'sendContract').mockImplementationOnce(async () => {
+      await db('contracts').where({ id }).update({ status: 'sent' });
+      const { AppError } = require('../../src/utils/errors');
+      throw new AppError('This contract changed while it was being sent.', 409, 'CONTRACT_CHANGED');
+    });
+    let res;
+    try {
+      res = await require('../../src/services/contract/dataCollection').freeze(id, null);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res).toEqual({ status: 'sent', frozen: true });
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toBeNull();
+  });
+});

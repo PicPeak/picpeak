@@ -34,7 +34,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
+vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../../../../components/admin/PermissionGate', () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => children,
 }));
@@ -156,4 +156,30 @@ it('an awaiting_data contract still waiting offers no send at all', async () => 
   expect(await screen.findByText(/Waiting for the customer to complete their details/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Send to customer' })).not.toBeInTheDocument();
   expect(sendPreview).not.toHaveBeenCalled();
+});
+
+it('a send whose invitation mail failed warns instead of claiming success', async () => {
+  const { toast } = await import('react-toastify');
+  const user = userEvent.setup();
+  send.mockResolvedValue({ pdfPath: null, invited: 0, invitationFailed: true });
+  get.mockResolvedValue(contract({ customerAddressMissing: true }));
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'Send to customer' }));
+  await user.click(await screen.findByRole('button', { name: 'Send to 1 signers' }));
+  await waitFor(() => expect(toast.warn).toHaveBeenCalledWith(
+    "Sent, but the email to the signer couldn't go out. It is retried automatically within the hour, so don't send again.",
+  ));
+  expect(toast.success).not.toHaveBeenCalled();
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+it('a clean send says it was sent', async () => {
+  const { toast } = await import('react-toastify');
+  const user = userEvent.setup();
+  get.mockResolvedValue(contract({ customerAddressMissing: true }));
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'Send to customer' }));
+  await user.click(await screen.findByRole('button', { name: 'Send to 1 signers' }));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Contract sent.'));
+  expect(toast.warn).not.toHaveBeenCalled();
 });

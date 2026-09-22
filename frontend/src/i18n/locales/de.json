@@ -8014,6 +8014,7 @@
       "sendError": "Senden fehlgeschlagen",
       "sentAt": "Gesendet am",
       "sentToast": "Vertrag gesendet.",
+      "sentInvitationFailedToast": "Gesendet, aber die E-Mail an die unterzeichnende Person konnte nicht verschickt werden. Sie wird innerhalb einer Stunde automatisch erneut versucht. Bitte senden Sie nicht noch einmal.",
       "signBy": "Unterzeichnen bis",
       "signatures": "Unterschriften",
       "signedByAdmin": "Gegengezeichnet",

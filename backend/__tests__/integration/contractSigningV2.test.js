@@ -662,7 +662,10 @@ test('an invitation whose email fails leaves the signer invitable', async () => 
   ));
   const res = await request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth);
   queue.mockRestore();
-  expect(res.status).toBeGreaterThanOrEqual(400);
+  // The send itself committed: it answers with a warning, not an error, so
+  // the admin doesn't send it a second time.
+  expect(res.status).toBe(200);
+  expect(res.body.data || res.body).toEqual(expect.objectContaining({ invitationFailed: true }));
 
   const rows = await db('contract_signers').where({ contract_id: id }).orderBy('position');
   expect(rows.map((r) => r.status)).toEqual(['pending', 'pending']);

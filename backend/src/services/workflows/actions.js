@@ -408,8 +408,10 @@ registry.registerAction('send_document', async (ctx) => {
   if (doc === 'contract') {
     const cid = ctx.vars.preparedContractId;
     if (!cid) return { skipped: true, reason: 'no prepared contract to send' };
-    await require('../contractService').sendContract(cid, adminId);
-    return { contract_sent: cid };
+    const sent = await require('../contractService').sendContract(cid, adminId);
+    // Sent, but the invitation failed: recorded on the contract, retried by
+    // the hourly sweep. The run log says so rather than failing the step.
+    return sent && sent.invitationFailed ? { contract_sent: cid, invitation_failed: true } : { contract_sent: cid };
   }
   return { skipped: true, reason: `send_document for '${doc}' not implemented yet` };
 });

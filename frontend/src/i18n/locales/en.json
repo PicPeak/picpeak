@@ -8013,6 +8013,7 @@
       "sendError": "Send failed",
       "sentAt": "Sent at",
       "sentToast": "Contract sent.",
+      "sentInvitationFailedToast": "Sent, but the email to the signer couldn't go out. It is retried automatically within the hour, so don't send again.",
       "signBy": "Sign by",
       "signatures": "Signatures",
       "signedByAdmin": "Counter-signed",

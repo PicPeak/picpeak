@@ -482,7 +482,23 @@ async function completeSend(contractId, {
       },
     });
   });
-  return inviteDue(contractId, actor);
+  return inviteAfterCommit(contractId, actor);
+}
+
+/**
+ * Invite the due signers of a contract whose state change has committed.
+ * The contract is out whatever the mail does: a failed invitation is
+ * recorded on it, the hourly sweep invites whoever is left pending, and
+ * the caller answers with a warning instead of an error — an error there
+ * reads as "nothing happened" and invites a second send.
+ */
+async function inviteAfterCommit(contractId, actor) {
+  try {
+    return { invited: await inviteDue(contractId, actor), invitationFailed: false };
+  } catch (err) {
+    await recordFollowUpFailure(contractId, 'invitation', err);
+    return { invited: 0, invitationFailed: true };
+  }
 }
 
 /**
@@ -1539,6 +1555,7 @@ module.exports = {
   prepareSend,
   completeSend,
   inviteDue,
+  inviteAfterCommit,
   resendInvitation,
   sendReminder,
   revokeOnCancel,
