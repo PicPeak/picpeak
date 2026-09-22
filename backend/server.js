@@ -78,6 +78,7 @@ const { startFileWatcher } = require('./src/services/fileWatcher');
 const { startExpirationChecker } = require('./src/services/expirationChecker');
 const { startTransferCleanup } = require('./src/services/transferCleanupService');
 const { startDownloadJobCleanup } = require('./src/services/downloadJobCleanupService');
+const { startFeedbackRateLimitCleanup } = require('./src/services/feedbackRateLimitCleanupService');
 const { startRevealScheduler } = require('./src/services/revealScheduler');
 const { startInvoiceScheduler } = require('./src/services/invoiceSchedulerService');
 const { initializeTransporter, startEmailQueueProcessor } = require('./src/services/emailProcessor');
@@ -1170,6 +1171,11 @@ async function startServer() {
     await require('./src/services/downloadJobService').recoverOrphanedJobs()
       .catch((err) => logger.error('Download job recovery failed', { error: err.message }));
     startDownloadJobCleanup();
+    // Stale feedback_rate_limits rows (#1585): the per-request delete in
+    // consumeFeedbackLimit() only ever clears the event/action-type pair it
+    // just handled, so a gallery that goes quiet leaves its rows behind —
+    // sweep them on a schedule as a backstop.
+    startFeedbackRateLimitCleanup();
     // Reveal-mode scheduler (#838): minutely stamp for scheduled reveals.
     startRevealScheduler();
     // CRM invoice scheduler: hourly tick to flush scheduled-send invoices
