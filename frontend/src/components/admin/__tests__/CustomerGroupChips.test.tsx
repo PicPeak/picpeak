@@ -23,7 +23,7 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-import { CustomerGroupChipList } from '../CustomerGroupChips';
+import { CustomerGroupChipList, CustomerGroupFilter } from '../CustomerGroupChips';
 
 const group = (id: number, name: string) => ({
   id, name, description: null, color: '#FFFFFF', sortOrder: id, isArchived: false,
@@ -70,5 +70,22 @@ describe('CustomerGroupChipList', () => {
     const dot = container.querySelector('[aria-hidden="true"]');
     expect(dot?.className).toContain('ring-1');
     expect(dot?.className).toContain('dark:ring-white/25');
+  });
+});
+
+describe('CustomerGroupFilter', () => {
+  const props = {
+    selectedIds: [], onToggle: vi.fn(), ungrouped: false, ungroupedCount: 5, onToggleUngrouped: vi.fn(),
+    match: 'any' as const, onMatchChange: vi.fn(), showClear: false, onClear: vi.fn(),
+  };
+
+  it('keeps Ungrouped when every group is archived', () => {
+    render(<CustomerGroupFilter {...props} groups={[]} hasAnyGroup />);
+    expect(screen.getByRole('button', { name: /Ungrouped/ })).toBeInTheDocument();
+  });
+
+  it('renders nothing when there are no groups at all', () => {
+    const { container } = render(<CustomerGroupFilter {...props} groups={[]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

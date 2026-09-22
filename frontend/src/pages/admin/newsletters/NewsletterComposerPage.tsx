@@ -107,6 +107,12 @@ export const NewsletterComposerPage: React.FC = () => {
   // unticked — the server refuses to save an archived group.
   const groupOptions = useMemo(() => (groupCatalogue || [])
     .filter((g) => !g.isArchived || (draft?.groupIds || []).includes(g.id)), [groupCatalogue, draft?.groupIds]);
+  // A group deleted after the draft was saved is gone from the catalogue but
+  // still named by the rule, and the server refuses to save an unknown id.
+  // List it so it can be unticked instead of blocking save, preview and send.
+  const missingGroupIds = useMemo(() => (groupCatalogue
+    ? (draft?.groupIds || []).filter((id) => !groupCatalogue.some((g) => g.id === id))
+    : []), [groupCatalogue, draft?.groupIds]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -397,7 +403,7 @@ export const NewsletterComposerPage: React.FC = () => {
           {draft.recipientMode === 'groups' && (
             <div className="mb-4 space-y-2">
               <div className="max-h-64 overflow-y-auto border border-neutral-200 dark:border-neutral-700 rounded-md p-2">
-                {groupOptions.length === 0 ? (
+                {groupOptions.length === 0 && missingGroupIds.length === 0 ? (
                   <p className="text-sm text-neutral-500 dark:text-neutral-400">
                     {t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')}
                   </p>
@@ -419,6 +425,18 @@ export const NewsletterComposerPage: React.FC = () => {
                         {t('customers.groups.archived', 'Archived')}
                       </span>
                     )}
+                  </label>
+                ))}
+                {missingGroupIds.map((id) => (
+                  <label key={`missing-${id}`} className="flex items-center gap-2 py-1 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked
+                      onChange={() => patch({ groupIds: (draft.groupIds || []).filter((x) => x !== id) })}
+                    />
+                    <span className="text-neutral-500 dark:text-neutral-400 line-through">
+                      {t('customers.groups.deletedGroup', 'Deleted group')}
+                    </span>
                   </label>
                 ))}
               </div>

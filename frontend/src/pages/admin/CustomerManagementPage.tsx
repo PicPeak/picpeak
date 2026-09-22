@@ -412,6 +412,7 @@ export const CustomerManagementPage: React.FC = () => {
                 onToggle={toggleGroup}
                 ungrouped={ungroupedFilter}
                 ungroupedCount={catalogue?.ungroupedCount}
+                hasAnyGroup={(groups || []).length > 0}
                 onToggleUngrouped={() => updateParams(ungroupedFilter
                   ? { ungrouped: null }
                   : { ungrouped: '1', groups: null, match: null })}

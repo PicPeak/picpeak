@@ -325,6 +325,19 @@ describe('newsletter composer', () => {
     });
   });
 
+  it('lists a group deleted after the draft was saved so it can be unticked (#1443)', async () => {
+    campaignFixture = { ...baseCampaign, recipientMode: 'groups', groupIds: [1, 99], groupMatch: 'any' };
+    renderComposer();
+    const deleted = await screen.findByRole('checkbox', { name: /Deleted group/ });
+    expect(deleted).toBeChecked();
+    await userEvent.click(deleted);
+    expect(screen.queryByRole('checkbox', { name: /Deleted group/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+    expect(updateSpy.mock.calls.at(-1)?.[1]).toMatchObject({ recipientMode: 'groups', groupIds: [1] });
+  });
+
   it('hides the groups mode from a role that cannot read customers (#1443)', async () => {
     grantedPermissions = ['newsletters.view', 'newsletters.send'];
     renderComposer();

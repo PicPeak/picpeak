@@ -5945,6 +5945,7 @@
       "customColor": "Eigene Farbe",
       "empty": "Noch keine Gruppen. Lege eine an, um deine Kunden zu ordnen.",
       "emptyCatalogue": "Noch keine Gruppen. Lege eine unter Kunden → Gruppen an.",
+      "deletedGroup": "Gelöschte Gruppe",
       "palette": {
         "blue": "Blau",
         "green": "Grün",

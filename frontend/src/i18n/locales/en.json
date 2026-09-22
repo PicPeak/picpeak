@@ -5945,6 +5945,7 @@
       "customColor": "Custom colour",
       "empty": "No groups yet. Create one to organise your customers.",
       "emptyCatalogue": "No groups yet. Create one under Customers → Groups.",
+      "deletedGroup": "Deleted group",
       "palette": {
         "blue": "Blue",
         "green": "Green",

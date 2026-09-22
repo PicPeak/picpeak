@@ -120,6 +120,10 @@ interface CustomerGroupFilterProps {
   ungrouped: boolean;
   ungroupedCount?: number;
   onToggleUngrouped: () => void;
+  /** Any group exists, archived ones included. Customers carrying only an
+   *  archived group are still grouped, so Ungrouped stays meaningful after
+   *  every live group is archived. Defaults to "there are live groups". */
+  hasAnyGroup?: boolean;
   match: CustomerGroupMatch;
   onMatchChange: (match: CustomerGroupMatch) => void;
   /** Any filter or search is set, so there is something to clear. */
@@ -154,10 +158,10 @@ const ClearFilters: React.FC<{ onClear: () => void }> = ({ onClear }) => {
  */
 export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
   groups, selectedIds, onToggle, ungrouped, ungroupedCount, onToggleUngrouped,
-  match, onMatchChange, showClear, onClear,
+  hasAnyGroup = groups.length > 0, match, onMatchChange, showClear, onClear,
 }) => {
   const { t } = useTranslation();
-  if (groups.length === 0) {
+  if (!hasAnyGroup) {
     return showClear ? <ClearFilters onClear={onClear} /> : null;
   }
   return (

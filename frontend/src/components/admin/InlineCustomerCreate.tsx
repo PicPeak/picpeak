@@ -196,7 +196,8 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
     setBusy(mode);
     try {
       const customer = await customerAdminService.createDirect(form.email, buildPrefill(form), groupIds);
-      if (groupIds.length > 0) queryClient.invalidateQueries({ queryKey: ['admin-customer-groups'] });
+      // Always: member counts move with groups, the Ungrouped count without.
+      queryClient.invalidateQueries({ queryKey: ['admin-customer-groups'] });
       if (mode === 'invite') {
         // Customer is now saved as passive. Fire the second call to
         // promote them. If THIS fails, keep the customer selected
