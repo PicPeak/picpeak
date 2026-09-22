@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
-const { assertStoredPathInside } = require('./safePath');
+const { assertStoredPathInside, resolveStoredPathStrict } = require('./safePath');
 const { getStoragePath } = require('../config/storage');
 
 /**
@@ -25,15 +25,17 @@ const { getStoragePath } = require('../config/storage');
  * @param {'quote'|'invoice'} type the business-docs sub-directory it lives in
  * @returns {Buffer|null}
  */
+const documentRoots = (type) => [
+  path.join(getStoragePath(), 'business-docs', type),
+  // Documents written before the writers moved to the shared resolver
+  // still live under <cwd>/storage (same directory on a stock install).
+  path.join(process.cwd(), 'storage', 'business-docs', type),
+];
+
 function readStoredDocumentPdf(pdfPath, type) {
   if (!pdfPath) return null;
   try {
-    const resolved = assertStoredPathInside(pdfPath, [
-      path.join(getStoragePath(), 'business-docs', type),
-      // Documents written before the writers moved to the shared resolver
-      // still live under <cwd>/storage (same directory on a stock install).
-      path.join(process.cwd(), 'storage', 'business-docs', type),
-    ]);
+    const resolved = assertStoredPathInside(pdfPath, documentRoots(type));
     return fs.readFileSync(resolved);
   } catch (err) {
     logger.warn('Stored document PDF unavailable, rendering it live instead', { type, pdfPath, code: err.code || err.name });
@@ -41,4 +43,18 @@ function readStoredDocumentPdf(pdfPath, type) {
   }
 }
 
-module.exports = { readStoredDocumentPdf };
+/**
+ * The stored invoice PDF to attach to a reminder or workflow email: the file,
+ * symlinks followed, or null when it is missing or lies outside the invoice
+ * folder (the email then goes without it, as it always did when missing).
+ */
+function invoicePdfFile(pdfPath) {
+  try {
+    return resolveStoredPathStrict(pdfPath, documentRoots('invoice'));
+  } catch (err) {
+    logger.warn('Stored invoice PDF refused as an attachment', { pdfPath, code: err.code || err.name });
+    return null;
+  }
+}
+
+module.exports = { readStoredDocumentPdf, invoicePdfFile };

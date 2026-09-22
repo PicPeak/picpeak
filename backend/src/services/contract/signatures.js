@@ -17,6 +17,10 @@ const { buildSignatureStamps, persistAuditCertificate, persistContractPdf, persi
 const { getContractById } = require('./crud');
 const { auditedUpdate } = require('../accountingHistory');
 const { resolveStoredPath, toStoredPath } = require('../../utils/storedPath');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
+
+/** A contract file this module opens: symlinks followed, null when missing, 403 outside. */
+const contractFile = (stored) => resolveStoredPathStrict(stored, contractPdfRoots());
 
 // The change history's actor for a signature or upload through the emailed
 // link. The token row names only the contract, not who holds the link.
@@ -172,7 +176,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
   // stays untouched on disk.
   const refreshed = await getContractById(contract.id);
   try {
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new Error(`Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}`);
     }
@@ -359,7 +363,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
     if (!signaturePath) {
       throw new Error('Admin signature image missing; cannot stamp the counter-signed PDF');
     }
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new Error(`Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}`);
     }
@@ -746,7 +750,7 @@ async function rerenderAndResend(contractId, adminId) {
   // it would replace the record with the unsigned PDF carrying the issuer
   // image alone — and mail that to both parties. Re-send the stored file.
   const isV2Contract = Number(contract.signing_version) === 2;
-  if (isV2Contract && !(contract.signed_pdf_path && fs.existsSync(resolveStoredPath(contract.signed_pdf_path) || ''))) {
+  if (isV2Contract && !contractFile(contract.signed_pdf_path)) {
     throw new AppError(
       'The signed PDF for this contract is missing on disk, so there is nothing to re-send. Restore it from a backup before trying again.',
       409, 'SIGNED_PDF_MISSING',
@@ -772,7 +776,7 @@ async function rerenderAndResend(contractId, adminId) {
     // the customer originally agreed to and side-steps the silent re-
     // render failure that left signed_pdf_path NULL on prior contracts.
     const refreshed = await getContractById(contract.id);
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new AppError(
         `Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}; cannot re-stamp.`,
@@ -842,7 +846,8 @@ async function rerenderAndResend(contractId, adminId) {
   if (isV2Contract) {
     const existing = await db('generated_documents')
       .where({ doc_type: 'contract', doc_id: contract.id, kind: 'audit' }).orderBy('id', 'desc').first();
-    const existingPath = existing && resolveStoredPath(existing.path);
+    let existingPath = null;
+    try { existingPath = existing ? contractFile(existing.path) : null; } catch (_) { existingPath = null; }
     auditCertPath = existingPath && fs.existsSync(existingPath)
       ? existingPath
       : await signingV2.issueCertificate(contract.id, refetched.signed_pdf_sha256);
@@ -968,7 +973,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   // already points at an uploaded PDF we still produce a stamped copy
   // on disk for the audit trail, but signed_pdf_path is not updated.
   const refreshed = await getContractById(contract.id);
-  const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+  const unsignedPdf = contractFile(refreshed.contract.pdf_path);
   if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
     throw new AppError(
       `Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}; cannot re-stamp.`,

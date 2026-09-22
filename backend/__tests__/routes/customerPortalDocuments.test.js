@@ -312,4 +312,62 @@ describe('customer portal contracts and quotes', () => {
     const album = await db('quote_line_items').where({ quote_id: withAddOns, position: 2 }).first();
     expect([false, 0, '0', null]).toContain(album.selected);
   });
+
+  it('refuses a stored contract path outside the contract folders with 403, and renders live only when the file is missing', async () => {
+    const contractService = require('../../src/services/contractService');
+    const live = jest.spyOn(contractService, 'renderContractPdfBuffer').mockResolvedValue(Buffer.from('%PDF-LIVE'));
+    const { buildRouteApp } = require('../integration/helpers/crmDb');
+    const verification = require('../../src/services/publicDocumentVerificationService');
+    const publicApp = buildRouteApp('/api/public/contracts', require('../../src/routes/publicContracts'));
+
+    const id = await contract(customerId, 'sent', 'K-P-PATH');
+    const token = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+    const grant = verification.issueGrant('contract', await db('contract_action_tokens').where({ token }).first(), token);
+    const both = async () => [
+      await get(`/api/customer/contracts/${id}/pdf`).buffer(true),
+      await request(publicApp).get(`/api/public/contracts/${token}/pdf`).set('X-Document-Access', grant).buffer(true),
+    ];
+
+    const dir = path.join(process.env.STORAGE_PATH, 'business-docs', 'contract', '2026');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'K-P-PATH.pdf'), '%PDF-STORED');
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-outside-'));
+    fs.writeFileSync(path.join(outside, 'secret.pdf'), 'secret');
+    fs.symlinkSync(path.join(outside, 'secret.pdf'), path.join(dir, 'K-P-PATH-link.pdf'));
+    const invoiceDir = path.join(process.env.STORAGE_PATH, 'business-docs', 'invoice', '2026');
+    fs.mkdirSync(invoiceDir, { recursive: true });
+    fs.writeFileSync(path.join(invoiceDir, 'I-1.pdf'), '%PDF-INVOICE');
+
+    try {
+      // The stored file is served.
+      await db('contracts').where({ id }).update({ pdf_path: 'business-docs/contract/2026/K-P-PATH.pdf' });
+      for (const res of await both()) {
+        expect(res.status).toBe(200);
+        expect(Buffer.from(res.body).toString()).toBe('%PDF-STORED');
+      }
+
+      // Tampering: outside the root, climbing out, a symlink out, another folder.
+      for (const bad of ['/etc/passwd', '../../../../etc/passwd',
+        'business-docs/contract/2026/K-P-PATH-link.pdf', 'business-docs/invoice/2026/I-1.pdf']) {
+        await db('contracts').where({ id }).update({ pdf_path: bad });
+        for (const res of await both()) {
+          expect(res.status).toBe(403);
+          expect(String(res.text || '')).not.toMatch(/root:|secret|INVOICE/);
+        }
+      }
+      expect(live).not.toHaveBeenCalled();
+
+      // Simply missing, relative or from another root: rendered live.
+      for (const gone of ['business-docs/contract/2026/gone.pdf', '/app/storage/business-docs/contract/2026/gone.pdf']) {
+        await db('contracts').where({ id }).update({ pdf_path: gone });
+        for (const res of await both()) {
+          expect(res.status).toBe(200);
+          expect(Buffer.from(res.body).toString()).toBe('%PDF-LIVE');
+        }
+      }
+    } finally {
+      live.mockRestore();
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
 });

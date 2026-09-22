@@ -9,7 +9,20 @@ const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const pdfStampService = require('../pdfStampService');
 const documentArtifactService = require('../documentArtifactService');
-const { resolveStoredPath } = require('../../utils/storedPath');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
+
+/**
+ * A signature image to stamp, symlinks followed. A missing or refused image
+ * comes back as null with `unavailable` set, so the stamp fails and is
+ * reported as failed instead of being skipped as "no signature".
+ */
+function signatureImage(stored) {
+  let file = null;
+  try { file = resolveStoredPathStrict(stored, contractPdfRoots()); } catch (err) {
+    logger.warn('Signature image refused', { code: err.code || err.name });
+  }
+  return { signaturePngPath: file, unavailable: !file };
+}
 
 
 /**
@@ -174,7 +187,7 @@ function buildSignatureStamps(contract) {
   const stamps = [];
   if (contract.signed_customer_signature_path) {
     stamps.push({
-      signaturePngPath: resolveStoredPath(contract.signed_customer_signature_path),
+      ...signatureImage(contract.signed_customer_signature_path),
       role: 'customer',
       caption: {
         name: contract.signed_customer_name || '',
@@ -186,7 +199,7 @@ function buildSignatureStamps(contract) {
   }
   if (contract.signed_admin_signature_path) {
     stamps.push({
-      signaturePngPath: resolveStoredPath(contract.signed_admin_signature_path),
+      ...signatureImage(contract.signed_admin_signature_path),
       role: 'admin',
       caption: {
         name: contract.signed_admin_name || '',

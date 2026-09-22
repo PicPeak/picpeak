@@ -22,6 +22,8 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 // Stored paths are relative to the storage root: onDisk() is the file a row
 // names, storedAs() what a row records for a file.
 const { resolveStoredPath: onDisk, toStoredPath: storedAs } = require('../../src/utils/storedPath');
+// Stamps read the image with symlinks followed (the tmp dir is a symlink on macOS).
+const stampedImage = (stored) => fs.realpathSync(onDisk(stored));
 
 jest.setTimeout(120000);
 
@@ -342,8 +344,8 @@ describe('signature evidence under concurrent requests', () => {
     const contract = await db('contracts').where({ id }).first();
     expect(contract.status).toBe('fully_signed');
     expect(recorder.stampsOf(contract.signed_pdf_sha256)).toEqual([
-      { role: 'customer', png: onDisk(contract.signed_customer_signature_path) },
-      { role: 'admin', png: onDisk(contract.signed_admin_signature_path) },
+      { role: 'customer', png: stampedImage(contract.signed_customer_signature_path) },
+      { role: 'admin', png: stampedImage(contract.signed_admin_signature_path) },
     ]);
   });
 });
@@ -370,7 +372,7 @@ describe('customer signature stamping', () => {
     expect(contract.signed_pdf_path).toBeTruthy();
     // The PDF on record shows the image the contract references.
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([onDisk(contract.signed_customer_signature_path)]);
+      .toEqual([stampedImage(contract.signed_customer_signature_path)]);
   });
 });
 
@@ -576,7 +578,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
     const contract = await db('contracts').where({ id }).first();
     // The PDF on record carries the image the contract references.
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([onDisk(contract.signed_customer_signature_path)]);
+      .toEqual([stampedImage(contract.signed_customer_signature_path)]);
     expect(a.superseded).toBe(true);
     expect(b.superseded).toBeUndefined();
     expect(await restampLogsFor(id)).toHaveLength(2);
@@ -612,7 +614,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
 
     const contract = await db('contracts').where({ id }).first();
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([onDisk(contract.signed_customer_signature_path)]);
+      .toEqual([stampedImage(contract.signed_customer_signature_path)]);
     if (b.status === 'rejected') expect(b.reason.code).toBe('CONTRACT_STATE_CHANGED');
   });
 

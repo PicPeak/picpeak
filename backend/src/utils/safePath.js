@@ -127,11 +127,33 @@ function assertStoredPathInside(storedPath, allowedRoots) {
 }
 
 /**
- * Convenience helper that builds the standard contract PDF roots
- * (system-stamped + wet-upload) and delegates to assertPathInside.
- * Use from contract PDF stream / read sites.
+ * The directories a stored path may name at all: the storage root, and
+ * <cwd>/storage, where the contract writers put files before they moved onto
+ * the shared resolver (the same directory on a stock install).
  */
-function assertContractPdfPath(filePath) {
+function storageRoots() {
+  return [getStoragePath(), path.join(process.cwd(), 'storage')];
+}
+
+/**
+ * The file a stored path names, for a reader that opens it: placed on this
+ * install's storage root, then checked with symlinks followed. Returns null
+ * when there is no value or the file is simply not there, so the caller keeps
+ * its own "missing" handling. A value that cannot be placed inside
+ * `allowedRoots` (tampering, a crafted restore) throws AppError 403.
+ */
+function resolveStoredPathStrict(storedPath, allowedRoots = storageRoots()) {
+  if (!storedPath) return null;
+  try {
+    return assertStoredPathInside(storedPath, allowedRoots);
+  } catch (err) {
+    if (err && err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+/** Where contract PDFs and signature images live (see assertContractPdfPath). */
+function contractPdfRoots() {
   const cwd = process.cwd();
   // getStoragePath() rather than a second `STORAGE_PATH || cwd` expression:
   // the two disagree whenever STORAGE_PATH is unset, because the shared
@@ -141,8 +163,7 @@ function assertContractPdfPath(filePath) {
   // resolver, so a guard with its own idea of the root refuses exactly the
   // files it is meant to serve.
   const storageRoot = getStoragePath();
-  // The stored value may be storage-relative or recorded by another install.
-  return assertStoredPathInside(filePath, [
+  return [
     // The configured storage root is where the contract writers persist, so it
     // has to be allowed here or every generated PDF is refused with
     // PATH_OUTSIDE_STORAGE the moment STORAGE_PATH is not <cwd>/storage. The
@@ -152,7 +173,17 @@ function assertContractPdfPath(filePath) {
     path.join(storageRoot, 'business-docs', 'contract'),
     path.join(cwd, 'storage', 'business-docs', 'contract'),
     path.join(storageRoot, 'uploads', 'contracts', 'signed'),
-  ]);
+  ];
+}
+
+/**
+ * Convenience helper that builds the standard contract PDF roots
+ * (system-stamped + wet-upload) and delegates to assertPathInside.
+ * Use from contract PDF stream / read sites.
+ */
+function assertContractPdfPath(filePath) {
+  // The stored value may be storage-relative or recorded by another install.
+  return assertStoredPathInside(filePath, contractPdfRoots());
 }
 
 /**
@@ -251,6 +282,9 @@ function isPublicUploadImage(filePath) {
 module.exports = {
   assertPathInside,
   assertStoredPathInside,
+  resolveStoredPathStrict,
+  storageRoots,
+  contractPdfRoots,
   assertContractPdfPath,
   assertZipEntriesWithin,
   uploadedAssetPath,

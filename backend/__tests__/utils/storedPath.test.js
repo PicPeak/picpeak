@@ -15,7 +15,7 @@ const prevStorage = process.env.STORAGE_PATH;
 const prevCwd = process.cwd();
 
 const { toStoredPath, relocateStoredPath, resolveStoredPath } = require('../../src/utils/storedPath');
-const { assertContractPdfPath, assertStoredPathInside } = require('../../src/utils/safePath');
+const { assertContractPdfPath, assertStoredPathInside, resolveStoredPathStrict } = require('../../src/utils/safePath');
 
 function put(base, rel, content = 'x') {
   const file = path.join(base, ...rel.split('/'));
@@ -130,6 +130,23 @@ describe('read guards', () => {
     // Inside the storage root but outside the contract folders.
     put(root, 'business-docs/invoice/2026/I-1.pdf');
     expect(() => assertContractPdfPath('business-docs/invoice/2026/I-1.pdf')).toThrow(expect.objectContaining({ statusCode: 403 }));
+  });
+
+  it('resolveStoredPathStrict: the realpath, null when missing, 403 outside or linked out', () => {
+    const file = put(root, 'business-docs/invoice/2026/I-1.pdf');
+    expect(resolveStoredPathStrict('business-docs/invoice/2026/I-1.pdf')).toBe(fs.realpathSync(file));
+    expect(resolveStoredPathStrict('/app/storage/business-docs/invoice/2026/I-1.pdf')).toBe(fs.realpathSync(file));
+    expect(resolveStoredPathStrict('business-docs/invoice/2026/gone.pdf')).toBeNull();
+    expect(resolveStoredPathStrict(null)).toBeNull();
+    const outside = put(tmp, 'outside/secret.pdf');
+    fs.symlinkSync(outside, path.join(root, 'business-docs', 'invoice', '2026', 'link.pdf'));
+    for (const bad of ['/etc/passwd', '../../etc/passwd', 'business-docs/invoice/2026/link.pdf']) {
+      expect(() => resolveStoredPathStrict(bad)).toThrow(expect.objectContaining({ statusCode: 403 }));
+    }
+    // Confined to one folder, a file elsewhere in storage is refused too.
+    fs.mkdirSync(path.join(root, 'business-docs', 'quote'), { recursive: true });
+    expect(() => resolveStoredPathStrict('business-docs/invoice/2026/I-1.pdf', [path.join(root, 'business-docs', 'quote')]))
+      .toThrow(expect.objectContaining({ statusCode: 403 }));
   });
 
   it('assertStoredPathInside follows symlinks out of the root', () => {

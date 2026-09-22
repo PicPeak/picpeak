@@ -335,7 +335,9 @@ async function stampSignatures(originalPdfBuffer, stamps) {
   // the result as fully signed can refuse it.
   const failed = [];
   for (const stamp of stamps) {
-    if (!stamp.signaturePngPath) continue;
+    // `unavailable`: the row names an image that is missing or was refused;
+    // that is a failed stamp, not an unsigned slot.
+    if (!stamp.signaturePngPath && !stamp.unavailable) continue;
     try {
       buffer = await stampSignature({
         pdfBuffer: buffer,
