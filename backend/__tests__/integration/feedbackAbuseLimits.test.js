@@ -90,6 +90,28 @@ test('verified guest identities retain their server-issued identifiers', () => {
 });
 
 
+test('the sweep removes rows past 2x the widest configured window and keeps fresh ones (#1585)', async () => {
+  const { sweepStaleFeedbackRateLimits } = require('../../src/middleware/feedbackRateLimit');
+  // Widest configured window here is comment's 3600s (see beforeAll), so the
+  // sweep's cutoff is 7200s ago. Timestamps are ISO strings, per the
+  // Jest+SQLite Date landmine (CLAUDE.md) — a raw Date stored through the
+  // sqlite3 driver under Jest round-trips as the literal string
+  // "[object Object]" instead of a comparable timestamp.
+  const staleRow = { event_id: eventId, action_type: 'comment', action_count: 1,
+    identifier: 'stale-guest', window_start: new Date(Date.now() - 8000 * 1000).toISOString() };
+  const staleOtherActionRow = { event_id: eventId, action_type: 'like', action_count: 1,
+    identifier: 'stale-guest-2', window_start: new Date(Date.now() - 8000 * 1000).toISOString() };
+  const freshRow = { event_id: eventId, action_type: 'comment', action_count: 1,
+    identifier: 'fresh-guest', window_start: new Date(Date.now() - 100 * 1000).toISOString() };
+  await db('feedback_rate_limits').insert([staleRow, staleOtherActionRow, freshRow]);
+
+  const deleted = await sweepStaleFeedbackRateLimits();
+  expect(deleted).toBe(2);
+
+  const remaining = await db('feedback_rate_limits').select('identifier');
+  expect(remaining.map(row => row.identifier)).toEqual(['fresh-guest']);
+});
+
 test('IPv6 address rotation shares one event IP budget while another /64 stays independent', async () => {
   const { consumeFeedbackLimit } = require('../../src/middleware/feedbackRateLimit');
   const key = createHash('sha256').update('feedback-ip:2001:db8:1:2::/64').digest('hex');

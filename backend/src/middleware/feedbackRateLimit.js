@@ -104,6 +104,33 @@ async function consumeFeedbackLimit(req, actionType) {
   });
 }
 
+/**
+ * Backstop sweep for orphaned feedback_rate_limits rows (#1585).
+ *
+ * consumeFeedbackLimit() only ever deletes rows for the (event_id,
+ * action_type) pair it is currently processing, so a gallery that stops
+ * receiving feedback — or an action type nobody uses again — leaves its
+ * rows behind forever; each accepted action inserts two (guest + IP budget).
+ * This runs periodically (see feedbackRateLimitCleanupService) and deletes
+ * anything older than 2x the widest configured window across all action
+ * types — double, rather than the window itself, so a row is never swept
+ * out from under a request that is still mid-window against it.
+ */
+async function sweepStaleFeedbackRateLimits() {
+  const settings = await getRateLimitSettings();
+  const maxWindowSeconds = Object.keys(DEFAULT_RATE_LIMITS).reduce((max, actionType) => {
+    const configured = settings[actionType];
+    const window = Number.isSafeInteger(configured?.window) && configured.window > 0
+      ? configured.window
+      : DEFAULT_RATE_LIMITS[actionType].window;
+    return Math.max(max, window);
+  }, 0);
+  const cutoff = new Date(Date.now() - maxWindowSeconds * 2 * 1000).toISOString();
+  const deleted = await db('feedback_rate_limits').where('window_start', '<', cutoff).delete();
+  if (deleted > 0) logger.info(`Feedback rate-limit sweep removed ${deleted} stale row(s)`);
+  return deleted;
+}
+
 function feedbackRateLimit(actionType) {
   return async (req, res, next) => {
     try {
@@ -189,5 +216,6 @@ module.exports = {
   feedbackRateLimit,
   strictRateLimit,
   generateGuestIdentifier,
-  consumeFeedbackLimit
+  consumeFeedbackLimit,
+  sweepStaleFeedbackRateLimits
 };
