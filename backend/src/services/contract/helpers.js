@@ -123,8 +123,18 @@ function ensureCustomerActive(customer) {
     throw new AppError('Customer is deactivated', 409);
   }
 }
+/**
+ * A contract that asked for the customer's details and was never sent with
+ * them (#1446): still waiting, or expired or cancelled while it waited.
+ * Nothing of it but its number is shown to the customer.
+ */
+function neverFrozen(contract) {
+  return contract.status === 'awaiting_data' || (!!contract.data_request && !contract.sent_at);
+}
+
 module.exports = {
   SECTIONS_ORDER,
+  neverFrozen,
   adminActor,
   customerPublicActor,
   emitContractEvent,

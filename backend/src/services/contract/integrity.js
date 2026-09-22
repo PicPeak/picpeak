@@ -72,8 +72,13 @@ async function integrityReport(contractId, { adminId = null } = {}) {
   const checks = [];
 
   const complete = contract.status === 'fully_signed';
-  if (contract.pdf_sha256 || contract.pdf_path) {
-    checks.push(compare('unsigned_pdf', contract.pdf_sha256, fileSha(contract.pdf_path)));
+  const events = await signingEvents.listEvents(contractId);
+  // A contract that went out has an unsigned PDF, whatever its columns say
+  // now: the send is in the log, with the PDF's sha256.
+  const sentEvent = events.find((e) => e.type === 'sent');
+  if (contract.pdf_sha256 || contract.pdf_path || contract.sent_at || sentEvent) {
+    checks.push(compare('unsigned_pdf', contract.pdf_sha256 || (sentEvent && sentEvent.artifactSha256),
+      fileSha(contract.pdf_path)));
   }
   if (contract.signed_pdf_sha256 || contract.signed_pdf_path || complete) {
     checks.push(compare('signed_pdf', contract.signed_pdf_sha256, fileSha(contract.signed_pdf_path)));
@@ -124,7 +129,6 @@ async function integrityReport(contractId, { adminId = null } = {}) {
     checks.push(compare('manifest', contract.attachment_manifest_sha256, manifest ? attachments.manifestSha256(manifest) : null));
   }
 
-  const events = await signingEvents.listEvents(contractId);
   if (events.length || contract.audit_chain_head) {
     const chain = await signingEvents.verifyChain(contractId);
     checks.push({

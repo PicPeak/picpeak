@@ -602,6 +602,32 @@ describe('consents', () => {
     expect(after.rendered_content_sha256).toBe(before.rendered_content_sha256);
   });
 
+  test('a replayed signature with different declaration answers is not the one recorded', async () => {
+    const { id, session } = await sentWithSession();
+    const frozen = parsed((await db('contracts').where({ id }).first()).rendered_content).consents;
+    const all = frozen.map((c) => ({ key: c.key, accepted: true }));
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed', consents: all, idempotencyKey: 'consent-replay' }));
+    expect((await ok(sign(session, { name: 'Anna Muster', mode: 'typed', consents: all, idempotencyKey: 'consent-replay' }))).replayed)
+      .toBe(true);
+    const changed = await sign(session, {
+      name: 'Anna Muster', mode: 'typed', idempotencyKey: 'consent-replay',
+      consents: [...all.map((c) => ({ ...c, accepted: false })), { key: 'made_up', accepted: true }],
+    });
+    expect(changed.status).toBe(409);
+    expect(changed.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+  });
+
+  test('an expired contract takes no paper copy', async () => {
+    const id = await newContract();
+    await sendContract(id);
+    await db('contracts').where({ id }).update({ status: 'expired' });
+    const upload = require('path').join(tmpDir, 'paper.pdf');
+    fs.writeFileSync(upload, '%PDF-1.4');
+    await expect(require('../../src/services/contract/signatures').attachSignedPdfUpload(id, upload, 'admin'))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect((await db('contracts').where({ id }).first()).status).toBe('expired');
+  });
+
   test('a contract sent before declarations were frozen still signs with the single confirmation', async () => {
     const { canonicalSha256 } = require('../../src/utils/canonicalJson');
     const { id, session } = await sentWithSession();
@@ -887,7 +913,12 @@ describe('workflow triggers and the gated invoice step', () => {
     expect(await action(ctxFor(id, { __dryRun: true }))).toEqual({ dryRun: true, would: 'prepare_contract_invoice', contractId: id });
     expect(await db('invoices').where({ source_contract_id: id })).toHaveLength(0);
 
+    // An earlier failed attempt, still on the contract.
+    await require('../../src/services/contract/signingV2')
+      .recordFollowUpFailure(id, 'prepare_contract_invoice', new Error('earlier attempt'));
     const first = await action(ctxFor(id));
+    // It is no longer outstanding.
+    expect((await db('contracts').where({ id }).first()).follow_up_failed_at).toBeNull();
     const invoices = await db('invoices').where({ source_contract_id: id });
     expect(invoices).toHaveLength(1);
     expect(first.invoice_prepared).toEqual([invoices[0].id]);
@@ -1010,6 +1041,11 @@ describe('integrity report', () => {
     await db('contract_signers').where({ id: signer.id }).update({ signature_path: signer.signature_path });
     await db('contracts').where({ id }).update({ signed_pdf_path: null });
     expect(await failing(id)).toEqual(['completed_artifact', 'signed_pdf']);
+    await db('contracts').where({ id }).update({ signed_pdf_path: contract.signed_pdf_path });
+    // The unsigned PDF with both its columns cleared: the send in the log still requires it.
+    await db('contracts').where({ id }).update({ pdf_path: null, pdf_sha256: null });
+    expect(await failing(id)).toEqual(['unsigned_pdf']);
+    await db('contracts').where({ id }).update({ pdf_path: contract.pdf_path, pdf_sha256: contract.pdf_sha256 });
     await db('contracts').where({ id }).update({ signed_pdf_path: contract.signed_pdf_path });
     const allEvents = await db('contract_signing_events').where({ contract_id: id }).orderBy('seq');
     await db('contract_signing_events').where({ contract_id: id, event_type: 'completed' }).del();

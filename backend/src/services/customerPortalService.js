@@ -336,13 +336,13 @@ async function getEventOverview(customerId, slug) {
       .whereNot('status', 'draft')
       .andWhere(linkedTo('converted_event_id'))
       .orderBy('id', 'desc')
-      .select('id', 'contract_number', 'status', 'title', 'issue_date', 'pdf_path', 'signed_pdf_path'))
+      .select('id', 'contract_number', 'status', 'title', 'issue_date', 'pdf_path', 'signed_pdf_path', 'sent_at', 'data_request'))
       .map((c) => ({
         id: c.id,
         contractNumber: c.contract_number,
         status: c.status,
         // Nothing of a contract still collecting details (#1446) but its number.
-        title: c.status === 'awaiting_data' ? null : (c.title || null),
+        title: require('./contract/helpers').neverFrozen(c) ? null : (c.title || null),
         issueDate: toDateOnly(c.issue_date),
         hasPdf: !!c.pdf_path,
         hasSignedPdf: !!c.signed_pdf_path,

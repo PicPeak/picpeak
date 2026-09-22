@@ -573,7 +573,9 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   if (!filePath) throw new AppError('No file uploaded', 400);
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
-  if (['cancelled', 'draft'].includes(contract.status)) {
+  // Expired is final (#1446), and a contract still collecting details was
+  // never frozen: there is nothing a paper copy could be the signed form of.
+  if (['cancelled', 'draft', 'expired', 'awaiting_data'].includes(contract.status)) {
     throw new AppError(`Cannot attach a signed PDF to a contract in status '${contract.status}'`, 409);
   }
 

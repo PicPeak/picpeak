@@ -349,9 +349,13 @@ registry.registerAction('prepare_contract_invoice', async (ctx) => {
   if (Array.isArray(ctx.vars.preparedInvoiceIds) && ctx.vars.preparedInvoiceIds.length) {
     return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
   }
+  // Done now: a failure an earlier run recorded is no longer outstanding.
+  const cleared = () => require('../contract/signingV2')
+    .clearFollowUpFailure(contractId, { steps: ['prepare_contract_invoice'] });
   const existing = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
   if (existing.length) {
     ctx.vars.preparedInvoiceIds = existing.map((r) => r.id);
+    await cleared();
     return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
   }
   try {
@@ -363,6 +367,7 @@ registry.registerAction('prepare_contract_invoice', async (ctx) => {
   }
   const created = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
   ctx.vars.preparedInvoiceIds = created.map((r) => r.id);
+  await cleared();
   return { invoice_prepared: ctx.vars.preparedInvoiceIds };
 });
 

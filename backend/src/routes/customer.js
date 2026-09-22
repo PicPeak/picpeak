@@ -39,6 +39,7 @@ const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
 const contractSignedPdfUpload = require('../utils/contractSignedPdfUpload');
 const { auditedUpdate } = require('../services/accountingHistory');
+const { neverFrozen } = require('../services/contract/helpers');
 
 // Gate a customer-facing route on BOTH the global master flag AND the
 // per-customer override — getEffectiveFeaturesForCustomer combines them, so an
@@ -909,14 +910,6 @@ async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
     return null;
   }
   return row;
-}
-
-/**
- * A contract that asked for the customer's details and was never sent with
- * them (#1446): still waiting, or expired or cancelled while it waited.
- */
-function neverFrozen(contract) {
-  return contract.status === 'awaiting_data' || (!!contract.data_request && !contract.sent_at);
 }
 
 function sendUnfrozen(res, contract) {

@@ -861,6 +861,24 @@ async function sessionAttachment(sessionToken, attachmentId) {
   }
 }
 
+/**
+ * Whether a replayed signature carries the declaration answers recorded with
+ * the first one (#1446). Contracts without frozen declarations have none.
+ */
+async function sameConsentAnswers(contract, signer, submitted) {
+  const frozen = frozenConsents(contract);
+  if (!frozen) return true;
+  let given;
+  try {
+    given = consents.answers(frozen, submitted);
+  } catch (_) {
+    return false;
+  }
+  const recorded = new Map((await db('contract_signer_consents').where({ signer_id: signer.id }))
+    .map((row) => [row.consent_key, row.accepted === true || row.accepted === 1]));
+  return given.length === recorded.size && given.every((a) => recorded.get(a.key) === a.accepted);
+}
+
 /** A customer signer signs. Idempotent per `idempotencyKey`. */
 async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   const { signer, contract, session } = await sessionContext(sessionToken);
@@ -877,7 +895,8 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
       // resent after a lost response, so a key arriving with a different name
       // or a different mode is not the request that succeeded, and answering
       // "done" would report a signature nobody made that way.
-      if (signerName(signer) !== name || (signer.signature_mode || null) !== mode) {
+      if (signerName(signer) !== name || (signer.signature_mode || null) !== mode
+        || !(await sameConsentAnswers(contract, signer, input.consents))) {
         throw Object.assign(new AppError(
           'This signature was already recorded with different details. Reload the page to see where the contract stands.',
           409, 'IDEMPOTENCY_KEY_REUSED',
