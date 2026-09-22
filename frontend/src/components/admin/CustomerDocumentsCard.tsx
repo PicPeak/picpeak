@@ -220,9 +220,13 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
       </p>
 
       <PermissionGate permission={PERMISSION}>
-        <div className="flex flex-col md:flex-row md:items-end gap-3 mb-4">
-          <label className="flex-1 min-w-0 text-sm text-neutral-700 dark:text-neutral-300">
-            <span className="block mb-1">{t('customers.documents.fileLabel', 'Document to share')}</span>
+        {/* Two rows: the file input on a line of its own, then the links,
+            the two options and Upload, wrapping as the card narrows. In one
+            row the file input was squeezed to a sliver once the project
+            picker and the notify option joined it. */}
+        <div className="flex flex-col gap-3 mb-4">
+          <label className="block w-full text-sm text-neutral-700 dark:text-neutral-300">
+            <span className="block mb-1 whitespace-nowrap">{t('customers.documents.fileLabel', 'Document to share')}</span>
             <input
               ref={inputRef}
               type="file"
@@ -232,9 +236,10 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
               className="block w-full text-sm text-neutral-700 dark:text-neutral-300"
             />
           </label>
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
           {events.length > 0 && (
             <label className="text-sm text-neutral-700 dark:text-neutral-300">
-              <span className="block mb-1">{t('customers.documents.eventLabel', 'Event')}</span>
+              <span className="block mb-1 whitespace-nowrap">{t('customers.documents.eventLabel', 'Event')}</span>
               <select value={uploadEventId} onChange={(e) => setUploadEventId(e.target.value)} className={selectClass}>
                 <option value="">{t('customers.documents.noLink', 'None')}</option>
                 {events.map((ev) => <option key={ev.id} value={ev.id}>{ev.eventName}</option>)}
@@ -249,14 +254,14 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
               customerAccountId={customerId}
               strictCustomer
               disabled={uploading}
-              className="text-sm md:w-48"
+              className="text-sm w-48 max-w-full"
             />
           )}
-          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 md:pb-2">
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 pb-2 whitespace-nowrap">
             <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} className="h-4 w-4" />
             {t('customers.documents.shareNow', 'Share with the customer')}
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 md:pb-2">
+          <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 pb-2 whitespace-nowrap">
             <input type="checkbox" checked={notify} onChange={(e) => setNotifyChoice(e.target.checked)} className="h-4 w-4" />
             {t('customers.documents.notifyCustomer', 'Notify the customer by email')}
           </label>
@@ -271,6 +276,7 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
           >
             {t('customers.documents.upload', 'Upload')}
           </Button>
+          </div>
         </div>
       </PermissionGate>
 
