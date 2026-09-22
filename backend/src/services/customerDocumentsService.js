@@ -766,21 +766,23 @@ async function markErasedForCustomer(customerId, trx) {
     await trx('customer_documents').where({ id: d.id }).update({
       deleted_at: now,
       unshared_at: now,
-      original_name: erasedName(d),
       updated_at: now,
     });
   }
-  // A document linked to a contract is kept as part of the contractual
-  // record, but the name the customer gave the file is their data too
-  // ("Scan_Anna_Muster_Pass.pdf") and erasure has to reach it as well. The
-  // bytes and the storage key are what the record needs.
-  const linked = await trx('customer_documents')
+  // Every row keeps only what the record needs. The name the customer gave
+  // the file ("Scan_Anna_Muster_Pass.pdf") and the studio's review note
+  // ("passport expired") are their data: erasure reaches them on documents
+  // kept for a contract, on deleted ones, and on rows whose bytes a retention
+  // sweep already purged. The bytes and the storage key stay where kept.
+  const named = await trx('customer_documents')
     .where({ customer_account_id: customerId })
-    .whereNotNull('contract_id')
-    .whereNull('purged_at')
     .select('id', 'storage_key');
-  for (const d of linked) {
-    await trx('customer_documents').where({ id: d.id }).update({ original_name: erasedName(d), updated_at: now });
+  for (const d of named) {
+    await trx('customer_documents').where({ id: d.id }).update({
+      original_name: erasedName(d),
+      review_note: null,
+      updated_at: now,
+    });
   }
   await trx('customer_documents')
     .where({ customer_account_id: customerId })

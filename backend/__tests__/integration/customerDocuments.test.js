@@ -720,4 +720,42 @@ describe('customer erasure', () => {
     expect(after.unshared_at).toBeTruthy();
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(true);
   });
+
+  it('clears review notes and file names on every row, purged ones included', async () => {
+    // The studio's review note ("passport expired, Anna Muster") is data about
+    // the customer; so is the file name on a row a retention sweep already
+    // purged. Neither is part of any contractual record.
+    const customerD = idOf(await db('customer_accounts').insert({
+      email: 'erase-d@example.com', display_name: 'Dora', password_hash: 'x',
+      preferred_language: 'de', is_active: 1, created_at: new Date().toISOString(),
+    }).returning('id'));
+    await db('customer_accounts').where({ id: customerD }).update({ feature_documents: true });
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: 'K-ERASE-2', customer_account_id: customerD, status: 'sent', issue_date: '2026-09-01',
+    }).returning('id'));
+    const upload = async (name, fields = {}) => {
+      let req = asAdmin(request(adminApp).post(`/api/admin/customers/${customerD}/documents`));
+      for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+      const res = await req.attach('file', PDF, { filename: name, contentType: 'application/pdf' });
+      expect(res.status).toBe(201);
+      return res.body.document.id;
+    };
+    const linked = await upload('Pass_Dora.pdf', { contractId: String(contractId) });
+    const loose = await upload('Rechnung_Dora.pdf');
+    const purged = await upload('Alt_Dora.pdf');
+    const now = new Date().toISOString();
+    await db('customer_documents').whereIn('id', [linked, loose, purged])
+      .update({ review_note: 'Passport expired, Dora Muster' });
+    await db('customer_documents').where({ id: purged })
+      .update({ deleted_at: now, purged_at: now, original_name: 'Alt_Dora.pdf' });
+
+    await require('../../src/services/customerAccountsService').eraseCustomer(customerD, null);
+
+    const rows = await db('customer_documents').whereIn('id', [linked, loose, purged]);
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.review_note).toBeNull();
+      expect(r.original_name).toBe('erased.pdf');
+    }
+  });
 });
