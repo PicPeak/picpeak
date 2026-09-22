@@ -517,9 +517,12 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // it, so a limited gallery always streams.
     const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos
       || !!(await currentDownloadLimit(req.event));
-    const zipInfo = streamOnly
+    let zipInfo = streamOnly
       ? null
       : await downloadZipService.getZipInfo(req.event.id);
+    // Again after the cache lookup, which awaits storage: a limit set in the
+    // meantime must still send this request down the counted stream.
+    if (zipInfo && await currentDownloadLimit(req.event)) zipInfo = null;
     if (zipInfo) {
       const storage = getStorage();
 

@@ -501,6 +501,10 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     const hasAccountingHistory = await trx.schema.hasTable('accounting_change_history');
     const tablesToClear = new Set(tables);
     if (hasAccountingHistory) tablesToClear.add('accounting_change_history');
+    // Same for download limit grants (issue 1560): an archive made before
+    // they existed would leave local grants on restored photos whose ids
+    // happen to match, using up those galleries' quotas.
+    if (await trx.schema.hasTable('event_download_grants')) tablesToClear.add('event_download_grants');
     for (const table of tablesToClear) {
       await trx(table).del();
     }
