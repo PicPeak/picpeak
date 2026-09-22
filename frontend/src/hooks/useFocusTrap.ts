@@ -7,18 +7,21 @@ export const useFocusTrap = (isActive: boolean) => {
     if (!isActive || !containerRef.current) return;
 
     const container = containerRef.current;
-    const focusableElements = container.querySelectorAll(
+    // Read on every Tab, not once: a control enabled or added after the trap
+    // opened (a dialog's primary action, once its data has loaded) must be
+    // reachable too.
+    const focusable = () => Array.from(container.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    
-    const firstFocusable = focusableElements[0] as HTMLElement;
-    const lastFocusable = focusableElements[focusableElements.length - 1] as HTMLElement;
+    ));
 
     // Focus first element when trap is activated
-    firstFocusable?.focus();
+    focusable()[0]?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
+      const elements = focusable();
+      const firstFocusable = elements[0];
+      const lastFocusable = elements[elements.length - 1];
 
       if (e.shiftKey) {
         // Shift + Tab
