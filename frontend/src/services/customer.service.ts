@@ -174,6 +174,11 @@ export interface CustomerDashboard {
       id: number; contractNumber: string; title: string | null; eventName: string | null;
       validUntil: string | null; sentAt: string | null;
     }>;
+    /** Signing-v2 contracts waiting on the customer's own details (#1446, issue 1590). */
+    contractDetails?: Array<{
+      id: number; contractNumber: string; title: string | null; eventName: string | null;
+      validUntil: string | null; sentAt: string | null;
+    }>;
     invoices: Array<{
       id: number; invoiceNumber: string; status: string; dueDate: string | null; overdue: boolean;
       eventName: string | null; totalAmountMinor: number; openAmountMinor: number; currency: string;

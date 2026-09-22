@@ -41,6 +41,7 @@ const dashboard: CustomerDashboard = {
     quotes: [], contracts: [], invoices: [],
     documents: [{ id: 7, name: 'passport-scan.pdf', reviewNote: 'Too blurry' }],
     documentRequests: [{ id: 2, title: 'Signed contract', note: null, dueAt: null, link: '/customer/documents?request=2' }],
+    contractDetails: [{ id: 4, contractNumber: 'C-2026-0004', title: null, eventName: null, validUntil: null, sentAt: null }],
   },
   recent: [
     { kind: 'document_shared', id: 3, title: 'offer.pdf', at: '2026-09-20T10:00:00Z', link: '/customer/documents/3' },
@@ -93,5 +94,12 @@ describe('CustomerDashboardPage — Recent', () => {
     const needs = await screen.findByRole('region', { name: 'Needs your attention' });
     expect(needs).toHaveTextContent('Please upload: Signed contract');
     expect(within(needs).getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/customer/documents?request=2');
+  });
+
+  it('tells a customer with an awaiting_data contract to complete their details (#1590)', async () => {
+    renderPage();
+    const needs = await screen.findByRole('region', { name: 'Needs your attention' });
+    expect(needs).toHaveTextContent('Complete your details for contract C-2026-0004');
+    expect(within(needs).getByRole('link', { name: 'Complete my details' })).toHaveAttribute('href', '/customer/contracts');
   });
 });

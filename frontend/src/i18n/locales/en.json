@@ -5504,6 +5504,8 @@
       "viewQuote": "View quote",
       "contractAwaiting": "Contract {{number}} is waiting for your signature",
       "viewContract": "View contract",
+      "contractDetailsNeeded": "Complete your details for contract {{number}}",
+      "completeDetails": "Complete my details",
       "invoiceOverdue": "Invoice {{number}} is overdue",
       "invoiceDue": "Invoice {{number}} is due {{date}}",
       "openAmount": "Open: {{amount}}",

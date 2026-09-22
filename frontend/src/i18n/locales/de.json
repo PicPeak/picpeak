@@ -5504,6 +5504,8 @@
       "viewQuote": "Angebot ansehen",
       "contractAwaiting": "Vertrag {{number}} wartet auf Ihre Unterschrift",
       "viewContract": "Vertrag ansehen",
+      "contractDetailsNeeded": "Ergänzen Sie Ihre Angaben für Vertrag {{number}}",
+      "completeDetails": "Meine Angaben ergänzen",
       "invoiceOverdue": "Rechnung {{number}} ist überfällig",
       "invoiceDue": "Rechnung {{number}} ist fällig am {{date}}",
       "openAmount": "Offen: {{amount}}",
