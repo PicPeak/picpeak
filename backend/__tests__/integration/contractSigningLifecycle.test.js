@@ -1613,6 +1613,29 @@ describe('collect-then-freeze', () => {
     expect(refused.body.code).toBe('DATA_REQUEST_SIGNER');
     expect((await db('contracts').where({ id }).first()).status).toBe('draft');
 
+    // Signers replaced after the check but before the claim (signer edits
+    // don't bump lock_version): the claim re-reads them and refuses.
+    await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+      order: 'parallel', signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+    }));
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const realPrepare = signingV2.prepareSend;
+    const swap = jest.spyOn(signingV2, 'prepareSend').mockImplementation(async (contract) => {
+      const prepared = await realPrepare(contract);
+      await db('contract_signers').where({ contract_id: contract.id, position: 1 })
+        .update({ email_hash: require('../../src/utils/fieldEncryption').hashEmail('ben@example.com') });
+      return prepared;
+    });
+    let raced;
+    try {
+      raced = await request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true });
+    } finally {
+      swap.mockRestore();
+    }
+    expect(raced.status).toBe(409);
+    expect(raced.body.code).toBe('DATA_REQUEST_SIGNER');
+    expect((await db('contracts').where({ id }).first()).status).toBe('draft');
+
     const waiting = await requested();
     await db('contracts').where({ id: waiting }).update({ valid_until: dateOnly(daysAgo(20)) });
     await require('../../src/services/contract/expiry').runContractSigningSweep();

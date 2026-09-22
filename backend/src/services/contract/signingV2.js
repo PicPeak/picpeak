@@ -727,9 +727,9 @@ function progress(rows) {
  * the link — the same one `portalSigningAccess` matches on when it opens a
  * session for a signed-in customer.
  */
-async function isAccountHolder(contract, signer) {
+async function isAccountHolder(contract, signer, conn = db) {
   if (!signer.email_hash || !contract.customer_account_id) return false;
-  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first('email');
+  const customer = await conn('customer_accounts').where({ id: contract.customer_account_id }).first('email');
   if (!customer || !customer.email) return false;
   return fieldEncryption.hashEmail(customer.email) === signer.email_hash;
 }

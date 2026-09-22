@@ -106,13 +106,15 @@ async function requestData(contractId, adminId) {
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   ensureCustomerActive(customer);
   const { rows } = await signingV2.prepareSend(contract);
-  const first = rows.find((row) => row.role === 'customer' && Number(row.position) === 1);
-  if (!first || !(await signingV2.isAccountHolder(contract, first))) {
-    throw new AppError(
-      'Only the customer themselves can complete their details. Make them the first signer, or send the contract as it is.',
-      409, 'DATA_REQUEST_SIGNER',
-    );
-  }
+  const firstIsHolder = async (signerRows, conn) => {
+    const first = signerRows.find((row) => row.role === 'customer' && Number(row.position) === 1);
+    return !!first && signingV2.isAccountHolder(contract, first, conn);
+  };
+  const notHolder = () => new AppError(
+    'Only the customer themselves can complete their details. Make them the first signer, or send the contract as it is.',
+    409, 'DATA_REQUEST_SIGNER',
+  );
+  if (!(await firstIsHolder(rows, db))) throw notHolder();
   const actor = await adminActor(adminId);
   const request = { fields: FIELDS, required: REQUIRED };
   await db.transaction(async (trx) => {
@@ -131,6 +133,10 @@ async function requestData(contractId, adminId) {
     if (!claimed) {
       throw new AppError('This contract changed while it was being sent. Reload it and send again.', 409, 'CONTRACT_CHANGED');
     }
+    // Signer edits don't bump lock_version: re-read them now that the claim
+    // holds the contract row. setSigners takes that row first and refuses a
+    // non-draft, so what is read here is what gets invited.
+    if (!(await firstIsHolder(await require('./signers').listSigners(contractId, trx), trx))) throw notHolder();
     await signingEvents.appendEvent(trx, contractId, {
       type: 'data_requested', actorType: 'admin', actorLabel: actor.name || null, payload: { fields: request.fields },
     });
