@@ -554,3 +554,18 @@ it('"Show only if…" shows a rule the library text carries, and removing it ove
     items: [{ kind: 'block', blockId: 7, body: { de: 'Bibliothekstext' } }],
   })));
 });
+
+it('an edit made while the publish check runs stops the publish and keeps the edit', async () => {
+  const user = userEvent.setup();
+  let answer: (value: typeof clean) => void = () => {};
+  check.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Publish' }));
+  await waitFor(() => expect(check).toHaveBeenCalled());
+  await user.type(screen.getByDisplayValue('Hallo'), '!');
+  await act(async () => { answer(clean); });
+  expect(await screen.findByText('Changed since the check — check again')).toBeInTheDocument();
+  expect(publish).not.toHaveBeenCalled();
+  expect(screen.getByDisplayValue('Hallo!')).toBeInTheDocument();
+});

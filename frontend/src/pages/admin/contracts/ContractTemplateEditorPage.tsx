@@ -360,7 +360,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
   };
 
   /** Save, then run the check on what was saved. Null when either failed. */
-  const runCheck = async (): Promise<{ saved: ContractTemplateDetail | null; result: TemplatePublishCheck } | null> => {
+  const runCheck = async (): Promise<{ saved: ContractTemplateDetail | null; result: TemplatePublishCheck; checked: string } | null> => {
     let saved: ContractTemplateDetail | null = null;
     // An edit made from here on is not in what the server checks: the result
     // then shows as stale. (Taken before the save, so at worst an edit made
@@ -373,7 +373,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
     try {
       const result = await contractTemplatesService.check(templateId);
       showCheck(result, checked);
-      return { saved, result };
+      return { saved, result, checked };
     } catch (err) {
       fail(err, t('contracts.templates.check.failed', 'The check could not be run.') as string);
       return null;
@@ -393,9 +393,19 @@ export const ContractTemplateEditorPage: React.FC = () => {
       // draft is not touched. The server runs the same check again.
       const checked = await runCheck();
       if (!checked || !checked.result.ok) return;
+      // Edited while the check ran: what would be published is not what is
+      // on screen. The result shows as stale; check again, then publish.
+      if (serialize(draftRef.current) !== checked.checked) return;
       const published = await contractTemplatesService.publish(templateId, lockRef.current);
       store(published);
-      load(published);
+      if (serialize(draftRef.current) === checked.checked) {
+        load(published);
+      } else {
+        // Edited while the publish ran: the edits stay, unsaved, and the next
+        // save starts a new draft from the version just published.
+        lockRef.current = published.template.lockVersion;
+        setSavedSerial(checked.checked);
+      }
       setCheck(null);
       toast.success(t('contracts.templates.published', 'Version {{version}} published', { version: published.version }));
     } catch (err) {
