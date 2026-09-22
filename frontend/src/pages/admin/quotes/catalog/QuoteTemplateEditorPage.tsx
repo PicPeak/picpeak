@@ -22,6 +22,7 @@ import {
 import { eventTypesService } from '../../../../services/eventTypes.service';
 import { workflowsService } from '../../../../services/workflows.service';
 import { useFeatureFlags } from '../../../../contexts/FeatureFlagsContext';
+import { contractTemplatesService } from '../../../../services/contractTemplates.service';
 import { usePermissions } from '../../../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import type { BoundTo, LineUnit } from '../../../../utils/lineItemTotals';
@@ -55,6 +56,8 @@ interface Meta {
   eventType: string;
   language: string;
   currency: string;
+  /** '' = the default contract template. */
+  contractTemplateId: string;
 }
 
 /** Editor for one free line (and, for the top level, its sub-items). */
@@ -118,7 +121,15 @@ export const QuoteTemplateEditorPage: React.FC = () => {
   const bookingWorkflows = useMemo(() => workflows.filter((w) => w.trigger_type === 'quote.accepted'), [workflows]);
   const presets = presetData?.presets || [];
 
-  const [meta, setMeta] = useState<Meta>({ name: '', description: '', eventType: '', language: 'de', currency: 'CHF' });
+  const [meta, setMeta] = useState<Meta>({ name: '', description: '', eventType: '', language: 'de', currency: 'CHF', contractTemplateId: '' });
+  // The contract templates a quote made from this template can become (#1445).
+  const { data: contractTemplates } = useQuery({
+    queryKey: ['contract-templates'],
+    queryFn: () => contractTemplatesService.list(),
+    enabled: !!flags.contracts,
+    retry: false,
+  });
+  const usableContractTemplates = (contractTemplates?.templates || []).filter((ct) => ct.status !== 'archived' && ct.currentVersionId);
   const [draft, setDraft] = useState<TemplateDraft | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -131,6 +142,7 @@ export const QuoteTemplateEditorPage: React.FC = () => {
       eventType: tpl.eventType || '',
       language: tpl.language || 'de',
       currency: tpl.currency || 'CHF',
+      contractTemplateId: tpl.defaultContractTemplateId ? String(tpl.defaultContractTemplateId) : '',
     });
     setDraft(tpl.draft);
   }, [data]);
@@ -158,6 +170,7 @@ export const QuoteTemplateEditorPage: React.FC = () => {
         eventType: meta.eventType || null,
         language: meta.language || null,
         currency: meta.currency || null,
+        ...(contractTemplates ? { defaultContractTemplateId: meta.contractTemplateId ? Number(meta.contractTemplateId) : null } : {}),
         draft,
       });
       await qc.invalidateQueries({ queryKey: ['quote-template', templateId] });
@@ -271,6 +284,18 @@ export const QuoteTemplateEditorPage: React.FC = () => {
               {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
+          {contractTemplates && (
+            <div>
+              <label htmlFor="template-contract-template" className={labelCls}>
+                {t('quotes.templates.contractTemplate', 'Contract template')}
+              </label>
+              <select id="template-contract-template" className={selectCls} value={meta.contractTemplateId}
+                onChange={(e) => setMeta({ ...meta, contractTemplateId: e.target.value })}>
+                <option value="">{t('quotes.templates.contractTemplateDefault', '— The default contract template —')}</option>
+                {usableContractTemplates.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="md:col-span-2">
             <label htmlFor="template-description" className={labelCls}>{t('quotes.catalog.field.description', 'Description')}</label>
             <textarea id="template-description" rows={2} className={inputCls} value={meta.description}

@@ -373,8 +373,8 @@ export const quotesService = {
    *  contract detail page exposes its own convert-to-event /
    *  convert-to-invoice buttons that re-enter the quote conversion
    *  path via the contract's source_quote_id. */
-  async convertToContract(id: number): Promise<{ contractId: number; alreadyConverted: boolean }> {
-    const { data } = await api.post(`/admin/quotes/${id}/convert-to-contract`);
+  async convertToContract(id: number, contractTemplateId?: number | null): Promise<{ contractId: number; alreadyConverted: boolean }> {
+    const { data } = await api.post(`/admin/quotes/${id}/convert-to-contract`, contractTemplateId ? { contractTemplateId } : {});
     return data.data || data;
   },
 

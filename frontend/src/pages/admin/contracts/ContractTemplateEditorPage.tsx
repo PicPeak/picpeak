@@ -251,7 +251,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
    * Resolves with the server's copy, or null when the save failed (the
    * state says why; nothing local is dropped).
    */
-  const saveNow = useCallback(async (): Promise<ContractTemplateDetail | null> => {
+  const saveNow = useCallback(async (extra: Partial<ContractTemplateDraftPayload> = {}): Promise<ContractTemplateDetail | null> => {
     if (saving.current) await saving.current;
     const snapshot = draftRef.current;
     const serial = serialize(snapshot);
@@ -259,7 +259,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       setSaveState('saving');
       setProblem(null);
       try {
-        const saved = await contractTemplatesService.saveDraft(templateId, { lockVersion: lockRef.current, ...payloadOf(snapshot) });
+        const saved = await contractTemplatesService.saveDraft(templateId, { lockVersion: lockRef.current, ...payloadOf(snapshot), ...extra });
         lockRef.current = saved.template.lockVersion;
         setSavedSerial(serial);
         setSavedAt(new Date());
@@ -437,6 +437,78 @@ export const ContractTemplateEditorPage: React.FC = () => {
     } finally {
       setBusy(false);
     }
+  };
+
+  // ---- the source template moved on (lineage) ------------------------
+  const lineage = detail?.lineage || null;
+
+  const loadSourceVersion = (n: number) => contractTemplatesService.version(lineage!.sourceTemplateId, n);
+
+  const onLineageCompare = async () => {
+    if (!lineage || !lineage.latestSourceVersion) return;
+    setBusy(true);
+    try {
+      const [before, after] = await Promise.all([
+        lineage.sourceVersion ? loadSourceVersion(lineage.sourceVersion) : Promise.resolve(null),
+        loadSourceVersion(lineage.latestSourceVersion),
+      ]);
+      const comparable = (v: typeof after | null): ComparableVersion => (v ? {
+        title: v.title, introText: v.introText, outroText: v.outroText, items: v.items || [], attachments: v.attachments || [],
+      } : { title: '', introText: {}, outroText: {}, items: [], attachments: [] });
+      setComparing({
+        before: comparable(before),
+        after: comparable(after),
+        title: t('contracts.templates.lineage.compareTitle', 'What changed in “{{name}}”', { name: lineage.sourceName }) as string,
+        subtitle: t('contracts.templates.compare.subtitle', 'v{{from}} → v{{to}}',
+          { from: lineage.sourceVersion ?? '—', to: lineage.latestSourceVersion }) as string,
+      });
+    } catch (err) {
+      fail(err, t('contracts.templates.actionFailed', 'That didn\'t work. Please try again.') as string);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Append the source's clauses this draft doesn't have, and mark the new version as reviewed. */
+  const onLineageAdopt = async () => {
+    if (!lineage || !lineage.latestSourceVersion) return;
+    setBusy(true);
+    try {
+      const latest = await loadSourceVersion(lineage.latestSourceVersion);
+      const have = new Set(draftRef.current.items.map((item) => (item.kind === 'block' ? `b:${item.blockId}` : `t:${item.heading.trim().toLowerCase()}`)));
+      const added: DraftItem[] = (latest.items || [])
+        .filter((item) => !have.has(item.kind === 'block' ? `b:${item.blockId}` : `t:${(item.heading || '').trim().toLowerCase()}`))
+        .map((item) => ({
+          key: nextKey(),
+          kind: item.kind,
+          blockId: item.blockId,
+          section: item.section,
+          name: item.block?.name || '',
+          heading: item.heading || '',
+          body: item.body || {},
+          baseText: item.kind === 'block' ? (item.snapshot && Object.keys(item.snapshot).length ? item.snapshot : item.block?.bodies || {}) : {},
+          blockArchived: false,
+        }));
+      if (added.length) change((cur) => ({ ...cur, items: [...cur.items, ...added] }));
+      draftRef.current = { ...draftRef.current, items: [...draftRef.current.items, ...added] };
+      const saved = await saveNow({ sourceVersionNumber: lineage.latestSourceVersion });
+      if (saved) {
+        toast.success(added.length
+          ? t('contracts.templates.lineage.adopted', '{{count}} new clauses added at the end', { count: added.length })
+          : t('contracts.templates.lineage.nothingNew', 'Nothing new to add — marked as reviewed'));
+      }
+    } catch (err) {
+      fail(err, t('contracts.templates.actionFailed', 'That didn\'t work. Please try again.') as string);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onLineageDismiss = async () => {
+    if (!lineage || !lineage.latestSourceVersion) return;
+    setBusy(true);
+    await saveNow({ sourceVersionNumber: lineage.latestSourceVersion });
+    setBusy(false);
   };
 
   // ---- the conflict: nothing here is lost, the admin decides ----------
@@ -622,6 +694,25 @@ export const ContractTemplateEditorPage: React.FC = () => {
             <Button variant="outline" onClick={onDuplicate} disabled={busy}>{t('contracts.templates.duplicate', 'Duplicate')}</Button>
           </PermissionGate>
         </Card>
+      )}
+
+      {lineage && lineage.updateAvailable && !readOnly && (
+        <div role="status" className="p-3 rounded-md border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30 text-sm text-blue-900 dark:text-blue-100 flex flex-wrap items-center gap-3">
+          <p className="flex-1">
+            {lineage.sourceIsSystem
+              ? t('contracts.templates.lineage.systemUpdated', 'The system template was updated (v{{from}} → v{{to}}). Your copy is unchanged.',
+                { from: lineage.sourceVersion ?? '—', to: lineage.latestSourceVersion })
+              : t('contracts.templates.lineage.sourceUpdated', '“{{name}}”, which this template was copied from, has a newer version (v{{from}} → v{{to}}). Your copy is unchanged.',
+                { name: lineage.sourceName, from: lineage.sourceVersion ?? '—', to: lineage.latestSourceVersion })}
+          </p>
+          <Button variant="outline" size="sm" onClick={onLineageCompare} disabled={busy}>{t('contracts.templates.conflictCompare', 'Compare')}</Button>
+          <Button variant="outline" size="sm" onClick={onLineageAdopt} disabled={busy || conflict}>
+            {t('contracts.templates.lineage.adopt', 'Add the new clauses to my draft')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onLineageDismiss} disabled={busy || conflict}>
+            {t('contracts.templates.lineage.dismiss', 'Mark as reviewed')}
+          </Button>
+        </div>
       )}
 
       {!readOnly && (

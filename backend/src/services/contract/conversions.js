@@ -27,19 +27,31 @@ const { auditedInsert, auditedUpdate } = require('../accountingHistory');
  * paths are gated against the converted_contract_id back-pointer so an
  * admin can't accidentally double-spend the quote.
  */
-async function createFromQuote(quoteId, adminId) {
+async function createFromQuote(quoteId, adminId, { contractTemplateId = null } = {}) {
   // Same self-heal as createContract — the quote-conversion path seeds
   // the contract with every active system block, and the new
   // quote_line_items_table block needs to be present for it to land
   // in the default inclusion list.
   await ensureSystemBlocksSeeded();
-  // Starts from the default template's published version (#1445), like a
-  // new contract; resolved before the transaction.
-  const templates = require('./templates');
-  const version = await templates.resolveVersionForNewContract(null);
 
   const quote = await db('quotes').where({ id: quoteId }).first();
   if (!quote) throw new AppError('Quote not found', 404);
+
+  // The contract template (#1445), resolved before the transaction: the one
+  // asked for, else the one the quote's template names, else the default.
+  // One asked for must be usable; the quote template's may have been
+  // archived since, which quietly falls back to the default.
+  const templates = require('./templates');
+  let versionId = null;
+  if (contractTemplateId) {
+    versionId = await templates.usablePublishedVersionId(contractTemplateId);
+    if (!versionId) throw new AppError('Pick a published contract template', 400, 'TEMPLATE_VERSION_INVALID');
+  } else if (quote.source_template_id && await hasColumnCached('quote_templates', 'default_contract_template_id')) {
+    const quoteTemplate = await db('quote_templates').where({ id: quote.source_template_id })
+      .select('default_contract_template_id').first();
+    versionId = await templates.usablePublishedVersionId(quoteTemplate && quoteTemplate.default_contract_template_id);
+  }
+  const version = await templates.resolveVersionForNewContract(versionId);
   if (quote.status !== 'accepted') {
     throw new AppError(`Cannot convert a quote with status '${quote.status}'`, 409, 'QUOTE_NOT_ACCEPTED');
   }

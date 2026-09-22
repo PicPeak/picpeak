@@ -101,6 +101,8 @@ export interface QuoteTemplate {
   currency: string | null;
   status: 'draft' | 'published' | 'archived';
   currentVersion: number | null;
+  /** The contract template a contract from such a quote starts from; null = the default. */
+  defaultContractTemplateId?: number | null;
   draft: TemplateDraft;
   createdAt: string;
   updatedAt: string;
@@ -124,6 +126,7 @@ export interface TemplateSavePayload {
   eventType?: string | null;
   language?: string | null;
   currency?: string | null;
+  defaultContractTemplateId?: number | null;
   draft?: TemplateDraft;
 }
 

@@ -1283,6 +1283,15 @@ async function startServer() {
       logger.warn('permissions self-heal failed at boot:', err.message);
     }
 
+    // The standard contract template (#1445): seeded once, and given a new
+    // published version when the built-in revision moved on. Never changes
+    // an existing version; safe with two replicas booting at once.
+    try {
+      await require('./src/services/contract/defaultTemplate').ensureDefaultTemplate();
+    } catch (err) {
+      logger.warn('standard contract template check failed at boot:', err.message);
+    }
+
     // Install-from-backup trigger. If `RESTORE_ON_INSTALL` (or
     // `.txt`) exists in the /backup mount AND the DB is empty, run
     // the restore HERE before any admin UI surfaces. Lets admins

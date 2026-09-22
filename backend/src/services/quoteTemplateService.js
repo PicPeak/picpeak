@@ -194,10 +194,21 @@ function templateColumns(payload) {
   if (payload.language !== undefined) out.language = payload.language || null;
   if (payload.currency !== undefined) out.currency = payload.currency ? String(payload.currency).toUpperCase() : null;
   if (payload.draft !== undefined) out.draft_snapshot = JSON.stringify(sanitizeDraft(payload.draft));
+  if (payload.default_contract_template_id !== undefined) {
+    out.default_contract_template_id = payload.default_contract_template_id || null;
+  }
   return out;
 }
 
+/** A contract template a quote template may point at: one that exists and isn't archived (#1445). */
+async function assertContractTemplate(id) {
+  if (!id) return;
+  const row = await db('contract_templates').where({ id }).first();
+  if (!row || row.status === 'archived') throw invalid('Pick a contract template that exists and is not archived');
+}
+
 async function createTemplate(payload, adminId) {
+  await assertContractTemplate(payload.default_contract_template_id);
   const id = insertedId(await db('quote_templates').insert({
     draft_snapshot: JSON.stringify(emptyDraft()),
     ...templateColumns(payload),
@@ -224,6 +235,7 @@ async function loadEditableTemplate(id) {
 /** Save metadata and/or the working copy. Published versions are untouched. */
 async function updateTemplate(id, payload) {
   await loadEditableTemplate(id);
+  await assertContractTemplate(payload.default_contract_template_id);
   await db('quote_templates').where({ id }).update({ ...templateColumns(payload), updated_at: new Date() });
 }
 

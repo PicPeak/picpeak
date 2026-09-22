@@ -109,6 +109,8 @@ function transformTemplate(t) {
     currency: t.currency || null,
     status: t.status,
     currentVersion: t.current_version == null ? null : Number(t.current_version),
+    // The contract template a contract from such a quote starts from (#1445).
+    defaultContractTemplateId: t.default_contract_template_id == null ? null : Number(t.default_contract_template_id),
     draft: templates.parseSnapshot(t.draft_snapshot) || templates.emptyDraft(),
     createdAt: t.created_at,
     updatedAt: t.updated_at,
@@ -384,6 +386,7 @@ const TEMPLATE_VALIDATORS = [
   body('eventType').optional({ nullable: true }).isString().isLength({ max: 64 }),
   body('language').optional({ nullable: true }).isString().isLength({ max: 8 }),
   body('currency').optional({ nullable: true }).isString().isLength({ min: 3, max: 3 }),
+  body('defaultContractTemplateId').optional({ nullable: true }).isInt({ min: 1 }).toInt(),
   // The section structure is validated by quoteTemplateService.sanitizeDraft.
   body('draft').optional().isObject(),
 ];
@@ -395,6 +398,7 @@ function templatePayload(reqBody) {
     event_type: reqBody.eventType,
     language: reqBody.language,
     currency: reqBody.currency,
+    default_contract_template_id: reqBody.defaultContractTemplateId,
     draft: reqBody.draft,
   };
 }

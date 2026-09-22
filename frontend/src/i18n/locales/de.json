@@ -7053,7 +7053,9 @@
       "textOwn": "Eigener Text",
       "texts": "Einleitung und Schluss",
       "validityDays": "Gültig für (Tage)",
-      "versions": "Veröffentlichte Versionen"
+      "versions": "Veröffentlichte Versionen",
+      "contractTemplate": "Vertragsvorlage",
+      "contractTemplateDefault": "— Die Standard-Vertragsvorlage —"
     },
     "textBlocks": {
       "insert": "Textbaustein einfügen…"
@@ -7085,7 +7087,10 @@
         "noAddOns": "Dieses Angebot enthält keine Zusatzleistungen.",
         "failed": "Die Änderungen an den Zusatzleistungen konnten nicht gespeichert werden."
       }
-    }
+    },
+    "contractTemplate": "Vertragsvorlage",
+    "convertToContractConfirm": "Vertrag entwerfen",
+    "contractTemplateFromQuote": "Vorausgewählt durch die Offertvorlage: {{name}}"
   },
   "crm": {
     "lineItems": {
@@ -8232,7 +8237,17 @@
         "instructions": "Um eine Klausel zu verschieben, drücken Sie Leertaste oder Enter, bewegen Sie sie mit den Pfeiltasten und drücken Sie erneut Leertaste oder Enter zum Ablegen. Escape bricht ab."
       },
       "layoutPreview": "Signierseite ansehen",
-      "layoutPreviewTitle": "Signierseite mit Beispieldaten"
+      "layoutPreviewTitle": "Signierseite mit Beispieldaten",
+      "lineage": {
+        "systemUpdated": "Die Standardvorlage wurde aktualisiert (v{{from}} → v{{to}}). Ihre Kopie ist unverändert.",
+        "sourceUpdated": "„{{name}}“, aus der diese Vorlage kopiert wurde, hat eine neuere Version (v{{from}} → v{{to}}). Ihre Kopie ist unverändert.",
+        "adopt": "Neue Klauseln in meinen Entwurf übernehmen",
+        "dismiss": "Als geprüft markieren",
+        "compareTitle": "Was sich in „{{name}}“ geändert hat",
+        "adopted_one": "{{count}} neue Klausel am Ende hinzugefügt",
+        "adopted_other": "{{count}} neue Klauseln am Ende hinzugefügt",
+        "nothingNew": "Nichts Neues zu übernehmen — als geprüft markiert"
+      }
     },
     "attachments": {
       "heading": "Anhänge",

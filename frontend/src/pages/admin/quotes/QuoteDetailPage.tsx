@@ -3,7 +3,7 @@
  * action buttons: Preview PDF / Resend / Duplicate / Convert to event.
  * Edit hops back to the editor.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +20,7 @@ import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { toast } from 'react-toastify';
 import { quoteErrorText } from '../../../utils/quoteErrors';
+import { ConvertToContractDialog } from './ConvertToContractDialog';
 
 // The statuses the server refuses to edit (quoteService.updateQuote).
 const LOCKED_STATUSES = ['accepted', 'declined', 'converted'];
@@ -40,6 +41,9 @@ export const QuoteDetailPage: React.FC = () => {
     queryFn: () => quotesService.get(parseInt(id!, 10)),
     enabled: !!id,
   });
+  // "Convert to contract" asks which contract template to start from (#1445).
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   if (isLoading || !data) return <Loading />;
   const q = data.quote;
@@ -100,17 +104,18 @@ export const QuoteDetailPage: React.FC = () => {
     }
   };
 
-  const handleConvertToContract = async () => {
-    if (!window.confirm(t('quotes.confirmConvertToContract',
-      'Draft a contract from this quote? The customer + admin will both sign before event / invoice creation.'))) return;
+  const handleConvertToContract = async (contractTemplateId: number | null) => {
+    setConverting(true);
     try {
-      const result = await quotesService.convertToContract(q.id);
+      const result = await quotesService.convertToContract(q.id, contractTemplateId);
       toast.success(result.alreadyConverted
         ? (t('quotes.contractAlreadyLinkedToast', 'A contract was already drafted from this quote.') as string)
         : (t('quotes.convertedToContractToast', 'Contract drafted from this quote.') as string));
       navigate(`/admin/clients/contracts/${result.contractId}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Convert failed');
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -290,7 +295,7 @@ export const QuoteDetailPage: React.FC = () => {
                   / convert-to-invoice buttons.
                   H.4 — hidden when the `contracts` feature is off. */}
               {flags.contracts && (
-                <Button variant="outline" onClick={handleConvertToContract}>
+                <Button variant="outline" onClick={() => setConvertOpen(true)}>
                   <ScrollText className="w-4 h-4 mr-1" />{t('quotes.convertToContract', 'Convert to contract')}
                 </Button>
               )}
@@ -408,6 +413,14 @@ export const QuoteDetailPage: React.FC = () => {
           <h3 className="font-semibold mb-2">{t('quotes.section.internalNotes', 'Internal notes')}</h3>
           <p className="text-sm whitespace-pre-line text-neutral-700 dark:text-neutral-300">{q.internalNotes}</p>
         </Card>
+      )}
+      {convertOpen && (
+        <ConvertToContractDialog
+          sourceTemplateId={q.sourceTemplateId}
+          onClose={() => setConvertOpen(false)}
+          onConvert={handleConvertToContract}
+          converting={converting}
+        />
       )}
     </div>
   );

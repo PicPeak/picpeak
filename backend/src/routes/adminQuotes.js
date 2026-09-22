@@ -666,14 +666,18 @@ router.post(
 router.post(
   '/:id/convert-to-contract',
   requirePermission('quotes.manage'),
-  [param('id').isInt({ min: 1 })],
+  // Optional (#1445): the contract template to start from; without it, the
+  // one the quote's template names, else the default.
+  [param('id').isInt({ min: 1 }), body('contractTemplateId').optional({ nullable: true }).isInt({ min: 1 }).toInt()],
   handleAsync(async (req, res) => {
     validateRequest(req);
     // Lazy require to keep the route file dep-light + avoid the
     // quoteService ↔ contractService cycle bleeding through.
     const contractService = require('../services/contractService');
     const id = parseInt(req.params.id, 10);
-    const result = await contractService.createFromQuote(id, req.admin.id);
+    const result = await contractService.createFromQuote(id, req.admin.id, {
+      contractTemplateId: req.body && req.body.contractTemplateId ? req.body.contractTemplateId : null,
+    });
     if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200,
       result.alreadyConverted ? 'Already linked to a contract' : 'Contract drafted from quote');

@@ -39,6 +39,9 @@ export interface ContractTemplateSummary {
   currentVersionId?: number | null;
   lockVersion: number;
   isDefault: boolean;
+  /** The template this one was duplicated from, and the version of it taken in. */
+  sourceTemplateId?: number | null;
+  sourceVersion?: number | null;
   hasDraft?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -75,8 +78,19 @@ export interface ContractTemplateVersion {
   attachments?: IncludedAttachment[];
 }
 
+/** Where a copy came from, and whether the source has a newer version (never applied by itself). */
+export interface ContractTemplateLineage {
+  sourceTemplateId: number;
+  sourceName: string;
+  sourceIsSystem: boolean;
+  sourceVersion: number | null;
+  latestSourceVersion: number | null;
+  updateAvailable: boolean;
+}
+
 export interface ContractTemplateDetail {
   template: ContractTemplateSummary;
+  lineage?: ContractTemplateLineage | null;
   draft: ContractTemplateVersion | null;
   published: ContractTemplateVersion | null;
   versions: ContractTemplateVersion[];
@@ -98,6 +112,8 @@ export interface ContractTemplateDraftPayload {
     body?: LocaleText;
   }>;
   attachments?: AttachmentSelection[];
+  /** "Reviewed up to this version" of the source template. */
+  sourceVersionNumber?: number;
 }
 
 /** One problem the pre-publication check found, and where it is. */

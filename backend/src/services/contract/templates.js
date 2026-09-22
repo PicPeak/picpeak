@@ -133,6 +133,9 @@ function templateToApi(template, defaultId) {
     currentVersion: template.current_version == null ? null : ensureInt(template.current_version),
     lockVersion: ensureInt(template.lock_version),
     isDefault: defaultId != null && Number(defaultId) === Number(template.id),
+    // Where a copy came from (#1445), and the source version it has taken in.
+    sourceTemplateId: template.source_template_id == null ? null : ensureInt(template.source_template_id),
+    sourceVersion: template.source_version_number == null ? null : ensureInt(template.source_version_number),
     createdAt: template.created_at,
     updatedAt: template.updated_at,
   };
@@ -165,6 +168,26 @@ function versionsWithPublisher(conn = db) {
     .select('v.*', 'pub.username as publisher_username');
 }
 
+/**
+ * A copy's source and whether it moved on since the copy took it in: shown
+ * as "the system template was updated", never applied by itself.
+ */
+async function lineageOf(template) {
+  if (!template.source_template_id) return null;
+  const source = await db('contract_templates').where({ id: template.source_template_id }).first();
+  if (!source) return null;
+  const seen = template.source_version_number == null ? null : ensureInt(template.source_version_number);
+  const latest = source.current_version == null ? null : ensureInt(source.current_version);
+  return {
+    sourceTemplateId: source.id,
+    sourceName: source.name,
+    sourceIsSystem: truthy(source.is_system),
+    sourceVersion: seen,
+    latestSourceVersion: latest,
+    updateAvailable: latest != null && (seen == null || latest > seen),
+  };
+}
+
 async function getTemplate(id) {
   const template = await db('contract_templates').where({ id }).first();
   if (!template) throw notFound();
@@ -173,6 +196,7 @@ async function getTemplate(id) {
   const publishedRow = versions.find((v) => v.status === 'published') || null;
   return {
     template: templateToApi(template, await getDefaultTemplateId()),
+    lineage: await lineageOf(template),
     draft: draftRow
       ? versionToApi(draftRow, await loadItems(draftRow.id), await attachments.loadVersionAttachments(draftRow.id))
       : null,
@@ -344,6 +368,9 @@ async function duplicateTemplate(id, payload, adminId) {
     const templateId = insertedId(await trx('contract_templates').insert({
       name, description: source.description, use_case: source.use_case, is_system: false, status: 'draft',
       lock_version: 1, created_by_admin_id: adminId || null, created_at: now, updated_at: now,
+      // Lineage (#1445): later versions of the source are offered, not applied.
+      source_template_id: source.id,
+      source_version_number: source.current_version == null ? null : ensureInt(source.current_version),
     }).returning('id'));
     const versionId = insertedId(await trx('contract_template_versions').insert({
       template_id: templateId, version_number: 1, status: 'draft',
@@ -378,10 +405,27 @@ async function saveDraft(id, payload, adminId) {
   // clause text: "who changed what" on a template is answerable from the
   // activity log without putting the contract's wording into it (#1445).
   const changed = [];
+  // "Reviewed up to version n" of the source (#1445), checked against the
+  // source before the transaction.
+  let sourceVersion;
+  if (payload.sourceVersionNumber !== undefined) {
+    const own = await db('contract_templates').where({ id }).first();
+    const source = own && own.source_template_id
+      ? await db('contract_templates').where({ id: own.source_template_id }).first() : null;
+    const n = ensureInt(payload.sourceVersionNumber);
+    if (!source || n < 1 || n > ensureInt(source.current_version)) {
+      throw invalid('That version of the source template does not exist');
+    }
+    sourceVersion = n;
+  }
   await db.transaction(async (trx) => {
     const template = await claimLock(trx, id, payload.lockVersion);
     assertEditable(template);
     const now = new Date();
+    if (sourceVersion !== undefined) {
+      await trx('contract_templates').where({ id }).update({ source_version_number: sourceVersion, updated_at: now });
+      changed.push('sourceVersion');
+    }
     if (Object.keys(meta).length) {
       await trx('contract_templates').where({ id }).update({ ...meta, updated_at: now });
       changed.push(...Object.keys(meta));
@@ -561,6 +605,21 @@ async function loadPublishedVersion(versionId) {
     throw new AppError('This template is archived', 409, 'TEMPLATE_ARCHIVED');
   }
   return { ...version, items: await loadItems(version.id) };
+}
+
+/**
+ * The published version of a template that may start a contract, or null
+ * (archived, never published, gone).
+ */
+async function usablePublishedVersionId(templateId) {
+  if (!templateId) return null;
+  const row = await db('contract_template_versions as v')
+    .join('contract_templates as t', 't.id', 'v.template_id')
+    .where({ 'v.template_id': templateId, 'v.status': 'published' })
+    .whereNot('t.status', 'archived')
+    .select('v.id')
+    .first();
+  return row ? row.id : null;
 }
 
 /**
@@ -903,6 +962,7 @@ module.exports = {
   restoreTemplate,
   setDefaultTemplate,
   loadPublishedVersion,
+  usablePublishedVersionId,
   resolveVersionForNewContract,
   seedContractFromVersion,
   renderTemplatePreview,

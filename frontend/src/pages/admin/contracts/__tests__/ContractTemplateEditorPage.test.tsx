@@ -410,3 +410,29 @@ it('marks where the dry run broke the pages between clauses', async () => {
   await user.type(screen.getByLabelText('Contract title'), 'X');
   expect(screen.getByText(/page 3 · before your latest changes/)).toBeInTheDocument();
 });
+
+it('offers a newer system version without applying it, and adds only the new clauses on request', async () => {
+  const user = userEvent.setup();
+  get.mockResolvedValue({
+    ...detail(),
+    lineage: { sourceTemplateId: 1, sourceName: 'Standard contract', sourceIsSystem: true, sourceVersion: 1, latestSourceVersion: 2, updateAvailable: true },
+  });
+  version.mockImplementation(async (_id: number, n: number) => ({
+    id: 40 + n, version: n, status: 'published', title: '', introText: {}, outroText: {}, contentSha256: null, publishedAt: null,
+    items: [
+      { kind: 'block', blockId: 7, section: 'scope', heading: null, body: {}, snapshot: { de: 'Bibliothekstext' }, block: { slug: 's', name: 'Leistung', isActive: true, bodies: {} } },
+      ...(n === 2 ? [{ kind: 'block', blockId: 9, section: 'closing', heading: null, body: {}, snapshot: { de: 'Neu' }, block: { slug: 'n', name: 'Neue Klausel', isActive: true, bodies: {} } }] : []),
+    ],
+    attachments: [],
+  }));
+  renderPage();
+  expect(await screen.findByText(/The system template was updated \(v1 → v2\)/)).toBeInTheDocument();
+  expect(screen.queryByText('Neue Klausel')).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Add the new clauses to my draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    sourceVersionNumber: 2,
+    items: [{ kind: 'block', blockId: 7, body: {} }, { kind: 'block', blockId: 9, body: {} }],
+  })));
+  expect(screen.getByText('Neue Klausel')).toBeInTheDocument();
+});

@@ -101,6 +101,7 @@ router.put(
     body('attachments').optional().isArray({ max: 20 }),
     body('attachments.*.attachmentId').optional().isInt({ min: 1 }),
     body('attachments.*.delivery').optional().isIn(['merged', 'separate']),
+    body('sourceVersionNumber').optional().isInt({ min: 1 }).toInt(),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);

@@ -7053,7 +7053,9 @@
       "textOwn": "Own text",
       "texts": "Intro and outro",
       "validityDays": "Valid for (days)",
-      "versions": "Published versions"
+      "versions": "Published versions",
+      "contractTemplate": "Contract template",
+      "contractTemplateDefault": "— The default contract template —"
     },
     "textBlocks": {
       "insert": "Insert text block…"
@@ -7085,7 +7087,10 @@
         "noAddOns": "This quote has no add-ons.",
         "failed": "The add-on changes could not be saved."
       }
-    }
+    },
+    "contractTemplate": "Contract template",
+    "convertToContractConfirm": "Draft the contract",
+    "contractTemplateFromQuote": "Preselected by the quote's template: {{name}}"
   },
   "crm": {
     "lineItems": {
@@ -8231,7 +8236,17 @@
         "instructions": "To move a clause, press Space or Enter, move it with the arrow keys, and press Space or Enter again to drop it. Press Escape to cancel."
       },
       "layoutPreview": "Preview signing page",
-      "layoutPreviewTitle": "Signing page with sample data"
+      "layoutPreviewTitle": "Signing page with sample data",
+      "lineage": {
+        "systemUpdated": "The system template was updated (v{{from}} → v{{to}}). Your copy is unchanged.",
+        "sourceUpdated": "“{{name}}”, which this template was copied from, has a newer version (v{{from}} → v{{to}}). Your copy is unchanged.",
+        "adopt": "Add the new clauses to my draft",
+        "dismiss": "Mark as reviewed",
+        "compareTitle": "What changed in “{{name}}”",
+        "adopted_one": "{{count}} new clause added at the end",
+        "adopted_other": "{{count}} new clauses added at the end",
+        "nothingNew": "Nothing new to add — marked as reviewed"
+      }
     },
     "attachments": {
       "heading": "Attachments",
