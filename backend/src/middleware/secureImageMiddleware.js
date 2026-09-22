@@ -3,6 +3,7 @@ const { db } = require('../database/db');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
+const { networkLimit } = require('../utils/networkRateCap');
 
 /**
  * Enhanced secure image middleware with comprehensive protection
@@ -193,6 +194,28 @@ class SecureImageMiddleware {
           window: window.duration / 1000,
           limit: window.limit,
           violations: violations + 1
+        };
+      }
+    }
+
+    // The network cap (utils/networkRateCap.js). The windows above count per
+    // device, and the device includes headers the client picks; rotating them
+    // was a fresh budget each time. These count the network key alone, at a
+    // multiple of the device budget. Refused with a 429, but never added to
+    // the block list: at a venue the network is every guest, and one scraper
+    // on the wifi must not get the whole party blocked.
+    for (const window of windows) {
+      const allowed = secureImageService.checkRateLimit(
+        `network:${clientInfo.rateLimitAddress}_${window.duration}`,
+        networkLimit(window.limit),
+        window.duration
+      );
+      if (!allowed) {
+        return {
+          passed: false,
+          scope: 'network',
+          window: window.duration / 1000,
+          limit: networkLimit(window.limit)
         };
       }
     }
