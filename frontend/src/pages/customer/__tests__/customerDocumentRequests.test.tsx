@@ -120,4 +120,24 @@ describe('CustomerDocumentsPage — document requests', () => {
       'The request for contract.pdf is no longer open.',
     ));
   });
+
+  it('still sends the linked request when the request list failed to load', async () => {
+    svc.listDocumentRequests.mockRejectedValueOnce(new Error('network'));
+    renderAt('/customer/documents?request=4');
+    await userEvent.upload(await screen.findByLabelText('File'), pdf());
+    await userEvent.click(screen.getByRole('button', { name: /^Upload$/ }));
+    await waitFor(() => expect(svc.uploadDocument).toHaveBeenCalledWith(
+      expect.any(File), expect.objectContaining({ requestId: 4 }),
+    ));
+  });
+
+  it('drops a linked request the loaded list no longer has', async () => {
+    renderAt('/customer/documents?request=99');
+    await screen.findByText('Signed contract');
+    await userEvent.upload(screen.getByLabelText('File'), pdf());
+    await userEvent.click(screen.getByRole('button', { name: /^Upload$/ }));
+    await waitFor(() => expect(svc.uploadDocument).toHaveBeenCalledWith(
+      expect.any(File), expect.objectContaining({ requestId: null }),
+    ));
+  });
 });

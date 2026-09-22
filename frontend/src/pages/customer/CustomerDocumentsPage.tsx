@@ -249,7 +249,7 @@ export const CustomerDocumentsPage: React.FC = () => {
   });
   // What the studio asked for (slice 10). `?request=<id>` — the link in the
   // request mail and on the dashboard — preselects one for the upload.
-  const { data: requests = [] } = useQuery({
+  const { data: requests = [], isSuccess: requestsLoaded } = useQuery({
     queryKey: ['customer-document-requests'],
     queryFn: () => customerService.listDocumentRequests(),
   });
@@ -287,6 +287,10 @@ export const CustomerDocumentsPage: React.FC = () => {
   const formatNames = formatList(formats);
   const uploading = progress !== null;
   const selectedRequest = requests.find((r) => r.id === requestId) || null;
+  // The id from the link goes with the upload even while the request list
+  // is still loading or failed to load — the server checks it. Only a list
+  // that loaded without it (answered, cancelled) drops it.
+  const uploadRequestId = selectedRequest ? selectedRequest.id : (requestsLoaded ? null : requestId);
 
   const selectRequest = (id: number | null) => {
     setRequestId(id);
@@ -322,11 +326,11 @@ export const CustomerDocumentsPage: React.FC = () => {
     try {
       await customerService.uploadDocument(file, {
         eventId: eventId ? Number(eventId) : null,
-        requestId: selectedRequest ? selectedRequest.id : null,
+        requestId: uploadRequestId,
         signal: controller.signal,
         onProgress: setProgress,
       });
-      if (selectedRequest) {
+      if (uploadRequestId) {
         selectRequest(null);
         await queryClient.invalidateQueries({ queryKey: ['customer-document-requests'] });
         await queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
