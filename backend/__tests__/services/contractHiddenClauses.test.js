@@ -65,4 +65,10 @@ test('values are escaped for the markup from format 3; an earlier snapshot keeps
   // Sent before values were escaped: its stored PDF printed the value's markup.
   const earlier = await resolveDisplayContent({ rendered_content: snapshot({ event_name: '**Gala**', source_quote_number: '' }, 2) }, [], [], 'de');
   expect(body(earlier)).toBe('Für **Gala**.');
+  // …and a backslash stays a backslash, on the signing page and in the PDF.
+  const withBackslash = await resolveDisplayContent({ rendered_content: snapshot({ event_name: 'ACME\\_EU', source_quote_number: '' }, 2) }, [], [], 'de');
+  const view = publicContractView({ status: 'sent' }, withBackslash, null, null, null, null);
+  expect(view.sections[0].blocks.find((b) => b.name === 'Anlass').body).toBe('Für ACME\\_EU.');
+  const { parseInlineMarkdown } = require('../../src/utils/placeholders');
+  expect(parseInlineMarkdown(body(withBackslash)).map((r) => r.text).join('')).toBe('Für ACME\\_EU.');
 });

@@ -308,8 +308,14 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
   const clauses = snapshot ? snapshot.clauses : orderedClauses(contract, inclusions, textSections || []);
   const intro = snapshot ? snapshot.introText : contract.intro_text;
   const outro = snapshot ? snapshot.outroText : contract.outro_text;
-  const output = snapshot && ensureInt(snapshot.format) < 3 ? 'text' : 'markdown';
-  const render = (template) => renderTemplatedBody(template, placeholders, { output });
+  // A snapshot sent before format 3 is read the way its stored PDF was drawn:
+  // values unescaped, and a backslash an ordinary character (the markup then
+  // knew only `**bold**`), so it is doubled for the escape-aware parser.
+  const legacy = !!snapshot && ensureInt(snapshot.format) < 3;
+  const render = (template) => {
+    const out = renderTemplatedBody(template, placeholders, { output: legacy ? 'text' : 'markdown' });
+    return legacy && typeof out === 'string' ? out.replace(/\\/g, '\\\\') : out;
+  };
   return {
     title: snapshot ? snapshot.title : (contract.title || ''),
     introText: intro ? render(intro) : null,
