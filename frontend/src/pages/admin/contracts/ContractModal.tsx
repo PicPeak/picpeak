@@ -20,18 +20,22 @@ export const ContractModal: React.FC<{
   const { t } = useTranslation();
   const trap = useFocusTrap(true);
   const opener = useRef<Element | null>(typeof document !== 'undefined' ? document.activeElement : null);
+  // Callers pass inline callbacks: read the latest one, so the effect below
+  // runs once and gives the focus back only when the dialog closes.
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     const returnTo = opener.current;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') close.current();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       if (returnTo instanceof HTMLElement) returnTo.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
