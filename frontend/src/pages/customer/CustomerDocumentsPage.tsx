@@ -210,7 +210,7 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
             {doc.canDelete && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={async () => {
                   setBusyId(doc.id);
