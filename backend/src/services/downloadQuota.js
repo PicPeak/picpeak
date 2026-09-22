@@ -154,14 +154,21 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
 async function revokeGrants(eventId, photoIds, reservation) {
   const ids = uniqueIds(photoIds);
   if (ids.length === 0 || !reservation) return 0;
-  let removed = 0;
-  for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
-    removed += await db('event_download_grants')
-      .where({ event_id: eventId, reservation })
-      .whereIn('photo_id', ids.slice(i, i + INSERT_CHUNK))
-      .del();
-  }
-  return removed;
+  // Under the same event lock as grantDownloads: a request that has just read
+  // a reserved row as granted clears its tag before this may delete it.
+  return db.transaction(async (trx) => {
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forUpdate().first();
+    }
+    let removed = 0;
+    for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
+      removed += await trx('event_download_grants')
+        .where({ event_id: eventId, reservation })
+        .whereIn('photo_id', ids.slice(i, i + INSERT_CHUNK))
+        .del();
+    }
+    return removed;
+  });
 }
 
 /** The undelivered part of a grant: counted by this request, never appended. */

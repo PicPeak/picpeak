@@ -284,6 +284,16 @@ describe('Download limit (issue 1560)', () => {
       expect(await quota.revokeGrants(event.id, [photoIds[0]], null)).toBe(0);
     });
 
+    it('a HEAD probe of download-all takes none of the quota', async () => {
+      const { event, token } = await makeEvent({ limit: 10, photos: 3 });
+      const res = await request(app)
+        .head(`/api/gallery/${event.slug}/download-all`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/zip');
+      expect(await grantCount(event.id)).toBe(0);
+    });
+
     it('download-all is refused while the gallery holds more photos than remain', async () => {
       const { event, token } = await makeEvent({ limit: 3, photos: 4 });
       const res = await request(app)

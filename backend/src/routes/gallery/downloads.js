@@ -34,6 +34,30 @@ const {
   downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, revokeGrants, undeliveredGrants,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
+/**
+ * Download limit (issue 1560). A zip grants its whole set before the first
+ * byte; when the response ends, whatever archiver never wrote gets its slot
+ * back — a photo skipped for a missing source, or everything left when the
+ * guest cancels. Entries carry their photoId into archiver's 'entry' event.
+ */
+function releaseUnshipped(req, res, quota) {
+  const shipped = [];
+  res.once('close', () => {
+    const unshipped = undeliveredGrants(quota, shipped);
+    if (unshipped.length === 0) return;
+    revokeGrants(req.event.id, unshipped, quota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
+      eventId: req.event.id, error: err.message,
+    }));
+  });
+  return {
+    track(archive) {
+      archive.on('entry', (entry) => {
+        if (entry && entry.photoId != null) shipped.push(entry.photoId);
+      });
+    },
+  };
+}
+
 function parseByteRange(header, size) {
   if (!header || typeof header !== 'string' || !size) return null;
   const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
@@ -544,10 +568,20 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       return res.status(404).json({ error: 'No photos found' });
     }
 
+    // Download limit (issue 1560): a HEAD probe (a download manager asking
+    // for the size first) answers without taking any of the quota.
+    if (req.method === 'HEAD' && downloadLimitOf(req.event)) {
+      const check = await checkDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+      if (!check.ok) return res.status(403).end();
+      res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.event.slug}.zip"` });
+      return res.end();
+    }
+
     // Download limit (issue 1560): the whole archive or nothing, decided
     // before the zip headers go out.
     const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+    const releaseAll = releaseUnshipped(req, res, quota);
 
     // Count unique types
     const uniqueTypes = new Set(photos.map(p => p.type)).size;
@@ -577,6 +611,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         archive.abort();
       }
     });
+    releaseAll.track(archive);
 
     archive.pipe(res);
 
@@ -606,6 +641,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // never make it into the archive.
     const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
+      // A cancelled download stops rendering; nothing appended now ships.
+      if (cancelled) break;
       const photo = photos[i];
       const storageKey = resolvePhotoStorageKey(req.event, photo);
       const entryName = bulkEntryNames[i];
@@ -640,14 +677,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         // hidden photos all land here, so skipping the cap would leak
         // full-resolution files for exactly those cases.
         const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, effectiveSettings);
+        // photoId rides along to archiver's 'entry' event (releaseUnshipped).
         if (rendered) {
-          archive.append(rendered, { name: archiveName });
+          archive.append(rendered, { name: archiveName, photoId: photo.id });
         } else if (storageKey) {
           if (!await guard.acquire()) break;
           const stream = await storage.get(storageKey);
-          archive.append(guard.track(stream), { name: archiveName });
+          archive.append(guard.track(stream), { name: archiveName, photoId: photo.id });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName });
+          archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName, photoId: photo.id });
         }
         appendedIds.push(photo.id);
       } catch (err) {
@@ -658,15 +696,6 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           error: err.message,
         });
       }
-    }
-
-    // Download limit (issue 1560): photos skipped above were granted up front
-    // but never shipped, so they get their slots back.
-    const allUndelivered = undeliveredGrants(quota, appendedIds);
-    if (allUndelivered.length > 0) {
-      revokeGrants(req.event.id, allUndelivered, quota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
-        eventId: req.event.id, error: err.message,
-      }));
     }
 
     // Notification only after the response actually finished — finalize()
@@ -764,6 +793,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // what gets zipped, so it is what gets granted. All or nothing.
     const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!selectedQuota.ok) return res.status(403).json(downloadLimitError(selectedQuota));
+    const releaseSelected = releaseUnshipped(req, res, selectedQuota);
 
     const archiveName = `${req.event.slug}-selected.zip`;
     res.setHeader('Content-Type', 'application/zip');
@@ -795,6 +825,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         archive.abort();
       }
     });
+    releaseSelected.track(archive);
 
     archive.pipe(res);
 
@@ -816,6 +847,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Only photos whose append succeeded count as downloaded (#895).
     const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
+      // A cancelled download stops rendering; nothing appended now ships.
+      if (selectedCancelled) break;
       const photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolveSelectedKey(req.event, photo);
@@ -838,13 +871,13 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         // storage rather than buffering the whole photo.
         const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, effectiveSettings);
         if (rendered) {
-          archive.append(rendered, { name });
+          archive.append(rendered, { name, photoId: photo.id });
         } else if (storageKey) {
           if (!await selectedGuard.acquire()) break;
           const stream = await selectedStorage.get(storageKey);
-          archive.append(selectedGuard.track(stream), { name });
+          archive.append(selectedGuard.track(stream), { name, photoId: photo.id });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name });
+          archive.file(resolvePhotoFilePath(req.event, photo), { name, photoId: photo.id });
         }
         appendedIds.push(photo.id);
       } catch (err) {
@@ -855,14 +888,6 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           error: err.message,
         });
       }
-    }
-
-    // Download limit (issue 1560): same release as download-all.
-    const selectedUndelivered = undeliveredGrants(selectedQuota, appendedIds);
-    if (selectedUndelivered.length > 0) {
-      revokeGrants(req.event.id, selectedUndelivered, selectedQuota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
-        eventId: req.event.id, error: err.message,
-      }));
     }
 
     // See download-all: notify only on response 'finish'.
@@ -1065,6 +1090,13 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
           error: 'This gallery changed since the download was prepared — please request it again',
           status: 'stale',
         });
+      }
+      // A HEAD probe answers without taking any of the quota.
+      if (req.method === 'HEAD') {
+        const check = await checkDownloads(req.event, deliveredIds);
+        if (!check.ok) return res.status(403).end();
+        res.set({ 'Content-Type': 'application/zip', 'Content-Length': stat.size });
+        return res.end();
       }
       const quota = await grantDownloads(req.event, deliveredIds);
       if (!quota.ok) return res.status(403).json(downloadLimitError(quota));

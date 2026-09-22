@@ -18,7 +18,9 @@ const {
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
-const { grantDownloads, downloadLimitError, isOriginalWithheld } = require('../services/downloadQuota');
+const {
+  grantDownloads, checkDownloads, downloadLimitOf, downloadLimitError, isOriginalWithheld,
+} = require('../services/downloadQuota');
 
 const router = express.Router();
 
@@ -384,6 +386,13 @@ router.get('/:slug/secure-download/:photoId/:token',
 
       // Download limit (issue 1560), granted once the file is in hand and
       // before any byte of it goes out.
+      // A HEAD probe answers without taking any of the quota.
+      if (req.method === 'HEAD' && downloadLimitOf(req.event)) {
+        const check = await checkDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+        if (!check.ok) return res.status(403).end();
+        res.set({ 'Content-Type': resolvePhotoContentType(photo), 'Content-Length': fileBuffer.length });
+        return res.end();
+      }
       const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
       if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
 
