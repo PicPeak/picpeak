@@ -407,10 +407,19 @@ async function completeSend(contractId, {
       query.where({ id: contractId, status: fromStatus });
       if (lockVersion != null) query.where('lock_version', lockVersion);
     };
-    // Locked first on PostgreSQL, before the signer rows below: setSigners
-    // takes the contract, then the signers, and the other order deadlocks.
+    // Lock order on PostgreSQL: the customer, then the contract, then the
+    // signer rows. Erasure and every link issue take the customer row first
+    // (customerMayReceiveLink); setSigners takes the contract, then the
+    // signers. Any other order deadlocks against one of them.
+    const pg = trx.client.config.client === 'pg';
+    if (pg && sendInputs) {
+      const target = await trx('contracts').where({ id: contractId }).first('customer_account_id');
+      if (target && target.customer_account_id != null) {
+        await trx('customer_accounts').where({ id: target.customer_account_id }).forUpdate().first('id');
+      }
+    }
     const draftQuery = trx('contracts').modify(claim);
-    if (trx.client.config.client === 'pg') draftQuery.forUpdate();
+    if (pg) draftQuery.forUpdate();
     const draft = await draftQuery.first();
     if (!draft) {
       throw new AppError(
