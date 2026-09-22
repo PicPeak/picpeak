@@ -285,3 +285,21 @@ test('a customer deactivated before the review check refuses the send even with 
     await db('customer_accounts').where({ id: customerId }).update({ is_active: true });
   }
 });
+
+test('the review token covers the issuer and the contract PDF theme', async () => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  const token = async () => (await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth))).reviewToken;
+  const first = await token();
+  const now = new Date().toISOString();
+  await db('pdf_themes').insert({ scope: 'contract', settings: JSON.stringify({ footer: { mode: 'custom', text: { de: 'Neu' } } }), created_at: now, updated_at: now });
+  const before = (await db('business_profile').where({ id: 1 }).first()).address_line1;
+  try {
+    const second = await token();
+    expect(second).not.toBe(first);
+    await db('business_profile').where({ id: 1 }).update({ address_line1: 'Anderswo 3' });
+    expect(await token()).not.toBe(second);
+  } finally {
+    await db('pdf_themes').where({ scope: 'contract' }).del();
+    await db('business_profile').where({ id: 1 }).update({ address_line1: before });
+  }
+});

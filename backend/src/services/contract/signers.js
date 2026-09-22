@@ -97,13 +97,15 @@ const SEND_SETTINGS = [
 /**
  * The inputs' sha256, read through `conn`. `lock` takes row locks on
  * PostgreSQL (SQLite writes one at a time); `signerRows` stands in for the
- * signer rows when the caller already holds the ones it renders with.
+ * signer rows when the caller already holds the ones it renders with;
+ * `withSigners: false` leaves them out (the review, which shows them itself
+ * and runs before a first send creates them).
  */
-async function readSendInputsSha256(conn, contract, { lock = false, signerRows = null } = {}) {
+async function readSendInputsSha256(conn, contract, { lock = false, signerRows = null, withSigners = true } = {}) {
   const locking = lock && conn.client.config.client === 'pg';
   const locked = (query) => (locking ? query.forUpdate() : query);
   const customer = await locked(conn('customer_accounts').where({ id: contract.customer_account_id })).first();
-  const rows = signerRows || await locked(listSigners(contract.id, conn));
+  const rows = !withSigners ? null : signerRows || await locked(listSigners(contract.id, conn));
   const profile = await locked(conn('business_profile').where({ id: 1 })).first();
   const settings = await locked(conn('app_settings').whereIn('setting_key', SEND_SETTINGS)
     .select('setting_key', 'setting_value').orderBy('setting_key', 'asc'));

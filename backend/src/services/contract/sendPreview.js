@@ -123,6 +123,8 @@ async function buildSendPreview(contractId) {
   const recipient = require('./signers').recipientFields(customer);
   const fingerprint = {
     ...review, lockVersion, issueDate: contract.issue_date || null, validUntil: contract.valid_until || null, recipient,
+    // The issuer, the settings and the PDF theme the send renders with.
+    inputs: await require('./signers').readSendInputsSha256(db, contract, { withSigners: false }),
   };
   return {
     ...review,
