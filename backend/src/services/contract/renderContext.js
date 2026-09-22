@@ -182,9 +182,11 @@ function parseContentSnapshot(value) {
 /**
  * The current snapshot format. See buildContentSnapshot. Format 3 changes no
  * field: it marks a snapshot whose placeholder values are escaped for the
- * body's markup (renderTemplatedBody). One sent before that rendered its
- * values as they were — `**ACME**` in a customer name printed bold — and its
- * stored PDF says so, so it keeps being read that way.
+ * body's markup (renderTemplatedBody) and whose clauses left empty by a
+ * condition are dropped with their headings. One sent before that rendered
+ * its values as they were — `**ACME**` in a customer name printed bold — and
+ * every clause heading, and its stored PDF says so, so it keeps being read
+ * that way.
  */
 const SNAPSHOT_FORMAT = 3;
 
@@ -344,7 +346,9 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
         body: String(render(content.pickLocale(clause.body, locale)) || '')
           .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
       }))
-      .filter((clause) => clause.slug === 'quote_line_items_table' || clause.body.trim() !== ''),
+      // A contract sent before format 3 printed such a clause with its
+      // heading, and is read the way it was sent (see `legacy` above).
+      .filter((clause) => legacy || clause.slug === 'quote_line_items_table' || clause.body.trim() !== ''),
     (clause) => clause),
   };
 }

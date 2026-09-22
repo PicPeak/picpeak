@@ -72,3 +72,9 @@ test('values are escaped for the markup from format 3; an earlier snapshot keeps
   const { parseInlineMarkdown } = require('../../src/utils/placeholders');
   expect(parseInlineMarkdown(body(withBackslash)).map((r) => r.text).join('')).toBe('Für ACME\\_EU.');
 });
+
+test('a contract sent before format 3 keeps a clause emptied by a condition, as its PDF printed it', async () => {
+  const earlier = await resolveDisplayContent({ rendered_content: snapshot({ event_name: '', source_quote_number: 'Q-1' }, 2) }, [], [], 'de');
+  expect(earlier.sections.map((s) => [s.section, s.blocks.map((b) => b.name)]))
+    .toEqual([['scope', ['Leistung', 'Anlass']], ['nda', ['Geheim']]]);
+});
