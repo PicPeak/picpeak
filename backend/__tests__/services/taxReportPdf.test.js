@@ -184,6 +184,25 @@ describe('renderTaxReportPdf', () => {
   });
 });
 
+describe('renderTaxReportPdf and the default theme', () => {
+  it('keeps the logo in the issuer column whatever position the theme gives it', async () => {
+    const pdfThemeService = require('../../src/services/pdfThemeService');
+    const pdfService = require('../../src/services/pdfService');
+    const real = await pdfThemeService.resolveTheme('default');
+    const theme = jest.spyOn(pdfThemeService, 'resolveTheme').mockResolvedValue({ ...real, logo: { ...real.logo, position: 'left' } });
+    const base = jest.spyOn(pdfService, 'createBaseDocument');
+    try {
+      invoiceRowsForRun = [SAMPLE_ROW()];
+      callCount = 0;
+      await taxReportService.renderTaxReportPdf({ from: '2026-01-01', to: '2026-03-31', currency: 'CHF' });
+      expect(base.mock.calls[0][0].theme.logo.position).toBe('right');
+    } finally {
+      theme.mockRestore();
+      base.mockRestore();
+    }
+  });
+});
+
 describe('renderTaxReportCsv', () => {
   it('returns a CSV blob with the de localised header row', async () => {
     invoiceRowsForRun = [SAMPLE_ROW()];

@@ -757,11 +757,14 @@ async function renderTaxReportPdf({ from, to, currency, locale, scope } = {}) {
   const useLocale = renderCtx.locale;
   const intlLocale = useLocale === 'de' ? 'de-CH' : 'en-GB';
 
+  // The default PDF theme's font family (#1445). Its logo position is not
+  // taken: the report's title fills the top left, so the logo stays in the
+  // issuer column, the only place this layout draws it.
+  const theme = await require('./pdfThemeService').resolveTheme('default');
   const { doc, page, fonts } = pdfService.createBaseDocument({
     orientation: 'landscape',
     issuer: renderCtx.issuer,
-    // The default PDF theme's font family (#1445).
-    theme: await require('./pdfThemeService').resolveTheme('default'),
+    theme: { ...theme, logo: { ...(theme && theme.logo), position: 'right' } },
     info: {
       Title: `${t(useLocale, 'tax_title')} ${report.period.from}–${report.period.to}`,
       Author: renderCtx.issuer.companyName || 'picpeak',
