@@ -23,6 +23,7 @@ const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
+const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const packageJson = require('../../package.json');
 
 // Bump only on a breaking change to the on-disk layout below.
@@ -192,6 +193,11 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     // correct. Copying every business doc through /tmp and back would only risk
     // filling the temp disk.
     const files = includeFiles ? await collectFiles(includePhotos) : [];
+    // Documents a row names in the legacy root (<cwd>/storage) when that is
+    // not the storage root: collectFiles never sees them. They are archived
+    // under the storage-relative path the manifest maps their rows to.
+    const legacyFiles = includeFiles ? await collectLegacyStoredFiles(db) : [];
+    for (const f of legacyFiles) files.push({ abs: f.abs, rel: f.rel.split('/').join(path.sep) });
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.
     const manifest = {
@@ -206,6 +212,9 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       options: { includePhotos: !!includePhotos, includeFiles: !!includeFiles },
       tables: tableMeta,
       file_count: files.length,
+      // { stored value: storage-relative path under files/ } for the legacy
+      // documents above; the importer rewrites those rows to it.
+      ...(legacyFiles.length ? { stored_path_map: storedPathMap(legacyFiles) } : {}),
       // NOTE: contains secrets (SMTP password, admin hashes, API keys) in plain
       // text — the download surface must warn about this.
       contains_secrets: true,

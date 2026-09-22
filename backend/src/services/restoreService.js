@@ -5,6 +5,7 @@ const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
 const { createReadStream, createWriteStream } = require('fs');
+const fsSync = require('fs');
 const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -452,6 +453,23 @@ class RestoreService {
         this.log('warn',
           'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
+      }
+
+      // Documents the source read from its legacy root (<cwd>/storage) were
+      // backed up under a storage-relative path; point their rows at it now
+      // that both the rows and the files are back (legacyStoredFiles.js).
+      // After the migrations, which leave these outside-root values alone.
+      if (['full', 'database'].includes(options.restoreType)) {
+        try {
+          const { applyStoredPathMap } = require('../utils/legacyStoredFiles');
+          const { getStoragePath } = require('../config/storage');
+          const root = getStoragePath();
+          const updated = await applyStoredPathMap(db, manifest.metadata && manifest.metadata.stored_path_map,
+            (rel) => fsSync.existsSync(path.join(root, ...rel.split('/'))));
+          if (updated) this.log('info', `Pointed ${updated} restored document path(s) at their backed-up location`);
+        } catch (err) {
+          this.log('warn', `Updating restored document paths failed: ${err.message}`);
+        }
       }
 
       // The standard contract template was checked against the database
