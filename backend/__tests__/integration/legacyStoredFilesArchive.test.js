@@ -137,6 +137,31 @@ describe('legacy-root documents in archives', () => {
     expect(await contents()).toEqual({ only: 'LEGACY-ONLY', shadowed: 'LEGACY-SAME', root: 'ROOT-SAME' });
   });
 
+  it('leaves out a legacy file reached through a symlink to outside the legacy root', async () => {
+    const { collectLegacyStoredFiles } = require('../../src/utils/legacyStoredFiles');
+    const { legacy } = useInstall('source');
+    const outside = path.join(base, 'source', 'outside');
+    write(path.join(outside, 'secret.pdf'), 'OUTSIDE');
+    fs.mkdirSync(path.join(legacy, 'business-docs'), { recursive: true });
+    fs.symlinkSync(outside, path.join(legacy, 'business-docs', 'inbound'));
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({
+      original_filename: 'link', file_path: path.join(legacy, 'business-docs', 'inbound', 'secret.pdf'),
+    });
+    expect(await collectLegacyStoredFiles(db)).toEqual([]);
+  });
+
+  it('applies the backup exclusion patterns to legacy files', async () => {
+    const backupService = require('../../src/services/backupService');
+    await seedDocuments();
+    const files = await backupService.getFilesToBackup({ backup_exclude_patterns: ['only.*', 'legacy'] });
+    const legacyRels = files.filter((f) => f.legacyValues).map((f) => f.relativePath.split(path.sep).join('/'));
+    // only.pdf by name; same.pdf lands in a legacy/ folder, excluded by the directory name.
+    expect(legacyRels).toEqual([]);
+    const withoutPatterns = await backupService.getFilesToBackup({});
+    expect(withoutPatterns.filter((f) => f.legacyValues)).toHaveLength(2);
+  });
+
   it('refuses a map entry that is not a plain storage-relative path', async () => {
     const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
     await db('inbound_documents').del();

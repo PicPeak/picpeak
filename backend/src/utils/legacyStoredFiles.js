@@ -79,14 +79,22 @@ async function collectLegacyStoredFiles(knex) {
     for (const row of rows) if (typeof row[column] === 'string' && row[column]) values.add(row[column]);
   }
 
+  let realLegacy;
+  try { realLegacy = fs.realpathSync(legacy); } catch { return []; }
   const byAbs = new Map();
   for (const value of values) {
-    const abs = resolveStoredPath(value);
-    if (!abs || !isInside(abs, legacy) || covered.some((dir) => isInside(abs, dir))) continue;
+    const resolved = resolveStoredPath(value);
+    if (!resolved || !isInside(resolved, legacy) || covered.some((dir) => isInside(resolved, dir))) continue;
+    // The readers check the realpath (resolveStoredPathStrict); so does this,
+    // so a symlink inside the legacy root cannot pull an outside file into
+    // an archive.
+    let abs;
+    try { abs = fs.realpathSync(resolved); } catch { continue; }
+    if (!isInside(abs, realLegacy)) continue;
     let stat;
     try { stat = fs.statSync(abs); } catch { continue; }
     if (!stat.isFile()) continue;
-    const suffix = toPosix(path.relative(legacy, abs));
+    const suffix = toPosix(path.relative(legacy, resolved));
     if (!isPlaceablePath(suffix)) continue;
     if (!byAbs.has(abs)) byAbs.set(abs, { abs, suffix, values: [] });
     byAbs.get(abs).values.push(value);

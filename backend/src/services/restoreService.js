@@ -456,10 +456,12 @@ class RestoreService {
       }
 
       // Documents the source read from its legacy root (<cwd>/storage) were
-      // backed up under a storage-relative path; point their rows at it now
-      // that both the rows and the files are back (legacyStoredFiles.js).
+      // backed up under a storage-relative path; point their rows at it once
+      // both the rows and the files are back (legacyStoredFiles.js).
       // After the migrations, which leave these outside-root values alone.
-      if (['full', 'database'].includes(options.restoreType)) {
+      // Every restore type: a database restore followed by a separate files
+      // restore only has both halves in place after the second one.
+      if (manifest.metadata && manifest.metadata.stored_path_map) {
         try {
           const { applyStoredPathMap } = require('../utils/legacyStoredFiles');
           const { getStoragePath } = require('../config/storage');
