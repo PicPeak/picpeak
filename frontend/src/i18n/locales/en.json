@@ -8275,7 +8275,8 @@
           "removed": "Removed",
           "moved": "Moved",
           "changed": "Changed"
-        }
+        },
+        "tooLarge": "Too large to compare here"
       },
       "undo": "Undo",
       "redo": "Redo",

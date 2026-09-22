@@ -53,3 +53,12 @@ it('compares title, intro, outro and attachments', () => {
   expect(diff.fields.map((f) => f.field)).toEqual(['title', 'intro']);
   expect(diff.attachments).toEqual([{ type: 'changed', name: 'AGB' }, { type: 'added', name: 'Datenschutz' }]);
 });
+
+it('past its total budget a comparison marks the remaining texts too large instead of diffing them', () => {
+  const long = (w: string) => Array.from({ length: 400 }, (_, i) => `${w}${i}`).join(' ');
+  const before = version([text('A', long('a')), text('B', long('b'))]);
+  const after = version([text('A', long('x')), text('B', long('y'))]);
+  const { clauses } = diffVersions(before, after, { cells: 700_000 });
+  expect(clauses[0].texts[0].tooLarge).toBeUndefined();
+  expect(clauses[1].texts[0]).toEqual({ locale: 'de', ops: [], tooLarge: true });
+});

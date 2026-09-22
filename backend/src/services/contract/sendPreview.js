@@ -14,7 +14,7 @@
 const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { ensureInt } = require('../../utils/numericHelpers');
-const { PLACEHOLDER_PATTERN } = require('../../utils/placeholders');
+const { unknownPlaceholders, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
 
 const problem = (code, severity, message, extra = {}) => ({ code, severity, message, ...extra });
 
@@ -47,8 +47,18 @@ async function buildSendPreview(contractId) {
     recipient: view.recipient,
     commercial: quote ? publicView.commercialView(quote) : null,
   };
-  const texts = [content.introText, content.outroText, ...content.sections.flatMap((s) => s.blocks.map((b) => b.body))];
-  const unresolved = [...new Set(texts.flatMap((text) => [...String(text || '').matchAll(PLACEHOLDER_PATTERN)].map((m) => m[1])))];
+  // Placeholders the templates use that nothing fills in. Read from the
+  // contract's own texts, not the rendered ones: a customer called
+  // "{{x}}" is a value, printed as typed, not a problem.
+  const data = await require('./crud').getContractById(contractId);
+  const locale = contract.language || 'de';
+  const content_ = require('./content');
+  const rawTexts = [
+    contract.intro_text, contract.outro_text,
+    ...require('./renderContext').orderedClauses(contract, data.inclusions, data.textSections || [])
+      .map((clause) => content_.pickLocale(clause.body, locale)),
+  ];
+  const unresolved = [...new Set(rawTexts.flatMap((text) => unknownPlaceholders(String(text || ''), CONTRACT_PLACEHOLDERS)))];
   if (unresolved.length) {
     problems.push(problem('PLACEHOLDER_UNRESOLVED', 'warning',
       `Placeholders that will print as typed: ${unresolved.map((k) => `{{${k}}}`).join(', ')}`, { keys: unresolved }));

@@ -10,6 +10,15 @@ export type WordOp = { type: 'same' | 'add' | 'del'; text: string };
 
 /** Beyond this many table cells a text pair is shown as replaced whole. */
 const MAX_CELLS = 2_000_000;
+/**
+ * Table cells for a whole comparison, across all its text pairs. Past it,
+ * the remaining changed texts say "too large to compare here" instead of
+ * freezing the page on a template with many long clauses.
+ */
+const TOTAL_CELLS = 8_000_000;
+
+/** What a comparison may still spend on word diffs. */
+export interface DiffBudget { cells: number }
 
 /** Longest common subsequence of `a` and `b` as index pairs, in order. */
 function lcs<T>(a: T[], b: T[], equal: (x: T, y: T) => boolean): Array<[number, number]> {
@@ -78,6 +87,8 @@ export interface ComparableVersion {
 export interface TextChange {
   locale: ContractLocale;
   ops: WordOp[];
+  /** The comparison's budget ran out: no word diff for this text. */
+  tooLarge?: boolean;
 }
 
 export interface ClauseChange {
@@ -112,20 +123,28 @@ const clauseName = (item: Item) => (item.kind === 'block' ? (item.name || item.b
 /** Identity across versions: the library block, or the free text's heading. */
 const identity = (item: Item) => (item.kind === 'block' ? `block:${item.blockId}` : `text:${(item.heading || '').trim().toLowerCase()}`);
 
-function textChanges(before: LocaleText, after: LocaleText): TextChange[] {
+function textChanges(before: LocaleText, after: LocaleText, budget: DiffBudget): TextChange[] {
   const locales = [...new Set([...Object.keys(before), ...Object.keys(after)])] as ContractLocale[];
   return locales
     .filter((l) => (before[l] || '') !== (after[l] || ''))
-    .map((locale) => ({ locale, ops: diffWords(before[locale] || '', after[locale] || '') }));
+    .map((locale) => {
+      const a = before[locale] || '';
+      const b = after[locale] || '';
+      const cells = (a.split(/(\s+)/).length + 1) * (b.split(/(\s+)/).length + 1);
+      if (cells > budget.cells) return { locale, ops: [], tooLarge: true };
+      budget.cells -= cells;
+      return { locale, ops: diffWords(a, b) };
+    });
 }
 
-export function diffVersions(before: ComparableVersion, after: ComparableVersion): VersionDiff {
+export function diffVersions(before: ComparableVersion, after: ComparableVersion, budget: DiffBudget = { cells: TOTAL_CELLS }): VersionDiff {
+  const changes = (x: LocaleText, y: LocaleText) => textChanges(x, y, budget);
   const fields: VersionDiff['fields'] = [];
-  const title = textChanges({ de: before.title || '' }, { de: after.title || '' });
+  const title = changes({ de: before.title || '' }, { de: after.title || '' });
   if (title.length) fields.push({ field: 'title', texts: title });
-  const intro = textChanges(before.introText || {}, after.introText || {});
+  const intro = changes(before.introText || {}, after.introText || {});
   if (intro.length) fields.push({ field: 'intro', texts: intro });
-  const outro = textChanges(before.outroText || {}, after.outroText || {});
+  const outro = changes(before.outroText || {}, after.outroText || {});
   if (outro.length) fields.push({ field: 'outro', texts: outro });
 
   // Pair clauses by identity (the n-th occurrence with the n-th), then take
@@ -153,7 +172,7 @@ export function diffVersions(before: ComparableVersion, after: ComparableVersion
   const matchedOld = new Set<number>();
   pairedList.forEach(([o, n], k) => {
     matchedOld.add(o);
-    const texts = textChanges(effectiveText(before.items[o]), effectiveText(after.items[n]));
+    const texts = changes(effectiveText(before.items[o]), effectiveText(after.items[n]));
     const moved = !inOrder.has(k);
     if (!moved && !texts.length && before.items[o].section === after.items[n].section) return;
     clauses.push({
@@ -167,11 +186,11 @@ export function diffVersions(before: ComparableVersion, after: ComparableVersion
   });
   paired.forEach((o, n) => {
     if (o >= 0) return;
-    clauses.push({ type: 'added', name: clauseName(after.items[n]), from: null, to: n + 1, texts: textChanges({}, effectiveText(after.items[n])) });
+    clauses.push({ type: 'added', name: clauseName(after.items[n]), from: null, to: n + 1, texts: changes({}, effectiveText(after.items[n])) });
   });
   before.items.forEach((item, o) => {
     if (matchedOld.has(o)) return;
-    clauses.push({ type: 'removed', name: clauseName(item), from: o + 1, to: null, texts: textChanges(effectiveText(item), {}) });
+    clauses.push({ type: 'removed', name: clauseName(item), from: o + 1, to: null, texts: changes(effectiveText(item), {}) });
   });
   clauses.sort((x, y) => (x.to ?? x.from ?? 0) - (y.to ?? y.from ?? 0));
 

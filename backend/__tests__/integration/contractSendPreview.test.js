@@ -162,3 +162,16 @@ test('a sent contract and an inactive customer are errors', async () => {
     await db('customer_accounts').where({ id: customerId }).update({ is_active: true });
   }
 });
+
+test('a placeholder-looking customer value is not reported; an unknown placeholder in the text is', async () => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  await db('customer_accounts').where({ id: customerId }).update({ company_name: '{{not_a_problem}}' });
+  await db('contracts').where({ id: contractId }).update({ intro_text: 'Hallo {{custmer_name}}' });
+  try {
+    const preview = await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth));
+    const unresolved = preview.problems.find((p) => p.code === 'PLACEHOLDER_UNRESOLVED');
+    expect(unresolved.keys).toEqual(['custmer_name']);
+  } finally {
+    await db('customer_accounts').where({ id: customerId }).update({ company_name: null });
+  }
+});

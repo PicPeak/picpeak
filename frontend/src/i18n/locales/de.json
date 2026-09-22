@@ -8276,7 +8276,8 @@
           "removed": "Entfernt",
           "moved": "Verschoben",
           "changed": "Geändert"
-        }
+        },
+        "tooLarge": "Zu gross für einen Vergleich hier"
       },
       "undo": "Rückgängig",
       "redo": "Wiederholen",

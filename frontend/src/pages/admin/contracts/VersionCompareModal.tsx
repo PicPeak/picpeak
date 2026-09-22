@@ -17,11 +17,17 @@ const badge: Record<string, string> = {
   changed: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
 };
 
+const TooLarge: React.FC = () => {
+  const { t } = useTranslation();
+  return <em className="text-neutral-600 dark:text-neutral-400">{t('contracts.templates.compare.tooLarge', 'Too large to compare here')}</em>;
+};
+
 const Texts: React.FC<{ texts: TextChange[] }> = ({ texts }) => (
   <div className="space-y-1">
-    {texts.map(({ locale, ops }) => (
+    {texts.map(({ locale, ops, tooLarge }) => (
       <p key={locale} className="text-sm whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">
         <span className="mr-2 text-[10px] font-semibold uppercase text-neutral-500 dark:text-neutral-400">{locale}</span>
+        {tooLarge && <TooLarge />}
         {ops.map((op, i) => {
           if (op.type === 'add') return <ins key={i} className="bg-green-100 dark:bg-green-900/50 no-underline">{op.text}</ins>;
           if (op.type === 'del') return <del key={i} className="bg-red-100 dark:bg-red-900/50">{op.text}</del>;
