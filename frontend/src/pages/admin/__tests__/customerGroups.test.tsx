@@ -413,6 +413,22 @@ describe('bulk group changes', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Selected customers' })).toBeNull());
   });
 
+  it('allows no selection while the rows on screen are still the previous filter\'s', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('ungrouped@example.com');
+    let resolveFiltered: (rows: unknown[]) => void = () => {};
+    list.mockImplementationOnce(() => new Promise((resolve) => { resolveFiltered = resolve; }));
+
+    const filter = screen.getByRole('group', { name: 'Filter by group' });
+    await user.click(within(filter).getByRole('button', { name: /Press/ }));
+    await waitFor(() => expect(rowBox('ungrouped@example.com')).toBeDisabled());
+    expect(screen.getByRole('checkbox', { name: 'Select all shown customers' })).toBeDisabled();
+
+    resolveFiltered([customer(12, 'press@example.com', [press])]);
+    await waitFor(() => expect(rowBox('press@example.com')).toBeEnabled());
+  });
+
   it('previews the effective change, confirms with the consequence, and clears the selection', async () => {
     bulkAssignGroups.mockImplementation(async (payload: { dryRun?: boolean }) => ({
       customers: 2, added: 1, removed: 0, perGroup: [{ groupId: 1, added: 1, removed: 0 }], dryRun: !!payload.dryRun,

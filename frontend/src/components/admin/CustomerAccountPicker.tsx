@@ -130,8 +130,8 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
     onChange(value.filter((v) => v.id !== id));
   };
 
-  const created = (c: { id: number; email: string; displayName: string | null }) => {
-    onChange([...value, { id: c.id, email: c.email, displayName: c.displayName }]);
+  const created = (c: CustomerAccountSummary) => {
+    onChange([...value, { id: c.id, email: c.email, displayName: c.displayName, groups: c.groups }]);
     setIsCreating(false);
     setQuery('');
     setResults([]);

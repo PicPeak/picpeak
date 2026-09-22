@@ -26,8 +26,14 @@ vi.mock('react-i18next', async () => {
 });
 
 vi.mock('../../../contexts/FeatureFlagsContext', () => ({ useFeatureEnabled: () => true }));
-vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => false }));
-vi.mock('../InlineCustomerCreate', () => ({ InlineCustomerCreate: () => null }));
+let canCreate = false;
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => canCreate }));
+let createdCustomer: unknown = null;
+vi.mock('../InlineCustomerCreate', () => ({
+  InlineCustomerCreate: ({ onCreated }: { onCreated: (c: unknown) => void }) => (
+    <button type="button" onClick={() => onCreated(createdCustomer)}>finish-create</button>
+  ),
+}));
 
 const search = vi.fn();
 const get = vi.fn();
@@ -68,6 +74,8 @@ const withProviders = (node: React.ReactNode, permissions: string[] | null) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canCreate = false;
+  createdCustomer = null;
   search.mockResolvedValue([found]);
   get.mockResolvedValue({ ...found });
 });
@@ -127,5 +135,16 @@ describe('CustomerAccountPicker', () => {
     await user.type(screen.getByPlaceholderText('Search by email, name, or company'), 'found');
     await user.click(await screen.findByRole('button', { name: /found@example.com/ }));
     expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: 7, groups })]);
+  });
+
+  it('keeps the groups of a customer created inline', async () => {
+    canCreate = true;
+    createdCustomer = { ...found, id: 8, email: 'new@example.com' };
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    withProviders(<CustomerAccountPicker value={[]} onChange={onChange} />, null);
+    await user.click(screen.getByRole('button', { name: '+ Create new customer' }));
+    await user.click(screen.getByRole('button', { name: 'finish-create' }));
+    expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ id: 8, groups })]);
   });
 });

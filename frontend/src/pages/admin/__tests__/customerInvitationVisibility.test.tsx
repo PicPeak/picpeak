@@ -335,6 +335,28 @@ describe('InlineCustomerCreate — groups for the new customer (#1443)', () => {
     expect(createDirect.mock.calls[0][2]).toEqual([1, 2]);
   });
 
+  it('does not send a ticked group that was archived while the form was open', async () => {
+    listGroups.mockResolvedValue([group(1, 'VIP'), group(2, 'Press')]);
+    createDirect.mockResolvedValue({ id: 7, email: 'new@example.com' });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><InlineCustomerCreate mode="passive" onCreated={() => {}} onCancel={() => {}} /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await fill();
+    await userEvent.click(await screen.findByRole('checkbox', { name: /VIP/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Press/ }));
+
+    listGroups.mockResolvedValue([group(1, 'VIP'), group(2, 'Press', true)]);
+    await qc.invalidateQueries({ queryKey: ['admin-customer-groups'] });
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: /Press/ })).toBeNull());
+    await userEvent.click(screen.getByRole('button', { name: /Save as passive customer/i }));
+
+    await waitFor(() => expect(createDirect).toHaveBeenCalledTimes(1));
+    expect(createDirect.mock.calls[0][2]).toEqual([1]);
+  });
+
   it('shows no group picker, and fetches no catalogue, without customers.groups.manage', async () => {
     hasPermission.mockImplementation((name) => name !== 'customers.groups.manage');
     listGroups.mockResolvedValue([group(1, 'VIP')]);

@@ -171,7 +171,11 @@ export const CustomerManagementPage: React.FC = () => {
     updateParams({ q: null, groups: null, match: null, ungrouped: null, status: null });
   };
 
-  const { data: customers, isPending: customersLoading, error: customersError } = useQuery({
+  // `customersStale`: while a new filter loads, the rows on screen are the
+  // previous filter's, so they can't be selected for a bulk change.
+  const {
+    data: customers, isPending: customersLoading, error: customersError, isPlaceholderData: customersStale,
+  } = useQuery({
     queryKey: ['admin-customers', listFilter],
     queryFn: () => customerAdminService.list(listFilter),
     // A group filter waits for the catalogue, so a stale id from a bookmark
@@ -502,6 +506,7 @@ export const CustomerManagementPage: React.FC = () => {
                             <input
                               type="checkbox"
                               checked={allVisibleSelected}
+                              disabled={customersStale}
                               onChange={() => setSelectedIds(allVisibleSelected ? [] : visibleIds)}
                               aria-label={t('customers.groups.bulk.selectAll', 'Select all shown customers')}
                             />
@@ -526,6 +531,7 @@ export const CustomerManagementPage: React.FC = () => {
                               <input
                                 type="checkbox"
                                 checked={selectedIds.includes(c.id)}
+                                disabled={customersStale}
                                 onChange={() => toggleSelected(c.id)}
                                 aria-label={t('customers.groups.bulk.selectOne', 'Select {{email}}', { email: c.email })}
                               />

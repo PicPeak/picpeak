@@ -127,6 +127,9 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
     enabled: canAssignGroups,
   });
   const liveGroups = (catalogue || []).filter((group) => !group.isArchived);
+  // A ticked group archived or deleted while the form is open drops out of
+  // the list; sending its id anyway would refuse every save.
+  const assignableGroupIds = groupIds.filter((id) => liveGroups.some((group) => group.id === id));
 
   // Resolve a title + subtitle that matches the selected mode. The
   // 'both' branch keeps the legacy copy so inline (in-editor) callers
@@ -195,7 +198,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
     }
     setBusy(mode);
     try {
-      const customer = await customerAdminService.createDirect(form.email, buildPrefill(form), groupIds);
+      const customer = await customerAdminService.createDirect(form.email, buildPrefill(form), assignableGroupIds);
       // Always: member counts move with groups, the Ungrouped count without.
       queryClient.invalidateQueries({ queryKey: ['admin-customer-groups'] });
       if (mode === 'invite') {
