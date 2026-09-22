@@ -1292,14 +1292,6 @@ async function startServer() {
       logger.warn('standard contract template check failed at boot:', err.message);
     }
 
-    // The retired free-text PDF font path (#1445) becomes an uploaded font
-    // once; the renderer no longer reads the column.
-    try {
-      await require('./src/services/pdf/uploadedFonts').migrateLegacyFont(logger);
-    } catch (err) {
-      logger.warn('moving the earlier custom PDF font failed at boot:', err.message);
-    }
-
     // Install-from-backup trigger. If `RESTORE_ON_INSTALL` (or
     // `.txt`) exists in the /backup mount AND the DB is empty, run
     // the restore HERE before any admin UI surfaces. Lets admins
@@ -1316,6 +1308,15 @@ async function startServer() {
       }
     } catch (err) {
       logger.warn('Install-from-backup hook threw:', err.message);
+    }
+
+    // The retired free-text PDF font path (#1445) becomes an uploaded font
+    // once; the renderer no longer reads the column. After install-from-backup,
+    // so a restored profile's path is the one moved.
+    try {
+      await require('./src/services/pdf/uploadedFonts').migrateLegacyFont(logger);
+    } catch (err) {
+      logger.warn('moving the earlier custom PDF font failed at boot:', err.message);
     }
 
     // First-run: surface a one-time setup token while no admin account exists.

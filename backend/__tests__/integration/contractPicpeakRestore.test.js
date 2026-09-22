@@ -156,3 +156,23 @@ test('a sent contract, its attachments and its template version come back byte f
     fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
   }
 });
+
+test('a restored profile that still names the retired PDF font path has it moved into the uploaded fonts', async () => {
+  const legacyDir = path.join(process.env.STORAGE_PATH, 'fonts');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.copyFileSync(path.resolve(__dirname, '../../assets/fonts/Jost/400.ttf'), path.join(legacyDir, 'restored.ttf'));
+  await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: 'fonts/restored.ttf' });
+  const { createPicpeak } = require('../../src/services/picpeakExportService');
+  const { importFromPicpeak } = require('../../src/services/picpeakImportService');
+  const { filePath } = await createPicpeak({ includePhotos: false });
+  try {
+    await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: null });
+    const result = await importFromPicpeak({ picpeakPath: filePath, currentAdminId: adminId });
+    expect(result.restored).toBe(true);
+    // Moved during the restore, not at the next restart.
+    expect((await db('business_profile').where({ id: 1 }).first()).pdf_font_ttf_path).toBeNull();
+    expect(await db('pdf_fonts').where({ display_name: 'Custom font (earlier setting)' }).first()).toBeTruthy();
+  } finally {
+    fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
+  }
+});

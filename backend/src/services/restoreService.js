@@ -454,6 +454,17 @@ class RestoreService {
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
 
+      // A restored profile may still carry the retired PDF font path (#1445);
+      // the renderer no longer reads it, so move it into the uploaded fonts
+      // now rather than at the next restart.
+      if (migrationsApplied) {
+        try {
+          await require('./pdf/uploadedFonts').migrateLegacyFont();
+        } catch (err) {
+          this.log('warn', `Moving the restored custom PDF font failed: ${err.message}`);
+        }
+      }
+
       // Faces last (#1163). This used to run in step 6, before the migrations
       // above. On a backup predating migration 187 that meant queueing rows
       // whose external_relpath was still relative to events.external_path
