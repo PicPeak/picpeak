@@ -49,18 +49,10 @@
  */
 
 const fs = require('fs');
-const { getStoragePath } = require('../config/storage');
 const crypto = require('crypto');
-const path = require('path');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-
-// The shared resolver, not a second `STORAGE_PATH || cwd` expression. With
-// STORAGE_PATH unset the two disagree — getStoragePath() falls back
-// module-relative while cwd is normally backend/ — and this diagnostic would
-// then report the business-docs tree as missing while the backup walker, which
-// uses the module-relative root, was backing it up correctly.
-const STORAGE_ROOT = () => getStoragePath();
+const { resolveStoredPath } = require('../utils/storedPath');
 
 /**
  * Every column the verifier walks, declared once so the test suite
@@ -120,7 +112,6 @@ async function verifyDocumentArtefacts(options = {}) {
     : Array.from(new Set(CHECKS.map((c) => c.scope)));
 
   const checksToRun = CHECKS.filter((c) => scopes.includes(c.scope));
-  const storageRoot = STORAGE_ROOT();
 
   const missing = [];
   const hashMismatches = [];
@@ -147,16 +138,15 @@ async function verifyDocumentArtefacts(options = {}) {
     for (const row of rows) {
       totalRows += 1;
       const storedPath = row[check.pathColumn];
-      // Stored paths can be absolute (older rows) or relative-to-
-      // storage (newer rows). Normalize: resolve relative paths
-      // against STORAGE_PATH; absolute paths are used verbatim.
-      const absPath = path.isAbsolute(storedPath)
-        ? storedPath
-        : path.join(storageRoot, storedPath);
+      // Stored paths can be absolute (older rows, possibly recorded by
+      // another install before a restore) or relative-to-storage (newer
+      // rows). storedPath.js places both on this install's storage root;
+      // a value it cannot place there counts as missing.
+      const absPath = resolveStoredPath(storedPath);
 
       let exists = false;
       try {
-        exists = fs.existsSync(absPath);
+        exists = !!absPath && fs.existsSync(absPath);
       } catch (_) { exists = false; }
 
       if (!exists) {

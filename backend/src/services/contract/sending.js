@@ -148,7 +148,8 @@ async function sendContract(id, adminId, { reviewToken = null, collectData = fal
       })),
   };
 
-  const { filePath: pdfPath, sha256: pdfSha256 } = await persistContractPdf(refreshed.contract, sendable.buffer, '', {
+  // The storage-relative path: it is recorded on the contract row.
+  const { storedPath: pdfPath, sha256: pdfSha256 } = await persistContractPdf(refreshed.contract, sendable.buffer, '', {
     kind: 'unsigned',
     theme: ctx.theme,
     issuer: ctx.issuer,

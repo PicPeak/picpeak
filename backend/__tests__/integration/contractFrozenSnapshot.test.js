@@ -20,6 +20,9 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+
 jest.setTimeout(120000);
 
 const parsed = (value) => (typeof value === 'string' ? JSON.parse(value) : value);
@@ -176,7 +179,7 @@ test('editing the source quote after the send changes neither the hash nor the r
   expect(after.rendered_content).toBe(before.rendered_content);
 
   // The PDF that was sent is untouched and still hashes to what was recorded.
-  expect(crypto.createHash('sha256').update(fs.readFileSync(after.pdf_path)).digest('hex'))
+  expect(crypto.createHash('sha256').update(fs.readFileSync(onDisk(after.pdf_path))).digest('hex'))
     .toBe(after.pdf_sha256);
 
   // And a re-render reads the snapshot, not the rewritten quote: the render
@@ -270,7 +273,7 @@ test('a generated document carries its manifest, and says so in the log', async 
   });
   // The file on disk is the one the row names.
   const contract = await contractRow(contractId);
-  expect(fs.existsSync(contract.pdf_path)).toBe(true);
+  expect(fs.existsSync(onDisk(contract.pdf_path))).toBe(true);
 });
 
 test('a contract\'s attachments and free text land in its change history', async () => {

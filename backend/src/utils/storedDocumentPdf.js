@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger');
-const { assertPathInside } = require('./safePath');
+const { assertStoredPathInside } = require('./safePath');
 const { getStoragePath } = require('../config/storage');
 
 /**
@@ -28,7 +28,7 @@ const { getStoragePath } = require('../config/storage');
 function readStoredDocumentPdf(pdfPath, type) {
   if (!pdfPath) return null;
   try {
-    const resolved = assertPathInside(pdfPath, [
+    const resolved = assertStoredPathInside(pdfPath, [
       path.join(getStoragePath(), 'business-docs', type),
       // Documents written before the writers moved to the shared resolver
       // still live under <cwd>/storage (same directory on a stock install).

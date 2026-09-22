@@ -20,6 +20,7 @@ const { PDFDocument } = require('pdf-lib');
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const logger = require('../utils/logger');
+const { toStoredPath } = require('../utils/storedPath');
 const invoiceService = require('./invoiceService');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
 // Tri-state proof-attach resolver — single source of truth lives with the
@@ -194,7 +195,7 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
   const row = {
     source: source || 'upload',
     original_filename: originalFilename || null,
-    file_path: filePath,
+    file_path: toStoredPath(filePath),
     mime_type: mimeType || null,
     file_sha256: fileSha256,
     status: duplicateOfId ? 'duplicate' : 'unsorted',

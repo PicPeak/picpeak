@@ -23,6 +23,9 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+
 // Full migration run + cold-requiring pdfService/emailProcessor is slow
 // under CI load; match the other CRM integration suites.
 jest.setTimeout(120000);
@@ -244,9 +247,9 @@ describe('POST /api/admin/quotes/:id/send', () => {
 
     // PDF persisted inside the isolated storage root
     expect(quote.pdf_path).toBeTruthy();
-    expect(quote.pdf_path.startsWith(path.join(storageRoot, 'quote'))).toBe(true);
-    expect(fs.existsSync(quote.pdf_path)).toBe(true);
-    expect(fs.statSync(quote.pdf_path).size).toBeGreaterThan(0);
+    expect(onDisk(quote.pdf_path).startsWith(path.join(storageRoot, 'quote'))).toBe(true);
+    expect(fs.existsSync(onDisk(quote.pdf_path))).toBe(true);
+    expect(fs.statSync(onDisk(quote.pdf_path)).size).toBeGreaterThan(0);
 
     // Action token row: right quote, future expiry
     const tokenRow = await db('quote_action_tokens').where({ token: res.body.token }).first();
@@ -319,7 +322,7 @@ describe('POST /api/admin/invoices/:id/cancel (Storno mint)', () => {
     const sentStorno = await db('invoices').where({ id: storno.id }).first();
     expect(sentStorno.status).toBe('sent');
     expect(sentStorno.pdf_path).toBeTruthy();
-    expect(fs.existsSync(sentStorno.pdf_path)).toBe(true);
+    expect(fs.existsSync(onDisk(sentStorno.pdf_path))).toBe(true);
     const stornoEmails = await db('email_queue').where({ email_type: 'storno_issued' });
     expect(stornoEmails.length).toBeGreaterThanOrEqual(1);
     expect(stornoEmails[0].recipient_email).toBe(CUSTOMER_EMAIL);
@@ -370,29 +373,29 @@ describe('POST /api/admin/contracts/:id/countersign', () => {
     // The customer's own signature (from the real sign flow in the seed)
     // must survive countersigning — layered, not replaced.
     expect(row.signed_customer_signature_path).toBeTruthy();
-    expect(fs.existsSync(row.signed_customer_signature_path)).toBe(true);
+    expect(fs.existsSync(onDisk(row.signed_customer_signature_path))).toBe(true);
     expect(row.signed_customer_name).toBe('Custo Mer');
 
     // Admin signature image persisted under the storage root
     expect(row.signed_admin_signature_path).toBeTruthy();
-    expect(row.signed_admin_signature_path.startsWith(
+    expect(onDisk(row.signed_admin_signature_path).startsWith(
       path.join(storageRoot, 'contract', 'signatures'),
     )).toBe(true);
-    expect(fs.existsSync(row.signed_admin_signature_path)).toBe(true);
+    expect(fs.existsSync(onDisk(row.signed_admin_signature_path))).toBe(true);
 
     // Stamped, fully-signed PDF written and hashed. The issue spec
     // called this `integrity_hash`; the real column is
     // `signed_pdf_sha256` (plus `pdf_sha256` for the unsigned base).
     expect(row.signed_pdf_render_failed_at).toBeFalsy();
     expect(row.signed_pdf_path).toBeTruthy();
-    expect(fs.existsSync(row.signed_pdf_path)).toBe(true);
+    expect(fs.existsSync(onDisk(row.signed_pdf_path))).toBe(true);
     expect(row.signed_pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(sha256(fs.readFileSync(row.signed_pdf_path))).toBe(row.signed_pdf_sha256);
+    expect(sha256(fs.readFileSync(onDisk(row.signed_pdf_path)))).toBe(row.signed_pdf_sha256);
 
     // BOTH stamps must be embedded in the final document — a regression
     // stamping the admin onto the unsigned base PDF would keep every
     // path/hash assertion above green (codex review of #850 round 2).
-    const imagesPerPage = await countImagesPerPage(row.signed_pdf_path);
+    const imagesPerPage = await countImagesPerPage(onDisk(row.signed_pdf_path));
     const maxImagesOnAPage = Math.max(...imagesPerPage);
     expect(maxImagesOnAPage).toBeGreaterThanOrEqual(2);
 

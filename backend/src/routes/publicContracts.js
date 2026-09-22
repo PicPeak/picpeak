@@ -198,7 +198,8 @@ router.get(
     const fs = require('fs');
     const path = require('path');
     const { assertContractPdfPath } = require('../utils/safePath');
-    const filePath = contract.signed_pdf_path || contract.pdf_path;
+    const { resolveStoredPath } = require('../utils/storedPath');
+    const filePath = resolveStoredPath(contract.signed_pdf_path || contract.pdf_path);
     // Content-Disposition: attachment + Referrer-Policy: no-referrer
     // so the long-lived contract token doesn't leak via referer
     // headers if the customer opens the PDF in an external viewer

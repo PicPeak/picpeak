@@ -32,6 +32,7 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
+const { resolveStoredPath } = require('../utils/storedPath');
 const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -797,7 +798,7 @@ router.get(
     if (!data.contract.pdf_path) {
       return res.status(404).json({ error: 'PDF not yet rendered', code: 'PDF_MISSING' });
     }
-    if (!fs.existsSync(data.contract.pdf_path)) {
+    if (!fs.existsSync(resolveStoredPath(data.contract.pdf_path) || '')) {
       return res.status(404).json({ error: 'PDF file missing from disk', code: 'PDF_MISSING_ON_DISK' });
     }
     // Defence-in-depth: reject any path that resolves outside the
@@ -826,7 +827,7 @@ router.get(
     if (!data.contract.signed_pdf_path) {
       return res.status(404).json({ error: 'No signed PDF uploaded', code: 'SIGNED_PDF_MISSING' });
     }
-    if (!fs.existsSync(data.contract.signed_pdf_path)) {
+    if (!fs.existsSync(resolveStoredPath(data.contract.signed_pdf_path) || '')) {
       return res.status(404).json({ error: 'Signed PDF missing from disk', code: 'SIGNED_PDF_MISSING_ON_DISK' });
     }
     const safePath = assertContractPdfPath(data.contract.signed_pdf_path);

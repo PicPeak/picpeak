@@ -14,6 +14,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { validateFileType } = require('../../utils/fileSecurityUtils');
 const { requireEventOwnership } = require('../../middleware/ownership');
 const { getStoragePath } = require('./helpers');
+const { resolveStoredPath, toStoredPath } = require('../../utils/storedPath');
 
 
 // Configure multer for event logo uploads
@@ -73,7 +74,7 @@ module.exports = (router) => {
       // Delete old logo file if exists
       if (event.hero_logo_path) {
         try {
-          await fs.unlink(event.hero_logo_path);
+          await fs.unlink(resolveStoredPath(event.hero_logo_path) || '');
           logger.debug('Deleted old event logo file', { path: event.hero_logo_path });
         } catch (err) {
           logger.warn('Failed to delete old event logo file', { path: event.hero_logo_path, error: err.message });
@@ -87,7 +88,7 @@ module.exports = (router) => {
         .where('id', id)
         .update({
           hero_logo_url: logoUrl,
-          hero_logo_path: logoPath
+          hero_logo_path: toStoredPath(logoPath)
         });
 
       await logActivity('event_logo_uploaded',
@@ -123,7 +124,7 @@ module.exports = (router) => {
       // Delete logo file if exists
       if (event.hero_logo_path) {
         try {
-          await fs.unlink(event.hero_logo_path);
+          await fs.unlink(resolveStoredPath(event.hero_logo_path) || '');
           logger.debug('Deleted event logo file', { path: event.hero_logo_path });
         } catch (err) {
           logger.warn('Failed to delete event logo file', { path: event.hero_logo_path, error: err.message });

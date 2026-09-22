@@ -8,6 +8,10 @@
  * it was rendered with (including the font and logo files' sha256) and, for
  * contracts, the attachment and signature manifest. The document's own row
  * keeps storing the path (pdf_path, signed_pdf_path…) as before.
+ *
+ * Paths are recorded relative to the storage root (storedPath.js), so the
+ * record survives a restore onto another storage path. persist() returns
+ * both: `path` to use the file now, `storedPath` to record it.
  */
 
 const crypto = require('crypto');
@@ -17,6 +21,7 @@ const { PDFDocument } = require('pdf-lib');
 const { db } = require('../database/db');
 const { getStoragePath } = require('../config/storage');
 const { resolveFontFiles } = require('./pdf/fonts');
+const { toStoredPath } = require('../utils/storedPath');
 
 // Bumped when the renderer's output for the same inputs changes on purpose
 // (4: placeholder values escaped in contract bodies; 5: layout in the theme —
@@ -121,7 +126,7 @@ function writeWithoutOverwriting(root, fileName, buffer) {
  * @param {number} [opts.templateVersionId]
  * @param {number} [opts.parentId]        the generated_documents row this derives from
  * @param {object} [opts.conn]            knex transaction to record inside
- * @returns {Promise<{ path: string, sha256: string, bytes: number, id: number }>}
+ * @returns {Promise<{ path: string, storedPath: string, sha256: string, bytes: number, id: number }>}
  */
 async function persist(opts) {
   const { docType, docId, kind, buffer, fileName } = opts;
@@ -141,7 +146,7 @@ async function persist(opts) {
     doc_type: docType,
     doc_id: docId,
     kind,
-    path: filePath,
+    path: toStoredPath(filePath),
     sha256: digest,
     bytes: buffer.length,
     pages: await countPages(buffer),
@@ -153,7 +158,7 @@ async function persist(opts) {
     generated_at: new Date().toISOString(),
   }).returning('id');
   const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-  return { path: filePath, sha256: digest, bytes: buffer.length, id };
+  return { path: filePath, storedPath: toStoredPath(filePath), sha256: digest, bytes: buffer.length, id };
 }
 
 function parseManifest(value) {

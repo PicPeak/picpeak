@@ -113,7 +113,7 @@ async function sendInvoice(id, adminId, options = {}) {
   const buffer = await pdfService.renderInvoiceToBuffer(ctx);
 
   // Persist the PDF snapshot and record it in generated_documents (#1445).
-  const { path: pdfPath } = await require('../documentArtifactService').persist({
+  const { path: pdfPath, storedPath } = await require('../documentArtifactService').persist({
     docType: 'invoice',
     docId: invoice.id,
     kind: 'sent',
@@ -126,7 +126,7 @@ async function sendInvoice(id, adminId, options = {}) {
 
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   await auditedUpdate(db, 'invoices', { id }, {
-    status: newStatus, sent_at: new Date(), pdf_path: pdfPath, updated_at: new Date(),
+    status: newStatus, sent_at: new Date(), pdf_path: storedPath, updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.send' });
 
   const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
@@ -394,7 +394,7 @@ async function sendStorno(stornoId, adminId) {
   const buffer = await pdfService.renderInvoiceToBuffer(ctx);
 
   // Persist the PDF snapshot alongside regular invoices, recorded (#1445).
-  const { path: pdfPath } = await require('../documentArtifactService').persist({
+  const { path: pdfPath, storedPath } = await require('../documentArtifactService').persist({
     docType: 'invoice',
     docId: storno.id,
     kind: 'storno',
@@ -408,7 +408,7 @@ async function sendStorno(stornoId, adminId) {
   await auditedUpdate(db, 'invoices', { id: stornoId }, {
     status: 'sent',
     sent_at: new Date(),
-    pdf_path: pdfPath,
+    pdf_path: storedPath,
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.storno.send' });
 

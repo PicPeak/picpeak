@@ -19,6 +19,9 @@ const PDFKit = require('pdfkit');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, createPublicToken, buildRouteApp,
 } = require('./helpers/crmDb');
+
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
 // Reads a stored timestamp in whatever shape the engine returns it.
 const { toMillis } = require('../../src/utils/queueTimestamps');
 
@@ -309,12 +312,12 @@ test('the business changes the add-ons of an accepted quote: recorded, re-render
   // Each version keeps its own file: the first acceptance stays on disk.
   expect(before.pdf_path).toMatch(/-accepted\.pdf$/);
   expect(quote.pdf_path).toMatch(/-accepted-2\.pdf$/);
-  expect(require('fs').existsSync(before.pdf_path)).toBe(true);
+  expect(require('fs').existsSync(onDisk(before.pdf_path))).toBe(true);
 
   const customer = await db('customer_accounts').where({ id: customerId }).first();
   const mail = await lastMail('quote_addons_updated', customer.email);
   expect(mail).toEqual(expect.objectContaining({ booked_list: 'Album', removed_list: 'Drone' }));
-  expect(mail.attachments[0].contentPath).toBe(quote.pdf_path);
+  expect(mail.attachments[0].contentPath).toBe(onDisk(quote.pdf_path));
 
   // The same choice again changes nothing and sends nothing.
   const count = (await db('email_queue').where({ email_type: 'quote_addons_updated' })).length;

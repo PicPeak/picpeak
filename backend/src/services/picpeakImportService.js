@@ -22,6 +22,7 @@ const StreamZip = require('node-stream-zip');
 const { pipeline } = require('stream/promises');
 const { Transform, Writable } = require('stream');
 const { assertZipEntriesWithin } = require('../utils/safePath');
+const { STORED_PATH_COLUMNS, relocateStoredPath } = require('../utils/storedPath');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
@@ -458,6 +459,26 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
+// Stored file paths (storedPath.js). A source install recorded generated PDFs,
+// signature images and uploads as absolute paths under ITS storage root; the
+// files land under this install's root (restoreFiles), so each path is
+// rewritten to the storage-relative form, which resolves here whatever the
+// two roots are called. When a path has more than one candidate suffix, the
+// one the archive actually carries under files/ wins. Values that are already
+// relative, or name nothing under a storage folder, are left as they are.
+function relocateStoredPaths(table, rows, filesDir) {
+  const columns = STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column);
+  if (!columns.length) return rows;
+  const inArchive = (rel) => fs.existsSync(path.join(filesDir, ...rel.split('/')));
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const col of columns) {
+      if (typeof out[col] === 'string') out[col] = relocateStoredPath(out[col], inArchive);
+    }
+    return out;
+  });
+}
+
 // Whole-DB replace in one transaction with FK enforcement suspended (pg:
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
@@ -534,6 +555,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         toSerialise = new Set();
       }
       prepared = serialiseJsonColumns(prepared, toSerialise);
+      prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
       await trx.batchInsert(table, prepared, 100);
     }
 
@@ -783,6 +805,7 @@ module.exports = {
   epochToIso,
   coerceForTargetEngine,
   typedColumnsFor,
+  relocateStoredPaths,
   reinjectCurrentAdmin,
   captureOperatorRole,
   preserveOperatorRole,

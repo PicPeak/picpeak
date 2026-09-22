@@ -28,6 +28,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { formatShortDate } = require('../../utils/dateFormatter');
 const { assertContractPdfPath } = require('../../utils/safePath');
+const { resolveStoredPath, toStoredPath } = require('../../utils/storedPath');
 const fieldEncryption = require('../../utils/fieldEncryption');
 const emailProcessor = require('../emailProcessor');
 const pdfStampService = require('../pdfStampService');
@@ -162,7 +163,7 @@ function slotFrom(manifest, key) {
 
 /** The PDF as it stands (the latest signed copy, or the sent one). */
 function currentPdf(contract) {
-  const file = contract.signed_pdf_path || contract.pdf_path;
+  const file = resolveStoredPath(contract.signed_pdf_path || contract.pdf_path);
   if (!file || !fs.existsSync(file)) throw new AppError('The contract PDF is missing', 500, 'PDF_MISSING');
   return fs.readFileSync(assertContractPdfPath(file));
 }
@@ -286,7 +287,7 @@ async function bestEffortLog(type, meta, actor) {
 async function invitationAttachments(contract) {
   const list = [];
   if ((await getAppSetting('crm_contracts_pdf_attachment_enabled')) !== false && contract.pdf_path) {
-    list.push({ filename: `${contract.contract_number}.pdf`, contentPath: contract.pdf_path, contentType: 'application/pdf' });
+    list.push({ filename: `${contract.contract_number}.pdf`, contentPath: resolveStoredPath(contract.pdf_path), contentType: 'application/pdf' });
   }
   const attachments = require('./attachments');
   for (const row of await attachments.loadContractAttachments(contract.id)) {
@@ -1016,7 +1017,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
         signed_at: signedAt,
         name_enc: fieldEncryption.encrypt(name),
         signature_mode: mode,
-        signature_path: signaturePath,
+        signature_path: toStoredPath(signaturePath),
         signature_sha256: imageBytes ? sha256(imageBytes) : null,
         consent_version: CONSENT_VERSION,
         content_sha256: current.rendered_content_sha256 || null,
@@ -1042,7 +1043,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
 
       const customers = all.filter((r) => r.role === 'customer');
       const customersDone = customers.every((r) => r.id === row.id || r.status === 'signed');
-      const contractUpdate = { signed_pdf_path: stored.filePath, signed_pdf_sha256: stored.sha256, updated_at: signedAt };
+      const contractUpdate = { signed_pdf_path: stored.storedPath, signed_pdf_sha256: stored.sha256, updated_at: signedAt };
       if (customersDone) {
         contractUpdate.status = 'signed_by_customer';
         contractUpdate.signed_by_customer_at = signedAt;
@@ -1297,7 +1298,7 @@ async function countersign(contractId, input, { ip = null, userAgent = null, adm
         verified_via: 'admin',
         verified_at: signedAt,
         signature_mode: mode,
-        signature_path: signaturePath,
+        signature_path: toStoredPath(signaturePath),
         signature_sha256: imageBytes ? sha256(imageBytes) : null,
         content_sha256: current.rendered_content_sha256 || null,
         manifest_sha256: manifestSha256,
@@ -1310,8 +1311,8 @@ async function countersign(contractId, input, { ip = null, userAgent = null, adm
         status: 'fully_signed',
         signed_by_admin_at: signedAt,
         signed_admin_name: name,
-        signed_admin_signature_path: signaturePath,
-        signed_pdf_path: stored.filePath,
+        signed_admin_signature_path: toStoredPath(signaturePath),
+        signed_pdf_path: stored.storedPath,
         signed_pdf_sha256: stored.sha256,
         sealed_at: signedAt,
         updated_at: signedAt,
@@ -1429,7 +1430,7 @@ async function sendCompletedEmails(contractId, certificatePath) {
   {
     const contract = await db('contracts').where({ id: contractId }).first();
     const attachments = [{
-      filename: `${contract.contract_number}-signed.pdf`, contentPath: contract.signed_pdf_path, contentType: 'application/pdf',
+      filename: `${contract.contract_number}-signed.pdf`, contentPath: resolveStoredPath(contract.signed_pdf_path), contentType: 'application/pdf',
     }];
     if (certificatePath) {
       attachments.push({ filename: `${contract.contract_number}-certificate.pdf`, contentPath: certificatePath, contentType: 'application/pdf' });

@@ -25,6 +25,9 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+
 jest.setTimeout(120000);
 
 // A json/text column, read the same way on both engines: PostgreSQL hands
@@ -243,7 +246,7 @@ test('the issuer counter-signs last; completion seals it and the chain verifies'
 
   const contract = await db('contracts').where({ id: ids.contract }).first();
   expect(contract.sealed_at).toBeTruthy();
-  const final = fs.readFileSync(contract.signed_pdf_path);
+  const final = fs.readFileSync(onDisk(contract.signed_pdf_path));
   expect(sha256(final)).toBe(contract.signed_pdf_sha256);
   expect((await PDFDocument.load(final)).getPageCount()).toBe(Number(unsigned.pages));
   const certificate = await db('generated_documents').where({ doc_type: 'contract', doc_id: ids.contract, kind: 'audit' }).first();
@@ -333,7 +336,7 @@ test('re-sending a signed v2 contract keeps the signed PDF it has', async () => 
   const contract = await db('contracts').where({ id: ids.contract }).first();
   expect(contract.status).toBe('fully_signed');
   const before = { path: contract.signed_pdf_path, sha: contract.signed_pdf_sha256 };
-  const bytes = fs.readFileSync(before.path);
+  const bytes = fs.readFileSync(onDisk(before.path));
 
   const res = await request(contractsApp).post(`/api/admin/contracts/${ids.contract}/resend-signed`).set(auth);
   expect(res.status).toBe(200);
@@ -341,8 +344,8 @@ test('re-sending a signed v2 contract keeps the signed PDF it has', async () => 
   const after = await db('contracts').where({ id: ids.contract }).first();
   expect(after.signed_pdf_path).toBe(before.path);
   expect(after.signed_pdf_sha256).toBe(before.sha);
-  expect(sha256(fs.readFileSync(after.signed_pdf_path))).toBe(before.sha);
-  expect(fs.readFileSync(after.signed_pdf_path).equals(bytes)).toBe(true);
+  expect(sha256(fs.readFileSync(onDisk(after.signed_pdf_path)))).toBe(before.sha);
+  expect(fs.readFileSync(onDisk(after.signed_pdf_path)).equals(bytes)).toBe(true);
 });
 
 test('a wet-signed upload is refused unless its bytes are a PDF and the signer is the only one', async () => {
@@ -839,7 +842,7 @@ test('the signing certificate can be downloaded once it exists', async () => {
   // The bytes are the artifact that was recorded, not a fresh render.
   const stored = await db('generated_documents')
     .where({ doc_type: 'contract', doc_id: id, kind: 'audit' }).orderBy('id', 'desc').first();
-  expect(sha256(res.body)).toBe(sha256(fs.readFileSync(stored.path)));
+  expect(sha256(res.body)).toBe(sha256(fs.readFileSync(onDisk(stored.path))));
 });
 
 // ---------------------------------------------------------------------

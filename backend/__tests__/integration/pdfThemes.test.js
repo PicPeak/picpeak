@@ -19,6 +19,9 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
+// Stored paths are relative to the storage root (storedPath.js).
+const { toStoredPath: storedAs } = require('../../src/utils/storedPath');
+
 jest.setTimeout(120000);
 
 let db;
@@ -137,7 +140,7 @@ test('a sent quote records its PDF with sha256, pages and the theme it used', as
   expect(rows).toHaveLength(1);
   const [row] = rows;
   expect(row.kind).toBe('sent');
-  expect(row.path).toBe(pdfPath);
+  expect(row.path).toBe(storedAs(pdfPath));
   expect(row.sha256).toBe(crypto.createHash('sha256').update(fs.readFileSync(pdfPath)).digest('hex'));
   expect(Number(row.pages)).toBeGreaterThanOrEqual(1);
   const snapshot = JSON.parse(row.theme_snapshot);

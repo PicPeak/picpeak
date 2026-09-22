@@ -52,6 +52,7 @@ const {
 } = require('../utils/lineItemTotals');
 const { prepareQuoteLineItems } = require('./quoteCatalogService');
 const { readStoredDocumentPdf } = require('../utils/storedDocumentPdf');
+const { resolveStoredPath, toStoredPath } = require('../utils/storedPath');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
 
 // Every write to `quotes.status` goes through assertQuoteTransition below.
@@ -1153,7 +1154,7 @@ async function sendQuote(id, adminId) {
     await auditedUpdate(trx, 'quotes', { id }, {
       status: 'sent',
       sent_at: new Date(),
-      pdf_path: pdfPath,
+      pdf_path: toStoredPath(pdfPath),
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
       // A (re)sent quote is a new offer, so nothing of the previous answer
       // carries over: the add-on choice, the answer itself, the response
@@ -1500,7 +1501,7 @@ async function storeAcceptedQuotePdf(quoteId) {
     const buffer = await pdfService.renderQuoteToBuffer(ctx);
     const pdfPath = await persistDocPdf('quote', data.quote, buffer, await acceptedSuffix(quoteId),
       { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
-    await auditedUpdate(db, 'quotes', { id: quoteId }, { pdf_path: pdfPath },
+    await auditedUpdate(db, 'quotes', { id: quoteId }, { pdf_path: toStoredPath(pdfPath) },
       { source: 'quote.accepted.pdf' });
   } catch (err) {
     // pdf_path is already cleared, so the quote renders live — with the
@@ -1569,7 +1570,7 @@ async function emailAddOnChange(quoteId, change) {
       cc: quote.cc_pdf_email || undefined,
       attachments: quote.pdf_path ? [{
         filename: `${quote.quote_number}.pdf`,
-        contentPath: quote.pdf_path,
+        contentPath: resolveStoredPath(quote.pdf_path),
         contentType: 'application/pdf',
       }] : undefined,
     });
@@ -1951,7 +1952,7 @@ async function adminAcceptQuote(id, adminId) {
         { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
       // Record it like sendQuote does: the accepted quote opens as this
       // file from now on instead of re-rendering (#1451).
-      await auditedUpdate(db, 'quotes', { id }, { pdf_path: pdfPath },
+      await auditedUpdate(db, 'quotes', { id }, { pdf_path: toStoredPath(pdfPath) },
         { actor: adminId, source: 'quote.accept.admin' });
 
       const formatMoney = (minor, currency, locale) =>
