@@ -30,6 +30,7 @@ const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { SECTIONS_ORDER } = require('./helpers');
 const content = require('./content');
+const { DEFAULT_CONSENTS } = require('./consents');
 
 const DEFAULT_SETTING = 'crm_contracts_default_template_id';
 const SYSTEM_NAME = 'Standard contract';
@@ -61,6 +62,8 @@ const contentSha256Of = (blocks) => canonicalSha256({
     body: content.blockBodies(block),
   })),
   attachments: [],
+  // The declarations a signer confirms (#1446), part of what a version is.
+  consents: DEFAULT_CONSENTS,
 });
 
 /** Insert a published system version with these blocks (inside `trx`). */
@@ -73,6 +76,7 @@ async function insertSystemVersion(trx, templateId, versionNumber, blocks, revis
     content_sha256: contentSha256Of(blocks),
     published_at: now,
     system_revision: revision,
+    consents: JSON.stringify(DEFAULT_CONSENTS),
     created_at: now,
     updated_at: now,
   }).returning('id'));

@@ -26,6 +26,7 @@ import { Button, Card, Input, Loading } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { AttachmentListEditor, type AttachmentRow } from '../../../components/admin/AttachmentListEditor';
 import type { IncludedAttachment } from '../../../services/documentAttachments.service';
+import { TemplateConsentsEditor } from './TemplateConsentsEditor';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import {
   contractsService, CONTRACT_SECTIONS, type ContractBlock, type ContractBlockSection,
@@ -33,7 +34,7 @@ import {
 import {
   contractTemplatesService, templateError,
   type ContractLocale, type ContractTemplateDetail, type ContractTemplateDraftPayload, type ContractTemplateItem, type LocaleText,
-  type TemplateFinding, type TemplatePublishCheck,
+  type TemplateFinding, type TemplatePublishCheck, type ContractConsentDefinition,
 } from '../../../services/contractTemplates.service';
 import { TemplateCheckPanel } from './TemplateCheckPanel';
 import { LocaleTextField, fieldClass, iconButton, labelClass } from './TemplateEditorFields';
@@ -62,6 +63,8 @@ interface EditorDraft {
   outro: LocaleText;
   items: DraftItem[];
   attachments: AttachmentRow[];
+  /** The declarations a signer confirms (#1446). */
+  consents: ContractConsentDefinition[];
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'error' | 'conflict';
@@ -69,7 +72,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'offline' | 'error' | 'conflict';
 const AUTOSAVE_MS = 2000;
 
 const EMPTY: EditorDraft = {
-  name: '', description: '', useCase: '', title: '', intro: {}, outro: {}, items: [], attachments: [],
+  name: '', description: '', useCase: '', title: '', intro: {}, outro: {}, items: [], attachments: [], consents: [],
 };
 
 const toAttachmentRows = (list?: IncludedAttachment[]): AttachmentRow[] => (list || []).map((a) => ({ attachmentId: a.attachmentId, delivery: a.delivery, name: a.name, pages: a.pages, bytes: a.bytes, isActive: a.isActive }));
@@ -116,6 +119,7 @@ function draftFromDetail(detail: ContractTemplateDetail): EditorDraft {
       blockArchived: item.kind === 'block' && item.block ? !item.block.isActive : false,
     })),
     attachments: toAttachmentRows(source?.attachments),
+    consents: source?.consents || [],
   };
 }
 
@@ -132,6 +136,7 @@ function payloadOf(draft: EditorDraft): Omit<ContractTemplateDraftPayload, 'lock
       ? { kind: 'block', blockId: item.blockId, body: item.body }
       : { kind: 'text', section: item.section, heading: item.heading.trim() || null, body: item.body })),
     attachments: draft.attachments.map((a) => ({ attachmentId: a.attachmentId, delivery: a.delivery })),
+    consents: draft.consents.map((c) => ({ key: c.key, required: c.required, text: c.text })),
   };
 }
 
@@ -908,6 +913,9 @@ export const ContractTemplateEditorPage: React.FC = () => {
         <AttachmentListEditor idPrefix="contract-template-attachment" value={draft.attachments}
           onChange={(attachments) => setField('attachments', attachments)} readOnly={readOnly} />
       </Card>
+
+      <TemplateConsentsEditor value={draft.consents}
+        onChange={(consents, coalesce) => setField('consents', consents, coalesce)} readOnly={readOnly} />
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" onClick={onLayoutPreview} disabled={busy}>{t('contracts.templates.layoutPreview', 'Preview signing page')}</Button>

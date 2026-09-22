@@ -40,6 +40,7 @@ const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { auditedUpdate } = require('../accountingHistory');
 const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
 const { persistContractPdf, persistSignatureImage } = require('./signatureAssets');
+const consents = require('./consents');
 
 const VERSION = 2;
 const CONSENT_VERSION = 'v1';
@@ -162,9 +163,20 @@ function currentPdf(contract) {
   return fs.readFileSync(assertContractPdfPath(file));
 }
 
-function readSignature(input, requireDrawn) {
+/**
+ * The declarations frozen into a contract's content snapshot at send
+ * (#1446), or null for a contract sent before they existed — that one
+ * still signs with the single "I agree" confirmation.
+ */
+function frozenConsents(contract) {
+  const snapshot = require('./renderContext').parseContentSnapshot(contract.rendered_content);
+  if (!snapshot || !Array.isArray(snapshot.consents) || !snapshot.consents.length) return null;
+  return consents.parseConsents(snapshot.consents);
+}
+
+function readSignature(input, requireDrawn, { needsAccepted = true } = {}) {
   const name = String((input && input.name) || '').trim().slice(0, 255);
-  if ((input && input.accepted) !== true) {
+  if (needsAccepted && (input && input.accepted) !== true) {
     throw new AppError('Confirm that you have read and agree to the contract.', 400, 'TOS_REQUIRED');
   }
   if (!name) throw new AppError('Your name is required.', 400, 'NAME_REQUIRED');
@@ -608,6 +620,12 @@ async function sessionView(sessionToken) {
   // What the signature is bound to (#1446): the content hash, and every
   // attachment as the manifest recorded it at send, with its own hash.
   view.contentSha256 = contract.rendered_content_sha256 || null;
+  // The declarations to confirm, in the contract's language; null for a
+  // contract sent before they were frozen (the single checkbox).
+  const frozen = frozenConsents(contract);
+  view.consents = frozen ? frozen.map((c) => ({
+    key: c.key, required: c.required, version: c.version, text: consents.pickText(c, contract.language || 'de'),
+  })) : null;
   const recorded = await unsignedManifest(contract.id, db);
   view.manifest = {
     sha256: contract.attachment_manifest_sha256 || null,
@@ -678,7 +696,9 @@ async function sessionAttachment(sessionToken, attachmentId) {
 async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   const { signer, contract, session } = await sessionContext(sessionToken);
   const requireDrawn = (await getAppSetting('crm_contracts_require_drawn_signature')) === true;
-  const { name, mode } = readSignature(input, requireDrawn);
+  // With declarations frozen at send, each is answered on its own and
+  // checked below; the single `accepted` flag is the older contracts' path.
+  const { name, mode } = readSignature(input, requireDrawn, { needsAccepted: !frozenConsents(contract) });
   const idempotencyKey = input.idempotencyKey ? String(input.idempotencyKey).slice(0, 64) : null;
   if (signer.status === 'signed') {
     if (idempotencyKey && signer.idempotency_key === idempotencyKey) {
@@ -730,6 +750,10 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
 
       const recorded = await unsignedManifest(contract.id, trx);
       const manifestSha256 = assertUnchangedSinceSend(current, recorded);
+      // Every required declaration accepted, none unknown — against the
+      // wording frozen at send, which the check above just re-hashed.
+      const frozen = frozenConsents(current);
+      const given = frozen ? consents.answers(frozen, input.consents) : null;
       const base = currentPdf(current);
       const slot = slotFrom(recorded, row.slot_key);
       const stamped = await pdfStampService.stampSlot({
@@ -762,6 +786,17 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
         updated_at: signedAt,
       });
       if (!updated) throw new AppError('You have already signed this contract.', 409, 'ALREADY_SIGNED');
+      if (given) {
+        await trx('contract_signer_consents').insert(given.map((answer) => ({
+          signer_id: row.id,
+          consent_key: answer.key,
+          version: answer.version,
+          text_sha256: answer.textSha256,
+          accepted: answer.accepted,
+          accepted_at: answer.accepted ? signedAt.toISOString() : null,
+          created_at: signedAt.toISOString(),
+        })));
+      }
 
       const customers = all.filter((r) => r.role === 'customer');
       const customersDone = customers.every((r) => r.id === row.id || r.status === 'signed');
@@ -782,6 +817,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
         payload: {
           mode, via, slot: row.slot_key, documentSha256: sha256(base),
           contentSha256: current.rendered_content_sha256 || null, manifestSha256, consentVersion: CONSENT_VERSION,
+          ...(given ? { consents: given } : {}),
         },
       });
       return { customersDone };
@@ -1057,6 +1093,19 @@ async function issueCertificate(contractId, signedSha) {
     const profile = (await db('business_profile').where({ id: 1 }).first()) || {};
     const fontOptions = await stampFontOptions();
     const recorded = await unsignedManifest(contractId, db);
+    // Each signer's answers to the declarations, with the wording's hash.
+    const answered = new Map();
+    for (const answer of await db('contract_signer_consents')
+      .whereIn('signer_id', rows.map((row) => row.id)).orderBy('id', 'asc')) {
+      const list = answered.get(Number(answer.signer_id)) || [];
+      list.push({
+        key: answer.consent_key,
+        version: Number(answer.version),
+        textSha256: answer.text_sha256,
+        accepted: answer.accepted === true || answer.accepted === 1 || answer.accepted === '1',
+      });
+      answered.set(Number(answer.signer_id), list);
+    }
     const { renderSigningCertificate } = require('../pdf/signingCertificate');
     const { buffer } = await renderSigningCertificate({
       contract,
@@ -1068,6 +1117,7 @@ async function issueCertificate(contractId, signedSha) {
         signatureMode: row.signature_mode,
         signedAt: row.signed_at,
         documentSha256: row.document_sha256,
+        consents: answered.get(Number(row.id)) || [],
       })),
       events,
       hashes: {

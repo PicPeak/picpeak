@@ -102,6 +102,11 @@ router.put(
     body('attachments.*.attachmentId').optional().isInt({ min: 1 }),
     body('attachments.*.delivery').optional().isIn(['merged', 'separate']),
     body('sourceVersionNumber').optional().isInt({ min: 1 }).toInt(),
+    // The declarations a signer confirms (#1446); the service validates keys and wording.
+    body('consents').optional().isArray({ max: 8 }),
+    body('consents.*.key').optional().isString().isLength({ max: 40 }),
+    body('consents.*.required').optional().isBoolean(),
+    body('consents.*.text').optional().isObject(),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);

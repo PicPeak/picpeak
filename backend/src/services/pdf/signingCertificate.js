@@ -110,6 +110,12 @@ function renderSigningCertificate({
         row(t(locale, 'cert_method'), signer.signatureMode ? t(locale, `signature_method_${signer.signatureMode}`) : '');
         row(t(locale, 'cert_signed_at'), iso(signer.signedAt));
         row(t(locale, 'cert_document_sha'), signer.documentSha256, { mono: true });
+        // One row per declaration (#1446): key and version, the answer, and
+        // the start of the wording's hash.
+        for (const consent of signer.consents || []) {
+          row(`${t(locale, 'cert_consent')} ${consent.key} · v${consent.version}`,
+            `${t(locale, consent.accepted ? 'cert_consent_accepted' : 'cert_consent_declined')} · ${String(consent.textSha256 || '').slice(0, 16)}`);
+        }
         doc.moveDown(0.4);
       });
 

@@ -86,7 +86,7 @@ const nextIp = () => {
 };
 const asSigner = (req) => req.set('X-Forwarded-For', nextIp());
 const sign = (session, body) => asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
-  .set('X-Signing-Session', session).send({ accepted: true, ...body });
+  .set('X-Signing-Session', session).send({ consents: [{ key: 'acceptance', accepted: true }], ...body });
 
 async function newContract() {
   const { contract } = await ok(request(contractsApp).post('/api/admin/contracts').set(auth).send({ customerAccountId: customerId }));

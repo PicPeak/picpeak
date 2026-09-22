@@ -9,7 +9,7 @@
  *   GET  /session                       the contract, for the verified signer
  *   GET  /session/pdf                   the PDF as it stands
  *   GET  /session/attachments/:id       one of the contract's attachments
- *   POST /session/sign                  { name, mode, signatureDataUrl?, accepted, idempotencyKey? }
+ *   POST /session/sign                  { name, mode, signatureDataUrl?, consents | accepted, idempotencyKey? }
  *   POST /session/decline               { reason? }
  *   POST /session/upload-signed-pdf     a wet-signed PDF, when uploads are allowed
  *
@@ -117,7 +117,12 @@ router.post(
   signLimiter,
   [
     body('name').isString().isLength({ min: 1, max: 255 }),
-    body('accepted').isBoolean(),
+    // The single confirmation of contracts sent before declarations were
+    // frozen; newer ones answer each declaration in `consents` (#1446).
+    body('accepted').optional().isBoolean(),
+    body('consents').optional().isArray({ max: 8 }),
+    body('consents.*.key').optional().isString().isLength({ max: 40 }),
+    body('consents.*.accepted').optional().isBoolean(),
     body('mode').optional().isIn(['drawn', 'typed']),
     body('signatureDataUrl').optional({ nullable: true }).isString(),
     body('idempotencyKey').optional({ nullable: true }).isString().isLength({ max: 64 }),

@@ -8220,6 +8220,18 @@
       "draftFromVersion": "Neuer Entwurf aus dieser Version",
       "draftFromVersionConfirm": "Den aktuellen Entwurf durch eine Kopie von Version {{version}} ersetzen?",
       "draftCreated": "Entwurf aus Version {{version}} erstellt",
+      "consents": {
+        "title": "Erklärungen, die unterzeichnende Personen bestätigen",
+        "help": "Jede Erklärung ist ein eigenes Kästchen auf der Unterzeichnungsseite, nie vorausgewählt. Erforderliche müssen angehakt werden, um zu unterzeichnen. Der Wortlaut gehört zum Unterzeichneten: Wird er geändert, erhält die Erklärung beim Speichern des Entwurfs eine neue Version; bereits versandte Verträge behalten den Wortlaut, mit dem sie versandt wurden.",
+        "none": "Fügen Sie vor dem Veröffentlichen mindestens eine erforderliche Erklärung hinzu.",
+        "key": "Schlüssel",
+        "required": "Zum Unterzeichnen erforderlich",
+        "version": "Version {{version}}",
+        "remove": "Erklärung {{number}} entfernen",
+        "textDe": "Wortlaut (Deutsch)",
+        "textEn": "Wortlaut (Englisch)",
+        "add": "Erklärung hinzufügen"
+      },
       "check": {
         "run": "Prüfen",
         "failed": "Die Prüfung konnte nicht ausgeführt werden.",
@@ -8245,7 +8257,8 @@
           "FONT_MISSING": "Die Schrift „{{key}}“ konnte nicht geladen werden; das PDF verwendet Helvetica.",
           "LOGO_MISSING": "Das Logo wurde nicht gefunden; das PDF hat kein Logo.",
           "PAGE_COUNT_HIGH": "Der Vertrag umfasst {{pages}} Seiten.",
-          "RENDER_FAILED": "Der Vertrag konnte nicht als PDF erstellt werden."
+          "RENDER_FAILED": "Der Vertrag konnte nicht als PDF erstellt werden.",
+          "CONSENT_REQUIRED_MISSING": "Fügen Sie vor dem Veröffentlichen mindestens eine erforderliche Erklärung hinzu."
         }
       },
       "placeholdersHint": "Platzhalter werden beim Erstellen eines Vertrags ausgefüllt. Nutzen Sie „Platzhalter einfügen“ neben einem Text; die Vorschau zeigt sie mit Beispieldaten.",
@@ -9033,6 +9046,12 @@
       "declining": "Wird abgelehnt…",
       "confirm": "Vertrag ablehnen",
       "uncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob Ihre Ablehnung gespeichert wurde. Laden Sie diese Seite neu, um den Stand des Vertrags zu sehen, bevor Sie es erneut versuchen."
+    },
+    "consents": {
+      "legend": "Ihre Erklärungen",
+      "required": "(erforderlich)",
+      "optional": "(freiwillig)",
+      "missing": "Setzen Sie bei jeder erforderlichen Erklärung ein Häkchen, um zu unterzeichnen."
     }
   }
 }

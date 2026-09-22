@@ -625,6 +625,12 @@ const SignForm: React.FC<SignFormProps> = ({
   const [name, setName] = useState(draft?.name || c.signing.name || '');
   const [mode, setMode] = useState<SignatureMode>(draft?.mode || 'drawn');
   const [accepted, setAccepted] = useState(false);
+  // The declarations frozen at send (#1446), each ticked on its own and
+  // never pre-ticked. A contract sent before they existed has none and
+  // keeps the single confirmation above.
+  const declarations = c.consents && c.consents.length ? c.consents : null;
+  const [answers, setAnswers] = useState<Record<string, boolean>>({});
+  const missingRequired = declarations ? declarations.filter((d) => d.required && !answers[d.key]) : [];
   const [error, setError] = useState<string | null>(null);
   // A submission whose response never arrived: we cannot say whether it
   // landed, so the page asks the server instead of inviting a blind retry.
@@ -661,6 +667,9 @@ const SignForm: React.FC<SignFormProps> = ({
         return t('contractSigning.sign.errors.tooLarge', 'Your drawn signature is too large to save. Clear it and draw it again.');
       case 'TOS_REQUIRED':
         return t('publicContract.errorAccept', 'Please tick the acceptance box.');
+      case 'CONSENT_REQUIRED':
+      case 'CONSENT_UNKNOWN':
+        return t('contractSigning.consents.missing', 'Tick every required declaration to sign.');
       case 'NAME_REQUIRED':
         return t('publicContract.errorName', 'Please enter your name.');
       default:
@@ -677,7 +686,9 @@ const SignForm: React.FC<SignFormProps> = ({
       name: name.trim(),
       mode: effectiveMode,
       signatureDataUrl: effectiveMode === 'drawn' ? signatureDataUrl : null,
-      accepted: true,
+      ...(declarations
+        ? { consents: declarations.map((d) => ({ key: d.key, accepted: answers[d.key] === true })) }
+        : { accepted: true as const }),
       idempotencyKey: signingIdempotencyKey(scope),
     }),
     onSuccess: (result) => {
@@ -743,8 +754,10 @@ const SignForm: React.FC<SignFormProps> = ({
         : t('contractSigning.sign.errors.drawOrType', 'Draw your signature in the box, or switch to typing your name.'));
       return;
     }
-    if (!accepted) {
-      setError(t('publicContract.errorAccept', 'Please tick the acceptance box.'));
+    if (declarations ? missingRequired.length > 0 : !accepted) {
+      setError(declarations
+        ? t('contractSigning.consents.missing', 'Tick every required declaration to sign.')
+        : t('publicContract.errorAccept', 'Please tick the acceptance box.'));
       return;
     }
     setError(null);
@@ -813,15 +826,48 @@ const SignForm: React.FC<SignFormProps> = ({
           </div>
         )}
 
-        <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-          <input
-            type="checkbox"
-            checked={accepted}
-            onChange={(e) => setAccepted(e.target.checked)}
-            className="mt-1"
-          />
-          <span>{t('publicContract.acceptCheckbox', 'I have read this contract and agree to be bound by its terms.')}</span>
-        </label>
+        {declarations ? (
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium mb-1">
+              {t('contractSigning.consents.legend', 'Your declarations')}
+            </legend>
+            {declarations.map((d) => (
+              <label key={d.key} className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={answers[d.key] === true}
+                  onChange={(e) => setAnswers((cur) => ({ ...cur, [d.key]: e.target.checked }))}
+                  aria-required={d.required}
+                  className="mt-1"
+                />
+                <span>
+                  {d.text}
+                  {' '}
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {d.required
+                      ? t('contractSigning.consents.required', '(required)')
+                      : t('contractSigning.consents.optional', '(optional)')}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : (
+          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="mt-1"
+            />
+            <span>{t('publicContract.acceptCheckbox', 'I have read this contract and agree to be bound by its terms.')}</span>
+          </label>
+        )}
+        {declarations && missingRequired.length > 0 && (
+          <p id="contract-signing-consents-missing" className="text-xs text-neutral-600 dark:text-neutral-400">
+            {t('contractSigning.consents.missing', 'Tick every required declaration to sign.')}
+          </p>
+        )}
 
         {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
@@ -859,7 +905,12 @@ const SignForm: React.FC<SignFormProps> = ({
           </div>
         ) : (
           <div className="flex justify-end">
-            <button type="submit" disabled={signMutation.isPending} className={PRIMARY_BUTTON}>
+            <button
+              type="submit"
+              disabled={signMutation.isPending || missingRequired.length > 0}
+              aria-describedby={missingRequired.length > 0 ? 'contract-signing-consents-missing' : undefined}
+              className={PRIMARY_BUTTON}
+            >
               {signMutation.isPending
                 ? t('contractSigning.sign.submitting', 'Signing…')
                 : t('publicContract.submit', 'Sign contract')}

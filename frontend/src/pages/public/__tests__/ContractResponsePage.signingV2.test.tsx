@@ -432,3 +432,56 @@ it('shows the frozen totals even when no line item was counted', async () => {
   // No lines, so no line table header.
   expect(screen.queryByRole('columnheader', { name: 'Description' })).toBeNull();
 });
+
+// ---------------------------------------------------------------------
+// Slice 5 of the #1446 plan — the declarations frozen at send, each on
+// its own, never pre-ticked.
+// ---------------------------------------------------------------------
+
+it('asks for each frozen declaration, unticked, and sends every answer', async () => {
+  const user = userEvent.setup();
+  window.sessionStorage.setItem(
+    'picpeak.contractSigning.session.portal',
+    JSON.stringify({ sessionToken: SESSION_TOKEN, expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+  const view = sessionView({ verifiedVia: 'portal' });
+  session.mockResolvedValue({
+    contract: {
+      ...view.contract,
+      consents: [
+        { key: 'acceptance', required: true, version: 1, text: 'I agree to be bound.' },
+        { key: 'terms', required: true, version: 2, text: 'I accept the general terms.' },
+        { key: 'image_rights', required: false, version: 1, text: 'You may show my photos.' },
+      ],
+    },
+  });
+  sign.mockResolvedValue({ status: 'sent', signedAt: '2026-09-14T10:00:00Z' });
+  renderAt('/contract/signing');
+
+  await screen.findByRole('heading', { name: 'Wedding contract' });
+  const boxes = ['I agree to be bound.', 'I accept the general terms.', 'You may show my photos.']
+    .map((text) => screen.getByRole('checkbox', { name: new RegExp(text) }));
+  for (const box of boxes) expect(box).not.toBeChecked();
+  // The single old confirmation is gone.
+  expect(screen.queryByRole('checkbox', { name: /I have read this contract/ })).toBeNull();
+
+  await user.click(screen.getByRole('radio', { name: 'Type my name' }));
+  const submit = screen.getByRole('button', { name: 'Sign contract' });
+  expect(submit).toBeDisabled();
+  expect(submit).toHaveAccessibleDescription('Tick every required declaration to sign.');
+
+  await user.click(boxes[0]);
+  expect(submit).toBeDisabled();
+  await user.click(boxes[1]);
+  expect(submit).toBeEnabled();
+  await user.click(submit);
+
+  expect(await screen.findByText('Thank you — you have signed the contract.')).toBeInTheDocument();
+  const [, payload] = sign.mock.calls[0];
+  expect(payload.accepted).toBeUndefined();
+  expect(payload.consents).toEqual([
+    { key: 'acceptance', accepted: true },
+    { key: 'terms', accepted: true },
+    { key: 'image_rights', accepted: false },
+  ]);
+});

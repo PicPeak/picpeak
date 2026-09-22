@@ -581,3 +581,34 @@ it('opened from a stale cache, an untouched editor takes the newer server copy a
   await user.click(screen.getByRole('button', { name: 'Save draft' }));
   await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({ lockVersion: 5, title: 'Neuer Titel' })));
 });
+
+it('edits the declarations a signer confirms and saves them with the draft (#1446)', async () => {
+  const user = userEvent.setup();
+  const base = detail();
+  get.mockResolvedValue({
+    ...base,
+    draft: {
+      ...base.draft,
+      consents: [{ key: 'acceptance', required: true, version: 1, text: { en: 'I agree.', de: 'Einverstanden.' } }],
+    },
+  });
+  renderPage();
+  await screen.findByText('Leistung');
+  expect(screen.getByDisplayValue('Einverstanden.')).toBeInTheDocument();
+  expect(screen.getByText('Version 1')).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Add declaration' }));
+  const keys = screen.getAllByLabelText('Key');
+  expect(keys[1]).toHaveValue('declaration_2');
+  await user.clear(keys[1]);
+  await user.type(keys[1], 'Image Rights');
+  await user.type(screen.getAllByLabelText('Wording (German)')[1], 'Fotos dürfen gezeigt werden.');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    consents: [
+      { key: 'acceptance', required: true, text: { en: 'I agree.', de: 'Einverstanden.' } },
+      { key: 'image_rights', required: false, text: { de: 'Fotos dürfen gezeigt werden.' } },
+    ],
+  })));
+});

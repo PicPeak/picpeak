@@ -76,6 +76,16 @@ export interface ContractTemplateVersion {
   items?: ContractTemplateItem[];
   /** PDFs sent with contracts from this version, in order. */
   attachments?: IncludedAttachment[];
+  /** The declarations a signer confirms (#1446). */
+  consents?: ContractConsentDefinition[];
+}
+
+/** One declaration a signer confirms; the server decides `version`. */
+export interface ContractConsentDefinition {
+  key: string;
+  required: boolean;
+  version?: number;
+  text: { en?: string; de?: string };
 }
 
 /** Where a copy came from, and whether the source has a newer version (never applied by itself). */
@@ -114,6 +124,7 @@ export interface ContractTemplateDraftPayload {
   attachments?: AttachmentSelection[];
   /** "Reviewed up to this version" of the source template. */
   sourceVersionNumber?: number;
+  consents?: Array<Pick<ContractConsentDefinition, 'key' | 'required' | 'text'>>;
 }
 
 /** One problem the pre-publication check found, and where it is. */

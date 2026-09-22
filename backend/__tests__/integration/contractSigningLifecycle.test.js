@@ -26,6 +26,7 @@ let customerEmail;
 let token;
 let contractsApp;
 let signingApp;
+let templatesApp;
 
 const prevCwd = process.cwd();
 const auth = { get Authorization() { return `Bearer ${token}`; } };
@@ -63,7 +64,7 @@ const nextIp = () => {
 };
 const asSigner = (req) => req.set('X-Forwarded-For', nextIp());
 const sign = (session, body) => asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
-  .set('X-Signing-Session', session).send({ accepted: true, ...body });
+  .set('X-Signing-Session', session).send({ consents: [{ key: 'acceptance', accepted: true }], ...body });
 const sessionView = async (session) => (await ok(asSigner(request(signingApp).get('/api/public/contract-signing/session'))
   .set('X-Signing-Session', session))).contract;
 
@@ -139,6 +140,7 @@ beforeAll(async () => {
 
   contractsApp = buildRouteApp('/api/admin/contracts', require('../../src/routes/adminContracts'));
   signingApp = buildRouteApp('/api/public/contract-signing', require('../../src/routes/publicContractSigning'));
+  templatesApp = buildRouteApp('/api/admin/contract-templates', require('../../src/routes/adminContractTemplates'));
 }, 120000);
 
 afterAll(async () => {
@@ -403,5 +405,189 @@ describe('lifecycle', () => {
     const row = contracts.find((c) => c.id === id);
     expect(row.status).toBe('sent');
     expect(row.signerProgress).toEqual({ signed: 1, total: 2 });
+  });
+});
+
+// ---------------------------------------------------------------------
+// Slice 5 — versioned, hashed consents
+// ---------------------------------------------------------------------
+
+const ACCEPT = { key: 'acceptance', accepted: true };
+const TERMS = { en: 'I accept the general terms.', de: 'Ich akzeptiere die AGB.' };
+const IMAGES = { en: 'You may show photos of me on your website.', de: 'Sie dürfen Fotos von mir auf Ihrer Website zeigen.' };
+
+/** A published template with its own declarations; returns its ids. */
+async function templateWithConsents(list) {
+  const [block] = await db('contract_blocks').where({ is_active: true }).orderBy('id').limit(1);
+  const tplUrl = '/api/admin/contract-templates';
+  const created = await ok(request(templatesApp).post(tplUrl).set(auth).send({ name: `Consents ${Date.now()}-${Math.random()}` }));
+  const saved = await ok(request(templatesApp).put(`${tplUrl}/${created.template.id}/draft`).set(auth).send({
+    lockVersion: created.template.lockVersion,
+    items: [{ kind: 'block', blockId: block.id }],
+    consents: list,
+  }));
+  const published = await ok(request(templatesApp).post(`${tplUrl}/${created.template.id}/publish`).set(auth)
+    .send({ lockVersion: saved.template.lockVersion }));
+  return { templateId: created.template.id, versionId: published.published.id, published };
+}
+
+const withTerms = [
+  { key: 'acceptance', required: true, text: { en: 'I agree to be bound.', de: 'Ich bin einverstanden.' } },
+  { key: 'terms', required: true, text: TERMS },
+  { key: 'image_rights', required: false, text: IMAGES },
+];
+
+describe('consents', () => {
+  test('a template\'s declarations are versioned by their wording and part of its hash', async () => {
+    const tplUrl = '/api/admin/contract-templates';
+    const { templateId, published } = await templateWithConsents(withTerms);
+    expect(published.published.consents.map((c) => [c.key, c.required, c.version])).toEqual([
+      ['acceptance', true, 1], ['terms', true, 1], ['image_rights', false, 1],
+    ]);
+
+    // Same wording keeps its version; changed wording or `required` counts up.
+    const detail = await ok(request(templatesApp).get(`${tplUrl}/${templateId}`).set(auth));
+    const saved = await ok(request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: detail.template.lockVersion,
+      consents: [
+        withTerms[0],
+        { key: 'terms', required: true, text: { ...TERMS, en: 'I accept the general terms of business.' } },
+        { key: 'image_rights', required: true, text: IMAGES },
+        { key: 'privacy', required: false, text: { en: 'Privacy notice read.' } },
+      ],
+    }));
+    expect(saved.draft.consents.map((c) => [c.key, c.version])).toEqual([
+      ['acceptance', 1], ['terms', 2], ['image_rights', 2], ['privacy', 1],
+    ]);
+    const republished = await ok(request(templatesApp).post(`${tplUrl}/${templateId}/publish`).set(auth)
+      .send({ lockVersion: saved.template.lockVersion }));
+    expect(republished.contentSha256).not.toBe(published.contentSha256);
+
+    // A key twice, or a template nobody has to confirm anything in, is refused.
+    const again = await ok(request(templatesApp).get(`${tplUrl}/${templateId}`).set(auth));
+    const twice = await request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: again.template.lockVersion, consents: [withTerms[1], withTerms[1]],
+    });
+    expect(twice.status).toBe(400);
+    const optionalOnly = await ok(request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: again.template.lockVersion, consents: [withTerms[2]],
+    }));
+    const refused = await request(templatesApp).post(`${tplUrl}/${templateId}/publish`).set(auth)
+      .send({ lockVersion: optionalOnly.template.lockVersion });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toMatch(/declaration/);
+  });
+
+  test('the migration gives a version without declarations today\'s wording, once', async () => {
+    const version = await db('contract_template_versions').orderBy('id').first();
+    await db('contract_template_versions').where({ id: version.id }).update({ consents: null });
+    const migration = require('../../migrations/core/252_contract_consents');
+    await migration.up(db);
+    await migration.up(db);
+    const [entry] = parsed((await db('contract_template_versions').where({ id: version.id }).first()).consents);
+    expect(entry).toEqual({
+      key: 'acceptance', required: true, version: 1,
+      text: {
+        en: 'I have read this contract and agree to be bound by its terms.',
+        de: 'Ich habe diesen Vertrag gelesen und erkläre mich mit seinen Bedingungen einverstanden.',
+      },
+    });
+  });
+
+  test('the send freezes the declarations into the hashed snapshot, and the signer answers each', async () => {
+    const { versionId } = await templateWithConsents(withTerms);
+    const { id, session } = await sentWithSession({ templateVersionId: versionId });
+    const contract = await db('contracts').where({ id }).first();
+    const snapshot = parsed(contract.rendered_content);
+    expect(snapshot.consents.map((c) => c.key)).toEqual(['acceptance', 'terms', 'image_rights']);
+
+    // Shown in the contract's language, and never pre-checked (nothing is).
+    const view = await sessionView(session);
+    expect(view.consents).toEqual([
+      { key: 'acceptance', required: true, version: 1, text: 'Ich bin einverstanden.' },
+      { key: 'terms', required: true, version: 1, text: TERMS.de },
+      { key: 'image_rights', required: false, version: 1, text: IMAGES.de },
+    ]);
+
+    // A required one missing: refused, and nothing is written.
+    const missing = await sign(session, { name: 'Anna Muster', mode: 'typed', consents: [ACCEPT] });
+    expect(missing.status).toBe(400);
+    expect(missing.body.code).toBe('CONSENT_REQUIRED');
+    expect(missing.body.details.missingKeys).toEqual(['terms']);
+    const unknown = await sign(session, { name: 'Anna Muster', mode: 'typed', consents: [ACCEPT, { key: 'terms', accepted: true }, { key: 'marketing', accepted: true }] });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.code).toBe('CONSENT_UNKNOWN');
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    expect(signer.status).toBe('invited');
+    expect(await db('contract_signer_consents').where({ signer_id: signer.id })).toHaveLength(0);
+    expect(await eventTypes(id)).not.toContain('signed');
+
+    // The optional one declined is recorded as declined.
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed', consents: [ACCEPT, { key: 'terms', accepted: true }, { key: 'image_rights', accepted: false }] }));
+    const rows = await db('contract_signer_consents').where({ signer_id: signer.id }).orderBy('id');
+    const consentsService = require('../../src/services/contract/consents');
+    expect(rows.map((r) => [r.consent_key, Number(r.version), !!r.accepted, r.text_sha256])).toEqual([
+      ['acceptance', 1, true, consentsService.textSha256(snapshot.consents[0])],
+      ['terms', 1, true, consentsService.textSha256({ text: TERMS })],
+      ['image_rights', 1, false, consentsService.textSha256({ text: IMAGES })],
+    ]);
+    expect(rows[2].accepted_at).toBeNull();
+    const signed = await db('contract_signing_events').where({ contract_id: id, event_type: 'signed' }).first();
+    expect(parsed(signed.payload).consents.map((c) => [c.key, c.accepted])).toEqual([
+      ['acceptance', true], ['terms', true], ['image_rights', false],
+    ]);
+    expect(parsed(signed.payload).consentVersion).toBe('v1');
+
+    // The certificate carries one row per declaration.
+    const certificate = require('../../src/services/pdf/signingCertificate');
+    const spy = jest.spyOn(certificate, 'renderSigningCertificate');
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+    const [{ signers }] = spy.mock.calls[0];
+    spy.mockRestore();
+    expect(signers[0].consents.map((c) => [c.key, c.accepted])).toEqual([
+      ['acceptance', true], ['terms', true], ['image_rights', false],
+    ]);
+  });
+
+  test('changing the template after send changes nothing the signer confirms', async () => {
+    const tplUrl = '/api/admin/contract-templates';
+    const { templateId, versionId } = await templateWithConsents(withTerms);
+    const { id, session } = await sentWithSession({ templateVersionId: versionId });
+    const before = await db('contracts').where({ id }).first();
+
+    const detail = await ok(request(templatesApp).get(`${tplUrl}/${templateId}`).set(auth));
+    const saved = await ok(request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: detail.template.lockVersion,
+      consents: [{ key: 'acceptance', required: true, text: { en: 'Different.', de: 'Anders.' } }],
+    }));
+    await ok(request(templatesApp).post(`${tplUrl}/${templateId}/publish`).set(auth).send({ lockVersion: saved.template.lockVersion }));
+
+    const view = await sessionView(session);
+    expect(view.consents.map((c) => c.text)).toEqual(['Ich bin einverstanden.', TERMS.de, IMAGES.de]);
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed', consents: [ACCEPT, { key: 'terms', accepted: true }] }));
+    const after = await db('contracts').where({ id }).first();
+    expect(after.rendered_content_sha256).toBe(before.rendered_content_sha256);
+  });
+
+  test('a contract sent before declarations were frozen still signs with the single confirmation', async () => {
+    const { canonicalSha256 } = require('../../src/utils/canonicalJson');
+    const { id, session } = await sentWithSession();
+    // What a snapshot from before this change looks like: no `consents`.
+    const contract = await db('contracts').where({ id }).first();
+    const snapshot = parsed(contract.rendered_content);
+    delete snapshot.consents;
+    await db('contracts').where({ id }).update({
+      rendered_content: JSON.stringify(snapshot), rendered_content_sha256: canonicalSha256(snapshot),
+    });
+
+    expect((await sessionView(session)).consents).toBeNull();
+    const unconfirmed = await sign(session, { name: 'Anna Muster', mode: 'typed', consents: undefined, accepted: false });
+    expect(unconfirmed.status).toBe(400);
+    expect(unconfirmed.body.code).toBe('TOS_REQUIRED');
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed', consents: undefined, accepted: true }));
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    expect(signer.status).toBe('signed');
+    expect(signer.consent_version).toBe('v1');
+    expect(await db('contract_signer_consents').where({ signer_id: signer.id })).toHaveLength(0);
   });
 });

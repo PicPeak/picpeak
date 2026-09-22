@@ -29,6 +29,7 @@ const { ALLOWED_SECTIONS } = require('../contractBlocksService');
 const { DEFAULT_SETTING, ensureDefaultTemplate, getDefaultTemplateId } = require('./defaultTemplate');
 const content = require('./content');
 const attachments = require('./attachments');
+const consents = require('./consents');
 const { insertBeforeLastPage } = require('../pdf/merge');
 const crypto = require('crypto');
 
@@ -117,6 +118,8 @@ function versionToApi(version, items, attachmentRows) {
     publishedBy: version.published_by_admin_id && version.publisher_username
       ? { id: version.published_by_admin_id, username: version.publisher_username }
       : null,
+    // The declarations a signer confirms (#1446).
+    consents: consents.parseConsents(version.consents) || [],
     ...(items ? { items: items.map(itemToApi) } : {}),
     ...(attachmentRows ? { attachments: attachmentRows.map(attachments.inclusionToApi) } : {}),
   };
@@ -329,6 +332,7 @@ async function ensureDraft(trx, template, fromVersion = null) {
     title: source ? source.title : null,
     intro_text: source ? source.intro_text : null,
     outro_text: source ? source.outro_text : null,
+    consents: source && source.consents ? source.consents : JSON.stringify(consents.DEFAULT_CONSENTS),
     created_at: now,
     updated_at: now,
   }).returning('id'));
@@ -348,7 +352,8 @@ async function createTemplate(payload, adminId) {
       created_at: now, updated_at: now,
     }).returning('id'));
     await trx('contract_template_versions').insert({
-      template_id: templateId, version_number: 1, status: 'draft', created_at: now, updated_at: now,
+      template_id: templateId, version_number: 1, status: 'draft',
+      consents: JSON.stringify(consents.DEFAULT_CONSENTS), created_at: now, updated_at: now,
     });
     return templateId;
   });
@@ -375,6 +380,9 @@ async function duplicateTemplate(id, payload, adminId) {
     const versionId = insertedId(await trx('contract_template_versions').insert({
       template_id: templateId, version_number: 1, status: 'draft',
       title: from ? from.title : null, intro_text: from ? from.intro_text : null, outro_text: from ? from.outro_text : null,
+      // Wording carries over; versions restart with the new template.
+      consents: JSON.stringify((consents.parseConsents(from && from.consents) || consents.DEFAULT_CONSENTS)
+        .map((c) => ({ ...c, version: 1 }))),
       created_at: now, updated_at: now,
     }).returning('id'));
     if (from) {
@@ -431,6 +439,14 @@ async function saveDraft(id, payload, adminId) {
       changed.push(...Object.keys(meta));
     }
     const draft = await ensureDraft(trx, template);
+    if (payload.consents !== undefined) {
+      // Versions are decided against the published wording: unchanged keeps
+      // its number, changed wording or `required` counts it up.
+      const published = await trx('contract_template_versions').where({ template_id: id, status: 'published' }).first('consents');
+      versionUpdates.consents = JSON.stringify(consents.sanitizeConsents(
+        payload.consents, consents.parseConsents(published && published.consents) || [],
+      ));
+    }
     if (Object.keys(versionUpdates).length) {
       await trx('contract_template_versions').where({ id: draft.id }).update({ ...versionUpdates, updated_at: now });
       changed.push(...Object.keys(versionUpdates));
@@ -506,6 +522,9 @@ async function publishTemplate(id, { lockVersion }, adminId) {
       err.details = { findings: archivedNow };
       throw err;
     }
+    // The declarations a signer confirms (#1446); checkTemplate refused a
+    // draft without a required one, and a save since would have failed the lock.
+    const draftConsents = consents.parseConsents(draft.consents);
 
     // Freeze the blocks' bodies and hash the resolved content.
     const now = new Date();
@@ -534,6 +553,8 @@ async function publishTemplate(id, { lockVersion }, adminId) {
       items: resolved,
       // Attachments are bound to the version by their bytes.
       attachments: versionAttachments.map((a) => ({ position: a.position, delivery: a.delivery, sha256: a.sha256 })),
+      // And the declarations a signer confirms, by their wording (#1446).
+      consents: draftConsents,
     });
 
     await trx('contract_template_versions').where({ template_id: id, status: 'published' })
@@ -915,6 +936,11 @@ async function checkTemplate(id) {
       const missing = LOCALES_CHECKED.find((locale) => !has(locale));
       findings.push(finding('LOCALE_INCOMPLETE', 'warning', `"${label}" has no ${missing.toUpperCase()} text`, { itemPosition, locale: missing }));
     }
+  }
+
+  // The declarations a signer confirms (#1446): at least one required.
+  for (const message of consents.publishProblems(consents.parseConsents(draft.consents))) {
+    findings.push(finding('CONSENT_REQUIRED_MISSING', 'error', message));
   }
 
   for (const row of await attachments.loadVersionAttachments(draft.id)) {

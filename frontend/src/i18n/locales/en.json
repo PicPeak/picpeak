@@ -8219,6 +8219,18 @@
       "draftFromVersion": "New draft from this version",
       "draftFromVersionConfirm": "Replace the current draft with a copy of version {{version}}?",
       "draftCreated": "Draft created from version {{version}}",
+      "consents": {
+        "title": "Declarations the signer confirms",
+        "help": "Each one is a separate checkbox on the signing page, never pre-ticked. Required ones must be ticked to sign. The wording is part of what is signed: changing it gives the declaration a new version when the draft is saved, and contracts already sent keep the wording they went out with.",
+        "none": "Add at least one required declaration before publishing.",
+        "key": "Key",
+        "required": "Required to sign",
+        "version": "Version {{version}}",
+        "remove": "Remove declaration {{number}}",
+        "textDe": "Wording (German)",
+        "textEn": "Wording (English)",
+        "add": "Add declaration"
+      },
       "check": {
         "run": "Check",
         "failed": "The check could not be run.",
@@ -8244,7 +8256,8 @@
           "FONT_MISSING": "The font \"{{key}}\" could not be loaded; the PDF falls back to Helvetica.",
           "LOGO_MISSING": "The logo could not be found; the PDF has no logo.",
           "PAGE_COUNT_HIGH": "The contract runs to {{pages}} pages.",
-          "RENDER_FAILED": "The contract could not be rendered as a PDF."
+          "RENDER_FAILED": "The contract could not be rendered as a PDF.",
+          "CONSENT_REQUIRED_MISSING": "Add at least one required declaration before publishing."
         }
       },
       "placeholdersHint": "Placeholders are filled in when a contract is made. Use “Insert placeholder” next to a text; the preview shows them with sample data.",
@@ -9032,6 +9045,12 @@
       "declining": "Declining…",
       "confirm": "Decline contract",
       "uncertain": "We couldn't reach the server, so we can't say whether your refusal was recorded. Reload this page to see where the contract stands before trying again."
+    },
+    "consents": {
+      "legend": "Your declarations",
+      "required": "(required)",
+      "optional": "(optional)",
+      "missing": "Tick every required declaration to sign."
     }
   }
 }

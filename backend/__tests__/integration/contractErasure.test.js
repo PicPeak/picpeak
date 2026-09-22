@@ -115,7 +115,7 @@ beforeAll(async () => {
   const session = await verifiedSession(state.signed.link);
   await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
     .set('X-Signing-Session', session)
-    .send({ name: 'Anna Muster', mode: 'typed', accepted: true }));
+    .send({ name: 'Anna Muster', mode: 'typed', consents: [{ key: 'acceptance', accepted: true }] }));
   state.signedSession = session;
   state.unsignedSession = await verifiedSession(state.unsigned.link);
 
@@ -134,7 +134,7 @@ beforeAll(async () => {
   state.signedCancelled = await sentContract();
   await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
     .set('X-Signing-Session', await verifiedSession(state.signedCancelled.link))
-    .send({ name: 'Anna Muster', mode: 'typed', accepted: true }));
+    .send({ name: 'Anna Muster', mode: 'typed', consents: [{ key: 'acceptance', accepted: true }] }));
   await db('contracts').where({ id: state.signedCancelled.id }).update({ status: 'cancelled' });
 
   const contractRow = (id) => db('contracts').where({ id }).first();

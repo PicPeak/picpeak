@@ -59,18 +59,38 @@ export interface SigningState {
   signers: SigningProgressEntry[];
 }
 
+/** A declaration frozen into the contract at send, in its language (#1446). */
+export interface SigningConsent {
+  key: string;
+  required: boolean;
+  version: number;
+  text: string;
+}
+
 export interface SigningSessionContract extends PublicContractView {
   attachments: Array<{ id: number; name: string; delivery: 'merged' | 'separate'; pages: number }>;
   allowPdfUpload: boolean;
   requireDrawnSignature: boolean;
   signing: SigningState;
+  /** sha256 of the content frozen at send (#1446). */
+  contentSha256?: string | null;
+  /** Every attachment as recorded at send, with its own hash (#1446). */
+  manifest?: {
+    sha256: string | null;
+    attachments: Array<{ attachmentId: number; name: string; delivery: 'merged' | 'separate'; pages: number; sha256: string }>;
+  };
+  /** The declarations to confirm; null for a contract sent before they were frozen. */
+  consents?: SigningConsent[] | null;
 }
 
 export interface SignPayload {
   name: string;
   mode: SignatureMode;
   signatureDataUrl?: string | null;
-  accepted: true;
+  /** Contracts sent before declarations were frozen: the single confirmation. */
+  accepted?: true;
+  /** Each frozen declaration and whether it was confirmed (#1446). */
+  consents?: Array<{ key: string; accepted: boolean }>;
   idempotencyKey: string;
 }
 
