@@ -150,7 +150,12 @@ test('a document rendered with an uploaded font is byte-stable, and an archived 
 
   // The record of a generated document names the font files by hash.
   const { _internal } = require('../../src/services/documentArtifactService');
-  expect(JSON.parse(_internal.themeSnapshot(theme, {})).fontSha256.body).toBe(sha256(regular));
+  const recorded = JSON.parse(_internal.themeSnapshot(theme, {}));
+  expect(recorded.fontSha256.body).toBe(sha256(regular));
+  // By id and hash, never by this server's file path.
+  expect(recorded.uploadedFontId).toBe(font.id);
+  expect(recorded.fontFiles).toBeUndefined();
+  expect(JSON.stringify(recorded)).not.toContain(process.env.STORAGE_PATH);
 
   // Archived: the theme still names it, the render falls back, the check says so.
   const archived = await request(app).post(`/api/admin/pdf-themes/fonts/${font.id}/archive`).set(auth);

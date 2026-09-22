@@ -196,6 +196,24 @@ function sanitizeThemeSettings(input, { availableFamilies = [] } = {}) {
   return out;
 }
 
+/**
+ * A stored settings row, re-checked on the way out (#1445): a value the
+ * current rules refuse — a hand-edited row, a bound tightened since — is
+ * dropped key by key instead of reaching the renderer. `availableFamilies`
+ * should include archived uploaded fonts, so a theme still naming one keeps
+ * it (and the document falls back visibly, FONT_MISSING).
+ */
+function sanitizeStoredSettings(stored, { availableFamilies = [] } = {}) {
+  const src = parseSettings(stored);
+  const out = {};
+  for (const [key, value] of Object.entries(src)) {
+    try {
+      Object.assign(out, sanitizeThemeSettings({ [key]: value }, { availableFamilies }));
+    } catch (_) { /* dropped */ }
+  }
+  return out;
+}
+
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -318,6 +336,7 @@ module.exports = {
   BUILT_IN_BY_SCOPE,
   parseSettings,
   sanitizeThemeSettings,
+  sanitizeStoredSettings,
   resolveTheme,
   builtInTheme,
 };

@@ -45,8 +45,13 @@ async function countPages(buffer) {
 function themeSnapshot(theme, issuer) {
   if (!theme) return null;
   const fonts = resolveFontFiles({ fontFamily: theme.fontFamily, fontFiles: theme.fontFiles });
+  // An uploaded font is recorded by its id and the files' sha256, never by
+  // its path on this server (#1445).
+  const { fontFiles, ...rest } = theme; // eslint-disable-line no-unused-vars
+  const uploaded = /^upload-(\d+)$/.exec(String(theme.fontFamily || ''));
   return JSON.stringify({
-    ...theme,
+    ...rest,
+    ...(uploaded ? { uploadedFontId: Number(uploaded[1]) } : {}),
     fontSha256: fonts
       ? { body: fileSha256(fonts.body), bold: fileSha256(fonts.bold), italic: fileSha256(fonts.italic) }
       : null,

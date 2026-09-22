@@ -163,3 +163,12 @@ describe('layout (#1445)', () => {
     expect(codes({ bodySize: 9, layout: { margins: { left: 30, right: 25 } } })).not.toContain('LINE_TOO_LONG');
   });
 });
+
+test('a stored row is re-checked on read: values the rules refuse are dropped key by key (#1445)', () => {
+  const stored = JSON.stringify({
+    titleSize: 99, colors: { accent: '#123456' }, bodySize: 11, layout: { margins: { left: 5 } }, fontFamily: 'Gone', footer: { mode: 'none' },
+  });
+  expect(theme.sanitizeStoredSettings(stored, { availableFamilies: ['Jost'] }))
+    .toEqual({ colors: { accent: '#123456' }, bodySize: 11, footer: { mode: 'none', text: '' } });
+  expect(theme.sanitizeStoredSettings('{"fontFamily":"upload-3"}', { availableFamilies: ['upload-3'] })).toEqual({ fontFamily: 'upload-3' });
+});
