@@ -121,6 +121,13 @@ services:
       - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
+      # Malware scanner for customer documents (#1444). Empty = no scanner;
+      # uploads then wait for an admin's review. With the opt-in `clamav`
+      # profile below, set CLAMAV_HOST=clamav. See docs/ENVIRONMENT_VARIABLES.md.
+      - CLAMAV_HOST=${CLAMAV_HOST:-}
+      - CLAMAV_PORT=${CLAMAV_PORT:-3310}
+      - CLAMAV_TIMEOUT_MS=${CLAMAV_TIMEOUT_MS:-30000}
+      - CLAMAV_MAX_BYTES=${CLAMAV_MAX_BYTES:-26214400}
     # No `user:` directive — as of #484, the container starts as root,
     # chowns the bind mounts to nodejs (UID 1001), then drops privileges
     # via su-exec. PUID/PGID env vars are no longer read; if you need
@@ -259,6 +266,24 @@ services:
     networks:
       - picpeak-network
 
+  # Optional malware scanner for customer documents (#1444). Gated behind the
+  # `clamav` profile — a plain `docker compose up -d` does NOT start it; opt
+  # in with `docker compose --profile clamav up -d` and set CLAMAV_HOST=clamav
+  # in .env. ClamAV holds its signature database in memory: plan for about
+  # 1 GB of RAM, and a few minutes on first start while it downloads the
+  # signatures (uploads stay pending meanwhile). No host port: only the
+  # backend reaches it on picpeak-network.
+  clamav:
+    image: clamav/clamav:stable
+    container_name: picpeak-clamav
+    restart: unless-stopped
+    profiles:
+      - clamav
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks:
+      - picpeak-network
+
   frontend:
     build:
       context: ./frontend
@@ -303,6 +328,10 @@ volumes:
   picpeak-db-secret:
     driver: local
   picpeak-redis-secret:
+    driver: local
+  # ClamAV signature database (opt-in `clamav` profile). Re-downloadable;
+  # needs no backup.
+  clamav-db:
     driver: local
 
 networks:

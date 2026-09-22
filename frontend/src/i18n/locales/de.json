@@ -705,7 +705,12 @@
       "counts": "{{pending}} warten auf Prüfung, {{rejected}} abgelehnt.",
       "hint": "Kunden-Uploads bleiben für den Kunden gesperrt, bis sie im Kundendatensatz als unbedenklich markiert sind. Abgelehnte Dateien werden nach Ablauf der Aufbewahrungsfrist gelöscht.",
       "abuse": "Letzte 24 Stunden: {{forbidden}} Zugriffsversuche auf fremde Dokumente, {{quota}} wegen Speicherplatz abgewiesene Uploads, {{rate}} Treffer des Upload-Limits.",
-      "abuseAlert": "{{count}} Kunde(n) haben die Alarmschwelle überschritten; die Geschäftsadresse wurde per E-Mail informiert."
+      "abuseAlert": "{{count}} Kunde(n) haben die Alarmschwelle überschritten; die Geschäftsadresse wurde per E-Mail informiert.",
+      "scannerOff": "Virenscanner: nicht eingerichtet. Kunden-Uploads warten auf eine manuelle Prüfung.",
+      "scannerOk": "Virenscanner (ClamAV): erreichbar.",
+      "scannerDown": "Virenscanner (ClamAV): nicht erreichbar. Neue Uploads bleiben ausstehend, bis er wieder läuft; der stündliche Nachscan holt sie nach.",
+      "scannerLastSuccess": "Letzter erfolgreicher Scan: {{date}}.",
+      "scannerLastError": "Letztes Problem: {{error}} ({{date}})."
     },
     "evidenceKey": {
       "title": "Schlüssel für Signaturnachweise",
@@ -3829,7 +3834,8 @@
       "customerDocumentForbiddenAccess": "Ein Kunde hat ein Dokument eines anderen Kunden angefordert",
       "customerDocumentQuotaExceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
       "customerDocumentRateLimited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
-      "customerDocumentForbiddenAccessAlert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)"
+      "customerDocumentForbiddenAccessAlert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)",
+      "customerDocumentScanCleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4152,7 +4158,8 @@
       "customer_document_forbidden_access": "Ein Kunde hat ein Dokument eines anderen Kunden angefordert",
       "customer_document_quota_exceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
       "customer_document_rate_limited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
-      "customer_document_forbidden_access_alert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)"
+      "customer_document_forbidden_access_alert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)",
+      "customer_document_scan_cleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden"
     },
     "people": {
       "title": "Personen in dieser Galerie",

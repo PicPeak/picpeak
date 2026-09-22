@@ -1163,6 +1163,18 @@ async function startServer() {
     // Customer documents retention (#1444): delete long-rejected files and
     // remove the bytes of deleted ones once the retention window elapses.
     require('./src/services/customerDocumentRetentionService').startCustomerDocumentRetention();
+    // Malware scanner for customer documents (#1444): clamd over TCP, only
+    // when CLAMAV_HOST is set. Without it uploads stay pending until an admin
+    // reviews them. The hourly re-scan picks up rows left pending while the
+    // scanner was down; it does nothing while no scanner is registered.
+    {
+      const clamd = require('./src/services/scanners/clamd');
+      if (clamd.isConfigured()) {
+        require('./src/services/documentScanService').registerScanner(clamd.scan);
+        logger.info('Customer documents: clamd scanner registered');
+      }
+      require('./src/services/customerDocumentRescanService').startCustomerDocumentRescan();
+    }
     // Custom-resolution download archives (#858) are disposable renditions —
     // sweep them once their TTL passes so .download-cache doesn't grow forever.
     // Best-effort, as before the scheduler refactor: a transient DB error on

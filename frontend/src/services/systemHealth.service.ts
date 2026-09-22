@@ -41,6 +41,11 @@ export interface SystemHealthFailures {
     rejected: number;
     /** Last 24 hours (#1444). */
     abuse?: { forbiddenAccess: number; quotaExceeded: number; rateLimited: number; customersOverThreshold: number };
+    /** clamd (#1444). lastError is a category (timeout, refused, …), never the host. */
+    scanner?: {
+      configured: boolean; reachable: boolean; lastSuccessAt: string | null;
+      lastError: string | null; lastErrorAt?: string | null;
+    };
   };
   /** Where the key for signing evidence comes from (#1446) — never the key itself. */
   evidenceKey?: {

@@ -211,6 +211,29 @@ export const SystemHealthPage: React.FC = () => {
                 {t('systemHealth.customerDocuments.hint',
                   'Customer uploads stay unavailable to them until they are marked clean on the customer record. Rejected files are deleted after the retention period.')}
               </p>
+              {data.customerDocuments.scanner && (
+                <p
+                  className={`text-sm mt-2 ${data.customerDocuments.scanner.configured && !data.customerDocuments.scanner.reachable
+                    ? 'text-red-700 dark:text-red-400' : 'text-neutral-600 dark:text-neutral-400'}`}
+                >
+                  {!data.customerDocuments.scanner.configured
+                    ? t('systemHealth.customerDocuments.scannerOff', 'Malware scanner: not configured. Customer uploads wait for a manual review.')
+                    : data.customerDocuments.scanner.reachable
+                      ? t('systemHealth.customerDocuments.scannerOk', 'Malware scanner (ClamAV): reachable.')
+                      : t('systemHealth.customerDocuments.scannerDown', 'Malware scanner (ClamAV): not reachable. New uploads stay pending until it is back; the hourly re-scan catches up.')}
+                  {data.customerDocuments.scanner.lastSuccessAt && (
+                    <>{' '}{t('systemHealth.customerDocuments.scannerLastSuccess', 'Last successful scan: {{date}}.', {
+                      date: fmtDateTime(data.customerDocuments.scanner.lastSuccessAt),
+                    })}</>
+                  )}
+                  {data.customerDocuments.scanner.lastError && data.customerDocuments.scanner.lastErrorAt && (
+                    <>{' '}{t('systemHealth.customerDocuments.scannerLastError', 'Last problem: {{error}} ({{date}}).', {
+                      error: data.customerDocuments.scanner.lastError,
+                      date: fmtDateTime(data.customerDocuments.scanner.lastErrorAt),
+                    })}</>
+                  )}
+                </p>
+              )}
               {data.customerDocuments.abuse && (
                 <p
                   className={`text-sm mt-2 ${data.customerDocuments.abuse.customersOverThreshold > 0

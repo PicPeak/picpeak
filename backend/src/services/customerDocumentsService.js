@@ -473,6 +473,7 @@ async function createDocument({
         sha256,
         status,
         reviewed_at: status === 'clean' ? now : null,
+        scanned_at: verdict === 'clean' ? now : null,
         reviewed_by_admin_id: status === 'clean' && uploaderType === 'admin' ? uploaderId : null,
         // Only a clean document can be shared (setShared refuses anything
         // else), so a share asked for on an upload the scanner left pending

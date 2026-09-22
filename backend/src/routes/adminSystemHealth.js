@@ -288,6 +288,8 @@ router.get(
       ? {
         ...await require('../services/customerDocumentsService').getReviewCounts(),
         abuse: await require('../services/customerDocumentAbuse').last24hCounts(),
+        // Configured / reachable / last success (slice 8). Never the host.
+        scanner: await require('../services/scanners/clamd').health(),
       }
       : null;
     // Where the key for signing evidence comes from (#1446): the env var, the

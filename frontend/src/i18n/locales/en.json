@@ -705,7 +705,12 @@
       "counts": "{{pending}} awaiting review, {{rejected}} rejected.",
       "hint": "Customer uploads stay unavailable to them until they are marked clean on the customer record. Rejected files are deleted after the retention period.",
       "abuse": "Last 24 hours: {{forbidden}} attempts on other customers' documents, {{quota}} uploads refused for quota, {{rate}} rate-limit hits.",
-      "abuseAlert": "{{count}} customer(s) passed the alert threshold; the business address was emailed."
+      "abuseAlert": "{{count}} customer(s) passed the alert threshold; the business address was emailed.",
+      "scannerOff": "Malware scanner: not configured. Customer uploads wait for a manual review.",
+      "scannerOk": "Malware scanner (ClamAV): reachable.",
+      "scannerDown": "Malware scanner (ClamAV): not reachable. New uploads stay pending until it is back; the hourly re-scan catches up.",
+      "scannerLastSuccess": "Last successful scan: {{date}}.",
+      "scannerLastError": "Last problem: {{error}} ({{date}})."
     },
     "evidenceKey": {
       "title": "Signing evidence key",
@@ -3357,7 +3362,8 @@
       "customerDocumentForbiddenAccess": "A customer asked for another customer's document",
       "customerDocumentQuotaExceeded": "A customer upload was refused: storage full",
       "customerDocumentRateLimited": "A customer hit the document upload limit",
-      "customerDocumentForbiddenAccessAlert": "Repeated attempts on other customers' documents ({{count}} in an hour)"
+      "customerDocumentForbiddenAccessAlert": "Repeated attempts on other customers' documents ({{count}} in an hour)",
+      "customerDocumentScanCleared": "A customer document passed the security check"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -3682,7 +3688,8 @@
       "customer_document_forbidden_access": "A customer asked for another customer's document",
       "customer_document_quota_exceeded": "A customer upload was refused: storage full",
       "customer_document_rate_limited": "A customer hit the document upload limit",
-      "customer_document_forbidden_access_alert": "Repeated attempts on other customers' documents ({{count}} in an hour)"
+      "customer_document_forbidden_access_alert": "Repeated attempts on other customers' documents ({{count}} in an hour)",
+      "customer_document_scan_cleared": "A customer document passed the security check"
     },
     "people": {
       "title": "People in this gallery",

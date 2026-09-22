@@ -735,3 +735,113 @@ describe('document abuse signals', () => {
     expect(counts.customersOverThreshold).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slice 8 — clamd scanner and the hourly re-scan
+// ---------------------------------------------------------------------------
+
+describe('malware scanner (fake clamd)', () => {
+  const { fakeClamd } = require('./helpers/fakeClamd');
+  // Required lazily: loading a service at collect time would open the
+  // database before bootCrmDb has pointed it at this suite's file.
+  let documentScanService;
+  let runCustomerDocumentRescan;
+  let fake;
+  let me;
+  let INFECTED;
+
+  const useClamd = () => {
+    process.env.CLAMAV_HOST = '127.0.0.1';
+    process.env.CLAMAV_PORT = String(fake.port);
+    process.env.CLAMAV_TIMEOUT_MS = '3000';
+    documentScanService.registerScanner(require('../../src/services/scanners/clamd').scan);
+  };
+
+  beforeAll(async () => {
+    documentScanService = require('../../src/services/documentScanService');
+    ({ runCustomerDocumentRescan } = require('../../src/services/customerDocumentRescanService'));
+    const { PDFName, PDFString } = require('pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.addPage([200, 200]);
+    doc.catalog.set(PDFName.of('Note'), PDFString.of('EICAR-STANDARD-ANTIVIRUS-TEST-FILE'));
+    // No object streams: the marker has to sit in the bytes uncompressed.
+    INFECTED = Buffer.from(await doc.save({ useObjectStreams: false }));
+    fake = await fakeClamd();
+    me = await newCustomer();
+  });
+
+  afterAll(async () => {
+    documentScanService.registerScanner(null);
+    delete process.env.CLAMAV_HOST;
+    delete process.env.CLAMAV_PORT;
+    delete process.env.CLAMAV_TIMEOUT_MS;
+    await fake.close();
+  });
+
+  afterEach(() => documentScanService.registerScanner(null));
+
+  it('clears a clean upload and refuses an infected one, logging the rejection', async () => {
+    useClamd();
+    const clean = await uploadAs(me, 'scanned.pdf');
+    expect(clean.status).toBe(201);
+    expect(clean.body.document).toMatchObject({ status: 'clean', downloadable: true });
+
+    const infected = await asCustomer(request(customerApp).post('/api/customer/documents'), me)
+      .attach('file', INFECTED, { filename: 'invoice.pdf', contentType: 'application/pdf' });
+    expect(infected.status).toBe(422);
+    expect(infected.body.code).toBe('DOCUMENT_REJECTED_BY_SCAN');
+    const logged = (await db('activity_logs').where({ activity_type: 'customer_document_scan_rejected' }))
+      .map((r) => meta(r.metadata)).filter((m) => m.customerId === me);
+    expect(logged).toHaveLength(1);
+    expect(await db('customer_documents').where({ customer_account_id: me, original_name: 'invoice.pdf' }).first())
+      .toBeUndefined();
+  });
+
+  it('re-scans rows left pending and promotes each exactly once under two concurrent runs', async () => {
+    // Uploaded while no scanner was registered: pending.
+    const a = (await uploadAs(me, 'later-clean.pdf')).body.document.id;
+    const b = (await uploadAs(me, 'later-clean-2.pdf')).body.document.id;
+    // Swap the stored bytes of a third row for the infected file.
+    const c = (await uploadAs(me, 'later-infected.pdf')).body.document.id;
+    const stored = await db('customer_documents').where({ id: c }).first('storage_key');
+    require('fs').writeFileSync(require('path').join(process.env.STORAGE_PATH, stored.storage_key), INFECTED);
+
+    useClamd();
+    const [r1, r2] = await Promise.all([runCustomerDocumentRescan(), runCustomerDocumentRescan()]);
+    expect(r1.clean + r2.clean).toBeGreaterThanOrEqual(2);
+
+    const rows = await db('customer_documents').whereIn('id', [a, b, c]).orderBy('id');
+    expect(rows.map((r) => r.status)).toEqual(['clean', 'clean', 'rejected']);
+    expect(rows.every((r) => r.scanned_at && !r.scan_claimed_until)).toBe(true);
+    const cleared = (await db('activity_logs').where({ activity_type: 'customer_document_scan_cleared' }))
+      .map((r) => meta(r.metadata)).filter((m) => [a, b].includes(m.documentId));
+    expect(cleared).toHaveLength(2);
+    const rejected = (await db('activity_logs').where({ activity_type: 'customer_document_scan_rejected' }))
+      .map((r) => meta(r.metadata)).filter((m) => m.documentId === c);
+    expect(rejected).toHaveLength(1);
+
+    // A second run finds nothing left to do.
+    expect(await runCustomerDocumentRescan()).toEqual({ clean: 0, rejected: 0, pending: 0 });
+  });
+
+  it('lets an admin decision made during the scan win', async () => {
+    const id = (await uploadAs(me, 'decided.pdf')).body.document.id;
+    const original = require('../../src/services/scanners/clamd').scan;
+    // The admin rejects while the scan is in flight.
+    documentScanService.registerScanner(async (p) => {
+      await asAdmin(request(adminApp).post(adminDoc(me, id, '/review'))).send({ status: 'rejected', note: 'No' });
+      return original(p);
+    });
+    await runCustomerDocumentRescan();
+    const row = await db('customer_documents').where({ id }).first();
+    expect(row.status).toBe('rejected');
+    expect(row.review_note).toBe('No');
+    expect(row.scan_claimed_until).toBeFalsy();
+  });
+
+  it('does nothing while no scanner is registered', async () => {
+    const id = (await uploadAs(me, 'waits.pdf')).body.document.id;
+    expect(await runCustomerDocumentRescan()).toEqual({ clean: 0, rejected: 0, pending: 0 });
+    expect((await db('customer_documents').where({ id }).first()).status).toBe('pending');
+  });
+});
