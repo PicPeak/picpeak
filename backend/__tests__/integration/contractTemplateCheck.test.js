@@ -278,3 +278,29 @@ test('a block archived after the check but before the publish commits is still r
     await db('contract_blocks').where({ id: other.id }).update({ is_active: true });
   }
 });
+
+test('an attachment archived after the check but before the publish commits is still refused', async () => {
+  const doc = await PDFDocument.create();
+  doc.addPage([204, 204]);
+  const attachment = (await ok(request(attachmentsApp).post('/api/admin/document-attachments')
+    .set(auth).field('name', 'Late archive')
+    .attach('file', Buffer.from(await doc.save()), { filename: 'late.pdf', contentType: 'application/pdf' }))).attachment;
+  const saved = await templateWith({
+    items: [text({ de: 'a', en: 'a' })],
+    attachments: [{ attachmentId: attachment.id, delivery: 'merged' }],
+  });
+  const templates = require('../../src/services/contract/templates');
+  const pdfService = require('../../src/services/pdfService');
+  const real = pdfService.renderContractWithSlots;
+  const spy = jest.spyOn(pdfService, 'renderContractWithSlots').mockImplementation(async (ctx) => {
+    await db('document_attachments').where({ id: attachment.id }).update({ is_active: false });
+    return real(ctx);
+  });
+  try {
+    await expect(templates.publishTemplate(saved.template.id, { lockVersion: saved.template.lockVersion }, adminId))
+      .rejects.toMatchObject({ statusCode: 400, code: 'TEMPLATE_INVALID' });
+    expect((await db('contract_templates').where({ id: saved.template.id }).first()).current_version).toBeNull();
+  } finally {
+    spy.mockRestore();
+  }
+});

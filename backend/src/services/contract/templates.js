@@ -489,15 +489,21 @@ async function publishTemplate(id, { lockVersion }, adminId) {
     const items = await loadItems(draft.id, trx);
     if (!items.length) throw invalid('Add at least one clause before publishing');
     const versionAttachments = await attachments.loadVersionAttachments(draft.id, trx);
-    // Checked again under the lock: a block archived in the library between
-    // the check above and this transaction must not be frozen into a version.
-    const archivedNow = items.filter((item) => item.kind === 'block' && !truthy(item.block_is_active));
-    if (archivedNow.length) {
-      const err = invalid(archivedNow.map((item) => `"${item.block_name}" is archived in the clause library`).join(' · '));
-      err.details = {
-        findings: archivedNow.map((item) => finding('BLOCK_ARCHIVED', 'error',
+    // Checked again under the lock: a block or attachment archived in its
+    // library between the check above and this transaction must not be
+    // frozen into a version. Archiving bumps neither the template's lock nor
+    // anything the claim above reads.
+    const archivedNow = [
+      ...items.filter((item) => item.kind === 'block' && !truthy(item.block_is_active))
+        .map((item) => finding('BLOCK_ARCHIVED', 'error',
           `"${item.block_name}" is archived in the clause library`, { itemPosition: ensureInt(item.position) })),
-      };
+      ...versionAttachments.filter((row) => !truthy(row.is_active))
+        .map((row) => finding('ATTACHMENT_ARCHIVED', 'error',
+          `"${row.name}" is archived in the attachment library`, { attachmentId: row.attachment_id })),
+    ];
+    if (archivedNow.length) {
+      const err = invalid(archivedNow.map((f) => f.message).join(' · '));
+      err.details = { findings: archivedNow };
       throw err;
     }
 
