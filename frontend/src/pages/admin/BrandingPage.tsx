@@ -13,6 +13,7 @@ import { useFeatureEnabled, useFeatureFlags } from '../../contexts/FeatureFlagsC
 import { CustomerDashboardBrandingCard } from '../../components/admin/CustomerDashboardBrandingCard';
 import { PdfTypographyCard } from '../../components/admin/PdfTypographyCard';
 import { PdfThemeCard } from '../../components/admin/PdfThemeCard';
+import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
 
@@ -1182,6 +1183,7 @@ export const BrandingPage: React.FC = () => {
         </div>
 
         {(flags.quotes || flags.bills || flags.taxReport || flags.contracts) && <PdfThemeCard />}
+        {(flags.quotes || flags.bills || flags.taxReport || flags.contracts) && <PdfFontsCard />}
 
         {/* Event-Specific Themes Info */}
         <Card padding="md" className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800">

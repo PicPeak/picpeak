@@ -1510,10 +1510,12 @@ async function appendEpcQr(doc, ctx) {
 /** Register the theme's faces; falls back to the issuer's family, then Helvetica. */
 function registerThemeFonts(doc, issuer = {}, theme = null) {
   const fontFamily = (theme && theme.fontFamily) || issuer.pdfFontFamily || null;
-  const fonts = pdfFonts.registerFonts(doc, { pdfFontTtfPath: issuer.pdfFontTtfPath, fontFamily });
+  // An uploaded family arrives as `theme.fontFiles`, resolved by the theme
+  // service before the render (services/pdf/uploadedFonts).
+  const fonts = pdfFonts.registerFonts(doc, { fontFamily, fontFiles: theme && theme.fontFiles });
   // A configured font that can't be loaded falls back to Helvetica without a
   // word; a render that collects findings (the template check) hears of it.
-  if (!fonts && (fontFamily || issuer.pdfFontTtfPath)) {
+  if (!fonts && fontFamily) {
     reportFinding(doc, { code: 'FONT_MISSING', severity: 'warning', key: fontFamily || 'custom' });
   }
   return fonts || { body: FONT_BODY, bold: FONT_BOLD, italic: FONT_ITALIC };
@@ -1649,7 +1651,7 @@ function createBaseDocument(options = {}) {
  */
 function registerCustomFonts(doc, issuer) {
   if (!issuer || typeof issuer !== 'object') return null;
-  return pdfFonts.registerFonts(doc, { pdfFontTtfPath: issuer.pdfFontTtfPath, fontFamily: issuer.pdfFontFamily });
+  return pdfFonts.registerFonts(doc, { fontFamily: issuer.pdfFontFamily });
 }
 
 /**

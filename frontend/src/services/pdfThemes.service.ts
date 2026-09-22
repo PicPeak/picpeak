@@ -65,11 +65,54 @@ export interface PdfThemeList {
   themes: PdfThemeRow[];
   /** Bundled font directory names, e.g. "Jost", "Playfair-Display". */
   fontFamilies: string[];
+  /** Active uploaded fonts a theme may use. */
+  uploadedFonts?: Array<{ family: string; name: string }>;
+}
+
+/** An uploaded PDF font (#1445). */
+export interface UploadedPdfFont {
+  id: number;
+  /** What a theme stores: `upload-<id>`. */
+  family: string;
+  name: string;
+  licenceNote: string;
+  licenceAcknowledgedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  files: Array<{ style: '400' | '700' | '400i'; sha256: string; bytes: number }>;
+}
+
+export interface FontUpload {
+  name: string;
+  licenceNote: string;
+  regular: File;
+  bold?: File | null;
+  italic?: File | null;
 }
 
 export const pdfThemesService = {
   async list(): Promise<PdfThemeList> {
     const { data } = await api.get('/admin/pdf-themes');
+    return data.data || data;
+  },
+  async fonts(): Promise<{ fonts: UploadedPdfFont[] }> {
+    const { data } = await api.get('/admin/pdf-themes/fonts');
+    return data.data || data;
+  },
+  /** Checked by content on the server; the admin has confirmed the right to embed it. */
+  async uploadFont(upload: FontUpload): Promise<{ font: UploadedPdfFont }> {
+    const form = new FormData();
+    form.append('name', upload.name);
+    form.append('licenceNote', upload.licenceNote);
+    form.append('licenceAcknowledged', 'true');
+    form.append('regular', upload.regular);
+    if (upload.bold) form.append('bold', upload.bold);
+    if (upload.italic) form.append('italic', upload.italic);
+    const { data } = await api.post('/admin/pdf-themes/fonts', form);
+    return data.data || data;
+  },
+  async archiveFont(id: number): Promise<{ font: UploadedPdfFont }> {
+    const { data } = await api.post(`/admin/pdf-themes/fonts/${id}/archive`);
     return data.data || data;
   },
   /** Replace a scope's settings; `{}` clears it back to inherited. */

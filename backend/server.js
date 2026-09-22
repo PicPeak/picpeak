@@ -1292,6 +1292,14 @@ async function startServer() {
       logger.warn('standard contract template check failed at boot:', err.message);
     }
 
+    // The retired free-text PDF font path (#1445) becomes an uploaded font
+    // once; the renderer no longer reads the column.
+    try {
+      await require('./src/services/pdf/uploadedFonts').migrateLegacyFont(logger);
+    } catch (err) {
+      logger.warn('moving the earlier custom PDF font failed at boot:', err.message);
+    }
+
     // Install-from-backup trigger. If `RESTORE_ON_INSTALL` (or
     // `.txt`) exists in the /backup mount AND the DB is empty, run
     // the restore HERE before any admin UI surfaces. Lets admins

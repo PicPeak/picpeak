@@ -3170,6 +3170,39 @@
         "BODY_SIZE_SMALL": "Body text of {{value}} pt is hard to read; {{limit}} pt or more is recommended.",
         "LINE_HEIGHT_TIGHT": "A line height of {{value}} is tight; {{limit}} or more reads better.",
         "LINE_TOO_LONG": "Lines run to about {{value}} characters; above {{limit}} they get hard to follow. Wider margins or larger text help."
+      },
+      "uploadedFonts": "Your fonts"
+    },
+    "pdfFonts": {
+      "title": "Your fonts for PDFs",
+      "description": "Add your brand font as TTF or OTF files (up to 5 MB each). Once added, pick it in the PDF theme.",
+      "add": "Add a font",
+      "face": {
+        "regular": "Regular",
+        "bold": "Bold",
+        "italic": "Italic"
+      },
+      "name": "Name",
+      "licenceNote": "Licence",
+      "licencePlaceholder": "e.g. SIL Open Font License 1.1, or: desktop licence bought with the brand kit, allows embedding",
+      "confirm": "I have the right to embed this font in the documents I send.",
+      "upload": "Add font",
+      "uploaded": "Font added",
+      "uploadFailed": "The font could not be added.",
+      "archive": "Archive",
+      "archived": "Archived",
+      "archiveConfirm": "Archive this font? Documents whose theme uses it fall back to Helvetica.",
+      "archiveFailed": "The font could not be archived.",
+      "errors": {
+        "FONT_FORMAT_UNSUPPORTED": "Upload the font as a TTF or OTF file; WOFF, WOFF2 and font collections aren't supported.",
+        "FONT_NOT_A_FONT": "This file isn't a TTF or OTF font.",
+        "FONT_MALFORMED": "The font file is damaged or incomplete.",
+        "FONT_TOO_LARGE": "A font file may be at most 5 MB.",
+        "FONT_TOO_COMPLEX": "This font is too complex to use.",
+        "FONT_LICENCE_RESTRICTED": "This font's licence doesn't allow embedding it in documents.",
+        "FONT_NAME_TAKEN": "A font with this name exists already.",
+        "FONT_LICENCE_NOTE_REQUIRED": "Describe the font's licence.",
+        "FONT_LICENCE_NOT_CONFIRMED": "Confirm that you may embed this font."
       }
     }
   },

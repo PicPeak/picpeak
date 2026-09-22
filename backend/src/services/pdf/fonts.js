@@ -3,14 +3,18 @@
 /**
  * PDF fonts (#1445): the regular, bold and italic faces a document uses.
  *
- * Resolution, as before plus an italic slot:
- *   1. the legacy single uploaded TTF (business_profile.pdf_font_ttf_path) —
- *      one file for every face;
+ * Resolution:
+ *   1. an uploaded family (`upload-<id>`, services/pdf/uploadedFonts): the
+ *      theme service resolves it to files before the render and passes them
+ *      as `fontFiles` — the renderer runs in a worker without a database;
  *   2. a bundled family (backend/assets/fonts/<Family>/): 400 → 500 → 600 →
  *      700 for regular, 700 → 600 → 500 → 400 for bold, `400i.ttf` for
  *      italic. A family without an italic file uses its upright regular
  *      rather than a synthetic slant;
  *   3. PDFKit's built-in Helvetica / Helvetica-Bold / Helvetica-Oblique.
+ *
+ * The retired free-text path (business_profile.pdf_font_ttf_path) is no
+ * longer read: a boot step moves it into an uploaded font.
  *
  * The web font picker (fontsService) only lists `<digits>.woff2`, so the
  * italic TTFs never show up as extra families there.
@@ -18,7 +22,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getStoragePath } = require('../../config/storage');
 
 const FONTS_ROOT = path.resolve(__dirname, '../../../assets/fonts');
 const HELVETICA = Object.freeze({ body: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique' });
@@ -29,26 +32,11 @@ const exists = (file) => {
 };
 const firstExisting = (dir, names) => names.map((n) => path.join(dir, n)).find(exists) || null;
 
-function legacyFontFile(raw) {
-  // The configured storage root first; process.cwd()/storage stays on as a
-  // legacy fallback so installs predating STORAGE_PATH keep resolving.
-  const storageRoot = getStoragePath();
-  const candidates = [
-    path.isAbsolute(raw) ? raw : null,
-    path.join(storageRoot, raw.replace(/^\/+/, '')),
-    path.join(storageRoot, 'fonts', path.basename(raw)),
-    path.join(process.cwd(), 'storage', raw.replace(/^\/+/, '')),
-    path.join(process.cwd(), 'storage', 'fonts', path.basename(raw)),
-  ].filter(Boolean);
-  const found = candidates.find(exists);
-  return found && /\.(ttf|otf)$/i.test(found) ? found : null;
-}
-
-/** The files for `{ pdfFontTtfPath, fontFamily }`, or null for Helvetica. */
-function resolveFontFiles({ pdfFontTtfPath, fontFamily } = {}) {
-  if (pdfFontTtfPath) {
-    const file = legacyFontFile(String(pdfFontTtfPath));
-    if (file) return { body: file, bold: file, italic: file };
+/** The files for `{ fontFamily, fontFiles }`, or null for Helvetica. */
+function resolveFontFiles({ fontFamily, fontFiles } = {}) {
+  if (fontFiles && fontFiles.body && exists(fontFiles.body)) {
+    const or = (file) => (file && exists(file) ? file : fontFiles.body);
+    return { body: fontFiles.body, bold: or(fontFiles.bold), italic: or(fontFiles.italic) };
   }
   if (fontFamily) {
     // The family name comes from a saved setting: strip anything that could

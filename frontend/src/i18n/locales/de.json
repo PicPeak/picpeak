@@ -3640,6 +3640,39 @@
         "BODY_SIZE_SMALL": "Fliesstext mit {{value}} pt ist schwer lesbar; empfohlen sind mindestens {{limit}} pt.",
         "LINE_HEIGHT_TIGHT": "Eine Zeilenhöhe von {{value}} ist eng; ab {{limit}} liest es sich besser.",
         "LINE_TOO_LONG": "Zeilen umfassen etwa {{value}} Zeichen; über {{limit}} werden sie schwer lesbar. Breitere Ränder oder grössere Schrift helfen."
+      },
+      "uploadedFonts": "Ihre Schriften"
+    },
+    "pdfFonts": {
+      "title": "Ihre Schriften für PDFs",
+      "description": "Fügen Sie Ihre Hausschrift als TTF- oder OTF-Dateien hinzu (je bis 5 MB). Danach wählen Sie sie im PDF-Design.",
+      "add": "Schrift hinzufügen",
+      "face": {
+        "regular": "Normal",
+        "bold": "Fett",
+        "italic": "Kursiv"
+      },
+      "name": "Name",
+      "licenceNote": "Lizenz",
+      "licencePlaceholder": "z. B. SIL Open Font License 1.1, oder: Desktop-Lizenz aus dem Brand-Kit, erlaubt Einbettung",
+      "confirm": "Ich darf diese Schrift in die Dokumente einbetten, die ich versende.",
+      "upload": "Schrift hinzufügen",
+      "uploaded": "Schrift hinzugefügt",
+      "uploadFailed": "Die Schrift konnte nicht hinzugefügt werden.",
+      "archive": "Archivieren",
+      "archived": "Archiviert",
+      "archiveConfirm": "Diese Schrift archivieren? Dokumente, deren Design sie nutzt, verwenden dann Helvetica.",
+      "archiveFailed": "Die Schrift konnte nicht archiviert werden.",
+      "errors": {
+        "FONT_FORMAT_UNSUPPORTED": "Laden Sie die Schrift als TTF- oder OTF-Datei hoch; WOFF, WOFF2 und Schriftsammlungen werden nicht unterstützt.",
+        "FONT_NOT_A_FONT": "Diese Datei ist keine TTF- oder OTF-Schrift.",
+        "FONT_MALFORMED": "Die Schriftdatei ist beschädigt oder unvollständig.",
+        "FONT_TOO_LARGE": "Eine Schriftdatei darf höchstens 5 MB gross sein.",
+        "FONT_TOO_COMPLEX": "Diese Schrift ist zu komplex.",
+        "FONT_LICENCE_RESTRICTED": "Die Lizenz dieser Schrift erlaubt keine Einbettung in Dokumente.",
+        "FONT_NAME_TAKEN": "Es gibt bereits eine Schrift mit diesem Namen.",
+        "FONT_LICENCE_NOTE_REQUIRED": "Beschreiben Sie die Lizenz der Schrift.",
+        "FONT_LICENCE_NOT_CONFIRMED": "Bestätigen Sie, dass Sie diese Schrift einbetten dürfen."
       }
     }
   },

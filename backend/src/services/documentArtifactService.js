@@ -20,8 +20,9 @@ const { resolveFontFiles } = require('./pdf/fonts');
 
 // Bumped when the renderer's output for the same inputs changes on purpose
 // (4: placeholder values escaped in contract bodies; 5: layout in the theme —
-// margins, address window, logo placement, body size and line height, #1445).
-const RENDERER_VERSION = '5';
+// margins, address window, logo placement, body size and line height; 6:
+// uploaded fonts, the free-text font path no longer read, #1445).
+const RENDERER_VERSION = '6';
 const DOC_TYPES = ['quote', 'invoice', 'contract'];
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
@@ -43,7 +44,7 @@ async function countPages(buffer) {
 /** The resolved theme plus the sha256 of the font and logo files it drew with. */
 function themeSnapshot(theme, issuer) {
   if (!theme) return null;
-  const fonts = resolveFontFiles({ pdfFontTtfPath: issuer && issuer.pdfFontTtfPath, fontFamily: theme.fontFamily });
+  const fonts = resolveFontFiles({ fontFamily: theme.fontFamily, fontFiles: theme.fontFiles });
   return JSON.stringify({
     ...theme,
     fontSha256: fonts

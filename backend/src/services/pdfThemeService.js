@@ -12,6 +12,24 @@ const { isUniqueViolation } = require('../utils/dbErrors');
 const businessProfileService = require('./businessProfileService');
 const themeModel = require('./pdf/theme');
 const { availableFamilies } = require('./pdf/fonts');
+const uploadedFonts = require('./pdf/uploadedFonts');
+
+/** Bundled families plus the active uploaded ones (`upload-<id>`). */
+async function allFamilies() {
+  return [...availableFamilies(), ...(await uploadedFonts.uploadedFamilies()).map((f) => f.family)];
+}
+
+/**
+ * A resolved theme with its uploaded font's files attached (#1445): the
+ * renderer runs in a worker without a database, so an `upload-<id>` family
+ * reaches it as server-resolved paths. An archived or missing font resolves
+ * to nothing, and the document falls back to Helvetica.
+ */
+async function withFontFiles(theme) {
+  if (!theme || !uploadedFonts.idOfFamily(theme.fontFamily)) return theme;
+  const fontFiles = await uploadedFonts.fontFilesFor(theme.fontFamily);
+  return fontFiles ? Object.freeze({ ...theme, fontFiles: Object.freeze(fontFiles) }) : theme;
+}
 
 async function loadRows() {
   const rows = await db('pdf_themes').select('scope', 'settings', 'updated_at');
@@ -28,7 +46,7 @@ async function loadRows() {
 async function resolveTheme(scope) {
   const { byScope } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
-  return themeModel.resolveTheme(scope, byScope, profile);
+  return withFontFiles(themeModel.resolveTheme(scope, byScope, profile));
 }
 
 /** Every scope's stored settings and, for document types, the resolved theme. */
@@ -48,6 +66,8 @@ async function listThemes() {
       };
     }),
     fontFamilies: availableFamilies(),
+    // Uploaded fonts a theme may use, `[{ family: 'upload-<id>', name }]`.
+    uploadedFonts: await uploadedFonts.uploadedFamilies(),
   };
 }
 
@@ -60,7 +80,7 @@ function assertScope(scope) {
 /** Replace a scope's settings. An empty object clears the scope. */
 async function saveTheme(scope, settings, adminId) {
   assertScope(scope);
-  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: availableFamilies() });
+  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await allFamilies() });
   const now = new Date();
   const values = { settings: JSON.stringify(clean), updated_by_admin_id: adminId || null, updated_at: now };
   const updated = await db('pdf_themes').where({ scope }).update(values);
@@ -85,13 +105,13 @@ async function saveTheme(scope, settings, adminId) {
  */
 async function resolveDraftTheme(scope, settings) {
   assertScope(scope);
-  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: availableFamilies() });
+  const clean = themeModel.sanitizeThemeSettings(settings, { availableFamilies: await allFamilies() });
   const { byScope } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
   const rows = { ...byScope, [scope]: clean };
   // Previewing the default scope shows its effect on a quote.
   const docScope = scope === 'default' ? 'quote' : scope;
-  return themeModel.resolveTheme(docScope, rows, profile);
+  return withFontFiles(themeModel.resolveTheme(docScope, rows, profile));
 }
 
 // ---------------------------------------------------------------------

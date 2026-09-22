@@ -237,8 +237,15 @@ export const PdfThemeCard: React.FC = () => {
           <label htmlFor="pdf-theme-font" className={labelClass}>{t('branding.pdfTheme.font', 'Font')}</label>
           <select id="pdf-theme-font" className={fieldClass} value={draft.fontFamily ?? ''}
             onChange={(e) => setField('fontFamily', e.target.value || undefined)}>
-            <option value="">{inherit(resolved?.fontFamily ? familyLabel(resolved.fontFamily) : 'Helvetica')}</option>
+            <option value="">{inherit(resolved?.fontFamily
+              ? ((data?.uploadedFonts || []).find((f) => f.family === resolved.fontFamily)?.name || familyLabel(resolved.fontFamily))
+              : 'Helvetica')}</option>
             {(data?.fontFamilies || []).map((dir) => <option key={dir} value={dir}>{familyLabel(dir)}</option>)}
+            {(data?.uploadedFonts || []).length > 0 && (
+              <optgroup label={t('branding.pdfTheme.uploadedFonts', 'Your fonts') as string}>
+                {(data?.uploadedFonts || []).map((f) => <option key={f.family} value={f.family}>{f.name}</option>)}
+              </optgroup>
+            )}
           </select>
         </div>
         <div>

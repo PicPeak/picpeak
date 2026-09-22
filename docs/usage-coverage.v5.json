@@ -323,9 +323,12 @@
     "adminPdfThemes.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "PDF look-and-feel configuration (colours, font, footer, page numbers) and its sample preview are settings, not separate usage signals; the documents they style are covered by the billing capabilities.",
+      "reason": "PDF look-and-feel configuration (colours, font, footer, page numbers, layout, uploaded fonts) and its sample preview are settings, not separate usage signals; the documents they style are covered by the billing capabilities.",
       "route_signatures": [
         "GET /",
+        "GET /fonts",
+        "POST /fonts",
+        "POST /fonts/:id/archive",
         "PUT /:scope",
         "POST /:scope/preview"
       ]
