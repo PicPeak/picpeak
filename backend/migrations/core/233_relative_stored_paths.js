@@ -26,7 +26,8 @@
  * holds the value that was read, so a concurrent write is never overwritten.
  * Hashes are untouched.
  *
- * down() turns relative values back into absolute paths under the same root,
+ * down() turns root-relative values (starting with a storage folder) back
+ * into absolute paths under the same root,
  * so an older release (which reads only absolute paths for these columns) can
  * open the files again after a rollback. It cannot tell which values up()
  * converted, so it also makes absolute the values that were already relative
@@ -105,7 +106,10 @@ exports.up = async function(knex) {
 exports.down = async function(knex) {
   const root = storageRoot();
   await rewrite(knex, (query) => query, (value) => {
-    if (path.isAbsolute(value)) return value;
+    // Only root-relative values (what up() writes). A legacy value relative
+    // to the working directory (`storage/business-docs/...` outside the
+    // root) is what an older release reads as it is.
+    if (path.isAbsolute(value) || !FOLDERS.includes(value.split(/[\\/]/)[0])) return value;
     const abs = path.resolve(root, value);
     return abs.startsWith(root + path.sep) ? abs : value;
   });
