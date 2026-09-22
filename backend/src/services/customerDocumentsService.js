@@ -104,7 +104,7 @@ function cleanDisplayName(originalName, format = 'pdf') {
 function parseOptionalId(value, field) {
   if (value === undefined || value === null || value === '') return null;
   const s = String(value);
-  if (!/^\d{1,10}$/.test(s) || Number(s) < 1) {
+  if (!/^\d{1,10}$/.test(s) || Number(s) < 1 || Number(s) > 2147483647) {
     throw new ValidationError(`${field} must be a positive integer`);
   }
   return Number(s);

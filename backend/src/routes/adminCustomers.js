@@ -1005,6 +1005,10 @@ router.get('/:id/monthly-draft', [
   successResponse(res, { draft });
 }));
 
+// Ids above PostgreSQL's integer range answer 400 here rather than a 500
+// from the database.
+const MAX_ID = 2147483647;
+
 // ---- customer activity (#1444) -------------------------------------------
 // The customer's timeline: document, account and group activity from
 // activity_logs, newest first. ?limit (1-200, default 50) and ?beforeId (the
@@ -1014,9 +1018,9 @@ router.get('/:id/monthly-draft', [
 router.get('/:id/activity', [
   adminAuth,
   requirePermission('customers.view'),
-  param('id').isInt({ min: 1 }),
+  param('id').isInt({ min: 1, max: MAX_ID }),
   query('limit').optional().isInt({ min: 1, max: 200 }),
-  query('beforeId').optional().isInt({ min: 1 }),
+  query('beforeId').optional().isInt({ min: 1, max: MAX_ID }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const customerId = parseInt(req.params.id, 10);
@@ -1044,9 +1048,9 @@ const documentGuards = [
   adminAuth,
   requireDocuments,
   requirePermission('customers.documents.manage'),
-  param('id').isInt({ min: 1 }),
+  param('id').isInt({ min: 1, max: MAX_ID }),
 ];
-const documentItemGuards = [...documentGuards, param('docId').isInt({ min: 1 })];
+const documentItemGuards = [...documentGuards, param('docId').isInt({ min: 1, max: MAX_ID })];
 const adminActor = (admin) => ({ type: 'admin', id: admin.id, name: admin.username || 'admin' });
 
 /** Multipart sends strings; JSON sends booleans. Anything else: no choice made. */
@@ -1116,9 +1120,9 @@ router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
 // Replaces all three links; send null to clear one.
 router.patch('/:id/documents/:docId', [
   ...documentItemGuards,
-  body('eventId').optional({ nullable: true }).isInt({ min: 1 }),
-  body('projectId').optional({ nullable: true }).isInt({ min: 1 }),
-  body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('eventId').optional({ nullable: true }).isInt({ min: 1, max: MAX_ID }),
+  body('projectId').optional({ nullable: true }).isInt({ min: 1, max: MAX_ID }),
+  body('contractId').optional({ nullable: true }).isInt({ min: 1, max: MAX_ID }),
 ], handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
   await customerDocumentsService.updateLinks(customerId, parseInt(req.params.docId, 10), req.body, req.admin);
@@ -1191,7 +1195,7 @@ router.delete('/:id/documents/:docId', documentItemGuards, handleAsync(async (re
 // ---- document requests (#1444 slice 10) -----------------------------------
 // The studio asks the customer for a document. Same guards as the documents.
 // A request of another customer is the same 404 as an unknown one.
-const requestItemGuards = [...documentGuards, param('requestId').isInt({ min: 1 })];
+const requestItemGuards = [...documentGuards, param('requestId').isInt({ min: 1, max: MAX_ID })];
 
 router.get('/:id/document-requests', documentGuards, handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
@@ -1204,8 +1208,8 @@ router.post('/:id/document-requests', [
   body('title').isString().trim().isLength({ min: 1, max: 200 }),
   body('note').optional({ nullable: true }).isString().isLength({ max: 1000 }),
   body('dueAt').optional({ nullable: true }).isISO8601(),
-  body('eventId').optional({ nullable: true }).isInt({ min: 1 }),
-  body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('eventId').optional({ nullable: true }).isInt({ min: 1, max: MAX_ID }),
+  body('contractId').optional({ nullable: true }).isInt({ min: 1, max: MAX_ID }),
   body('notify').optional({ nullable: true }).isBoolean(),
 ], handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);

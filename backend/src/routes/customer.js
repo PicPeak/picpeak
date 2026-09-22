@@ -1185,7 +1185,7 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
     let requestId = null;
     if (req.body.requestId !== undefined && req.body.requestId !== '') {
       requestId = /^\d{1,10}$/.test(String(req.body.requestId)) ? Number(req.body.requestId) : -1;
-      if (requestId < 1) {
+      if (requestId < 1 || requestId > 2147483647) {
         return res.status(404).json({ error: 'Document request not found', code: 'DOCUMENT_REQUEST_NOT_FOUND' });
       }
     }

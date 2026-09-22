@@ -11,6 +11,8 @@
  *      for the retention period. The row stays, with purged_at set, as the
  *      record that the file existed.
  *
+ * It also prunes customer_document_abuse_counters older than 30 days.
+ *
  * A contract-linked document is skipped by both: it is part of a contractual
  * record, and erasure already keeps such a document rather than destroying
  * it. Deleting one is refused while the link stands (#1444), so a row that
@@ -59,6 +61,12 @@ async function runCustomerDocumentRetention(now = Date.now()) {
       .whereNull('deleted_at')
       .update({ deleted_at: stamp, updated_at: stamp });
     logger.info(`Customer documents: deleted ${expiredRejections.length} rejected file(s) after ${days} days`);
+  }
+
+  // Abuse counters (migration 241) are hourly windows; System Health reads
+  // the last 24 hours. Anything older than 30 days is no longer needed.
+  if (await db.schema.hasTable('customer_document_abuse_counters')) {
+    await db('customer_document_abuse_counters').where('window_start', '<', now - 30 * DAY_MS).del();
   }
 
   const deleted = await db('customer_documents')

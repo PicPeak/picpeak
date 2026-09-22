@@ -212,9 +212,30 @@ describe('GET /api/customer/documents/:id', () => {
   });
 
   it('answers 404 for ids that are not ids', async () => {
-    for (const id of ['abc', '0', '-1', '1.5', '99999999999']) {
+    for (const id of ['abc', '0', '-1', '1.5', '99999999999', '2147483648']) {
       const res = await getDoc(customerA, id);
       expect(res.status).toBe(404);
+    }
+  });
+
+  it('answers ids past the integer range with 404 or 400, never a database error', async () => {
+    const big = '2147483648';
+    expect((await download(customerA, big)).status).toBe(404);
+    expect((await asCustomer(request(customerApp).delete(`/api/customer/documents/${big}`), customerA)).status).toBe(404);
+    const withRequest = await uploadAs(customerA, 'big.pdf', { requestId: big });
+    expect(withRequest.status).toBe(404);
+    expect((await uploadAs(customerA, 'big.pdf', { eventId: big })).status).toBe(400);
+    for (const [method, url, body] of [
+      ['get', `/api/admin/customers/${big}/activity`],
+      ['get', `/api/admin/customers/${customerA}/activity?beforeId=${big}`],
+      ['get', `/api/admin/customers/${big}/documents`],
+      ['post', `/api/admin/customers/${customerA}/documents/${big}/share`],
+      ['delete', `/api/admin/customers/${customerA}/document-requests/${big}`],
+      ['patch', `/api/admin/customers/${customerA}/document-requests/${big}`, { title: 'x' }],
+      ['post', `/api/admin/customers/${customerA}/document-requests`, { title: 'x', eventId: Number(big) }],
+    ]) {
+      const res = await asAdmin(request(adminApp)[method](url)).send(body || {});
+      expect({ url, status: res.status }).toEqual({ url, status: 400 });
     }
   });
 });
@@ -814,6 +835,21 @@ describe('document abuse signals', () => {
       await db('app_settings').where({ setting_key: 'customer_documents_forbidden_alert_threshold' })
         .update({ setting_value: JSON.stringify(20) });
     }
+  });
+
+  it('prunes counters older than 30 days in the hourly retention sweep', async () => {
+    const { runCustomerDocumentRetention } = require('../../src/services/customerDocumentRetentionService');
+    const who = await newCustomer();
+    const hour = 3600e3;
+    const window = (ago) => Math.floor((Date.now() - ago) / hour) * hour;
+    await db('customer_document_abuse_counters').insert([
+      { customer_account_id: who, signal: 'rate_limited', window_start: window(31 * 864e5), count: 1 },
+      { customer_account_id: who, signal: 'rate_limited', window_start: window(29 * 864e5), count: 1 },
+    ]);
+    await runCustomerDocumentRetention(Date.now());
+    const left = await db('customer_document_abuse_counters').where({ customer_account_id: who });
+    expect(left).toHaveLength(1);
+    expect(Number(left[0].window_start)).toBe(window(29 * 864e5));
   });
 
   it('counts quota refusals and rate-limit hits', async () => {

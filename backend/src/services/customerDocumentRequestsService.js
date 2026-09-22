@@ -93,6 +93,11 @@ async function create(customerId, input, admin) {
   if (!title) throw new ValidationError('title is required');
   const eventId = input.eventId ? Number(input.eventId) : null;
   const contractId = input.contractId ? Number(input.contractId) : null;
+  for (const id of [eventId, contractId]) {
+    if (id !== null && (!Number.isInteger(id) || id < 1 || id > 2147483647)) {
+      throw new ValidationError('eventId and contractId must be positive integers');
+    }
+  }
   await checkLinks(customerId, { eventId, contractId }, admin);
   const now = new Date().toISOString();
   const inserted = await db('customer_document_requests').insert({
