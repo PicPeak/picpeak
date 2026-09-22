@@ -139,8 +139,9 @@ function transformInvitation(inv) {
 }
 
 // Far more groups than a catalogue holds, and well under what an IN list or
-// a reorder loop should be handed from a request.
-const MAX_GROUP_IDS = 100;
+// a reorder loop should be handed from a request. The same number bounds how
+// many groups one customer carries, so the detail editor can always save.
+const MAX_GROUP_IDS = customerGroupsService.MAX_GROUPS_PER_CUSTOMER;
 const MAX_REORDER_IDS = 500;
 // One bulk change covers at most this many customers.
 const MAX_BULK_CUSTOMERS = 500;
@@ -148,14 +149,22 @@ const MAX_BULK_CUSTOMERS = 500;
 /**
  * `?groupIds=1,2` or `?groupIds=1&groupIds=2` → [1, 2]. Anything that isn't a
  * positive integer is dropped rather than refused, so a stale bookmark shows
- * the unfiltered list instead of an error. Capped at MAX_GROUP_IDS.
+ * the unfiltered list instead of an error. More than MAX_GROUP_IDS groups is
+ * refused: cutting the list short would quietly answer a different filter
+ * ("all of them" over the first 100 is not "all of them").
  */
 function parseGroupIds(value) {
   if (value === undefined || value === null || value === '') return [];
   const raw = Array.isArray(value) ? value : String(value).split(',');
-  return [...new Set(raw
+  const ids = [...new Set(raw
     .map((id) => Number(String(id).trim()))
-    .filter((id) => Number.isInteger(id) && id > 0))].slice(0, MAX_GROUP_IDS);
+    .filter((id) => Number.isInteger(id) && id > 0))];
+  if (ids.length > MAX_GROUP_IDS) {
+    const err = new AppError(`Filter by at most ${MAX_GROUP_IDS} groups at once`, 400, 'GROUP_FILTER_TOO_MANY');
+    err.details = { limit: MAX_GROUP_IDS };
+    throw err;
+  }
+  return ids;
 }
 
 // ---- customer groups (#1443) --------------------------------------------

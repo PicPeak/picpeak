@@ -60,6 +60,7 @@ const deleteGroup = vi.fn();
 const bulkAssignGroups = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
   BULK_GROUP_MAX_CUSTOMERS: 500,
+  MAX_GROUPS_PER_CUSTOMER: 100,
   customerAdminService: {
     list: (...a: unknown[]) => list(...a),
     listInvitations: vi.fn().mockResolvedValue([]),
@@ -454,6 +455,23 @@ describe('bulk group changes', () => {
     expect(screen.queryByRole('region', { name: 'Selected customers' })).toBeNull();
   });
 
+  it('names the customers a change would take past the group limit, and keeps the confirm button off', async () => {
+    bulkAssignGroups.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      response: { status: 400, data: { error: 'x', code: 'BULK_GROUP_LIMIT', details: { customers: 2, limit: 100 } } },
+    }));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('grouped@example.com');
+    await user.click(rowBox('grouped@example.com'));
+    await user.click(screen.getByRole('button', { name: 'Add to groups…' }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox', { name: /VIP/ }));
+    expect(await within(dialog).findByText(
+      '2 selected customers would be in more than 100 groups. Take them out of the selection, or out of other groups first.',
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Add \d+ membership/ })).toBeDisabled();
+  });
+
   it('keeps the confirm button off when the change would do nothing', async () => {
     bulkAssignGroups.mockResolvedValue({
       customers: 1, added: 0, removed: 0, perGroup: [{ groupId: 1, added: 0, removed: 0 }], dryRun: true,
@@ -507,6 +525,14 @@ describe('the overview states', () => {
     const { container } = renderPage();
     await waitFor(() => expect(container.querySelector('.animate-spin')).not.toBeNull());
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('says why when a filter holds more groups than the server takes', async () => {
+    list.mockRejectedValue(Object.assign(new Error('Request failed'), {
+      response: { status: 400, data: { error: 'x', code: 'GROUP_FILTER_TOO_MANY', details: { limit: 100 } } },
+    }));
+    renderPage();
+    expect(await screen.findByText('Filter by at most 100 groups at once.')).toBeInTheDocument();
   });
 
   it('says so when the customers cannot be loaded', async () => {

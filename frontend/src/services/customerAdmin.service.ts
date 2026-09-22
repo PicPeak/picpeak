@@ -45,6 +45,8 @@ export interface CustomerGroupCatalogue {
  * more with a 400.
  */
 export const BULK_GROUP_MAX_CUSTOMERS = 500;
+/** The most groups one filter, or one customer, carries (MAX_GROUP_IDS on the server). */
+export const MAX_GROUPS_PER_CUSTOMER = 100;
 
 export interface CustomerGroupBulkPayload {
   customerIds: number[];

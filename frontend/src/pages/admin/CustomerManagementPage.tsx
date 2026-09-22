@@ -33,6 +33,7 @@ import { Button, Card, Input, Loading } from '../../components/common';
 import {
   customerAdminService,
   BULK_GROUP_MAX_CUSTOMERS,
+  MAX_GROUPS_PER_CUSTOMER,
   type CustomerAccountSummary,
   type CustomerGroupMatch,
   type CustomerInvitationSummary,
@@ -424,6 +425,7 @@ export const CustomerManagementPage: React.FC = () => {
                 onMatchChange={(match) => updateParams({ match: match === 'all' ? 'all' : null })}
                 showClear={hasAnyFilter}
                 onClear={clearFilters}
+                maxSelected={MAX_GROUPS_PER_CUSTOMER}
               />
             )}
           </div>
@@ -437,7 +439,9 @@ export const CustomerManagementPage: React.FC = () => {
           ) : customersError ? (
             <div className="text-sm text-red-600 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
-              {t('customers.loadError', 'Could not load customers')}
+              {(customersError as { response?: { data?: { code?: string } } })?.response?.data?.code === 'GROUP_FILTER_TOO_MANY'
+                ? t('customers.groups.filterLimit', 'Filter by at most {{max}} groups at once.', { max: MAX_GROUPS_PER_CUSTOMER })
+                : t('customers.loadError', 'Could not load customers')}
             </div>
           ) : filteredCustomers.length === 0 ? (
             // "Nobody matches" and "there is nobody yet" are different

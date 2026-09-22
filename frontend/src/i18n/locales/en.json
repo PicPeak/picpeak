@@ -5973,6 +5973,7 @@
       "nameRequired": "A group needs a name",
       "loadError": "The groups could not be loaded. Reload the page to try again.",
       "filterLabel": "Filter by group",
+      "filterLimit": "Filter by at most {{max}} groups at once.",
       "clearFilter": "Clear",
       "none": "—",
       "more": "+{{count}}",
@@ -6021,7 +6022,9 @@
         "addedToast_other": "Added {{count}} memberships",
         "removedToast_one": "Removed {{count}} membership",
         "removedToast_other": "Removed {{count}} memberships",
-        "overCap": "At most {{max}} customers can be changed at once. Narrow the filter or clear some of the selection."
+        "overCap": "At most {{max}} customers can be changed at once. Narrow the filter or clear some of the selection.",
+        "overGroupLimit_one": "{{count}} selected customer would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.",
+        "overGroupLimit_other": "{{count}} selected customers would be in more than {{max}} groups. Take them out of the selection, or out of other groups first."
       }
     },
     "emptyFiltered": "No customers match these filters.",

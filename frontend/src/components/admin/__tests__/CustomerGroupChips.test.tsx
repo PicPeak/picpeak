@@ -88,4 +88,21 @@ describe('CustomerGroupFilter', () => {
     const { container } = render(<CustomerGroupFilter {...props} groups={[]} />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('turns the unselected groups off at the limit, and says why, but keeps the selected ones switchable', () => {
+    render(<CustomerGroupFilter {...props} groups={groups} selectedIds={[1, 2]} maxSelected={2} />);
+    expect(screen.getByRole('button', { name: /VIP/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Press/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Wedding/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Corporate/ })).toBeDisabled();
+    expect(screen.getByText('Filter by at most 2 groups at once.')).toBeInTheDocument();
+  });
+
+  it('keeps every group switchable below the limit', () => {
+    render(<CustomerGroupFilter {...props} groups={groups} selectedIds={[1]} maxSelected={2} />);
+    for (const name of [/VIP/, /Press/, /Wedding/, /Corporate/]) {
+      expect(screen.getByRole('button', { name })).toBeEnabled();
+    }
+    expect(screen.queryByText(/at most/)).toBeNull();
+  });
 });

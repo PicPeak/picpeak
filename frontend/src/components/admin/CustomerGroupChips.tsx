@@ -129,6 +129,8 @@ interface CustomerGroupFilterProps {
   /** Any filter or search is set, so there is something to clear. */
   showClear: boolean;
   onClear: () => void;
+  /** The most groups one filter may select; further pills are disabled. */
+  maxSelected?: number;
 }
 
 const pillClass = (active: boolean) => `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
@@ -158,9 +160,13 @@ const ClearFilters: React.FC<{ onClear: () => void }> = ({ onClear }) => {
  */
 export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
   groups, selectedIds, onToggle, ungrouped, ungroupedCount, onToggleUngrouped,
-  hasAnyGroup = groups.length > 0, match, onMatchChange, showClear, onClear,
+  hasAnyGroup = groups.length > 0, match, onMatchChange, showClear, onClear, maxSelected,
 }) => {
   const { t } = useTranslation();
+  const atLimit = maxSelected !== undefined && selectedIds.length >= maxSelected;
+  const limitHint = atLimit
+    ? t('customers.groups.filterLimit', 'Filter by at most {{max}} groups at once.', { max: maxSelected })
+    : undefined;
   if (!hasAnyGroup) {
     return showClear ? <ClearFilters onClear={onClear} /> : null;
   }
@@ -171,13 +177,16 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
       </span>
       {groups.map((group) => {
         const active = selectedIds.includes(group.id);
+        const blocked = atLimit && !active;
         return (
           <button
             key={group.id}
             type="button"
             onClick={() => onToggle(group.id)}
             aria-pressed={active}
-            className={pillClass(active)}
+            disabled={blocked}
+            title={blocked ? limitHint : undefined}
+            className={`${pillClass(active)}${blocked ? ' cursor-not-allowed opacity-50' : ''}`}
           >
             <GroupDot color={group.color} />
             {group.name}
@@ -217,6 +226,9 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
             </button>
           ))}
         </span>
+      )}
+      {atLimit && (
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">{limitHint}</span>
       )}
       {showClear && <ClearFilters onClear={onClear} />}
     </div>

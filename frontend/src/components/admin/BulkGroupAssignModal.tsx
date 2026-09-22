@@ -81,6 +81,14 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
     },
   });
 
+  // The server refuses a change that would put a customer in more groups
+  // than the detail editor can save; say so instead of a generic failure.
+  const previewFailure = (preview.error as { response?: { data?: { code?: string; details?: { customers?: number; limit?: number } } } } | null)
+    ?.response?.data;
+  const overLimit = previewFailure?.code === 'BULK_GROUP_LIMIT'
+    ? { customers: previewFailure.details?.customers ?? 1, limit: previewFailure.details?.limit ?? 100 }
+    : null;
+
   const effect = preview.data ? (mode === 'add' ? preview.data.added : preview.data.removed) : 0;
   const nameOf = (groupId: number) => groups.find((g) => g.id === groupId)?.name || '';
   // "3 customers are already in VIP" / "2 customers are not in VIP": the
@@ -154,7 +162,14 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
               </span>
             ) : preview.isError ? (
               <span className="text-red-600 dark:text-red-400">
-                {t('customers.groups.bulk.previewError', 'The change could not be previewed. Close this and try again.')}
+                {overLimit
+                  ? t('customers.groups.bulk.overGroupLimit', {
+                    count: overLimit.customers,
+                    max: overLimit.limit,
+                    defaultValue_one: '{{count}} selected customer would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
+                    defaultValue_other: '{{count}} selected customers would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
+                  })
+                  : t('customers.groups.bulk.previewError', 'The change could not be previewed. Close this and try again.')}
               </span>
             ) : preview.data && (
               <>

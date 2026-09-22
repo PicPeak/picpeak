@@ -275,9 +275,11 @@ describe('filtering', () => {
     const stale = await listCustomers('?groupIds=999999');
     expect(stale.status).toBe(200);
     expect(stale.body.customers).toEqual([]);
-    // More ids than the route accepts are cut off, not refused.
+    // More ids than the route accepts are refused rather than cut short:
+    // a shortened list would answer a different filter.
     const many = await listCustomers(`?groupIds=${Array.from({ length: 1200 }, (_, i) => i + 1000000).join(',')}`);
-    expect(many.status).toBe(200);
+    expect(many.status).toBe(400);
+    expect(many.body.code).toBe('GROUP_FILTER_TOO_MANY');
   });
 });
 
@@ -830,5 +832,70 @@ describe('bulk assign and remove', () => {
     const tooManyGroups = await bulk({ customerIds: [customer], addGroupIds: Array.from({ length: 101 }, (_, i) => i + 1) });
     expect(tooManyGroups.status).toBe(400);
     expect((await bulk({ customerIds: [], addGroupIds: [group.id] })).status).toBe(400);
+  });
+});
+
+describe('the per-customer group cap', () => {
+  const bulk = (body) => request(adminApp)
+    .post('/api/admin/customers/groups/bulk-assign').set(auth(superToken)).send(body);
+
+  // Archived filler groups: they count towards what a customer carries, and
+  // stay out of every catalogue listing the other tests read.
+  async function fillerGroups(count, tag) {
+    const ids = [];
+    for (let i = 0; i < count; i += 1) {
+      ids.push(idOf(await db('customer_groups').insert({
+        name: `Cap ${tag} ${i}`, name_key: `cap ${tag} ${i}`, color: '#6B7280',
+        sort_order: 0, is_archived: true,
+      }).returning('id')));
+    }
+    return ids;
+  }
+  const carry = (customer, groupIds) => db('customer_group_members').insert(groupIds.map((groupId) => ({
+    group_id: groupId, customer_account_id: customer, assigned_at: new Date().toISOString(),
+  })));
+  const countOf = async (customer) => Number((await db('customer_group_members')
+    .where({ customer_account_id: customer }).count({ n: '*' }).first()).n);
+
+  it('refuses a filter over more groups than one request carries, instead of cutting it short', async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => i + 1);
+    const res = await listCustomers(`?groupIds=${ids.join(',')}&groupMatch=all`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('GROUP_FILTER_TOO_MANY');
+    expect(res.body.details).toEqual({ limit: 100 });
+    // The repeated form counts the same, after dropping duplicates.
+    const repeated = ids.slice(0, 100).map((id) => `groupIds=${id}`).join('&');
+    expect((await listCustomers(`?${repeated}&groupIds=1`)).status).toBe(200);
+  });
+
+  it('refuses a bulk add that takes a customer past 100 groups, previews the refusal, and writes nothing', async () => {
+    const filler = await fillerGroups(100, 'full');
+    const target = bodyOf(await createGroup({ name: 'Cap target' })).group;
+    const [full, empty] = [await createCustomer(), await createCustomer()];
+    await carry(full, filler);
+
+    for (const dryRun of [true, false]) {
+      const res = await bulk({ customerIds: [full, empty], addGroupIds: [target.id], dryRun });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('BULK_GROUP_LIMIT');
+      expect(res.body.details).toEqual({ customers: 1, limit: 100 });
+    }
+    expect(await countOf(full)).toBe(100);
+    expect(await countOf(empty)).toBe(0);
+
+    // Swapping one group for another keeps the customer at 100: allowed.
+    const swap = await bulk({ customerIds: [full, empty], addGroupIds: [target.id], removeGroupIds: [filler[0]] });
+    expect(swap.status).toBe(200);
+    expect(await countOf(full)).toBe(100);
+    expect(await countOf(empty)).toBe(1);
+  });
+
+  it('still takes a customer already over the cap out of groups', async () => {
+    const filler = await fillerGroups(101, 'over');
+    const customer = await createCustomer();
+    await carry(customer, filler);
+    const res = await bulk({ customerIds: [customer], removeGroupIds: [filler[0], filler[1]] });
+    expect(res.status).toBe(200);
+    expect(await countOf(customer)).toBe(99);
   });
 });

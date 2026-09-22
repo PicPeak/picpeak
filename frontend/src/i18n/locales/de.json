@@ -5973,6 +5973,7 @@
       "nameRequired": "Eine Gruppe braucht einen Namen",
       "loadError": "Die Gruppen konnten nicht geladen werden. Lade die Seite neu.",
       "filterLabel": "Nach Gruppe filtern",
+      "filterLimit": "Filtern Sie nach höchstens {{max}} Gruppen auf einmal.",
       "clearFilter": "Zurücksetzen",
       "none": "—",
       "more": "+{{count}}",
@@ -6021,7 +6022,9 @@
         "addedToast_other": "{{count}} Zuordnungen hinzugefügt",
         "removedToast_one": "{{count}} Zuordnung entfernt",
         "removedToast_other": "{{count}} Zuordnungen entfernt",
-        "overCap": "Höchstens {{max}} Kunden können auf einmal geändert werden. Schränken Sie den Filter ein oder heben Sie einen Teil der Auswahl auf."
+        "overCap": "Höchstens {{max}} Kunden können auf einmal geändert werden. Schränken Sie den Filter ein oder heben Sie einen Teil der Auswahl auf.",
+        "overGroupLimit_one": "{{count}} ausgewählter Kunde wäre in mehr als {{max}} Gruppen. Nehmen Sie ihn aus der Auswahl oder zuerst aus anderen Gruppen heraus.",
+        "overGroupLimit_other": "{{count}} ausgewählte Kunden wären in mehr als {{max}} Gruppen. Nehmen Sie sie aus der Auswahl oder zuerst aus anderen Gruppen heraus."
       }
     },
     "emptyFiltered": "Keine Kunden entsprechen diesen Filtern.",

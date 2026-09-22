@@ -31,6 +31,10 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const LOOKUP_CHUNK = 500;
 // Three bound parameters a row; well under the engines' limits.
 const INSERT_CHUNK = 100;
+// The most groups one customer carries. The detail editor saves the full
+// list in one request capped at this size, so nothing may push a customer
+// past it; the bulk change refuses to.
+const MAX_GROUPS_PER_CUSTOMER = 100;
 
 /** A colour the chip can show in both themes; anything else is refused. */
 function normalizeColor(value) {
@@ -416,6 +420,7 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
       }
 
       const current = new Set();
+      const carried = new Map();
       let found = 0;
       for (const slice of chunks(customers, LOOKUP_CHUNK)) {
         found += (await trx('customer_accounts').whereIn('id', slice).pluck('id')).length;
@@ -424,6 +429,14 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
           .whereIn('group_id', [...add, ...remove])
           .select('customer_account_id', 'group_id');
         for (const row of rows) current.add(`${Number(row.customer_account_id)}:${Number(row.group_id)}`);
+        if (add.length > 0) {
+          const counts = await trx('customer_group_members')
+            .whereIn('customer_account_id', slice)
+            .groupBy('customer_account_id')
+            .select('customer_account_id')
+            .count({ total: '*' });
+          for (const row of counts) carried.set(Number(row.customer_account_id), Number(row.total));
+        }
       }
       if (found !== customers.length) throw new AppError('Customer not found', 404, 'CUSTOMER_NOT_FOUND');
 
@@ -443,6 +456,33 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
       }
       added = toInsert.length;
       removed = [...toRemove.values()].reduce((sum, members) => sum + members.length, 0);
+
+      // Only a customer the change gives a new group can be pushed over the
+      // cap; one already over it may still be taken out of groups.
+      if (toInsert.length > 0) {
+        const delta = new Map();
+        for (const row of toInsert) {
+          delta.set(row.customer_account_id, (delta.get(row.customer_account_id) || 0) + 1);
+        }
+        for (const members of toRemove.values()) {
+          for (const customerId of members) {
+            if (delta.has(customerId)) delta.set(customerId, delta.get(customerId) - 1);
+          }
+        }
+        let over = 0;
+        for (const [customerId, change] of delta) {
+          if ((carried.get(customerId) || 0) + change > MAX_GROUPS_PER_CUSTOMER) over += 1;
+        }
+        if (over > 0) {
+          const err = new AppError(
+            `${over} of the selected customers would be in more than ${MAX_GROUPS_PER_CUSTOMER} groups. Remove them from the selection or take them out of other groups first.`,
+            400,
+            'BULK_GROUP_LIMIT',
+          );
+          err.details = { customers: over, limit: MAX_GROUPS_PER_CUSTOMER };
+          throw err;
+        }
+      }
       if (dryRun) return;
 
       for (const [groupId, members] of toRemove) {
@@ -469,6 +509,7 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
 
 module.exports = {
   DEFAULT_COLOR,
+  MAX_GROUPS_PER_CUSTOMER,
   list,
   countUngrouped,
   create,
