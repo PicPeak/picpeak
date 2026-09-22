@@ -917,6 +917,34 @@ describe('integrity report', () => {
     await db('contract_signing_events').where({ id: event.id }).update({ actor_label: event.actor_label });
     expect((await report(id)).ok).toBe(true);
 
+    // Each artefact removed in turn — the file, or its record — fails
+    // exactly its own check, never a skip.
+    const moveAway = (file) => {
+      fs.renameSync(file, `${file}.gone`);
+      return () => fs.renameSync(`${file}.gone`, file);
+    };
+    for (const [file, expected] of files) {
+      const restore = moveAway(file);
+      expect(await failing(id)).toEqual(expected);
+      restore();
+    }
+    await db('generated_documents').where({ id: certificate.id }).update({ kind: 'audit-hidden' });
+    expect(await failing(id)).toEqual(['certificate']);
+    await db('generated_documents').where({ id: certificate.id }).update({ kind: 'audit' });
+    await db('contract_signers').where({ id: signer.id }).update({ signature_path: null });
+    expect(await failing(id)).toEqual(['signature_image']);
+    await db('contract_signers').where({ id: signer.id }).update({ signature_path: signer.signature_path });
+    await db('contracts').where({ id }).update({ signed_pdf_path: null });
+    expect(await failing(id)).toEqual(['completed_artifact', 'signed_pdf']);
+    await db('contracts').where({ id }).update({ signed_pdf_path: contract.signed_pdf_path });
+    const allEvents = await db('contract_signing_events').where({ contract_id: id }).orderBy('seq');
+    await db('contract_signing_events').where({ contract_id: id, event_type: 'completed' }).del();
+    expect(await failing(id)).toEqual(['completed_artifact', 'event_chain']);
+    await db('contract_signing_events').where({ contract_id: id }).del();
+    expect(await failing(id)).toEqual(['completed_artifact', 'event_chain']);
+    await db('contract_signing_events').insert(allEvents.map(({ id: _id, ...row }) => row));
+    expect((await report(id)).ok).toBe(true);
+
     // The same report as a PDF.
     const pdf = await request(contractsApp).get(`/api/admin/contracts/${id}/verify-integrity?format=pdf`).set(auth)
       .buffer(true).parse((res, cb) => {

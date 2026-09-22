@@ -16,8 +16,11 @@
  *   completed_artifact the `completed` event's artifactSha256 ↔ the signed PDF on disk
  *
  * `ok` is true, false, or null for "can't be checked" (content redacted on
- * erasure). A check only appears when its artefact exists. The overall
- * result fails when any check is false.
+ * erasure). Which artefacts must exist is derived from what the contract
+ * recorded, never from what is found: a recorded hash, a status that
+ * implies a file, or a chain head each make their artefact required, and a
+ * required artefact that is gone — row or file — is a failing check with
+ * `note: 'missing'`. The overall result fails when any check is false.
  *
  * There is deliberately no public variant: "does this hash belong to
  * contract N" would be an enumeration oracle. The certificate prints the
@@ -68,18 +71,25 @@ async function integrityReport(contractId, { adminId = null } = {}) {
   if (!contract) throw new AppError('Contract not found', 404);
   const checks = [];
 
-  if (contract.pdf_path) checks.push(compare('unsigned_pdf', contract.pdf_sha256, fileSha(contract.pdf_path)));
-  if (contract.signed_pdf_path) checks.push(compare('signed_pdf', contract.signed_pdf_sha256, fileSha(contract.signed_pdf_path)));
+  const complete = contract.status === 'fully_signed';
+  if (contract.pdf_sha256 || contract.pdf_path) {
+    checks.push(compare('unsigned_pdf', contract.pdf_sha256, fileSha(contract.pdf_path)));
+  }
+  if (contract.signed_pdf_sha256 || contract.signed_pdf_path || complete) {
+    checks.push(compare('signed_pdf', contract.signed_pdf_sha256, fileSha(contract.signed_pdf_path)));
+  }
 
   const certificate = await db('generated_documents')
     .where({ doc_type: 'contract', doc_id: contractId, kind: 'audit' })
     .orderBy('id', 'desc')
     .first();
-  if (certificate) checks.push(compare('certificate', certificate.sha256, fileSha(certificate.path)));
+  if (certificate || complete) {
+    checks.push(compare('certificate', certificate && certificate.sha256, certificate ? fileSha(certificate.path) : null));
+  }
 
   const rows = await db('contract_signers').where({ contract_id: contractId }).orderBy('position', 'asc');
   for (const row of rows) {
-    if (!row.signature_path) continue;
+    if (!row.signature_sha256 && !row.signature_path) continue;
     checks.push(compare('signature_image', row.signature_sha256, fileSha(row.signature_path), { subject: row.slot_key }));
   }
 
@@ -115,21 +125,25 @@ async function integrityReport(contractId, { adminId = null } = {}) {
   }
 
   const events = await signingEvents.listEvents(contractId);
-  if (events.length) {
+  if (events.length || contract.audit_chain_head) {
     const chain = await signingEvents.verifyChain(contractId);
     checks.push({
       check: 'event_chain',
       subject: null,
-      ok: chain.ok,
+      // A recorded head with no events left is a log that went missing.
+      ok: chain.ok && events.length > 0,
       expected: contract.audit_chain_head || null,
       actual: chain.head,
-      note: chain.ok ? null : `${chain.reason} at #${chain.brokenAt}`,
+      note: !events.length ? 'missing' : (chain.ok ? null : `${chain.reason} at #${chain.brokenAt}`),
       brokenAt: chain.brokenAt,
     });
-    const completed = [...events].reverse().find((e) => e.type === 'completed');
-    if (completed) {
-      checks.push(compare('completed_artifact', completed.artifactSha256, fileSha(contract.signed_pdf_path)));
-    }
+  }
+  // A completed v2 contract has its completion in the log: the `completed`
+  // event, or — completed on paper — the `wet_upload` one.
+  const completion = [...events].reverse().find((e) => e.type === 'completed' || e.type === 'wet_upload');
+  if (completion || (complete && Number(contract.signing_version) === 2)) {
+    checks.push(compare('completed_artifact', completion && completion.artifactSha256, fileSha(contract.signed_pdf_path),
+      completion ? {} : { actual: null, note: 'missing' }));
   }
 
   const failed = checks.filter((c) => c.ok === false).map((c) => c.check);
