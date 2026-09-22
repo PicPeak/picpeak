@@ -12,6 +12,8 @@ const { PDFDocument } = require('pdf-lib');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
 
 jest.setTimeout(120000);
 
@@ -282,7 +284,7 @@ describe('the manifest is bound into the signature', () => {
     spy.mockRestore();
     expect(contract.attachment_manifest_sha256).toMatch(/^[0-9a-f]{64}$/);
     const stored = await db('generated_documents').where({ doc_type: 'contract', doc_id: id, kind: 'audit' }).first();
-    expect(fs.existsSync(stored.path)).toBe(true);
+    expect(fs.existsSync(onDisk(stored.path))).toBe(true);
   });
 });
 
@@ -1043,10 +1045,10 @@ describe('integrity report', () => {
     const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
     const library = await db('document_attachments').where({ id: terms.id }).first();
     const files = [
-      [contract.pdf_path, ['unsigned_pdf']],
-      [contract.signed_pdf_path, ['completed_artifact', 'signed_pdf']],
-      [certificate.path, ['certificate']],
-      [signer.signature_path, ['signature_image']],
+      [onDisk(contract.pdf_path), ['unsigned_pdf']],
+      [onDisk(contract.signed_pdf_path), ['completed_artifact', 'signed_pdf']],
+      [onDisk(certificate.path), ['certificate']],
+      [onDisk(signer.signature_path), ['signature_image']],
       [attachments.readStoredFile(library).absolute, ['attachment']],
     ];
     for (const [file, expected] of files) {

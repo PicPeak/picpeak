@@ -35,12 +35,20 @@ const { canonicalSha256 } = require('../../utils/canonicalJson');
 const signingEvents = require('./signingEvents');
 const attachments = require('./attachments');
 const { adminActor } = require('./helpers');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
-function fileSha(file) {
+/**
+ * The sha256 of a stored file, or null when it can't be read. The stored
+ * path may be storage-relative or recorded under another storage root (a
+ * restore); it is placed on this install's root with symlinks followed, and
+ * one that can't be placed inside the contract folders counts as missing.
+ */
+function fileSha(stored) {
   try {
-    return file && fs.existsSync(file) ? sha256(fs.readFileSync(file)) : null;
+    const file = resolveStoredPathStrict(stored, contractPdfRoots());
+    return file ? sha256(fs.readFileSync(file)) : null;
   } catch (_) {
     return null;
   }
@@ -186,8 +194,8 @@ async function integrityReport(contractId, { adminId = null } = {}) {
 }
 
 function leg(filePath, expected) {
-  const present = !!filePath && fs.existsSync(filePath);
-  const actual = present ? fileSha(filePath) : null;
+  const actual = fileSha(filePath);
+  const present = !!actual;
   return { path: filePath || null, present, expected: expected || null, actual, match: !!(expected && actual && expected === actual) };
 }
 

@@ -75,7 +75,7 @@ async function signedContract() {
   const { sessionToken } = await ok(asSigner(request(signingApp).post(`/api/public/contract-signing/invite/${link}/verify`)).send({ code }));
   await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
     .set('X-Signing-Session', sessionToken)
-    .send({ accepted: true, name: 'Anna Muster', mode: 'drawn', signatureDataUrl: PNG }));
+    .send({ consents: [{ key: 'acceptance', accepted: true }], name: 'Anna Muster', mode: 'drawn', signatureDataUrl: PNG }));
   const done = await ok(request(contractsApp).post(`/api/admin/contracts/${contract.id}/countersign`).set(auth)
     .send({ name: 'Studio Admin', mode: 'drawn', signatureDataUrl: PNG }));
   expect(done.status).toBe('fully_signed');
@@ -209,7 +209,6 @@ test('documents open and re-hash after a restore onto another storage path', asy
     res.on('data', (c) => chunks.push(c));
     res.on('end', () => cb(null, Buffer.concat(chunks)));
   };
-  const contractService = require('../../src/services/contractService');
   for (const id of [current, legacy]) {
     const { contract, documents } = expected[id];
     const pdf = await request(contractsApp).get(`/api/admin/contracts/${id}/pdf`).set(auth).buffer(true).parse(binary);
@@ -223,9 +222,21 @@ test('documents open and re-hash after a restore onto another storage path', asy
     const audit = documents.filter((d) => d.kind === 'audit').sort((a, b) => b.id - a.id)[0];
     expect(sha256(certificate.body)).toBe(audit.sha256);
 
-    const integrity = await contractService.verifyIntegrity(id);
+    // The signing-lifecycle integrity report: every artefact re-read and
+    // re-hashed after the move, none missing.
+    const integrity = await require('../../src/services/contract/integrity').integrityReport(id, { adminId });
+    expect(integrity.checks.filter((c) => c.note === 'missing')).toEqual([]);
+    expect(integrity.checks.filter((c) => c.ok === false)).toEqual([]);
+    expect(integrity.ok).toBe(true);
+    expect(integrity.checks.map((c) => c.check)).toEqual(expect.arrayContaining([
+      'unsigned_pdf', 'signed_pdf', 'certificate', 'signature_image', 'event_chain', 'completed_artifact',
+    ]));
+    expect(integrity.checks.filter((c) => c.check === 'signature_image')).toHaveLength(2);
     expect(integrity.unsigned).toEqual(expect.objectContaining({ present: true, match: true }));
     expect(integrity.signed).toEqual(expect.objectContaining({ present: true, match: true }));
+    const reportPdf = await request(contractsApp).get(`/api/admin/contracts/${id}/verify-integrity?format=pdf`).set(auth).buffer(true).parse(binary);
+    expect(reportPdf.status).toBe(200);
+    expect(reportPdf.body.slice(0, 5).toString()).toBe('%PDF-');
   }
 
   const report = await require('../../src/services/backupIntegrityService').verifyDocumentArtefacts();

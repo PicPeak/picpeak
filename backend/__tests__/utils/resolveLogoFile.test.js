@@ -21,11 +21,13 @@ const { resolveLogoFile } = require('../../src/utils/resolveLogoFile');
 const { getAppSetting } = require('../../src/utils/appSettings');
 
 describe('resolveLogoFile', () => {
-  let existsSpy, statSpy;
+  let existsSpy, statSpy, realpathSpy;
 
   beforeEach(() => {
     existsSpy = jest.spyOn(fs, 'existsSync');
     statSpy = jest.spyOn(fs, 'statSync');
+    // The paths here are fictional; no symlinks to follow.
+    realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p) => p);
     existsSpy.mockReturnValue(false);
     statSpy.mockImplementation(() => ({ isFile: () => true }));
     getAppSetting.mockReset();
@@ -34,6 +36,7 @@ describe('resolveLogoFile', () => {
   afterEach(() => {
     existsSpy.mockRestore();
     statSpy.mockRestore();
+    realpathSpy.mockRestore();
   });
 
   it('returns null when no sources are configured', async () => {
@@ -116,5 +119,12 @@ describe('resolveLogoFile', () => {
     getAppSetting.mockResolvedValue(null);
     const out = await resolveLogoFile({ logo_path: '/app/storage/uploads/logos/logo.png' });
     expect(out).toBe('/app/storage/uploads/logos/logo.png');
+  });
+
+  it('skips a candidate that is a symlink out of the storage root', async () => {
+    getAppSetting.mockResolvedValue(null);
+    existsSpy.mockImplementation((p) => p === '/app/storage/uploads/logos/linked.png');
+    realpathSpy.mockImplementation((p) => (p === '/app/storage/uploads/logos/linked.png' ? '/etc/secret.png' : p));
+    expect(await resolveLogoFile({ logo_path: 'uploads/logos/linked.png' })).toBeNull();
   });
 });
