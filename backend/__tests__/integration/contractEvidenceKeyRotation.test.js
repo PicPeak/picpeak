@@ -123,12 +123,12 @@ test('rotation moves every value to the new key and changes no hash', async () =
   });
   const before = await snapshot();
 
-  // A new key from the env var: until the rotation keeps the generated file,
-  // the values written under it can't be read.
+  // A new key from the env var: the generated file it replaced stays
+  // readable, so no signer's address goes blank before the rotation.
   process.env.PICPEAK_EVIDENCE_KEY = KEY_B;
   fieldEncryption._resetForTests();
   const keyB = fieldEncryption.keyInfo().keyId;
-  expect(fieldEncryption.tryDecrypt(signers[0].name_enc)).toBeNull();
+  expect(fieldEncryption.tryDecrypt(signers[0].email_enc)).toBe(customerEmail);
 
   const { rotate } = require('../../scripts/rotate-evidence-key');
   const dry = await rotate({ db, fieldEncryption, dryRun: true });
@@ -177,4 +177,37 @@ test('a malformed old key is refused at boot', () => {
   expect(fieldEncryption.keyProblemAtBoot()).toMatch(/PICPEAK_EVIDENCE_KEYS_OLD \(entry 2\)/);
   process.env.PICPEAK_EVIDENCE_KEYS_OLD = KEY_B;
   expect(fieldEncryption.keyProblemAtBoot()).toBeNull();
+});
+
+test('no invitation goes to an address that can\'t be read; the contract says why', async () => {
+  // Lose every key the evidence was written under.
+  process.env.PICPEAK_EVIDENCE_KEY = 'f'.repeat(64);
+  delete process.env.PICPEAK_EVIDENCE_KEYS_OLD;
+  fieldEncryption._resetForTests();
+  const keysDir = path.join(process.env.STORAGE_PATH, 'business-docs', 'keys');
+  const hidden = `${keysDir}-hidden`;
+  fs.renameSync(keysDir, hidden);
+  try {
+    const { contract } = await ok(request(contractsApp).post('/api/admin/contracts').set(auth)
+      .send({ customerAccountId: (await db('customer_accounts').first()).id }));
+    // The signer rows are written under the key in use; make their address
+    // unreadable the way a lost key does.
+    await ok(request(contractsApp).put(`/api/admin/contracts/${contract.id}/signers`).set(auth)
+      .send({ signers: [{ name: 'Anna Muster', email: customerEmail }] }));
+    await db('contract_signers').where({ contract_id: contract.id, role: 'customer' })
+      .update({ email_enc: 'v1:deadbeef:AAAA.AAAA.AAAA' });
+    const queuedBefore = await db('email_queue').where({ email_type: 'contract_sent' }).count({ n: '*' }).first();
+
+    await ok(request(contractsApp).post(`/api/admin/contracts/${contract.id}/send`).set(auth));
+    const queuedAfter = await db('email_queue').where({ email_type: 'contract_sent' }).count({ n: '*' }).first();
+    expect(Number(queuedAfter.n)).toBe(Number(queuedBefore.n));
+    expect(await db('email_queue').where({ recipient_email: '' })).toHaveLength(0);
+    const sent = await db('contracts').where({ id: contract.id }).first();
+    expect(sent.follow_up_error).toMatch(/^invitation:/);
+    expect((await db('contract_signers').where({ contract_id: contract.id, role: 'customer' }).first()).status).toBe('pending');
+  } finally {
+    fs.renameSync(hidden, keysDir);
+    process.env.PICPEAK_EVIDENCE_KEY = KEY_B;
+    fieldEncryption._resetForTests();
+  }
 });

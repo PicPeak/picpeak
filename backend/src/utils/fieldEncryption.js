@@ -26,12 +26,13 @@
  *
  * The key ring (key rotation): `encrypt` always uses the current key;
  * `decrypt` picks the key by the id in the value, from the current key,
- * PICPEAK_EVIDENCE_KEYS_OLD (comma-separated, the same accepted forms) and
- * any `evidence.key.<keyId>` file next to the key file. A generated
- * `evidence.key` that PICPEAK_EVIDENCE_KEY has replaced is not read:
- * scripts/rotate-evidence-key.js renames it to `evidence.key.<keyId>` on its
- * first run and then re-encrypts everything under the current key; the old
- * keys can go once it reports no rows left under them.
+ * PICPEAK_EVIDENCE_KEYS_OLD (comma-separated, the same accepted forms), any
+ * `evidence.key.<keyId>` file next to the key file and — once
+ * PICPEAK_EVIDENCE_KEY has taken over — the generated `evidence.key` it
+ * replaced, so nothing becomes unreadable between setting the variable and
+ * running scripts/rotate-evidence-key.js. The script keeps that file as
+ * `evidence.key.<keyId>` and re-encrypts everything under the current key;
+ * the old keys can go once it reports no rows left under them.
  */
 
 const crypto = require('crypto');
@@ -145,7 +146,8 @@ function keyRing({ refresh = false } = {}) {
     names = fs.readdirSync(dir);
   } catch (_) { /* no key directory yet */ }
   for (const name of names) {
-    if (!name.startsWith(`${base}.`)) continue;
+    const replaced = name === base && current.source === 'env';
+    if (!replaced && !name.startsWith(`${base}.`)) continue;
     try {
       const key = readKeyFile(path.join(dir, name));
       keys.set(idOf(key), key);

@@ -60,11 +60,18 @@ test('a changed value is refused, and so is one from another key', () => {
   flipped[0] ^= 1;
   expect(() => fieldEncryption.decrypt(`${v}:${id}:${iv}.${tag}.${flipped.toString('base64url')}`)).toThrow();
 
+  // A key nobody holds any more.
+  const foreign = stored.replace(/^v1:[0-9a-f]{8}:/, 'v1:deadbeef:');
+  expect(() => fieldEncryption.decrypt(foreign)).toThrow(/different evidence key/);
+  expect(fieldEncryption.tryDecrypt(foreign)).toBeNull();
+
+  // Setting the env key keeps the generated file readable as an old key
+  // (#1446 key ring), so evidence doesn't go blank before the rotation runs.
   process.env.PICPEAK_EVIDENCE_KEY = 'a'.repeat(64);
   fieldEncryption._resetForTests();
   expect(fieldEncryption.keyInfo().source).toBe('env');
-  expect(() => fieldEncryption.decrypt(stored)).toThrow(/different evidence key/);
-  expect(fieldEncryption.tryDecrypt(stored)).toBeNull();
+  expect(fieldEncryption.decrypt(stored)).toBe('Anna Muster');
+  expect(fieldEncryption.encrypt('x').startsWith(`v1:${fieldEncryption.keyInfo().keyId}:`)).toBe(true);
 });
 
 test('a key with a character missing is refused, a passphrase is not', () => {

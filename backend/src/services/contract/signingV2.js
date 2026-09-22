@@ -287,12 +287,26 @@ function dueSigners(contract, rows) {
   return contract.status === 'awaiting_data' ? due.filter((r) => Number(r.position) === 1) : due;
 }
 
+/**
+ * The signer's address, or an error when it can't be read — a lost evidence
+ * key decrypts to nothing, and a mail to '' must never be queued as if it
+ * had gone somewhere.
+ */
+function deliverableEmail(row) {
+  const email = signerEmail(row);
+  if (!email) {
+    throw new AppError('The signer\'s email address can\'t be read (check the evidence key).', 500, 'SIGNER_EMAIL_UNREADABLE');
+  }
+  return email;
+}
+
 async function sendInvitation(contract, row, token, template = 'contract_sent') {
+  const to = deliverableEmail(row);
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';
   // Asking for details carries nothing of the contract: no title, no PDF, no
   // attachment — it isn't frozen yet, and the link is not verified yet.
   const asksForDetails = contract.status === 'awaiting_data';
-  await emailProcessor.queueEmail(null, signerEmail(row), asksForDetails ? 'contract_data_request' : template, {
+  await emailProcessor.queueEmail(null, to, asksForDetails ? 'contract_data_request' : template, {
     contract_number: contract.contract_number,
     customer_name: signerName(row),
     response_url: `${frontendUrl}/contract/${token}`,
@@ -326,7 +340,10 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
       await sendInvitation(contract, row, token);
     } catch (err) {
       await signers.undoInvitation(row.id);
-      throw err;
+      // An address that can't be read is recorded on the contract for the
+      // admin, and the other signers still get their links.
+      if (err.code !== 'SIGNER_EMAIL_UNREADABLE') throw err;
+      await recordFollowUpFailure(contractId, 'invitation', err);
     }
   }
   return due.length;
@@ -971,7 +988,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   // The signer's own receipt, straight away.
   await step('signature_receipt', async () => {
     const profile = await db('business_profile').where({ id: 1 }).first();
-    await emailProcessor.queueEmail(null, signerEmail(signer), 'contract_signature_received', {
+    await emailProcessor.queueEmail(null, deliverableEmail(signer), 'contract_signature_received', {
       contract_number: contract.contract_number,
       customer_name: name,
       title: contract.title || '',
