@@ -15,7 +15,7 @@ vi.mock('react-i18next', async () => {
     const text = typeof fb === 'string' ? fb : k;
     return text.replace(/\{\{(\w+)\}\}/g, (_, name) => String(opts?.[name] ?? ''));
   };
-  return { ...actual, useTranslation: () => ({ t, i18n: { language: 'en' } }) };
+  return { ...actual, useTranslation: () => ({ t }) };
 });
 
 const flagsState = { flags: {} as Record<string, boolean>, isLoading: false };
@@ -57,6 +57,6 @@ describe('CrmSettingsPage subtitle', () => {
   it('lists every enabled area', async () => {
     flagsState.flags = { quotes: true, bills: true, documents: true };
     renderPage();
-    expect(await screen.findByText('Settings for quotes, invoices, and customer documents.')).toBeInTheDocument();
+    expect(await screen.findByText('Settings for quotes, invoices and customer documents.')).toBeInTheDocument();
   });
 });

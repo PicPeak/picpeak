@@ -7445,7 +7445,8 @@
       "quotes": "quotes",
       "invoices": "invoices",
       "contracts": "contracts",
-      "documents": "customer documents"
+      "documents": "customer documents",
+      "and": "and"
     },
     "emptyState": "No CRM features are currently enabled. Turn on Quotes, Invoices, or Contracts in Settings → Features to see the matching configuration here.",
     "section": {

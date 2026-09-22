@@ -7446,7 +7446,8 @@
       "quotes": "Angebote",
       "invoices": "Rechnungen",
       "contracts": "Verträge",
-      "documents": "Kundendokumente"
+      "documents": "Kundendokumente",
+      "and": "und"
     },
     "emptyState": "Aktuell sind keine CRM-Funktionen aktiv. Aktivieren Sie Angebote, Rechnungen oder Verträge unter Einstellungen → Features, damit die passenden Konfigurationen hier erscheinen.",
     "section": {

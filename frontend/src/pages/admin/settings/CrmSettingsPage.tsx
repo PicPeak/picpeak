@@ -86,7 +86,7 @@ const SETTING_KEYS = [
 ];
 
 export const CrmSettingsPage: React.FC = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { flags } = useFeatureFlags();
   // Show each section only when the corresponding master flag is on —
   // configuring Skonto on quotes is pointless when quotes itself is
@@ -111,11 +111,15 @@ export const CrmSettingsPage: React.FC = () => {
     showContracts && t('crmSettings.areas.contracts', 'contracts'),
     showDocuments && t('crmSettings.areas.documents', 'customer documents'),
   ].filter((a): a is string => !!a);
+  // Joined with a translated "and" rather than Intl.ListFormat: a partial
+  // locale falls back to the English area names, and its own conjunction
+  // would then read "quotes et invoices".
+  const andWord = t('crmSettings.areas.and', 'and');
+  const areaList = subtitleAreas.length > 1
+    ? `${subtitleAreas.slice(0, -1).join(', ')} ${andWord} ${subtitleAreas[subtitleAreas.length - 1]}`
+    : subtitleAreas[0];
   const subtitle = subtitleAreas.length
-    ? t('crmSettings.subtitleFor', 'Settings for {{areas}}.', {
-      areas: new Intl.ListFormat(i18n.language || 'en', { style: 'long', type: 'conjunction' }).format(subtitleAreas),
-      interpolation: { escapeValue: false },
-    })
+    ? t('crmSettings.subtitleFor', 'Settings for {{areas}}.', { areas: areaList, interpolation: { escapeValue: false } })
     : t('crmSettings.subtitle', 'Fine-tune quote and invoice behaviour.');
   const { data, isLoading } = useQuery({
     queryKey: ['settings', 'crm'],
