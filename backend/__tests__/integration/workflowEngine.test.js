@@ -202,6 +202,58 @@ describe('workflow engine', () => {
     expect(await cond(makeCtx({ paid_at: null, status: 'sent', paid_amount_minor: 0, total_amount_minor: 1000 }))).toBe(false);
   });
 
+  test('customer_in_group reads the run customer\'s groups when it is evaluated (#1443)', async () => {
+    const ts = new Date().toISOString();
+    const idOf = (rows) => (typeof rows[0] === 'object' ? rows[0].id : rows[0]);
+    const customer = idOf(await db('customer_accounts').insert({ email: 'wf-group@example.com', is_active: true, created_at: ts }).returning('id'));
+    const [vip, press] = [
+      idOf(await db('customer_groups').insert({ name: 'WF VIP', name_key: 'wf vip', color: '#2563EB', sort_order: 1, is_archived: false, created_at: ts, updated_at: ts }).returning('id')),
+      idOf(await db('customer_groups').insert({ name: 'WF Press', name_key: 'wf press', color: '#2563EB', sort_order: 2, is_archived: false, created_at: ts, updated_at: ts }).returning('id')),
+    ];
+    await db('customer_group_members').insert({ group_id: vip, customer_account_id: customer });
+
+    const cond = require('../../src/services/workflows/registry').getCondition('customer_in_group');
+    const ctx = (config, vars = { customerAccountId: customer }) => ({ run: {}, node: { config }, vars, db });
+    expect(await cond(ctx({ groupIds: [vip] }))).toBe(true);
+    expect(await cond(ctx({ groupIds: [vip, press] }))).toBe(true);
+    expect(await cond(ctx({ groupIds: [vip, press], match: 'all' }))).toBe(false);
+    expect(await cond(ctx({ groupIds: [press] }))).toBe(false);
+    expect(await cond(ctx({ groupIds: [] }))).toBe(false);
+    // No customer on the run (a gallery trigger): false, not an error.
+    expect(await cond(ctx({ groupIds: [vip] }, {}))).toBe(false);
+
+    // Through the engine: membership is read when the node runs, not when the
+    // run started, and a dry run takes the same branch.
+    const groupFlow = await makeWorkflow({
+      trigger: 'group.event',
+      nodes: [
+        { key: 'g1', type: 'trigger' },
+        { key: 'g2', type: 'wait', config: { delayMinutes: 0 } },
+        { key: 'g3', type: 'condition', config: { condition: 'customer_in_group', groupIds: [vip, press], match: 'all' } },
+        { key: 'g4', type: 'action', config: { action: 'noop' } },
+        { key: 'g5', type: 'action', config: { action: 'noop' } },
+      ],
+      edges: [
+        { from: 'g1', to: 'g2' },
+        { from: 'g2', to: 'g3' },
+        { from: 'g3', handle: 'yes', to: 'g4' },
+        { from: 'g3', handle: 'no', to: 'g5' },
+      ],
+    });
+    const [runId] = await engine.emitWorkflowEvent('group.event', { entityType: 'customer', entityId: customer, payload: { customerAccountId: customer } });
+    expect((await db('workflow_runs').where({ id: runId }).first()).status).toBe('waiting');
+    await db('customer_group_members').insert({ group_id: press, customer_account_id: customer });
+    await engine.resumeRun(runId);
+    const taken = await db('workflow_run_steps').where({ run_id: runId }).pluck('node_key');
+    expect(taken).toContain('g4');
+    expect(taken).not.toContain('g5');
+
+    const dryRunId = await engine.testRun(groupFlow, { payload: { customerAccountId: customer }, dryRun: true });
+    const dryTaken = await db('workflow_run_steps').where({ run_id: dryRunId }).pluck('node_key');
+    expect(dryTaken).toContain('g4');
+    expect(dryTaken).not.toContain('g5');
+  });
+
   test('gate creates a pending approval + admin email, token confirm resumes the run', async () => {
     await makeWorkflow({
       trigger: 'approval.event',

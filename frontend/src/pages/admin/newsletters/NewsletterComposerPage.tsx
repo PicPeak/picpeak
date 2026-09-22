@@ -25,6 +25,7 @@ import {
   newslettersService, type Campaign, type RecipientMode,
 } from '../../../services/newsletters.service';
 import { customerAdminService } from '../../../services/customerAdmin.service';
+import { GroupDot } from '../../../components/admin/CustomerGroupChips';
 import { usePermissions } from '../../../contexts/PermissionsContext';
 
 /**
@@ -96,6 +97,17 @@ export const NewsletterComposerPage: React.FC = () => {
     enabled: draft?.recipientMode === 'manual' && canPickCustomers,
   });
 
+  // Customer groups (#1443) read /admin/customers/groups, also customers.view.
+  const { data: groupCatalogue } = useQuery({
+    queryKey: ['admin-customer-groups'],
+    queryFn: () => customerAdminService.listGroups(true),
+    enabled: draft?.recipientMode === 'groups' && canPickCustomers,
+  });
+  // Live groups, plus any archived one the draft still names so it can be
+  // unticked — the server refuses to save an archived group.
+  const groupOptions = useMemo(() => (groupCatalogue || [])
+    .filter((g) => !g.isArchived || (draft?.groupIds || []).includes(g.id)), [groupCatalogue, draft?.groupIds]);
+
   const save = useMutation({
     mutationFn: async () => {
       if (!draft) throw new Error('no draft');
@@ -107,6 +119,8 @@ export const NewsletterComposerPage: React.FC = () => {
         language: draft.language,
         recipientMode: draft.recipientMode,
         customerIds: draft.customerIds,
+        groupIds: draft.groupIds || [],
+        groupMatch: draft.groupMatch || 'any',
         sendRatePerMinute: draft.sendRatePerMinute,
       });
     },
@@ -335,7 +349,7 @@ export const NewsletterComposerPage: React.FC = () => {
           </div>
 
           <div className="space-y-2 mb-4">
-            {(['all_active', 'manual'] as RecipientMode[])
+            {(['all_active', 'manual', 'groups'] as RecipientMode[])
               .filter((mode) => mode === 'all_active' || canPickCustomers)
               .map((mode) => (
               <label key={mode} className="flex items-start gap-2 cursor-pointer">
@@ -350,7 +364,9 @@ export const NewsletterComposerPage: React.FC = () => {
                   <span className="font-medium text-neutral-900 dark:text-neutral-100">
                     {mode === 'all_active'
                       ? t('newsletters.mode.allActive', 'All active customers')
-                      : t('newsletters.mode.manual', 'Pick customers')}
+                      : mode === 'manual'
+                        ? t('newsletters.mode.manual', 'Pick customers')
+                        : t('newsletters.mode.groups', 'Customers in groups')}
                   </span>
                 </span>
               </label>
@@ -375,6 +391,58 @@ export const NewsletterComposerPage: React.FC = () => {
                   </span>
                 </label>
               ))}
+            </div>
+          )}
+
+          {draft.recipientMode === 'groups' && (
+            <div className="mb-4 space-y-2">
+              <div className="max-h-64 overflow-y-auto border border-neutral-200 dark:border-neutral-700 rounded-md p-2">
+                {groupOptions.length === 0 ? (
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                    {t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')}
+                  </p>
+                ) : groupOptions.map((g) => (
+                  <label key={g.id} className="flex items-center gap-2 py-1 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={(draft.groupIds || []).includes(g.id)}
+                      onChange={(e) => patch({
+                        groupIds: e.target.checked
+                          ? [...(draft.groupIds || []), g.id]
+                          : (draft.groupIds || []).filter((x) => x !== g.id),
+                      })}
+                    />
+                    <GroupDot color={g.color} className="h-2.5 w-2.5" />
+                    <span className="text-neutral-800 dark:text-neutral-200">{g.name}</span>
+                    {g.isArchived && (
+                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                        {t('customers.groups.archived', 'Archived')}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              {(draft.groupIds || []).length >= 2 && (
+                <div className="flex flex-wrap gap-4 text-sm" role="radiogroup" aria-label={t('customers.groups.matchLabel', 'Customers in') as string}>
+                  {(['any', 'all'] as const).map((value) => (
+                    <label key={value} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="groupMatch"
+                        checked={(draft.groupMatch || 'any') === value}
+                        onChange={() => patch({ groupMatch: value })}
+                      />
+                      {value === 'any'
+                        ? t('customers.groups.matchAny', 'Any of them')
+                        : t('customers.groups.matchAll', 'All of them')}
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {t('newsletters.groupsHint',
+                  'Who is in the groups is read when the campaign is sent, not now. Deactivated and unsubscribed customers are left out.')}
+              </p>
             </div>
           )}
 

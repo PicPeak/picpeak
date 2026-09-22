@@ -38,7 +38,11 @@ const MAX_BODY_BYTES = 200 * 1024;
 const MAX_SUBJECT_LENGTH = 255;
 
 const VALID_STATUSES = ['draft', 'queued', 'sending', 'sent', 'cancelled', 'failed'];
-const VALID_RECIPIENT_MODES = ['all_active', 'manual'];
+// `groups` (#1443): the active, consenting customers in the selected customer
+// groups, read when the campaign is queued.
+const VALID_RECIPIENT_MODES = ['all_active', 'manual', 'groups'];
+const VALID_GROUP_MATCHES = ['any', 'all'];
+const MAX_RECIPIENT_GROUPS = 100;
 
 // Rate bounds.
 //
@@ -413,10 +417,27 @@ async function resolveRecipients(campaign, conn = db) {
   if (campaign.recipient_mode === 'manual' && ids.length === 0) {
     return { recipients: [], skippedOptOut: 0, skippedNoEmail: 0 };
   }
+  const { groupIds, match } = parseGroupFilter(campaign);
+  if (campaign.recipient_mode === 'groups' && groupIds.length === 0) {
+    return { recipients: [], skippedOptOut: 0, skippedNoEmail: 0 };
+  }
 
+  // Groups: the all_active rule narrowed to the members of the groups, as
+  // they are now. This is what queueCampaign sends to, so membership is
+  // evaluated when the campaign is queued — never taken from the composer —
+  // and a group deleted since the draft was saved contributes nobody. The
+  // email_campaign_recipients rows written at queue time are the record of
+  // who it went to; a later group change does not touch them.
   const base = () => {
     const q = conn('customer_accounts').where('is_active', formatBoolean(true));
     if (campaign.recipient_mode === 'manual') q.whereIn('id', ids);
+    if (campaign.recipient_mode === 'groups') {
+      const members = conn('customer_group_members').whereIn('group_id', groupIds);
+      if (match === 'all') {
+        members.groupBy('customer_account_id').havingRaw('COUNT(DISTINCT group_id) = ?', [groupIds.length]);
+      }
+      q.whereIn('id', members.select('customer_account_id'));
+    }
     return q;
   };
 
@@ -481,6 +502,71 @@ function parseRecipientIds(campaign) {
   const ids = Array.isArray(parsed) ? parsed : parsed?.customerIds;
   if (!Array.isArray(ids)) return [];
   return [...new Set(ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+}
+
+function parseFilterObject(raw) {
+  if (!raw) return {};
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) return { customerIds: parsed };
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+const cleanIds = (value) => [...new Set((Array.isArray(value) ? value : [])
+  .map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+
+/** The groups rule of a campaign: `{ groupIds, match }`, `any` by default. */
+function parseGroupFilter(campaign) {
+  const filter = parseFilterObject(campaign.recipient_filter);
+  return {
+    groupIds: cleanIds(filter.groupIds),
+    match: filter.match === 'all' ? 'all' : 'any',
+  };
+}
+
+/**
+ * `recipient_filter` holds both the manual selection and the groups rule,
+ * so switching the mode back and forth doesn't lose either. A payload
+ * replaces only the parts it sends.
+ */
+function mergeRecipientFilter(existingRaw, payload) {
+  const filter = parseFilterObject(existingRaw);
+  if (payload.customerIds !== undefined) filter.customerIds = cleanIds(payload.customerIds);
+  if (payload.groupIds !== undefined) {
+    const groupIds = cleanIds(payload.groupIds);
+    if (groupIds.length > MAX_RECIPIENT_GROUPS) {
+      throw new AppError(`A campaign can target at most ${MAX_RECIPIENT_GROUPS} groups`, 400);
+    }
+    filter.groupIds = groupIds;
+  }
+  if (payload.groupMatch !== undefined) {
+    if (!VALID_GROUP_MATCHES.includes(payload.groupMatch)) {
+      throw new AppError('groupMatch must be any or all', 400);
+    }
+    filter.match = payload.groupMatch;
+  }
+  for (const key of ['customerIds', 'groupIds']) {
+    if (Array.isArray(filter[key]) && filter[key].length === 0) delete filter[key];
+  }
+  if (!filter.groupIds) delete filter.match;
+  return Object.keys(filter).length ? JSON.stringify(filter) : null;
+}
+
+/**
+ * A groups campaign needs at least one group, and only groups that exist and
+ * are not archived. Checked when the rule is saved; at send time a group
+ * that has gone since simply contributes nobody.
+ */
+async function assertGroupRule(recipientFilter) {
+  const { groupIds } = parseGroupFilter({ recipient_filter: recipientFilter });
+  if (groupIds.length === 0) throw new AppError('Pick at least one customer group', 400);
+  const groups = await db('customer_groups').whereIn('id', groupIds);
+  if (groups.length !== groupIds.length) throw new AppError('Customer group not found', 404);
+  const archived = groups.find((g) => g.is_archived === true || g.is_archived === 1 || g.is_archived === '1');
+  if (archived) throw new AppError(`"${archived.name}" is archived and can't be targeted`, 400);
 }
 
 /**
@@ -853,16 +939,11 @@ function sanitiseCampaignPayload(payload = {}) {
   if (payload.recipientMode !== undefined) {
     const mode = String(payload.recipientMode || '');
     if (!VALID_RECIPIENT_MODES.includes(mode)) {
-      throw new AppError('recipientMode must be all_active or manual', 400);
+      throw new AppError('recipientMode must be all_active, manual or groups', 400);
     }
     out.recipient_mode = mode;
   }
-  if (payload.customerIds !== undefined) {
-    const ids = Array.isArray(payload.customerIds)
-      ? [...new Set(payload.customerIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))]
-      : [];
-    out.recipient_filter = ids.length ? JSON.stringify({ customerIds: ids }) : null;
-  }
+  // recipient_filter is merged with the stored one by the caller.
   if (payload.sendRatePerMinute !== undefined) {
     out.send_rate_per_minute = clampRate(payload.sendRatePerMinute);
   }
@@ -870,10 +951,18 @@ function sanitiseCampaignPayload(payload = {}) {
   return out;
 }
 
+/** Whether a payload touches the recipient rule. */
+const touchesRecipients = (payload) => ['recipientMode', 'customerIds', 'groupIds', 'groupMatch']
+  .some((key) => payload[key] !== undefined);
+
 async function createCampaign(payload, adminId) {
   const data = sanitiseCampaignPayload(payload);
   if (!data.name) throw new AppError('Campaign name is required', 400);
   if (!data.subject) throw new AppError('Subject is required', 400);
+  if (touchesRecipients(payload)) {
+    data.recipient_filter = mergeRecipientFilter(null, payload);
+    if (data.recipient_mode === 'groups') await assertGroupRule(data.recipient_filter);
+  }
 
   const nowIso = new Date().toISOString();
   const inserted = await db('email_campaigns').insert({
@@ -899,6 +988,10 @@ async function updateCampaign(id, payload, adminId) {
     throw new AppError('Only a draft campaign can be edited', 409);
   }
   const data = sanitiseCampaignPayload(payload);
+  if (touchesRecipients(payload)) {
+    data.recipient_filter = mergeRecipientFilter(campaign.recipient_filter, payload);
+    if ((data.recipient_mode || campaign.recipient_mode) === 'groups') await assertGroupRule(data.recipient_filter);
+  }
   if (Object.keys(data).length === 0) return campaign;
 
   data.updated_at = new Date().toISOString();
@@ -1004,4 +1097,7 @@ module.exports = {
   DEFAULT_RATE_PER_MINUTE,
   VALID_STATUSES,
   VALID_RECIPIENT_MODES,
+  VALID_GROUP_MATCHES,
+  MAX_RECIPIENT_GROUPS,
+  parseGroupFilter,
 };

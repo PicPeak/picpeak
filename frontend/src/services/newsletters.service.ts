@@ -11,7 +11,7 @@ import { api } from '../config/api';
 export type CampaignStatus =
   | 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'failed';
 
-export type RecipientMode = 'all_active' | 'manual';
+export type RecipientMode = 'all_active' | 'manual' | 'groups';
 
 export type RecipientStatus =
   | 'queued' | 'sent' | 'failed' | 'cancelled' | 'skipped_opt_out';
@@ -29,6 +29,10 @@ export interface Campaign {
   recipientMode: RecipientMode;
   /** Only meaningful when recipientMode is 'manual'. */
   customerIds: number[];
+  /** Only meaningful when recipientMode is 'groups' (#1443). Membership is
+   *  read on the server when the campaign is queued. */
+  groupIds: number[];
+  groupMatch: 'any' | 'all';
   recipientCount: number;
   sentCount: number;
   failedCount: number;
@@ -69,6 +73,8 @@ export interface CampaignPayload {
   language?: string;
   recipientMode?: RecipientMode;
   customerIds?: number[];
+  groupIds?: number[];
+  groupMatch?: 'any' | 'all';
   sendRatePerMinute?: number;
 }
 

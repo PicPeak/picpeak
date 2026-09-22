@@ -64,6 +64,7 @@ function describeNode(type: string, config: any = {}, triggerType?: string): str
     case 'condition':
     case 'branch':
       if (c.condition === 'invoice_paid') return 'Invoice paid?';
+      if (c.condition === 'customer_in_group') return 'Customer in group?';
       if (c.condition === 'expr') return `${c.field || 'field'} ${c.op || ''} ${c.value ?? ''}`.trim();
       if (c.condition === 'always') return 'Always';
       if (c.condition === 'never') return 'Never';

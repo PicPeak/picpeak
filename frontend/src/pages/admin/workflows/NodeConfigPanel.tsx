@@ -4,8 +4,11 @@
  * kept for power users / config the form doesn't cover. Changes are applied
  * live to the node (the global Save persists them).
  */
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { customerAdminService } from '../../../services/customerAdmin.service';
+import { PermissionsContext } from '../../../contexts/PermissionsContext';
 
 type Cfg = Record<string, any>;
 
@@ -40,6 +43,7 @@ const ACTIONS = [
 ];
 const CONDITIONS = [
   ['invoice_paid', 'Invoice is paid'],
+  ['customer_in_group', 'Customer is in group'],
   ['expr', 'Compare a field'],
   ['always', 'Always → yes'],
   ['never', 'Never → no'],
@@ -71,6 +75,18 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
   };
 
   const waitMode = config.untilVar ? 'until' : 'delay';
+
+  // Customer groups for the customer_in_group condition (#1443). Listing them
+  // needs customers.view; without it the ids already in the config stay as
+  // they are and only the JSON editor can change them.
+  const canListGroups = !!useContext(PermissionsContext)?.hasPermission('customers.view');
+  const wantsGroups = (nodeType === 'condition' || nodeType === 'branch') && config.condition === 'customer_in_group';
+  const { data: groups } = useQuery({
+    queryKey: ['admin-customer-groups'],
+    queryFn: () => customerAdminService.listGroups(true),
+    enabled: wantsGroups && canListGroups,
+  });
+  const groupIds: number[] = Array.isArray(config.groupIds) ? config.groupIds : [];
 
   return (
     <div className="space-y-3">
@@ -147,6 +163,42 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
                   <input className={field} value={config.value ?? ''} onChange={(e) => set({ value: e.target.value })} />
                 </Row>
               )}
+            </>
+          )}
+          {config.condition === 'customer_in_group' && (
+            <>
+              <Row label={t('workflows.editor.groups', 'Customer groups')}>
+                {canListGroups ? (
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {(groups || []).filter((g) => !g.isArchived || groupIds.includes(g.id)).map((g) => (
+                      <label key={g.id} className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+                        <input
+                          type="checkbox"
+                          checked={groupIds.includes(g.id)}
+                          onChange={(e) => set({
+                            groupIds: e.target.checked ? [...groupIds, g.id] : groupIds.filter((id) => id !== g.id),
+                          })}
+                        />
+                        {g.name}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {t('workflows.editor.groupsNoPermission', 'Listing customer groups needs the customers.view permission.')}
+                  </p>
+                )}
+              </Row>
+              <Row label={t('customers.groups.matchLabel', 'Customers in')}>
+                <select className={field} value={config.match === 'all' ? 'all' : 'any'} onChange={(e) => set({ match: e.target.value })}>
+                  <option value="any">{t('customers.groups.matchAny', 'Any of them')}</option>
+                  <option value="all">{t('customers.groups.matchAll', 'All of them')}</option>
+                </select>
+              </Row>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                {t('workflows.editor.groupsHint',
+                  'Checked when this step runs. Needs a customer on the run: customer, quote, contract and invoice triggers have one; on gallery and event triggers this is always “no”.')}
+              </p>
             </>
           )}
           <p className="text-xs text-neutral-500 dark:text-neutral-400">

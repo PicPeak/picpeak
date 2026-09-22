@@ -305,4 +305,22 @@ describe('admin newsletters routes', () => {
   it('rejects an unknown status filter', async () => {
     expect((await request(app).get(`${MOUNT}?status=bogus`).set(auth(superToken))).status).toBe(400);
   });
+
+  it('saves and answers a groups rule, and refuses one it cannot hold (#1443)', async () => {
+    const [inserted] = await db('customer_groups').insert({
+      name: 'Newsletter segment', name_key: 'newsletter segment', color: '#2563EB', sort_order: 1,
+      is_archived: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).returning('id');
+    const groupId = typeof inserted === 'object' ? inserted.id : inserted;
+
+    const { body } = await createDraft({ recipientMode: 'groups', groupIds: [groupId], groupMatch: 'all' });
+    expect(body.campaign).toMatchObject({ recipientMode: 'groups', groupIds: [groupId], groupMatch: 'all' });
+
+    const put = (payload) => request(app).put(`${MOUNT}/${body.campaign.id}`).set(auth(superToken)).send(payload);
+    expect((await put({ groupMatch: 'some' })).status).toBe(400);
+    expect((await put({ groupIds: Array.from({ length: 101 }, (_, i) => i + 1) })).status).toBe(400);
+    expect((await put({ groupIds: ['x'] })).status).toBe(400);
+
+    await db('customer_groups').where({ id: groupId }).del();
+  });
 });

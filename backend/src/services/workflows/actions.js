@@ -32,6 +32,29 @@ registry.registerCondition('invoice_paid', async (ctx) => {
   return Number.isFinite(total) && total > 0 && paid >= total;
 });
 
+// True when the run's customer is in the configured customer groups (#1443):
+// `match: 'any'` (default) in at least one, `'all'` in every one. Membership
+// is read here, when the node is evaluated — a delayed node sees the groups as
+// they are then, not as they were when the run started. The customer comes
+// from `customerAccountId` in the run's vars, which the customer.created,
+// quote.*, contract.* and invoice.* triggers set; on any other trigger (the
+// gallery and event ones) there is no customer and the condition is false.
+// Read-only, so a dry run evaluates it like a real one.
+registry.registerCondition('customer_in_group', async (ctx) => {
+  const customerId = Number(ctx.vars?.customerAccountId);
+  if (!Number.isInteger(customerId) || customerId <= 0) return false;
+  const cfg = ctx.node?.config || {};
+  const groupIds = [...new Set((Array.isArray(cfg.groupIds) ? cfg.groupIds : [])
+    .map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (groupIds.length === 0) return false;
+  const found = await ctx.db('customer_group_members')
+    .where({ customer_account_id: customerId })
+    .whereIn('group_id', groupIds)
+    .pluck('group_id');
+  const distinct = new Set(found.map(Number)).size;
+  return cfg.match === 'all' ? distinct === groupIds.length : distinct > 0;
+});
+
 // --- Actions ---
 
 // Queue an email. recipientClass 'admin' (internal) sends immediately;

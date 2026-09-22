@@ -70,6 +70,8 @@ const baseCampaign: Campaign = {
   status: 'draft',
   recipientMode: 'all_active',
   customerIds: [],
+  groupIds: [],
+  groupMatch: 'any',
   recipientCount: 0,
   sentCount: 0,
   failedCount: 0,
@@ -90,10 +92,11 @@ let resolution = {
 const queueSpy = vi.fn(async () => ({ queued: 42, skippedOptOut: 3, sendRatePerMinute: 20 }));
 const resolveSpy = vi.fn(async () => resolution);
 
+const updateSpy = vi.fn(async (..._a: unknown[]) => campaignFixture);
 vi.mock('../../../../services/newsletters.service', () => ({
   newslettersService: {
     get: vi.fn(async () => ({ campaign: campaignFixture, recipientSummary: {} })),
-    update: vi.fn(async () => campaignFixture),
+    update: (...a: unknown[]) => updateSpy(...a),
     preview: vi.fn(async () => ({
       subject: 'Our spring offers',
       html: '<html><body><p>Hi Alex</p></body></html>',
@@ -111,6 +114,11 @@ vi.mock('../../../../services/customerAdmin.service', () => ({
     list: vi.fn(async () => [
       { id: 1, email: 'a@example.com', displayName: 'Ada', isActive: true, createdAt: '', lastLogin: null,
         firstName: null, lastName: null, salutation: null, companyName: null },
+    ]),
+    listGroups: vi.fn(async () => [
+      { id: 1, name: 'VIP', description: null, color: '#2563EB', sortOrder: 1, isArchived: false },
+      { id: 2, name: 'Press', description: null, color: '#15803D', sortOrder: 2, isArchived: false },
+      { id: 3, name: 'Retired', description: null, color: '#4B5563', sortOrder: 3, isArchived: true },
     ]),
   },
 }));
@@ -139,6 +147,7 @@ describe('newsletter composer', () => {
       sendRatePerMinute: 20, estimatedMinutes: 3,
     };
     confirmSpy.mockClear();
+    updateSpy.mockClear();
     queueSpy.mockClear();
     resolveSpy.mockClear();
   });
@@ -295,5 +304,31 @@ describe('newsletter composer', () => {
 
     expect(screen.queryByRole('radio', { name: /Pick customers/i })).not.toBeInTheDocument();
     expect(screen.getByRole('radio', { name: /All active customers/i })).toBeInTheDocument();
+  });
+
+  it('targets customer groups: live groups, Any/All from two, saved with the campaign (#1443)', async () => {
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+
+    await userEvent.click(screen.getByRole('radio', { name: /Customers in groups/i }));
+    await userEvent.click(await screen.findByRole('checkbox', { name: /VIP/ }));
+    expect(screen.queryByRole('checkbox', { name: /Retired/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'All of them' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Press/ }));
+    await userEvent.click(screen.getByRole('radio', { name: 'All of them' }));
+    expect(screen.getByText(/read when the campaign is sent/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Save/i }));
+    await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+    expect(updateSpy.mock.calls.at(-1)?.[1]).toMatchObject({
+      recipientMode: 'groups', groupIds: [1, 2], groupMatch: 'all',
+    });
+  });
+
+  it('hides the groups mode from a role that cannot read customers (#1443)', async () => {
+    grantedPermissions = ['newsletters.view', 'newsletters.send'];
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+    expect(screen.queryByRole('radio', { name: /Customers in groups/i })).not.toBeInTheDocument();
   });
 });
