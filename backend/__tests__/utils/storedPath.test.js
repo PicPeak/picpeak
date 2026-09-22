@@ -124,6 +124,13 @@ describe('relocateStoredPath (restore)', () => {
       .toBe('uploads/storage/business-docs/a.pdf');
   });
 
+  it('prefers the archive’s suffix when the source root sits inside this root', () => {
+    process.env.STORAGE_PATH = tmp;
+    const value = path.join(tmp, 'storage', 'business-docs', 'a.pdf');
+    expect(relocateStoredPath(value, (rel) => rel === 'business-docs/a.pdf')).toBe('business-docs/a.pdf');
+    expect(relocateStoredPath(value, (rel) => rel === 'storage/business-docs/a.pdf')).toBe('storage/business-docs/a.pdf');
+  });
+
   it('keeps the value when the archive carries none of its candidates', () => {
     const legacy = path.join(tmp, 'storage', 'business-docs', 'contract', '2026', 'C-1.pdf');
     expect(relocateStoredPath(legacy, () => false)).toBe(legacy);

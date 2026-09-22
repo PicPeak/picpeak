@@ -113,9 +113,9 @@ const isStorageRelative = (value) => !path.isAbsolute(value)
 
 /**
  * A stored value rewritten for this install: relative to the storage root
- * when it is under it, else its storage-relative suffix when it has one
- * (a path recorded by another install, absolute or relative to that
- * install's working directory). `exists(relative)` picks between suffixes;
+ * when it is under it (and the archive carries it), else its
+ * storage-relative suffix when it has one (a path recorded by another
+ * install, absolute or relative to that install's working directory). `exists(relative)` picks between suffixes;
  * when it is given and the archive carries none of them, the value is kept
  * as it was, so the read-side fallbacks (resolveStoredPath) still apply to
  * it. Anything else comes back unchanged.
@@ -124,7 +124,10 @@ function relocateStoredPath(value, exists = null) {
   if (!value || typeof value !== 'string' || isStorageRelative(value)) return value;
   if (path.isAbsolute(value)) {
     const own = toStoredPath(value);
-    if (own !== value) return own;
+    // Under this root, unless the archive says otherwise: a source root
+    // inside this one (`/data/storage` restored into `/data`) lands its files
+    // at the storage suffix, not at the path relative to this root.
+    if (own !== value && (!exists || exists(own))) return own;
   }
   const suffixes = storageSuffixes(value);
   if (!suffixes.length) return value;
