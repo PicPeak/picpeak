@@ -99,8 +99,9 @@ const apiError = (code: string, error: string, details?: unknown) =>
   Object.assign(new Error(error), { response: { data: { code, error, details } } });
 const clean = { ok: true, pageCount: 3, itemPages: [{ position: 1, firstPage: 1, lastPage: 1 }], findings: [] };
 
-function renderPage() {
+function renderPage(cached?: unknown) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (cached) client.setQueryData(['contract-template', 5], cached);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/admin/clients/contracts/templates/5']}>
@@ -568,4 +569,15 @@ it('an edit made while the publish check runs stops the publish and keeps the ed
   expect(await screen.findByText('Changed since the check — check again')).toBeInTheDocument();
   expect(publish).not.toHaveBeenCalled();
   expect(screen.getByDisplayValue('Hallo!')).toBeInTheDocument();
+});
+
+it('opened from a stale cache, an untouched editor takes the newer server copy and its lock', async () => {
+  const user = userEvent.setup();
+  const fresh = detail(5);
+  fresh.draft = { ...fresh.draft, title: 'Neuer Titel' };
+  get.mockResolvedValue(fresh);
+  renderPage(detail(3));
+  expect(await screen.findByDisplayValue('Neuer Titel')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({ lockVersion: 5, title: 'Neuer Titel' })));
 });

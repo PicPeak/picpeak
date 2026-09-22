@@ -225,11 +225,20 @@ export const ContractTemplateEditorPage: React.FC = () => {
   // The first server copy becomes the editor's state; later refetches don't
   // overwrite what is being edited.
   useEffect(() => {
-    if (!detail || loadedFor.current === detail.template.id) return;
+    if (!detail) return;
+    if (loadedFor.current === detail.template.id) {
+      // A newer server copy (a cached one was shown first, or someone saved
+      // elsewhere) replaces an editor nobody has changed, so the next save
+      // doesn't run into a conflict of the cache's making.
+      const newer = detail.template.lockVersion > lockRef.current;
+      if (newer && !dirty && !saving.current && saveState !== 'conflict') load(detail);
+      return;
+    }
     loadedFor.current = detail.template.id;
     load(detail);
     setCheck(null);
     setSaveState('idle');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, load]);
 
   const store = (next: ContractTemplateDetail) => {
