@@ -573,8 +573,8 @@ describe('document notifications', () => {
       const own = await uploadAs(me, 'wf-own.pdf');
       const calls = spy.mock.calls.map(([trigger, opts]) => [trigger, opts.entityId, opts.payload]);
       expect(calls).toEqual(expect.arrayContaining([
-        ['document.shared', up.body.document.id, { customerAccountId: me, documentId: up.body.document.id, eventId: null }],
-        ['document.uploaded', own.body.document.id, { customerAccountId: me, documentId: own.body.document.id, eventId: null }],
+        ['document.shared', up.body.document.id, { customerAccountId: me, customerEmail: 'notify-me@example.com', documentId: up.body.document.id, eventId: null }],
+        ['document.uploaded', own.body.document.id, { customerAccountId: me, customerEmail: 'notify-me@example.com', documentId: own.body.document.id, eventId: null }],
       ]));
     } finally {
       spy.mockRestore();

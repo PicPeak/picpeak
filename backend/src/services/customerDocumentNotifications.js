@@ -192,12 +192,16 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
 async function emitDocumentWorkflow(trigger, doc, dedupSuffix = null) {
   const isRequest = trigger === 'document.requested';
   try {
+    // send_email's "Customer" recipient reads customerEmail (as on the quote
+    // triggers); only a customer the direct mails would reach gets one.
+    const customer = await reachableCustomer(doc.customer_account_id);
+    const customerEmail = customer ? customer.email : null;
     await require('./workflows').emitWorkflowEvent(trigger, {
       entityType: isRequest ? 'customer_document_request' : 'customer_document',
       entityId: doc.id,
       payload: isRequest
-        ? { customerAccountId: doc.customer_account_id, requestId: doc.id, eventId: doc.event_id || null }
-        : { customerAccountId: doc.customer_account_id, documentId: doc.id, eventId: doc.event_id || null },
+        ? { customerAccountId: doc.customer_account_id, customerEmail, requestId: doc.id, eventId: doc.event_id || null }
+        : { customerAccountId: doc.customer_account_id, customerEmail, documentId: doc.id, eventId: doc.event_id || null },
       dedupSuffix,
     });
   } catch (err) {
