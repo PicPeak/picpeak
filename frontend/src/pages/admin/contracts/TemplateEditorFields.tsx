@@ -106,9 +106,9 @@ export const ClauseConditionField: React.FC<{
   // must wrap every language, inherited ones included.
   const own = Object.fromEntries(Object.entries(body)
     .filter(([, text]) => typeof text === 'string' && text.trim() !== '')) as LocaleText;
-  const hasOwnText = Object.keys(own).length > 0;
   const effective: LocaleText = { ...baseText, ...own };
-  const current = readCondition(hasOwnText ? effective : {});
+  // Read from what renders: a library text can carry a rule of its own.
+  const current = readCondition(effective);
   const set = (next: ClauseCondition | null) => {
     const written = applyCondition(effective, next);
     // Only what differs from the library is the clause's own text; a rule

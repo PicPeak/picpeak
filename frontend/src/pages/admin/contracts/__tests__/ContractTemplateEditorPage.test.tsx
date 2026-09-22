@@ -533,3 +533,24 @@ it('adopting a newer source version adds a second clause with a heading the draf
     ],
   })));
 });
+
+it('"Show only if…" shows a rule the library text carries, and removing it overrides the text', async () => {
+  const user = userEvent.setup();
+  const wrapped = detail();
+  wrapped.draft.items = [{
+    ...wrapped.draft.items[0],
+    block: { ...wrapped.draft.items[0].block, bodies: { de: '{{#if event_date}}Bibliothekstext{{/if}}' } },
+  }];
+  get.mockResolvedValue(wrapped);
+  saveDraft.mockResolvedValue({ ...wrapped, template: { ...wrapped.template, lockVersion: 4 } });
+  renderPage();
+  await screen.findByText('Leistung');
+  if (!screen.queryByRole('combobox', { name: 'Show only if…' })) await user.click(screen.getByRole('button', { name: 'Text' }));
+  const rule = await screen.findByRole('combobox', { name: 'Show only if…' });
+  expect(rule).toHaveValue('event_date');
+  await user.selectOptions(rule, '');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    items: [{ kind: 'block', blockId: 7, body: { de: 'Bibliothekstext' } }],
+  })));
+});
