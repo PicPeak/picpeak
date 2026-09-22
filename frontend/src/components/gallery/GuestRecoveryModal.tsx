@@ -135,6 +135,7 @@ export const GuestRecoveryModal: React.FC = () => {
         {step === 'email' ? (
           <form onSubmit={handleRequestCode} className="space-y-4">
             <Input
+              themed
               type="email"
               label={t('gallery.guestRecovery.emailLabel', 'Email')}
               value={email}
@@ -152,6 +153,7 @@ export const GuestRecoveryModal: React.FC = () => {
         ) : (
           <form onSubmit={handleVerify} className="space-y-4">
             <Input
+              themed
               label={t('gallery.guestRecovery.codeLabel', 'Verification code')}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
