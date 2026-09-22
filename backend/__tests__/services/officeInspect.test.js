@@ -178,6 +178,47 @@ describe('OOXML external relationships', () => {
   });
 });
 
+describe('spreadsheet formulas and alternate-format parts', () => {
+  const XCT = `<?xml version="1.0"?><Types><Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`;
+  const xlsx = (sheet, workbook = '<workbook/>') => zipFile([
+    ['[Content_Types].xml', XCT], ['xl/workbook.xml', workbook], ['xl/worksheets/sheet1.xml', sheet],
+  ]);
+  const cell = (f) => `<worksheet><sheetData><row><c r="A1"><f>${f}</f></c></row></sheetData></worksheet>`;
+
+  it.each([
+    '_xlfn.WEBSERVICE("https://example.invalid/probe")',
+    'IMAGE("https://example.invalid/p.png")',
+    'RTD("prog.id",,"x")',
+    'HYPERLINK("https://example.invalid","x")',
+    'cmd|\' /c calc\'!A0',
+  ])('refuses the formula %s', async (f) => {
+    expect(await code(inspectOffice(await xlsx(cell(f)), 'xlsx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('refuses one in a defined name too', async () => {
+    const workbook = '<workbook><definedNames><definedName name="x">WEBSERVICE("https://e.invalid")</definedName></definedNames></workbook>';
+    expect(await code(inspectOffice(await xlsx(cell('1'), workbook), 'xlsx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('allows ordinary formulas, a pipe inside a string and a quoted sheet name', async () => {
+    const sheet = '<worksheet><sheetData><row><c r="A1"><f>SUM(B1:B9)</f></c><c r="A2"><f>A1&amp;"a|b"</f></c><c r="A3"><f>\'x|y\'!A1</f></c></row></sheetData></worksheet>';
+    expect(await code(inspectOffice(await xlsx(sheet), 'xlsx'))).toBe('ok');
+  });
+
+  it('refuses a macro sheet and a Word alternate-format import', async () => {
+    const macro = await zipFile([
+      ['[Content_Types].xml', XCT.replace('</Types>', '<Override PartName="/xl/macrosheets/sheet1.xml" ContentType="application/vnd.ms-excel.macrosheet+xml"/></Types>')],
+      ['xl/workbook.xml', '<workbook/>'], ['xl/macrosheets/sheet1.xml', '<xm:macrosheet/>'],
+    ]);
+    expect(await code(inspectOffice(macro, 'xlsx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    const altChunk = await docx([['word/_rels/document.xml.rels',
+      '<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/aFChunk" Target="afchunk.rtf"/></Relationships>'],
+    ['word/afchunk.rtf', '{\\rtf1 {\\field{\\*\\fldinst INCLUDETEXT "x"}}}']]);
+    expect(await code(inspectOffice(altChunk, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+});
+
 describe('Word fields', () => {
   const body = (inner) => `<w:document><w:body><w:p>${inner}</w:p></w:body></w:document>`;
   const withBody = (inner, part = 'word/document.xml') => zipFile([

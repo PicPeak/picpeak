@@ -42,8 +42,8 @@ const DEFAULTS = {
   maxExpandedBytes: 200 * 1024 * 1024,
   // Budget for the few XML parts actually read.
   maxPartBytes: 4 * 1024 * 1024,
-  // A Word part read for its fields: the body of a long document is larger
-  // than the package parts above.
+  // A Word or sheet part read for its fields or formulas: the body of a long
+  // document or a big sheet is larger than the package parts above.
   maxWordPartBytes: 32 * 1024 * 1024,
   // txt / csv when the caller passes no cap (the upload limit's default).
   maxTextBytes: 25 * 1024 * 1024,
@@ -104,8 +104,16 @@ const ODF_ACTIVE_ELEMENT = new Set([
 // character codes spells text out of numbers.
 const ACTIVE_FIELD = /^\s*(DDE|DDEAUTO|INCLUDETEXT|INCLUDEPICTURE|IMPORT|LINK)\b|^\s*QUOTE\s+\d/i;
 // Content types and relationship types of code and embedded objects.
-const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
-const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations|externalLink)$/i;
+// (aFChunk: an alternate-format part — RTF, HTML, MHT — Word imports whole,
+// fields and links included, without any of it being read here. Macro
+// sheets hold Excel 4 macros.)
+const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b|macrosheet|dialogsheet/i;
+const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations|externalLink|aFChunk|xlMacrosheet|xlIntlMacrosheet|dialogsheet)$/i;
+// Spreadsheet formulas that reach outside the file or run code when the
+// workbook recalculates: web requests, pictures by URL, real-time data and
+// DLL calls, links. A pipe outside a string is DDE (app|topic!item).
+const ACTIVE_FORMULA = /\b(?:_xlfn\.|_xludf\.)?(WEBSERVICE|IMAGE|RTD|CALL|REGISTER(?:\.ID)?|EXEC|HYPERLINK|FILTERXML)\s*\(/i;
+const FORMULA_ELEMENTS = new Set(['f', 'formula', 'formula1', 'formula2', 'definedname']);
 
 // An ODF link that leaves the package: any URL scheme (not only http/file —
 // vnd.sun.star.script: and macro: run code on click), a network path, an
@@ -258,6 +266,26 @@ function fieldInstructions(xml) {
   }
   // Unterminated fields and instrText outside any field are checked too.
   return [...done, ...stack.map((f) => f.instr), loose];
+}
+
+/** The text of every formula in a SpreadsheetML part (cells, names, rules). */
+function formulas(xml) {
+  const out = [];
+  let current = null;
+  for (const t of xmlTokens(xml)) {
+    if (t.kind === 'open' && FORMULA_ELEMENTS.has(localName(t.name))) current = '';
+    else if (t.kind === 'close' && FORMULA_ELEMENTS.has(localName(t.name)) && current !== null) {
+      out.push(current);
+      current = null;
+    } else if (t.kind === 'text' && current !== null) current += t.text;
+  }
+  return out;
+}
+
+function isActiveFormula(formula) {
+  if (ACTIVE_FORMULA.test(formula)) return true;
+  // DDE: a pipe outside string literals and quoted sheet names.
+  return formula.replace(/"(?:[^"]|"")*"/g, '').replace(/'(?:[^']|'')*'/g, '').includes('|');
 }
 
 /** The first `n` bytes of an entry, without inflating the rest. */
@@ -428,18 +456,22 @@ async function inspectOffice(file, format, limits = {}) {
           }
         }
       }
-      // Word fields that run a program or fetch content (ACTIVE_FIELD), in
-      // every part declared as XML except relationships — and in an
-      // undeclared .xml part too, which Word's repair may still load.
+      // Word fields and spreadsheet formulas that run a program or fetch
+      // content (ACTIVE_FIELD, ACTIVE_FORMULA), in every part declared as
+      // XML except relationships — and in an undeclared .xml part too, which
+      // the application's repair may still load.
       for (const name of names) {
-        if (format !== 'docx' || entries[name].isDirectory || name === '[Content_Types].xml') continue;
+        if (entries[name].isDirectory || name === '[Content_Types].xml') continue;
         const partType = overrides.get(`/${name}`.toLowerCase())
           ?? defaults.get(name.slice(name.lastIndexOf('.') + 1).toLowerCase());
         const xmlPart = partType === undefined ? /\.xml$/i.test(name) : /xml$/i.test(partType);
         if (!xmlPart || /relationships\+xml$/i.test(partType || '') || /\.rels$/i.test(name)) continue;
-        const fields = fieldInstructions(await readPart(zip, name, lim.maxWordPartBytes));
-        if (fields.some((instr) => ACTIVE_FIELD.test(instr))) {
+        const xml = await readPart(zip, name, lim.maxWordPartBytes);
+        if (format === 'docx' && fieldInstructions(xml).some((instr) => ACTIVE_FIELD.test(instr))) {
           throw active('The document contains fields that run programs or load outside content');
+        }
+        if (format === 'xlsx' && formulas(xml).some(isActiveFormula)) {
+          throw active('The workbook contains formulas that reach outside the file');
         }
       }
     } else {
