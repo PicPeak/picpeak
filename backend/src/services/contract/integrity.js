@@ -88,8 +88,15 @@ async function integrityReport(contractId, { adminId = null } = {}) {
     .where({ doc_type: 'contract', doc_id: contractId, kind: 'audit' })
     .orderBy('id', 'desc')
     .first();
-  if (certificate || complete) {
+  // Required where the log says the contract was completed in the browser:
+  // that completion always issues one, recorded with its sha256. A contract
+  // completed before certificates were recorded (#1445), or on paper with
+  // nothing to certify, has none to check — not a missing one.
+  const completedOnline = events.some((e) => e.type === 'completed');
+  if (certificate || completedOnline) {
     checks.push(compare('certificate', certificate && certificate.sha256, certificate ? fileSha(certificate.path) : null));
+  } else if (complete) {
+    checks.push({ check: 'certificate', subject: null, ok: null, expected: null, actual: null, note: 'not_recorded' });
   }
 
   const rows = await db('contract_signers').where({ contract_id: contractId }).orderBy('position', 'asc');

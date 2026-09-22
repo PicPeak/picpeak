@@ -975,6 +975,20 @@ describe('integrity report', () => {
     return () => fs.writeFileSync(file, original);
   }
 
+  test('a contract completed before certificates were recorded is not reported as missing one', async () => {
+    const id = await newContract();
+    await sendContract(id);
+    const sent = await db('contracts').where({ id }).first();
+    // Completed the older way: no `completed` event, no recorded certificate.
+    await db('contracts').where({ id }).update({
+      status: 'fully_signed', signing_version: 1, signed_pdf_path: sent.pdf_path, signed_pdf_sha256: sent.pdf_sha256,
+    });
+    const result = await report(id);
+    expect(result.checks.find((c) => c.check === 'certificate')).toEqual(expect.objectContaining({ ok: null, note: 'not_recorded' }));
+    expect(result.checks.filter((c) => c.ok === false)).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
   test('each artefact altered in turn fails exactly its own check', async () => {
     const attachments = require('../../src/services/contract/attachments');
     const terms = await libraryAttachment('Integrity terms');
