@@ -83,6 +83,11 @@ async function collectLegacyStoredFiles(knex) {
 
   let realLegacy;
   try { realLegacy = fs.realpathSync(legacy); } catch { return []; }
+  // The document folders the archive walks anyway, by realpath: with
+  // <cwd>/storage a symlink to the storage root (the all-in-one image), a
+  // legacy path names a file the walk already archives.
+  const realCovered = covered.map((dir) => { try { return fs.realpathSync(dir); } catch { return null; } })
+    .filter(Boolean);
   const byAbs = new Map();
   // Paths under the storage root other rows name or may be moved to (the
   // import relocates a value to any of its storage suffixes), whether or not
@@ -105,7 +110,7 @@ async function collectLegacyStoredFiles(knex) {
     // an archive.
     let abs;
     try { abs = fs.realpathSync(resolved); } catch { continue; }
-    if (!isInside(abs, realLegacy)) continue;
+    if (!isInside(abs, realLegacy) || realCovered.some((dir) => isInside(abs, dir))) continue;
     let stat;
     try { stat = fs.statSync(abs); } catch { continue; }
     if (!stat.isFile()) continue;
@@ -185,8 +190,14 @@ async function applyStoredPathMap(knex, map, verify, { onlyUnreadable = false } 
     // literally names is still there, that file is newer than the archived
     // copy. (Not resolveStoredPath: its suffix fallback may find a different
     // document at the unmapped path.) The map's values are legacy-root paths,
-    // absolute or relative to the working directory.
-    if (onlyUnreadable && fs.existsSync(path.isAbsolute(value) ? value : path.resolve(process.cwd(), value))) continue;
+    // absolute, or relative to the working directory or to the storage root
+    // (migration 233 writes the latter when the legacy root is inside it).
+    if (onlyUnreadable) {
+      const literal = path.isAbsolute(value)
+        ? [value]
+        : [path.resolve(process.cwd(), value), path.resolve(getStoragePath(), value)];
+      if (literal.some((file) => fs.existsSync(file))) continue;
+    }
     // eslint-disable-next-line no-await-in-loop
     if (await verify(rel)) entries.push([value, rel]);
   }
