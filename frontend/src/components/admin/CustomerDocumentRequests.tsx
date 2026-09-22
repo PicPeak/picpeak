@@ -50,7 +50,11 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
       const { notification } = await customerDocumentsAdminService.createRequest(customerId, {
         title: title.trim(),
         note: note.trim() || null,
-        dueAt: due ? new Date(`${due}T23:59:59`).toISOString() : null,
+        // A calendar date, anchored at noon UTC: the mail formats it in the
+        // server's timezone and every page in the viewer's, and noon names the
+        // same day in all of them from UTC-11 to UTC+11. The admin's own end
+        // of day was already the next day in UTC west of Greenwich.
+        dueAt: due ? `${due}T12:00:00.000Z` : null,
       });
       const done = t('customers.documents.requests.created', 'Request sent.');
       if (notification === 'queued') toast.success(`${done} ${t('customers.documents.notified', 'The customer gets an email.')}`);

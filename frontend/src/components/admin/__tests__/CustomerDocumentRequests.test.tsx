@@ -1,7 +1,7 @@
 /**
  * Admin → customer record → "Requested from the customer" (#1444 slice 10).
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -76,5 +76,16 @@ describe('CustomerDocumentRequests', () => {
       title: 'Passport copy', note: 'Both sides', dueAt: null,
     }));
     expect(toastMock.success).toHaveBeenCalledWith('Request sent. The customer gets an email.');
+  });
+
+  it('sends the chosen deadline as that calendar day, whatever the admin\'s timezone', async () => {
+    renderIt();
+    await screen.findByText('Signed contract');
+    await userEvent.type(screen.getByLabelText('What do you need?'), 'Passport copy');
+    fireEvent.change(screen.getByLabelText('Needed by (optional)'), { target: { value: '2026-09-22' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Request document' }));
+    await waitFor(() => expect(svc.createRequest).toHaveBeenCalledWith(5, expect.objectContaining({
+      dueAt: '2026-09-22T12:00:00.000Z',
+    })));
   });
 });
