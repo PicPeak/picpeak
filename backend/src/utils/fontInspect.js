@@ -11,7 +11,8 @@
  *   - the tables a PDF renderer needs: cmap, glyf or CFF, head, hhea, hmtx,
  *     name;
  *   - the font's own embedding permission (OS/2 fsType): "restricted licence
- *     embedding" is refused — such a font may not be put into a PDF.
+ *     embedding", "no subsetting" and "bitmap embedding only" are refused —
+ *     PDFKit embeds a subset of the outlines, which such a font forbids.
  * Runs in a worker (utils/fontValidation).
  */
 
@@ -66,6 +67,13 @@ function inspectFont(buffer) {
   if (!Number.isFinite(numGlyphs) || numGlyphs > MAX_GLYPHS) throw refuse('The font has too many glyphs', 'FONT_TOO_COMPLEX');
   if (fsType && fsType.noEmbedding) {
     throw refuse('This font\'s licence does not allow embedding it in documents', 'FONT_LICENCE_RESTRICTED');
+  }
+  // PDFKit always embeds a subset of the glyphs used, and embeds outlines.
+  if (fsType && fsType.noSubsetting) {
+    throw refuse('This font\'s licence does not allow embedding a subset of it, which PDFs need', 'FONT_NO_SUBSETTING');
+  }
+  if (fsType && fsType.bitmapOnly) {
+    throw refuse('This font\'s licence only allows embedding bitmaps, not the outlines PDFs need', 'FONT_BITMAP_ONLY');
   }
   return {
     format: trueType ? 'ttf' : 'otf',

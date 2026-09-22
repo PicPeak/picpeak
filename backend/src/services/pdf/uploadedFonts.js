@@ -186,6 +186,29 @@ function legacyFontFile(raw) {
 }
 
 const LEGACY_NAME = 'Custom font (earlier setting)';
+// Why the move failed, for the fonts card: `{ reason, path, at }`.
+const LEGACY_FAILURE_SETTING = 'pdf_font_legacy_move_failure';
+
+/**
+ * Record why the earlier font could not be moved, then clear the column: the
+ * failure is shown once on the fonts card instead of a warning at every boot
+ * while documents quietly use Helvetica.
+ */
+async function recordLegacyFailure(raw, reason, logger) {
+  const { upsertAppSetting } = require('../../utils/appSettings');
+  await upsertAppSetting(LEGACY_FAILURE_SETTING, JSON.stringify({ reason, path: raw, at: new Date().toISOString() }), 'json');
+  const { auditedUpdate } = require('../accountingHistory');
+  await auditedUpdate(db, 'business_profile', { id: 1 }, { pdf_font_ttf_path: null }, { source: 'pdf.fonts.legacy_migration' });
+  logger.warn('The earlier custom PDF font could not be moved; documents use Helvetica', { path: raw, reason });
+  return null;
+}
+
+/** The recorded failure of that move, or null. */
+async function legacyMoveFailure() {
+  const { getAppSetting } = require('../../utils/appSettings');
+  const value = await getAppSetting(LEGACY_FAILURE_SETTING, null);
+  return value && typeof value === 'object' ? value : null;
+}
 
 /**
  * Boot: move a still-set pdf_font_ttf_path into an uploaded font, point every
@@ -202,9 +225,10 @@ async function migrateLegacyFont(logger = require('../../utils/logger')) {
   const raw = profile && profile.pdf_font_ttf_path ? String(profile.pdf_font_ttf_path) : null;
   if (!raw) return null;
   const file = legacyFontFile(raw);
-  if (!file) {
-    logger.warn('The earlier custom PDF font file was not found; it no longer applies', { path: raw });
-    return null;
+  if (!file) return recordLegacyFailure(raw, 'FONT_FILE_NOT_FOUND', logger);
+  // The size before reading: the column held any path an admin typed.
+  if (fs.statSync(file).size > require('../../utils/fontValidation').MAX_BYTES) {
+    return recordLegacyFailure(raw, 'FONT_TOO_LARGE', logger);
   }
   let font;
   try {
@@ -220,8 +244,7 @@ async function migrateLegacyFont(logger = require('../../utils/logger')) {
       const row = await db('pdf_fonts').where({ display_name: LEGACY_NAME }).first();
       font = row ? { id: row.id, family: familyOf(row.id) } : null;
     } else {
-      logger.warn('The earlier custom PDF font could not be moved; it no longer applies', { path: raw, code: err && err.code });
-      return null;
+      return recordLegacyFailure(raw, (err && err.code) || 'FONT_MALFORMED', logger);
     }
   }
   if (!font) return null;
@@ -258,4 +281,5 @@ module.exports = {
   archiveFont,
   fontFilesFor,
   migrateLegacyFont,
+  legacyMoveFailure,
 };

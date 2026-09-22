@@ -36,14 +36,14 @@ const bold = fs.readFileSync(path.join(FONTS, '700.ttf'));
 const italic = fs.readFileSync(path.join(FONTS, '400i.ttf'));
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
-/** A copy of `ttf` whose OS/2 fsType says "restricted licence embedding". */
-function restricted(ttf) {
+/** A copy of `ttf` with OS/2 fsType set to `bits` (default: restricted licence embedding). */
+function restricted(ttf, bits = 0x0002) {
   const out = Buffer.from(ttf);
   const tables = out.readUInt16BE(4);
   for (let i = 0; i < tables; i += 1) {
     const record = 12 + i * 16;
     if (out.toString('latin1', record, record + 4) === 'OS/2') {
-      out.writeUInt16BE(0x0002, out.readUInt32BE(record + 8) + 8);
+      out.writeUInt16BE(bits, out.readUInt32BE(record + 8) + 8);
       return out;
     }
   }
@@ -99,6 +99,8 @@ test.each([
   ['a WOFF2 file named .ttf', () => fs.readFileSync(path.join(FONTS, '400.woff2')), 'FONT_FORMAT_UNSUPPORTED'],
   ['a truncated file', () => regular.subarray(0, 4000), 'FONT_MALFORMED'],
   ['a font whose licence restricts embedding', () => restricted(regular), 'FONT_LICENCE_RESTRICTED'],
+  ['a font that may not be subset', () => restricted(regular, 0x0100), 'FONT_NO_SUBSETTING'],
+  ['a font that may only be embedded as bitmaps', () => restricted(regular, 0x0200), 'FONT_BITMAP_ONLY'],
   ['something that is not a font', () => Buffer.from('%PDF-1.7 not a font at all, really'), 'FONT_NOT_A_FONT'],
   ['a file over 5 MB', () => Buffer.concat([regular, Buffer.alloc(5 * 1024 * 1024)]), 'FONT_TOO_LARGE'],
 ])('%s is refused', async (_, make, code) => {
@@ -188,4 +190,34 @@ test('the retired free-text font path moves into an uploaded font once, and the 
   // Once: nothing left to move.
   expect(await migrateLegacyFont(logger)).toBeNull();
   expect(Number((await db('pdf_fonts').where({ display_name: row.display_name }).count({ n: '*' }).first()).n)).toBe(1);
+});
+
+test('an earlier font that cannot be moved is recorded, the column cleared, and the fonts list says why', async () => {
+  const { migrateLegacyFont } = require('../../src/services/pdf/uploadedFonts');
+  const logger = { info: jest.fn(), warn: jest.fn() };
+  const legacyDir = path.join(process.env.STORAGE_PATH, 'fonts');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.writeFileSync(path.join(legacyDir, 'locked.ttf'), restricted(regular));
+  await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: 'fonts/locked.ttf' });
+
+  expect(await migrateLegacyFont(logger)).toBeNull();
+  expect((await db('business_profile').where({ id: 1 }).first()).pdf_font_ttf_path).toBeNull();
+  const list = await request(app).get('/api/admin/pdf-themes/fonts').set(auth);
+  expect(list.body.legacyMoveFailure).toEqual(expect.objectContaining({ reason: 'FONT_LICENCE_RESTRICTED', path: 'fonts/locked.ttf' }));
+  // Nothing left to retry at the next boot, so no warning there.
+  logger.warn.mockClear();
+  expect(await migrateLegacyFont(logger)).toBeNull();
+  expect(logger.warn).not.toHaveBeenCalled();
+
+  // A missing file and an oversized one are recorded the same way, without reading it.
+  await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: 'fonts/gone.ttf' });
+  await migrateLegacyFont(logger);
+  expect((await request(app).get('/api/admin/pdf-themes/fonts').set(auth)).body.legacyMoveFailure.reason).toBe('FONT_FILE_NOT_FOUND');
+  fs.writeFileSync(path.join(legacyDir, 'huge.ttf'), Buffer.alloc(6 * 1024 * 1024));
+  await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: 'fonts/huge.ttf' });
+  const read = jest.spyOn(fs, 'readFileSync');
+  await migrateLegacyFont(logger);
+  expect(read.mock.calls.some(([f]) => String(f).endsWith('huge.ttf'))).toBe(false);
+  read.mockRestore();
+  expect((await request(app).get('/api/admin/pdf-themes/fonts').set(auth)).body.legacyMoveFailure.reason).toBe('FONT_TOO_LARGE');
 });

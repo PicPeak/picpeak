@@ -3672,8 +3672,12 @@
         "FONT_LICENCE_RESTRICTED": "Die Lizenz dieser Schrift erlaubt keine Einbettung in Dokumente.",
         "FONT_NAME_TAKEN": "Es gibt bereits eine Schrift mit diesem Namen.",
         "FONT_LICENCE_NOTE_REQUIRED": "Beschreiben Sie die Lizenz der Schrift.",
-        "FONT_LICENCE_NOT_CONFIRMED": "Bestätigen Sie, dass Sie diese Schrift einbetten dürfen."
-      }
+        "FONT_LICENCE_NOT_CONFIRMED": "Bestätigen Sie, dass Sie diese Schrift einbetten dürfen.",
+        "FONT_FILE_NOT_FOUND": "die Datei wurde nicht gefunden.",
+        "FONT_NO_SUBSETTING": "Die Lizenz dieser Schrift erlaubt keine Einbettung einer Teilmenge, die PDFs benötigen.",
+        "FONT_BITMAP_ONLY": "Die Lizenz dieser Schrift erlaubt nur das Einbetten von Bitmaps, nicht der Umrisse, die PDFs benötigen."
+      },
+      "legacyFailed": "Die vor diesem Update eingestellte Schrift konnte nicht übernommen werden: {{reason}}"
     }
   },
   "admin": {

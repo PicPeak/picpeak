@@ -3202,8 +3202,12 @@
         "FONT_LICENCE_RESTRICTED": "This font's licence doesn't allow embedding it in documents.",
         "FONT_NAME_TAKEN": "A font with this name exists already.",
         "FONT_LICENCE_NOTE_REQUIRED": "Describe the font's licence.",
-        "FONT_LICENCE_NOT_CONFIRMED": "Confirm that you may embed this font."
-      }
+        "FONT_LICENCE_NOT_CONFIRMED": "Confirm that you may embed this font.",
+        "FONT_FILE_NOT_FOUND": "the file was not found.",
+        "FONT_NO_SUBSETTING": "This font's licence doesn't allow embedding a subset of it, which PDFs need.",
+        "FONT_BITMAP_ONLY": "This font's licence only allows embedding bitmaps, not the outlines PDFs need."
+      },
+      "legacyFailed": "The font set before this update could not be moved: {{reason}}"
     }
   },
   "admin": {

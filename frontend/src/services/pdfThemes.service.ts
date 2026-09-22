@@ -95,7 +95,11 @@ export const pdfThemesService = {
     const { data } = await api.get('/admin/pdf-themes');
     return data.data || data;
   },
-  async fonts(): Promise<{ fonts: UploadedPdfFont[] }> {
+  async fonts(): Promise<{
+    fonts: UploadedPdfFont[];
+    /** Why the font set before this update could not be moved, if it couldn't. */
+    legacyMoveFailure?: { reason: string; path: string; at: string } | null;
+  }> {
     const { data } = await api.get('/admin/pdf-themes/fonts');
     return data.data || data;
   },

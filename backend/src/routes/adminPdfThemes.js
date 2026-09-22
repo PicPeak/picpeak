@@ -50,7 +50,11 @@ router.get(
 router.get(
   '/fonts',
   requirePermission(['settings.view', 'settings.banking']),
-  handleAsync(async (req, res) => successResponse(res, { fonts: await uploadedFonts.listFonts() }))
+  handleAsync(async (req, res) => successResponse(res, {
+    fonts: await uploadedFonts.listFonts(),
+    // Why the font set before uploaded fonts existed could not be moved, if it couldn't.
+    legacyMoveFailure: await uploadedFonts.legacyMoveFailure(),
+  }))
 );
 
 router.post(

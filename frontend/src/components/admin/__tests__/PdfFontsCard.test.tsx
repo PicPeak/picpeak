@@ -9,7 +9,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('react-i18next', async () => ({
   ...(await vi.importActual<typeof import('react-i18next')>('react-i18next')),
-  useTranslation: () => ({ t: (_k: string, fb?: unknown) => (typeof fb === 'string' ? fb : _k), i18n: { language: 'en' } }),
+  useTranslation: () => ({
+    t: (_k: string, fb?: unknown, opts?: Record<string, unknown>) => {
+      const base = typeof fb === 'string' ? fb : _k;
+      return opts ? base.replace(/\{\{(\w+)\}\}/g, (_m, key) => String(opts[key] ?? '')) : base;
+    },
+    i18n: { language: 'en' },
+  }),
 }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('../PermissionGate', () => ({ PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
@@ -70,4 +76,10 @@ it('shows why the server refused a file', async () => {
   await user.click(screen.getByRole('checkbox', { name: /right to embed/ }));
   await user.click(screen.getByRole('button', { name: 'Add font' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('restricted');
+});
+
+it('says once why the font set before the update could not be moved', async () => {
+  fonts.mockResolvedValue({ fonts: [], legacyMoveFailure: { reason: 'FONT_LICENCE_RESTRICTED', path: 'fonts/x.ttf', at: '' } });
+  renderCard();
+  expect(await screen.findByText(/The font set before this update could not be moved: FONT_LICENCE_RESTRICTED/)).toBeInTheDocument();
 });

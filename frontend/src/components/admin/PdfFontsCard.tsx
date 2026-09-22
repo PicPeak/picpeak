@@ -97,6 +97,14 @@ export const PdfFontsCard: React.FC = () => {
         </div>
       </div>
 
+      {data?.legacyMoveFailure && (
+        <p role="status" className="mb-4 p-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
+          {t('branding.pdfFonts.legacyFailed', 'The font set before this update could not be moved: {{reason}}', {
+            reason: t(`branding.pdfFonts.errors.${data.legacyMoveFailure.reason}`, data.legacyMoveFailure.reason),
+          })}
+        </p>
+      )}
+
       {fonts.length > 0 && (
         <ul className="divide-y divide-neutral-200 dark:divide-neutral-700 mb-4">
           {fonts.map((font) => (
