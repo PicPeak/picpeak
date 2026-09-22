@@ -30,8 +30,9 @@ vi.mock('../../../../services/contractTemplates.service', () => ({
     })),
   },
 }));
+const getTemplate = vi.fn(async () => ({ template: { id: 8, defaultContractTemplateId: 2 }, versions: [] }));
 vi.mock('../../../../services/quoteCatalog.service', () => ({
-  quoteCatalogService: { getTemplate: vi.fn(async () => ({ template: { id: 8, defaultContractTemplateId: 2 }, versions: [] })) },
+  quoteCatalogService: { getTemplate: (...a: unknown[]) => getTemplate(...(a as [])) },
 }));
 
 import { ConvertToContractDialog } from '../ConvertToContractDialog';
@@ -66,4 +67,24 @@ it('without a quote template it preselects the default contract template', async
   await waitFor(() => expect(select).toHaveValue('1'));
   await user.click(screen.getByRole('button', { name: 'Draft the contract' }));
   expect(onConvert).toHaveBeenCalledWith(1);
+});
+
+it('waits for a slow quote template before preselecting, and never overrides a manual choice', async () => {
+  const user = userEvent.setup();
+  let release: () => void = () => {};
+  getTemplate.mockImplementationOnce(() => new Promise((resolve) => {
+    release = () => resolve({ template: { id: 8, defaultContractTemplateId: 2 }, versions: [] });
+  }));
+  renderDialog(8);
+  const select = await screen.findByRole('combobox', { name: 'Contract template' });
+  // The list is there, the quote template is not: no default forced in yet.
+  expect(select).toHaveValue('1'); // the browser shows the first option, but nothing was chosen
+  expect(screen.getByRole('button', { name: 'Draft the contract' })).toBeDisabled();
+  release();
+  await waitFor(() => expect(select).toHaveValue('2'));
+
+  // A manual choice survives a later refetch.
+  await user.selectOptions(select, '1');
+  await new Promise((r) => setTimeout(r, 20));
+  expect(select).toHaveValue('1');
 });

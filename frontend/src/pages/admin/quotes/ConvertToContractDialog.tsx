@@ -23,7 +23,7 @@ export const ConvertToContractDialog: React.FC<{
     queryFn: () => contractTemplatesService.list(),
     retry: false,
   });
-  const { data: quoteTemplate } = useQuery({
+  const { data: quoteTemplate, isFetched: quoteTemplateSettled } = useQuery({
     queryKey: ['quote-template', sourceTemplateId],
     queryFn: () => quoteCatalogService.getTemplate(sourceTemplateId as number),
     enabled: !!sourceTemplateId,
@@ -31,13 +31,20 @@ export const ConvertToContractDialog: React.FC<{
   });
   const usable = (list?.templates || []).filter((tpl) => tpl.status !== 'archived' && tpl.currentVersionId);
   const [choice, setChoice] = useState<string>('');
+  // A choice the admin made is never replaced by a later preselection.
+  const [touched, setTouched] = useState(false);
+  // Preselect only once everything that decides it is known: the list, and
+  // the quote template's contract template when the quote has a template
+  // (its query usually resolves after the list; preselecting earlier would
+  // send the default explicitly and override the server's own fallback).
+  const waitingForQuoteTemplate = !!sourceTemplateId && !quoteTemplateSettled;
 
   useEffect(() => {
-    if (choice || !usable.length) return;
+    if (touched || choice || !usable.length || waitingForQuoteTemplate) return;
     const fromQuote = quoteTemplate?.template.defaultContractTemplateId;
     const preferred = usable.find((tpl) => tpl.id === fromQuote) || usable.find((tpl) => tpl.isDefault) || usable[0];
     setChoice(String(preferred.id));
-  }, [choice, usable, quoteTemplate]);
+  }, [touched, choice, usable, quoteTemplate, waitingForQuoteTemplate]);
 
   const fromQuoteName = usable.find((tpl) => tpl.id === quoteTemplate?.template.defaultContractTemplateId)?.name;
 
@@ -50,7 +57,7 @@ export const ConvertToContractDialog: React.FC<{
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-          <Button onClick={() => onConvert(choice ? Number(choice) : null)} disabled={converting || isLoading}>
+          <Button onClick={() => onConvert(choice ? Number(choice) : null)} disabled={converting || isLoading || (!choice && waitingForQuoteTemplate)}>
             {t('quotes.convertToContractConfirm', 'Draft the contract')}
           </Button>
         </>
@@ -65,7 +72,7 @@ export const ConvertToContractDialog: React.FC<{
           <label htmlFor="convert-contract-template" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
             {t('quotes.contractTemplate', 'Contract template')}
           </label>
-          <select id="convert-contract-template" value={choice} onChange={(e) => setChoice(e.target.value)}
+          <select id="convert-contract-template" value={choice} onChange={(e) => { setTouched(true); setChoice(e.target.value); }}
             className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100">
             {usable.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
