@@ -393,6 +393,28 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Get list of extracted files to update database
       const extractedPhotos = [];
 
+      // Photo credits (#1561). A guest erased while the event was archived
+      // had their name cleared from rows that no longer existed, so the
+      // manifest still holds it; only a guest still on the event keeps theirs.
+      const activeGuestIds = new Set((await db('gallery_guests')
+        .where({ event_id: archive.id, is_deleted: formatBoolean(false) })
+        .pluck('id')).map(Number));
+      const creditFieldsOf = (entry) => {
+        if (!entry) return {};
+        const fields = {};
+        if (entry.uploaded_by === 'admin' || entry.uploaded_by === 'guest') fields.uploaded_by = entry.uploaded_by;
+        const source = ['guest', 'exif', 'manual'].includes(entry.credit_source) ? entry.credit_source : null;
+        const guestId = Number(entry.uploader_guest_id);
+        const guestKept = Number.isInteger(guestId) && activeGuestIds.has(guestId);
+        if (source === 'guest' && !guestKept) return fields;
+        if (source) {
+          fields.credit_source = source;
+          fields.credit_name = typeof entry.credit_name === 'string' && entry.credit_name ? entry.credit_name : null;
+        }
+        if (guestKept) fields.uploader_guest_id = guestId;
+        return fields;
+      };
+
       // Category name -> id, resolved once per name for the whole restore.
       const categoriesMap = new Map();
 
@@ -569,7 +591,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 // shape the row had, and on SQLite a `new Date()` written
                 // through knex is epoch milliseconds, so normalise to ISO
                 // rather than write the number back.
-                uploaded_at: toIso(manifestEntry?.uploaded_at) || new Date().toISOString()
+                uploaded_at: toIso(manifestEntry?.uploaded_at) || new Date().toISOString(),
+                ...creditFieldsOf(manifestEntry),
               });
             }
           } catch (statError) {

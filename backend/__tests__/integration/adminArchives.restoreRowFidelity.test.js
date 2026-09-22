@@ -69,6 +69,7 @@ describe('archive restore rebuilds the photo row faithfully', () => {
 
   beforeEach(async () => {
     await db('photos').del();
+    await db('gallery_guests').del();
     await db('photo_categories').del();
     await db('events').del();
   });
@@ -286,6 +287,39 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     const photo = await db('photos').where('event_id', eventId).first();
     expect(photo.media_type).toBe('video');
     expect(photo.mime_type).toBe('video/mp4');
+  });
+
+  it('restores credits, except the name of a guest erased while archived', async () => {
+    // Seeded first: the manifest below names the event's guests by id.
+    const eventId = await seedArchivedEvent(path.join('archives', 'credits.zip'), 'credits-event');
+    const guest = async (name, deleted) => {
+      const [row] = await db('gallery_guests').insert({
+        event_id: eventId, name, identifier: `g-${name}`, is_deleted: deleted ? 1 : 0,
+      }).returning('id');
+      return typeof row === 'object' ? row.id : row;
+    };
+    const anna = await guest('Anna', false);
+    const bea = await guest('Removed', true);
+    // The manifest is written with the archive, so it predates the erasure.
+    const manifest = [
+      { filename: 'kept.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Anna', credit_source: 'guest', uploader_guest_id: anna },
+      { filename: 'erased.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Bea', credit_source: 'guest', uploader_guest_id: bea },
+      { filename: 'cleared.jpg', type: 'individual', uploaded_by: 'admin', credit_name: null, credit_source: 'manual', uploader_guest_id: null },
+    ];
+    await writeArchive('credits.zip', {
+      'individual/kept.jpg': BYTES,
+      'individual/erased.jpg': BYTES,
+      'individual/cleared.jpg': BYTES,
+      'photos_manifest.json': manifestOf(manifest),
+    });
+
+    await restore(eventId);
+
+    const rows = Object.fromEntries((await db('photos').where('event_id', eventId)).map((p) => [p.filename, p]));
+    expect(rows['kept.jpg']).toMatchObject({ uploaded_by: 'guest', credit_name: 'Anna', credit_source: 'guest', uploader_guest_id: anna });
+    expect(rows['erased.jpg']).toMatchObject({ uploaded_by: 'guest', credit_name: null, credit_source: null, uploader_guest_id: null });
+    // A cleared credit stays decided, so the EXIF backfill cannot put one back.
+    expect(rows['cleared.jpg']).toMatchObject({ credit_name: null, credit_source: 'manual' });
   });
 
   it('keeps the original upload time rather than stamping the restore time', async () => {
