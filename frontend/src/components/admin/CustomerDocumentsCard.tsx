@@ -337,8 +337,9 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                         <Button
                           type="button" variant="ghost" size="sm" disabled={busy}
                           leftIcon={<CheckCircle2 className="w-4 h-4" />}
-                          onClick={() => run(doc.id, () => customerDocumentsAdminService.review(customerId, doc.id, 'clean'),
-                            t('customers.documents.markedClean', 'Marked clean.'))}
+                          onClick={() => run(doc.id, async () => {
+                            await customerDocumentsAdminService.review(customerId, doc.id, 'clean');
+                          }, t('customers.documents.markedClean', 'Marked clean.'))}
                         >
                           {t('customers.documents.markClean', 'Mark clean')}
                         </Button>
