@@ -13,6 +13,7 @@ const logger = require('../utils/logger');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
+const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const packageJson = require('../../package.json');
 
@@ -676,6 +677,30 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns);
   }
 
+  // Documents a row names in the legacy root (<cwd>/storage) when that is not
+  // the storage root: the walk above never sees them. Each is backed up under
+  // the storage-relative path the manifest's stored_path_map points its rows
+  // at, when a selected backup path covers that path.
+  // A failure here must not cost the rest of the backup.
+  let legacyFiles = [];
+  try {
+    legacyFiles = await collectLegacyStoredFiles(db);
+  } catch (error) {
+    logger.warn(`Could not list documents stored outside the storage root: ${error.message}`);
+  }
+  for (const legacy of legacyFiles) {
+    const covered = targets.some((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
+    if (!covered) continue;
+    const stats = await fs.stat(legacy.abs);
+    files.push({
+      path: legacy.abs,
+      relativePath: legacy.rel.split('/').join(path.sep),
+      size: stats.size,
+      modified: stats.mtime,
+      legacyValues: legacy.values,
+    });
+  }
+
   return files;
 }
 
@@ -854,6 +879,14 @@ async function performRsyncBackup(config, files) {
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
   // file list (which only feeds manifests and file state).
+  // rsync transfers the storage root itself, so a legacy-root document (see
+  // getFilesToBackupInternal) is not in it: leave it out of the manifest
+  // rather than record a file the destination never received.
+  const legacyCount = files.filter((file) => file.legacyValues).length;
+  if (legacyCount) {
+    logger.warn(`rsync backup: ${legacyCount} document(s) stored outside the storage root are not transferred; use a local or S3 destination, or a .picpeak export, to include them`);
+    files = files.filter((file) => !file.legacyValues);
+  }
   const excludedPaths = await resolveExcludedBackupPaths(config);
   const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
@@ -1153,6 +1186,12 @@ async function runBackupInternal(isManual = false) {
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
 
+      // Rows naming a legacy-root document are pointed at its backed-up path
+      // on restore (restoreService). rsync leaves those documents out.
+      const legacyMap = storedPathMap(
+        (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
+          .map((file) => ({ rel: file.relativePath.split(path.sep).join('/'), values: file.legacyValues }))
+      );
       const manifestOptions = {
         backupType: previousBackup ? 'incremental' : 'full',
         backupPath: result.backupPath,
@@ -1163,7 +1202,8 @@ async function runBackupInternal(isManual = false) {
         customMetadata: {
           backup_run_id: runId,
           destination_type: destinationType,
-          retentionDays: config.backup_retention_days || 30
+          retentionDays: config.backup_retention_days || 30,
+          ...(Object.keys(legacyMap).length ? { stored_path_map: legacyMap } : {})
         }
       };
 
