@@ -1775,6 +1775,7 @@
       "reason": "Admin contract template operations only (drafts, pre-publication check, publishing, versions, default, preview). No clause wording, customer data or contract content.",
       "route_signatures": [
         "GET /",
+        "GET /placeholders",
         "POST /",
         "GET /:id",
         "GET /:id/versions/:version",

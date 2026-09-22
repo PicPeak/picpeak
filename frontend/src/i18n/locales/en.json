@@ -8053,7 +8053,6 @@
       "docTitle": "Contract title",
       "introText": "Intro text",
       "outroText": "Closing text",
-      "placeholders": "Placeholders you can use:",
       "clauses": "Clauses",
       "noClauses": "No clauses yet. Add clauses from the library or free text.",
       "clause": "Clause",
@@ -8115,6 +8114,29 @@
           "PAGE_COUNT_HIGH": "The contract runs to {{pages}} pages.",
           "RENDER_FAILED": "The contract could not be rendered as a PDF."
         }
+      },
+      "placeholdersHint": "Placeholders are filled in when a contract is made. Use “Insert placeholder” next to a text; the preview shows them with sample data.",
+      "picker": {
+        "open": "Insert placeholder",
+        "title": "Placeholders",
+        "search": "Search placeholders",
+        "none": "No placeholder matches.",
+        "sample": "e.g. {{value}}",
+        "categories": {
+          "customer": "Customer",
+          "event": "Event",
+          "contract": "Contract",
+          "pricing": "Pricing and terms",
+          "issuer": "Your business"
+        }
+      },
+      "condition": {
+        "label": "Show only if…",
+        "always": "Always show",
+        "kind": "Condition",
+        "filled": "is filled in",
+        "empty": "is empty",
+        "mixed": "This text has conditions of its own. Choosing a rule here replaces the one around the whole clause."
       }
     },
     "attachments": {

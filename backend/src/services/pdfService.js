@@ -2373,7 +2373,18 @@ function renderContractInProcess(context) {
           // each page's bottom margin, clear of the body text (#1445; the
           // numbers used to sit inside the content area and could overlap it).
           stampPageNumbers(doc, locale, {
-            beforeStamp: () => drawFooter(doc, ctx.issuer || {}, locale),
+            beforeStamp: () => {
+              drawFooter(doc, ctx.issuer || {}, locale);
+              // A template preview names itself on every page (#1445), below
+              // the page number, so a printed preview can't pass for a contract.
+              if (ctx.previewLabel) {
+                doc.font(doc._fonts.body).fontSize(7).fillColor(themeColor(doc, 'subtle'));
+                doc.text(String(ctx.previewLabel), PAGE.marginLeft, doc.page.height - PAGE.marginBottom + 20, {
+                  width: PAGE.contentWidth, align: 'left', lineBreak: false, ellipsis: true,
+                });
+                doc.fillColor(themeColor(doc, 'text'));
+              }
+            },
             insertedBeforeLast: ctx.mergedAttachmentPages,
           });
         } catch (err) {

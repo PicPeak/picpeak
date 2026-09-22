@@ -632,23 +632,30 @@ async function previewVersion(id, versionNumber) {
 }
 
 /**
- * Render a version the way a contract made from it renders, with the business
- * profile and no customer. `skipUnreadable` leaves out a merged attachment
+ * Render a version the way a contract made from it renders: the business
+ * profile's letterhead, and sample data (pdf/sampleData) for the customer,
+ * the event and a three-line quote — or a real customer when
+ * `customer` is given. Every page names what is previewed ("Preview —
+ * <template> v<n|draft>"). `skipUnreadable` leaves out a merged attachment
  * whose file can't be read (the check reports it) instead of failing.
  * Returns the PDF, where each clause landed, what the render worked around,
  * the page count and the render context.
  */
-async function renderVersion(template, version, { skipUnreadable = false } = {}) {
+async function renderVersion(template, version, { skipUnreadable = false, customer = null } = {}) {
   const items = await loadItems(version.id);
   const businessProfileService = require('../businessProfileService');
   const { profile } = await businessProfileService.getProfile();
+  const sample = require('../pdf/sampleData');
   const language = (profile && profile.default_locale) || 'de';
+  const quote = sample.sampleContractQuote(language, profile && profile.default_currency);
   const fakeContract = {
     id: null,
     contract_number: 'PREVIEW',
-    customer_account_id: null,
+    customer_account_id: customer ? customer.id : null,
     language,
     issue_date: new Date().toISOString().slice(0, 10),
+    event_name: sample.sampleText(language).eventName,
+    event_date: '2027-06-12',
     title: version.title || template.name,
     intro_text: content.pickLocale(version.intro_text, language) || null,
     outro_text: content.pickLocale(version.outro_text, language) || null,
@@ -674,8 +681,17 @@ async function renderVersion(template, version, { skipUnreadable = false } = {})
   }
   const { buildRenderContext } = require('./renderContext');
   const pdfService = require('../pdfService');
-  const ctx = await buildRenderContext(fakeContract, inclusions, textSections);
+  const ctx = await buildRenderContext(fakeContract, inclusions, textSections, {
+    customer: customer || sample.SAMPLE_CUSTOMER,
+    quote,
+    placeholders: { source_quote_number: quote.number },
+  });
   ctx.mergedAttachmentPages = merged.reduce((sum, file) => sum + file.pages, 0);
+  const { t: pdfT } = require('../pdf-i18n');
+  ctx.previewLabel = pdfT(language, 'template_preview_label', {
+    name: template.name,
+    version: version.status === 'draft' ? pdfT(language, 'template_preview_draft') : `v${ensureInt(version.version_number)}`,
+  });
   const rendered = await pdfService.renderContractWithSlots(ctx);
   const own = rendered.slots && rendered.slots.length ? rendered.slots[0].pageIndex + 1 : 0;
   const result = await insertBeforeLastPage(rendered.buffer, merged.map((file) => file.buffer), { title: 'PREVIEW' });
@@ -691,11 +707,17 @@ async function renderVersion(template, version, { skipUnreadable = false } = {})
 
 /**
  * A sample PDF of a template's draft (or a given version), rendered by the
- * real contract pipeline with the business profile and no customer.
+ * real contract pipeline with sample data, or with a real customer when
+ * `customerId` is given (the route checks customers.view first).
  */
-async function renderTemplatePreview(id, { version: versionNumber } = {}) {
+async function renderTemplatePreview(id, { version: versionNumber, customerId = null } = {}) {
   const { template, version } = await previewVersion(id, versionNumber);
-  return (await renderVersion(template, version)).buffer;
+  let customer = null;
+  if (customerId) {
+    customer = await db('customer_accounts').where({ id: customerId }).first();
+    if (!customer) throw new AppError('Customer not found', 404, 'CUSTOMER_NOT_FOUND');
+  }
+  return (await renderVersion(template, version, { customer })).buffer;
 }
 
 // A contract past this many pages is almost always a mistake (a pasted

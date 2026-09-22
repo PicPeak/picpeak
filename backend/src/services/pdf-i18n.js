@@ -78,6 +78,9 @@ const LABELS = {
     page: 'Page',
     of: 'of',
     page_of: 'Page {current} of {total}',
+    // Contract template previews (#1445): which template and version this is.
+    template_preview_label: 'Preview — {name} {version} — sample data, not a contract',
+    template_preview_draft: 'draft',
     epc_qr_title: 'Scan to pay (SEPA)',
     epc_qr_subtitle: 'Open your banking app and scan this code to prefill the transfer.',
     quote_response_intro: 'You can accept or decline this quote here:',
@@ -264,6 +267,8 @@ const LABELS = {
     page: 'Seite',
     of: 'von',
     page_of: 'Seite {current} von {total}',
+    template_preview_label: 'Vorschau — {name} {version} — Beispieldaten, kein Vertrag',
+    template_preview_draft: 'Entwurf',
     epc_qr_title: 'Zum Bezahlen scannen (SEPA)',
     epc_qr_subtitle: 'Öffne deine Banking-App und scanne diesen Code, um die Überweisung vorauszufüllen.',
     quote_response_intro: 'Sie können dieses Angebot hier annehmen oder ablehnen:',

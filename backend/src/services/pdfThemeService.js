@@ -93,36 +93,7 @@ async function resolveDraftTheme(scope, settings) {
 // Preview: a sample document through the real renderer
 // ---------------------------------------------------------------------
 
-const SAMPLE_CUSTOMER = {
-  first_name: 'Anna', last_name: 'Muster', display_name: 'Anna Muster',
-  address_line1: 'Musterstrasse 1', postal_code: '9490', city: 'Vaduz', country_code: 'LI',
-  email: 'anna@example.com',
-};
-
-const SAMPLE_TEXT = {
-  de: {
-    photography: 'Fotografie vor Ort',
-    photographyNote: 'Vorbereitung, Trauung und Porträts',
-    album: 'Album 30×30',
-    discount: 'Vereinsrabatt',
-    intro: 'Vorschau mit Beispieldaten — kein echtes Dokument.',
-    blockName: 'Leistungsumfang',
-    blockBody: 'Die Fotografin begleitet die Hochzeit am vereinbarten Tag. **Beispieltext** für die Vorschau.',
-    closingName: 'Schlussbestimmungen',
-    closingBody: 'Änderungen bedürfen der Schriftform. Beispieltext für die Vorschau.',
-  },
-  en: {
-    photography: 'Photography on location',
-    photographyNote: 'Getting ready, ceremony and portraits',
-    album: 'Album 30×30',
-    discount: 'Club discount',
-    intro: 'Preview with sample data — not a real document.',
-    blockName: 'Scope of services',
-    blockBody: 'The photographer covers the wedding on the agreed day. **Sample text** for the preview.',
-    closingName: 'Closing provisions',
-    closingBody: 'Changes must be made in writing. Sample text for the preview.',
-  },
-};
+const { SAMPLE_CUSTOMER, SAMPLE_TOTALS, sampleText, sampleLines } = require('./pdf/sampleData');
 
 /**
  * Render a sample quote, invoice or contract with a scope's theme — the
@@ -139,22 +110,14 @@ async function renderPreview(scope, settings) {
   const pdfService = require('./pdfService');
   const logoPath = await resolveLogoFile(profile);
   const locale = profile && profile.default_locale === 'en' ? 'en' : 'de';
-  const text = SAMPLE_TEXT[locale];
+  const text = sampleText(locale);
   const currency = String((profile && profile.default_currency) || 'CHF').toUpperCase();
   const issuer = buildIssuerBlock(profile || {}, logoPath, { quoteToggles: docType === 'quote' });
   const recipient = buildRecipientBlock(profile || {}, SAMPLE_CUSTOMER);
   const issueDate = new Date().toISOString().slice(0, 10);
 
-  const lines = [
-    { quantity: 8, unit: 'hour', description: text.photography, unitPriceMinor: 15000, discountPercent: 0,
-      lineTotalMinor: 120000, detailsText: text.photographyNote },
-    { quantity: 1, description: text.album, unitPriceMinor: 45000, discountPercent: 0, lineTotalMinor: 45000 },
-    { quantity: 1, lineKind: 'discount', description: text.discount, unitPriceMinor: -10000, discountPercent: 0,
-      lineTotalMinor: -10000 },
-  ];
-  const totals = {
-    netAmountMinor: 155000, vatRate: 8.1, vatAmountMinor: 12555, shippingAmountMinor: 0, totalAmountMinor: 167555,
-  };
+  const lines = sampleLines(locale);
+  const totals = { ...SAMPLE_TOTALS };
 
   if (docType === 'contract') {
     return pdfService.renderContractToBuffer({

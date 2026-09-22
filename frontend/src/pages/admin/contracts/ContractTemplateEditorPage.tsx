@@ -23,10 +23,12 @@ import {
   contractsService, CONTRACT_SECTIONS, type ContractBlock, type ContractBlockSection,
 } from '../../../services/contracts.service';
 import {
-  contractTemplatesService, templateError, CONTRACT_LOCALES, CONTRACT_PLACEHOLDERS,
+  contractTemplatesService, templateError, CONTRACT_LOCALES,
   type ContractLocale, type ContractTemplateDetail, type LocaleText, type TemplateFinding, type TemplatePublishCheck,
 } from '../../../services/contractTemplates.service';
 import { TemplateCheckPanel } from './TemplateCheckPanel';
+import { PlaceholderPicker, placeholderLang, useContractPlaceholders } from './PlaceholderPicker';
+import { applyCondition, readCondition, unwrapCondition, type ClauseCondition } from './clauseCondition';
 
 /** Ask a text field to show a language and take the focus ("Go to" from the check). */
 interface FocusRequest {
@@ -123,7 +125,10 @@ const LocaleTextField: React.FC<{
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
         <label htmlFor={`${id}-${locale}`} className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{label}</label>
-        <div className="flex gap-1" role="group" aria-label={t('contracts.templates.languages', 'Languages') as string}>
+        <div className="flex gap-1 items-center flex-wrap" role="group" aria-label={t('contracts.templates.languages', 'Languages') as string}>
+          {!readOnly && (
+            <PlaceholderPicker target={textarea} onInsert={(next) => onChange({ ...value, [locale]: next })} />
+          )}
           {CONTRACT_LOCALES.map((l) => (
             <button
               key={l}
@@ -149,6 +154,65 @@ const LocaleTextField: React.FC<{
         placeholder={hint?.[locale] || hint?.en || hint?.de || ''}
         onChange={(e) => onChange({ ...value, [locale]: e.target.value })}
       />
+    </div>
+  );
+};
+
+/**
+ * "Show only if…": one placeholder that may be empty, and whether the clause
+ * shows when it is filled in or when it is empty. Writes the clause body
+ * wrapped in `{{#if}}` / `{{#unless}}` (clauseCondition.ts).
+ */
+const ClauseConditionField: React.FC<{
+  id: string;
+  body: LocaleText;
+  /** A block's library text, which the rule wraps when the clause has no text of its own. */
+  baseText: LocaleText;
+  readOnly: boolean;
+  onChange: (body: LocaleText) => void;
+}> = ({ id, body, baseText, readOnly, onChange }) => {
+  const { t, i18n } = useTranslation();
+  const lang = placeholderLang(i18n.language);
+  const options = useContractPlaceholders().filter((p) => p.conditional);
+  const hasOwnText = Object.values(body).some((text) => typeof text === 'string' && text.trim() !== '');
+  const current = readCondition(hasOwnText ? body : {});
+  const set = (next: ClauseCondition | null) => {
+    const source = hasOwnText ? body : baseText;
+    const written = applyCondition(source, next);
+    // Rule removed from a block whose text is the library's: back to the library text.
+    const plain = unwrapCondition(written);
+    const isLibrary = !next && Object.keys(baseText).length > 0
+      && Object.keys(plain).length === Object.keys(baseText).length
+      && Object.entries(baseText).every(([locale, text]) => plain[locale as ContractLocale] === text);
+    onChange(isLibrary ? {} : written);
+  };
+  const key = current && current !== 'mixed' ? current.key : '';
+  const kind = current && current !== 'mixed' ? current.kind : 'if';
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <label htmlFor={`${id}-key`} className={labelClass}>{t('contracts.templates.condition.label', 'Show only if…')}</label>
+        <select id={`${id}-key`} className={fieldClass} value={key} disabled={readOnly}
+          onChange={(e) => set(e.target.value ? { kind, key: e.target.value } : null)}>
+          <option value="">{t('contracts.templates.condition.always', 'Always show')}</option>
+          {options.map((p) => <option key={p.key} value={p.key}>{p.label[lang]}</option>)}
+        </select>
+      </div>
+      {key && (
+        <div>
+          <label htmlFor={`${id}-kind`} className="sr-only">{t('contracts.templates.condition.kind', 'Condition')}</label>
+          <select id={`${id}-kind`} className={fieldClass} value={kind} disabled={readOnly}
+            onChange={(e) => set({ kind: e.target.value as ClauseCondition['kind'], key })}>
+            <option value="if">{t('contracts.templates.condition.filled', 'is filled in')}</option>
+            <option value="unless">{t('contracts.templates.condition.empty', 'is empty')}</option>
+          </select>
+        </div>
+      )}
+      {current === 'mixed' && (
+        <p className="text-xs text-amber-800 dark:text-amber-300 basis-full">
+          {t('contracts.templates.condition.mixed', 'This text has conditions of its own. Choosing a rule here replaces the one around the whole clause.')}
+        </p>
+      )}
     </div>
   );
 };
@@ -481,8 +545,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
         <LocaleTextField id="contract-template-outro" label={t('contracts.templates.outroText', 'Closing text') as string}
           value={outro} onChange={setOutro} rows={2} readOnly={readOnly} focusRequest={focusFor('outro')} />
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          {t('contracts.templates.placeholders', 'Placeholders you can use:')}{' '}
-          <span className="font-mono">{CONTRACT_PLACEHOLDERS.map((key) => `{{${key}}}`).join(' ')}</span>
+          {t('contracts.templates.placeholdersHint', 'Placeholders are filled in when a contract is made. Use “Insert placeholder” next to a text; the preview shows them with sample data.')}
         </p>
       </Card>
 
@@ -542,6 +605,13 @@ export const ContractTemplateEditorPage: React.FC = () => {
                         onChange={(e) => update(item.key, { heading: e.target.value })} />
                     </div>
                   )}
+                  <ClauseConditionField
+                    id={`${item.key}-condition`}
+                    body={item.body}
+                    baseText={item.baseText}
+                    readOnly={readOnly}
+                    onChange={(body) => update(item.key, { body })}
+                  />
                   <LocaleTextField
                     id={`${item.key}-body`}
                     label={item.kind === 'block'

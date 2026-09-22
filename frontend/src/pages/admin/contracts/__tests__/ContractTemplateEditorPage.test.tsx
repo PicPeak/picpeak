@@ -56,6 +56,11 @@ vi.mock('../../../../services/contractTemplates.service', async () => {
       saveDraft: (...args: unknown[]) => saveDraft(...args),
       publish: (...args: unknown[]) => publish(...args),
       check: (...args: unknown[]) => check(...args),
+      placeholders: vi.fn(async () => ({
+        placeholders: [
+          { key: 'event_date', category: 'event', conditional: true, label: { en: 'Event date', de: 'Datum' }, sample: { en: '12.06.2027', de: '12.06.2027' } },
+        ],
+      })),
       previewUrl: vi.fn(),
       draftFromVersion: vi.fn(),
       duplicate: vi.fn(),
@@ -198,4 +203,24 @@ it('shows the findings of a publish the server refused', async () => {
   await screen.findByText('Leistung');
   await user.click(screen.getByRole('button', { name: 'Publish' }));
   expect(await screen.findByText('Clause 1 · Leistung: archived in the clause library.')).toBeInTheDocument();
+});
+
+it('"Show only if…" wraps the clause in every language and saves it', async () => {
+  const user = userEvent.setup();
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Text' }));
+  await user.selectOptions(await screen.findByRole('combobox', { name: 'Show only if…' }), 'event_date');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    items: [{ kind: 'block', blockId: 7, body: { de: '{{#if event_date}}Bibliothekstext{{/if}}' } }],
+  })));
+
+  // Back to "Always show": the clause returns to the library text.
+  if (!screen.queryByRole('combobox', { name: 'Show only if…' })) await user.click(screen.getByRole('button', { name: 'Text' }));
+  await user.selectOptions(await screen.findByRole('combobox', { name: 'Show only if…' }), '');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({
+    items: [{ kind: 'block', blockId: 7, body: {} }],
+  })));
 });

@@ -289,13 +289,16 @@ async function buildContentSnapshot(contract, inclusions, textSections = []) {
  * placeholders filled in: from the sent snapshot when there is one, else
  * from the live draft. Shared by the PDF and the customer's signing page.
  */
-async function resolveDisplayContent(contract, inclusions, textSections, locale, { customer } = {}) {
+async function resolveDisplayContent(contract, inclusions, textSections, locale, { customer, placeholders: extra } = {}) {
   const snapshot = parseContentSnapshot(contract.rendered_content);
   const placeholders = snapshot
     ? snapshot.placeholders
-    : await buildPlaceholderContext(contract, customer !== undefined
-      ? customer
-      : await db('customer_accounts').where({ id: contract.customer_account_id }).first());
+    : {
+      ...(await buildPlaceholderContext(contract, customer !== undefined
+        ? customer
+        : await db('customer_accounts').where({ id: contract.customer_account_id }).first())),
+      ...(extra || {}),
+    };
   const clauses = snapshot ? snapshot.clauses : orderedClauses(contract, inclusions, textSections || []);
   const intro = snapshot ? snapshot.introText : contract.intro_text;
   const outro = snapshot ? snapshot.outroText : contract.outro_text;
@@ -330,8 +333,12 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
  * Before send (preview from editor) the live `contract_blocks.body_text`
  * is used so the admin can iterate on block bodies and see the result.
  */
-async function buildRenderContext(contract, inclusions, textSections = []) {
-  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
+async function buildRenderContext(contract, inclusions, textSections = [], options = {}) {
+  // `options.customer` / `options.quote` stand in for the customer row and
+  // the frozen quote: the template preview renders with sample data (#1445).
+  const customer = options.customer !== undefined
+    ? options.customer
+    : await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   const profile = (await businessProfileService.getProfile()).profile || {};
 
   // The line items and totals the contract prints. A contract sent with a
@@ -348,7 +355,12 @@ async function buildRenderContext(contract, inclusions, textSections = []) {
   let quoteCurrency = null;
   let quoteNumber = null;
   let quoteTotals = null;
-  if (snapshot && ensureInt(snapshot.format) >= 2 && snapshot.quote) {
+  if (options.quote) {
+    quoteLineItems = options.quote.lineItems || [];
+    quoteCurrency = options.quote.currency || null;
+    quoteNumber = options.quote.number || null;
+    quoteTotals = options.quote.totals || null;
+  } else if (snapshot && ensureInt(snapshot.format) >= 2 && snapshot.quote) {
     quoteLineItems = snapshot.quote.lineItems || [];
     quoteCurrency = snapshot.quote.currency || null;
     quoteNumber = snapshot.quote.number || null;
@@ -373,7 +385,8 @@ async function buildRenderContext(contract, inclusions, textSections = []) {
   // Clauses in reading order with placeholders filled in — from the sent
   // snapshot once there is one (#1445), else live. The locale picks each
   // clause's text in that language, then English, then German.
-  const display = await resolveDisplayContent(contract, inclusions, textSections, locale, { customer });
+  const display = await resolveDisplayContent(contract, inclusions, textSections, locale,
+    { customer, placeholders: options.placeholders });
 
   // Use the same robust logo resolver quote/invoice use — checks
   // business_profile.logo_path → app_settings.branding_logo_path →

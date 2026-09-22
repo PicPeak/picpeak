@@ -4,6 +4,7 @@
  * Admin → contract templates (#1445). Mounted at /api/admin/contract-templates.
  *
  *   GET    /                               every template, with draft and default flags
+ *   GET    /placeholders                   the placeholders contract texts may use, with labels and samples
  *   POST   /                               create (an empty draft)
  *   GET    /:id                            template, draft, published version, history
  *   GET    /:id/versions/:version          one version with its clauses
@@ -14,7 +15,8 @@
  *   POST   /:id/duplicate                  copy into a new template
  *   POST   /:id/archive, /:id/restore
  *   POST   /:id/default                    new contracts start from this template
- *   POST   /:id/preview                    a sample PDF of the draft or a version
+ *   POST   /:id/preview                    a sample PDF of the draft or a version (sample data, or a
+ *                                           real customer with previewCustomerId + customers.view)
  *
  * adminAuth → the `contracts` feature flag → contracts.view to read and
  * preview, contracts.templates.manage for everything that changes a
@@ -28,6 +30,9 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { AppError } = require('../utils/errors');
+const { userHasAnyPermission } = require('../middleware/permissions');
+const { CONTRACT_PLACEHOLDER_REGISTRY } = require('../utils/placeholders');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const templates = require('../services/contract/templates');
 
@@ -47,6 +52,11 @@ const metaBody = [
 
 router.get('/', VIEW, handleAsync(async (req, res) => (
   successResponse(res, { templates: await templates.listTemplates() })
+)));
+
+// Before `/:id`, which would read "placeholders" as an id.
+router.get('/placeholders', VIEW, handleAsync(async (req, res) => (
+  successResponse(res, { placeholders: CONTRACT_PLACEHOLDER_REGISTRY })
 )));
 
 router.post(
@@ -142,10 +152,20 @@ router.post('/:id/default', MANAGE, [idParam], handleAsync(async (req, res) => {
 router.post(
   '/:id/preview',
   VIEW,
-  [idParam, body('version').optional({ nullable: true }).isInt({ min: 1 }).toInt()],
+  [
+    idParam,
+    body('version').optional({ nullable: true }).isInt({ min: 1 }).toInt(),
+    body('previewCustomerId').optional({ nullable: true }).isInt({ min: 1 }).toInt(),
+  ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const buffer = await templates.renderTemplatePreview(req.params.id, { version: req.body.version || null });
+    const customerId = req.body.previewCustomerId || null;
+    // A real customer's data leaves the server only as the PDF asked for,
+    // and only to an admin who may see that customer anyway.
+    if (customerId && !(await userHasAnyPermission(req.admin?.id, ['customers.view']))) {
+      throw new AppError('You need permission to view customers for a preview with customer data', 403, 'FORBIDDEN');
+    }
+    const buffer = await templates.renderTemplatePreview(req.params.id, { version: req.body.version || null, customerId });
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', buildContentDisposition(`contract-template-${req.params.id}-preview.pdf`, 'inline'));
     return res.send(buffer);

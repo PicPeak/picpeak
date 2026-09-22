@@ -8054,7 +8054,6 @@
       "docTitle": "Vertragstitel",
       "introText": "Einleitung",
       "outroText": "Schlusstext",
-      "placeholders": "Verfügbare Platzhalter:",
       "clauses": "Klauseln",
       "noClauses": "Noch keine Klauseln. Fügen Sie Klauseln aus der Bibliothek oder freien Text hinzu.",
       "clause": "Klausel",
@@ -8116,6 +8115,29 @@
           "PAGE_COUNT_HIGH": "Der Vertrag umfasst {{pages}} Seiten.",
           "RENDER_FAILED": "Der Vertrag konnte nicht als PDF erstellt werden."
         }
+      },
+      "placeholdersHint": "Platzhalter werden beim Erstellen eines Vertrags ausgefüllt. Nutzen Sie „Platzhalter einfügen“ neben einem Text; die Vorschau zeigt sie mit Beispieldaten.",
+      "picker": {
+        "open": "Platzhalter einfügen",
+        "title": "Platzhalter",
+        "search": "Platzhalter suchen",
+        "none": "Kein Platzhalter gefunden.",
+        "sample": "z. B. {{value}}",
+        "categories": {
+          "customer": "Kunde",
+          "event": "Anlass",
+          "contract": "Vertrag",
+          "pricing": "Preise und Bedingungen",
+          "issuer": "Ihr Unternehmen"
+        }
+      },
+      "condition": {
+        "label": "Nur anzeigen, wenn…",
+        "always": "Immer anzeigen",
+        "kind": "Bedingung",
+        "filled": "ausgefüllt ist",
+        "empty": "leer ist",
+        "mixed": "Dieser Text enthält eigene Bedingungen. Eine Regel hier ersetzt die Bedingung um die ganze Klausel."
       }
     },
     "attachments": {

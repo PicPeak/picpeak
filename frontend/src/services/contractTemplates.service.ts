@@ -12,12 +12,18 @@ export type ContractLocale = 'de' | 'en' | 'fr' | 'nl' | 'pt' | 'ru';
 export const CONTRACT_LOCALES: ContractLocale[] = ['de', 'en', 'fr', 'nl', 'pt', 'ru'];
 export type LocaleText = Partial<Record<ContractLocale, string>>;
 
-/** The placeholders contract texts may use (backend CONTRACT_PLACEHOLDERS). */
-export const CONTRACT_PLACEHOLDERS = [
-  'customer_name', 'customer_address', 'event_name', 'event_date', 'issue_date', 'contract_number', 'title',
-  'net_days', 'skonto_percent', 'skonto_within_days', 'cancellation_30d_percent', 'currency',
-  'issuer_company_name', 'issuer_address', 'source_quote_number',
-] as const;
+/**
+ * A placeholder contract texts may use, as the backend's registry describes
+ * it (GET /placeholders). The frontend keeps no list of its own.
+ */
+export interface ContractPlaceholder {
+  key: string;
+  category: 'customer' | 'event' | 'contract' | 'pricing' | 'issuer';
+  label: { en: string; de: string };
+  sample: { en: string; de: string };
+  /** May a "Show only if…" rule test it (a value that can be empty)? */
+  conditional: boolean;
+}
 
 export type ContractTemplateStatus = 'draft' | 'published' | 'archived';
 
@@ -120,6 +126,10 @@ const unwrap = <T>(data: { data?: T } & T): T => (data.data || data) as T;
 export const contractTemplatesService = {
   async list(): Promise<{ templates: ContractTemplateSummary[] }> {
     const { data } = await api.get(base);
+    return unwrap(data);
+  },
+  async placeholders(): Promise<{ placeholders: ContractPlaceholder[] }> {
+    const { data } = await api.get(`${base}/placeholders`);
     return unwrap(data);
   },
   async get(id: number): Promise<ContractTemplateDetail> {

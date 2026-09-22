@@ -21,10 +21,13 @@ const { escapeHtml } = require('./formatters');
 
 const PLACEHOLDER_PATTERN = /\{\{\s*(\w+)\s*\}\}/g;
 // `{{#if key}}…{{/if}}` — contract bodies use it to leave a clause out when
-// a value is missing. Same tolerance for spaces as the plain placeholder, and
-// the same module owns both so the check and the renderer can't disagree
-// about what a placeholder looks like.
-const CONDITIONAL_PATTERN = /\{\{\s*#if\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/if\s*\}\}/g;
+// a value is missing — and its one inversion, `{{#unless key}}…{{/unless}}`,
+// for "only when there is no …". Same tolerance for spaces as the plain
+// placeholder, and the same module owns both so the check and the renderer
+// can't disagree about what a placeholder looks like. Groups: 1 = if|unless,
+// 2 = key, 3 = body. Deliberately no else, negation, comparison or nesting
+// (the pre-publication check refuses nested blocks).
+const CONDITIONAL_PATTERN = /\{\{\s*#(if|unless)\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/\1\s*\}\}/g;
 
 // Keys a quote text (intro/outro, text blocks) may use.
 const QUOTE_PLACEHOLDERS = Object.freeze([
@@ -41,27 +44,65 @@ const QUOTE_PLACEHOLDERS = Object.freeze([
   'day_rate',
 ]);
 
-/** Every placeholder key used in `text`, in order of first appearance. */
-// Keys contract texts may use (#1445) — the values
-// services/contract/renderContext.buildPlaceholderContext provides.
-const CONTRACT_PLACEHOLDERS = Object.freeze([
-  'customer_name',
-  'customer_address',
-  'event_name',
-  'event_date',
-  'issue_date',
-  'contract_number',
-  'title',
-  'net_days',
-  'skonto_percent',
-  'skonto_within_days',
-  'cancellation_30d_percent',
-  'currency',
-  'issuer_company_name',
-  'issuer_address',
-  'source_quote_number',
-]);
+// The placeholders contract texts may use (#1445) — the values
+// services/contract/renderContext.buildPlaceholderContext provides — with
+// what the editor's picker shows: a category, a label and a sample value per
+// language, and whether a "Show only if…" rule may test it (a value that can
+// be empty). The frontend reads this from the API; it keeps no copy.
+const CONTRACT_PLACEHOLDER_REGISTRY = Object.freeze([
+  { key: 'customer_name', category: 'customer', conditional: false,
+    label: { en: 'Customer name', de: 'Name des Kunden' },
+    sample: { en: 'Anna Muster', de: 'Anna Muster' } },
+  { key: 'customer_address', category: 'customer', conditional: true,
+    label: { en: 'Customer address', de: 'Adresse des Kunden' },
+    sample: { en: 'Musterstrasse 1, 9490, Vaduz', de: 'Musterstrasse 1, 9490, Vaduz' } },
+  { key: 'event_name', category: 'event', conditional: true,
+    label: { en: 'Event name', de: 'Name des Anlasses' },
+    sample: { en: 'Wedding Anna & Ben', de: 'Hochzeit Anna & Ben' } },
+  { key: 'event_date', category: 'event', conditional: true,
+    label: { en: 'Event date', de: 'Datum des Anlasses' },
+    sample: { en: '12.06.2027', de: '12.06.2027' } },
+  { key: 'issue_date', category: 'contract', conditional: false,
+    label: { en: 'Contract date', de: 'Vertragsdatum' },
+    sample: { en: '22.09.2026', de: '22.09.2026' } },
+  { key: 'contract_number', category: 'contract', conditional: false,
+    label: { en: 'Contract number', de: 'Vertragsnummer' },
+    sample: { en: 'C-2026-0042', de: 'C-2026-0042' } },
+  { key: 'title', category: 'contract', conditional: false,
+    label: { en: 'Contract title', de: 'Vertragstitel' },
+    sample: { en: 'Photography contract', de: 'Fotografievertrag' } },
+  { key: 'source_quote_number', category: 'contract', conditional: true,
+    label: { en: 'Number of the source quote', de: 'Nummer der Offerte' },
+    sample: { en: 'Q-2026-0107', de: 'Q-2026-0107' } },
+  { key: 'net_days', category: 'pricing', conditional: false,
+    label: { en: 'Payment term (days)', de: 'Zahlungsfrist (Tage)' },
+    sample: { en: '30', de: '30' } },
+  { key: 'skonto_percent', category: 'pricing', conditional: false,
+    label: { en: 'Early-payment discount (%)', de: 'Skonto (%)' },
+    sample: { en: '2', de: '2' } },
+  { key: 'skonto_within_days', category: 'pricing', conditional: false,
+    label: { en: 'Early-payment discount within (days)', de: 'Skonto innert (Tagen)' },
+    sample: { en: '10', de: '10' } },
+  // Not data: renderContext fills in the literal 25 on every contract.
+  { key: 'cancellation_30d_percent', category: 'pricing', conditional: false,
+    label: { en: 'Cancellation fee within 30 days (fixed: 25 %)', de: 'Annullationsgebühr innert 30 Tagen (fest: 25 %)' },
+    sample: { en: '25', de: '25' } },
+  { key: 'currency', category: 'pricing', conditional: false,
+    label: { en: 'Currency', de: 'Währung' },
+    sample: { en: 'CHF', de: 'CHF' } },
+  { key: 'issuer_company_name', category: 'issuer', conditional: false,
+    label: { en: 'Your company name', de: 'Ihr Firmenname' },
+    sample: { en: 'Studio Example', de: 'Studio Beispiel' } },
+  { key: 'issuer_address', category: 'issuer', conditional: false,
+    label: { en: 'Your address', de: 'Ihre Adresse' },
+    sample: { en: 'Weg 1, 9490, Vaduz', de: 'Weg 1, 9490, Vaduz' } },
+].map((entry) => Object.freeze(entry)));
 
+// Keys contract texts may use: derived from the registry, so the allowlist
+// and the picker can't drift apart.
+const CONTRACT_PLACEHOLDERS = Object.freeze(CONTRACT_PLACEHOLDER_REGISTRY.map((entry) => entry.key));
+
+/** Every placeholder key used in `text`, in order of first appearance. */
 function findPlaceholders(text) {
   if (typeof text !== 'string' || !text) return [];
   const keys = [];
@@ -69,7 +110,7 @@ function findPlaceholders(text) {
   // one used to publish without a word — the clause then simply never
   // appeared on any document.
   for (const match of text.matchAll(CONDITIONAL_PATTERN)) {
-    if (!keys.includes(match[1])) keys.push(match[1]);
+    if (!keys.includes(match[2])) keys.push(match[2]);
   }
   for (const match of text.matchAll(PLACEHOLDER_PATTERN)) {
     if (!keys.includes(match[1])) keys.push(match[1]);
@@ -90,7 +131,8 @@ function hasConditional(text) {
 
 /**
  * Resolve `{{#if key}}…{{/if}}` against `values`: a key with no value — a
- * missing one included — drops the block. A plain `{{key}}` stays visible
+ * missing one included — drops the block; `{{#unless key}}…{{/unless}}` keeps
+ * its block exactly then. A plain `{{key}}` stays visible
  * when it is unknown, but leaving `{{#if …}}` markup in a contract body
  * would print it on the document, so a typo is caught earlier instead:
  * findPlaceholders reports conditional keys too, and publishing a template
@@ -98,17 +140,17 @@ function hasConditional(text) {
  */
 function renderConditionals(text, values = {}) {
   if (typeof text !== 'string' || !text) return text;
-  return text.replace(CONDITIONAL_PATTERN, (match, key, inner) => {
+  return text.replace(CONDITIONAL_PATTERN, (match, kind, key, inner) => {
     const value = values && Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined;
     const present = value !== undefined && value !== null && value !== '' && value !== false && value !== 0;
-    return present ? inner : '';
+    return present === (kind === 'if') ? inner : '';
   });
 }
 
 // Every opening and closing conditional tag, well-formed or not, so the check
 // can tell a nested block (which the non-greedy CONDITIONAL_PATTERN mis-pairs)
 // and an unclosed one from a correct block.
-const CONDITIONAL_TAG = /\{\{\s*(?:#(if)\s+\w+|\/(if))\s*\}\}/g;
+const CONDITIONAL_TAG = /\{\{\s*(?:#(if|unless)\s+\w+|\/(if|unless))\s*\}\}/g;
 
 /**
  * What is wrong with the `{{#if}}` blocks in `text`: `CONDITIONAL_NESTED`
@@ -119,18 +161,17 @@ const CONDITIONAL_TAG = /\{\{\s*(?:#(if)\s+\w+|\/(if))\s*\}\}/g;
 function conditionalProblems(text) {
   if (typeof text !== 'string' || !text) return [];
   const problems = new Set();
-  let depth = 0;
+  const open = [];
   for (const match of text.matchAll(CONDITIONAL_TAG)) {
     if (match[1]) {
-      if (depth > 0) problems.add('CONDITIONAL_NESTED');
-      depth += 1;
-    } else if (depth === 0) {
+      if (open.length) problems.add('CONDITIONAL_NESTED');
+      open.push(match[1]);
+    } else if (open.pop() !== match[2]) {
+      // A closing tag with nothing open, or `{{/unless}}` closing an `#if`.
       problems.add('CONDITIONAL_UNCLOSED');
-    } else {
-      depth -= 1;
     }
   }
-  if (depth > 0) problems.add('CONDITIONAL_UNCLOSED');
+  if (open.length) problems.add('CONDITIONAL_UNCLOSED');
   return [...problems];
 }
 
@@ -244,6 +285,7 @@ function markdownToPlain(text) {
 
 module.exports = {
   QUOTE_PLACEHOLDERS,
+  CONTRACT_PLACEHOLDER_REGISTRY,
   CONTRACT_PLACEHOLDERS,
   PLACEHOLDER_PATTERN,
   CONDITIONAL_PATTERN,
