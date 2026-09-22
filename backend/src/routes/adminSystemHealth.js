@@ -282,8 +282,13 @@ router.get(
     // The counts belong to the documents feature: with it off, no route
     // answers for it, this one included. Ops admins (settings.view /
     // system.view) see the aggregate, as they do for the rest of this page.
+    // Plus 24-hour abuse signals (slice 9): attempts on other customers'
+    // documents, quota refusals, rate-limit hits.
     const customerDocuments = await isFeatureEnabled('documents')
-      ? await require('../services/customerDocumentsService').getReviewCounts()
+      ? {
+        ...await require('../services/customerDocumentsService').getReviewCounts(),
+        abuse: await require('../services/customerDocumentAbuse').last24hCounts(),
+      }
       : null;
     // Where the key for signing evidence comes from (#1446): the env var, the
     // file in business-docs (backed up), or not created yet. Never the key.

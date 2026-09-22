@@ -577,6 +577,26 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
       body_text: 'Guten Tag {{customer_name}},\n\ndas von Ihnen hochgeladene Dokument {{document_title}} wurde nicht angenommen.{{#if review_note}}\nBegründung: {{review_note}}{{/if}}\n\nSie können in Ihrem Kundenportal eine korrigierte Fassung hochladen: {{document_link}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
     },
   },
+  customer_document_access_alert_admin: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'attempt_count', 'admin_link'],
+    en: {
+      subject: 'Repeated access to other customers\' documents: {{customer_name}}',
+      body_html: `<h2>Unusual document access</h2>
+<p>Within the last hour, {{customer_name}} asked the portal for {{attempt_count}} documents that belong to other customers. Every one of them was refused.</p>
+<p>This can be a stale link, but it is also what trying out document numbers looks like. You can deactivate the account from the customer record if it continues.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Open the customer record</a></p>`,
+      body_text: 'Within the last hour, {{customer_name}} asked the portal for {{attempt_count}} documents that belong to other customers. Every one of them was refused.\n\nThis can be a stale link, but it is also what trying out document numbers looks like. You can deactivate the account from the customer record if it continues.\n\n{{admin_link}}',
+    },
+    de: {
+      subject: 'Wiederholte Zugriffe auf fremde Dokumente: {{customer_name}}',
+      body_html: `<h2>Ungewöhnliche Dokumentzugriffe</h2>
+<p>{{customer_name}} hat in der letzten Stunde im Portal {{attempt_count}} Dokumente angefordert, die anderen Kunden gehören. Alle Zugriffe wurden abgewiesen.</p>
+<p>Das kann ein veralteter Link sein, sieht aber auch so aus, als würden Dokumentnummern ausprobiert. Falls es weitergeht, können Sie das Konto im Kundendatensatz deaktivieren.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Kundendatensatz öffnen</a></p>`,
+      body_text: '{{customer_name}} hat in der letzten Stunde im Portal {{attempt_count}} Dokumente angefordert, die anderen Kunden gehören. Alle Zugriffe wurden abgewiesen.\n\nDas kann ein veralteter Link sein, sieht aber auch so aus, als würden Dokumentnummern ausprobiert. Falls es weitergeht, können Sie das Konto im Kundendatensatz deaktivieren.\n\n{{admin_link}}',
+    },
+  },
 };
 
 let _seeded = false;

@@ -36,7 +36,12 @@ export interface SystemHealthFailures {
   scanTruncated?: boolean;
   counts: { stuckEmails: number; waitingEmails: number; pendingScanned?: number };
   /** Customer documents (#1444): uploads waiting for a review, and rejected ones. */
-  customerDocuments?: { pending: number; rejected: number };
+  customerDocuments?: {
+    pending: number;
+    rejected: number;
+    /** Last 24 hours (#1444). */
+    abuse?: { forbiddenAccess: number; quotaExceeded: number; rateLimited: number; customersOverThreshold: number };
+  };
   /** Where the key for signing evidence comes from (#1446) — never the key itself. */
   evidenceKey?: {
     source: 'env' | 'file' | 'none' | 'unreadable';

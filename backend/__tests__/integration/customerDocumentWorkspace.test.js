@@ -648,3 +648,90 @@ describe('portal dashboard: Recent and Needs action', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slice 9 — abuse signals
+// ---------------------------------------------------------------------------
+
+describe('document abuse signals', () => {
+  let owner;
+  let prober;
+  let foreignId;
+  const counter = (customerId, signal) => db('customer_document_abuse_counters')
+    .where({ customer_account_id: customerId, signal }).first();
+  const logged = async (type, customerId) => (await db('activity_logs').where({ activity_type: type }))
+    .map((r) => meta(r.metadata)).filter((m) => m.customerId === customerId);
+
+  beforeAll(async () => {
+    owner = await newCustomer();
+    prober = await newCustomer();
+    foreignId = (await adminUpload(owner, 'owners.pdf', { share: 'true' })).body.document.id;
+  });
+
+  it('counts attempts on another customer\'s existing document, logging once per hour with ids only', async () => {
+    expect((await getDoc(prober, foreignId)).status).toBe(404);
+    expect((await download(prober, foreignId)).status).toBe(404);
+    expect((await asCustomer(request(customerApp).delete(`/api/customer/documents/${foreignId}`), prober)).status).toBe(404);
+
+    expect(Number((await counter(prober, 'forbidden_access')).count)).toBe(3);
+    const entries = await logged('customer_document_forbidden_access', prober);
+    expect(entries).toEqual([{ customerId: prober }]);
+  });
+
+  it('does not count ids that do not exist, nor the customer\'s own hidden rows', async () => {
+    const quiet = await newCustomer();
+    const hidden = (await adminUpload(quiet, 'never-shared.pdf')).body.document.id;
+    expect((await getDoc(quiet, 99999999)).status).toBe(404);
+    expect((await getDoc(quiet, hidden)).status).toBe(404);
+    expect(await counter(quiet, 'forbidden_access')).toBeUndefined();
+  });
+
+  it('alerts the business address once when a customer passes the threshold', async () => {
+    const loud = await newCustomer();
+    await db('business_profile').update({ email: 'studio@example.com' });
+    await db('app_settings').where({ setting_key: 'customer_documents_forbidden_alert_threshold' })
+      .update({ setting_value: JSON.stringify(3) });
+    try {
+      const mails = () => db('email_queue').where({ email_type: 'customer_document_access_alert_admin' });
+      const before = (await mails()).length;
+      for (let i = 0; i < 5; i += 1) await getDoc(loud, foreignId);
+      const after = await mails();
+      expect(after.length).toBe(before + 1);
+      expect(meta(after[after.length - 1].email_data)).toMatchObject({ attempt_count: '3' });
+      expect(await logged('customer_document_forbidden_access_alert', loud)).toEqual([{ customerId: loud, count: 3 }]);
+    } finally {
+      await db('app_settings').where({ setting_key: 'customer_documents_forbidden_alert_threshold' })
+        .update({ setting_value: JSON.stringify(20) });
+    }
+  });
+
+  it('counts quota refusals and rate-limit hits', async () => {
+    const full = await newCustomer();
+    await db('app_settings').where({ setting_key: 'customer_documents_quota_mb' })
+      .update({ setting_value: JSON.stringify(0.00001) });
+    try {
+      expect((await uploadAs(full, 'too-big.pdf')).status).toBe(413);
+    } finally {
+      await db('app_settings').where({ setting_key: 'customer_documents_quota_mb' })
+        .update({ setting_value: JSON.stringify(250) });
+    }
+    expect(Number((await counter(full, 'quota_exceeded')).count)).toBe(1);
+
+    const hasty = await newCustomer();
+    let last;
+    for (let i = 0; i < 21; i += 1) {
+      last = await asCustomer(request(customerApp).delete('/api/customer/documents/99999999'), hasty);
+    }
+    expect(last.status).toBe(429);
+    expect(last.body.code).toBe('UPLOAD_RATE_LIMITED');
+    expect(Number((await counter(hasty, 'rate_limited')).count)).toBe(1);
+    // The deletes of an id that doesn't exist were never forbidden access.
+    expect(await counter(hasty, 'forbidden_access')).toBeUndefined();
+
+    const counts = await require('../../src/services/customerDocumentAbuse').last24hCounts();
+    expect(counts.forbiddenAccess).toBeGreaterThanOrEqual(8);
+    expect(counts.quotaExceeded).toBeGreaterThanOrEqual(1);
+    expect(counts.rateLimited).toBeGreaterThanOrEqual(1);
+    expect(counts.customersOverThreshold).toBeGreaterThanOrEqual(1);
+  });
+});

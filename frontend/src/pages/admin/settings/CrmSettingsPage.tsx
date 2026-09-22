@@ -79,6 +79,7 @@ const SETTING_KEYS = [
   'customer_documents_quota_mb',
   'customer_documents_retention_days',
   'customer_documents_notify_on_share',
+  'customer_documents_forbidden_alert_threshold',
 ];
 
 export const CrmSettingsPage: React.FC = () => {
@@ -518,6 +519,10 @@ export const CrmSettingsPage: React.FC = () => {
             label={t('crmSettings.customer_documents_retention_days.label', 'Keep rejected and deleted files (days)') as string}
             value={values.customer_documents_retention_days ?? 30}
             onChange={(e) => setVal('customer_documents_retention_days', Number(e.target.value))} />
+          <Input type="number" min={1} max={10000}
+            label={t('crmSettings.customer_documents_forbidden_alert_threshold.label', 'Alert after attempts on other customers\' documents (per hour)') as string}
+            value={values.customer_documents_forbidden_alert_threshold ?? 20}
+            onChange={(e) => setVal('customer_documents_forbidden_alert_threshold', Number(e.target.value))} />
         </div>
       </Card>
       )}

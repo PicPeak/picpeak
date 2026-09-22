@@ -211,6 +211,24 @@ export const SystemHealthPage: React.FC = () => {
                 {t('systemHealth.customerDocuments.hint',
                   'Customer uploads stay unavailable to them until they are marked clean on the customer record. Rejected files are deleted after the retention period.')}
               </p>
+              {data.customerDocuments.abuse && (
+                <p
+                  className={`text-sm mt-2 ${data.customerDocuments.abuse.customersOverThreshold > 0
+                    ? 'text-red-700 dark:text-red-400' : 'text-neutral-600 dark:text-neutral-400'}`}
+                >
+                  {t('systemHealth.customerDocuments.abuse',
+                    'Last 24 hours: {{forbidden}} attempts on other customers\' documents, {{quota}} uploads refused for quota, {{rate}} rate-limit hits.', {
+                      forbidden: data.customerDocuments.abuse.forbiddenAccess,
+                      quota: data.customerDocuments.abuse.quotaExceeded,
+                      rate: data.customerDocuments.abuse.rateLimited,
+                    })}
+                  {data.customerDocuments.abuse.customersOverThreshold > 0 && (
+                    <>{' '}{t('systemHealth.customerDocuments.abuseAlert',
+                      '{{count}} customer(s) passed the alert threshold; the business address was emailed.',
+                      { count: data.customerDocuments.abuse.customersOverThreshold })}</>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         </Card>

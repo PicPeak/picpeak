@@ -31,6 +31,7 @@ const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../mid
 const customerAccountsService = require('../services/customerAccountsService');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
+const customerDocumentAbuse = require('../services/customerDocumentAbuse');
 const customerPortalService = require('../services/customerPortalService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
@@ -1123,6 +1124,11 @@ const documentUploadLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => `customer-documents:${req.customer.id}`,
   message: { error: 'Too many uploads. Please wait a few minutes and try again.', code: 'UPLOAD_RATE_LIMITED' },
+  // Counted as an abuse signal (per customer per hour), then answered as usual.
+  handler: (req, res, _next, options) => {
+    customerDocumentAbuse.record(req.customer.id, 'rate_limited')
+      .finally(() => res.status(options.statusCode).json(options.message));
+  },
 });
 
 // A 4xx AppError carries a message written for the customer; anything else is
@@ -1158,6 +1164,7 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
     const limits = await customerDocumentsService.getLimits();
     const usedBytes = await customerDocumentsService.getUsageBytes(req.customer.id);
     if (usedBytes >= limits.quotaBytes) {
+      await customerDocumentAbuse.record(req.customer.id, 'quota_exceeded');
       return res.status(413).json({ error: 'Your document storage is full.', code: 'QUOTA_EXCEEDED' });
     }
     file = await receivePdfUpload(req, res, { maxBytes: limits.maxUploadBytes });
@@ -1180,6 +1187,7 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
     await customerDocumentNotifications.emitDocumentWorkflow('document.uploaded', row);
     res.status(201).json({ document: customerDocumentsService.toCustomerDto(row) });
   } catch (error) {
+    if (error && error.code === 'QUOTA_EXCEEDED') await customerDocumentAbuse.record(req.customer.id, 'quota_exceeded');
     sendDocumentError(res, error, 'Failed to upload document');
   } finally {
     discardTempFile(file);
@@ -1205,8 +1213,14 @@ async function loadCustomerDocument(req, res) {
   const id = documentIdParam(req);
   const found = id ? await customerDocumentsService.getStateForCustomer(req.customer.id, id) : null;
   if (found && found.state === 'visible') return found.row;
-  if (found) res.status(410).json(DOCUMENT_GONE[found.state]);
-  else res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+  if (found) {
+    res.status(410).json(DOCUMENT_GONE[found.state]);
+  } else {
+    // Counted only when the id exists and is someone else's (never for an
+    // id that doesn't exist); the answer is the same 404 either way.
+    if (id) await customerDocumentAbuse.recordIfForeign(req.customer.id, id);
+    res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+  }
   return null;
 }
 
@@ -1240,6 +1254,9 @@ router.delete('/documents/:id', customerAuth, requireDocumentsFeature, documentU
       { type: 'customer', id: req.customer.id, name: req.customer.email });
     return res.json({ deleted: true });
   } catch (error) {
+    if (error && error.code === 'DOCUMENT_NOT_FOUND') {
+      await customerDocumentAbuse.recordIfForeign(req.customer.id, documentIdParam(req));
+    }
     return sendDocumentError(res, error, 'Failed to delete document');
   }
 });

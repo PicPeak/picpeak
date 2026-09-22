@@ -703,7 +703,9 @@
     "customerDocuments": {
       "title": "Kundendokumente",
       "counts": "{{pending}} warten auf Prüfung, {{rejected}} abgelehnt.",
-      "hint": "Kunden-Uploads bleiben für den Kunden gesperrt, bis sie im Kundendatensatz als unbedenklich markiert sind. Abgelehnte Dateien werden nach Ablauf der Aufbewahrungsfrist gelöscht."
+      "hint": "Kunden-Uploads bleiben für den Kunden gesperrt, bis sie im Kundendatensatz als unbedenklich markiert sind. Abgelehnte Dateien werden nach Ablauf der Aufbewahrungsfrist gelöscht.",
+      "abuse": "Letzte 24 Stunden: {{forbidden}} Zugriffsversuche auf fremde Dokumente, {{quota}} wegen Speicherplatz abgewiesene Uploads, {{rate}} Treffer des Upload-Limits.",
+      "abuseAlert": "{{count}} Kunde(n) haben die Alarmschwelle überschritten; die Geschäftsadresse wurde per E-Mail informiert."
     },
     "evidenceKey": {
       "title": "Schlüssel für Signaturnachweise",
@@ -3823,7 +3825,11 @@
       "customerDocumentLinked": "Verknüpfungen eines Kundendokuments geändert",
       "customerDocumentDeleted": "Kundendokument gelöscht",
       "customerDocumentDownloaded": "Kundendokument heruntergeladen",
-      "customerDocumentScanRejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden"
+      "customerDocumentScanRejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden",
+      "customerDocumentForbiddenAccess": "Ein Kunde hat ein Dokument eines anderen Kunden angefordert",
+      "customerDocumentQuotaExceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
+      "customerDocumentRateLimited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
+      "customerDocumentForbiddenAccessAlert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4142,7 +4148,11 @@
       "customer_document_linked": "Verknüpfungen eines Kundendokuments geändert",
       "customer_document_deleted": "Kundendokument gelöscht",
       "customer_document_downloaded": "Kundendokument heruntergeladen",
-      "customer_document_scan_rejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden"
+      "customer_document_scan_rejected": "Ein Kundendokument hat die Sicherheitsprüfung nicht bestanden",
+      "customer_document_forbidden_access": "Ein Kunde hat ein Dokument eines anderen Kunden angefordert",
+      "customer_document_quota_exceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
+      "customer_document_rate_limited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
+      "customer_document_forbidden_access_alert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -7546,6 +7556,9 @@
     },
     "customer_documents_retention_days": {
       "label": "Abgelehnte und gelöschte Dateien aufbewahren (Tage)"
+    },
+    "customer_documents_forbidden_alert_threshold": {
+      "label": "Alarm nach Zugriffsversuchen auf fremde Dokumente (pro Stunde)"
     }
   },
   "quoteResponse": {
