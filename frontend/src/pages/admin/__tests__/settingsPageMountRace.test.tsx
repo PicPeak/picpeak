@@ -107,4 +107,14 @@ describe('SettingsPage fresh-mount permission race (QA J.08)', () => {
     expect(() => renderAt('webhooks')).not.toThrow();
     expect(screen.getByText('settings.title')).toBeInTheDocument();
   });
+
+  it('keeps the CRM behaviour tab for an install with documents but no quotes, bills or contracts', () => {
+    flagsState.flags = { documents: true };
+    try {
+      renderAt('crm');
+      expect(screen.getByRole('heading', { level: 2, name: 'CRM behaviour' })).toBeInTheDocument();
+    } finally {
+      flagsState.flags = {};
+    }
+  });
 });

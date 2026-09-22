@@ -259,7 +259,7 @@ export const SettingsPage: React.FC = () => {
     // has actually enabled.
     if (flagsLoading) return;
     const gatedOff: Record<string, boolean> = {
-      crm: !(flags.quotes || flags.bills || flags.contracts),
+      crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
       contracts: !flags.contracts,
       reminderTemplates: !flags.reminderEmails,
       accounting: !flags.accounting,
@@ -270,7 +270,7 @@ export const SettingsPage: React.FC = () => {
       setActiveTab('features');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, flags.quotes, flags.bills, flags.contracts, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow, activeTab]);
+  }, [flagsLoading, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow, activeTab]);
 
   // Permission snap-back: if the active tab isn't permitted for this role (e.g.
   // a deep-linked ?tab=security a photographer can't access), move to the first
@@ -280,7 +280,7 @@ export const SettingsPage: React.FC = () => {
     if (flagsLoading) return;
     if (hasAnyPermission(TAB_PERMISSIONS[activeTab] ?? ['settings.view'])) return;
     const flagOff: Partial<Record<TabType, boolean>> = {
-      crm: !(flags.quotes || flags.bills || flags.contracts),
+      crm: !(flags.quotes || flags.bills || flags.contracts || flags.documents),
       contracts: !flags.contracts,
       reminderTemplates: !flags.reminderEmails,
       accounting: !flags.accounting,
@@ -292,7 +292,7 @@ export const SettingsPage: React.FC = () => {
     );
     if (firstVisible && firstVisible !== activeTab) setActiveTab(firstVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow]);
+  }, [flagsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow]);
 
   // Wait for the permissions context too: on a fresh/hard mount it starts out
   // empty, which filters every nav group down to nothing and left `activeItem`
@@ -366,7 +366,7 @@ export const SettingsPage: React.FC = () => {
       label: t('settings.groups.crm', 'CRM-Settings'),
       items: [
         { key: 'businessProfile',    label: t('settings.businessProfile.title', 'Business profile'), icon: Briefcase },
-        ...(flags.quotes || flags.bills || flags.contracts
+        ...(flags.quotes || flags.bills || flags.contracts || flags.documents
           ? [{ key: 'crm' as const,                label: t('settings.crm.title',             'CRM behaviour'),    icon: Receipt }]
           : []),
         ...(flags.contracts
