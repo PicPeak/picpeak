@@ -534,7 +534,7 @@ async function updateContract(id, payload, adminId) {
 async function cancelContract(id, adminId) {
   const contract = await db('contracts').where({ id }).first();
   if (!contract) throw new AppError('Contract not found', 404);
-  if (!['draft', 'sent'].includes(contract.status)) {
+  if (!['draft', 'sent', 'awaiting_data'].includes(contract.status)) {
     throw new AppError(`Cannot cancel a contract with status '${contract.status}'`, 409);
   }
   await auditedUpdate(db, 'contracts', { id }, {

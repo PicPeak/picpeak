@@ -10,6 +10,7 @@
  *   GET  /session/pdf                   the PDF as it stands
  *   GET  /session/attachments/:id       one of the contract's attachments
  *   POST /session/sign                  { name, mode, signatureDataUrl?, consents | accepted, idempotencyKey? }
+ *   POST /session/details               { values } — the customer's details, before the freeze
  *   POST /session/decline               { reason? }
  *   POST /session/upload-signed-pdf     a wet-signed PDF, when uploads are allowed
  *
@@ -148,6 +149,19 @@ router.post(
       { ip: clientIpForAudit(req), userAgent: req.get('user-agent') || null },
     );
     return successResponse(res, result);
+  }),
+);
+
+// Collect-then-freeze (#1446): the first signer's details, before the
+// contract is rendered and frozen with them.
+router.post(
+  '/session/details',
+  signLimiter,
+  [body('values').isObject()],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const dataCollection = require('../services/contract/dataCollection');
+    return successResponse(res, await dataCollection.submitDetails(sessionOf(req), req.body.values));
   }),
 );
 

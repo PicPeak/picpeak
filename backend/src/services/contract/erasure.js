@@ -108,7 +108,7 @@ async function plan(db, customerId) {
       redact.push({
         id: row.id,
         status: row.status,
-        cancel: ['draft', 'sent'].includes(row.status),
+        cancel: ['draft', 'sent', 'awaiting_data'].includes(row.status),
         redacted: redactSnapshot(row.rendered_content),
       });
     }

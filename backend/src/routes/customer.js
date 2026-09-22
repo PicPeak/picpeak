@@ -771,6 +771,8 @@ router.get('/contracts', customerAuth, async (req, res) => {
         // A signatures-v2 contract signs through a signer session, so it has
         // no action token to look for; one sent before still needs a live one.
         canSign: c.status === 'sent' && (Number(c.signing_version) === 2 || liveTokens.has(c.id)),
+        // Collect-then-freeze (#1446): the customer's details come first.
+        canCompleteDetails: c.status === 'awaiting_data' && Number(c.signing_version) === 2,
         signerProgress: progress.get(Number(c.id)) || null,
       })),
     });

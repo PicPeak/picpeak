@@ -5688,7 +5688,8 @@
       "sign": "Sign",
       "downloadCertificate": "Signing certificate",
       "expired": "The time to sign this contract has run out. Ask the sender for a new one.",
-      "expiredHint": "The time to sign ran out before every signature was in, so it can no longer be signed."
+      "expiredHint": "The time to sign ran out before every signature was in, so it can no longer be signed.",
+      "completeDetails": "Complete my details"
     },
     "documents": {
       "title": "Documents",
@@ -7893,7 +7894,8 @@
       "cancelled": "Withdrawn",
       "declined": "Declined",
       "expired": "Expired",
-      "partlySigned": "Partly signed ({{signed}} of {{total}})"
+      "partlySigned": "Partly signed ({{signed}} of {{total}})",
+      "awaiting_data": "Details needed"
     },
     "list": {
       "new": "New contract",
@@ -8030,6 +8032,9 @@
       "countersignUncertain": "We couldn't reach the server, so we can't say whether the counter-signature was recorded. The contract has been reloaded — check its status before signing again.",
       "attachmentMerged": "merged from page {{page}}",
       "attachmentSeparate": "sent as a separate file",
+      "collectData": "Ask the customer to complete their details first",
+      "finishSending": "Finish sending with the customer's details",
+      "waitingForDetails": "Waiting for the customer to complete their details. The contract is prepared and sent to the other signers once they have.",
       "review": {
         "title": "Review before sending",
         "loadFailed": "The review could not be loaded.",
@@ -8067,7 +8072,10 @@
           "ATTACHMENT_MISSING": "The file of an attachment is missing.",
           "NO_CLAUSES": "The contract has no clauses.",
           "PLACEHOLDER_UNRESOLVED": "These placeholders will print as typed: {{keys}}"
-        }
+        },
+        "collectHint": "Only the first signer gets a link now, to complete their details. The contract, its PDF and the price are prepared once they have, and then go to the other signers.",
+        "requestDetails": "Ask for the details",
+        "afterDetails": "Set once the customer has completed their details."
       }
     },
     "editor": {
@@ -8506,7 +8514,9 @@
           "revoked": "Links withdrawn",
           "viewed": "Contract opened",
           "expired": "Time to sign ran out",
-          "reminded": "Reminder sent"
+          "reminded": "Reminder sent",
+          "data_requested": "Customer details requested",
+          "data_collected": "Customer details received"
         },
         "actor": {
           "admin": "Admin",
@@ -9119,6 +9129,27 @@
       "total": "Total",
       "attachments": "Attachments",
       "hash": "Content fingerprint (SHA-256)"
+    },
+    "details": {
+      "fields": {
+        "address_line1": "Street and number",
+        "address_line2": "Address line 2",
+        "postal_code": "Postal code",
+        "city": "City",
+        "country_code": "Country (two-letter code, e.g. CH)",
+        "company_name": "Company",
+        "vat_id": "VAT number",
+        "phone": "Phone"
+      },
+      "invalid": "Check the highlighted details.",
+      "uncertain": "We couldn't confirm that your details arrived. Check the page again before sending them a second time.",
+      "error": "Your details couldn't be saved. Try again in a moment.",
+      "savedTitle": "Your details are saved",
+      "savedBody": "You'll receive a new email as soon as the contract is ready.",
+      "title": "Your details for contract {{number}}",
+      "intro": "The contract is prepared with these details once you send them; then you can read and sign it right here.",
+      "sending": "Preparing the contract…",
+      "submit": "Save my details and prepare the contract"
     }
   }
 }

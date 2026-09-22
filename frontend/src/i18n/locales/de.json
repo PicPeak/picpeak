@@ -5688,7 +5688,8 @@
       "sign": "Unterschreiben",
       "downloadCertificate": "Signaturzertifikat",
       "expired": "Die Frist zur Unterzeichnung dieses Vertrags ist abgelaufen. Bitten Sie den Absender um einen neuen.",
-      "expiredHint": "Die Frist lief ab, bevor alle unterzeichnet hatten; der Vertrag kann nicht mehr unterzeichnet werden."
+      "expiredHint": "Die Frist lief ab, bevor alle unterzeichnet hatten; der Vertrag kann nicht mehr unterzeichnet werden.",
+      "completeDetails": "Meine Angaben ergänzen"
     },
     "documents": {
       "title": "Dokumente",
@@ -7894,7 +7895,8 @@
       "cancelled": "Zurückgezogen",
       "declined": "Abgelehnt",
       "expired": "Abgelaufen",
-      "partlySigned": "Teilweise unterzeichnet ({{signed}} von {{total}})"
+      "partlySigned": "Teilweise unterzeichnet ({{signed}} von {{total}})",
+      "awaiting_data": "Angaben erforderlich"
     },
     "list": {
       "new": "Neuer Vertrag",
@@ -8031,6 +8033,9 @@
       "countersignUncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob die Gegenzeichnung gespeichert wurde. Der Vertrag wurde neu geladen – prüfen Sie seinen Status, bevor Sie erneut unterschreiben.",
       "attachmentMerged": "ab Seite {{page}} eingefügt",
       "attachmentSeparate": "als separate Datei versendet",
+      "collectData": "Kundschaft zuerst ihre Angaben ergänzen lassen",
+      "finishSending": "Mit den Angaben der Kundschaft fertig versenden",
+      "waitingForDetails": "Wartet darauf, dass die Kundschaft ihre Angaben ergänzt. Danach wird der Vertrag erstellt und an die übrigen Unterzeichnenden versandt.",
       "review": {
         "title": "Vor dem Senden prüfen",
         "loadFailed": "Die Übersicht konnte nicht geladen werden.",
@@ -8068,7 +8073,10 @@
           "ATTACHMENT_MISSING": "Die Datei eines Anhangs fehlt.",
           "NO_CLAUSES": "Der Vertrag hat keine Klauseln.",
           "PLACEHOLDER_UNRESOLVED": "Diese Platzhalter erscheinen unverändert im Vertrag: {{keys}}"
-        }
+        },
+        "collectHint": "Nur die erste unterzeichnende Person erhält jetzt einen Link, um ihre Angaben zu ergänzen. Vertrag, PDF und Preis werden erst danach erstellt und gehen dann an die übrigen Unterzeichnenden.",
+        "requestDetails": "Angaben anfordern",
+        "afterDetails": "Wird festgelegt, sobald die Kundschaft ihre Angaben ergänzt hat."
       }
     },
     "editor": {
@@ -8507,7 +8515,9 @@
           "revoked": "Links zurückgezogen",
           "viewed": "Vertrag geöffnet",
           "expired": "Frist zur Unterzeichnung abgelaufen",
-          "reminded": "Erinnerung gesendet"
+          "reminded": "Erinnerung gesendet",
+          "data_requested": "Angaben der Kundschaft angefordert",
+          "data_collected": "Angaben der Kundschaft eingegangen"
         },
         "actor": {
           "admin": "Admin",
@@ -9120,6 +9130,27 @@
       "total": "Gesamtbetrag",
       "attachments": "Anlagen",
       "hash": "Inhalts-Fingerabdruck (SHA-256)"
+    },
+    "details": {
+      "fields": {
+        "address_line1": "Strasse und Hausnummer",
+        "address_line2": "Adresszusatz",
+        "postal_code": "Postleitzahl",
+        "city": "Ort",
+        "country_code": "Land (zweistelliger Code, z. B. CH)",
+        "company_name": "Firma",
+        "vat_id": "MWST-/USt-Nummer",
+        "phone": "Telefon"
+      },
+      "invalid": "Bitte prüfen Sie die markierten Angaben.",
+      "uncertain": "Wir konnten nicht bestätigen, dass Ihre Angaben angekommen sind. Prüfen Sie die Seite erneut, bevor Sie sie ein zweites Mal senden.",
+      "error": "Ihre Angaben konnten nicht gespeichert werden. Versuchen Sie es gleich noch einmal.",
+      "savedTitle": "Ihre Angaben sind gespeichert",
+      "savedBody": "Sie erhalten eine neue E-Mail, sobald der Vertrag bereit ist.",
+      "title": "Ihre Angaben für Vertrag {{number}}",
+      "intro": "Der Vertrag wird mit diesen Angaben erstellt, sobald Sie sie senden; danach können Sie ihn gleich hier lesen und unterzeichnen.",
+      "sending": "Vertrag wird erstellt …",
+      "submit": "Angaben speichern und Vertrag erstellen"
     }
   }
 }

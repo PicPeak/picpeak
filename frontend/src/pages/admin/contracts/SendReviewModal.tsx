@@ -6,6 +6,11 @@
  * the problems the server found, with the PDF preview and a layout preview
  * of the signing page. The final button says what it does, and stays
  * disabled while an error stands.
+ *
+ * When the customer's address would print empty, the review offers to ask
+ * the customer for their details first (#1446, collect-then-freeze). That
+ * send invites only the first signer and renders nothing, so the review then
+ * names neither a price nor a PDF: both are made once the details are in.
  */
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,13 +27,19 @@ const heading = 'text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb
 export const SendReviewModal: React.FC<{
   contractId: number;
   onClose: () => void;
-  /** Called with the review's token: the server refuses the send if the contract changed since. */
-  onSend: (reviewToken: string) => void;
+  /** Called with the review's token (the server refuses the send if the
+   *  contract changed since) and `collectData`: ask the customer for their
+   *  details first (#1446). */
+  onSend: (reviewToken: string, collectData: boolean) => void;
   onPreviewPdf: () => void;
   sending: boolean;
-}> = ({ contractId, onClose, onSend, onPreviewPdf, sending }) => {
+  /** {{customer_address}} would print empty: offer collect-then-freeze. */
+  customerAddressMissing?: boolean;
+}> = ({ contractId, onClose, onSend, onPreviewPdf, sending, customerAddressMissing = false }) => {
   const { t } = useTranslation();
   const [showLayout, setShowLayout] = useState(false);
+  const [collectChecked, setCollectData] = useState(false);
+  const collectData = customerAddressMissing && collectChecked;
   const { data: review, isLoading, isError, refetch } = useQuery({
     queryKey: ['contract-send-preview', contractId],
     queryFn: () => contractsService.sendPreview(contractId),
@@ -47,10 +58,12 @@ export const SendReviewModal: React.FC<{
   const footer = (
     <>
       <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-      <Button onClick={() => { if (review) onSend(review.reviewToken); }} disabled={!review || errors.length > 0 || sending}>
+      <Button onClick={() => { if (review) onSend(review.reviewToken, collectData); }} disabled={!review || errors.length > 0 || sending}>
         {sending
           ? t('contracts.detail.review.sending', 'Sending…')
-          : t('contracts.detail.review.sendTo', 'Send to {{count}} signers', { count: invited })}
+          : collectData
+            ? t('contracts.detail.review.requestDetails', 'Ask for the details')
+            : t('contracts.detail.review.sendTo', 'Send to {{count}} signers', { count: invited })}
       </Button>
     </>
   );
@@ -99,6 +112,21 @@ export const SendReviewModal: React.FC<{
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
               {t('contracts.detail.review.ready', 'Everything is ready to send.')}
             </p>
+          )}
+
+          {customerAddressMissing && (
+            <section className="p-3 rounded-md border border-neutral-200 dark:border-neutral-700">
+              <label className="flex items-start gap-2 text-neutral-800 dark:text-neutral-200">
+                <input type="checkbox" className="mt-0.5" checked={collectChecked}
+                  onChange={(e) => { setCollectData(e.target.checked); setShowLayout(false); }} />
+                {t('contracts.detail.collectData', 'Ask the customer to complete their details first')}
+              </label>
+              {collectData && (
+                <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+                  {t('contracts.detail.review.collectHint', 'Only the first signer gets a link now, to complete their details. The contract, its PDF and the price are prepared once they have, and then go to the other signers.')}
+                </p>
+              )}
+            </section>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -154,7 +182,9 @@ export const SendReviewModal: React.FC<{
             </section>
             <section>
               <h3 className={heading}>{t('contracts.detail.review.price', 'Price')}</h3>
-              {review.totals ? (
+              {collectData ? (
+                <p className="text-neutral-600 dark:text-neutral-400">{t('contracts.detail.review.afterDetails', 'Set once the customer has completed their details.')}</p>
+              ) : review.totals ? (
                 <dl className="grid grid-cols-2 gap-x-3 text-neutral-800 dark:text-neutral-200">
                   <dt>{t('publicContract.price.net', 'Net')}</dt><dd className="text-right tabular-nums">{money(review.totals.netMinor)}</dd>
                   {(review.totals.vatMinor !== 0 || review.totals.vatRatePercent > 0) && (
@@ -177,17 +207,19 @@ export const SendReviewModal: React.FC<{
             </section>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={onPreviewPdf}>
-              <FileDown className="w-4 h-4 mr-1" />{t('contracts.detail.previewPdf', 'Preview PDF')}
-            </Button>
-            <Button variant="outline" size="sm" aria-expanded={showLayout} onClick={() => setShowLayout((v) => !v)}>
-              {showLayout
-                ? t('contracts.detail.review.hideLayout', 'Hide the signing page')
-                : t('contracts.detail.review.showLayout', 'Show the signing page')}
-            </Button>
-          </div>
-          {showLayout && <ContractLayoutPreview content={review.content} idPrefix="send-review-layout" />}
+          {!collectData && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={onPreviewPdf}>
+                <FileDown className="w-4 h-4 mr-1" />{t('contracts.detail.previewPdf', 'Preview PDF')}
+              </Button>
+              <Button variant="outline" size="sm" aria-expanded={showLayout} onClick={() => setShowLayout((v) => !v)}>
+                {showLayout
+                  ? t('contracts.detail.review.hideLayout', 'Hide the signing page')
+                  : t('contracts.detail.review.showLayout', 'Show the signing page')}
+              </Button>
+            </div>
+          )}
+          {showLayout && !collectData && <ContractLayoutPreview content={review.content} idPrefix="send-review-layout" />}
         </div>
       )}
     </ContractModal>

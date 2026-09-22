@@ -44,6 +44,8 @@ const consents = require('./consents');
 
 const VERSION = 2;
 const CONSENT_VERSION = 'v1';
+// Out to the signers: signing, or (first) collecting the customer's details.
+const OPEN_STATUSES = ['sent', 'awaiting_data'];
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 const isV2 = (contract) => Number(contract && contract.signing_version) === VERSION;
@@ -275,16 +277,29 @@ async function invitationAttachments(contract) {
   return list.length ? list : undefined;
 }
 
+/**
+ * While a contract collects the customer's details first (`awaiting_data`,
+ * dataCollection.js), only the first signer may act: they are the one
+ * invited, reminded and let in. Afterwards the usual rule applies.
+ */
+function dueSigners(contract, rows) {
+  const due = signers.signersDue(contract, rows);
+  return contract.status === 'awaiting_data' ? due.filter((r) => Number(r.position) === 1) : due;
+}
+
 async function sendInvitation(contract, row, token, template = 'contract_sent') {
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';
-  await emailProcessor.queueEmail(null, signerEmail(row), template, {
+  // Asking for details carries nothing of the contract: no title, no PDF, no
+  // attachment — it isn't frozen yet, and the link is not verified yet.
+  const asksForDetails = contract.status === 'awaiting_data';
+  await emailProcessor.queueEmail(null, signerEmail(row), asksForDetails ? 'contract_data_request' : template, {
     contract_number: contract.contract_number,
     customer_name: signerName(row),
     response_url: `${frontendUrl}/contract/${token}`,
-    title: contract.title || '',
-    event_name: contract.event_name || '',
+    title: asksForDetails ? '' : (contract.title || ''),
+    event_name: asksForDetails ? '' : (contract.event_name || ''),
     valid_until: formatShortDate(contract.valid_until),
-    attachments: await invitationAttachments(contract),
+    attachments: asksForDetails ? undefined : await invitationAttachments(contract),
   });
 }
 
@@ -294,7 +309,7 @@ async function sendInvitation(contract, row, token, template = 'contract_sent') 
  */
 async function inviteDue(contractId, actor = { type: 'system' }) {
   const contract = await db('contracts').where({ id: contractId }).first();
-  const due = signers.signersDue(contract, await signers.listSigners(contractId)).filter((row) => row.status === 'pending');
+  const due = dueSigners(contract, await signers.listSigners(contractId)).filter((row) => row.status === 'pending');
   const expiresAt = invitationExpiry(contract);
   for (const row of due) {
     const token = await db.transaction(async (trx) => {
@@ -324,7 +339,9 @@ async function prepareSend(contract) {
 }
 
 /** After the send stored the PDF: mark it sent, log it, invite the signers. */
-async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = null, lockVersion = null, sendInputs = null }) {
+async function completeSend(contractId, {
+  pdfPath, pdfSha256, adminId, freeze = null, lockVersion = null, sendInputs = null, fromStatus = 'draft',
+}) {
   const actor = await adminActor(adminId);
   await db.transaction(async (trx) => {
     const now = new Date();
@@ -334,8 +351,9 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
     // render and here, lose it, and nothing they carry is written.
     const history = { actor: adminId, source: 'contract.send' };
     // The claim: still the draft that was rendered, same lock_version.
+    // `awaiting_data` once the customer's details are in (dataCollection.js).
     const claim = (query) => {
-      query.where({ id: contractId, status: 'draft' });
+      query.where({ id: contractId, status: fromStatus });
       if (lockVersion != null) query.where('lock_version', lockVersion);
     };
     // Locked first on PostgreSQL, before the signer rows below: setSigners
@@ -388,7 +406,8 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
     const contract = await trx('contracts').where({ id: contractId }).first();
     await signingEvents.appendEvent(trx, contractId, {
       type: 'sent',
-      actorType: 'admin',
+      // The freeze after collected details runs with no admin behind it.
+      actorType: adminId ? 'admin' : 'system',
       actorLabel: actor.name || null,
       artifactSha256: pdfSha256,
       payload: {
@@ -409,20 +428,20 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
 async function reissueInvitation(contractId, signerId, { actor, event, payload = {}, template = 'contract_sent' }) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
-  if (!isV2(contract) || contract.status !== 'sent') {
+  if (!isV2(contract) || !OPEN_STATUSES.includes(contract.status)) {
     throw new AppError('Links can only be sent again while the contract is out for signature', 409, 'CONTRACT_NOT_SIGNABLE');
   }
   const rows = await signers.listSigners(contractId);
   const row = rows.find((r) => r.id === Number(signerId));
   if (!row || row.role !== 'customer') throw new AppError('Signer not found', 404, 'SIGNER_NOT_FOUND');
-  if (!signers.signersDue(contract, rows).some((r) => r.id === row.id)) {
+  if (!dueSigners(contract, rows).some((r) => r.id === row.id)) {
     throw new AppError('This signer can\'t sign yet, or has already signed', 409, 'SIGNER_NOT_DUE');
   }
   const token = await db.transaction(async (trx) => {
     // Re-checked under the lock: an expiry or a decline committing since the
     // read above must not get a fresh link, nor an event past its seal.
     const current = await trx('contracts').where({ id: contractId }).forUpdate().first('status');
-    if (!current || current.status !== 'sent') {
+    if (!current || current.status !== contract.status) {
       throw new AppError('Links can only be sent again while the contract is out for signature', 409, 'CONTRACT_NOT_SIGNABLE');
     }
     const created = await signers.createInvitation(trx, row.id, invitationExpiry(contract));
@@ -521,7 +540,10 @@ function assertInvitable(contract, signer) {
   if (contract.status === 'expired') {
     throw new AppError('The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED');
   }
-  if (contract.status !== 'sent') {
+  // While the customer's details are collected, only the first signer's link
+  // is live; any other is refused like one for a withdrawn contract.
+  const collecting = contract.status === 'awaiting_data' && Number(signer.position) === 1;
+  if (contract.status !== 'sent' && !collecting) {
     throw new AppError('This contract is no longer waiting for signatures', 410, 'CONTRACT_NOT_SIGNABLE');
   }
 }
@@ -594,7 +616,8 @@ async function verifyCode(token, code) {
 async function openSession(contractId, signer, via) {
   return db.transaction(async (trx) => {
     const current = await trx('contracts').where({ id: contractId }).forUpdate().first();
-    if (!current || current.status !== 'sent') {
+    const collecting = current && current.status === 'awaiting_data' && Number(signer.position) === 1;
+    if (!current || (current.status !== 'sent' && !collecting)) {
       throw new AppError('This contract is no longer waiting for signatures', 410, 'CONTRACT_NOT_SIGNABLE');
     }
     const session = await signers.createSession(signer.id, via, trx);
@@ -666,9 +689,24 @@ async function recordViewOnce(contractId, signer, session) {
   }
 }
 
+/** Only the first signer, and only when they are the account holder, supplies details. */
+async function assertDataSigner(contract, signer) {
+  if (Number(signer.position) !== 1 || !(await isAccountHolder(contract, signer))) {
+    throw new AppError('Only the customer can complete these details.', 403, 'DATA_REQUEST_SIGNER');
+  }
+}
+
+const signerDisplayName = (row) => signerName(row);
+
 /** The full contract for a verified signer, with where the signing stands. */
 async function sessionView(sessionToken) {
   const { signer, contract, session } = await sessionContext(sessionToken);
+  // Collecting details first: the form, and nothing of the contract — it
+  // isn't frozen yet (dataCollection.js).
+  if (contract.status === 'awaiting_data') {
+    await assertDataSigner(contract, signer);
+    return require('./dataCollection').dataView(contract, signer, session);
+  }
   await recordViewOnce(contract.id, signer, session);
   const view = await require('./publicView').buildPublicView(contract.id);
   delete view.signedCustomerIp;
@@ -745,13 +783,17 @@ async function wetUploadContext(sessionToken) {
   return context;
 }
 
+const notReady = () => new AppError('The contract is not ready yet.', 409, 'CONTRACT_NOT_READY');
+
 async function sessionPdf(sessionToken) {
   const { contract } = await sessionContext(sessionToken);
+  if (contract.status === 'awaiting_data') throw notReady();
   return { contract, buffer: currentPdf(contract) };
 }
 
 async function sessionAttachment(sessionToken, attachmentId) {
   const { contract } = await sessionContext(sessionToken);
+  if (contract.status === 'awaiting_data') throw notReady();
   try {
     return await require('./attachments').openContractAttachment(contract.id, attachmentId);
   } catch (err) {
@@ -763,6 +805,7 @@ async function sessionAttachment(sessionToken, attachmentId) {
 /** A customer signer signs. Idempotent per `idempotencyKey`. */
 async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   const { signer, contract, session } = await sessionContext(sessionToken);
+  if (contract.status === 'awaiting_data') throw notReady();
   const requireDrawn = (await getAppSetting('crm_contracts_require_drawn_signature')) === true;
   // With declarations frozen at send, each is answered on its own and
   // checked below; the single `accepted` flag is the older contracts' path.
@@ -1295,19 +1338,19 @@ async function portalSigningAccess(customer, contractId) {
     'The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED',
   );
   if (contract.status === 'expired') throw expiredError();
-  if (contract.status === 'sent') {
+  if (OPEN_STATUSES.includes(contract.status)) {
     const deadline = await signers.signingDeadline(contract);
     if (deadline != null && deadline <= Date.now()) throw expiredError();
   }
-  // Only a contract still out for signature opens a session. A sealed one
-  // would append a `verified` event and move the audit chain past the head
-  // its already-issued certificate prints.
-  if (contract.status !== 'sent') {
+  // Only a contract still out for signature (or collecting the customer's
+  // details) opens a session. A sealed one would append a `verified` event
+  // and move the audit chain past the head its certificate prints.
+  if (!OPEN_STATUSES.includes(contract.status)) {
     throw new AppError('This contract is no longer waiting for your signature', 409, 'CONTRACT_NOT_SIGNABLE');
   }
   const emailHash = fieldEncryption.hashEmail(customer.email);
   const row = (await signers.listSigners(contract.id)).find((r) => r.role === 'customer' && r.email_hash === emailHash);
-  if (!row) {
+  if (!row || (contract.status === 'awaiting_data' && Number(row.position) !== 1)) {
     throw new AppError('You are not a signer of this contract. Use the link from the signing email.', 403, 'SIGNER_NOT_FOUND');
   }
   const session = await openSession(contract.id, row, 'portal');
@@ -1384,6 +1427,11 @@ module.exports = {
   revealEvidence,
   notifyAdmin,
   adminDashboardUrl,
+  isAccountHolder,
+  assertDataSigner,
+  dueSigners,
+  signerDisplayName,
+  OPEN_STATUSES,
   invitationExpiry,
   recordFollowUpFailure,
   _internal: { formatSignedAt, captionLines },

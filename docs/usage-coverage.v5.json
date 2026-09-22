@@ -1822,6 +1822,7 @@
         "GET /session/pdf",
         "GET /session/attachments/:attachmentId",
         "POST /session/sign",
+        "POST /session/details",
         "POST /session/decline",
         "POST /session/upload-signed-pdf"
       ]

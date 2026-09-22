@@ -61,6 +61,7 @@ const requestCode = vi.fn();
 const verify = vi.fn();
 const session = vi.fn();
 const sign = vi.fn();
+const submitDetails = vi.fn();
 vi.mock('../../../services/publicContractSigning.service', async () => {
   const actual = await vi.importActual<typeof import('../../../services/publicContractSigning.service')>(
     '../../../services/publicContractSigning.service',
@@ -73,6 +74,7 @@ vi.mock('../../../services/publicContractSigning.service', async () => {
       verify: (...args: unknown[]) => verify(...args),
       session: (...args: unknown[]) => session(...args),
       sign: (...args: unknown[]) => sign(...args),
+      submitDetails: (...args: unknown[]) => submitDetails(...args),
       pdf: vi.fn(),
       attachment: vi.fn(),
       decline: vi.fn(),
@@ -552,4 +554,55 @@ it('says what happens next after the last customer signature', async () => {
   expect(await screen.findByText('Studio Licht will countersign; you\'ll get the final copy and its signing certificate by email.')).toBeInTheDocument();
   expect(screen.getByText('We have sent you a confirmation by email.')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Thank you — you have signed the contract.' })).toHaveFocus();
+});
+
+// ---------------------------------------------------------------------
+// Slice 11 of the #1446 plan — the customer's details before the freeze.
+// ---------------------------------------------------------------------
+
+it('asks for the details first, shows nothing of the contract, then opens it', async () => {
+  const user = userEvent.setup();
+  window.sessionStorage.setItem(
+    'picpeak.contractSigning.session.portal',
+    JSON.stringify({ sessionToken: SESSION_TOKEN, expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+  session
+    .mockResolvedValueOnce({
+      contract: {
+        contractNumber: 'V-2026-0007',
+        status: 'awaiting_data',
+        language: 'en',
+        issuer: { companyName: 'Studio Licht', logoUrl: null, logoUrlDark: null },
+        dataRequest: {
+          fields: ['address_line1', 'postal_code', 'city', 'country_code', 'phone'],
+          required: ['address_line1', 'postal_code', 'city', 'country_code'],
+          values: { address_line1: '', postal_code: '', city: '', country_code: '', phone: '+41 44 000 00 00' },
+          submitted: false,
+        },
+        signing: { status: 'invited', verifiedVia: 'portal', canSign: false, canDecline: false, waitingForOthers: false },
+      },
+    })
+    .mockResolvedValue(sessionView({ verifiedVia: 'portal' }));
+  submitDetails
+    .mockRejectedValueOnce(httpError(400, { code: 'DETAILS_INVALID', details: { fields: ['city'] } }))
+    .mockResolvedValue({ status: 'sent', frozen: true });
+  renderAt('/contract/signing');
+
+  expect(await screen.findByRole('heading', { name: 'Your details for contract V-2026-0007' })).toBeInTheDocument();
+  expect(screen.queryByText('Between the studio and the couple.')).toBeNull();
+  expect(screen.getByLabelText(/Phone/)).toHaveValue('+41 44 000 00 00');
+
+  await user.type(screen.getByLabelText(/Street and number/), 'Seestrasse 12');
+  await user.type(screen.getByLabelText(/Postal code/), '8001');
+  await user.type(screen.getByLabelText(/Country/), 'CH');
+  await user.click(screen.getByRole('button', { name: 'Save my details and prepare the contract' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Check the highlighted details.');
+  expect(screen.getByLabelText(/City/)).toHaveAttribute('aria-invalid', 'true');
+
+  await user.type(screen.getByLabelText(/City/), 'Zürich');
+  await user.click(screen.getByRole('button', { name: 'Save my details and prepare the contract' }));
+  expect(await screen.findByRole('heading', { name: 'Wedding contract' })).toBeInTheDocument();
+  expect(submitDetails).toHaveBeenLastCalledWith(SESSION_TOKEN, expect.objectContaining({
+    address_line1: 'Seestrasse 12', postal_code: '8001', city: 'Zürich', country_code: 'CH',
+  }));
 });

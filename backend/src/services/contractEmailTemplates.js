@@ -206,6 +206,35 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'In der Stunde ab {{hour}} gab es {{count}} Ereignisse der Art {{kind}} von einer Quelle{{#if contract_number}} beim Vertrag {{contract_number}}{{/if}} (Schwelle {{limit}}). Es wurde nichts offengelegt; prüfen Sie den Systemstatus, wenn es anhält.',
     },
   },
+  // #1446: collect-then-freeze (services/contract/dataCollection.js). Sent
+  // before the contract exists in its final form, so it names the number and
+  // nothing else: no title, no PDF, no attachment.
+  contract_data_request: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'customer_name', 'response_url', 'valid_until'],
+    en: {
+      subject: 'Please complete your details for contract {{contract_number}}',
+      body_html: `<h2>Contract {{contract_number}}</h2>
+<p>Dear {{customer_name}},</p>
+<p>before we can send you contract {{contract_number}} to sign, we need a few of your details, such as your address.</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{response_url}}" class="button">Complete my details</a>
+</p>
+<p style="font-size: 13px; color: #666;">You confirm your email address with a code first. Once your details are in, the contract is prepared with them and you can read and sign it straight away.</p>`,
+      body_text: 'Before we can send you contract {{contract_number}} to sign, we need a few of your details.\n\nOpen: {{response_url}}\n\nYou confirm your email address with a code first; then the contract is prepared with your details and you can sign it.',
+    },
+    de: {
+      subject: 'Bitte ergänzen Sie Ihre Angaben für Vertrag {{contract_number}}',
+      body_html: `<h2>Vertrag {{contract_number}}</h2>
+<p>Sehr geehrte/r {{customer_name}},</p>
+<p>bevor wir Ihnen den Vertrag {{contract_number}} zur Unterzeichnung senden können, benötigen wir einige Angaben von Ihnen, etwa Ihre Adresse.</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{response_url}}" class="button">Angaben ergänzen</a>
+</p>
+<p style="font-size: 13px; color: #666;">Sie bestätigen zuerst Ihre E-Mail-Adresse mit einem Code. Sobald Ihre Angaben vorliegen, wird der Vertrag damit erstellt und Sie können ihn sofort lesen und unterzeichnen.</p>`,
+      body_text: 'Bevor wir Ihnen den Vertrag {{contract_number}} zur Unterzeichnung senden können, benötigen wir einige Angaben von Ihnen.\n\nÖffnen: {{response_url}}\n\nSie bestätigen zuerst Ihre E-Mail-Adresse mit einem Code; danach wird der Vertrag mit Ihren Angaben erstellt und Sie können ihn unterzeichnen.',
+    },
+  },
   // #1446: the time to sign ran out (services/contract/expiry.js).
   contract_expired_admin_notification: {
     category: 'contracts', feature_flag: 'contracts',

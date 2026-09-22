@@ -30,7 +30,11 @@ async function renderContractPdfBuffer(contractId) {
  */
 const ensureIntOr = (v) => (v == null ? 1 : Number(v));
 
-async function sendContract(id, adminId, { reviewToken = null } = {}) {
+async function sendContract(id, adminId, { reviewToken = null, collectData = false } = {}) {
+  // Ask the customer for their details first; this send runs once they have
+  // (#1446, dataCollection.js).
+  if (collectData) return require('./dataCollection').requestData(id, adminId);
+
   // Self-heal: dev installs that ran migration 130 BEFORE we added
   // contract_fully_signed to the seed list won't have all three
   // contract templates in email_templates. Insert any missing rows
@@ -41,9 +45,16 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   if (!data) throw new AppError('Contract not found', 404);
   const { contract } = data;
 
-  if (!['draft'].includes(contract.status)) {
+  if (!['draft', 'awaiting_data'].includes(contract.status)) {
     throw new AppError(`Cannot send a contract with status '${contract.status}'`, 409);
   }
+  // A contract collecting the customer's details is frozen once they are in:
+  // from the customer's submission, or the admin's retry after a failed one.
+  const fromStatus = contract.status;
+  if (fromStatus === 'awaiting_data' && !contract.data_collected_at) {
+    throw new AppError('The customer hasn\'t completed their details yet.', 409, 'DATA_PENDING');
+  }
+
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   ensureCustomerActive(customer);
 
@@ -153,8 +164,11 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // Marks the contract sent, starts the event log and emails each signer
   // who may sign now their own link.
   const invited = await signingV2.completeSend(id, {
-    pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version, sendInputs,
+    pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version, sendInputs, fromStatus,
   });
+
+  // A freeze that failed after the customer's details came in is done now.
+  if (fromStatus === 'awaiting_data') await signingV2.clearFollowUpFailure(id);
 
   try {
     await logActivity('contract_sent', { contractId: id, signersInvited: invited }, null, await adminActor(adminId));

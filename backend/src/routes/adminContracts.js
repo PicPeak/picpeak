@@ -177,6 +177,8 @@ function transformContract(c, inclusions, textSections, attachmentRows) {
     templateVersion: c.template_version_number == null ? null : Number(c.template_version_number),
     lockVersion: c.lock_version == null ? 1 : Number(c.lock_version),
     renderedContentSha256: c.rendered_content_sha256 || null,
+    // Collect-then-freeze (#1446): when the customer's details came in.
+    dataCollectedAt: c.data_collected_at || null,
     textSections: Array.isArray(textSections)
       ? textSections.map((s) => ({
         id: s.id,
@@ -432,7 +434,15 @@ router.get(
     validateRequest(req);
     const data = await contractService.getContractById(parseInt(req.params.id, 10));
     if (!data) return res.status(404).json({ error: 'Contract not found' });
-    return successResponse(res, { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments) });
+    const contract = transformContract(data.contract, data.inclusions, data.textSections, data.attachments);
+    // Whether {{customer_address}} would print empty — the Send path then
+    // offers to ask the customer for their details first (#1446).
+    if (data.contract.status === 'draft') {
+      const customer = await db('customer_accounts').where({ id: data.contract.customer_account_id })
+        .first('address_line1', 'address_line2', 'postal_code', 'city');
+      contract.customerAddressMissing = require('../services/contract/dataCollection').addressMissing(customer);
+    }
+    return successResponse(res, { contract });
   }),
 );
 
@@ -506,11 +516,19 @@ router.get(
 router.post(
   '/:id/send',
   requirePermission('contracts.manage'),
-  [param('id').isInt({ min: 1 }), body('reviewToken').optional({ nullable: true }).isString().isLength({ min: 64, max: 64 })],
+  // collectData (#1446): ask the customer to complete their details first;
+  // the contract is frozen and sent once they have.
+  [
+    param('id').isInt({ min: 1 }),
+    body('reviewToken').optional({ nullable: true }).isString().isLength({ min: 64, max: 64 }),
+    body('collectData').optional().isBoolean(),
+  ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const result = await contractService.sendContract(parseInt(req.params.id, 10), req.admin?.id,
-      { reviewToken: req.body && req.body.reviewToken ? req.body.reviewToken : null });
+    const result = await contractService.sendContract(parseInt(req.params.id, 10), req.admin?.id, {
+      reviewToken: req.body && req.body.reviewToken ? req.body.reviewToken : null,
+      collectData: req.body && req.body.collectData === true,
+    });
     return successResponse(res, result);
   }),
 );

@@ -1030,3 +1030,163 @@ describe('enumeration and replay signals', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 11 — collect the customer's details, then freeze
+// ---------------------------------------------------------------------
+
+describe('collect-then-freeze', () => {
+  const ADDRESS = {
+    address_line1: 'Seestrasse 12', postal_code: '8001', city: 'Zürich', country_code: 'ch', company_name: 'Muster AG',
+  };
+  const details = (session, values) => asSigner(request(signingApp).post('/api/public/contract-signing/session/details'))
+    .set('X-Signing-Session', session).send({ values });
+
+  async function requested({ order = 'parallel' } = {}) {
+    await db('customer_accounts').where({ id: customerId })
+      .update({ address_line1: null, address_line2: null, postal_code: null, city: null, country_code: null, company_name: null });
+    const id = await newContract();
+    await twoSigners(id, order);
+    const { contract: draft } = await ok(request(contractsApp).get(`/api/admin/contracts/${id}`).set(auth));
+    expect(draft.customerAddressMissing).toBe(true);
+    const res = await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true }));
+    expect(res).toEqual({ status: 'awaiting_data', invited: 1 });
+    return id;
+  }
+
+  test('asking for details freezes nothing, invites only the customer, and shows no contract', async () => {
+    const id = await requested();
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('awaiting_data');
+    expect(contract.rendered_content).toBeNull();
+    expect(contract.pdf_path).toBeNull();
+    expect(await eventTypes(id)).toEqual(['data_requested', 'invited']);
+    const rows = await db('contract_signers').where({ contract_id: id, role: 'customer' }).orderBy('position');
+    expect(rows.map((r) => r.status)).toEqual(['invited', 'pending']);
+
+    const mail = await lastMail('contract_data_request', customerEmail);
+    expect(mail.title).toBe('');
+    expect(mail.attachments).toBeUndefined();
+    const link = linkToken(mail);
+    const summary = await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${link}`)));
+    expect(summary.status).toBe('awaiting_data');
+    const session = await verifiedSession(link, customerEmail);
+    const view = await sessionView(session);
+    expect(view).not.toHaveProperty('sections');
+    expect(view).not.toHaveProperty('title');
+    expect(view).not.toHaveProperty('introText');
+    expect(view.dataRequest.fields).toEqual(expect.arrayContaining(['address_line1', 'postal_code', 'city', 'country_code']));
+    expect(view.dataRequest.required).toEqual(['address_line1', 'postal_code', 'city', 'country_code']);
+    expect((await asSigner(request(signingApp).get('/api/public/contract-signing/session/pdf')).set('X-Signing-Session', session)).status).toBe(409);
+    expect((await sign(session, { name: 'Anna Muster', mode: 'typed' })).status).toBe(409);
+  });
+
+  test('the co-signer has no way in while details are collected', async () => {
+    const id = await requested();
+    const second = (await db('contract_signers').where({ contract_id: id, position: 2 }).first());
+    expect(await db('contract_signer_invitations').where({ signer_id: second.id })).toHaveLength(0);
+    // The admin can't hand them a link yet either.
+    const resend = await request(contractsApp).post(`/api/admin/contracts/${id}/signers/${second.id}/resend`).set(auth);
+    expect(resend.status).toBe(409);
+    // And a session for them — however it came about — shows nothing.
+    const { token: forced } = await require('../../src/services/contract/signers').createSession(second.id, 'otp');
+    const res = await asSigner(request(signingApp).get('/api/public/contract-signing/session')).set('X-Signing-Session', forced);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('DATA_REQUEST_SIGNER');
+    expect(JSON.stringify(res.body)).not.toMatch(/sections|introText/);
+  });
+
+  test('the details go onto the customer, then the contract is frozen with them and the others invited', async () => {
+    const id = await requested();
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+
+    const invalid = await details(session, { ...ADDRESS, country_code: 'Schweiz', city: '' });
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.code).toBe('DETAILS_INVALID');
+    expect(invalid.body.details.fields.sort()).toEqual(['city', 'country_code']);
+    const unknown = await details(session, { ...ADDRESS, email: 'x@example.com' });
+    expect(unknown.status).toBe(400);
+    expect((await db('contracts').where({ id }).first()).data_collected_at).toBeNull();
+
+    const done = await ok(details(session, ADDRESS));
+    expect(done).toEqual({ status: 'sent', frozen: true });
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('sent');
+    expect(parsed(contract.rendered_content).placeholders.customer_address).toBe('Seestrasse 12, 8001, Zürich');
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+    expect(customer).toEqual(expect.objectContaining({ address_line1: 'Seestrasse 12', country_code: 'CH', company_name: 'Muster AG' }));
+    expect(await eventTypes(id)).toEqual([
+      'data_requested', 'invited', 'code_sent', 'verified', 'data_collected', 'sent', 'invited',
+    ]);
+    const collected = await db('contract_signing_events').where({ contract_id: id, event_type: 'data_collected' }).first();
+    expect(parsed(collected.payload)).toEqual({ fields: ['address_line1', 'city', 'company_name', 'country_code', 'postal_code'] });
+    // The co-signer is invited now, with the contract.
+    expect(await lastMail('contract_sent', 'ben@example.com')).toBeTruthy();
+    // The change is in the accounting history, and no value anywhere in the logs.
+    const history = await require('../../src/services/accountingHistory').listHistory('customer', customerId);
+    expect(history.some((h) => h.source === 'contract.data_collection')).toBe(true);
+    const logs = JSON.stringify([
+      await db('activity_logs').where('activity_type', 'like', 'contract_%'),
+      await db('contract_signing_events').where({ contract_id: id }),
+    ]);
+    expect(logs).not.toContain('Seestrasse');
+    expect(logs).not.toContain('Muster AG');
+
+    // The same session now reads the frozen contract, and it can be signed.
+    const view = await sessionView(session);
+    expect(view.status).toBe('sent');
+    expect(view.sections.length).toBeGreaterThan(0);
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+    expect((await require('../../src/services/contract/signingEvents').verifyChain(id)).ok).toBe(true);
+  });
+
+  test('a second submission is refused, even one racing the first', async () => {
+    const id = await requested();
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+    const [a, b] = await Promise.all([details(session, ADDRESS), details(session, { ...ADDRESS, city: 'Bern' })]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 409]);
+    const again = await details(session, ADDRESS);
+    expect(again.status).toBe(409);
+    expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'data_collected' })).toHaveLength(1);
+  });
+
+  test('a failed render keeps the details and the status, and the admin sends again', async () => {
+    const id = await requested();
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+    const pdfService = require('../../src/services/pdfService');
+    const spy = jest.spyOn(pdfService, 'renderContractWithSlots').mockRejectedValueOnce(new Error('renderer down'));
+    const res = await ok(details(session, ADDRESS));
+    spy.mockRestore();
+    expect(res).toEqual({ status: 'awaiting_data', frozen: false });
+    const stuck = await db('contracts').where({ id }).first();
+    expect(stuck.status).toBe('awaiting_data');
+    expect(stuck.data_collected_at).toBeTruthy();
+    expect(stuck.follow_up_error).toMatch(/^data_freeze:/);
+    expect((await db('customer_accounts').where({ id: customerId }).first()).city).toBe('Zürich');
+    // The customer sees the details were taken, not the contract.
+    expect((await sessionView(session)).dataRequest.submitted).toBe(true);
+
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+    const sent = await db('contracts').where({ id }).first();
+    expect(sent.status).toBe('sent');
+    expect(sent.follow_up_failed_at).toBeNull();
+  });
+
+  test('only the account holder as first signer can be asked for details, and the clock runs', async () => {
+    await db('customer_accounts').where({ id: customerId }).update({ address_line1: null, city: null, postal_code: null });
+    const id = await newContract();
+    await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+      order: 'parallel', signers: [{ name: 'Ben Muster', email: 'ben@example.com' }, { name: 'Anna Muster', email: customerEmail }],
+    }));
+    const refused = await request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('DATA_REQUEST_SIGNER');
+    expect((await db('contracts').where({ id }).first()).status).toBe('draft');
+
+    const waiting = await requested();
+    await db('contracts').where({ id: waiting }).update({ valid_until: dateOnly(daysAgo(20)) });
+    await require('../../src/services/contract/expiry').runContractSigningSweep();
+    expect((await db('contracts').where({ id: waiting }).first()).status).toBe('expired');
+  });
+});

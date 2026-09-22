@@ -56,6 +56,7 @@ function statusBadgeClass(status: ContractStatus): string {
     : status === 'declined'                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
     : status === 'cancelled'               ? 'bg-neutral-200 text-neutral-600'
     : status === 'expired'                 ? 'bg-neutral-200 text-neutral-600'
+    : status === 'awaiting_data'           ? 'bg-amber-100 text-amber-800'
     :                                        'bg-neutral-100 text-neutral-700';
 }
 
@@ -129,9 +130,12 @@ export const ContractDetailPage: React.FC = () => {
   const legacySigning = signersQuery.isSuccess ? !isV2 : signersQuery.isError;
 
   // Send goes through the review (#1445): it opens here and sends from there.
+  // Collect-then-freeze (#1446) is chosen in the review, offered when the
+  // customer's address would print empty.
   const [reviewing, setReviewing] = useState(false);
   const sendMutation = useMutationWithToast({
-    mutationFn: (reviewToken?: string) => contractsService.send(numericId as number, reviewToken),
+    mutationFn: ({ reviewToken, askForDetails }: { reviewToken?: string; askForDetails?: boolean }) =>
+      contractsService.send(numericId as number, { reviewToken, collectData: askForDetails === true }),
     onSuccess: () => setReviewing(false),
     successMessage: t('contracts.detail.sentToast', 'Contract sent.') as string,
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
@@ -365,7 +369,17 @@ export const ContractDetailPage: React.FC = () => {
             </Button>
           </>
         )}
-        {(c.status === 'draft' || c.status === 'sent') && (
+        {c.status === 'awaiting_data' && (c.dataCollectedAt ? (
+          <Button onClick={() => sendMutation.mutate({})} disabled={sendMutation.isPending}>
+            <Send className="w-4 h-4 mr-1" />
+            {t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
+          </Button>
+        ) : (
+          <span className="self-center text-sm text-neutral-600 dark:text-neutral-400">
+            {t('contracts.detail.waitingForDetails', 'Waiting for the customer to complete their details. The contract is prepared and sent to the other signers once they have.')}
+          </span>
+        ))}
+        {(c.status === 'draft' || c.status === 'sent' || c.status === 'awaiting_data') && (
           <Button
             variant="outline"
             onClick={() => {
@@ -765,7 +779,8 @@ export const ContractDetailPage: React.FC = () => {
         <SendReviewModal
           contractId={numericId}
           onClose={() => setReviewing(false)}
-          onSend={(reviewToken) => sendMutation.mutate(reviewToken)}
+          customerAddressMissing={!!c.customerAddressMissing}
+          onSend={(reviewToken, askForDetails) => sendMutation.mutate({ reviewToken, askForDetails })}
           onPreviewPdf={handlePdfPreview}
           sending={sendMutation.isPending}
         />

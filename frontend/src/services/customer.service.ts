@@ -631,7 +631,7 @@ export interface CustomerInvoice {
 export interface CustomerContract {
   id: number;
   contractNumber: string;
-  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'declined' | 'cancelled' | 'expired';
+  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'declined' | 'cancelled' | 'expired' | 'awaiting_data';
   language: string;
   issueDate: string;
   validUntil: string | null;
@@ -649,4 +649,6 @@ export interface CustomerContract {
   canSign: boolean;
   /** How far the customer signers have got (#1446). */
   signerProgress?: { signed: number; total: number } | null;
+  /** The contract waits for the customer's details before it is prepared (#1446). */
+  canCompleteDetails?: boolean;
 }

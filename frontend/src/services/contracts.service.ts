@@ -66,7 +66,8 @@ export type ContractStatus =
   | 'fully_signed'
   | 'declined'
   | 'cancelled'
-  | 'expired';
+  | 'expired'
+  | 'awaiting_data';
 
 // ----- Signatures v2 (#1446): signers and the signing log -------------
 
@@ -348,6 +349,10 @@ export interface ContractSummary {
   attachments?: IncludedAttachment[];
   /** List rows only: how far the customer signers have got (#1446). */
   signerProgress?: { signed: number; total: number } | null;
+  /** Drafts: whether {{customer_address}} would print empty (#1446). */
+  customerAddressMissing?: boolean;
+  /** When the customer supplied their details (collect-then-freeze, #1446). */
+  dataCollectedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   inclusions?: ContractBlockInclusion[];
@@ -475,9 +480,18 @@ export const contractsService = {
     return data.data || data;
   },
 
-  /** `reviewToken`: the pre-send review's; the send is refused if the contract changed since. */
-  async send(id: number, reviewToken?: string): Promise<{ token: string; pdfPath: string | null }> {
-    const { data } = await api.post(`/admin/contracts/${id}/send`, reviewToken ? { reviewToken } : undefined);
+  /** `reviewToken`: the pre-send review's; the send is refused if the contract changed since.
+   *  `collectData` (#1446): ask the customer for their details first; the
+   *  contract is frozen and sent once they have. */
+  async send(
+    id: number,
+    options: { reviewToken?: string; collectData?: boolean } = {},
+  ): Promise<{ token: string; pdfPath: string | null }> {
+    const payload = {
+      ...(options.reviewToken ? { reviewToken: options.reviewToken } : {}),
+      ...(options.collectData ? { collectData: true } : {}),
+    };
+    const { data } = await api.post(`/admin/contracts/${id}/send`, Object.keys(payload).length ? payload : undefined);
     return data.data || data;
   },
 

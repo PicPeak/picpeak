@@ -316,6 +316,19 @@ const SigningFlow: React.FC<SigningFlowProps> = ({ scope, token, invite, onLinkE
     return <LoadProblem issuer={invite?.issuer} onRetry={() => { viewQuery.refetch(); }} />;
   }
 
+  // The customer's details come first (#1446): a form, and nothing of the
+  // contract until it has been prepared with them.
+  if (viewQuery.data.contract.status === 'awaiting_data' && viewQuery.data.contract.dataRequest) {
+    return (
+      <DetailsForm
+        sessionToken={session.sessionToken}
+        contract={viewQuery.data.contract}
+        onSessionInvalid={dropSession}
+        onRefresh={() => viewQuery.refetch()}
+      />
+    );
+  }
+
   return (
     <SigningContractView
       scope={scope}
@@ -324,6 +337,130 @@ const SigningFlow: React.FC<SigningFlowProps> = ({ scope, token, invite, onLinkE
       onSessionInvalid={dropSession}
       onRefresh={() => viewQuery.refetch()}
     />
+  );
+};
+
+const DETAIL_LABELS: Record<string, { key: string; fallback: string; autoComplete: string }> = {
+  address_line1: { key: 'contractSigning.details.fields.address_line1', fallback: 'Street and number', autoComplete: 'address-line1' },
+  address_line2: { key: 'contractSigning.details.fields.address_line2', fallback: 'Address line 2', autoComplete: 'address-line2' },
+  postal_code: { key: 'contractSigning.details.fields.postal_code', fallback: 'Postal code', autoComplete: 'postal-code' },
+  city: { key: 'contractSigning.details.fields.city', fallback: 'City', autoComplete: 'address-level2' },
+  country_code: { key: 'contractSigning.details.fields.country_code', fallback: 'Country (two-letter code, e.g. CH)', autoComplete: 'country' },
+  company_name: { key: 'contractSigning.details.fields.company_name', fallback: 'Company', autoComplete: 'organization' },
+  vat_id: { key: 'contractSigning.details.fields.vat_id', fallback: 'VAT number', autoComplete: 'off' },
+  phone: { key: 'contractSigning.details.fields.phone', fallback: 'Phone', autoComplete: 'tel' },
+};
+
+/**
+ * Collect-then-freeze (#1446): the first signer completes their details.
+ * The contract is prepared with them on submit, and the same session then
+ * opens it for review. No contract content is shown here.
+ */
+const DetailsForm: React.FC<{
+  sessionToken: string;
+  contract: SigningSessionContract;
+  onSessionInvalid: () => void;
+  onRefresh: () => Promise<unknown>;
+}> = ({ sessionToken, contract: c, onSessionInvalid, onRefresh }) => {
+  const { t } = useTranslation();
+  const request = c.dataRequest as NonNullable<SigningSessionContract['dataRequest']>;
+  const [values, setValues] = useState<Record<string, string>>(() => ({ ...request.values }));
+  const [invalid, setInvalid] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(request.submitted);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, [pending]);
+
+  const submit = useMutation({
+    mutationFn: () => publicContractSigningService.submitDetails(sessionToken, values),
+    onSuccess: async (result) => {
+      setError(null);
+      if (result.frozen) await onRefresh();
+      else setPending(true);
+    },
+    onError: async (err: unknown) => {
+      if (isSessionInvalid(err)) {
+        onSessionInvalid();
+        return;
+      }
+      const code = signingErrorCode(err);
+      if (code === 'DETAILS_INVALID') {
+        const fields = ((err as { response?: { data?: { details?: { fields?: string[] } } } })?.response?.data?.details?.fields) || [];
+        setInvalid(fields);
+        setError(t('contractSigning.details.invalid', 'Check the highlighted details.'));
+        return;
+      }
+      if (code === 'DATA_ALREADY_SUBMITTED' || code === 'DATA_NOT_REQUESTED') {
+        await onRefresh();
+        return;
+      }
+      // No status: we can't say whether it arrived — ask the server.
+      if (!signingErrorStatus(err)) {
+        await onRefresh();
+        setError(t('contractSigning.details.uncertain', 'We couldn\'t confirm that your details arrived. Check the page again before sending them a second time.'));
+        return;
+      }
+      setError(t('contractSigning.details.error', 'Your details couldn\'t be saved. Try again in a moment.'));
+    },
+  });
+
+  if (pending) {
+    return (
+      <MessagePage
+        issuer={c.issuer}
+        title={t('contractSigning.details.savedTitle', 'Your details are saved')}
+        body={t('contractSigning.details.savedBody', 'You\'ll receive a new email as soon as the contract is ready.')}
+      />
+    );
+  }
+
+  return (
+    <PageShell issuer={c.issuer}>
+      <div className={CARD}>
+        <h1 ref={heading} tabIndex={-1} className="text-2xl font-bold mb-1 focus:outline-none">
+          {t('contractSigning.details.title', 'Your details for contract {{number}}', { number: c.contractNumber })}
+        </h1>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          {t('contractSigning.details.intro', 'The contract is prepared with these details once you send them; then you can read and sign it right here.')}
+        </p>
+        <form
+          noValidate
+          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+          onSubmit={(e) => { e.preventDefault(); setInvalid([]); submit.mutate(); }}
+        >
+          {request.fields.map((field) => {
+            const label = DETAIL_LABELS[field] || { key: field, fallback: field, autoComplete: 'off' };
+            const required = request.required.includes(field);
+            const bad = invalid.includes(field);
+            return (
+              <div key={field} className={field === 'address_line1' || field === 'address_line2' ? 'sm:col-span-2' : ''}>
+                <label htmlFor={`contract-details-${field}`} className="block text-sm font-medium mb-1">
+                  {t(label.key, label.fallback)}
+                  {required && <span className="text-neutral-500 dark:text-neutral-400"> {t('contractSigning.consents.required', '(required)')}</span>}
+                </label>
+                <input
+                  id={`contract-details-${field}`}
+                  className={`${INPUT} ${bad ? 'border-red-500 dark:border-red-400' : ''}`}
+                  value={values[field] || ''}
+                  autoComplete={label.autoComplete}
+                  required={required}
+                  aria-invalid={bad || undefined}
+                  onChange={(e) => setValues((cur) => ({ ...cur, [field]: e.target.value }))}
+                />
+              </div>
+            );
+          })}
+          {error && <p role="alert" className="sm:col-span-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+          <div className="sm:col-span-2 flex justify-end">
+            <button type="submit" disabled={submit.isPending} className={PRIMARY_BUTTON}>
+              {submit.isPending
+                ? t('contractSigning.details.sending', 'Preparing the contract…')
+                : t('contractSigning.details.submit', 'Save my details and prepare the contract')}
+            </button>
+          </div>
+        </form>
+      </div>
+    </PageShell>
   );
 };
 

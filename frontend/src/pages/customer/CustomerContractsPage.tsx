@@ -31,10 +31,12 @@ type StatusFilter =
   | 'fully_signed'
   | 'declined'
   | 'cancelled'
-  | 'expired';
+  | 'expired'
+  | 'awaiting_data';
 
 const STATUS_OPTIONS: { value: StatusFilter; key: string; fallback: string }[] = [
   { value: 'all',                 key: 'customer.filter.all',                    fallback: 'All' },
+  { value: 'awaiting_data',       key: 'contracts.status.awaiting_data',         fallback: 'Waiting for your details' },
   { value: 'sent',                key: 'contracts.status.sent',                  fallback: 'Awaiting signature' },
   { value: 'signed_by_customer',  key: 'contracts.status.signed_by_customer',   fallback: 'Signed by customer · awaiting countersignature' },
   { value: 'signed_by_admin',     key: 'contracts.status.signed_by_admin',      fallback: 'Counter-signed' },
@@ -221,7 +223,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
   const statusBadge =
     c.status === 'fully_signed' ? 'status-chip hue-success'
       : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'status-chip hue-info'
-      : c.status === 'sent' ? 'status-chip hue-warning'
+      : c.status === 'sent' || c.status === 'awaiting_data' ? 'status-chip hue-warning'
       : c.status === 'declined' ? 'status-chip hue-danger'
       : 'status-chip hue-neutral';
 
@@ -275,6 +277,19 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
             {opening
               ? t('customer.contracts.opening', 'Opening…')
               : t('customer.contracts.sign', 'Sign')}
+          </button>
+        )}
+        {c.canCompleteDetails && (
+          <button
+            type="button"
+            onClick={handleSign}
+            disabled={opening}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-dark text-white hover:opacity-90 disabled:opacity-50"
+          >
+            <PenLine className="w-4 h-4" />
+            {opening
+              ? t('customer.contracts.opening', 'Opening…')
+              : t('customer.contracts.completeDetails', 'Complete my details')}
           </button>
         )}
         {(c.hasPdf || c.hasSignedPdf) && (

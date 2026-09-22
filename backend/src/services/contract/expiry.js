@@ -33,8 +33,9 @@ const { toMillis } = require('../../utils/queueTimestamps');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PURGE_AFTER_MS = 30 * DAY_MS;
-// The statuses whose clock runs: out for signature.
-const RUNNING = ['sent'];
+// The statuses whose clock runs: out for signature, or collecting the
+// customer's details first.
+const RUNNING = ['sent', 'awaiting_data'];
 
 const task = scheduledTask(() => runContractSigningSweep(), { schedule: '35 * * * *' });
 const startContractSigningSweep = () => task.start();
@@ -111,7 +112,7 @@ async function remindDue(now) {
   for (const contract of running) {
     const rows = await signers.listSigners(contract.id);
     // Only whoever may sign now: in a sequential contract, the next signer.
-    for (const row of signers.signersDue(contract, rows).filter((r) => r.status === 'invited')) {
+    for (const row of signingV2.dueSigners(contract, rows).filter((r) => r.status === 'invited')) {
       const count = Number(row.reminder_count) || 0;
       if (count >= steps.length) continue;
       const since = toMillis(row.invited_at);

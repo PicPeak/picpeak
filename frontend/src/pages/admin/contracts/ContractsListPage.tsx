@@ -25,7 +25,7 @@ import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { contractStatusLabel } from '../../../utils/contractStatus';
 
 const STATUSES: ContractStatus[] = [
-  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled', 'expired',
+  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled', 'expired', 'awaiting_data',
 ];
 
 // "Number" sorts by creation order (newest/oldest); "Issued" sorts by
@@ -174,7 +174,7 @@ export const ContractsListPage: React.FC = () => {
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                             c.status === 'fully_signed' ? 'bg-green-100 text-green-800'
                               : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
-                              : c.status === 'sent' ? 'bg-amber-100 text-amber-800'
+                              : c.status === 'sent' || c.status === 'awaiting_data' ? 'bg-amber-100 text-amber-800'
                               : c.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
                               : c.status === 'cancelled' || c.status === 'expired' ? 'bg-neutral-200 text-neutral-600'
                               : 'bg-neutral-100 text-neutral-700'

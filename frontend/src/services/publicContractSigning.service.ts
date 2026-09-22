@@ -81,6 +81,16 @@ export interface SigningSessionContract extends PublicContractView {
   };
   /** The declarations to confirm; null for a contract sent before they were frozen. */
   consents?: SigningConsent[] | null;
+  /** Only while the contract collects the customer's details first (#1446). */
+  dataRequest?: SigningDataRequest;
+}
+
+/** The details asked for before the contract is prepared (#1446). */
+export interface SigningDataRequest {
+  fields: string[];
+  required: string[];
+  values: Record<string, string>;
+  submitted: boolean;
 }
 
 export interface SignPayload {
@@ -136,6 +146,12 @@ export const publicContractSigningService = {
 
   async sign(sessionToken: string, payload: SignPayload): Promise<{ status: 'sent' | 'signed_by_customer'; signedAt: string }> {
     const { data } = await api.post(`${BASE}/session/sign`, payload, sessionHeaders(sessionToken));
+    return data.data || data;
+  },
+
+  /** The customer's details; the contract is prepared with them (#1446). */
+  async submitDetails(sessionToken: string, values: Record<string, string>): Promise<{ status: 'sent' | 'awaiting_data'; frozen: boolean }> {
+    const { data } = await api.post(`${BASE}/session/details`, { values }, sessionHeaders(sessionToken));
     return data.data || data;
   },
 

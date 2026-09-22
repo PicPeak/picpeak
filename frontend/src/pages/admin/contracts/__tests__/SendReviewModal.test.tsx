@@ -48,11 +48,12 @@ const review = (problems: unknown[] = []) => ({
   reviewToken: 'b'.repeat(64),
 });
 
-function renderModal(onSend = vi.fn()) {
+function renderModal(onSend = vi.fn(), { customerAddressMissing = false } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <SendReviewModal contractId={7} onClose={vi.fn()} onSend={onSend} onPreviewPdf={vi.fn()} sending={false} />
+      <SendReviewModal contractId={7} onClose={vi.fn()} onSend={onSend} onPreviewPdf={vi.fn()} sending={false}
+        customerAddressMissing={customerAddressMissing} />
     </QueryClientProvider>,
   );
   return onSend;
@@ -70,7 +71,9 @@ it('shows signers, attachments, price and template, and says who the send goes t
   expect(dialog).toHaveTextContent('Wedding, version 3');
   expect(dialog).toHaveTextContent(/Total.*2.162.00/);
   await user.click(screen.getByRole('button', { name: 'Send to 2 signers' }));
-  expect(onSend).toHaveBeenCalledWith('b'.repeat(64));
+  expect(onSend).toHaveBeenCalledWith('b'.repeat(64), false);
+  // Nothing to collect: the collect-then-freeze option (#1446) isn't offered.
+  expect(screen.queryByRole('checkbox', { name: 'Ask the customer to complete their details first' })).not.toBeInTheDocument();
 });
 
 it('an error blocks the send; a warning does not', async () => {
@@ -92,4 +95,26 @@ it('previews the signing page with its own component, at phone width on request'
   expect(screen.getByText('Photos all day.')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Phone' }));
   expect(screen.getByTestId('send-review-layout-frame')).toHaveStyle({ width: '390px' });
+});
+
+it('asks the customer for their details from the review, and then claims no price or PDF (#1446)', async () => {
+  const user = userEvent.setup();
+  sendPreview.mockResolvedValue(review());
+  const onSend = renderModal(vi.fn(), { customerAddressMissing: true });
+  const dialog = await screen.findByRole('dialog', { name: 'Review before sending' });
+  await screen.findByText('Everything is ready to send.');
+  // Unticked, the review is the ordinary send.
+  expect(dialog).toHaveTextContent(/Total.*2.162.00/);
+  expect(screen.getByRole('button', { name: 'Preview PDF' })).toBeInTheDocument();
+
+  await user.click(screen.getByRole('checkbox', { name: 'Ask the customer to complete their details first' }));
+  // Nothing is rendered or frozen by this send: no price, no PDF, no signing page.
+  expect(dialog).not.toHaveTextContent(/Total/);
+  expect(dialog).toHaveTextContent('Set once the customer has completed their details.');
+  expect(screen.queryByRole('button', { name: 'Preview PDF' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Show the signing page' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Send to 2 signers' })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Ask for the details' }));
+  expect(onSend).toHaveBeenCalledWith('b'.repeat(64), true);
 });
