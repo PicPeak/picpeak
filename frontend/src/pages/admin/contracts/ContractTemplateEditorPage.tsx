@@ -505,9 +505,18 @@ export const ContractTemplateEditorPage: React.FC = () => {
     setBusy(true);
     try {
       const latest = await loadSourceVersion(lineage.latestSourceVersion);
-      const have = new Set(draftRef.current.items.map((item) => (item.kind === 'block' ? `b:${item.blockId}` : `t:${item.heading.trim().toLowerCase()}`)));
+      // Matched occurrence by occurrence, not as a set: a second clause with
+      // the same heading (or none) in the source is new, not already here.
+      const identity = (item: { kind: string; blockId: number | null; heading?: string | null }) => (item.kind === 'block'
+        ? `b:${item.blockId}` : `t:${(item.heading || '').trim().toLowerCase()}`);
+      const have = new Map<string, number>();
+      for (const item of draftRef.current.items) have.set(identity(item), (have.get(identity(item)) || 0) + 1);
       const added: DraftItem[] = (latest.items || [])
-        .filter((item) => !have.has(item.kind === 'block' ? `b:${item.blockId}` : `t:${(item.heading || '').trim().toLowerCase()}`))
+        .filter((item) => {
+          const left = have.get(identity(item)) || 0;
+          if (left > 0) have.set(identity(item), left - 1);
+          return left === 0;
+        })
         .map((item) => ({
           key: nextKey(),
           kind: item.kind,

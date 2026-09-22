@@ -508,3 +508,28 @@ it('offers a newer system version without applying it, and adds only the new cla
   })));
   expect(screen.getByText('Neue Klausel')).toBeInTheDocument();
 });
+
+it('adopting a newer source version adds a second clause with a heading the draft already has once', async () => {
+  const user = userEvent.setup();
+  const base = detail();
+  get.mockResolvedValue({
+    ...base,
+    draft: { ...base.draft, items: [{ kind: 'text', blockId: null, section: 'closing', heading: 'Zusatz', body: { de: 'Eins' }, snapshot: {} }] },
+    lineage: { sourceTemplateId: 1, sourceName: 'Standard contract', sourceIsSystem: true, sourceVersion: 1, latestSourceVersion: 2, updateAvailable: true },
+  });
+  const zusatz = (de: string) => ({ kind: 'text', blockId: null, section: 'closing', heading: 'Zusatz', body: { de }, snapshot: {} });
+  version.mockImplementation(async (_id: number, n: number) => ({
+    id: 40 + n, version: n, status: 'published', title: '', introText: {}, outroText: {}, contentSha256: null, publishedAt: null,
+    items: n === 2 ? [zusatz('Eins'), zusatz('Zwei')] : [zusatz('Eins')],
+    attachments: [],
+  }));
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'Add the new clauses to my draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    sourceVersionNumber: 2,
+    items: [
+      { kind: 'text', section: 'closing', heading: 'Zusatz', body: { de: 'Eins' } },
+      { kind: 'text', section: 'closing', heading: 'Zusatz', body: { de: 'Zwei' } },
+    ],
+  })));
+});
