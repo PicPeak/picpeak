@@ -384,6 +384,35 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
   }
 });
 
+/**
+ * Abort a streaming archive whose headers are already on the wire.
+ *
+ * Aborting only the archive is not enough: archiver then ends its output, so
+ * a read that failed mid-copy reached the guest as a truncated ZIP inside a
+ * complete 200, and a read that failed while still queued left the archive
+ * and the response open forever (review of PR 1582). Destroying the response
+ * breaks the connection, which every client reports as a failed download.
+ */
+function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
+  logger.error('Gallery archive aborted after a failed read', {
+    eventId,
+    route,
+    error: err?.code || err?.name || 'Error',
+  });
+  guard.destroyAll();
+  archive.unpipe(res);
+  archive.abort();
+  res.destroy(err instanceof Error ? err : new Error('archive failed'));
+}
+
+// finalize() settles on the archive's end or error, and an aborted archive may
+// emit neither; the response closing ends the wait too.
+async function finalizeOrClose(archive, res) {
+  const finalized = archive.finalize();
+  finalized.catch(() => {}); // failures are handled by abortStreamingArchive
+  await Promise.race([finalized, new Promise((resolve) => res.once('close', resolve))]);
+}
+
 // Download all photos as ZIP
 // Zip downloads count toward each contained photo's download_count (#895)
 // — previously only single-photo downloads did, so galleries whose guests
@@ -514,9 +543,13 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}.zip"`);
 
     const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => {
-      throw err;
-    });
+    // A throw here used to escape the event emitter as an uncaught exception.
+    const failArchive = (err) => {
+      if (cancelled) return;
+      cancelled = true;
+      abortStreamingArchive({ archive, guard, res, err, eventId: req.event.id, route: 'download-all' });
+    };
+    archive.on('error', failArchive);
 
     // Reclaim storage reads on every exit (#1399 follow-up). A guest closing
     // the tab mid-download used to leave every appended-but-undrained read
@@ -525,7 +558,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       // A queued read that dies takes the archive with it: archiver has no
       // listener on it yet, so it would otherwise sit in the queue and stall
       // the download forever.
-      onFatalError: () => { cancelled = true; guard.destroyAll(); archive.abort(); },
+      onFatalError: failArchive,
     });
     res.on('close', () => {
       if (!res.writableFinished) {
@@ -627,7 +660,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       });
     }
     if (cancelled) return;
-    await archive.finalize();
+    await finalizeOrClose(archive, res);
+    // A failed or abandoned archive is not a download.
+    if (cancelled) return;
 
     if (!req.isAdminPreview) {
       // Log bulk download
@@ -647,7 +682,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
   } catch (error) {
     if (guard) guard.destroyAll();
     // Nothing to say to a client that already left, and the headers are gone.
-    if (cancelled || res.headersSent) return;
+    // A half-sent archive must not be left open or ended as if complete.
+    if (cancelled || res.headersSent) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
 });
@@ -713,24 +752,19 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
 
     const archive = archiver('zip', { zlib: { level: 5 } });
-    archive.on('error', (err) => {
-      logger.error('Zip error generating selected download', {
-        slug: req.params.slug,
-        eventId: req.event?.id,
-        error: err.message,
+    // The headers are already out, so a 500 here only ended the ZIP cleanly
+    // and truncated. Same abort as download-all.
+    const failSelected = (err) => {
+      if (selectedCancelled) return;
+      selectedCancelled = true;
+      abortStreamingArchive({
+        archive, guard: selectedGuard, res, err, eventId: req.event.id, route: 'download-selected',
       });
-      try {
-        res.status(500).end();
-      } catch (_) {
-        // ignore double-send errors
-      }
-    });
+    };
+    archive.on('error', failSelected);
 
     // Same reclaim contract as download-all above (#1399 follow-up).
-    selectedGuard = createArchiveStreamGuard({
-      onFatalError: () => { selectedCancelled = true; selectedGuard.destroyAll(); archive.abort(); },
-    });
-    archive.on('error', () => selectedGuard.destroyAll());
+    selectedGuard = createArchiveStreamGuard({ onFatalError: failSelected });
     res.on('close', () => {
       if (!res.writableFinished) {
         selectedCancelled = true;
@@ -808,7 +842,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       });
     }
     if (selectedCancelled) return;
-    await archive.finalize();
+    await finalizeOrClose(archive, res);
+    if (selectedCancelled) return;
 
     if (!req.isAdminPreview) {
       await db('access_logs').insert({
@@ -826,7 +861,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     }
   } catch (error) {
     if (selectedGuard) selectedGuard.destroyAll();
-    if (selectedCancelled || res.headersSent) return;
+    if (selectedCancelled || res.headersSent) {
+      if (!res.destroyed) res.destroy();
+      return;
+    }
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }
 });
