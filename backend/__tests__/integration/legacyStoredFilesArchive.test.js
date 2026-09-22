@@ -169,6 +169,20 @@ describe('legacy-root documents in archives', () => {
     expect(withoutPatterns.filter((f) => f.legacyValues)).toHaveLength(2);
   });
 
+  it('keeps a legacy document off a path another row names even when that file is missing', async () => {
+    const { collectLegacyStoredFiles } = require('../../src/utils/legacyStoredFiles');
+    const { legacy } = useInstall('source');
+    const legacyFile = path.join(legacy, 'business-docs', 'inbound', '2026', 'gone.pdf');
+    write(legacyFile, 'LEGACY-GONE');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert([
+      { original_filename: 'legacy', file_path: legacyFile },
+      { original_filename: 'missing', file_path: 'business-docs/inbound/2026/gone.pdf' },
+    ]);
+    const [entry] = await collectLegacyStoredFiles(db);
+    expect(entry.rel).toBe('business-docs/inbound/2026/legacy/gone.pdf');
+  });
+
   it('refuses a map entry that is not a plain storage-relative path', async () => {
     const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
     await db('inbound_documents').del();
