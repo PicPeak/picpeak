@@ -986,6 +986,33 @@ describe('malware scanner (fake clamd)', () => {
     expect(row.scan_claimed_until).toBeFalsy();
   });
 
+  it('removes a partial copy when fetching the stored file from S3 fails part-way', async () => {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const storageIndex = require('../../src/services/storage');
+    const id = (await uploadAs(me, 's3-partial.pdf')).body.document.id;
+    await db('customer_documents').where({ status: 'pending' }).whereNot({ id })
+      .update({ scan_claimed_until: Date.now() + 864e5 * 365 });
+    const tempDir = pathx.join(process.env.STORAGE_PATH, 'temp', 'customer-documents');
+    const leftovers = () => (fsx.existsSync(tempDir) ? fsx.readdirSync(tempDir) : []);
+    const before = leftovers().length;
+    storageIndex.setStorageForTesting({
+      kind: () => 's3',
+      getToFile: async (_key, file) => {
+        fsx.writeFileSync(file, 'half a file');
+        throw new Error('socket hang up');
+      },
+    });
+    documentScanService.registerScanner(async () => 'clean');
+    try {
+      expect(await runCustomerDocumentRescan()).toEqual({ clean: 0, rejected: 0, pending: 1 });
+    } finally {
+      storageIndex.resetStorage();
+    }
+    expect(leftovers()).toHaveLength(before);
+    await db('customer_documents').where({ id }).update({ deleted_at: new Date().toISOString() });
+  });
+
   it('backs off from files it cannot decide on, so the rows behind them are reached', async () => {
     const fsx = require('fs');
     const pathx = require('path');

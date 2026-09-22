@@ -52,8 +52,16 @@ async function localCopy(row) {
   const dir = path.join(getStoragePath(), 'temp', 'customer-documents');
   await fs.promises.mkdir(dir, { recursive: true });
   const file = path.join(dir, `rescan-${crypto.randomUUID()}.tmp`);
-  await storage.getToFile(row.storage_key, file);
-  return { file, cleanup: () => fs.promises.unlink(file).catch(() => {}) };
+  const cleanup = () => fs.promises.unlink(file).catch(() => {});
+  try {
+    await storage.getToFile(row.storage_key, file);
+  } catch (err) {
+    // A download that fails part-way leaves what it wrote; nothing else
+    // clears this directory, and the row is retried.
+    await cleanup();
+    throw err;
+  }
+  return { file, cleanup };
 }
 
 async function rescanRow(row) {
