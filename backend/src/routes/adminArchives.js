@@ -16,6 +16,7 @@ const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
 const { ALLOWED_MEDIA_TYPES, ALLOWED_VIDEO_TYPES } = require('../utils/fileSecurityUtils');
 const { toIso } = require('../utils/dateNormalize');
+const { clearGuestCredits } = require('../services/photoCredit');
 const router = express.Router();
 
 /**
@@ -608,6 +609,17 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Insert new photos if any
       if (extractedPhotos.length > 0) {
         await db('photos').insert(extractedPhotos);
+        // A guest erased while this restore ran was not in the rows the
+        // erasure cleared; now that they are in, clear them (#1561).
+        const restoredGuestIds = [...new Set(extractedPhotos
+          .map((p) => p.uploader_guest_id).filter((id) => id != null))];
+        if (restoredGuestIds.length > 0) {
+          const erased = await db('gallery_guests')
+            .whereIn('id', restoredGuestIds)
+            .where('is_deleted', formatBoolean(true))
+            .pluck('id');
+          if (erased.length > 0) await clearGuestCredits(erased);
+        }
       }
       
     } catch (extractError) {
