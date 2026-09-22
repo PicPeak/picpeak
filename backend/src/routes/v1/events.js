@@ -1102,7 +1102,7 @@ const zipTooLarge = (res, photoCount, totalBytes) => res.status(400).json({
  *
  *
  *       Every request counts against the general API rate limit (default 300
- *       requests per 15 minutes per client IP, Settings → Security). For bulk
+ *       requests per 15 minutes per client IP, Settings → Security → API rate limiting). For bulk
  *       delivery use this endpoint, or `ids` batches of up to 500, rather than
  *       one single-photo request per photo.
  *     tags: [Photos]
@@ -1363,7 +1363,7 @@ router.get(
  *
  *
  *       Every request counts against the general API rate limit (default 300
- *       requests per 15 minutes per client IP, Settings → Security). To
+ *       requests per 15 minutes per client IP, Settings → Security → API rate limiting). To
  *       deliver a whole event, use the ZIP endpoint (optionally in `ids`
  *       batches) instead of one request per photo.
  *     tags: [Photos]

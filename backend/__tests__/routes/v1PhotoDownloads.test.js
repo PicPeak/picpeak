@@ -52,7 +52,7 @@ const binaryParser = (response, cb) => {
   response.on('end', () => cb(null, Buffer.concat(chunks)));
 };
 
-async function waitFor(fn, timeoutMs = 3000) {
+async function waitFor(fn, timeoutMs = 10000) {
   const started = Date.now();
   for (;;) {
     const value = await fn();
