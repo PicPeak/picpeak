@@ -30,7 +30,7 @@ const PALETTE: WorkflowNodeType[] = ['trigger', 'condition', 'branch', 'loop', '
 const TRIGGERS = [
   'invoice.sent', 'invoice.paid', 'invoice.overdue',
   'quote.sent', 'quote.accepted', 'quote.declined',
-  'contract.sent', 'contract.signed',
+  'contract.sent', 'contract.signed_by_customer', 'contract.signed', 'contract.declined', 'contract.expired',
   'event.date_approaching',
   'gallery.published', 'gallery.expiring', 'gallery.expired', 'gallery.revealed',
   'customer.created',
@@ -50,6 +50,7 @@ const ACTION_LABEL: Record<string, string> = {
   queue_payment_check: 'Send payment-check email', escalate_to_collections: 'Collections handoff', send_email: 'Send email', reserve_date: 'Reserve the date',
   notify_pre_event: 'Send pre-event reminder', notify_gallery_expiring: 'Send gallery-expiring warning', notify_gallery_expired: 'Send gallery-expired email',
   prepare_quote: 'Prepare quote', prepare_contract: 'Prepare contract', prepare_invoice: 'Prepare invoice',
+  prepare_contract_invoice: 'Prepare invoice from contract',
   prepare_event: 'Create event', prepare_gallery: 'Create gallery', send_document: 'Send document',
   webhook: 'Call webhook', noop: 'Do nothing', set_context: 'Set value',
 };

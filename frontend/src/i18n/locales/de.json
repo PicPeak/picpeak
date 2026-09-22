@@ -7697,6 +7697,10 @@
     "crm_contracts_notify_each_signature": {
       "label": "Mich bei jeder einzelnen Unterschrift benachrichtigen (nicht erst, wenn alle unterzeichnet haben)"
     },
+    "crm_contracts_reminder_days": {
+      "label": "Erinnerungen zur Unterzeichnung (Tage nach dem letzten Link)",
+      "help": "Kommagetrennt, z. B. 3,7: eine Erinnerung mit neuem Link 3 Tage nach dem letzten, dann 7 Tage danach. Leer lassen für keine Erinnerungen."
+    },
     "customer_documents_notify_on_share": {
       "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"
     },
@@ -8471,7 +8475,8 @@
           "wet_upload": "Unterschriebenes PDF hochgeladen",
           "revoked": "Links zurückgezogen",
           "viewed": "Vertrag geöffnet",
-          "expired": "Frist zur Unterzeichnung abgelaufen"
+          "expired": "Frist zur Unterzeichnung abgelaufen",
+          "reminded": "Erinnerung gesendet"
         },
         "actor": {
           "admin": "Admin",
@@ -8498,7 +8503,13 @@
         "documentSha": "SHA-256 des unterschriebenen Dokuments"
       },
       "followUpFailed": "Ein Schritt nach der Unterschrift ist fehlgeschlagen",
-      "followUpFailedBody": "Die Unterschrift selbst ist erfasst. Seit {{date}} ist ein Schritt offen: {{error}}. Mit «Signierten Vertrag erneut senden» wird er nochmals ausgeführt, oder Sie senden der nächsten Person ihren Link."
+      "followUpFailedBody": "Die Unterschrift selbst ist erfasst. Seit {{date}} ist ein Schritt offen: {{error}}. Mit «Signierten Vertrag erneut senden» wird er nochmals ausgeführt, oder Sie senden der nächsten Person ihren Link.",
+      "reminded": "Eine Erinnerung mit neuem Link wurde an {{email}} gesendet.",
+      "remindNotDue": "Diese Person kann jetzt nicht erinnert werden: Sie ist noch nicht an der Reihe oder hat bereits geantwortet.",
+      "remindError": "Die Erinnerung konnte nicht gesendet werden. Versuchen Sie es erneut.",
+      "remindedAt": "{{count}}× erinnert, zuletzt {{date}}",
+      "remindConfirm": "{{name}} eine Erinnerung senden? Sie enthält einen neuen Link; der bisherige funktioniert dann nicht mehr.",
+      "remind": "Erinnerung senden"
     },
     "paperUpload": {
       "title": "Unterschriebenen Vertrag hochladen",

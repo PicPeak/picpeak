@@ -9,6 +9,10 @@
  *   engine hears `contract.expired`, and the admin gets one notice. A partly
  *   signed contract expires too — re-sending means a new contract, never
  *   this one coming back.
+ * - Signers who haven't signed get reminders on the steps of
+ *   `crm_contracts_reminder_days` (default "3,7", empty = off): each step is
+ *   that many days after their last link, and goes out through the resend
+ *   path with a new link (signingV2.sendReminder), in signing order.
  * - Codes and signing sessions that ended more than 30 days ago are removed.
  *
  * Several replicas run this at once. The flip is a conditional update on
@@ -24,6 +28,8 @@ const { auditedUpdate } = require('../accountingHistory');
 const signers = require('./signers');
 const signingEvents = require('./signingEvents');
 const { emitContractEvent } = require('./helpers');
+const { getAppSetting } = require('../../utils/appSettings');
+const { toMillis } = require('../../utils/queueTimestamps');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PURGE_AFTER_MS = 30 * DAY_MS;
@@ -87,17 +93,51 @@ async function expireDue(now) {
   return expired;
 }
 
+/** The reminder steps in days, ascending: "3,7" → [3, 7]. Empty = none. */
+async function reminderSteps() {
+  const raw = await getAppSetting('crm_contracts_reminder_days', '3,7');
+  const list = (Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(','))
+    .map((part) => Number(String(part).trim()))
+    .filter((days) => Number.isInteger(days) && days > 0 && days <= 365);
+  return [...new Set(list)].sort((a, b) => a - b).slice(0, 10);
+}
+
+async function remindDue(now) {
+  const steps = await reminderSteps();
+  if (!steps.length) return 0;
+  const signingV2 = require('./signingV2');
+  let sent = 0;
+  const running = await db('contracts').where({ signing_version: 2 }).whereIn('status', RUNNING);
+  for (const contract of running) {
+    const rows = await signers.listSigners(contract.id);
+    // Only whoever may sign now: in a sequential contract, the next signer.
+    for (const row of signers.signersDue(contract, rows).filter((r) => r.status === 'invited')) {
+      const count = Number(row.reminder_count) || 0;
+      if (count >= steps.length) continue;
+      const since = toMillis(row.invited_at);
+      if (since == null || now - since < steps[count] * DAY_MS) continue;
+      try {
+        if ((await signingV2.sendReminder(contract.id, row.id, { expectedCount: count })).reminded) sent += 1;
+      } catch (err) {
+        await signingV2.recordFollowUpFailure(contract.id, 'reminder', err);
+      }
+    }
+  }
+  return sent;
+}
+
 async function runContractSigningSweep(now = Date.now()) {
   const { ensureContractEmailTemplatesSeeded } = require('../contractEmailTemplates');
   await ensureContractEmailTemplatesSeeded(db, logger);
   const expired = await expireDue(now);
+  const reminded = await remindDue(now);
   const purged = await signers.purgeEndedAccess(PURGE_AFTER_MS, now);
-  if (expired || purged.contract_signing_otps || purged.contract_signing_sessions) {
+  if (expired || reminded || purged.contract_signing_otps || purged.contract_signing_sessions) {
     logger.info('Contract signing sweep', {
-      expired, purgedCodes: purged.contract_signing_otps, purgedSessions: purged.contract_signing_sessions,
+      expired, reminded, purgedCodes: purged.contract_signing_otps, purgedSessions: purged.contract_signing_sessions,
     });
   }
-  return { expired, purged };
+  return { expired, reminded, purged };
 }
 
 module.exports = {
@@ -106,4 +146,5 @@ module.exports = {
   stopContractSigningSweep,
   runContractSigningSweep,
   expireContract,
+  reminderSteps,
 };

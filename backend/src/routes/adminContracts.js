@@ -645,6 +645,21 @@ router.post(
   }),
 );
 
+// A reminder for one signer (#1446): a new link in the reminder mail — the
+// same function the hourly reminder ladder uses.
+router.post(
+  '/:id/signers/:signerId/remind',
+  requirePermission('contracts.manage'),
+  [param('id').isInt({ min: 1 }), param('signerId').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const signingV2 = require('../services/contract/signingV2');
+    return successResponse(res, await signingV2.sendReminder(
+      parseInt(req.params.id, 10), parseInt(req.params.signerId, 10), { adminId: req.admin?.id },
+    ));
+  }),
+);
+
 // The encrypted evidence (IP address, user agent, a decline reason),
 // decrypted for a dispute. Every opening is written to the activity log.
 router.get(

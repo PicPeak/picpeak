@@ -153,6 +153,36 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'Ihre Unterschrift zum Vertrag {{contract_number}} wurde am {{signed_at}} erfasst. Sobald alle unterzeichnet haben, erhalten Sie den endgültigen Vertrag und das Prüfprotokoll per E-Mail. Falls Sie ihn nicht unterzeichnet haben, antworten Sie bitte umgehend auf diese E-Mail.',
     },
   },
+  // #1446: a reminder with a new link. Links are stored as hashes, so a
+  // reminder can't re-send the old one — it says so.
+  contract_signature_reminder: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'customer_name', 'response_url', 'title', 'event_name', 'valid_until'],
+    en: {
+      subject: 'Reminder: contract {{contract_number}} is waiting for your signature',
+      body_html: `<h2>Contract {{contract_number}}</h2>
+<p>Dear {{customer_name}},</p>
+<p>contract {{contract_number}}{{#if title}} — "{{title}}"{{/if}} is still waiting for your signature.</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{response_url}}" class="button">Review &amp; sign contract</a>
+</p>
+<p style="font-size: 13px; color: #666;">This is a new link. Links from earlier emails about this contract no longer work.</p>
+{{#if valid_until}}<p style="font-size: 13px; color: #666;">Please sign by {{valid_until}}.</p>{{/if}}`,
+      body_text: 'Contract {{contract_number}} is still waiting for your signature.\n\nOpen: {{response_url}}\n\nThis is a new link; links from earlier emails no longer work.{{#if valid_until}} Please sign by {{valid_until}}.{{/if}}',
+    },
+    de: {
+      subject: 'Erinnerung: Vertrag {{contract_number}} wartet auf Ihre Unterschrift',
+      body_html: `<h2>Vertrag {{contract_number}}</h2>
+<p>Sehr geehrte/r {{customer_name}},</p>
+<p>der Vertrag {{contract_number}}{{#if title}} – „{{title}}"{{/if}} wartet noch auf Ihre Unterschrift.</p>
+<p style="text-align: center; margin: 30px 0;">
+  <a href="{{response_url}}" class="button">Vertrag prüfen &amp; unterzeichnen</a>
+</p>
+<p style="font-size: 13px; color: #666;">Dies ist ein neuer Link. Links aus früheren E-Mails zu diesem Vertrag funktionieren nicht mehr.</p>
+{{#if valid_until}}<p style="font-size: 13px; color: #666;">Bitte unterzeichnen Sie bis {{valid_until}}.</p>{{/if}}`,
+      body_text: 'Der Vertrag {{contract_number}} wartet noch auf Ihre Unterschrift.\n\nÖffnen: {{response_url}}\n\nDies ist ein neuer Link; Links aus früheren E-Mails funktionieren nicht mehr.{{#if valid_until}} Bitte unterzeichnen bis {{valid_until}}.{{/if}}',
+    },
+  },
   // #1446: the time to sign ran out (services/contract/expiry.js).
   contract_expired_admin_notification: {
     category: 'contracts', feature_flag: 'contracts',

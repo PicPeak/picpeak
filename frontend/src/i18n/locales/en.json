@@ -7696,6 +7696,10 @@
     "crm_contracts_notify_each_signature": {
       "label": "Email me every time a signer signs (not only when everyone has)"
     },
+    "crm_contracts_reminder_days": {
+      "label": "Signing reminders (days after the last link)",
+      "help": "Comma-separated, e.g. 3,7: a reminder with a new link 3 days after the last one, then 7 days after that. Leave empty for no reminders."
+    },
     "customer_documents_notify_on_share": {
       "label": "Email the customer when a document is shared with them (default for the checkbox on the customer record)"
     },
@@ -8470,7 +8474,8 @@
           "wet_upload": "Signed PDF uploaded",
           "revoked": "Links withdrawn",
           "viewed": "Contract opened",
-          "expired": "Time to sign ran out"
+          "expired": "Time to sign ran out",
+          "reminded": "Reminder sent"
         },
         "actor": {
           "admin": "Admin",
@@ -8497,7 +8502,13 @@
         "documentSha": "Signed document SHA-256"
       },
       "followUpFailed": "A step after the signature didn't go through",
-      "followUpFailedBody": "The signature itself is on record. Since {{date}} one step is still outstanding: {{error}}. Use \"Re-send the signed contract\" to run it again, or send the next signer their link."
+      "followUpFailedBody": "The signature itself is on record. Since {{date}} one step is still outstanding: {{error}}. Use \"Re-send the signed contract\" to run it again, or send the next signer their link.",
+      "reminded": "A reminder with a new link was sent to {{email}}.",
+      "remindNotDue": "This signer can't be reminded now: it isn't their turn yet, or they have already answered.",
+      "remindError": "The reminder couldn't be sent. Try again.",
+      "remindedAt": "Reminded {{count}}×, last {{date}}",
+      "remindConfirm": "Send {{name}} a reminder? It carries a new link; the previous one stops working.",
+      "remind": "Send reminder"
     },
     "paperUpload": {
       "title": "Upload a signed contract",

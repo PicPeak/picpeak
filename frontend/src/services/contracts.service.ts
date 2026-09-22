@@ -72,6 +72,9 @@ export interface ContractSigner {
   signedAt: string | null;
   declinedAt: string | null;
   signatureMode: 'drawn' | 'typed' | null;
+  /** Reminders sent so far (#1446). */
+  reminderCount?: number;
+  remindedAt?: string | null;
 }
 
 /**
@@ -527,6 +530,12 @@ export const contractsService = {
   /** A new link for one signer; the previous link stops working. */
   async resendSignerLink(id: number, signerId: number): Promise<{ resent: true }> {
     const { data } = await api.post(`/admin/contracts/${id}/signers/${signerId}/resend`);
+    return data.data || data;
+  },
+
+  /** A reminder with a new link (#1446) — the same path the reminder ladder takes. */
+  async remindSigner(id: number, signerId: number): Promise<{ reminded: true; step: number }> {
+    const { data } = await api.post(`/admin/contracts/${id}/signers/${signerId}/remind`);
     return data.data || data;
   },
 

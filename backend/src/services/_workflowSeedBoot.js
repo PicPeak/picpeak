@@ -207,6 +207,27 @@ function buildGalleryExpiredGraph() {
   return { nodes, edges };
 }
 
+// Contract completed (#1446) → an admin approves → draft invoice(s). The
+// gate stands in front of the only action, so nothing is created — let alone
+// sent — without an explicit OK, and the invoices wait on hold for the
+// admin to send them.
+function buildContractInvoiceGraph() {
+  const nodes = [
+    { node_key: 't', type: 'trigger', config: {}, pos_x: 320, pos_y: 0 },
+    { node_key: 'approve', type: 'gate', config: { label: 'Prepare the (deposit) invoice for this contract?' }, pos_x: 320, pos_y: 110 },
+    { node_key: 'prepInvoice', type: 'action', config: { action: 'prepare_contract_invoice' }, pos_x: 320, pos_y: 220 },
+    { node_key: 'done', type: 'action', config: { action: 'noop' }, pos_x: 320, pos_y: 330 },
+    { node_key: 'skip', type: 'action', config: { action: 'noop' }, pos_x: 620, pos_y: 110 },
+  ];
+  const edges = [
+    { from_node: 't', to_node: 'approve' },
+    { from_node: 'approve', from_handle: 'confirm', to_node: 'prepInvoice' },
+    { from_node: 'approve', from_handle: 'deny', to_node: 'skip' },
+    { from_node: 'prepInvoice', to_node: 'done' },
+  ];
+  return { nodes, edges };
+}
+
 // Built-in registry. `version` is the SEED_VERSION — bump when a graph changes
 // (or to re-assert the default `enabled` state) so a never-admin-touched copy is
 // re-seeded on boot. `enabled` is the seed default.
@@ -332,6 +353,19 @@ const BUILTINS = [
       + 'this flow per quote via the booking-workflow selector. Same review-before-send rule and '
       + 'stub caveat as the other booking flows; disabled by default.',
     build: async () => buildBookingInvoiceOnlyGraph(),
+  },
+  {
+    key: 'contract_completed_invoice',
+    version: 1,
+    enabled: false,
+    name: 'Contract completed → approval → draft invoice (built-in)',
+    trigger_type: 'contract.signed',
+    trigger_config: {},
+    description:
+      'When a contract is fully signed, ask the admin whether to prepare its (deposit) invoice. '
+      + 'On approval the invoice is created as a draft on hold — nothing is sent until the admin '
+      + 'sends it. A failed step shows on the run and on the contract. Disabled by default.',
+    build: async () => buildContractInvoiceGraph(),
   },
 ];
 

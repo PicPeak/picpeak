@@ -66,6 +66,9 @@ function signerToApi(row) {
     signedAt: row.signed_at || null,
     declinedAt: row.declined_at || null,
     signatureMode: row.signature_mode || null,
+    // Reminders sent so far (#1446), and when the last one went out.
+    reminderCount: Number(row.reminder_count) || 0,
+    remindedAt: row.reminded_at || null,
   };
 }
 

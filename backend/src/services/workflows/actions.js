@@ -334,6 +334,38 @@ registry.registerAction('prepare_invoice', async (ctx) => {
   return { invoice_prepared: invoiceIds };
 });
 
+// Prepare DRAFT invoice(s) from a COMPLETED contract (#1446) — the post-sign
+// step of the built-in "Contract completed" flow, which puts an admin
+// approval gate in front of it. Refuses anything but a fully signed contract
+// (convertToInvoiceOnly does), creates the invoices on hold, and adopts the
+// ones an earlier run made instead of making them twice. A failure is on the
+// run AND on the contract (recordFollowUpFailure), where the admin looks.
+registry.registerAction('prepare_contract_invoice', async (ctx) => {
+  const contractId = ctx.run.entity_id;
+  if (ctx.run.entity_type !== 'contract' || !contractId) {
+    return { skipped: true, reason: 'prepare_contract_invoice needs a contract entity' };
+  }
+  if (ctx.vars?.__dryRun) return { dryRun: true, would: 'prepare_contract_invoice', contractId };
+  if (Array.isArray(ctx.vars.preparedInvoiceIds) && ctx.vars.preparedInvoiceIds.length) {
+    return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
+  }
+  const existing = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
+  if (existing.length) {
+    ctx.vars.preparedInvoiceIds = existing.map((r) => r.id);
+    return { already: true, invoiceIds: ctx.vars.preparedInvoiceIds };
+  }
+  try {
+    const adminId = await resolveActor(ctx);
+    await require('../contract/conversions').convertToInvoiceOnly(contractId, adminId, { draft: true });
+  } catch (err) {
+    await require('../contract/signingV2').recordFollowUpFailure(contractId, 'prepare_contract_invoice', err);
+    throw err;
+  }
+  const created = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
+  ctx.vars.preparedInvoiceIds = created.map((r) => r.id);
+  return { invoice_prepared: ctx.vars.preparedInvoiceIds };
+});
+
 // Send a prepared draft document (config.document = 'invoice' | 'contract').
 registry.registerAction('send_document', async (ctx) => {
   const doc = ctx.node.config?.document || 'invoice';

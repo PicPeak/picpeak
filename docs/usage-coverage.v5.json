@@ -406,6 +406,7 @@
         "GET /:id/signers",
         "PUT /:id/signers",
         "POST /:id/signers/:signerId/resend",
+        "POST /:id/signers/:signerId/remind",
         "GET /:id/signing-evidence",
         "POST /:id/countersign",
         "POST /:id/upload-signed-pdf",

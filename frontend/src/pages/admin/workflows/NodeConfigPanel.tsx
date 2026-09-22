@@ -35,6 +35,7 @@ const ACTIONS = [
   ['prepare_quote', 'Prepare a quote (draft)'],
   ['prepare_contract', 'Prepare a contract (draft)'],
   ['prepare_invoice', 'Prepare an invoice (draft)'],
+  ['prepare_contract_invoice', 'Prepare an invoice from a completed contract (draft)'],
   ['prepare_event', 'Create an event (draft)'],
   ['prepare_gallery', 'Create a gallery (draft)'],
   ['send_document', 'Send the document'],

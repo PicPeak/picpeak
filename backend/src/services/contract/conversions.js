@@ -306,7 +306,13 @@ async function convertToEvent(contractId, adminId) {
  * Convert a fully-signed contract directly into invoice(s) without
  * creating an event row. Same delegation pattern as convertToEvent.
  */
-async function convertToInvoiceOnly(contractId, adminId) {
+/**
+ * `options.draft` (#1446, the workflow action `prepare_contract_invoice`):
+ * the invoices are created on hold — no send is scheduled — so nothing goes
+ * to the customer until an admin sends it. The standalone path's empty
+ * invoice has no send date either way.
+ */
+async function convertToInvoiceOnly(contractId, adminId, options = {}) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
   if (contract.status !== 'fully_signed') {
@@ -325,7 +331,9 @@ async function convertToInvoiceOnly(contractId, adminId) {
   // payment plan via quoteService (full installment schedule).
   if (contract.source_quote_id) {
     const quoteService = require('../quoteService');
-    const result = await quoteService.convertToInvoiceOnly(contract.source_quote_id, adminId, { fromContract: true });
+    const result = await quoteService.convertToInvoiceOnly(contract.source_quote_id, adminId, {
+      fromContract: true, ...(options.draft === true ? { draft: true } : {}),
+    });
     if (hasInvoiceContractBackPointer) {
       await auditedUpdate(db, 'invoices',
         (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),

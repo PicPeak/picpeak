@@ -69,6 +69,9 @@ const SETTING_KEYS = [
   // Signatures (#1446): an admin notice for every signature, not only once
   // every customer has signed. Default on.
   'crm_contracts_notify_each_signature',
+  // Reminder ladder for unsigned signers (#1446): days after the last link,
+  // comma-separated. Default "3,7"; empty = off.
+  'crm_contracts_reminder_days',
   // Dashboard CRM-overview tile visibility (per-tile). Default ON;
   // explicit false hides the tile. Stored as one boolean per tile so
   // admins can mix-and-match — e.g. someone who only bills hourly
@@ -504,6 +507,17 @@ export const CrmSettingsPage: React.FC = () => {
             label={t('crmSettings.crm_contracts_default_valid_days.label', 'Signing window (days)') as string}
             value={values.crm_contracts_default_valid_days ?? 30}
             onChange={(e) => setVal('crm_contracts_default_valid_days', Number(e.target.value))} />
+          <div>
+            <Input
+              label={t('crmSettings.crm_contracts_reminder_days.label', 'Signing reminders (days after the last link)') as string}
+              value={values.crm_contracts_reminder_days ?? '3,7'}
+              onChange={(e) => setVal('crm_contracts_reminder_days', e.target.value)}
+              placeholder="3,7"
+            />
+            <p className="text-xs text-neutral-500 mt-1">
+              {t('crmSettings.crm_contracts_reminder_days.help', 'Comma-separated, e.g. 3,7: a reminder with a new link 3 days after the last one, then 7 days after that. Leave empty for no reminders.')}
+            </p>
+          </div>
           <Input
             label={t('crmSettings.crm_contracts_number_format.label', 'Contract number format') as string}
             value={values.crm_contracts_number_format ?? ''}

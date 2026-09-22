@@ -275,9 +275,9 @@ async function invitationAttachments(contract) {
   return list.length ? list : undefined;
 }
 
-async function sendInvitation(contract, row, token) {
+async function sendInvitation(contract, row, token, template = 'contract_sent') {
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';
-  await emailProcessor.queueEmail(null, signerEmail(row), 'contract_sent', {
+  await emailProcessor.queueEmail(null, signerEmail(row), template, {
     contract_number: contract.contract_number,
     customer_name: signerName(row),
     response_url: `${frontendUrl}/contract/${token}`,
@@ -401,8 +401,12 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
   return inviteDue(contractId, actor);
 }
 
-/** A new link for one signer (the old one stops working). */
-async function resendInvitation(contractId, signerId, adminId) {
+/**
+ * A new link for one signer; the old one and its sessions stop working. The
+ * admin's resend and a reminder both come through here — links are stored
+ * as hashes only, so the one already sent can never be sent again.
+ */
+async function reissueInvitation(contractId, signerId, { actor, event, payload = {}, template = 'contract_sent' }) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
   if (!isV2(contract) || contract.status !== 'sent') {
@@ -414,21 +418,74 @@ async function resendInvitation(contractId, signerId, adminId) {
   if (!signers.signersDue(contract, rows).some((r) => r.id === row.id)) {
     throw new AppError('This signer can\'t sign yet, or has already signed', 409, 'SIGNER_NOT_DUE');
   }
-  const actor = await adminActor(adminId);
   const token = await db.transaction(async (trx) => {
+    // Re-checked under the lock: an expiry or a decline committing since the
+    // read above must not get a fresh link, nor an event past its seal.
+    const current = await trx('contracts').where({ id: contractId }).forUpdate().first('status');
+    if (!current || current.status !== 'sent') {
+      throw new AppError('Links can only be sent again while the contract is out for signature', 409, 'CONTRACT_NOT_SIGNABLE');
+    }
     const created = await signers.createInvitation(trx, row.id, invitationExpiry(contract));
     await signingEvents.appendEvent(trx, contractId, {
-      type: 'invitation_resent', actorType: 'admin', actorLabel: actor.name || null, signerId: row.id,
+      type: event,
+      actorType: actor.type === 'admin' ? 'admin' : 'system',
+      actorLabel: actor.name || null,
+      signerId: row.id,
+      payload,
     });
     return created;
   });
   try {
-    await sendInvitation(contract, row, token);
+    await sendInvitation(contract, row, token, template);
   } catch (err) {
     await signers.undoInvitation(row.id);
     throw err;
   }
+}
+
+/** A new link for one signer (the old one stops working). */
+async function resendInvitation(contractId, signerId, adminId) {
+  const actor = await adminActor(adminId);
+  await reissueInvitation(contractId, signerId, { actor: { ...actor, type: 'admin' }, event: 'invitation_resent' });
   return { resent: true };
+}
+
+/**
+ * Remind a signer who hasn't signed yet (#1446): a new link in the reminder
+ * mail, which says the earlier links no longer work. The hourly sweep sends
+ * the steps of `crm_contracts_reminder_days`; the admin's "Send reminder"
+ * comes through here too.
+ *
+ * `reminder_count` is the claim. It moves from the count the caller saw to
+ * the next one only while the signer is still `invited`; the run that
+ * didn't change the row sends nothing, so two replicas can't both send a
+ * step. If the reminder then fails, the claim is handed back.
+ */
+async function sendReminder(contractId, signerId, { adminId = null, expectedCount = null } = {}) {
+  const row = await db('contract_signers').where({ id: Number(signerId), contract_id: contractId }).first();
+  if (!row || row.role !== 'customer') throw new AppError('Signer not found', 404, 'SIGNER_NOT_FOUND');
+  const count = expectedCount == null ? (Number(row.reminder_count) || 0) : expectedCount;
+  const claimed = await db('contract_signers')
+    .where({ id: row.id, status: 'invited', reminder_count: count })
+    .update({ reminder_count: count + 1, reminded_at: new Date().toISOString() });
+  if (!claimed) {
+    if (expectedCount != null) return { reminded: false };
+    throw new AppError('This signer can\'t be reminded now: they haven\'t been invited yet, or have already answered.', 409, 'SIGNER_NOT_DUE');
+  }
+  const actor = adminId ? { ...(await adminActor(adminId)), type: 'admin' } : { type: 'system', name: null };
+  try {
+    await reissueInvitation(contractId, row.id, {
+      actor,
+      event: 'reminded',
+      payload: { step: count + 1, ...(adminId ? { manual: true } : {}) },
+      template: 'contract_signature_reminder',
+    });
+  } catch (err) {
+    await db('contract_signers').where({ id: row.id, reminder_count: count + 1 })
+      .update({ reminder_count: count, reminded_at: row.reminded_at || null });
+    throw err;
+  }
+  return { reminded: true, step: count + 1 };
 }
 
 /** Cancelling a v2 contract withdraws every link and session. */
@@ -866,6 +923,9 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
     });
   });
   if (!followUpFailed) await clearFollowUpFailure(contract.id);
+  // Every customer has signed: the workflow engine hears it once (its
+  // dedup key carries the trigger and the contract id).
+  if (outcome.customersDone) await emitContractEvent(contract, 'signed_by_customer');
   await bestEffortLog('contract_signed_by_customer', { contractId: contract.id, signerId: signer.id }, customerPublicActor());
   return { status: outcome.customersDone ? 'signed_by_customer' : 'sent', signedAt };
 }
@@ -897,6 +957,7 @@ async function decline(sessionToken, { reason } = {}) {
     reason: text,
     admin_dashboard_url: await adminDashboardUrl(contract.id),
   });
+  await emitContractEvent(contract, 'declined');
   await bestEffortLog('contract_declined', { contractId: contract.id, signerId: signer.id }, customerPublicActor());
   return { status: 'declined' };
 }
@@ -1288,6 +1349,7 @@ module.exports = {
   completeSend,
   inviteDue,
   resendInvitation,
+  sendReminder,
   revokeOnCancel,
   invitationSummary,
   requestCode,

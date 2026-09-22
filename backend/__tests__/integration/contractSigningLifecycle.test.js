@@ -658,3 +658,183 @@ describe('notices', () => {
     expect(contract.follow_up_error).toMatch(/^signature_receipt:/);
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 7 — reminders, workflow triggers, gated post-sign automation
+// ---------------------------------------------------------------------
+
+describe('reminders', () => {
+  const reminders = (to) => db('email_queue').where({ email_type: 'contract_signature_reminder', recipient_email: to });
+  const backdateInvite = (signerId, days) => db('contract_signers').where({ id: signerId }).update({ invited_at: daysAgo(days) });
+
+  test('each ladder step goes out once, however many replicas run, with a new link', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await sendContract(id);
+    const firstLink = linkToken(await lastMail('contract_sent', customerEmail));
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    const before = (await reminders(customerEmail)).length;
+
+    // Two days in: not yet.
+    await backdateInvite(signer.id, 2);
+    await runContractSigningSweep();
+    expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' })).toHaveLength(0);
+
+    // Four days in: step one, once.
+    await backdateInvite(signer.id, 4);
+    await Promise.all([runContractSigningSweep(), runContractSigningSweep()]);
+    let events = await db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' }).orderBy('seq');
+    expect(events.map((e) => parsed(e.payload).step)).toEqual([1]);
+    expect(Number((await db('contract_signers').where({ id: signer.id }).first()).reminder_count)).toBe(1);
+    expect((await reminders(customerEmail)).length).toBe(before + 1);
+    // The earlier link no longer works; the reminder's does.
+    expect((await asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${firstLink}`))).status).toBe(410);
+    const reminderLink = linkToken(await lastMail('contract_signature_reminder', customerEmail));
+    await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${reminderLink}`)));
+
+    // Seven days after that reminder: step two. Then the ladder is done.
+    await backdateInvite(signer.id, 8);
+    await Promise.all([runContractSigningSweep(), runContractSigningSweep()]);
+    await backdateInvite(signer.id, 40);
+    await runContractSigningSweep();
+    events = await db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' }).orderBy('seq');
+    expect(events.map((e) => parsed(e.payload).step)).toEqual([1, 2]);
+    expect((await reminders(customerEmail)).length).toBe(before + 2);
+    expect((await require('../../src/services/contract/signingEvents').verifyChain(id)).ok).toBe(true);
+  });
+
+  test('in signing order: the second signer is not reminded while the first is due', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await twoSigners(id, 'sequential');
+    await sendContract(id);
+    const [first, second] = await db('contract_signers').where({ contract_id: id, role: 'customer' }).orderBy('position');
+    // Even with an invitation on record, the second signer isn't due yet.
+    await db('contract_signers').where({ id: second.id }).update({ status: 'invited', invited_at: daysAgo(10) });
+    await backdateInvite(first.id, 4);
+    await runContractSigningSweep();
+    const events = await db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' });
+    expect(events.map((e) => Number(e.signer_id))).toEqual([first.id]);
+  });
+
+  test('nobody is reminded once the contract is declined or expired', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const declinedId = await newContract();
+    await sendContract(declinedId);
+    const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/decline')).set('X-Signing-Session', session).send({}));
+    const signer = await db('contract_signers').where({ contract_id: declinedId, role: 'customer' }).first();
+    await backdateInvite(signer.id, 5);
+    await runContractSigningSweep();
+    expect(await db('contract_signing_events').where({ contract_id: declinedId, event_type: 'reminded' })).toHaveLength(0);
+  });
+
+  test('the admin\'s "Send reminder" uses the same path, and is refused for a signer who signed', async () => {
+    const { id, session } = await sentWithSession();
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    const res = await ok(request(contractsApp).post(`/api/admin/contracts/${id}/signers/${signer.id}/remind`).set(auth));
+    expect(res).toEqual({ reminded: true, step: 1 });
+    const event = await db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' }).first();
+    expect(parsed(event.payload)).toEqual({ step: 1, manual: true });
+    expect(event.actor_type).toBe('admin');
+    // The reminder replaced the session's link too.
+    expect((await asSigner(request(signingApp).get('/api/public/contract-signing/session')).set('X-Signing-Session', session)).status).toBe(401);
+
+    const fresh = await verifiedSession(linkToken(await lastMail('contract_signature_reminder', customerEmail)), customerEmail);
+    await ok(sign(fresh, { name: 'Anna Muster', mode: 'typed' }));
+    const refused = await request(contractsApp).post(`/api/admin/contracts/${id}/signers/${signer.id}/remind`).set(auth);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('SIGNER_NOT_DUE');
+  });
+
+  test('reminders can be switched off', async () => {
+    const { reminderSteps } = require('../../src/services/contract/expiry');
+    expect(await reminderSteps()).toEqual([3, 7]);
+    await setSetting('crm_contracts_reminder_days', '');
+    expect(await reminderSteps()).toEqual([]);
+    await setSetting('crm_contracts_reminder_days', '10, 2,x,2');
+    expect(await reminderSteps()).toEqual([2, 10]);
+    await setSetting('crm_contracts_reminder_days', '3,7');
+  });
+});
+
+describe('workflow triggers and the gated invoice step', () => {
+  async function flowFor(triggerType) {
+    const [row] = await db('workflows').insert({
+      name: `on ${triggerType}`, enabled: true, version: 1, trigger_type: triggerType, trigger_config: '{}',
+    }).returning('id');
+    const workflowId = typeof row === 'object' ? row.id : row;
+    await db('workflow_nodes').insert({ workflow_id: workflowId, version: 1, node_key: 't', type: 'trigger', config: '{}', pos_x: 0, pos_y: 0 });
+    return workflowId;
+  }
+  const runsOf = (workflowId) => db('workflow_runs').where({ workflow_id: workflowId });
+
+  test('signed_by_customer, declined and expired each start a flow once', async () => {
+    await setFlag('workflows', true);
+    try {
+      const onSigned = await flowFor('contract.signed_by_customer');
+      const onDeclined = await flowFor('contract.declined');
+      const onExpired = await flowFor('contract.expired');
+
+      const { id: signedId, session } = await sentWithSession();
+      await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+      const { emitContractEvent } = require('../../src/services/contract/helpers');
+      await emitContractEvent(await db('contracts').where({ id: signedId }).first(), 'signed_by_customer');
+      expect((await runsOf(onSigned)).map((r) => Number(r.entity_id))).toEqual([signedId]);
+
+      const { id: declinedId, session: declineSession } = await sentWithSession();
+      await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/decline')).set('X-Signing-Session', declineSession).send({}));
+      expect((await runsOf(onDeclined)).map((r) => Number(r.entity_id))).toEqual([declinedId]);
+
+      const expiredId = await newContract();
+      await sendContract(expiredId);
+      await db('contracts').where({ id: expiredId }).update({ valid_until: dateOnly(daysAgo(30)) });
+      const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+      await Promise.all([runContractSigningSweep(), runContractSigningSweep()]);
+      expect((await runsOf(onExpired)).map((r) => Number(r.entity_id))).toEqual([expiredId]);
+    } finally {
+      await db('workflows').whereIn('trigger_type', ['contract.signed_by_customer', 'contract.declined', 'contract.expired']).update({ enabled: false });
+      await setFlag('workflows', false);
+    }
+  });
+
+  test('prepare_contract_invoice refuses an unfinished contract, dry-runs without writing, and drafts on hold', async () => {
+    const { registry } = require('../../src/services/workflows');
+    const action = registry.getAction('prepare_contract_invoice');
+    const ctxFor = (contractId, vars = {}) => ({ run: { entity_type: 'contract', entity_id: contractId, workflow_id: null }, vars, db, node: { config: {} } });
+
+    const { id, session } = await sentWithSession();
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+    await expect(action(ctxFor(id))).rejects.toMatchObject({ code: 'CONTRACT_NOT_FULLY_SIGNED' });
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toMatch(/^prepare_contract_invoice:/);
+    expect(await db('invoices').where({ source_contract_id: id })).toHaveLength(0);
+
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+    expect(await action(ctxFor(id, { __dryRun: true }))).toEqual({ dryRun: true, would: 'prepare_contract_invoice', contractId: id });
+    expect(await db('invoices').where({ source_contract_id: id })).toHaveLength(0);
+
+    const first = await action(ctxFor(id));
+    const invoices = await db('invoices').where({ source_contract_id: id });
+    expect(invoices).toHaveLength(1);
+    expect(first.invoice_prepared).toEqual([invoices[0].id]);
+    expect(invoices[0].scheduled_send_at).toBeNull();
+    // A re-run adopts it rather than drafting a second one.
+    expect(await action(ctxFor(id))).toEqual({ already: true, invoiceIds: [invoices[0].id] });
+    expect(await db('invoices').where({ source_contract_id: id })).toHaveLength(1);
+  });
+
+  test('the built-in "contract completed" flow ships disabled, with the approval in front of the action', async () => {
+    const seed = require('../../src/services/_workflowSeedBoot');
+    seed._resetBootForTests();
+    await seed.seedBuiltinWorkflowsAtBoot(db, { info: () => {}, warn: () => {} });
+    const wf = await db('workflows').where({ builtin_key: 'contract_completed_invoice' }).first();
+    expect(wf.trigger_type).toBe('contract.signed');
+    expect(!!wf.enabled).toBe(false);
+    const edges = await db('workflow_edges').where({ workflow_id: wf.id, version: wf.version });
+    const nodes = await db('workflow_nodes').where({ workflow_id: wf.id, version: wf.version });
+    const typeOf = (key) => nodes.find((n) => n.node_key === key).type;
+    const intoAction = edges.find((e) => nodes.find((n) => n.node_key === e.to_node && parsed(n.config).action === 'prepare_contract_invoice'));
+    expect(typeOf(intoAction.from_node)).toBe('gate');
+    expect(intoAction.from_handle).toBe('confirm');
+  });
+});

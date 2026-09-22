@@ -12,7 +12,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Send, ShieldCheck, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, BellRing, CheckCircle2, Eye, EyeOff, Send, ShieldCheck, Users, XCircle } from 'lucide-react';
 import { Button, Card } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -56,6 +56,22 @@ export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contra
         return t('contracts.signers.resendNotSignable', 'Links can only be sent again while the contract is out for signature.') as string;
       }
       return t('contracts.signers.resendError', 'The link couldn\'t be sent again. Try again.') as string;
+    },
+  });
+
+  const remindMutation = useMutationWithToast({
+    mutationFn: (signer: ContractSigner) => contractsService.remindSigner(contractId, signer.id),
+    successMessage: (_data, signer) => t('contracts.signers.reminded', 'A reminder with a new link was sent to {{email}}.', { email: signer.email || '' }) as string,
+    invalidateKeys: [['contract-signers', contractId]],
+    errorMessage: (err: unknown) => {
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      if (code === 'SIGNER_NOT_DUE') {
+        return t('contracts.signers.remindNotDue', 'This signer can\'t be reminded now: it isn\'t their turn yet, or they have already answered.') as string;
+      }
+      if (code === 'CONTRACT_NOT_SIGNABLE') {
+        return t('contracts.signers.resendNotSignable', 'Links can only be sent again while the contract is out for signature.') as string;
+      }
+      return t('contracts.signers.remindError', 'The reminder couldn\'t be sent. Try again.') as string;
     },
   });
 
@@ -145,6 +161,9 @@ export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contra
                       s.signatureMode === 'drawn' ? t('contracts.signers.mode.drawn', 'Drawn signature') : null,
                       s.signatureMode === 'typed' ? t('contracts.signers.mode.typed', 'Typed name') : null,
                       s.declinedAt ? t('contracts.signers.declinedAt', 'Declined {{date}}', { date: formatDateTime(s.declinedAt) }) : null,
+                      s.reminderCount && s.remindedAt
+                        ? t('contracts.signers.remindedAt', 'Reminded {{count}}×, last {{date}}', { count: s.reminderCount, date: formatDateTime(s.remindedAt) })
+                        : null,
                     ].filter(Boolean).join(' · ')}
                   </p>
                 </div>
@@ -165,6 +184,19 @@ export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contra
                     >
                       <Send className="w-4 h-4 mr-1" />
                       {t('contracts.signers.resend', 'Send the link again')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={remindMutation.isPending}
+                      onClick={() => {
+                        if (window.confirm(t('contracts.signers.remindConfirm', 'Send {{name}} a reminder? It carries a new link; the previous one stops working.', { name: s.name || s.email || '' }) as string)) {
+                          remindMutation.mutate(s);
+                        }
+                      }}
+                    >
+                      <BellRing className="w-4 h-4 mr-1" />
+                      {t('contracts.signers.remind', 'Send reminder')}
                     </Button>
                   </PermissionGate>
                 )}
