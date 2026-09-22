@@ -213,7 +213,12 @@ async function runSignalFlush() {
   const { ensureContractEmailTemplatesSeeded } = require('../contractEmailTemplates');
   await ensureContractEmailTemplatesSeeded(db, logger);
   await flush();
-  await checkThresholds();
+  // A flush early in the hour writes the tail of the previous one (counts
+  // gathered after its last flush, or a batch kept after a failed one);
+  // the alert rows' unique claim keeps a second check from alerting twice.
+  const now = Date.now();
+  await checkThresholds(hourOf(now - 60 * 60 * 1000));
+  await checkThresholds(hourOf(now));
   await purgeOld();
 }
 

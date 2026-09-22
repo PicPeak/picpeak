@@ -224,6 +224,16 @@ describe('the manifest is bound into the signature', () => {
     expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('invited');
   });
 
+  test('a snapshot lost after send is refused, not signed as a contract without declarations', async () => {
+    const { id, session } = await sentWithSession();
+    await db('contracts').where({ id }).update({ rendered_content: null });
+
+    const res = await sign(session, { name: 'Anna Muster', mode: 'typed', consents: undefined, accepted: true });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CONTRACT_CHANGED');
+    expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('invited');
+  });
+
   test('editing the source quote after send changes nothing a signer signs', async () => {
     // Guard: 1445's snapshot format 2 already froze the price, so this passes
     // without slice 3. It pins that the binding covers the price.
@@ -1049,6 +1059,22 @@ describe('enumeration and replay signals', () => {
     }
   });
 
+  test('counts flushed into the previous hour are still checked', async () => {
+    const { hourOf } = signals()._internal;
+    const lastHour = hourOf(Date.now() - 60 * 60 * 1000);
+    await setSetting('crm_contracts_alert_otp_failures_per_contract', 2);
+    try {
+      const contractId = await newContract();
+      await db('contract_signing_signals').insert({
+        hour: lastHour, kind: 'otp_failure', contract_id: contractId, ip_hash: null, count: 5, created_at: new Date().toISOString(),
+      });
+      await signals().runSignalFlush();
+      expect(await db('contract_signing_alerts').where({ hour: lastHour, kind: 'otp_failure' })).toHaveLength(1);
+    } finally {
+      await setSetting('crm_contracts_alert_otp_failures_per_contract', 10);
+    }
+  });
+
   test('with "store IP" off, the overall threshold still alerts', async () => {
     await setSetting('crm_contracts_store_ip', false);
     await setSetting('crm_contracts_alert_unknown_tokens_per_hour', 4);
@@ -1307,11 +1333,38 @@ describe('collect-then-freeze', () => {
     // then finishes the send: the contract is frozen with the correction.
     const customersApp = buildRouteApp('/api/admin/customers', require('../../src/routes/adminCustomers'));
     await ok(request(customersApp).put(`/api/admin/customers/${customerId}`).set(auth).send({ city: 'Winterthur' }));
+    const mailsBefore = (await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length;
     await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
     const sent = await db('contracts').where({ id }).first();
     expect(sent.status).toBe('sent');
     expect(sent.follow_up_failed_at).toBeNull();
     expect(parsed(sent.rendered_content).placeholders.customer_address).toContain('Winterthur');
+    // The customer was told to wait for an email: it comes, with a link to the contract.
+    expect((await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length)
+      .toBe(mailsBefore + 1);
+    const fresh = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    expect((await sessionView(fresh)).status).toBe('sent');
+  });
+
+  test('a co-signer\'s invitation failing after the freeze committed is not a failed freeze', async () => {
+    const id = await requested();
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockImplementation((...args) => (
+      args[1] === 'ben@example.com' ? Promise.reject(new Error('queue down')) : real(...args)
+    ));
+    let res;
+    try {
+      res = await ok(details(session, ADDRESS));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res).toEqual({ status: 'sent', frozen: true });
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('sent');
+    expect(contract.follow_up_error).toMatch(/^invitation:/);
+    expect((await sessionView(session)).status).toBe('sent');
   });
 
   test('only the account holder as first signer can be asked for details, and the clock runs', async () => {
@@ -1420,6 +1473,34 @@ describe('reminders, second pass', () => {
     expect(contract.follow_up_failed_at).toBeNull();
     // A live link again.
     await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${linkToken(await lastMail('contract_sent', customerEmail))}`)));
+  });
+
+  test('two sweeps retrying the same pending signer send one invitation', async () => {
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const id = await newContract();
+    await sendContract(id);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await require('../../src/services/contract/signers').undoInvitation(signer.id);
+    const before = (await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length;
+    const counts = await Promise.all([signingV2.inviteDue(id), signingV2.inviteDue(id)]);
+    expect(counts.sort()).toEqual([0, 1]);
+    expect((await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length).toBe(before + 1);
+    // The one link mailed is the one that works.
+    await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${linkToken(await lastMail('contract_sent', customerEmail))}`)));
+  });
+
+  test('a signer whose address can\'t be read keeps the failure on the contract through every sweep', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await sendContract(id);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await require('../../src/services/contract/signers').undoInvitation(signer.id);
+    await db('contract_signers').where({ id: signer.id }).update({ email_enc: 'v1:deadbeef:AAAA.AAAA.AAAA' });
+    await runContractSigningSweep();
+    await runContractSigningSweep();
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.follow_up_error).toMatch(/^invitation:/);
+    expect((await db('contract_signers').where({ id: signer.id }).first()).status).toBe('pending');
   });
 
   test('a contract frozen after its details came in starts its ladder at the freeze', async () => {

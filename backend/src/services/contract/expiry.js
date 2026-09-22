@@ -117,7 +117,12 @@ async function remindDue(now) {
     if (due.some((r) => r.status === 'pending')) {
       try {
         await signingV2.inviteDue(contract.id);
-        await signingV2.clearFollowUpFailure(contract.id, { steps: ['invitation', 'next_invitation', 'reminder'] });
+        // inviteDue records an unreadable address and carries on; the marker
+        // goes only once nobody who may sign is left without a link.
+        const after = signingV2.dueSigners(contract, await signers.listSigners(contract.id));
+        if (!after.some((r) => r.status === 'pending')) {
+          await signingV2.clearFollowUpFailure(contract.id, { steps: ['invitation', 'next_invitation', 'reminder'] });
+        }
       } catch (err) {
         await signingV2.recordFollowUpFailure(contract.id, 'invitation', err);
       }

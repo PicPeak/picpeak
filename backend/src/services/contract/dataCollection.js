@@ -216,6 +216,15 @@ async function freeze(contractId, adminId) {
     await signingV2.clearFollowUpFailure(contractId, { steps: ['data_freeze'] });
     return { status: 'sent', frozen: true };
   } catch (err) {
+    // The send commits before it invites anyone: a failed invitation after
+    // that is not a failed freeze. The contract is out, the signer's session
+    // opens it, and the hourly sweep invites whoever is still pending.
+    const current = await db('contracts').where({ id: contractId }).first('status');
+    if (current && current.status !== 'awaiting_data') {
+      await signingV2.clearFollowUpFailure(contractId, { steps: ['data_freeze'] });
+      await signingV2.recordFollowUpFailure(contractId, 'invitation', err);
+      return { status: current.status, frozen: true };
+    }
     await signingV2.recordFollowUpFailure(contractId, 'data_freeze', err);
     return { status: 'awaiting_data', frozen: false };
   }

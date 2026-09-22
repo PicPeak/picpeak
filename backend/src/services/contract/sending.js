@@ -169,6 +169,21 @@ async function sendContract(id, adminId, { reviewToken = null, collectData = fal
 
   // A freeze that failed after the customer's details came in is done now.
   if (fromStatus === 'awaiting_data') await signingV2.clearFollowUpFailure(id, { steps: ['data_freeze'] });
+  // The admin finishing that failed freeze: the first signer was told to
+  // wait for an email, and still holds only the details link — they get a
+  // new one to the contract now. (The customer's own submission freezes
+  // with them on the page; their session opens the contract.)
+  if (fromStatus === 'awaiting_data' && adminId) {
+    const firsts = (await require('./signers').listSigners(id))
+      .filter((row) => row.role === 'customer' && Number(row.position) === 1 && row.status === 'invited');
+    for (const row of firsts) {
+      try {
+        await signingV2.resendInvitation(id, row.id, adminId);
+      } catch (err) {
+        await signingV2.recordFollowUpFailure(id, 'invitation', err);
+      }
+    }
+  }
 
   try {
     await logActivity('contract_sent', { contractId: id, signersInvited: invited }, null, await adminActor(adminId));

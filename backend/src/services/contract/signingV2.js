@@ -141,9 +141,11 @@ function assertUnchangedSinceSend(contract, manifest) {
     'This contract changed after it was sent, so it can\'t be signed. Please contact the sender.',
     409, 'CONTRACT_CHANGED',
   );
-  if (contract.rendered_content && contract.rendered_content_sha256 && !contract.rendered_content_redacted_at) {
+  if (contract.rendered_content_sha256 && !contract.rendered_content_redacted_at) {
+    // A hash with no snapshot is a lost snapshot, not a legacy contract: it
+    // would otherwise sign without the declarations frozen into it.
     const { parseContentSnapshot } = require('./renderContext');
-    const snapshot = parseContentSnapshot(contract.rendered_content);
+    const snapshot = contract.rendered_content ? parseContentSnapshot(contract.rendered_content) : null;
     if (!snapshot || canonicalSha256(snapshot) !== contract.rendered_content_sha256) throw changed();
   }
   if (!contract.attachment_manifest_sha256) return null;
@@ -333,14 +335,22 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
   const contract = await db('contracts').where({ id: contractId }).first();
   const due = dueSigners(contract, await signers.listSigners(contractId)).filter((row) => row.status === 'pending');
   const expiresAt = invitationExpiry(contract);
+  let invited = 0;
   for (const row of due) {
-    const token = await db.transaction(async (trx) => {
-      const created = await signers.createInvitation(trx, row.id, expiresAt);
-      await signingEvents.appendEvent(trx, contractId, {
-        type: 'invited', actorType: actor.type === 'admin' ? 'admin' : 'system', actorLabel: actor.name || null, signerId: row.id,
+    let token;
+    try {
+      token = await db.transaction(async (trx) => {
+        const created = await signers.createInvitation(trx, row.id, expiresAt, { fromStatuses: ['pending'] });
+        await signingEvents.appendEvent(trx, contractId, {
+          type: 'invited', actorType: actor.type === 'admin' ? 'admin' : 'system', actorLabel: actor.name || null, signerId: row.id,
+        });
+        return created;
       });
-      return created;
-    });
+    } catch (err) {
+      // Invited (or signed) by another run since the read above: theirs stands.
+      if (err.code === 'SIGNER_NOT_DUE') continue;
+      throw err;
+    }
     // The invitation is committed before the mail goes out; undo it when the
     // send fails, or the signer sits at `invited` with a link nobody received
     // and every later inviteDue skips them.
@@ -352,9 +362,11 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
       // admin, and the other signers still get their links.
       if (err.code !== 'SIGNER_EMAIL_UNREADABLE') throw err;
       await recordFollowUpFailure(contractId, 'invitation', err);
+      continue;
     }
+    invited += 1;
   }
-  return due.length;
+  return invited;
 }
 
 /** Before the send renders: the signers (the customer by default) and their slots. */

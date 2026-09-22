@@ -258,12 +258,17 @@ function signersDue(contract, signers) {
  * signature used to set the status back to `invited`, re-opening a slot that
  * was already signed. The old session is revoked with the old link, or the
  * replaced link's session would keep working for up to an hour.
+ *
+ * `fromStatuses: ['pending']` makes it a first invitation only: two runs
+ * inviting the same signer at once (replicas sweeping together) can't both
+ * pass, and the loser gets SIGNER_NOT_DUE instead of revoking the winner's
+ * link.
  */
-async function createInvitation(trx, signerId, expiresAt) {
+async function createInvitation(trx, signerId, expiresAt, { fromStatuses = ['pending', 'invited'] } = {}) {
   const now = stamp();
   const reopened = await trx('contract_signers')
     .where({ id: signerId })
-    .whereIn('status', ['pending', 'invited'])
+    .whereIn('status', fromStatuses)
     .update({ status: 'invited', invited_at: now, updated_at: now });
   if (!reopened) {
     throw new AppError('This signer has already answered this contract', 409, 'SIGNER_NOT_DUE');
