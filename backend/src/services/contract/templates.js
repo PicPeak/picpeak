@@ -489,6 +489,17 @@ async function publishTemplate(id, { lockVersion }, adminId) {
     const items = await loadItems(draft.id, trx);
     if (!items.length) throw invalid('Add at least one clause before publishing');
     const versionAttachments = await attachments.loadVersionAttachments(draft.id, trx);
+    // Checked again under the lock: a block archived in the library between
+    // the check above and this transaction must not be frozen into a version.
+    const archivedNow = items.filter((item) => item.kind === 'block' && !truthy(item.block_is_active));
+    if (archivedNow.length) {
+      const err = invalid(archivedNow.map((item) => `"${item.block_name}" is archived in the clause library`).join(' · '));
+      err.details = {
+        findings: archivedNow.map((item) => finding('BLOCK_ARCHIVED', 'error',
+          `"${item.block_name}" is archived in the clause library`, { itemPosition: ensureInt(item.position) })),
+      };
+      throw err;
+    }
 
     // Freeze the blocks' bodies and hash the resolved content.
     const now = new Date();

@@ -256,3 +256,25 @@ test('the check needs the template permission', async () => {
     .set('Authorization', `Bearer ${mintAdminToken(viewerId)}`);
   expect(res.status).toBe(403);
 });
+
+test('a block archived after the check but before the publish commits is still refused', async () => {
+  const [other] = await db('contract_blocks').where({ is_system: true }).whereNot({ id: block.id }).orderBy('id', 'desc').limit(1);
+  const saved = await templateWith({ items: [{ kind: 'block', blockId: other.id }] });
+  const templates = require('../../src/services/contract/templates');
+  const pdfService = require('../../src/services/pdfService');
+  const real = pdfService.renderContractWithSlots;
+  // The block is archived during the check's dry-run render, after the
+  // check read the clauses.
+  const spy = jest.spyOn(pdfService, 'renderContractWithSlots').mockImplementation(async (ctx) => {
+    await db('contract_blocks').where({ id: other.id }).update({ is_active: false });
+    return real(ctx);
+  });
+  try {
+    await expect(templates.publishTemplate(saved.template.id, { lockVersion: saved.template.lockVersion }, adminId))
+      .rejects.toMatchObject({ statusCode: 400, code: 'TEMPLATE_INVALID' });
+    expect((await db('contract_templates').where({ id: saved.template.id }).first()).current_version).toBeNull();
+  } finally {
+    spy.mockRestore();
+    await db('contract_blocks').where({ id: other.id }).update({ is_active: true });
+  }
+});

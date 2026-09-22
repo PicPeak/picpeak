@@ -128,8 +128,9 @@ async function publishSystemRevision(system, revision = SYSTEM_TEMPLATE_REVISION
         .where({ template_id: system.id, status: 'published' })
         .whereNot({ version_number: versionNumber })
         .update({ status: 'superseded', updated_at: new Date().toISOString() });
+      // The new version becomes current; an archived template stays archived.
       await trx('contract_templates').where({ id: system.id })
-        .update({ current_version: versionNumber, status: 'published', updated_at: new Date().toISOString() });
+        .update({ current_version: versionNumber, updated_at: new Date().toISOString() });
     });
   } catch (err) {
     // Another replica published this version first.

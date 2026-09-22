@@ -164,3 +164,18 @@ test('converting a quote: the template asked for, else the quote template\'s, el
     .send({ defaultContractTemplateId: fromQuoteTemplate });
   expect(bad.status).toBe(400);
 });
+
+test('a new system revision on an archived standard template adds the version and leaves it archived', async () => {
+  const { publishSystemRevision } = require('../../src/services/contract/defaultTemplate');
+  await db('contract_templates').where({ id: systemId }).update({ status: 'archived' });
+  try {
+    const system = await db('contract_templates').where({ id: systemId }).first();
+    const version = await publishSystemRevision(system, 3);
+    expect(version).toBe(3);
+    const after = await db('contract_templates').where({ id: systemId }).first();
+    expect(after.status).toBe('archived');
+    expect(Number(after.current_version)).toBe(3);
+  } finally {
+    await db('contract_templates').where({ id: systemId }).update({ status: 'published' });
+  }
+});
