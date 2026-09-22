@@ -22,16 +22,39 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'v1dls3-test-secret';
 const { Readable } = require('stream');
 
 const mockObjects = new Map();
+// Keys whose read fails: 'mid' after some bytes, 'early' before any byte.
+const mockFailures = new Map();
+const mockSlow = new Set();
+// Storage metadata sizes that differ from the stored body.
+const mockStatSizes = new Map();
 const mockStorage = {
   kind: () => 's3',
-  stat: jest.fn(async (key) => (mockObjects.has(key) ? { size: mockObjects.get(key).length, mtime: new Date() } : null)),
+  stat: jest.fn(async (key) => {
+    if (mockStatSizes.has(key)) return { size: mockStatSizes.get(key), mtime: new Date() };
+    return mockObjects.has(key) ? { size: mockObjects.get(key).length, mtime: new Date() } : null;
+  }),
   get: jest.fn(async (key) => {
     if (!mockObjects.has(key)) {
       const err = new Error('The specified key does not exist.');
       err.name = 'NoSuchKey';
       throw err;
     }
-    return Readable.from([mockObjects.get(key)]);
+    const body = mockObjects.get(key);
+    const failure = mockFailures.get(key);
+    const slow = mockSlow.has(key);
+    return Readable.from((async function* read() {
+      if (failure === 'early') {
+        await new Promise((r) => setImmediate(r));
+        throw Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' });
+      }
+      if (slow) await new Promise((r) => setTimeout(r, 150));
+      yield body.subarray(0, 32 * 1024);
+      if (failure === 'mid') {
+        await new Promise((r) => setTimeout(r, 20));
+        throw Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' });
+      }
+      yield body.subarray(32 * 1024);
+    })());
   }),
 };
 
@@ -40,6 +63,8 @@ jest.mock('../../src/services/storage', () => ({
   initStorage: async () => mockStorage,
 }));
 
+const http = require('http');
+const crypto = require('crypto');
 const request = require('supertest');
 const express = require('express');
 const StreamZip = require('node-stream-zip');
@@ -54,6 +79,7 @@ const binaryParser = (response, cb) => {
 
 describe('v1 original downloads through an S3 backend (issue 1473)', () => {
   let db; let cleanup; let app; let token; let eventId; let presentId; let missingId;
+  let midEventId; let earlyEventId; let unsizedEventId;
   const body = Buffer.from('S3-ONLY-ORIGINAL-not-on-local-disk');
 
   beforeAll(async () => {
@@ -85,13 +111,54 @@ describe('v1 original downloads through an S3 backend (issue 1473)', () => {
       const r = await db('photos').insert({
         event_id: eventId, filename, path: `s3-event/individual/${filename}`, type: 'individual',
         source_origin: 'managed', mime_type: 'image/jpeg', original_filename: original,
-        uploaded_at: new Date().toISOString(),
+        size_bytes: body.length, uploaded_at: new Date().toISOString(),
       }).returning('id');
       return r[0]?.id ?? r[0];
     };
     presentId = await mk('s3-event_0001.jpg', 'present.jpg');
     missingId = await mk('s3-event_0002.jpg', 'missing.jpg');
     mockObjects.set('events/active/s3-event/individual/s3-event_0001.jpg', body);
+
+    // Two events whose ZIP hits a failing read: one mid-copy, one while the
+    // failing entry is still queued behind a slow first entry.
+    const mkFailEvent = async (slug) => {
+      const r = await db('events').insert({
+        slug, event_type: 'wedding', event_name: slug, event_date: '2026-08-01',
+        host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
+        share_token: `${slug}-share`, share_link: `/gallery/${slug}/x`, created_by: adminId,
+        expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+        is_active: 1, is_archived: 0, is_draft: 0, created_at: new Date().toISOString(),
+      }).returning('id');
+      return r[0]?.id ?? r[0];
+    };
+    const mkFailPhoto = async (evId, slug, filename, mode) => {
+      const key = `events/active/${slug}/individual/${filename}`;
+      mockObjects.set(key, crypto.randomBytes(256 * 1024));
+      if (mode === 'slow') mockSlow.add(key);
+      else if (mode) mockFailures.set(key, mode);
+      await db('photos').insert({
+        event_id: evId, filename, path: `${slug}/individual/${filename}`, type: 'individual',
+        source_origin: 'managed', mime_type: 'image/jpeg', size_bytes: 256 * 1024,
+        uploaded_at: new Date().toISOString(),
+      });
+    };
+    midEventId = await mkFailEvent('s3-mid');
+    await mkFailPhoto(midEventId, 's3-mid', 'a.jpg', 'mid');
+    await mkFailPhoto(midEventId, 's3-mid', 'b.jpg', null);
+    // A legacy row with no recorded size whose object is 21 GiB according to
+    // the storage metadata: the cap must see it.
+    unsizedEventId = await mkFailEvent('s3-unsized');
+    await db('photos').insert({
+      event_id: unsizedEventId, filename: 'huge.mp4', path: 's3-unsized/individual/huge.mp4',
+      type: 'individual', source_origin: 'managed', mime_type: 'video/mp4', media_type: 'video',
+      size_bytes: null, uploaded_at: new Date().toISOString(),
+    });
+    mockObjects.set('events/active/s3-unsized/individual/huge.mp4', Buffer.from('x'));
+    mockStatSizes.set('events/active/s3-unsized/individual/huge.mp4', 21 * 1024 ** 3);
+    earlyEventId = await mkFailEvent('s3-early');
+    await mkFailPhoto(earlyEventId, 's3-early', 'a.jpg', 'slow');
+    await mkFailPhoto(earlyEventId, 's3-early', 'b.jpg', 'early');
+    await mkFailPhoto(earlyEventId, 's3-early', 'c.jpg', null);
 
     app = express();
     app.use('/api/v1', require('../../src/routes/v1/events'));
@@ -134,5 +201,61 @@ describe('v1 original downloads through an S3 backend (issue 1473)', () => {
     expect((await zip.entryData('present.jpg')).equals(body)).toBe(true);
     expect((await zip.entryData('MISSING_FILES.txt')).toString()).toContain(String(missingId));
     await zip.close();
+  });
+
+  // Fetch over a real socket and report how the response ended: 'complete'
+  // (a clean end), 'aborted' (connection broken) or 'timeout'.
+  const fetchOutcome = (url, timeoutMs = 3000) => new Promise((resolve) => {
+    const server = http.createServer(app);
+    server.listen(0, '127.0.0.1', () => {
+      const done = (outcome, status) => {
+        clearTimeout(timer);
+        server.closeAllConnections?.();
+        server.close(() => resolve({ outcome, status }));
+      };
+      const timer = setTimeout(() => done('timeout', null), timeoutMs);
+      const req = http.get({
+        host: '127.0.0.1', port: server.address().port, path: url,
+        headers: { Authorization: `Bearer ${token}` },
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('aborted', () => done('aborted', res.statusCode));
+        res.on('error', () => done('aborted', res.statusCode));
+        res.on('end', () => done(res.complete ? 'complete' : 'aborted', res.statusCode));
+      });
+      req.on('error', () => done('aborted', null));
+    });
+  });
+
+  it('breaks the connection when a read fails mid-copy instead of ending a truncated 200', async () => {
+    const { outcome } = await fetchOutcome(`/api/v1/events/${midEventId}/photos/download`);
+    expect(outcome).toBe('aborted');
+  });
+
+  it('breaks the connection when a queued read fails before it starts instead of hanging', async () => {
+    const { outcome } = await fetchOutcome(`/api/v1/events/${earlyEventId}/photos/download`);
+    expect(outcome).toBe('aborted');
+  });
+
+  it('sizes rows without a recorded size from storage metadata before the cap', async () => {
+    const res = await get(`/api/v1/events/${unsizedEventId}/photos/download`);
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body.toString()).code).toBe('ZIP_TOO_LARGE');
+  });
+
+  it('answers HEAD from a stat without opening the object', async () => {
+    const res = await request(app)
+      .head(`/api/v1/events/${eventId}/photos/${presentId}/download`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-length']).toBe(String(body.length));
+    expect(mockStorage.stat).toHaveBeenCalled();
+    expect(mockStorage.get).not.toHaveBeenCalled();
+
+    const missing = await request(app)
+      .head(`/api/v1/events/${eventId}/photos/${missingId}/download`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(missing.status).toBe(404);
+    expect(mockStorage.get).not.toHaveBeenCalled();
   });
 });

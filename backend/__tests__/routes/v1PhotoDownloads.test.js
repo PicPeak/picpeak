@@ -80,7 +80,7 @@ describe('v1 original downloads (issue 1473)', () => {
   let superId; let adminId; let editorId;
   let readToken; let noScopeToken; let editorToken; let foreignAdminToken;
   let revokedToken; let expiredToken; let readTokenId; let readTokenName;
-  let eventId; let otherEventId; let archivedEventId; let capEventId; let editorEventId;
+  let eventId; let otherEventId; let archivedEventId; let capEventId; let editorEventId; let namesEventId;
   const photos = {};
   const bytes = {};
 
@@ -180,6 +180,7 @@ describe('v1 original downloads (issue 1473)', () => {
       is_archived: 1, archive_path: 'events/archived/dl-archived.zip',
     });
     capEventId = await mkEvent('dl-cap', superId);
+    namesEventId = await mkEvent('dl-names', superId);
     editorEventId = await mkEvent('dl-editor', editorId);
 
     // Random bytes: a transformed (resized, watermarked, re-encoded) response
@@ -199,6 +200,24 @@ describe('v1 original downloads (issue 1473)', () => {
     await mkPhoto('missing', eventId, 'dl-main', 'dl-main_0005.jpg', Buffer.from('gone'), {
       original_filename: 'gone.jpg',
     }, false);
+    // A row whose path climbs out of the storage root: LocalFsStorage
+    // refuses the key, which must read as a missing file, not a 500.
+    await db('photos').insert({
+      event_id: namesEventId, filename: 'escape.jpg', path: '../../../escape.jpg', type: 'individual',
+      source_origin: 'managed', mime_type: 'image/jpeg', size_bytes: 10, uploaded_at: new Date().toISOString(),
+    });
+    await mkPhoto('upper', namesEventId, 'dl-names', 'dl-names_0001.jpg', crypto.randomBytes(512), {
+      original_filename: 'IMG.jpg',
+    });
+    await mkPhoto('lower', namesEventId, 'dl-names', 'dl-names_0002.jpg', crypto.randomBytes(512), {
+      original_filename: 'img.JPG',
+    });
+    await mkPhoto('colon', namesEventId, 'dl-names', 'dl-names_0003.jpg', crypto.randomBytes(512), {
+      original_filename: '12:30 toast.jpg',
+    });
+    await mkPhoto('manifestName', namesEventId, 'dl-names', 'dl-names_0004.txt', crypto.randomBytes(16), {
+      original_filename: 'MISSING_FILES.txt',
+    });
     await mkPhoto('foreign', otherEventId, 'dl-other', 'dl-other_0001.jpg', crypto.randomBytes(1024));
     await mkPhoto('archived', archivedEventId, 'dl-archived', 'dl-archived_0001.jpg', Buffer.from('x'), {}, false);
     await mkPhoto('editorOwn', editorEventId, 'dl-editor', 'dl-editor_0001.jpg', crypto.randomBytes(1024));
@@ -449,6 +468,25 @@ describe('v1 original downloads (issue 1473)', () => {
         via: 'api_v1', token_id: Number(readTokenId), token_name: readTokenName, photo_count: 4, missing_count: 1,
       });
       expect(await db('access_logs').where({ event_id: eventId })).toHaveLength(0);
+    });
+
+    it('dedupes names case-insensitively, replaces colons and lists a refused path as missing', async () => {
+      const res = await get(`/api/v1/events/${namesEventId}/photos/download`);
+      expect(res.status).toBe(200);
+      const entries = await readZip(res.body);
+      expect(Object.keys(entries).sort()).toEqual(
+        ['12_30 toast.jpg', 'IMG.jpg', 'MISSING_FILES.txt', 'MISSING_FILES_1.txt', 'img_1.JPG'].sort(),
+      );
+      expect(sha256(entries['MISSING_FILES.txt'].data)).toBe(sha256(bytes.manifestName));
+      const escapeRow = await db('photos').where({ event_id: namesEventId, filename: 'escape.jpg' }).first();
+      expect(entries['MISSING_FILES_1.txt'].data.toString()).toContain(String(escapeRow.id));
+    });
+
+    it('answers a refused path on the single route as PHOTO_FILE_MISSING', async () => {
+      const escapeRow = await db('photos').where({ event_id: namesEventId, filename: 'escape.jpg' }).first();
+      const res = await get(`/api/v1/events/${namesEventId}/photos/${escapeRow.id}/download`);
+      expect(res.status).toBe(404);
+      expect(json(res).code).toBe('PHOTO_FILE_MISSING');
     });
 
     it('limits the archive to ?ids=', async () => {
