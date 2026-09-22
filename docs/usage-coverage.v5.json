@@ -393,6 +393,7 @@
         "GET /:id",
         "GET /:id/documents",
         "PUT /:id",
+        "GET /:id/send-preview",
         "POST /:id/send",
         "POST /:id/cancel",
         "POST /:id/convert-to-event",
@@ -1787,6 +1788,7 @@
         "POST /:id/archive",
         "POST /:id/restore",
         "POST /:id/default",
+        "GET /:id/preview-content",
         "POST /:id/preview"
       ]
     },

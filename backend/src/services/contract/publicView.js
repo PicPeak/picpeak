@@ -111,6 +111,27 @@ async function issuerSummary(profile) {
   };
 }
 
+/** A frozen (or about-to-be-frozen) quote as the page shows it: lines and totals. */
+function commercialView(quote) {
+  return {
+    sourceQuoteNumber: quote.number || null,
+    currency: quote.currency,
+    lineItems: (quote.lineItems || []).map((li) => ({
+      position: li.position,
+      parentPosition: li.parent_position,
+      kind: li.line_kind,
+      description: li.description,
+      details: li.details_text,
+      unit: li.unit,
+      quantity: li.quantity,
+      unitPriceMinor: li.unit_price_minor,
+      discountPercent: li.discount_percent,
+      lineTotalMinor: li.line_total_minor,
+    })),
+    totals: quote.totals,
+  };
+}
+
 /** The full public view of a contract, with its attachments and the signing toggles. */
 async function buildPublicView(contractId) {
   const contractService = require('../contractService');
@@ -144,27 +165,12 @@ async function buildPublicView(contractId) {
   // commercial terms, and re-reading the live quote here would show a signer
   // figures that are not the ones in the document they are signing.
   const snapshot = require('./renderContext').parseContentSnapshot(data.contract.rendered_content);
-  view.commercial = snapshot && snapshot.quote ? {
-    sourceQuoteNumber: snapshot.quote.number || null,
-    currency: snapshot.quote.currency,
-    lineItems: (snapshot.quote.lineItems || []).map((li) => ({
-      position: li.position,
-      parentPosition: li.parent_position,
-      kind: li.line_kind,
-      description: li.description,
-      details: li.details_text,
-      unit: li.unit,
-      quantity: li.quantity,
-      unitPriceMinor: li.unit_price_minor,
-      discountPercent: li.discount_percent,
-      lineTotalMinor: li.line_total_minor,
-    })),
-    totals: snapshot.quote.totals,
-  } : null;
+  view.commercial = snapshot && snapshot.quote ? commercialView(snapshot.quote) : null;
   return view;
 }
 
 module.exports = {
+  commercialView,
   normalizeBrandingLogoUrl,
   publicContractView,
   issuerSummary,

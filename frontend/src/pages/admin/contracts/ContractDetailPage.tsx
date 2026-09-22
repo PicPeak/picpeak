@@ -38,6 +38,7 @@ import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { SignaturePadField, type SignaturePadHandle } from '../../../components/contracts/SignaturePadField';
 import { SigningOverviewCard } from './SigningOverviewCard';
 import { PaperSignatureUploadDialog } from './PaperSignatureUploadDialog';
+import { SendReviewModal } from './SendReviewModal';
 
 function statusBadgeClass(status: ContractStatus): string {
   return status === 'fully_signed'         ? 'bg-green-100 text-green-800'
@@ -118,8 +119,11 @@ export const ContractDetailPage: React.FC = () => {
   const isV2 = signersQuery.data?.version === 2;
   const legacySigning = signersQuery.isSuccess ? !isV2 : signersQuery.isError;
 
+  // Send goes through the review (#1445): it opens here and sends from there.
+  const [reviewing, setReviewing] = useState(false);
   const sendMutation = useMutationWithToast({
     mutationFn: () => contractsService.send(numericId as number),
+    onSuccess: () => setReviewing(false),
     successMessage: t('contracts.detail.sentToast', 'Contract sent.') as string,
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
     errorMessage: t('contracts.detail.sendError', 'Send failed') as string,
@@ -334,7 +338,7 @@ export const ContractDetailPage: React.FC = () => {
               <FileDown className="w-4 h-4 mr-1" />
               {t('contracts.detail.previewPdf', 'Preview PDF')}
             </Button>
-            <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
+            <Button onClick={() => setReviewing(true)} disabled={sendMutation.isPending}>
               <Send className="w-4 h-4 mr-1" />
               {t('contracts.detail.send', 'Send to customer')}
             </Button>
@@ -734,6 +738,15 @@ export const ContractDetailPage: React.FC = () => {
           onClose={() => setUploadOpen(false)}
           onUpload={(file, coversSignerIds) => uploadMutation.mutate({ file, coversSignerIds })}
           isUploading={uploadMutation.isPending}
+        />
+      )}
+      {numericId && reviewing && (
+        <SendReviewModal
+          contractId={numericId}
+          onClose={() => setReviewing(false)}
+          onSend={() => sendMutation.mutate()}
+          onPreviewPdf={handlePdfPreview}
+          sending={sendMutation.isPending}
         />
       )}
     </div>

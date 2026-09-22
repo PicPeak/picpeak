@@ -15,6 +15,7 @@
  *   POST   /:id/duplicate                  copy into a new template
  *   POST   /:id/archive, /:id/restore
  *   POST   /:id/default                    new contracts start from this template
+ *   GET    /:id/preview-content             the draft (or ?version=) as the signing page shows it, sample data
  *   POST   /:id/preview                    a sample PDF of the draft or a version (sample data, or a
  *                                           real customer with previewCustomerId + customers.view)
  *
@@ -25,7 +26,7 @@
  */
 
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
@@ -148,6 +149,16 @@ router.post('/:id/default', MANAGE, [idParam], handleAsync(async (req, res) => {
   validateRequest(req);
   return successResponse(res, await templates.setDefaultTemplate(req.params.id, req.admin?.id));
 }));
+
+router.get(
+  '/:id/preview-content',
+  VIEW,
+  [idParam, query('version').optional().isInt({ min: 1 }).toInt()],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    return successResponse(res, await templates.previewContent(req.params.id, { version: req.query.version || null }));
+  })
+);
 
 router.post(
   '/:id/preview',

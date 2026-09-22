@@ -7901,7 +7901,45 @@
       "certificateUnavailable": "Signaturzertifikat nicht verfügbar",
       "countersignUncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob die Gegenzeichnung gespeichert wurde. Der Vertrag wurde neu geladen – prüfen Sie seinen Status, bevor Sie erneut unterschreiben.",
       "attachmentMerged": "ab Seite {{page}} eingefügt",
-      "attachmentSeparate": "als separate Datei versendet"
+      "attachmentSeparate": "als separate Datei versendet",
+      "review": {
+        "title": "Vor dem Senden prüfen",
+        "loadFailed": "Die Übersicht konnte nicht geladen werden.",
+        "blocked": "Dieser Vertrag kann noch nicht gesendet werden",
+        "warnings": "Bitte prüfen",
+        "ready": "Alles bereit zum Senden.",
+        "customer": "Kunde",
+        "signers": "Unterzeichnende",
+        "sequential": "Nacheinander, in dieser Reihenfolge",
+        "parallel": "Alle gleichzeitig",
+        "issuer": "Ihre Gegenzeichnung",
+        "noAttachments": "Keine",
+        "merged": "im PDF",
+        "separate": "separate Datei",
+        "pages_one": "{{count}} Seite",
+        "pages_other": "{{count}} Seiten",
+        "fileProblem": "Problem mit der Datei",
+        "price": "Preis",
+        "noPrice": "Keine Offerte verknüpft — der Vertrag nennt keinen Preis.",
+        "template": "Vorlage",
+        "templateVersion": "{{name}}, Version {{version}}",
+        "noTemplate": "Keine Vorlage",
+        "showLayout": "Signierseite anzeigen",
+        "hideLayout": "Signierseite ausblenden",
+        "sending": "Wird gesendet…",
+        "sendTo_one": "An {{count}} Unterzeichnende senden",
+        "sendTo_other": "An {{count}} Unterzeichnende senden",
+        "problems": {
+          "CONTRACT_NOT_DRAFT": "Nur ein Entwurf kann gesendet werden.",
+          "CUSTOMER_MISSING": "Der Kunde existiert nicht mehr.",
+          "CUSTOMER_INACTIVE": "Der Kunde ist deaktiviert.",
+          "SIGNER_EMAIL_MISSING": "Der Kunde hat keine E-Mail-Adresse zum Unterschreiben.",
+          "ATTACHMENT_CHANGED": "Ein Anhang stimmt nicht mehr mit der hinzugefügten Datei überein. Entfernen Sie ihn und fügen Sie ihn neu hinzu.",
+          "ATTACHMENT_MISSING": "Die Datei eines Anhangs fehlt.",
+          "NO_CLAUSES": "Der Vertrag hat keine Klauseln.",
+          "PLACEHOLDER_UNRESOLVED": "Diese Platzhalter erscheinen unverändert im Vertrag: {{keys}}"
+        }
+      }
     },
     "editor": {
       "back": "Zurück zur Liste",
@@ -8192,7 +8230,9 @@
         "end": "{{name}} an Position {{position}} von {{count}} abgelegt.",
         "cancel": "Verschieben von {{name}} abgebrochen.",
         "instructions": "Um eine Klausel zu verschieben, drücken Sie Leertaste oder Enter, bewegen Sie sie mit den Pfeiltasten und drücken Sie erneut Leertaste oder Enter zum Ablegen. Escape bricht ab."
-      }
+      },
+      "layoutPreview": "Signierseite ansehen",
+      "layoutPreviewTitle": "Signierseite mit Beispieldaten"
     },
     "attachments": {
       "heading": "Anhänge",
@@ -8351,6 +8391,12 @@
       "notCovered": "Bestätigen Sie jede Person, deren Unterschrift das Papierexemplar trägt – der Upload schliesst den Vertrag für alle ab.",
       "refusedTitle": "Bereits im Browser unterschrieben",
       "refusedBody": "Mindestens eine Person hat diesen Vertrag bereits im Browser unterschrieben. Ein Papierexemplar kann eine im Browser geleistete Unterschrift nicht ersetzen, deshalb ist der Upload nicht verfügbar. Lassen Sie die übrigen Personen im Browser unterschreiben und zeichnen Sie anschliessend auf dieser Seite gegen."
+    },
+    "layoutPreview": {
+      "device": "Bildschirmgrösse",
+      "desktop": "Desktop",
+      "phone": "Smartphone",
+      "note": "Layout-Vorschau der Signierseite. Unterschrieben wird das PDF."
     }
   },
   "messages": {

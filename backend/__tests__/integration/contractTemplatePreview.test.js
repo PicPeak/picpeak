@@ -136,3 +136,13 @@ test('previewCustomerId renders with that customer — for an admin who may view
   // Sample data needs no customer permission.
   expect((await capturePreview({}, limited)).res.status).toBe(200);
 });
+
+test('GET /:id/preview-content gives the draft as the signing page shows it, with sample data', async () => {
+  const content = await ok(request(templatesApp).get(url(`/${templateId}/preview-content`)).set(auth));
+  expect(content.contractNumber).toBe('PREVIEW');
+  expect(content.version).toBeNull();
+  expect(content.sections[0].blocks[0].body).toContain('Zwischen Anna Muster und');
+  expect(content.recipient).toEqual(expect.objectContaining({ displayName: 'Anna Muster' }));
+  expect(content.commercial).toEqual(expect.objectContaining({ currency: expect.any(String), sourceQuoteNumber: 'Q-2026-0107' }));
+  expect(content.commercial.lineItems).toHaveLength(3);
+});

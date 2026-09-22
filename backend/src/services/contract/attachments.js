@@ -313,11 +313,7 @@ async function buildSendable(contract, contractBuffer, { slots = [] } = {}) {
       separate: [],
     };
   }
-  const files = rows.map((row) => {
-    const { absolute, buffer } = readStoredFile(row);
-    if (sha256(buffer) !== row.inclusion_sha256) throw changed(row.name);
-    return { row, absolute, buffer };
-  });
+  const files = rows.map((row) => ({ row, ...readVerifiedFile(row) }));
   const merged = files.filter((file) => file.row.delivery === 'merged');
   const result = await insertBeforeLastPage(contractBuffer, merged.map((file) => file.buffer), {
     title: contract.contract_number,
@@ -355,6 +351,40 @@ async function buildSendable(contract, contractBuffer, { slots = [] } = {}) {
       .filter((file) => file.row.delivery === 'separate')
       .map((file) => ({ name: file.row.name, path: file.absolute, sha256: file.row.inclusion_sha256 })),
   };
+}
+
+/** A contract attachment's file, checked against the sha256 the contract recorded for it. */
+function readVerifiedFile(row) {
+  const { absolute, buffer } = readStoredFile(row);
+  if (sha256(buffer) !== row.inclusion_sha256) throw changed(row.name);
+  return { absolute, buffer };
+}
+
+/**
+ * What sending would find in each of a contract's attachments, without
+ * sending: the same read and hash check as buildSendable, per file. For the
+ * pre-send review, so a changed or missing file shows up there instead of as
+ * a failed send.
+ */
+async function verifyContractAttachments(contractId) {
+  const rows = await loadContractAttachments(contractId);
+  return rows.map((row) => {
+    let problem = null;
+    try {
+      readVerifiedFile(row);
+    } catch (err) {
+      problem = err && err.code === 'ATTACHMENT_CHANGED' ? 'ATTACHMENT_CHANGED' : 'ATTACHMENT_MISSING';
+    }
+    return {
+      attachmentId: row.attachment_id,
+      name: row.name,
+      delivery: row.delivery,
+      pages: Number(row.page_count),
+      sha256: row.inclusion_sha256,
+      ok: !problem,
+      problem,
+    };
+  });
 }
 
 /** One of a contract's attachments, for the customer or admin to download. */
@@ -395,6 +425,7 @@ module.exports = {
   seedContractAttachments,
   writeContractAttachments,
   buildSendable,
+  verifyContractAttachments,
   openContractAttachment,
   inclusionToApi,
   downloadName,

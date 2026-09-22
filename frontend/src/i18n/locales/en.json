@@ -7900,7 +7900,45 @@
       "certificateUnavailable": "Signing certificate unavailable",
       "countersignUncertain": "We couldn't reach the server, so we can't say whether the counter-signature was recorded. The contract has been reloaded — check its status before signing again.",
       "attachmentMerged": "merged from page {{page}}",
-      "attachmentSeparate": "sent as a separate file"
+      "attachmentSeparate": "sent as a separate file",
+      "review": {
+        "title": "Review before sending",
+        "loadFailed": "The review could not be loaded.",
+        "blocked": "This contract can't be sent yet",
+        "warnings": "Please check",
+        "ready": "Everything is ready to send.",
+        "customer": "Customer",
+        "signers": "Signers",
+        "sequential": "One after the other, in this order",
+        "parallel": "All at once",
+        "issuer": "your countersignature",
+        "noAttachments": "None",
+        "merged": "in the PDF",
+        "separate": "separate file",
+        "pages_one": "{{count}} page",
+        "pages_other": "{{count}} pages",
+        "fileProblem": "file problem",
+        "price": "Price",
+        "noPrice": "No quote attached — the contract names no price.",
+        "template": "Template",
+        "templateVersion": "{{name}}, version {{version}}",
+        "noTemplate": "No template",
+        "showLayout": "Show the signing page",
+        "hideLayout": "Hide the signing page",
+        "sending": "Sending…",
+        "sendTo_one": "Send to {{count}} signer",
+        "sendTo_other": "Send to {{count}} signers",
+        "problems": {
+          "CONTRACT_NOT_DRAFT": "Only a draft can be sent.",
+          "CUSTOMER_MISSING": "The customer no longer exists.",
+          "CUSTOMER_INACTIVE": "The customer is deactivated.",
+          "SIGNER_EMAIL_MISSING": "The customer has no email address to sign with.",
+          "ATTACHMENT_CHANGED": "An attachment no longer matches the file that was added. Remove it and add it again.",
+          "ATTACHMENT_MISSING": "The file of an attachment is missing.",
+          "NO_CLAUSES": "The contract has no clauses.",
+          "PLACEHOLDER_UNRESOLVED": "These placeholders will print as typed: {{keys}}"
+        }
+      }
     },
     "editor": {
       "back": "Back to list",
@@ -8191,7 +8229,9 @@
         "end": "{{name}} dropped at position {{position}} of {{count}}.",
         "cancel": "Moving {{name}} was cancelled.",
         "instructions": "To move a clause, press Space or Enter, move it with the arrow keys, and press Space or Enter again to drop it. Press Escape to cancel."
-      }
+      },
+      "layoutPreview": "Preview signing page",
+      "layoutPreviewTitle": "Signing page with sample data"
     },
     "attachments": {
       "heading": "Attachments",
@@ -8350,6 +8390,12 @@
       "notCovered": "Confirm every signer the paper copy is signed by — the upload completes the contract for all of them.",
       "refusedTitle": "Already signed in the browser",
       "refusedBody": "At least one signer has already signed this contract in the browser. A paper copy can't replace a signature given in the browser, so the upload isn't available. Let the remaining signers sign in the browser, then counter-sign on this page."
+    },
+    "layoutPreview": {
+      "device": "Screen size",
+      "desktop": "Desktop",
+      "phone": "Phone",
+      "note": "Layout preview of the signing page. The PDF is the document that is signed."
     }
   },
   "messages": {

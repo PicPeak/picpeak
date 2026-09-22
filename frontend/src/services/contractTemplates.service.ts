@@ -4,8 +4,8 @@
  * content change sends the lockVersion the editor loaded.
  */
 import { api } from '../config/api';
-import type { ContractBlockSection } from './contracts.service';
 import type { AttachmentSelection, IncludedAttachment } from './documentAttachments.service';
+import type { ContractBlockSection, ContractBodyContent } from './contracts.service';
 
 export type ContractLocale = 'de' | 'en' | 'fr' | 'nl' | 'pt' | 'ru';
 /** Tab order in the editors: German and English first. */
@@ -179,6 +179,11 @@ export const contractTemplatesService = {
   },
   async setDefault(id: number): Promise<ContractTemplateDetail> {
     const { data } = await api.post(`${base}/${id}/default`);
+    return unwrap(data);
+  },
+  /** The stored draft (or a version) as the signing page shows it, with sample data. */
+  async previewContent(id: number, version?: number): Promise<ContractBodyContent & { version: number | null }> {
+    const { data } = await api.get(`${base}/${id}/preview-content`, { params: version ? { version } : {} });
     return unwrap(data);
   },
   /** A sample PDF of the stored draft (or a version), as an object URL. */

@@ -41,6 +41,9 @@ import { TemplateClauseList, type DraftItem } from './TemplateClauseList';
 import { VersionCompareModal } from './VersionCompareModal';
 import type { ComparableVersion } from './templateDiff';
 import { useEditHistory } from './useEditHistory';
+import { ContractModal } from './ContractModal';
+import { ContractLayoutPreview } from '../../../components/contracts/ContractLayoutPreview';
+import type { ContractBodyContent } from '../../../services/contracts.service';
 
 /** Ask a text field to show a language and take the focus ("Go to" from the check). */
 interface FocusRequest {
@@ -198,6 +201,8 @@ export const ContractTemplateEditorPage: React.FC = () => {
   // "Compare with previous", or theirs against mine after a conflict.
   const [comparing, setComparing] = useState<{ before: ComparableVersion; after: ComparableVersion; title: string; subtitle: string; conflict?: boolean } | null>(null);
   const [pickBlockId, setPickBlockId] = useState('');
+  // The signing page as a contract from this draft would show it (sample data).
+  const [layout, setLayout] = useState<ContractBodyContent | null>(null);
 
   const dirty = savedSerial !== null && draftSerial !== savedSerial;
   const readOnly = !detail || detail.template.isSystem || detail.template.status === 'archived';
@@ -376,6 +381,18 @@ export const ContractTemplateEditorPage: React.FC = () => {
       if (!version && !readOnly && (dirty || !detail?.draft) && !(await saveNow())) return;
       const url = await contractTemplatesService.previewUrl(templateId, version);
       window.open(url, '_blank', 'noopener');
+    } catch (err) {
+      fail(err, t('contracts.templates.previewFailed', 'The preview could not be rendered.') as string);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onLayoutPreview = async () => {
+    setBusy(true);
+    try {
+      if (!readOnly && (dirty || !detail?.draft) && !(await saveNow())) return;
+      setLayout(await contractTemplatesService.previewContent(templateId));
     } catch (err) {
       fail(err, t('contracts.templates.previewFailed', 'The preview could not be rendered.') as string);
     } finally {
@@ -744,6 +761,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       </Card>
 
       <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={onLayoutPreview} disabled={busy}>{t('contracts.templates.layoutPreview', 'Preview signing page')}</Button>
         <Button variant="outline" onClick={() => onPreview()} disabled={busy}>{t('contracts.templates.preview', 'Preview PDF')}</Button>
         {!readOnly && (
           <PermissionGate permission="contracts.templates.manage">
@@ -798,6 +816,16 @@ export const ContractTemplateEditorPage: React.FC = () => {
         )}
       </Card>
 
+      {layout && (
+        <ContractModal
+          titleId="contract-template-layout-title"
+          title={t('contracts.templates.layoutPreviewTitle', 'Signing page with sample data')}
+          onClose={() => setLayout(null)}
+          width="max-w-5xl"
+        >
+          <ContractLayoutPreview content={layout} idPrefix="contract-template-layout" />
+        </ContractModal>
+      )}
       {comparing && (
         <VersionCompareModal
           before={comparing.before}

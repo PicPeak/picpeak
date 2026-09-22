@@ -654,7 +654,12 @@ async function previewVersion(id, versionNumber) {
  * Returns the PDF, where each clause landed, what the render worked around,
  * the page count and the render context.
  */
-async function renderVersion(template, version, { skipUnreadable = false, customer = null } = {}) {
+/**
+ * A version as a contract made from it right now: a stand-in contract row,
+ * its clauses and texts, and the sample quote and customer (or the real
+ * customer given). Shared by the PDF preview and the layout preview.
+ */
+async function previewInputs(template, version, { customer = null } = {}) {
   const items = await loadItems(version.id);
   const businessProfileService = require('../businessProfileService');
   const { profile } = await businessProfileService.getProfile();
@@ -683,6 +688,22 @@ async function renderVersion(template, version, { skipUnreadable = false, custom
   const textSections = items.filter((item) => item.kind === 'text').map((item) => ({
     section: item.section, position: item.position, heading: item.heading, body: item.body_override,
   }));
+  return {
+    profile,
+    language,
+    quote,
+    fakeContract,
+    inclusions,
+    textSections,
+    customer: customer || sample.SAMPLE_CUSTOMER,
+    placeholders: { source_quote_number: quote.number },
+  };
+}
+
+async function renderVersion(template, version, { skipUnreadable = false, customer = null } = {}) {
+  const {
+    profile, language, quote, fakeContract, inclusions, textSections, customer: previewCustomer, placeholders,
+  } = await previewInputs(template, version, { customer });
   // Merged attachments where a sent contract has them: before the signature page.
   const merged = [];
   for (const row of (await attachments.loadVersionAttachments(version.id)).filter((r) => r.delivery === 'merged')) {
@@ -694,11 +715,7 @@ async function renderVersion(template, version, { skipUnreadable = false, custom
   }
   const { buildRenderContext } = require('./renderContext');
   const pdfService = require('../pdfService');
-  const ctx = await buildRenderContext(fakeContract, inclusions, textSections, {
-    customer: customer || sample.SAMPLE_CUSTOMER,
-    quote,
-    placeholders: { source_quote_number: quote.number },
-  });
+  const ctx = await buildRenderContext(fakeContract, inclusions, textSections, { customer: previewCustomer, quote, placeholders });
   ctx.mergedAttachmentPages = merged.reduce((sum, file) => sum + file.pages, 0);
   const { t: pdfT } = require('../pdf-i18n');
   ctx.previewLabel = pdfT(language, 'template_preview_label', {
@@ -715,6 +732,34 @@ async function renderVersion(template, version, { skipUnreadable = false, custom
     pageCount: own + ctx.mergedAttachmentPages,
     ctx,
     profile,
+  };
+}
+
+/**
+ * A template's draft (or a given version) as the signing page would show a
+ * contract made from it, with sample data: the content the shared
+ * ContractBody component renders in the editor's desktop/phone preview.
+ */
+async function previewContent(id, { version: versionNumber } = {}) {
+  const { template, version } = await previewVersion(id, versionNumber);
+  const inputs = await previewInputs(template, version);
+  const { resolveDisplayContent } = require('./renderContext');
+  const publicView = require('./publicView');
+  const display = await resolveDisplayContent(inputs.fakeContract, inputs.inclusions, inputs.textSections, inputs.language,
+    { customer: inputs.customer, placeholders: inputs.placeholders });
+  const view = publicView.publicContractView(
+    { ...inputs.fakeContract, status: 'draft' }, display, inputs.customer, inputs.profile, null, null,
+  );
+  return {
+    contractNumber: view.contractNumber,
+    language: view.language,
+    title: view.title,
+    introText: view.introText,
+    outroText: view.outroText,
+    sections: view.sections,
+    recipient: view.recipient,
+    commercial: publicView.commercialView(inputs.quote),
+    version: version.status === 'draft' ? null : ensureInt(version.version_number),
   };
 }
 
@@ -861,5 +906,6 @@ module.exports = {
   resolveVersionForNewContract,
   seedContractFromVersion,
   renderTemplatePreview,
+  previewContent,
   checkTemplate,
 };
