@@ -271,12 +271,8 @@ router.post('/:slug/photos/:photoId/feedback',
 
       // Apply rate limiting based on feedback type
       const rateLimitMiddleware = feedbackRateLimit(feedbackType);
-      await new Promise((resolve, reject) => {
-        rateLimitMiddleware(req, res, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      // Await the middleware itself: a rejected response does not call next().
+      await rateLimitMiddleware(req, res, (err) => { if (err) throw err; });
 
       // If we got here and response was sent (rate limited), return
       if (res.headersSent) return;

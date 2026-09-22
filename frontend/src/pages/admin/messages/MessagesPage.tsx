@@ -14,6 +14,7 @@ import { accountingService } from '../../../services/accounting.service';
 import { Loading } from '../../../components/common';
 import { MessageComposer, type ComposerInit } from './MessageComposer';
 import { DocumentActionModal, type DocType } from './DocumentActionModal';
+import { EmailBodyFrame } from './EmailBodyFrame';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 
 /**
@@ -661,9 +662,7 @@ const ReceivedDetail: React.FC<{
         <div className="mt-4"><Loading /></div>
       ) : detail.data?.body_html ? (
         <div className="mt-4 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white" style={{ height: '48vh' }}>
-          {/* Sanitized server-side; rendered with a strict (script-less, no
-              same-origin) sandbox as a second layer against untrusted mail. */}
-          <iframe title="Email body" sandbox="" srcDoc={detail.data.body_html} className="w-full h-full border-0" />
+          <EmailBodyFrame key={item.id} html={detail.data.body_html} />
         </div>
       ) : detail.data?.body_text ? (
         <pre className="mt-4 whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300 font-sans">{detail.data.body_text}</pre>

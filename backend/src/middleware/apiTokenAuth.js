@@ -79,6 +79,7 @@ async function apiTokenAuth(req, res, next) {
           'admin_users.id',
           'admin_users.username',
           'admin_users.email',
+          'admin_users.must_change_password',
           'roles.id as role_id',
           'roles.name as role_name'
         )
@@ -97,7 +98,7 @@ async function apiTokenAuth(req, res, next) {
       // same reason and nulls the field afterwards.
       admin = await db('admin_users')
         .where({ id: row.created_by, is_active: formatBoolean(true) })
-        .select('id', 'username', 'email')
+        .select('id', 'username', 'email', 'must_change_password')
         .first();
       if (admin) {
         admin.role_id = null;
@@ -106,6 +107,11 @@ async function apiTokenAuth(req, res, next) {
     }
     if (!admin) {
       return res.status(401).json({ error: 'Token owner unavailable', code: 'OWNER_INACTIVE' });
+    }
+    if ([true, 1, '1', 'true'].includes(admin.must_change_password)) {
+      return res.status(403).json({
+        error: 'Change your password before using the API.', code: 'MUST_CHANGE_PASSWORD'
+      });
     }
 
     // Touch last_used_at — async, don't block the request.

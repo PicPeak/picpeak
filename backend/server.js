@@ -1104,6 +1104,7 @@ async function startServer() {
   try {
     // Initialize database
     await initializeDatabase();
+    await require('./src/utils/authSecurity').assertAuthSecuritySchema();
 
     // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers,
     // secureImageMiddleware) can see the general_site_url setting. Best-effort:

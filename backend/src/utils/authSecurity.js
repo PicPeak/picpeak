@@ -150,11 +150,7 @@ function resetSecurityConfigCache() {
  */
 async function trackFailedAttempt(identifier, ipAddress, userAgent) {
   try {
-    // Check if table exists first
-    const tableExists = await db.schema.hasTable('login_attempts');
-    if (!tableExists) {
-      return;
-    }
+    await assertAuthSecuritySchema();
     
     await db('login_attempts').insert({
       identifier,
@@ -220,11 +216,7 @@ async function trackSuccessfulLogin(identifier, ipAddress, userAgent) {
  */
 async function checkAccountLockout(identifier, ipAddress) {
   try {
-    // Check if table exists first
-    const tableExists = await db.schema.hasTable('login_attempts');
-    if (!tableExists) {
-      return { isLocked: false };
-    }
+    await assertAuthSecuritySchema();
 
     const { attemptWindowMs, maxAttempts, lockoutDurationMs } = await getSecurityConfig();
     
@@ -346,7 +338,14 @@ const cleanupTask = require('../services/scheduledTask').scheduledTask(cleanupOl
 function initializeCleanupJob() { cleanupTask.start(); }
 const stopCleanupJob = () => cleanupTask.stop();
 
+async function assertAuthSecuritySchema() {
+  if (!(await db.schema.hasTable('login_attempts'))) {
+    throw new Error('Login security schema is missing. Run the database migrations before starting PicPeak.');
+  }
+}
+
 module.exports = {
+  assertAuthSecuritySchema,
   stopCleanupJob,
   trackFailedAttempt,
   trackSuccessfulLogin,
