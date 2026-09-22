@@ -79,8 +79,7 @@ vi.mock('../../../services/customer.service', () => ({
 import { ConfirmDialogProvider } from '../../../components/common';
 import { CustomerDocumentsPage } from '../CustomerDocumentsPage';
 
-function renderPage() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={qc}>
       <ConfirmDialogProvider>
@@ -127,7 +126,9 @@ describe('CustomerDocumentsPage', () => {
       makeDoc({ id: 3, name: 'offer.pdf', uploadedBy: 'studio', status: 'clean', downloadable: true }),
     ];
     deleteSpy.mockClear();
-    renderPage();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    renderPage(qc);
     const del = await screen.findByRole('button', { name: 'Delete mine.pdf' });
     expect(screen.queryByRole('button', { name: 'Delete signed.pdf' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete offer.pdf' })).toBeNull();
@@ -138,6 +139,12 @@ describe('CustomerDocumentsPage', () => {
     expect(deleteSpy).not.toHaveBeenCalled();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith(1));
+    // The event page's own overview and the request list refresh too: the
+    // deleted upload may have answered a request, which is open again.
+    await waitFor(() => {
+      const keys = invalidate.mock.calls.map(([filters]) => (filters as { queryKey: unknown[] }).queryKey[0]);
+      expect(keys).toEqual(expect.arrayContaining(['customer-documents', 'customer-event-overview', 'customer-document-requests']));
+    });
   });
 
   it('downloads through the service', async () => {

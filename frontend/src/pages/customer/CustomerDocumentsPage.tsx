@@ -128,6 +128,10 @@ export function useDeleteOwnDocument(): (doc: CustomerDocument) => Promise<boole
       toast.success(t('customer.documents.deleted', '{{name}} was deleted.', { name: doc.name }));
       await queryClient.invalidateQueries({ queryKey: ['customer-documents'] });
       await queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+      // The per-event page lists documents from its own overview, and deleting
+      // the answer to a request opens that request again.
+      await queryClient.invalidateQueries({ queryKey: ['customer-event-overview'] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-document-requests'] });
       return true;
     } catch (err: any) {
       const code = await readErrorCode(err);
