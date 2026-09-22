@@ -59,13 +59,21 @@ function parseConsents(raw) {
 }
 
 /**
- * The editor's list, validated, with versions decided against the
- * published version's declarations (`previous`).
+ * The editor's list, validated, with versions decided against every
+ * declaration the template has issued (`previous`: those of all its
+ * published and superseded versions). A wording issued before keeps the
+ * number it had — restoring an old version brings its old numbers back —
+ * and any other wording gets one past the highest ever used for its key,
+ * so a key and version always name one wording.
  */
 function sanitizeConsents(input, previous = []) {
   if (!Array.isArray(input)) throw invalid('Declarations must be a list');
   if (input.length > MAX_CONSENTS) throw invalid(`A template has at most ${MAX_CONSENTS} declarations`);
-  const before = new Map((previous || []).map((c) => [c.key, c]));
+  const before = new Map();
+  for (const c of previous || []) {
+    if (!before.has(c.key)) before.set(c.key, []);
+    before.get(c.key).push(c);
+  }
   const seen = new Set();
   return input.map((entry, index) => {
     const label = `Declaration ${index + 1}`;
@@ -86,9 +94,10 @@ function sanitizeConsents(input, previous = []) {
     }
     if (!Object.keys(text).length) throw invalid(`${label}: enter the wording`);
     const required = entry.required === true;
-    const prior = before.get(key);
-    const unchanged = prior && prior.required === required && canonicalSha256(prior.text) === canonicalSha256(text);
-    return { key, required, version: prior ? (unchanged ? prior.version : prior.version + 1) : 1, text };
+    const issued = before.get(key) || [];
+    const same = issued.find((c) => c.required === required && canonicalSha256(c.text) === canonicalSha256(text));
+    const version = same ? same.version : Math.max(0, ...issued.map((c) => Number(c.version) || 0)) + 1;
+    return { key, required, version, text };
   });
 }
 

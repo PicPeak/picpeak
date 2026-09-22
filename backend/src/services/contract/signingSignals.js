@@ -60,6 +60,7 @@ const CODE_TO_KIND = {
   SIGNING_LINK_REVOKED: 'stale_token',
   SIGNING_LINK_EXPIRED: 'stale_token',
   CONTRACT_EXPIRED: 'stale_token',
+  // An ended session; one that never existed carries signalKind 'unknown_token'.
   SIGNING_SESSION_INVALID: 'stale_token',
   OTP_WRONG: 'otp_failure',
   OTP_LOCKED: 'otp_failure',
@@ -123,7 +124,7 @@ function record(kind, { contractId = null, clientKey = null, at = Date.now() } =
  * id on the error (`signalContractId`) where it is known.
  */
 function observe(err, req) {
-  const kind = err && CODE_TO_KIND[err.code];
+  const kind = err && (err.signalKind || CODE_TO_KIND[err.code]);
   if (!kind) return;
   const { rateLimitKey } = require('../../utils/rateLimitKey');
   // The caller doesn't wait on it: the response must not wait for a count.

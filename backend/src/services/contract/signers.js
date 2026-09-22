@@ -576,9 +576,13 @@ async function createSession(signerId, verifiedVia, conn = db) {
 /** The signer and contract behind a signing session. */
 async function findSession(token) {
   const invalid = () => new AppError('Your signing session has ended. Open the link from your email again.', 401, 'SIGNING_SESSION_INVALID');
-  if (!TOKEN_RE.test(String(token || ''))) throw invalid();
+  // Same answer either way; the signals count a token that matches nothing
+  // as a probe, not as a session that ended (signingSignals.js).
+  const unknown = () => Object.assign(invalid(), { signalKind: 'unknown_token' });
+  if (!TOKEN_RE.test(String(token || ''))) throw unknown();
   const session = await db('contract_signing_sessions').where({ session_hash: sha256(token) }).first();
-  if (!session || session.revoked_at || isPast(session.expires_at)) throw invalid();
+  if (!session) throw unknown();
+  if (session.revoked_at || isPast(session.expires_at)) throw invalid();
   return { session, ...(await loadSignerContext(session.signer_id)) };
 }
 

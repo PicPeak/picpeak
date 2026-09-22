@@ -440,12 +440,12 @@ async function saveDraft(id, payload, adminId) {
     }
     const draft = await ensureDraft(trx, template);
     if (payload.consents !== undefined) {
-      // Versions are decided against the published wording: unchanged keeps
-      // its number, changed wording or `required` counts it up.
-      const published = await trx('contract_template_versions').where({ template_id: id, status: 'published' }).first('consents');
-      versionUpdates.consents = JSON.stringify(consents.sanitizeConsents(
-        payload.consents, consents.parseConsents(published && published.consents) || [],
-      ));
+      // Versions are decided against every wording the template has issued:
+      // one issued before keeps its number, anything else counts it up.
+      const issued = (await trx('contract_template_versions').where({ template_id: id }).whereNot('status', 'draft')
+        .select('consents'))
+        .flatMap((row) => consents.parseConsents(row.consents) || []);
+      versionUpdates.consents = JSON.stringify(consents.sanitizeConsents(payload.consents, issued));
     }
     if (Object.keys(versionUpdates).length) {
       await trx('contract_template_versions').where({ id: draft.id }).update({ ...versionUpdates, updated_at: now });

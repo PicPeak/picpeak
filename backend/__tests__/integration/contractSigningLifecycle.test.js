@@ -491,6 +491,20 @@ describe('consents', () => {
       .send({ lockVersion: saved.template.lockVersion }));
     expect(republished.contentSha256).not.toBe(published.contentSha256);
 
+    // A wording issued before gets its old number back (restoring an older
+    // version does this); a new one goes past every number ever used.
+    const current = await ok(request(templatesApp).get(`${tplUrl}/${templateId}`).set(auth));
+    const reverted = await ok(request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: current.template.lockVersion,
+      consents: [withTerms[0], withTerms[1], { key: 'image_rights', required: true, text: IMAGES }],
+    }));
+    expect(reverted.draft.consents.map((c) => [c.key, c.version])).toEqual([['acceptance', 1], ['terms', 1], ['image_rights', 2]]);
+    const third = await ok(request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
+      lockVersion: reverted.template.lockVersion,
+      consents: [withTerms[0], { key: 'terms', required: true, text: { ...TERMS, en: 'A third wording.' } }],
+    }));
+    expect(third.draft.consents.map((c) => [c.key, c.version])).toEqual([['acceptance', 1], ['terms', 3]]);
+
     // A key twice, or a template nobody has to confirm anything in, is refused.
     const again = await ok(request(templatesApp).get(`${tplUrl}/${templateId}`).set(auth));
     const twice = await request(templatesApp).put(`${tplUrl}/${templateId}/draft`).set(auth).send({
@@ -1122,6 +1136,23 @@ describe('enumeration and replay signals', () => {
 
     const summary = await signals().summary();
     expect(summary.byKind.unknown_token).toBeGreaterThanOrEqual(3);
+  });
+
+  test('a session token that matches nothing counts as unknown, an ended one as stale', async () => {
+    const res = await fromIp(request(signingApp).get('/api/public/contract-signing/session'), '203.0.113.21')
+      .set('X-Signing-Session', unknownToken());
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SIGNING_SESSION_INVALID');
+    const { session } = await sentWithSession();
+    await db('contract_signing_sessions').update({ revoked_at: new Date().toISOString() });
+    const ended = await fromIp(request(signingApp).get('/api/public/contract-signing/session'), '203.0.113.21')
+      .set('X-Signing-Session', session);
+    expect(ended.body.code).toBe('SIGNING_SESSION_INVALID');
+    await new Promise((resolve) => setImmediate(resolve));
+    await signals().flush();
+    const rows = await db('contract_signing_signals').where({ ip_hash: signals()._internal.ipHash('203.0.113.21') });
+    const byKind = Object.fromEntries(rows.map((r) => [r.kind, Number(r.count)]));
+    expect(byKind).toEqual({ unknown_token: 1, stale_token: 1 });
   });
 
   test('a threshold alerts the admin once per kind per hour, however many replicas check', async () => {
