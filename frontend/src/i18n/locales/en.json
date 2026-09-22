@@ -5933,7 +5933,11 @@
       "saveLinks": "Save links",
       "linkSaved": "Links saved.",
       "empty": "No documents yet.",
-      "loadError": "Could not load documents."
+      "loadError": "Could not load documents.",
+      "unlinked": "Unlinked from the contract. You can delete it now.",
+      "linkedTitle": "Linked to a contract",
+      "linkedBody": "{{name}} is linked to a contract, so it is kept as part of the contractual record and cannot be deleted. Unlink it from the contract first, then delete it.",
+      "unlinkContract": "Unlink from contract"
     },
     "groups": {
       "title": "Groups",

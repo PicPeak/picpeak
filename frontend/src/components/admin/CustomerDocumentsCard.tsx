@@ -114,7 +114,32 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
     }
   };
 
+  // Only the contract link changes; PATCH replaces all three links, so the
+  // event and project go along unchanged.
+  const unlinkContract = (doc: AdminCustomerDocument) => run(doc.id,
+    () => customerDocumentsAdminService.setLinks(customerId, doc.id, {
+      eventId: doc.eventId, projectId: doc.projectId, contractId: null,
+    }),
+    t('customers.documents.unlinked', 'Unlinked from the contract. You can delete it now.'));
+
+  // A contract-linked document is part of the contractual record and the
+  // server refuses to delete it (409 DOCUMENT_CONTRACT_LINKED). Say so up
+  // front and offer the one way forward instead of a delete that fails.
+  const offerUnlink = async (doc: AdminCustomerDocument) => {
+    const ok = await confirm({
+      title: t('customers.documents.linkedTitle', 'Linked to a contract'),
+      message: t('customers.documents.linkedBody', '{{name}} is linked to a contract, so it is kept as part of the contractual record and cannot be deleted. Unlink it from the contract first, then delete it.', { name: doc.name }),
+      confirmLabel: t('customers.documents.unlinkContract', 'Unlink from contract'),
+      variant: 'warning',
+    });
+    if (ok) await unlinkContract(doc);
+  };
+
   const remove = async (doc: AdminCustomerDocument) => {
+    if (doc.contractId) {
+      await offerUnlink(doc);
+      return;
+    }
     const ok = await confirm({
       title: t('customers.documents.deleteTitle', 'Delete document?'),
       message: t('customers.documents.deleteBody', '{{name}} disappears from the customer\'s portal at once. The file itself is removed after the retention period.', { name: doc.name }),
@@ -122,8 +147,23 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
       variant: 'danger',
     });
     if (!ok) return;
-    await run(doc.id, () => customerDocumentsAdminService.remove(customerId, doc.id),
-      t('customers.documents.deleted', 'Document deleted.'));
+    setBusyId(doc.id);
+    try {
+      await customerDocumentsAdminService.remove(customerId, doc.id);
+      toast.success(t('customers.documents.deleted', 'Document deleted.'));
+    } catch (err: any) {
+      // Linked since this list was loaded: show the reason and the way out.
+      if (err?.response?.data?.code === 'DOCUMENT_CONTRACT_LINKED') {
+        await qc.invalidateQueries({ queryKey });
+        setBusyId(null);
+        await offerUnlink(doc);
+        return;
+      }
+      toast.error(errorText(err));
+    } finally {
+      setBusyId(null);
+    }
+    await qc.invalidateQueries({ queryKey });
   };
 
   const documents = data?.documents ?? [];
