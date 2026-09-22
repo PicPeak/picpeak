@@ -15,7 +15,7 @@ import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type
 import { feedbackService, FeedbackSettings as FeedbackSettingsType } from '../../services/feedback.service';
 import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTemplates.service';
 import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
-import { safeParseDate } from './event-details/utils';
+import { safeParseDate, eventHasGuests } from './event-details/utils';
 import { INITIAL_EDIT_FORM, type EditFormState, type EventDetailsTab } from './event-details/types';
 import { EventDetailsHeader } from './event-details/EventDetailsHeader';
 import { EventTabs } from './event-details/EventTabs';
@@ -153,15 +153,19 @@ export const EventDetailsPage: React.FC = () => {
     enabled: !!id,
   });
 
-  // Guests is only rendered in guest identity mode, so a ?tab=guests deep link
-  // on any other event would show an empty content area. Snap back once the
-  // settings have actually loaded — not while they're still undefined.
+  // Guests exist in guest identity mode, and for uploader names (#1561) in
+  // any mode — the host must be able to remove or merge those too.
+  const showGuestsTab = eventHasGuests(event, eventFeedbackSettings);
+
+  // Guests is only rendered when the event can have any, so a ?tab=guests
+  // deep link on any other event would show an empty content area. Snap back
+  // once both have actually loaded — not while they're still undefined.
   useEffect(() => {
-    if (feedbackSettingsLoading) return;
-    if (activeTab === 'guests' && eventFeedbackSettings?.identity_mode !== 'guest') {
+    if (feedbackSettingsLoading || eventLoading) return;
+    if (activeTab === 'guests' && !showGuestsTab) {
       setActiveTab('overview');
     }
-  }, [feedbackSettingsLoading, eventFeedbackSettings?.identity_mode, activeTab]);
+  }, [feedbackSettingsLoading, eventLoading, showGuestsTab, activeTab]);
 
   // Update local feedback settings when fetched from server
   useEffect(() => {
@@ -765,8 +769,8 @@ export const EventDetailsPage: React.FC = () => {
         <CategoriesTab id={id} />
       )}
 
-      {/* Guests Tab (only visible when identity_mode === 'guest') */}
-      {activeTab === 'guests' && eventFeedbackSettings?.identity_mode === 'guest' && (
+      {/* Guests Tab (guest identity mode, or uploader names on) */}
+      {activeTab === 'guests' && showGuestsTab && (
         <AdminGuestsList eventId={parseInt(id!)} eventName={event.event_name} />
       )}
 
