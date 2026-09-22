@@ -27,9 +27,12 @@ const mockFailures = new Map();
 const mockSlow = new Set();
 // Storage metadata sizes that differ from the stored body.
 const mockStatSizes = new Map();
+// Keys whose stat takes a while, like a HEAD against a slow bucket.
+const mockSlowStats = new Set();
 const mockStorage = {
   kind: () => 's3',
   stat: jest.fn(async (key) => {
+    if (mockSlowStats.has(key)) await new Promise((r) => setTimeout(r, 100));
     if (mockStatSizes.has(key)) return { size: mockStatSizes.get(key), mtime: new Date() };
     return mockObjects.has(key) ? { size: mockObjects.get(key).length, mtime: new Date() } : null;
   }),
@@ -79,7 +82,7 @@ const binaryParser = (response, cb) => {
 
 describe('v1 original downloads through an S3 backend (issue 1473)', () => {
   let db; let cleanup; let app; let token; let eventId; let presentId; let missingId;
-  let midEventId; let earlyEventId; let unsizedEventId;
+  let midEventId; let earlyEventId; let unsizedEventId; let slowSizeEventId;
   const body = Buffer.from('S3-ONLY-ORIGINAL-not-on-local-disk');
 
   beforeAll(async () => {
@@ -155,6 +158,18 @@ describe('v1 original downloads through an S3 backend (issue 1473)', () => {
     });
     mockObjects.set('events/active/s3-unsized/individual/huge.mp4', Buffer.from('x'));
     mockStatSizes.set('events/active/s3-unsized/individual/huge.mp4', 21 * 1024 ** 3);
+    // Forty legacy rows without a size, each statted slowly.
+    slowSizeEventId = await mkFailEvent('s3-slowsize');
+    for (let i = 0; i < 40; i += 1) {
+      const key = `events/active/s3-slowsize/individual/p${i}.jpg`;
+      mockObjects.set(key, Buffer.from('x'));
+      mockSlowStats.add(key);
+      await db('photos').insert({
+        event_id: slowSizeEventId, filename: `p${i}.jpg`, path: `s3-slowsize/individual/p${i}.jpg`,
+        type: 'individual', source_origin: 'managed', mime_type: 'image/jpeg',
+        size_bytes: null, uploaded_at: new Date().toISOString(),
+      });
+    }
     earlyEventId = await mkFailEvent('s3-early');
     await mkFailPhoto(earlyEventId, 's3-early', 'a.jpg', 'slow');
     await mkFailPhoto(earlyEventId, 's3-early', 'b.jpg', 'early');
@@ -241,6 +256,30 @@ describe('v1 original downloads through an S3 backend (issue 1473)', () => {
     const res = await get(`/api/v1/events/${unsizedEventId}/photos/download`);
     expect(res.status).toBe(400);
     expect(JSON.parse(res.body.toString()).code).toBe('ZIP_TOO_LARGE');
+  });
+
+  it('stops sizing and opens nothing once the client has left', async () => {
+    const server = http.createServer(app);
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const req = http.get({
+        host: '127.0.0.1', port: server.address().port,
+        path: `/api/v1/events/${slowSizeEventId}/photos/download`,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      req.on('error', () => {});
+      // Leave while the first batch of stats is in flight.
+      await new Promise((r) => setTimeout(r, 150));
+      req.destroy();
+      await new Promise((r) => setTimeout(r, 600));
+      // One batch of eight at most, not all forty; no reads at all.
+      expect(mockStorage.stat.mock.calls.length).toBeGreaterThan(0);
+      expect(mockStorage.stat.mock.calls.length).toBeLessThanOrEqual(16);
+      expect(mockStorage.get).not.toHaveBeenCalled();
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise((r) => server.close(r));
+    }
   });
 
   it('answers HEAD from a stat without opening the object', async () => {

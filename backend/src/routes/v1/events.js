@@ -1181,6 +1181,8 @@ router.get(
       if (guard) guard.destroyAll();
       if (archive) archive.abort();
     });
+    // Or gone before the handler even ran (during auth and ownership).
+    if (res.destroyed) return;
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -1243,6 +1245,8 @@ router.get(
       // file counts as zero; it ends up in the manifest below.
       const unsized = photos.filter((p) => p.size_bytes === null || p.size_bytes === undefined);
       for (let i = 0; i < unsized.length; i += SIZE_STAT_CONCURRENCY) {
+        // No more storage requests for a client that has left.
+        if (cancelled) return;
         const sizes = await Promise.all(unsized.slice(i, i + SIZE_STAT_CONCURRENCY).map(async (p) => {
           const location = locateOriginal(event, p);
           return location ? (await statOriginal(location)) || 0 : 0;
@@ -1266,7 +1270,7 @@ router.get(
       res.setHeader('X-Content-Type-Options', 'nosniff');
       // A probe, not a download: no archive, nothing read, nothing logged.
       if (req.method === 'HEAD') return res.end();
-      if (cancelled) return;
+      if (cancelled || res.destroyed) return;
 
       // Photos and videos are already compressed; deflating them again costs
       // CPU for nothing.
