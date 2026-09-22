@@ -11,6 +11,7 @@ const resources = [
   ['./customerDocumentRetentionService', 'stopCustomerDocumentRetention'],
   ['./customerDocumentRescanService', 'stopCustomerDocumentRescan'],
   ['./customerDocumentRequestReminderService', 'stopDocumentRequestReminders'],
+  ['./contract/expiry', 'stopContractSigningSweep'], ['./contract/signingSignals', 'stopSigningSignals'],
   ['./downloadJobCleanupService', 'stopDownloadJobCleanup'], ['./revealScheduler', 'stopRevealScheduler'],
   ['./invoiceSchedulerService', 'stopInvoiceScheduler'], ['./emailProcessor', 'stopEmailQueueProcessor'],
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller'],
