@@ -27,6 +27,9 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, createPublicToken, buildRouteApp,
 } = require('../integration/helpers/crmDb');
 
+// Stored paths are relative to the storage root (storedPath.js).
+const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+
 describe('signed-PDF upload file names', () => {
   let db; let cleanup; let customerId; let token;
 
@@ -104,6 +107,6 @@ describe('signed-PDF upload file names', () => {
     expect(statuses[0]).toBe(200);
     expect(filesStartingWith(`contract-${id}-`)).toHaveLength(statuses.filter((s) => s === 200).length);
     const row = await db('contracts').where({ id }).first();
-    expect(fs.existsSync(row.signed_pdf_path)).toBe(true);
+    expect(fs.existsSync(onDisk(row.signed_pdf_path))).toBe(true);
   });
 });

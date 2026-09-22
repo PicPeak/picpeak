@@ -21,7 +21,8 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { getStoragePath } = require('../config/storage');
-const { assertPathInside } = require('../utils/safePath');
+const { assertPathInside, assertStoredPathInside } = require('../utils/safePath');
+const { toStoredPath } = require('../utils/storedPath');
 const { db } = require('../database/db');
 const expenseService = require('../services/expenseService');
 const accountingHistory = require('../services/accountingHistory');
@@ -133,7 +134,7 @@ router.get('/inbound/:id/file', requireIncoming, requirePermission('accounting.v
     validateRequest(req);
     const row = await db('inbound_documents').where({ id: toInt(req.params.id) }).first('file_path', 'mime_type');
     if (!row || !row.file_path) return res.status(404).json({ error: 'File not found', code: 'NO_FILE' });
-    const safe = assertPathInside(row.file_path, [path.join(getStoragePath(), 'business-docs')]);
+    const safe = assertStoredPathInside(row.file_path, [path.join(getStoragePath(), 'business-docs')]);
     const isPdf = (row.mime_type || '').includes('pdf');
     res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
@@ -151,7 +152,7 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
     if (!row || !row.file_path) return res.status(404).json({ error: 'File not found', code: 'NO_FILE' });
     if (!(row.mime_type || '').includes('pdf')) return res.status(415).json({ error: 'Not a PDF', code: 'NOT_PDF' });
     const page = Math.min(Math.max(1, toInt(req.params.n)), row.page_count || 1);
-    const srcPdf = assertPathInside(row.file_path, [path.join(getStoragePath(), 'business-docs')]);
+    const srcPdf = assertStoredPathInside(row.file_path, [path.join(getStoragePath(), 'business-docs')]);
     const pngPath = await rasterizeService.getRenderedPagePath(id, srcPdf, page);
     const safePng = assertPathInside(pngPath, [path.join(getStoragePath(), 'business-docs')]);
     res.setHeader('Content-Type', 'image/png');
@@ -215,7 +216,7 @@ router.post('/', requireExpenses, requirePermission('accounting.manage'),
       description: b.description || null,
       taxTreatment: b.taxTreatment,
     };
-    const expense = await expenseService.createExpense(payload, req.admin.id, { receiptPath: req.file ? req.file.path : null });
+    const expense = await expenseService.createExpense(payload, req.admin.id, { receiptPath: req.file ? toStoredPath(req.file.path) : null });
     return successResponse(res, { expense }, 201, 'Expense created');
   }));
 
@@ -225,7 +226,7 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
     validateRequest(req);
     const row = await db('expenses').where({ id: toInt(req.params.id) }).first('receipt_path');
     if (!row || !row.receipt_path) return res.status(404).json({ error: 'No proof', code: 'NO_PROOF' });
-    const safe = assertPathInside(row.receipt_path, [path.join(getStoragePath(), 'business-docs')]);
+    const safe = assertStoredPathInside(row.receipt_path, [path.join(getStoragePath(), 'business-docs')]);
     const isPdf = safe.toLowerCase().endsWith('.pdf');
     res.setHeader('Content-Type', isPdf ? 'application/pdf' : 'application/octet-stream');
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
@@ -247,7 +248,7 @@ router.patch('/:id', requireExpenses, requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const expense = await expenseService.updateExpense(toInt(req.params.id), req.body, req.admin.id, { receiptPath: req.file ? req.file.path : null });
+    const expense = await expenseService.updateExpense(toInt(req.params.id), req.body, req.admin.id, { receiptPath: req.file ? toStoredPath(req.file.path) : null });
     return successResponse(res, { expense });
   }));
 

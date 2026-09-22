@@ -70,7 +70,7 @@ async function sendContract(id, adminId) {
   const refreshed = await getContractById(id);
   const ctx = await buildRenderContext(refreshed.contract, refreshed.inclusions);
   const buffer = await pdfService.renderContractToBuffer(ctx);
-  const { filePath: pdfPath, sha256: pdfSha256 } = await persistContractPdf(refreshed.contract, buffer);
+  const { filePath: pdfPath, storedPath: pdfStoredPath, sha256: pdfSha256 } = await persistContractPdf(refreshed.contract, buffer);
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = contract.valid_until
@@ -94,7 +94,8 @@ async function sendContract(id, adminId) {
     const updates = {
       status: 'sent',
       sent_at: new Date(),
-      pdf_path: pdfPath,
+      // The storage-relative path: it is recorded on the contract row.
+      pdf_path: pdfStoredPath,
       updated_at: new Date(),
     };
     if (hasPdfSha) updates.pdf_sha256 = pdfSha256;

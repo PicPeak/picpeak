@@ -19,6 +19,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
+// Stored paths are relative to the storage root: onDisk() is the file a row
+// names, storedAs() what a row records for a file.
+const { resolveStoredPath: onDisk, toStoredPath: storedAs } = require('../../src/utils/storedPath');
 
 jest.setTimeout(120000);
 
@@ -221,7 +224,7 @@ describe('signature evidence under concurrent requests', () => {
     const winner = names[results.indexOf(fulfilled[0])];
     const contract = await db('contracts').where({ id }).first();
     expect(contract.signed_customer_name).toBe(winner);
-    expect(fs.existsSync(contract.signed_customer_signature_path)).toBe(true);
+    expect(fs.existsSync(onDisk(contract.signed_customer_signature_path))).toBe(true);
     // The loser's signature image was removed with its rolled-back write.
     expect(signaturePngs().length).toBe(pngsBefore + 1);
     expect((await db('contract_action_tokens').where({ token }).first()).used_at).toBeTruthy();
@@ -268,7 +271,7 @@ describe('signature evidence under concurrent requests', () => {
     } else {
       expect(sign.reason.code).toBe('TOKEN_ALREADY_USED');
       expect(signaturePngs().length).toBe(pngsBefore);
-      expect(contract.signed_pdf_path).toBe(uploaded);
+      expect(contract.signed_pdf_path).toBe(storedAs(uploaded));
       expect(contract.status).toBe('fully_signed');
     }
   });
@@ -296,7 +299,7 @@ describe('signature evidence under concurrent requests', () => {
 
     const contract = await db('contracts').where({ id }).first();
     expect(contract.status).toBe('fully_signed');
-    expect(contract.signed_pdf_path).toBe(wet);
+    expect(contract.signed_pdf_path).toBe(storedAs(wet));
   });
 
   it('keeps the customer signature in the fully-signed PDF when the countersignature lands while the customer stamp renders', async () => {
@@ -321,8 +324,8 @@ describe('signature evidence under concurrent requests', () => {
     const contract = await db('contracts').where({ id }).first();
     expect(contract.status).toBe('fully_signed');
     expect(recorder.stampsOf(contract.signed_pdf_sha256)).toEqual([
-      { role: 'customer', png: contract.signed_customer_signature_path },
-      { role: 'admin', png: contract.signed_admin_signature_path },
+      { role: 'customer', png: onDisk(contract.signed_customer_signature_path) },
+      { role: 'admin', png: onDisk(contract.signed_admin_signature_path) },
     ]);
   });
 });
@@ -349,7 +352,7 @@ describe('customer signature stamping', () => {
     expect(contract.signed_pdf_path).toBeTruthy();
     // The PDF on record shows the image the contract references.
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([contract.signed_customer_signature_path]);
+      .toEqual([onDisk(contract.signed_customer_signature_path)]);
   });
 });
 
@@ -416,7 +419,7 @@ describe('countersignature stamping', () => {
     expect(mails.length).toBeGreaterThan(0);
     for (const mail of mails) {
       expect(mail.attachments.find((a) => a.filename === `${contractNumber}-signed.pdf`).contentPath)
-        .toBe(resent.signed_pdf_path);
+        .toBe(onDisk(resent.signed_pdf_path));
     }
   });
 
@@ -460,7 +463,7 @@ describe('countersignature stamping', () => {
     const contract = await db('contracts').where({ id }).first();
     expect(contract.status).toBe('fully_signed');
     expect(contract.signed_admin_name).toBe('Admin');
-    expect(contract.signed_pdf_path).toBe(wet);
+    expect(contract.signed_pdf_path).toBe(storedAs(wet));
   });
 });
 
@@ -485,7 +488,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason.code).toBe('CONTRACT_STATE_CHANGED');
     const contract = await db('contracts').where({ id }).first();
-    expect(fs.existsSync(contract.signed_customer_signature_path)).toBe(true);
+    expect(fs.existsSync(onDisk(contract.signed_customer_signature_path))).toBe(true);
     expect(signaturePngs().length).toBe(pngsBefore + 1);
   });
 
@@ -510,9 +513,9 @@ describe('admin PDF repair actions under concurrent requests', () => {
     }
 
     const contract = await db('contracts').where({ id }).first();
-    expect(contract.signed_pdf_path).toBe(wet);
+    expect(contract.signed_pdf_path).toBe(storedAs(wet));
     expect(result.superseded).toBe(true);
-    expect(result.signedPdfPath).toBe(wet);
+    expect(result.signedPdfPath).toBe(storedAs(wet));
     // The image was replaced even though the PDF was not, so the audit trail
     // still records the re-stamp.
     expect(await restampLogsFor(id)).toEqual([expect.objectContaining({ superseded: true })]);
@@ -555,7 +558,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
     const contract = await db('contracts').where({ id }).first();
     // The PDF on record carries the image the contract references.
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([contract.signed_customer_signature_path]);
+      .toEqual([onDisk(contract.signed_customer_signature_path)]);
     expect(a.superseded).toBe(true);
     expect(b.superseded).toBeUndefined();
     expect(await restampLogsFor(id)).toHaveLength(2);
@@ -591,7 +594,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
 
     const contract = await db('contracts').where({ id }).first();
     expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
-      .toEqual([contract.signed_customer_signature_path]);
+      .toEqual([onDisk(contract.signed_customer_signature_path)]);
     if (b.status === 'rejected') expect(b.reason.code).toBe('CONTRACT_STATE_CHANGED');
   });
 
@@ -649,7 +652,7 @@ describe('admin PDF repair actions under concurrent requests', () => {
 
   it('refuses a re-send when a signature on record cannot be stamped, and mails nothing', async () => {
     const before = await fullySignedWithImages('Unstampable resend');
-    fs.writeFileSync(before.signed_admin_signature_path, 'not an image');
+    fs.writeFileSync(onDisk(before.signed_admin_signature_path), 'not an image');
     const mailsBefore = (await db('email_queue').where({ email_type: 'contract_fully_signed' })).length;
 
     await expect(contractService.rerenderAndResend(before.id, adminId))

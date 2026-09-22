@@ -280,19 +280,14 @@ async function renderInvoicePdfBuffer(invoiceId) {
   // Imported (historical) invoices store the original PDF on disk
   // — short-circuit the renderer and stream the file untouched so
   // legal documents stay byte-identical to the source. Path is
-  // stored relative to STORAGE_PATH but we accept absolute too.
+  // stored relative to STORAGE_PATH; storedPath.js also places an
+  // absolute one, and refuses one outside the storage root.
   if (data.invoice.imported_pdf_path) {
     const fs = require('fs');
-    const path = require('path');
-    const { getStoragePath } = require('../../config/storage');
-    const raw = String(data.invoice.imported_pdf_path).trim();
-    const candidates = [
-      path.isAbsolute(raw) ? raw : null,
-      path.join(getStoragePath(), raw.replace(/^\/+/, '')),
-    ].filter(Boolean);
-    const found = candidates.find((p) => {
-      try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; }
-    });
+    const { resolveStoredPath } = require('../../utils/storedPath');
+    const candidate = resolveStoredPath(String(data.invoice.imported_pdf_path).trim());
+    let found = null;
+    try { found = candidate && fs.statSync(candidate).isFile() ? candidate : null; } catch { found = null; }
     if (!found) {
       throw new AppError('Imported invoice PDF is missing on disk', 410);
     }

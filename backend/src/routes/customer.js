@@ -20,6 +20,7 @@ const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const { assertContractPdfPath } = require('../utils/safePath');
+const { resolveStoredPath } = require('../utils/storedPath');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -767,7 +768,7 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     // generated PDF (signed in-browser, stamped, or unsigned).
     const path = require('path');
     const fs = require('fs');
-    const filePath = contract.signed_pdf_path || contract.pdf_path;
+    const filePath = resolveStoredPath(contract.signed_pdf_path || contract.pdf_path);
     if (!filePath || !fs.existsSync(filePath)) {
       // Render on-demand so customers who hit the link before the
       // first send still get something usable.

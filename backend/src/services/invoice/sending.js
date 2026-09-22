@@ -17,6 +17,7 @@ const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
+const { toStoredPath } = require('../../utils/storedPath');
 
 
 /**
@@ -123,7 +124,7 @@ async function sendInvoice(id, adminId, options = {}) {
 
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   await auditedUpdate(db, 'invoices', { id }, {
-    status: newStatus, sent_at: new Date(), pdf_path: pdfPath, updated_at: new Date(),
+    status: newStatus, sent_at: new Date(), pdf_path: toStoredPath(pdfPath), updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.send' });
 
   const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
@@ -400,7 +401,7 @@ async function sendStorno(stornoId, adminId) {
   await auditedUpdate(db, 'invoices', { id: stornoId }, {
     status: 'sent',
     sent_at: new Date(),
-    pdf_path: pdfPath,
+    pdf_path: toStoredPath(pdfPath),
     updated_at: new Date(),
   }, { actor: adminId, source: 'invoice.storno.send' });
 

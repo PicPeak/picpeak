@@ -12,6 +12,21 @@ const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
 const businessProfileService = require('./businessProfileService');
+const fs = require('fs');
+const path = require('path');
+const { resolveStoredPath } = require('../utils/storedPath');
+
+/**
+ * The file a queued attachment names. Rows in the queue carry the path the
+ * sender saw; one queued before a restore onto another storage path names the
+ * old root, so a path that is not there is placed on this install's storage
+ * root when the file is there (storedPath.js). Anything else is sent as given.
+ */
+function attachmentFile(file) {
+  if (!file || (path.isAbsolute(file) && fs.existsSync(file))) return file;
+  const placed = resolveStoredPath(file);
+  return placed && fs.existsSync(placed) ? placed : file;
+}
 
 /**
  * The From identity for an outbound message (#1225).
@@ -962,7 +977,7 @@ async function sendTemplateEmail(to, templateKey, variables, { usageEligible = t
         .filter((a) => a && (a.contentPath || a.path || a.content))
         .map((a) => ({
           filename: a.filename,
-          path: a.contentPath || a.path,
+          path: attachmentFile(a.contentPath || a.path),
           content: a.content,
           contentType: a.contentType,
         }))
@@ -1093,7 +1108,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
   const atts = Array.isArray(attachments)
     ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
-      .map((a) => ({ filename: a.filename, path: a.contentPath || a.path, content: a.content, contentType: a.contentType }))
+      .map((a) => ({ filename: a.filename, path: attachmentFile(a.contentPath || a.path), content: a.content, contentType: a.contentType }))
     : undefined;
   const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,
