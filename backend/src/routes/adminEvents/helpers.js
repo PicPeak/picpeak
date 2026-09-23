@@ -168,6 +168,10 @@ async function deleteEventCascade(eventId, adminContext) {
     if (await trx.schema.hasTable('event_people_merge_dismissals')) {
       await trx('event_people_merge_dismissals').where('event_id', eventId).del();
     }
+    // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
+    // SQLite caveat as photo_faces above — delete explicitly so an event's
+    // rate-limit tracking rows don't outlive it on the SQLite path.
+    await trx('feedback_rate_limits').where('event_id', eventId).del();
 
     await trx('photos').where('event_id', eventId).del();
     // 5. Finally delete the event row

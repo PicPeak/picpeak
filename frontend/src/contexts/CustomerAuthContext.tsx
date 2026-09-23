@@ -14,8 +14,51 @@
  */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import i18n from '../i18n/config';
 import { customerService, type CustomerProfile } from '../services/customer.service';
+
+/**
+ * Query key names owned by the customer portal (frontend/src/pages/customer/*),
+ * cleared on logout / session-loss (#1594) so the next customer to sign in
+ * on the same device never briefly sees the previous one's cached dashboard,
+ * quotes, contracts or invoices.
+ *
+ * Not a blanket `queryKey[0].startsWith('customer')` predicate: the app's
+ * QueryClient is a single instance shared with the admin dashboard (see
+ * App.tsx), and the admin CRM panels (CustomerCrmPanels.tsx, HoursSection.tsx)
+ * reuse the exact same first-element strings — 'customer-quotes',
+ * 'customer-contracts', 'customer-invoices' — for a *different*, per-account
+ * cache shaped `['customer-quotes', customerAccountId]`. Per this file's own
+ * header comment, an admin session and a customer session can coexist in the
+ * same browser, so that admin cache must survive a customer-portal logout.
+ * The three overlapping names are only cleared when the key has no second
+ * element (the shape the portal itself uses); every other portal key name is
+ * unique and clears regardless of length.
+ */
+const PORTAL_ONLY_QUERY_KEYS = new Set([
+  'customer-events',
+  'customer-profile',
+  'customer-quote',
+  'customer-contract',
+]);
+const PORTAL_SHARED_NAME_QUERY_KEYS = new Set([
+  'customer-quotes',
+  'customer-contracts',
+  'customer-invoices',
+]);
+
+function clearCustomerPortalQueryCache(queryClient: QueryClient) {
+  queryClient.removeQueries({
+    predicate: (query) => {
+      const name = query.queryKey[0];
+      if (typeof name !== 'string') return false;
+      if (PORTAL_ONLY_QUERY_KEYS.has(name)) return true;
+      if (PORTAL_SHARED_NAME_QUERY_KEYS.has(name)) return query.queryKey.length === 1;
+      return false;
+    },
+  });
+}
 
 /**
  * Apply a customer's preferred language to the portal UI. The admin-set
@@ -83,6 +126,7 @@ const DEFAULT_BRANDING: CustomerBrandingFlags = { showLogo: true, showCompanyNam
 interface ProviderProps { children: ReactNode; }
 
 export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [customer, setCustomerState] = useState<CustomerProfile | null>(null);
   const [features, setFeatures] = useState<CustomerFeatureFlags>(DEFAULT_FEATURES);
   const [branding, setBranding] = useState<CustomerBrandingFlags>(DEFAULT_BRANDING);
@@ -90,6 +134,10 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
   // Reserved for future surface-level errors (login form errors are
   // handled inline on the login page itself, not here).
   const [error] = useState<string | null>(null);
+  // Tracks the last-rendered customer id outside React state so refreshSession
+  // (a stable useCallback, not recreated per render) can always compare
+  // against the *current* identity rather than a stale closure over `customer`.
+  const customerIdRef = React.useRef<CustomerProfile['id'] | null>(null);
 
   /**
    * Refetch the session from /api/customer/auth/session and update both
@@ -123,6 +171,19 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
       return;
     }
     if (response?.customer) {
+      // customer_token is a single domain-wide cookie (see
+      // customer.service.ts), so a second tab can log out customer A and
+      // log in as customer B while this tab stays open. That tab's next
+      // refreshSession() gets a plain 200 for customer B — never a 401 —
+      // so without this check the else-branch cache clear below never
+      // runs and customer A's cached dashboard/quotes/contracts/invoices
+      // can render labeled as customer B's session (#1594). Also fires on
+      // a fresh login (previous id null); harmless since there's nothing
+      // stale to leak yet.
+      if (customerIdRef.current !== response.customer.id) {
+        clearCustomerPortalQueryCache(queryClient);
+      }
+      customerIdRef.current = response.customer.id;
       setCustomerState(response.customer);
       setFeatures(response.features);
       setBranding(response.branding);
@@ -131,13 +192,19 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
       sessionStorage.setItem(BRANDING_KEY, JSON.stringify(response.branding));
       applyCustomerLocale(response.customer.preferredLanguage);
     } else {
-      // Explicit 401 — server says no.
+      // Explicit 401 — server says no (session revoked, or an
+      // erasure-forced logout). The SPA stays mounted here (no hard
+      // navigation), so a cached dashboard/quotes/contracts/invoices query
+      // from this customer would otherwise sit in the QueryClient and flash
+      // on screen the moment the next customer logs in on the same device.
+      customerIdRef.current = null;
       setCustomerState(null);
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(FEATURES_KEY);
       sessionStorage.removeItem(BRANDING_KEY);
+      clearCustomerPortalQueryCache(queryClient);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     // Hydrate immediately from sessionStorage so the dashboard avoids
@@ -194,13 +261,25 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
     };
   }, [refreshSession]);
 
+  // Same identity check as refreshSession's success branch: a direct A→B
+  // switch through setSession/setCustomer (a login without an intervening
+  // logout or 401) must not keep A's cached portal queries around.
+  const adoptCustomerId = (id: CustomerProfile['id']) => {
+    if (customerIdRef.current !== id) {
+      clearCustomerPortalQueryCache(queryClient);
+    }
+    customerIdRef.current = id;
+  };
+
   const setCustomer = (c: CustomerProfile) => {
+    adoptCustomerId(c.id);
     setCustomerState(c);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(c));
     applyCustomerLocale(c.preferredLanguage);
   };
 
   const setSession = (s: { customer: CustomerProfile; features: CustomerFeatureFlags; branding: CustomerBrandingFlags }) => {
+    adoptCustomerId(s.customer.id);
     setCustomerState(s.customer);
     setFeatures(s.features);
     setBranding(s.branding);
@@ -212,12 +291,16 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
 
   const logout = async () => {
     await customerService.logout();
+    customerIdRef.current = null;
     setCustomerState(null);
     setFeatures(DEFAULT_FEATURES);
     setBranding(DEFAULT_BRANDING);
     sessionStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(FEATURES_KEY);
     sessionStorage.removeItem(BRANDING_KEY);
+    // Defense in depth: the hard navigate below already discards this tab's
+    // QueryClient, but clear explicitly in case that ever changes (#1594).
+    clearCustomerPortalQueryCache(queryClient);
     // Hard navigate so any in-flight requests with the old cookie don't
     // race the cleared session — same approach AdminAuthContext uses.
     window.location.href = '/customer/login';
