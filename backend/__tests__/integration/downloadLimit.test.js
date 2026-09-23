@@ -30,6 +30,13 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'download-limit-test-secret';
 const EXTERNAL_ROOT = fs.mkdtempSync(path.join(require('os').tmpdir(), 'picpeak-limit-ext-'));
 process.env.EXTERNAL_MEDIA_ROOT = EXTERNAL_ROOT;
 
+// The real service, with grantDownloads wrapped so a test can stage a race
+// the route loses (or a photo deleted just before the grant).
+jest.mock('../../src/services/downloadQuota', () => {
+  const actual = jest.requireActual('../../src/services/downloadQuota');
+  return { ...actual, grantDownloads: jest.fn(actual.grantDownloads) };
+});
+
 // A deterministic fingerprint, so a token minted below verifies on the
 // secure-image serve route.
 jest.mock('../../src/middleware/secureImageMiddleware', () => ({
@@ -97,7 +104,10 @@ describe('Download limit (issue 1560)', () => {
       photoIds.push(p[0]?.id ?? p[0]);
     }
     const event = await db('events').where({ id }).first();
-    return { event, photoIds, token: galleryToken(event) };
+    // The PIN client draws on the quota; a share-link guest does not.
+    return {
+      event, photoIds, token: galleryToken(event, { accessLevel: 'client' }), guestToken: galleryToken(event),
+    };
   }
 
   const grantCount = async (eventId) => {
@@ -740,6 +750,342 @@ describe('Download limit (issue 1560)', () => {
         .send({ download_limit: null });
       expect(cleared.status).toBe(200);
       expect((await db('events').where({ id: event.id }).first()).download_limit).toBeNull();
+    });
+  });
+
+  // ── Review round: videos, guests, conditional GETs, races ──────────────
+  const drainBody = (r, cb) => { const c = []; r.on('data', (d) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); };
+  const eventually = async (read, expected) => {
+    // Grants settle when the response closes, after supertest resolves.
+    let value;
+    for (let i = 0; i < 50; i += 1) {
+      value = await read();
+      if (value === expected) return value;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return value;
+  };
+  const deliveredCount = async (eventId) => (await quota.grantedPhotoIds(eventId, null, undefined, { deliveredOnly: true })).size;
+
+  async function makeVideo(event, photoId) {
+    const bytes = require('crypto').randomBytes(64 * 1024);
+    const filename = `clip-${photoId}.mp4`;
+    await fs.promises.writeFile(path.join(process.env.STORAGE_PATH, 'events', 'active', event.slug, filename), bytes);
+    await db('photos').where({ id: photoId }).update({
+      filename, path: `${event.slug}/${filename}`, media_type: 'video', mime_type: 'video/mp4', size_bytes: bytes.length,
+    });
+    return bytes;
+  }
+
+  describe('video playback (decision 1)', () => {
+    const play = (event, id, token, range) => {
+      const r = request(app).get(`/api/gallery/${event.slug}/photo/${id}`).set('Authorization', `Bearer ${token}`);
+      if (range) r.set('Range', range);
+      return r.buffer(true).parse(drainBody);
+    };
+
+    it('takes one slot per video, and replays and Range requests of it are free', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2 });
+      const bytes = await makeVideo(event, photoIds[0]);
+
+      const first = await play(event, photoIds[0], token, 'bytes=0-1023');
+      expect(first.status).toBe(206);
+      expect(Buffer.compare(first.body, bytes.subarray(0, 1024))).toBe(0);
+      expect(await eventually(() => deliveredCount(event.id), 1)).toBe(1);
+
+      expect((await play(event, photoIds[0], token, 'bytes=1024-')).status).toBe(206);
+      expect((await play(event, photoIds[0], token)).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(event.id)).toBe(1);
+      expect((await quota.getQuota(event)).remaining).toBe(1);
+    });
+
+    it('refuses an ungranted video once the quota is used up, with the download refusal', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      await makeVideo(event, photoIds[0]);
+      await quota.grantDownloads(event, [photoIds[1]]);
+
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/photo/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Range', 'bytes=0-');
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'DOWNLOAD_LIMIT_REACHED', limit: 1, used: 1, remaining: 0 });
+      expect(await grantCount(event.id)).toBe(1);
+    });
+
+    it('an unsatisfiable Range request takes no slot', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      await makeVideo(event, photoIds[0]);
+      const res = await play(event, photoIds[0], token, 'bytes=999999999-');
+      expect(res.status).toBe(416);
+      expect(await eventually(() => grantCount(event.id), 0)).toBe(0);
+    });
+
+    it('a guest plays a granted video free and is refused any other', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 3 });
+      await makeVideo(event, photoIds[0]);
+      await makeVideo(event, photoIds[1]);
+      await quota.grantDownloads(event, [photoIds[0]]);
+
+      expect((await play(event, photoIds[0], guestToken, 'bytes=0-99')).status).toBe(206);
+      const refused = await play(event, photoIds[1], guestToken, 'bytes=0-99');
+      expect(refused.status).toBe(403);
+      expect(JSON.parse(refused.body.toString())).toMatchObject({ code: 'DOWNLOAD_LIMIT_REACHED', preview_only: true });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(event.id)).toBe(1);
+    });
+
+    it('an unlimited gallery and an admin preview stream videos without grants', async () => {
+      const unlimited = await makeEvent({ limit: null });
+      await makeVideo(unlimited.event, unlimited.photoIds[0]);
+      expect((await play(unlimited.event, unlimited.photoIds[0], unlimited.guestToken)).status).toBe(200);
+
+      const limited = await makeEvent({ limit: 1 });
+      await makeVideo(limited.event, limited.photoIds[0]);
+      const preview = await request(app)
+        .get(`/api/gallery/${limited.event.slug}/photo/${limited.photoIds[0]}?admin_preview=1`)
+        .set('Cookie', [`admin_token=${adminToken}`])
+        .buffer(true).parse(drainBody);
+      expect(preview.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(unlimited.event.id)).toBe(0);
+      expect(await grantCount(limited.event.id)).toBe(0);
+    });
+
+    it('the hero and preview routes of a video lead back to the counted route', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 1 });
+      await makeVideo(event, photoIds[0]);
+      for (const route of ['hero', 'preview']) {
+        const res = await request(app)
+          .get(`/api/gallery/${event.slug}/${route}/${photoIds[0]}`)
+          .set('Authorization', `Bearer ${guestToken}`);
+        expect(res.status).toBe(302);
+        expect(res.headers.location).toBe(`/api/gallery/${event.slug}/photo/${photoIds[0]}`);
+      }
+    });
+  });
+
+  describe('share-link guests on a limited gallery (decision 2)', () => {
+    it('get the preview-size copy of a single photo and use no slot', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 1 });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .buffer(true).parse(drainBody);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^image\/(jpeg|webp)/);
+      expect(res.headers['content-disposition']).toContain('attachment');
+      expect(Buffer.compare(res.body, jpeg)).not.toBe(0);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(event.id)).toBe(0);
+      // Not refused at the limit either: they never draw on it.
+      await quota.grantDownloads(event, [photoIds[1]]);
+      await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[2]}`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .expect(200);
+    });
+
+    it('are refused a video, which has no preview-size copy', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 2 });
+      await makeVideo(event, photoIds[0]);
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${guestToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'DOWNLOAD_LIMIT_REACHED', preview_only: true });
+      expect(await grantCount(event.id)).toBe(0);
+    });
+
+    it('get zips of preview-size copies from download-selected and download-all, using no slot', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 1, photos: 3 });
+      const selected = await request(app)
+        .post(`/api/gallery/${event.slug}/download-selected`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({ photo_ids: photoIds })
+        .buffer(true).parse(drainBody);
+      expect(selected.status).toBe(200);
+      expect(selected.headers['content-type']).toBe('application/zip');
+      expect(selected.body.length).toBeGreaterThan(0);
+
+      const all = await request(app)
+        .get(`/api/gallery/${event.slug}/download-all`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .buffer(true).parse(drainBody);
+      expect(all.status).toBe(200);
+      expect(all.headers['content-type']).toBe('application/zip');
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(event.id)).toBe(0);
+    });
+
+    it('cannot start or collect a resolution job', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 5, photos: 2 });
+      await db('events').where({ id: event.id }).update({ download_resolution_picker_enabled: 1 });
+      const created = await request(app)
+        .post(`/api/gallery/${event.slug}/download-jobs`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .send({ resolution: 'original' });
+      expect(created.status).toBe(403);
+      expect(created.body).toMatchObject({ preview_only: true });
+
+      const jobToken = 'c'.repeat(64);
+      const zipKey = `download-jobs/${event.slug}-guest.zip`;
+      await fs.promises.mkdir(path.join(process.env.STORAGE_PATH, 'download-jobs'), { recursive: true });
+      await fs.promises.writeFile(path.join(process.env.STORAGE_PATH, zipKey), Buffer.from('PK'));
+      await db('download_jobs').insert({
+        token: jobToken, event_id: event.id, resolution: 'original',
+        photo_ids: JSON.stringify(photoIds), delivered_photo_ids: JSON.stringify(photoIds),
+        dedup_key: 'd'.repeat(64), status: 'ready', zip_path: zipKey, photo_count: 2,
+        visibility_scope: require('../../src/services/downloadJobService').visibilityScopeFor('guest'),
+        expires_at: new Date(Date.now() + 3600 * 1000).toISOString(), created_at: new Date().toISOString(),
+      });
+      const file = await request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${jobToken}/file`)
+        .set('Authorization', `Bearer ${guestToken}`);
+      expect(file.status).toBe(403);
+      expect(file.body).toMatchObject({ preview_only: true });
+      expect(await grantCount(event.id)).toBe(0);
+    });
+
+    it('get the preview-size copy from secure-download', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: 1 });
+      await db('events').where({ id: event.id }).update({ require_password: 0 });
+      const current = await db('events').where({ id: event.id }).first();
+      const secureImageService = require('../../src/services/secureImageService');
+      const token = secureImageService.generateSecureToken(photoIds[0], `gallery_public_${event.id}_${Date.now()}`, {
+        clientFingerprint: 'test-fp', maxUses: 10, expiresIn: 3600,
+        galleryAccess: require('../../src/services/galleryAccessService').grant(current, 'public'),
+      });
+      const res = await request(app)
+        .get(`/api/secure-images/${event.slug}/secure-download/${photoIds[0]}/${token}`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .buffer(true).parse(drainBody);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-disposition']).toContain('attachment');
+      expect(Buffer.compare(res.body, jpeg)).not.toBe(0);
+      expect(await grantCount(event.id)).toBe(0);
+    });
+
+    it('get the original on an unlimited gallery, as before', async () => {
+      const { event, photoIds, guestToken } = await makeEvent({ limit: null });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${guestToken}`)
+        .buffer(true).parse(drainBody);
+      expect(res.status).toBe(200);
+      expect(Buffer.compare(res.body, jpeg)).toBe(0);
+    });
+
+    it('the PIN client still gets the original and draws on the quota', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true).parse(drainBody);
+      expect(res.status).toBe(200);
+      expect(Buffer.compare(res.body, jpeg)).toBe(0);
+      expect(await eventually(() => deliveredCount(event.id), 1)).toBe(1);
+    });
+
+    it('a portal session draws on the quota like the PIN client', () => {
+      expect(quota.drawsOnQuota({ accessLevel: 'guest', viaCustomer: true })).toBe(true);
+      expect(quota.drawsOnQuota({ accessLevel: 'client' })).toBe(true);
+      expect(quota.drawsOnQuota({ accessLevel: 'guest' })).toBe(false);
+    });
+
+    it('the photos payload gives a guest no counter and no picker, and the client both', async () => {
+      const { event, token, guestToken } = await makeEvent({ limit: 3 });
+      await db('events').where({ id: event.id }).update({ download_resolution_picker_enabled: 1 });
+      const guest = await request(app)
+        .get(`/api/gallery/${event.slug}/photos`)
+        .set('Authorization', `Bearer ${guestToken}`);
+      expect(guest.status).toBe(200);
+      expect(guest.body.event).toMatchObject({
+        download_limit: null, downloads_remaining: null, download_preview_only: true,
+      });
+      expect(guest.body.event.download_resolution).toMatchObject({ picker_enabled: false, choices: [] });
+
+      const client = await request(app)
+        .get(`/api/gallery/${event.slug}/photos`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(client.body.event).toMatchObject({
+        download_limit: 3, downloads_remaining: 3, download_preview_only: false,
+      });
+    });
+  });
+
+  describe('review fixes', () => {
+    it('a 304 to a conditional GET takes no slot', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      const dl = (headers = {}) => request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .set(headers)
+        .buffer(true).parse(drainBody);
+      const first = await dl();
+      expect(first.status).toBe(200);
+      expect(first.headers.etag).toBeTruthy();
+      expect(await eventually(() => deliveredCount(event.id), 1)).toBe(1);
+
+      // An admin reset, then the browser revalidates what it already holds.
+      await quota.resetGrants(event.id);
+      const revalidated = await dl({ 'If-None-Match': first.headers.etag });
+      expect(revalidated.status).toBe(304);
+      expect(await eventually(() => grantCount(event.id), 0)).toBe(0);
+      await new Promise((r) => setTimeout(r, 50));
+      expect((await quota.getQuota(event)).remaining).toBe(1);
+    });
+
+    it('a download that loses the race for the last slot is not counted in the stats', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      quota.grantDownloads.mockResolvedValueOnce({ ok: false, limit: 1, used: 1, remaining: 0 });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(403);
+      expect((await db('photos').where({ id: photoIds[0] }).first()).download_count || 0).toBe(0);
+      const { c } = await db('access_logs').where({ event_id: event.id, action: 'download' }).count('id as c').first();
+      expect(Number(c)).toBe(0);
+    });
+
+    it('the preview redirect keeps the cache-buster query', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/photo/${photoIds[0]}?v=abc123`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(`/api/gallery/${event.slug}/preview/${photoIds[0]}?v=abc123`);
+    });
+
+    it('a photo deleted just before its grant answers 404, not 500', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2 });
+      const actual = jest.requireActual('../../src/services/downloadQuota').grantDownloads;
+      // Enforce the grant's foreign key as PostgreSQL does.
+      await db.raw('PRAGMA foreign_keys = ON');
+      try {
+        quota.grantDownloads.mockImplementationOnce(async (...args) => {
+          await db('photos').where({ id: photoIds[0] }).del();
+          return actual(...args);
+        });
+        const res = await request(app)
+          .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+          .set('Authorization', `Bearer ${token}`);
+        expect(res.status).toBe(404);
+        expect(await grantCount(event.id)).toBe(0);
+      } finally {
+        await db.raw('PRAGMA foreign_keys = OFF');
+      }
+    });
+
+    it('deleteEventCascade locks the event row before deleting grants and photos', () => {
+      const src = fs.readFileSync(path.join(__dirname, '../../src/routes/adminEvents/helpers.js'), 'utf8');
+      const body = src.slice(src.indexOf('await db.transaction(async (trx) => {'));
+      const lock = body.indexOf('trx(\'events\').where({ id: eventId }).forUpdate()');
+      expect(lock).toBeGreaterThan(-1);
+      for (const table of ['activity_logs', 'event_download_grants', 'photos']) {
+        expect(lock).toBeLessThan(body.indexOf(`trx('${table}')`));
+      }
     });
   });
 });

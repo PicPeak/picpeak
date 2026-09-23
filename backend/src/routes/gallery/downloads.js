@@ -14,7 +14,9 @@ const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const downloadZipService = require('../../services/downloadZipService');
-const { renderPhotoForDownload, resolveWatermarkSettings } = require('../../services/downloadRendition');
+const {
+  renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings,
+} = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
 const {
   resolveEventDownloadPolicy,
@@ -32,7 +34,7 @@ const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const {
   downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
-  settleWhenDone, responseDelivered,
+  settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
 /**
@@ -102,6 +104,17 @@ function galleryActor(req) {
   const isCustomer = !!(req && (req.viaCustomer || req.accessLevel === 'client'));
   return { type: isCustomer ? 'customer' : 'guest' };
 }
+// Download count + access log of one single-photo download.
+async function recordSingleDownload(req, photoId) {
+  await db('photos').where('id', photoId).increment('download_count', 1);
+  await db('access_logs').insert({
+    event_id: req.event.id,
+    ip_address: req.ip,
+    user_agent: req.headers['user-agent'],
+    action: 'download',
+    photo_id: photoId
+  });
+}
 const SINGLE_DOWNLOAD_DEBOUNCE_MS = 60 * 60 * 1000;
 const singleDownloadNotifiedAt = new Map();
 function notifySinglePhotoDownload(event, req) {
@@ -158,6 +171,31 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
     const box = isVideo ? null : parseResolution(requested);
 
+    // Download limit (issue 1560): a share-link guest of a limited gallery
+    // gets the preview-size copy and never draws on the quota; a video has
+    // none, so it is refused.
+    if (await isPreviewOnly(req)) {
+      const preview = await renderPreviewForDownload(photo, await resolveWatermarkSettings(req.event));
+      if (!preview) {
+        return isVideo
+          ? res.status(403).json(clientOnlyError())
+          : res.status(404).json({ error: 'Preview not available' });
+      }
+      if (req.method !== 'HEAD' && !req.isAdminPreview) {
+        await recordSingleDownload(req, photoId);
+        res.on('finish', () => {
+          if (res.statusCode < 400) notifySinglePhotoDownload(req.event, req);
+        });
+      }
+      const previewName = previewDownloadName(pickRawDownloadName(photo, await getUseOriginalFilenames()), preview.extension);
+      res.set({
+        'Content-Type': preview.contentType,
+        'Content-Disposition': buildContentDisposition(previewName),
+        'Content-Length': preview.buffer.length,
+      });
+      return res.send(preview.buffer);
+    }
+
     // A HEAD is a metadata probe, not a download. Answering it below the
     // counters recorded every probe as a real download, and answering it below
     // renderPhotoForDownload fetched and watermarked an image whose body Node
@@ -203,32 +241,22 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // already received is free again.
     const limitCheck = await checkDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
     if (!limitCheck.ok) return res.status(403).json(downloadLimitError(limitCheck));
+    // The download counters are bumped only once the grant went through: a
+    // request that loses the race for the last slot downloaded nothing.
     const grantThisPhoto = async () => {
       const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview, reserve: true });
       if (quota.ok) {
         settleWhenDone(res, req.event.id, quota, responseDelivered(res, [photo.id]));
+        // Admin preview (#868) downloads are excluded from the download count +
+        // guest analytics — kept out of client-facing stats.
+        if (!req.isAdminPreview) await recordSingleDownload(req, photoId);
         return true;
       }
-      // Lost a race with another device between the check and here.
-      res.status(403).json(downloadLimitError(quota));
+      // Lost a race with another device between the check and here, or the
+      // photo was deleted meanwhile.
+      refuseDownload(res, quota);
       return false;
     };
-
-    // Admin preview (#868) downloads are excluded from the download count +
-    // guest analytics — kept out of client-facing stats.
-    if (!req.isAdminPreview) {
-      // Update download count
-      await db('photos').where('id', photoId).increment('download_count', 1);
-
-      // Log download
-      await db('access_logs').insert({
-        event_id: req.event.id,
-        ip_address: req.ip,
-        user_agent: req.headers['user-agent'],
-        action: 'download',
-        photo_id: photoId
-      });
-    }
     // Surface in the admin notification bell (#746) — debounced, and only
     // once the response actually finished: notifying up-front would log a
     // download that then 404s/fails and the debounce would suppress the
@@ -586,19 +614,27 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       return res.status(404).json({ error: 'No photos found' });
     }
 
+    // Download limit (issue 1560): a share-link guest of a limited gallery
+    // gets an archive of preview-size copies and draws nothing from the quota.
+    const previewOnly = await isPreviewOnly(req);
+
     // Download limit (issue 1560): a HEAD probe (a download manager asking
     // for the size first) answers without taking any of the quota.
     if (req.method === 'HEAD' && downloadLimitOf(req.event)) {
-      const check = await checkDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
-      if (!check.ok) return res.status(403).end();
+      if (!previewOnly) {
+        const check = await checkDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+        if (!check.ok) return res.status(403).end();
+      }
       res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.event.slug}.zip"` });
       return res.end();
     }
 
     // Download limit (issue 1560): the whole archive or nothing, decided
     // before the zip headers go out.
-    const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
-    if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+    const quota = previewOnly
+      ? { ok: true, newIds: [] }
+      : await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
+    if (!quota.ok) return refuseDownload(res, quota);
     const releaseAll = releaseUnshipped(res, req.event.id, quota);
     // The guest left while the grant was being recorded: nothing to stream.
     if (res.destroyed || res.closed) return;
@@ -689,6 +725,14 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           }
         } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
           throw new Error('Photo file missing on disk');
+        }
+
+        if (previewOnly) {
+          const preview = await renderPreviewForDownload(photo, effectiveSettings);
+          if (!preview) throw new Error('No preview-size copy of this photo');
+          archive.append(preview.buffer, { name: previewDownloadName(archiveName, preview.extension), photoId: photo.id });
+          appendedIds.push(photo.id);
+          continue;
         }
 
         // Resize to the gallery's standard resolution (#858) and/or watermark.
@@ -814,9 +858,13 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     const selectedBox = parseResolution(selectedResolution);
 
     // Download limit (issue 1560): the resolved, visibility-filtered set is
-    // what gets zipped, so it is what gets granted. All or nothing.
-    const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
-    if (!selectedQuota.ok) return res.status(403).json(downloadLimitError(selectedQuota));
+    // what gets zipped, so it is what gets granted. All or nothing. A
+    // share-link guest gets preview-size copies and is granted nothing.
+    const selectedPreviewOnly = await isPreviewOnly(req);
+    const selectedQuota = selectedPreviewOnly
+      ? { ok: true, newIds: [] }
+      : await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
+    if (!selectedQuota.ok) return refuseDownload(res, selectedQuota);
     const releaseSelected = releaseUnshipped(res, req.event.id, selectedQuota);
     // The guest left while the grant was being recorded: nothing to stream.
     if (res.destroyed || res.closed) return;
@@ -890,6 +938,14 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           }
         } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
           throw new Error('Photo file missing on disk');
+        }
+
+        if (selectedPreviewOnly) {
+          const preview = await renderPreviewForDownload(photo, effectiveSettings);
+          if (!preview) throw new Error('No preview-size copy of this photo');
+          archive.append(preview.buffer, { name: previewDownloadName(name, preview.extension), photoId: photo.id });
+          appendedIds.push(photo.id);
+          continue;
         }
 
         // Resize (#858) and/or watermark. renderPhotoForDownload returns null
@@ -991,7 +1047,9 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
     // Download limit (issue 1560). Checked here so no archive gets built for a
     // request that could never be delivered; granted when the file is handed
     // over, because jobs are shared between requesters and creating one is not
-    // a download.
+    // a download. A share-link guest of a limited gallery only gets
+    // preview-size copies, which a resolution job does not build.
+    if (await isPreviewOnly(req)) return res.status(403).json(clientOnlyError());
     if (downloadLimitOf(req.event) && !req.isAdminPreview) {
       const resolved = await downloadJobService
         .photoQuery(req.event.id, photoIds, req.accessLevel)
@@ -1082,6 +1140,9 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     if (job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
+    // Download limit (issue 1560): a limited gallery's archives hold
+    // originals, which a share-link guest may not take.
+    if (await isPreviewOnly(req)) return res.status(403).json(clientOnlyError());
     if (job.status !== 'ready' || !job.zip_path) {
       return res.status(409).json({ error: 'Download is not ready yet', status: job.status });
     }
@@ -1128,7 +1189,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         return res.end();
       }
       const quota = await grantDownloads(req.event, deliveredIds, { reserve: true });
-      if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+      if (!quota.ok) return refuseDownload(res, quota);
       settleWhenDone(res, req.event.id, quota, responseDelivered(res, deliveredIds));
     }
 

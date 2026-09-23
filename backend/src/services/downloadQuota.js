@@ -136,6 +136,22 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
   // No byte has gone out yet, so a limit set since the event was loaded counts.
   if (!(await currentDownloadLimit(event))) return { ok: true, newIds: [] };
 
+  try {
+    return await grantInTransaction(event, ids, reserve);
+  } catch (err) {
+    // A photo deleted between the request loading it and the insert below
+    // fails the grant's foreign key (PostgreSQL). The photo is gone: that is
+    // a 404 for the caller, not a server error.
+    if (isForeignKeyViolation(err)) return { ok: false, photoGone: true };
+    throw err;
+  }
+}
+
+function isForeignKeyViolation(err) {
+  return !!err && (err.code === '23503' || /FOREIGN KEY constraint failed/i.test(String(err.message)));
+}
+
+function grantInTransaction(event, ids, reserve) {
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
     if (trx.client.config.client === 'pg') {
@@ -295,7 +311,10 @@ function settleWhenDone(res, eventId, quota, deliveredIds) {
  * that went out cannot be taken back.
  */
 function responseDelivered(res, photoIds) {
-  return () => (res.headersSent && res.statusCode < 400 ? photoIds : []);
+  // 2xx only. A 304 answers a conditional GET from a browser that already
+  // holds the bytes: nothing new went out, so it must not take a slot. A 206
+  // (a Range request of a video, a resumed download) did send bytes.
+  return () => (res.headersSent && res.statusCode >= 200 && res.statusCode < 300 ? photoIds : []);
 }
 
 /** The response body every download path sends when the limit refuses a request. */
@@ -306,6 +325,45 @@ function downloadLimitError(result) {
     limit: result.limit,
     used: result.used,
     remaining: result.remaining,
+  };
+}
+
+/**
+ * The response to a grant that did not go through: 404 when the photo was
+ * deleted while the request ran, else the limit refusal.
+ */
+function refuseDownload(res, result) {
+  if (result && result.photoGone) return res.status(404).json({ error: 'Photo not found' });
+  return res.status(403).json(downloadLimitError(result));
+}
+
+/**
+ * Whether this gallery session may take originals out of a limited gallery
+ * and so draw on its quota: the PIN client (accessLevel 'client') and a
+ * customer-portal session (viaCustomer, which runs at accessLevel 'guest').
+ * Share-link guests may not.
+ */
+function drawsOnQuota(req) {
+  return !!(req && (req.viaCustomer || req.accessLevel === 'client'));
+}
+
+/**
+ * Whether this request gets preview-size copies instead of originals: a
+ * share-link guest of a gallery with a download limit. They never consume
+ * the pool. Admin previews and unlimited galleries are unaffected.
+ */
+async function isPreviewOnly(req) {
+  if (!req || req.isAdminPreview || drawsOnQuota(req)) return false;
+  return !!(await currentDownloadLimit(req.event));
+}
+
+/** The refusal a preview-only guest gets for an original that has no preview-size copy (a video). */
+function clientOnlyError() {
+  return {
+    error: 'Original files of this gallery are available to the client only.',
+    code: 'DOWNLOAD_LIMIT_REACHED',
+    remaining: 0,
+    preview_only: true,
   };
 }
 
@@ -337,6 +395,10 @@ module.exports = {
   checkDownloads,
   grantDownloads,
   downloadLimitError,
+  refuseDownload,
+  drawsOnQuota,
+  isPreviewOnly,
+  clientOnlyError,
   resetGrants,
   settleReservation,
   settleWhenDone,

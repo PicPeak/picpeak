@@ -11,8 +11,8 @@ const { getUseOriginalFilenames } = require('./downloadFilenameService');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
-const { getQuota, grantedPhotoIds } = require('./downloadQuota');
-async function getGalleryPhotos({ event, query = {}, identity, accessLevel, adminPreview, hiddenForGuest, slug }) {
+const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
+async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
   // own feedback is resolved from the request identity instead (see the
@@ -408,6 +408,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
     ? await grantedPhotoIds(event.id, null, undefined, { deliveredOnly: true })
     : new Set();
   const withholdOriginals = !!downloadQuota;
+  // Only the client (PIN or portal) draws on the quota. A share-link guest
+  // downloads preview-size copies instead, so they get no counter they could
+  // not use, and no resolution picker: a job would build originals.
+  const downloadPreviewOnly = !!downloadQuota && !drawsOnQuota({ accessLevel, viaCustomer });
+  const quotaForViewer = downloadPreviewOnly ? null : downloadQuota;
 
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
@@ -427,13 +432,14 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // Download resolutions (#858). `choices` drives the picker modal and is
       // empty when the picker is off, so the UI can never offer a size the
       // server would reject.
-      download_limit: downloadQuota ? downloadQuota.limit : null,
-      downloads_used: downloadQuota ? downloadQuota.used : 0,
-      downloads_remaining: downloadQuota ? downloadQuota.remaining : null,
+      download_limit: quotaForViewer ? quotaForViewer.limit : null,
+      downloads_used: quotaForViewer ? quotaForViewer.used : 0,
+      downloads_remaining: quotaForViewer ? quotaForViewer.remaining : null,
+      download_preview_only: downloadPreviewOnly,
       download_resolution: {
         standard: downloadPolicy.standard,
-        picker_enabled: downloadPolicy.pickerEnabled,
-        choices: downloadPolicy.pickerEnabled ? downloadPolicy.choices : [],
+        picker_enabled: downloadPolicy.pickerEnabled && !downloadPreviewOnly,
+        choices: downloadPolicy.pickerEnabled && !downloadPreviewOnly ? downloadPolicy.choices : [],
       },
       // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
       // polling so a re-hide propagates without a manual reload.
