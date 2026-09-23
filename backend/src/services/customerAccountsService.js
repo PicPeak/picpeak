@@ -806,6 +806,21 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *   - Set `is_active=false` and bump `password_changed_at` so any
  *     outstanding tokens die immediately.
  *   - Delete pending invitations + reset tokens for this customer.
+ *   - Cancel every `email_queue` row still pending for this customer's
+ *     address (so nothing queued before the erasure goes out after it), and
+ *     redact the variables, recipient AND rendered_html (migration 119's
+ *     exact-sent-HTML column) on every row for this address that isn't
+ *     already gone — sent, failed or just-cancelled — so the archive and
+ *     any backup stop carrying their data (#1593). Matched on the address
+ *     as stored *before* this function rewrites it to the sentinel below,
+ *     case-insensitively (an address stored with different casing than the
+ *     account is still the same mailbox). Contract mail on this branch is
+ *     always queued to the account address (signatures v2 and its
+ *     per-signer addresses haven't landed here), so it is covered by the
+ *     same match. A cancelled row belonging to a newsletter campaign also flips its
+ *     `email_campaign_recipients` row and rolls the campaign's counters,
+ *     so a campaign whose last outstanding recipient was just erased
+ *     doesn't stay stuck at queued/sending forever.
  *
  * What we keep:
  *   - The customer_accounts row itself (anonymized).
@@ -826,8 +841,54 @@ async function eraseCustomer(id, erasedByAdminId) {
   // a random suffix so a re-erase of a different account doesn't
   // collide on the unique index.
   const sentinelEmail = `deleted-${id}-${crypto.randomBytes(4).toString('hex')}@deleted.invalid`;
+  // Campaigns touched by the email_queue cancellation below (#1593 bug 3) —
+  // their email_campaign_recipients rows and counters are recomputed once
+  // this transaction commits (recomputeCounts reads through the shared
+  // `db` connection, not `trx`, so calling it in here would read stale —
+  // or on SQLite, deadlock on — the not-yet-committed rows).
+  const touchedCampaignIds = new Set();
 
   await db.transaction(async (trx) => {
+    // email_queue (#1593): cancel what hasn't gone out yet, then redact the
+    // variables + recipient on every row for this address that isn't
+    // already gone (sent, failed, or the row just cancelled above) — done
+    // ahead of the customer_accounts update below so the match is still
+    // against the real address, not the sentinel.
+    const forCustomer = (q) => q.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+    const cancelledQueueRows = await forCustomer(trx('email_queue')).where('status', 'pending')
+      .select('id', 'campaign_id');
+    if (cancelledQueueRows.length > 0) {
+      await trx('email_queue')
+        .whereIn('id', cancelledQueueRows.map((row) => row.id))
+        .update({ status: 'cancelled' });
+    }
+    await forCustomer(trx('email_queue'))
+      .whereIn('status', ['sent', 'failed', 'cancelled'])
+      .update({
+        recipient_email: sentinelEmail,
+        email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),
+        // Migration 119: the exact HTML sent (customer name, document
+        // titles, review notes baked in) for the Project Overview preview.
+        // Left untouched, sent rows kept full customer PII here forever —
+        // in the DB and in every backup — defeating the erasure.
+        rendered_html: null,
+      });
+
+    // Newsletter campaign bookkeeping (#1593 bug 3): a cancelled row that
+    // belongs to a campaign must flip its email_campaign_recipients row
+    // too, or that recipient stays 'queued' forever and
+    // newsletterService.recomputeCounts's stillQueued check keeps the
+    // whole campaign stuck at 'queued'/'sending' even once every other
+    // recipient resolved.
+    for (const row of cancelledQueueRows) {
+      if (!row.campaign_id) continue;
+      await trx('email_campaign_recipients')
+        .where({ campaign_id: row.campaign_id, email_queue_id: row.id })
+        .where('status', 'queued')
+        .update({ status: 'cancelled' });
+      touchedCampaignIds.add(row.campaign_id);
+    }
+
     await auditedUpdate(trx, 'customer_accounts', { id }, {
       email: sentinelEmail,
       salutation: null,
@@ -881,6 +942,16 @@ async function eraseCustomer(id, erasedByAdminId) {
         { actor: erasedByAdminId || null, source: 'customer.erase' });
     }
   });
+
+  // Campaign counters (#1593 bug 3), recomputed now that the cancellations
+  // above have committed — recomputeCounts reads the recipient rows fresh
+  // through the shared `db` connection.
+  if (touchedCampaignIds.size > 0) {
+    const newsletterService = require('./newsletterService');
+    for (const campaignId of touchedCampaignIds) {
+      await newsletterService.recomputeCounts(campaignId);
+    }
+  }
 
   await logActivity('customer_erased',
     { customerId: id, originalEmail: customer.email },
