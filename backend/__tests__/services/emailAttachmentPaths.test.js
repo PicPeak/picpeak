@@ -124,3 +124,41 @@ test('a row queued before a restore onto another root still sends the restored f
   expect(row.status).toBe('sent');
   expect(mails[0].attachments[0].path).toBe(fs.realpathSync(file));
 });
+
+test('a symlink inside storage whose outside target is not there yet is not attached by its unchecked path', async () => {
+  // realpath fails on a dangling link, so the check cannot place it. Handing
+  // the link path to the transport anyway would let a target created after
+  // the check (or a link planted in its place) be read outside the root.
+  const target = path.join(outside, 'later.txt');
+  const link = path.join(root, 'business-docs', 'invoice', '2026', 'dangling.pdf');
+  fs.mkdirSync(path.dirname(link), { recursive: true });
+  fs.symlinkSync(target, link);
+  const id = await queue([{ filename: 'dangling.pdf', contentPath: link, contentType: 'application/pdf' }]);
+  const { processEmailQueue } = require('../../src/services/emailProcessor');
+  const stub = stubWebhookTransport();
+  const send = require('../../src/services/emailWebhookTransport').send;
+  send.mockImplementation(async (mail) => {
+    fs.writeFileSync(target, 'secret'); // the target appears before the transport reads
+    stub.mails.push(mail);
+    return { messageId: 'm' };
+  });
+  try {
+    await processEmailQueue({ ignoreSchedule: true, onlyId: id });
+  } finally { stub.restore(); fs.rmSync(target, { force: true }); }
+  expect(stub.mails).toHaveLength(0);
+  const row = await db('email_queue').where({ id }).first();
+  expect(row.status).not.toBe('sent');
+  expect(row.error_message).toMatch(/Attachment "dangling\.pdf" is missing/);
+  expect(row.error_message).not.toContain(outside);
+});
+
+test('a missing file fails the send and stays queued for a retry, naming only the attachment', async () => {
+  const gone = path.join(root, 'business-docs', 'invoice', '2026', 'deleted.pdf');
+  const id = await queue([{ filename: 'deleted.pdf', contentPath: gone, contentType: 'application/pdf' }]);
+  const { mails, row } = await send(id);
+  expect(mails).toHaveLength(0);
+  expect(row.status).toBe('pending');
+  expect(row.retry_count).toBe(1);
+  expect(row.error_message).toMatch(/Attachment "deleted\.pdf" is missing/);
+  expect(row.error_message).not.toContain(root);
+});
