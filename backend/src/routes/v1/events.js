@@ -1043,15 +1043,16 @@ async function openOriginal(event, photo, { needSize = true } = {}) {
 }
 
 /**
- * ZIP entry names: the original upload name, zip-safe, with `:` replaced
- * (Windows and macOS refuse it) and duplicates suffixed `_1`, `_2` … compared
+ * ZIP entry names: the original upload name, zip-safe (sanitizeForZipEntry
+ * replaces `:` and the rest of the Windows-reserved characters so entries
+ * extract cleanly there too) and duplicates suffixed `_1`, `_2` … compared
  * case-insensitively, so `IMG.jpg` and `img.JPG` do not overwrite each other
  * when extracted onto a case-insensitive filesystem.
  */
 function zipEntryNames(rawNames) {
   const taken = new Set();
   return rawNames.map((raw) => {
-    const name = sanitizeForZipEntry(raw).replace(/:/g, '_');
+    const name = sanitizeForZipEntry(raw);
     const ext = path.extname(name);
     const stem = ext ? name.slice(0, -ext.length) : name;
     let candidate = name;
@@ -1226,6 +1227,14 @@ router.get(
 
       // Size the request before loading a single row. sum() comes back as a
       // string on PostgreSQL (bigint) and skips rows with no recorded size.
+      // A row with a recorded size_bytes is trusted as-is here rather than
+      // re-statted against the live file: size_bytes is only ever written at
+      // import/replace time, so a file swapped afterwards on disk could make
+      // this preflight over- or under-count it. Re-verifying every row would
+      // mean a stat (an S3 HEAD, for external storage) per photo before this
+      // cheap COUNT/SUM check can even run, on top of what the unsized rows
+      // below already cost — accepted for now; the actual bytes streamed
+      // into the archive are always read from the real file regardless.
       const totals = await selection().getQuery()
         .count('photos.id as count')
         .sum('photos.size_bytes as bytes')

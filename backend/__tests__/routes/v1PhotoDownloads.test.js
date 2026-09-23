@@ -512,13 +512,13 @@ describe('v1 original downloads (issue 1473)', () => {
       const entries = await readZip(res.body);
       const names = Object.keys(entries).sort();
       expect(names).toEqual([
-        'Hochzeit Müller "final".jpg',
+        'Hochzeit Müller _final_.jpg',
         'IMG_0001.png',
         'IMG_0001_1.png',
         'MISSING_FILES.txt',
         'clip.mp4',
       ].sort());
-      expect(sha256(entries['Hochzeit Müller "final".jpg'].data)).toBe(sha256(bytes.jpeg));
+      expect(sha256(entries['Hochzeit Müller _final_.jpg'].data)).toBe(sha256(bytes.jpeg));
       expect(sha256(entries['clip.mp4'].data)).toBe(sha256(bytes.video));
       // Order is by stored filename: _0002.png before _0003.jpg.
       expect(sha256(entries['IMG_0001.png'].data)).toBe(sha256(bytes.png));
