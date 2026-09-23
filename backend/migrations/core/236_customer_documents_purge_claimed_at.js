@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 232: `customer_documents.purge_claimed_at` (#1592).
+ * Migration 236: `customer_documents.purge_claimed_at` (#1592).
  *
  * `purgeFiles()` used to stamp `purged_at` as its claim, before deleting the
  * bytes. A crash between the stamp and the delete (process death, deploy,
