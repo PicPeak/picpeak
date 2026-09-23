@@ -382,4 +382,84 @@ describe('customer erasure clears email_queue', () => {
     const campaign = await db('email_campaigns').where({ id: campaignId }).first();
     expect(Number(campaign.sent_count)).toBe(0);
   });
+
+  it('matches queued mail to the customer\'s address case-insensitively', async () => {
+    const mixed = await insertCustomer(db);
+    const now = new Date().toISOString();
+    const [pendingIns] = await db('email_queue').insert({
+      recipient_email: mixed.email.toUpperCase(), email_type: 'gallery_created', status: 'pending',
+      email_data: JSON.stringify({ customer_name: 'Mixed Case' }), created_at: now,
+    }).returning('id');
+    const [sentIns] = await db('email_queue').insert({
+      recipient_email: `Erase-Mailq-${mixed.email.slice('erase-mailq-'.length)}`, email_type: 'gallery_created',
+      status: 'sent', email_data: JSON.stringify({ customer_name: 'Mixed Case' }), rendered_html: '<p>Mixed Case</p>',
+      created_at: now,
+    }).returning('id');
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    await eraseCustomer(mixed.id, null);
+
+    const pending = await db('email_queue').where({ id: pendingIns?.id ?? pendingIns }).first();
+    expect(pending.status).toBe('cancelled');
+    expect(pending.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(JSON.parse(pending.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    const sent = await db('email_queue').where({ id: sentIns?.id ?? sentIns }).first();
+    expect(sent.status).toBe('sent');
+    expect(sent.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(sent.rendered_html).toBeFalsy();
+  });
+
+  it('covers contract mail to a signer address only when it names a contract this erasure redacts', async () => {
+    const fieldEncryption = require('../../src/utils/fieldEncryption');
+    const owner = await insertCustomer(db);
+    const other = await insertCustomer(db);
+    const signerEmail = 'co-signer@example.com';
+    const now = new Date().toISOString();
+
+    const mkContract = async (customerAccountId, number) => {
+      const [row] = await db('contracts').insert({
+        contract_number: number, customer_account_id: customerAccountId, status: 'sent',
+        issue_date: '2026-09-01', created_at: now, updated_at: now,
+      }).returning('id');
+      const contractId = row?.id ?? row;
+      await db('contract_signers').insert({
+        contract_id: contractId, position: 1, role: 'customer', slot_key: 'customer-1', status: 'invited',
+        name_enc: fieldEncryption.encrypt('Co Signer'), email_enc: fieldEncryption.encrypt(signerEmail),
+        email_hash: fieldEncryption.hashEmail(signerEmail), created_at: now, updated_at: now,
+      });
+      return contractId;
+    };
+    await mkContract(owner.id, 'V-ERASE-OWN');
+    await mkContract(other.id, 'V-ERASE-OTHER');
+
+    const queue = async (recipient, data) => {
+      const [row] = await db('email_queue').insert({
+        recipient_email: recipient, email_type: 'contract_sent', status: 'pending',
+        email_data: JSON.stringify(data), created_at: now,
+      }).returning('id');
+      return row?.id ?? row;
+    };
+    const ownInvite = await queue('Co-Signer@Example.com', { contract_number: 'V-ERASE-OWN', customer_name: 'Co Signer' });
+    const otherInvite = await queue(signerEmail, { contract_number: 'V-ERASE-OTHER', customer_name: 'Co Signer' });
+    const unattributed = await queue(signerEmail, { customer_name: 'Co Signer' });
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    await eraseCustomer(owner.id, null);
+
+    const own = await db('email_queue').where({ id: ownInvite }).first();
+    expect(own.status).toBe('cancelled');
+    expect(JSON.parse(own.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    expect(own.recipient_email).not.toMatch(/co-signer/i);
+
+    // Same address, another customer's contract: not this customer's mail.
+    const foreign = await db('email_queue').where({ id: otherInvite }).first();
+    expect(foreign.status).toBe('pending');
+    expect(foreign.recipient_email).toBe(signerEmail);
+    expect(JSON.parse(foreign.email_data).contract_number).toBe('V-ERASE-OTHER');
+
+    // Same address, nothing tying it to a contract: left alone.
+    const loose = await db('email_queue').where({ id: unattributed }).first();
+    expect(loose.status).toBe('pending');
+    expect(loose.recipient_email).toBe(signerEmail);
+  });
 });
