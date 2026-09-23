@@ -15,6 +15,7 @@
  * is observable rather than silent. Wiring is a follow-up commit.
  */
 const registry = require('./registry');
+const { formatBoolean } = require('../../utils/dbCompat');
 
 // --- Conditions ---
 
@@ -39,7 +40,10 @@ registry.registerCondition('invoice_paid', async (ctx) => {
 // from `customerAccountId` in the run's vars, which the customer.created,
 // quote.*, contract.* and invoice.* triggers set; on any other trigger (the
 // gallery and event ones) there is no customer and the condition is false.
-// Read-only, so a dry run evaluates it like a real one.
+// As with a newsletter group rule, a group archived (or deleted) since the
+// node was configured contributes nobody — so with `all` it can no longer be
+// matched and the condition is false. Read-only, so a dry run evaluates it
+// like a real one.
 registry.registerCondition('customer_in_group', async (ctx) => {
   const customerId = Number(ctx.vars?.customerAccountId);
   if (!Number.isInteger(customerId) || customerId <= 0) return false;
@@ -48,9 +52,11 @@ registry.registerCondition('customer_in_group', async (ctx) => {
     .map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (groupIds.length === 0) return false;
   const found = await ctx.db('customer_group_members')
-    .where({ customer_account_id: customerId })
-    .whereIn('group_id', groupIds)
-    .pluck('group_id');
+    .join('customer_groups', 'customer_groups.id', 'customer_group_members.group_id')
+    .where('customer_groups.is_archived', formatBoolean(false))
+    .where('customer_group_members.customer_account_id', customerId)
+    .whereIn('customer_group_members.group_id', groupIds)
+    .pluck('customer_group_members.group_id');
   const distinct = new Set(found.map(Number)).size;
   return cfg.match === 'all' ? distinct === groupIds.length : distinct > 0;
 });

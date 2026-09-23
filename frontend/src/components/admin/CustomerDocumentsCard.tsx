@@ -349,7 +349,11 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
                     <PermissionGate permission={PERMISSION}>
                       {doc.status !== 'clean' && (
                         <Button
-                          type="button" variant="ghost" size="sm" disabled={busy}
+                          type="button" variant="ghost" size="sm"
+                          disabled={busy || doc.malwareFlagged}
+                          title={doc.malwareFlagged
+                            ? t('customers.documents.malwareFlaggedTooltip', 'The malware scanner rejected this file. It cannot be marked clean.') as string
+                            : undefined}
                           leftIcon={<CheckCircle2 className="w-4 h-4" />}
                           onClick={() => run(doc.id, async () => {
                             await customerDocumentsAdminService.review(customerId, doc.id, 'clean');

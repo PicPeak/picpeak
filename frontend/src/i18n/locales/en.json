@@ -6127,6 +6127,7 @@
       "downloadStarted": "Download started.",
       "markClean": "Mark clean",
       "markedClean": "Marked clean.",
+      "malwareFlaggedTooltip": "The malware scanner rejected this file. It cannot be marked clean.",
       "reject": "Reject",
       "rejectPlaceholder": "Reason, shown to the customer (optional)",
       "confirmReject": "Reject file",

@@ -1127,6 +1127,51 @@ async function renderQueuedEmail(templateKey, variables = {}, to = '') {
   return { subject, html: htmlBody };
 }
 
+// Customer document notification types (customerDocumentNotifications.js,
+// #1591). Queued as soon as the triggering write commits, so the document or
+// request they report on can change state before the queue reaches the row
+// — a share undone, an upload deleted, a rejection reversed by a later
+// acceptance, a request fulfilled or cancelled. staleDocumentNotificationReason
+// re-checks the row right before send and returns why it no longer applies,
+// or null when it's still good to send. Scoped to just these types — not a
+// generic "verify relevance" hook for every email.
+const DOCUMENT_NOTIFICATION_TYPES = new Set([
+  'customer_document_shared',
+  'customer_document_uploaded_admin',
+  'customer_document_reviewed',
+  'customer_document_requested',
+  'customer_document_request_reminder',
+]);
+
+async function staleDocumentNotificationReason(emailType, emailData) {
+  if (!DOCUMENT_NOTIFICATION_TYPES.has(emailType)) return null;
+
+  if (emailType === 'customer_document_requested' || emailType === 'customer_document_request_reminder') {
+    const requestId = emailData.__requestId;
+    if (requestId == null) return null; // queued before this check existed
+    const request = await db('customer_document_requests').where({ id: requestId }).first('status');
+    if (!request || request.status !== 'open') {
+      return 'The document request was fulfilled or cancelled after this mail was queued';
+    }
+    return null;
+  }
+
+  const documentId = emailData.__documentId;
+  if (documentId == null) return null; // queued before this check existed
+  const doc = await db('customer_documents').where({ id: documentId })
+    .first('status', 'shared_at', 'unshared_at', 'deleted_at');
+  if (!doc || doc.deleted_at) {
+    return 'The document was deleted after this mail was queued';
+  }
+  if (emailType === 'customer_document_shared' && !(doc.shared_at && !doc.unshared_at)) {
+    return 'The document was unshared after this mail was queued';
+  }
+  if (emailType === 'customer_document_reviewed' && doc.status !== 'rejected') {
+    return 'The document was reviewed again after this mail was queued';
+  }
+  return null;
+}
+
 // Process email queue.
 //
 // Options:
@@ -1267,6 +1312,23 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // recipient language from the event consistently.
         if (emailData.eventId == null && email.event_id != null) {
           emailData.eventId = email.event_id;
+        }
+
+        // Customer document notifications (#1591) re-check the document/
+        // request they report on right before sending: a share can be
+        // undone, an upload deleted, a rejection reversed, or a request
+        // fulfilled/cancelled between queueing and the processor reaching
+        // this row. Cancelled here, the same way a newsletter opt-out is
+        // below — not an error, so it neither counts against retries nor
+        // logs at error level.
+        const staleDocumentReason = await staleDocumentNotificationReason(email.email_type, emailData);
+        if (staleDocumentReason) {
+          await db('email_queue').where('id', email.id).update({
+            status: 'cancelled',
+            error_message: staleDocumentReason,
+          });
+          logger.info(`Email ${email.id} skipped — ${staleDocumentReason}`);
+          continue;
         }
 
         // Newsletter campaigns (#1264) have no `email_templates` row — the

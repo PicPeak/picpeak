@@ -6127,6 +6127,7 @@
       "downloadStarted": "Download gestartet.",
       "markClean": "Als unbedenklich markieren",
       "markedClean": "Als unbedenklich markiert.",
+      "malwareFlaggedTooltip": "Der Malware-Scanner hat diese Datei abgelehnt. Sie kann nicht als unbedenklich markiert werden.",
       "reject": "Ablehnen",
       "rejectPlaceholder": "Grund, wird dem Kunden angezeigt (optional)",
       "confirmReject": "Datei ablehnen",
