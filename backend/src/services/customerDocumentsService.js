@@ -157,6 +157,8 @@ const PDF_ERROR_CODES = {
   PDF_TOO_MANY_PAGES: [`A document may have at most ${MAX_DOCUMENT_PAGES} pages`, 'PDF_TOO_MANY_PAGES'],
   PDF_TOO_COMPLEX: [null, 'PDF_TOO_COMPLEX'],
   PDF_ACTIVE_CONTENT: [null, 'PDF_ACTIVE_CONTENT'],
+  // Not a verdict on the file: no worker could start, or the queue is full.
+  DOCUMENT_CHECK_UNAVAILABLE: [null, 'DOCUMENT_CHECK_UNAVAILABLE'],
 };
 
 function documentPdfError(err) {
