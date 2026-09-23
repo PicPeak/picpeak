@@ -29,6 +29,12 @@ describe('DownloadQuotaNotice (issue 1560)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('shows a share-link guest the preview-size note, not a counter', () => {
+    renderWith({ download_limit: null, download_preview_only: true }, <DownloadQuotaNotice />);
+    expect(screen.getByTestId('download-preview-only')).toHaveTextContent('preview size');
+    expect(screen.queryByTestId('download-quota-counter')).toBeNull();
+  });
+
   it('shows the counter', () => {
     renderWith({ download_limit: 10, downloads_used: 3, downloads_remaining: 7 }, <DownloadQuotaNotice />);
     expect(screen.getByTestId('download-quota-counter')).toHaveTextContent('3 of 10 downloads used');

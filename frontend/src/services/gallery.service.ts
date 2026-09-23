@@ -129,7 +129,8 @@ export const galleryService = {
     }
     // Download limit (issue 1560): the download transports below pick a
     // path whose refusal they can see while this gallery has one.
-    markGalleryLimited(slug, !!data?.event?.download_limit);
+    // A preview-only guest counts too: a video download is refused for them.
+    markGalleryLimited(slug, !!data?.event?.download_limit || !!data?.event?.download_preview_only);
     const normalizedEvent = data?.event
       ? {
           ...data.event,

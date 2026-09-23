@@ -38,6 +38,8 @@ import './GalleryPremiumLayout.css';
 import { lightboxImageUrl } from '../imageTiers';
 import { renderPremiumLightboxImage } from './PremiumLightboxImage';
 
+const isVideoPhoto = (photo: Photo) => photo.media_type === 'video' || photo.type === 'video';
+
 interface PhotoCardProps {
   photo: Photo;
   width: number;
@@ -335,7 +337,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // multi-megabyte originals to show a photo on screen. `download` below
       // deliberately stays on photo.url: what a guest saves must be the full
       // original.
-      src: lightboxImageUrl(photo),
+      // A video's original cannot render as an image slide anyway, and on a
+      // gallery with a download limit fetching it takes a slot (issue 1560),
+      // which a neighbour preload must not do: show its poster instead.
+      src: isVideoPhoto(photo) ? (photo.thumbnail_url || photo.url) : lightboxImageUrl(photo),
       // The download handler used to recover the photo by matching slide.src
       // against photo.url. src is a derivative now, so that lookup would find
       // nothing and Download would silently do nothing (#1166 review).
@@ -639,8 +644,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
       {/* Main Gallery */}
       <main className="gallery-premium-main">
-        {/* Download limit (issue 1560): the guest's counter. */}
-        {allowDownloads && downloadQuota.limited && (
+        {/* Download limit (issue 1560): the client's counter, or a guest's
+            preview-size note. */}
+        {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (
           <div className="mb-4 text-center">
             <DownloadQuotaNotice />
           </div>

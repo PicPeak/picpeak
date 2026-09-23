@@ -1297,7 +1297,9 @@
       "counter": "{{used}} of {{limit}} downloads used",
       "selectionCost": "Uses {{cost}} of your {{remaining}} remaining downloads",
       "selectionTooLarge": "Download limit: this selection needs {{cost}} downloads, only {{remaining}} left",
-      "downloadAllBlocked": "This gallery holds more photos than your remaining downloads"
+      "downloadAllBlocked": "This gallery holds more photos than your remaining downloads",
+      "previewOnly": "Downloads in this gallery are preview size. The original files are available to the client.",
+      "videoClientOnly": "This video is available to the client only."
     }
   },
   "categories": {

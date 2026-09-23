@@ -300,6 +300,9 @@ export interface GalleryData {
     download_limit?: number | null;
     downloads_used?: number;
     downloads_remaining?: number | null;
+    // A share-link guest of a limited gallery: downloads are preview-size
+    // copies, and only the client draws on the quota.
+    download_preview_only?: boolean;
     disable_right_click?: boolean;
     watermark_downloads?: boolean;
     watermark_text?: string;

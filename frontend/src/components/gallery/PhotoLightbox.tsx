@@ -15,7 +15,7 @@ import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
-import { showDownloadLimitReached } from '../../utils/downloadLimit';
+import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 
 interface PhotoLightboxProps {
@@ -207,6 +207,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
   const withinDownloadLimit = !currentPhoto || downloadQuota.canDownload(currentPhoto);
+  // Playing a video streams its original, which on a limited gallery takes a
+  // slot like a download; replays of it are free. A video not yet granted
+  // cannot play once no slot is left, nor for a share-link guest, who never
+  // draws on the quota: say why instead of showing a broken player.
+  const videoNotGranted = currentPhoto?.media_type === 'video' && !currentPhoto.download_granted;
+  const videoLocked = videoNotGranted
+    && (downloadQuota.previewOnly || (downloadQuota.limited && (downloadQuota.remaining ?? 0) <= 0));
+  // Only a press on Play may take the slot, not the metadata preload of
+  // opening the lightbox. The quota is re-read once it did (or was refused).
+  const videoTakesSlot = videoNotGranted && downloadQuota.limited;
+  const refreshQuotaAfterVideo = videoTakesSlot ? () => notifyDownloadQuotaChanged(slug) : undefined;
   // The keyboard shortcut's listener is only rebuilt on navigation; it reads
   // the download handler through this, so a refreshed quota applies to D too.
   const downloadRef = useRef<() => void>(() => {});
@@ -1299,7 +1310,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               touchAction: isVideoCurrent ? 'auto' : 'none',
             }}
           >
-            {isVideoCurrent ? (
+            {isVideoCurrent && videoLocked ? (
+              <div className="w-full h-full flex items-center justify-center p-6">
+                <div
+                  className="max-w-sm rounded-lg bg-black/70 px-6 py-4 text-center text-sm text-white"
+                  role="status"
+                  data-testid="lightbox-video-locked"
+                >
+                  {videoUnavailableMessage(downloadQuota.previewOnly)}
+                </div>
+              </div>
+            ) : isVideoCurrent ? (
               <div className="w-full h-full flex items-center justify-center">
                 <VideoPlayer
                   src={currentPhoto.url}
@@ -1307,6 +1328,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   className="max-w-full max-h-full"
                   controls={true}
                   autoPlay={false}
+                  preload={videoTakesSlot ? 'none' : undefined}
+                  onPlaybackStart={refreshQuotaAfterVideo}
+                  onLoadError={refreshQuotaAfterVideo}
                 />
               </div>
             ) : (

@@ -23,6 +23,8 @@ export interface DownloadLimitInfo {
   limit?: number;
   used?: number;
   remaining?: number;
+  /** A share-link guest refused an original that has no preview-size copy (a video). */
+  previewOnly?: boolean;
 }
 
 export class DownloadLimitError extends Error {
@@ -85,6 +87,7 @@ export async function readDownloadLimitError(error: unknown): Promise<DownloadLi
     limit: typeof body.limit === 'number' ? body.limit : undefined,
     used: typeof body.used === 'number' ? body.used : undefined,
     remaining: typeof body.remaining === 'number' ? body.remaining : undefined,
+    previewOnly: body.preview_only === true || undefined,
   };
 }
 
@@ -95,8 +98,22 @@ export const downloadLimitReachedMessage = (): string =>
   // must still say something.
   i18n.t('gallery.downloadLimit.reached', REACHED_FALLBACK) || REACHED_FALLBACK;
 
+/** What a share-link guest of a limited gallery is told: downloads are preview size. */
+const PREVIEW_ONLY_FALLBACK = 'Downloads in this gallery are preview size. The original files are available to the client.';
+export const downloadPreviewOnlyMessage = (): string =>
+  i18n.t('gallery.downloadLimit.previewOnly', PREVIEW_ONLY_FALLBACK) || PREVIEW_ONLY_FALLBACK;
+
+/** Why a video will not play for this viewer on a limited gallery. */
+export function videoUnavailableMessage(previewOnly: boolean): string {
+  if (!previewOnly) return downloadLimitReachedMessage();
+  const fallback = 'This video is available to the client only.';
+  return i18n.t('gallery.downloadLimit.videoClientOnly', fallback) || fallback;
+}
+
 export function showDownloadLimitReached(info?: DownloadLimitInfo): void {
-  const message = info && typeof info.remaining === 'number' && info.remaining > 0
+  const message = info?.previewOnly
+    ? videoUnavailableMessage(true)
+    : info && typeof info.remaining === 'number' && info.remaining > 0
     ? i18n.t('gallery.downloadLimit.notEnough', {
       remaining: info.remaining,
       defaultValue: 'Only {{remaining}} downloads left. Please select fewer photos or contact your photographer.',
@@ -145,19 +162,29 @@ export interface DownloadQuota {
   limit: number | null;
   used: number;
   remaining: number | null;
+  /**
+   * A share-link guest of a limited gallery: downloads are preview-size
+   * copies and never draw on the quota, so there is no counter to show.
+   */
+  previewOnly: boolean;
 }
 
-export const UNLIMITED_QUOTA: DownloadQuota = { limited: false, limit: null, used: 0, remaining: null };
+export const UNLIMITED_QUOTA: DownloadQuota = {
+  limited: false, limit: null, used: 0, remaining: null, previewOnly: false,
+};
 
 export function quotaFromEvent(event?: {
   download_limit?: number | null;
   downloads_used?: number;
   downloads_remaining?: number | null;
+  download_preview_only?: boolean;
 } | null): DownloadQuota {
+  if (event?.download_preview_only) return { ...UNLIMITED_QUOTA, previewOnly: true };
   const limit = event?.download_limit;
   if (typeof limit !== 'number' || limit <= 0) return UNLIMITED_QUOTA;
   const used = event?.downloads_used ?? 0;
   return {
+    previewOnly: false,
     limited: true,
     limit,
     used,

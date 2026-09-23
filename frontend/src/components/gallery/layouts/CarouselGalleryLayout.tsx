@@ -89,8 +89,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     <div className="photo-grid relative">
       {/* Main Carousel */}
       <div className="photo-card relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-black rounded-lg overflow-hidden">
+        {/* A video's original cannot render as an image, and on a gallery
+            with a download limit fetching it takes a slot (issue 1560):
+            its poster instead. */}
         <AuthenticatedImage
-          src={currentPhoto.url}
+          src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : currentPhoto.url}
           alt={currentPhoto.filename}
           className="w-full h-full object-contain"
           isGallery={true}
