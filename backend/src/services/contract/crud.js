@@ -455,14 +455,26 @@ async function cancelContract(id, adminId) {
   if (!['draft', 'sent'].includes(contract.status)) {
     throw new AppError(`Cannot cancel a contract with status '${contract.status}'`, 409);
   }
+  // Resolved BEFORE the transaction opens — hasColumnCached deadlocks the
+  // single-connection SQLite pool when evaluated with a trx already open.
+  const hasQuoteContractBackPointer = contract.source_quote_id
+    ? await hasColumnCached('quotes', 'converted_contract_id')
+    : false;
+  const history = { actor: adminId, source: 'contract.cancel' };
   await db.transaction(async (trx) => {
-    await auditedUpdate(trx, 'contracts', { id }, {
-      status: 'cancelled',
-      updated_at: new Date(),
-    }, { actor: adminId, source: 'contract.cancel' });
+    // Guard the update on the same statuses checked above: a contract
+    // that got signed concurrently no longer matches, so this is a
+    // no-op instead of stomping a live contract to 'cancelled' and
+    // releasing its quote for a second, conflicting conversion.
+    const updatedRows = await auditedUpdate(trx, 'contracts',
+      (q) => q.where({ id }).whereIn('status', ['draft', 'sent']),
+      { status: 'cancelled', updated_at: new Date() }, history);
+    if (!updatedRows) {
+      throw new AppError('Cannot cancel this contract: its status changed concurrently', 409);
+    }
     // Release the source quote's converted_contract_id so a replacement
     // contract can be created from it (issue 1588).
-    await releaseQuoteOnDeadContract(trx, id, contract.source_quote_id);
+    await releaseQuoteOnDeadContract(trx, id, contract.source_quote_id, hasQuoteContractBackPointer, history);
   });
   // Invalidate any outstanding tokens.
   await db('contract_action_tokens').where({ contract_id: id, used_at: null }).update({
