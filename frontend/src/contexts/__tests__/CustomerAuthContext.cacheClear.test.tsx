@@ -193,4 +193,43 @@ describe('customer portal query cache clears on session loss (#1594)', () => {
     // At no point should Customer A's gallery have rendered for Customer B.
     expect(screen.queryByText('Alpha Wedding')).not.toBeInTheDocument();
   });
+
+  it('drops the cached dashboard when setSession switches straight to a different customer', async () => {
+    // A login through CustomerLoginPage calls setSession directly. If the
+    // SPA still holds customer A's queries (no logout, no 401 observed),
+    // switching to customer B there must clear them the same way logout does.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let switchSession: ReturnType<typeof useCustomerAuth>['setSession'] | undefined;
+    function Capture() {
+      switchSession = useCustomerAuth().setSession;
+      return null;
+    }
+
+    sessionSpy.mockResolvedValue({ customer: customerA, features, branding });
+    dashboardSpy.mockResolvedValue(dashboardWith('Alpha Wedding'));
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <CustomerAuthProvider>
+            <Capture />
+            <TestApp />
+          </CustomerAuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('Alpha Wedding')).toBeInTheDocument();
+    const removeQueriesSpy = vi.spyOn(qc, 'removeQueries');
+
+    // Same customer again (e.g. a re-login as A): nothing stale, keep the cache.
+    act(() => { switchSession!({ customer: customerA, features, branding }); });
+    expect(removeQueriesSpy).not.toHaveBeenCalled();
+    expect(qc.getQueryData(['customer-dashboard'])).toBeTruthy();
+
+    dashboardSpy.mockResolvedValue(dashboardWith('Beta Shoot'));
+    act(() => { switchSession!({ customer: customerB, features, branding }); });
+    expect(removeQueriesSpy).toHaveBeenCalled();
+    expect(await screen.findByText('Beta Shoot')).toBeInTheDocument();
+    expect(screen.queryByText('Alpha Wedding')).not.toBeInTheDocument();
+  });
 });
