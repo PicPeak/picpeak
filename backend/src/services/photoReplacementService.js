@@ -18,6 +18,7 @@ const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
+const { resolveCredit } = require('./photoCredit');
 const logger = require('../utils/logger');
 
 /**
@@ -153,6 +154,15 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
 
     const stats = await fsp.stat(newFileTempPath);
 
+    // Credit (#1561): an automatic one describes the file, so the new file's
+    // EXIF replaces it. Guest and manual credits are decisions about the
+    // photo and stay.
+    const isVideoReplacement = !!mimeType?.startsWith('video/');
+    const autoCredit = existingPhoto.uploaded_by !== 'guest'
+      && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
+      ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
+      : null;
+
     // RAW/DNG isn't sharp-decodable — extract the embedded JPEG preview first
     // (pass-through for ordinary images), then measure + thumbnail that. Mirrors
     // the ingest paths (processPhoto / processUploadedPhotos).
@@ -273,6 +283,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
 
     await db('photos').where({ id: existingPhoto.id }).update(updates);
+    if (autoCredit) {
+      // Fenced like the upload worker: a manual credit set meanwhile wins,
+      // and so does a replacement that installed another file since.
+      await db('photos')
+        .where({ id: existingPhoto.id, path: updates.path, filename: updates.filename })
+        .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'exif'))
+        .update({ credit_name: autoCredit.credit_name || null, credit_source: autoCredit.credit_source || null });
+    }
 
     const updatedPhoto = await db('photos').where({ id: existingPhoto.id }).first();
 

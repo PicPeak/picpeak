@@ -7,6 +7,7 @@ const { processUploadedVideo, extractVideoMetadata, isVideoMimeType } = require(
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const logger = require('../utils/logger');
+const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -187,6 +188,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         }
       }
 
+      // Credit (#1561), read from the temp file before it is moved.
+      const credit = await resolveCredit({ uploadedBy, localPath: tempPath, isVideo });
+
       // Now upload the original through the storage backend and remove the
       // local temp copy.
       try {
@@ -227,7 +231,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
-        mime_type: file.mimetype
+        mime_type: file.mimetype,
+        ...credit
       };
 
       // Add video-specific metadata if applicable
@@ -355,6 +360,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  *   - uploadId          optional pre-generated upload id (caller can
  *                       provide it for chunked uploads that span
  *                       multiple HTTP requests)
+ *   - uploadedBy        'admin' | 'guest' — who ran the upload (default 'admin')
+ *   - credit            credit columns resolved by the caller (#1561); for a
+ *                       guest upload that is the guest's name, and the
+ *                       worker then never reads EXIF for the row
  *
  * Returns: { uploadId, photos: [{id, filename, size, category_id}], errors: [{filename, error}] }
  */
@@ -363,6 +372,7 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, uploadId: providedUploadId, photoCap = null,
+    uploadedBy = 'admin', credit = {},
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -445,12 +455,17 @@ async function queueFilesForProcessing(files, options = {}) {
         mime_type: file.mimetype,
         processing_status: 'pending',
         upload_id: uploadId,
+        // Written explicitly: the column defaults to 'admin', so a queued
+        // guest upload used to be recorded as the photographer's (#1561).
+        uploaded_by: uploadedBy,
+        ...credit,
       }, photoCap);
       if (!inserted) {
         capReached = true;
         throw capRefusal();
       }
       const photoId = inserted[0]?.id || inserted[0];
+      await settleGuestCredit(photoId, credit);
 
       queued.push({
         id: photoId,
@@ -505,7 +520,14 @@ async function processPhoto(photoId) {
   // withLocalCopy materialises the original from the storage backend so
   // sharp/ffmpeg can read it. For local storage this is a free O(1) path
   // resolution; for S3 it downloads to a tmpdir that's auto-cleaned.
+  let exifCredit = null;
   await withLocalCopy(sourceKey, async (localPath) => {
+    // Credit (#1561): admin uploads only. A guest upload already carries the
+    // guest's name (or deliberately none), and a manual credit is final.
+    if (!isVideo && creditOpenForExif(photo)) {
+      exifCredit = (await resolveCredit({ localPath })).credit_name || null;
+    }
+
     if (!photo.captured_at && !isVideo) {
       try {
         const captured = await extractCaptureDate(localPath);
@@ -604,6 +626,17 @@ async function processPhoto(photoId) {
   }
 
   await db('photos').where({ id: photoId }).update(updateData);
+
+  // Separate, fenced write: an admin who set a credit while this row was in
+  // the queue made the final call, and this must not overwrite it. Fenced on
+  // the file that was read too, as the backfill is: a replacement meanwhile
+  // swapped it, and this name describes the old one.
+  if (exifCredit) {
+    await db('photos')
+      .where({ id: photoId, path: photo.path, filename: photo.filename })
+      .whereNull('credit_source')
+      .update({ credit_name: exifCredit, credit_source: 'exif' });
+  }
 
   // Side effects (best-effort, never fail the photo if these break)
   if (!isVideo) {

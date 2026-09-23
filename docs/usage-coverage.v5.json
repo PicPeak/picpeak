@@ -639,6 +639,15 @@
         "POST /:id/extend"
       ]
     },
+    "adminEvents/downloadLimit.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Download limit usage and reset for one gallery (issue 1560): no product-usage middleware, counters or report triggers; the usage numbers stay on the install.",
+      "route_signatures": [
+        "GET /:id/download-limit",
+        "POST /:id/download-limit/reset"
+      ]
+    },
     "adminEvents/downloadResolutions.js": {
       "decision": "configuration",
       "signals": [
@@ -1000,7 +1009,9 @@
         "POST /repair-capture-dates",
         "GET /repair-capture-dates/status",
         "POST /repair-orientation",
-        "GET /repair-orientation/status"
+        "GET /repair-orientation/status",
+        "POST /repair-credits",
+        "GET /repair-credits/status"
       ]
     },
     "adminPhotoExport.js": {
@@ -1041,6 +1052,8 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/credits",
+        "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/download",
         "GET /:eventId/photos",
         "GET /:eventId/photo/:photoId",
@@ -1658,7 +1671,9 @@
         "GET /events/:id",
         "POST /events/:id/photos",
         "GET /events/:id/share-link",
-        "GET /events/:id/photos"
+        "GET /events/:id/photos",
+        "GET /events/:id/photos/download",
+        "GET /events/:id/photos/:photoId/download"
       ]
     },
     "gallery/downloads.js": {

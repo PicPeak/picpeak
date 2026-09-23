@@ -155,7 +155,15 @@
     "processingFailed_one": "{{count}} fotografije ni bilo mogoče obdelati",
     "processingFailed_other": "{{count}} fotografij ni bilo mogoče obdelati",
     "uploadingChunks_one": "Nalaganje {{count}} dela",
-    "uploadingChunks_other": "Nalaganje {{count}} delov"
+    "uploadingChunks_other": "Nalaganje {{count}} delov",
+    "uploadingAs": "Nalaganje kot {{name}}",
+    "notYou": "Niste vi?",
+    "yourName": "Vaše ime",
+    "yourNameOptional": "Vaše ime (neobvezno)",
+    "nameRequired": "Za nalaganje vnesite svoje ime.",
+    "nameSaveFailed": "Vašega imena ni bilo mogoče shraniti. Poskusite znova.",
+    "namePrivacyShown": "Vaše ime se shrani z vašimi fotografijami in je vidno drugim gostom. Gostitelj ga lahko kadar koli odstrani.",
+    "namePrivacyHidden": "Vaše ime se shrani z vašimi fotografijami za gostitelja. Drugi gostje ga ne vidijo, gostitelj pa ga lahko kadar koli odstrani."
   },
   "navigation": {
     "dashboard": "Nadzorna plošča",
@@ -321,6 +329,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Vaše ime in izbire bodo odstranjeni iz te galerije.",
+      "forgetMeConfirmUploads": "Vaše ime bo odstranjeno s fotografij, ki ste jih naložili v to galerijo.",
       "forgetMe": "Pozabi me ({{name}})",
       "socials": "Družbena omrežja"
     },
@@ -340,7 +349,25 @@
     "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}",
     "downloadEverything": "Prenesi vse fotografije",
     "videoFormatUnsupported": "Tega videoformata v tem brskalniku ni mogoče predvajati. Prenesite ga, da si ga ogledate.",
-    "videoLoadFailed": "Tega videa ni bilo mogoče naložiti."
+    "videoLoadFailed": "Tega videa ni bilo mogoče naložiti.",
+    "downloadLimit": {
+      "reached": "Omejitev prenosov je dosežena. Za več prenosov se obrnite na fotografa.",
+      "notEnough": "Preostalih prenosov: {{remaining}}. Izberite manj fotografij ali se obrnite na fotografa.",
+      "counter": "Porabljenih prenosov: {{used}} od {{limit}}",
+      "selectionCost": "Porabi {{cost}} od preostalih prenosov ({{remaining}})",
+      "selectionTooLarge": "Omejitev prenosov: ta izbor potrebuje {{cost}} prenosov, preostalo jih je le {{remaining}}",
+      "downloadAllBlocked": "Ta galerija vsebuje več fotografij, kot vam je ostalo prenosov",
+      "previewOnly": "Prenosi v tej galeriji so v velikosti predogleda. Izvirne datoteke so na voljo stranki.",
+      "videoClientOnly": "Ta video je na voljo samo stranki."
+    },
+    "credits": {
+      "filterLabel": "Avtor",
+      "everyone": "Vsi",
+      "unnamedGuests": "Gostje brez imena",
+      "photographer": "Fotograf",
+      "uploadedBy": "Naložil(a) {{name}}",
+      "photoBy": "Fotografija: {{name}}"
+    }
   },
   "categories": {
     "title": "Kategorije fotografij",
@@ -675,6 +702,26 @@
       "title": "Uporabi hero fotografijo kot predogled pri deljenju",
       "help": "Ko se URL te galerije deli na WhatsAppu, Facebooku, Slacku itd., bo predogled povezave zgoraj prikazal hero fotografijo. Sličico brez prijave pridobijo pregledovalniki povezav — vsak z URL-jem to sliko dejansko naredi javno. Privzeto je izklopljeno; pred vklopom izberite hero fotografijo, ki jo lahko varno javno prikažete.",
       "heroRequired": "Najprej izberite hero fotografijo zgoraj — ta možnost jo uporabi kot predogled za WhatsApp / Facebook / Slack."
+    },
+    "downloadLimit": "Omejitev prenosov",
+    "downloadLimitHelp": "Največje število fotografij, ki jih stranka lahko prenese. 0 = neomejeno",
+    "downloadLimitUsage": "Preneseno: {{used}} / {{limit}}",
+    "downloadLimitReset": "Ponastavi",
+    "downloadLimitResetConfirm": "Ponastavim prenose za to galerijo? Stranka znova dobi celotno omejitev, že prenesene fotografije pa se štejejo znova.",
+    "downloadLimitResetDone": "Prenosi ponastavljeni",
+    "downloadLimitResetFailed": "Prenosov ni bilo mogoče ponastaviti",
+    "uploaderNames": {
+      "label": "Imena pri nalaganju",
+      "help": "Gostje lahko ob nalaganju vpišejo svoje ime, da veste, kdo je naložil katero fotografijo.",
+      "modes": {
+        "off": "Izklopljeno",
+        "optional": "Neobvezno",
+        "required": "Obvezno"
+      },
+      "showToGuests": "Pokaži imena gostom",
+      "showToGuestsHelp": "Gostje vidijo imena pri fotografijah, naloženih, ko je to vklopljeno; imena, vpisana, ko je bilo izklopljeno, ostanejo samo za vas in gostitelja. Izklop skrije vsa imena pred gosti. Velja tudi za avtorstvo fotografa iz EXIF.",
+      "shownToGuests": "Vidno gostom",
+      "hiddenFromGuests": "Vidno samo vam"
     }
   },
   "settings": {
@@ -904,7 +951,9 @@
       "defaultAllowColorLabels": "Barvne oznake",
       "defaultKeybindMode": "Privzete bližnjice v pregledovalniku",
       "keybindColors": "Samo barve – 1 zelena, 2 rumena, 3 rdeča",
-      "keybindLightroom": "Lightroom – 1–5 zvezdice, 6–9 barve"
+      "keybindLightroom": "Lightroom – 1–5 zvezdice, 6–9 barve",
+      "defaultDownloadLimit": "Privzeta omejitev prenosov",
+      "defaultDownloadLimitHelp": "Predizpolnjeno pri novih dogodkih: koliko fotografij lahko stranka prenese. 0 = neomejeno."
     },
     "imageSecurity": {
       "title": "Zaščita slik",
@@ -1219,6 +1268,16 @@
       "running": "Preverjanje usmerjenosti...",
       "resultSuccess": "Zadnji zagon: {{checked}} preverjenih, {{corrected}} popravljenih, {{requeued}} znova uvrščenih v prepoznavo obrazov, {{failed}} nedosegljivih",
       "staleTiers": "{{count}} predpomnjenih velikosti ni bilo mogoče izbrisati in bodo še naprej prikazovale staro usmerjenost — ponovite, ko bo shramba zapisljiva."
+    },
+    "creditBackfill": {
+      "title": "Avtorji fotografij",
+      "description": "Prebere avtorja (EXIF Artist, XMP Creator ali ime v Copyright) za fotografije, dodane preden so se avtorji beležili. Nalaganja gostov in ročno nastavljena imena se nikoli ne spremenijo.",
+      "withCredit": "Z avtorjem",
+      "undecided": "Še neprebrano",
+      "result": "Zadnji zagon: z avtorjem {{success}}, brez imena v datoteki {{noCredit}}, nedosegljivo {{failed}}",
+      "running": "Branje avtorjev...",
+      "noneToRead": "Ni več fotografij za branje",
+      "button": "Preberi avtorje iz EXIF"
     }
   },
   "analytics": {
@@ -1689,7 +1748,26 @@
       "rateStars": "Oceni z {{count}} zvezdicami",
       "markError": "Oznake ni bilo mogoče shraniti",
       "yourMarkColor": "Vaša oznaka: {{color}}",
-      "yourMarkRating": "Vaša ocena: {{count}}"
+      "yourMarkRating": "Vaša ocena: {{count}}",
+      "columns": {
+        "credit": "Avtor"
+      },
+      "credit": {
+        "label": "Avtor",
+        "edit": "Uredi",
+        "save": "Shrani ime",
+        "clear": "Odstrani ime",
+        "saved": "Ime shranjeno",
+        "cleared": "Ime odstranjeno",
+        "none": "Brez imena",
+        "unnamedGuest": "Gost brez imena",
+        "manualHint": "Ime, nastavljeno tukaj, je dokončno: podatki EXIF ga ne nadomestijo.",
+        "bulkAction": "Nastavi ime",
+        "bulkTitle": "Nastavi ime za fotografije: {{count}}",
+        "filterLabel": "Filtriraj po avtorju",
+        "filterAll": "Vsa imena",
+        "filterNone": "Brez imena"
+      }
     },
     "events": {
       "tabs": {

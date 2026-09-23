@@ -107,6 +107,11 @@ class AnalyticsService {
   private initialized = false;
   private customHeadHtml = '';
   private customHeadInjected = false;
+  // Umami/Rybbit script served through the same-origin tracker proxy. Like
+  // the custom head HTML it runs with the privileges of whoever is signed in
+  // on this origin, so it is kept out of the admin UI the same way.
+  private trackerScript: HTMLScriptElement | null = null;
+  private trackerScriptInjected = false;
   // Overridable in tests: jsdom cannot reload.
   reloadPage = () => { window.location.reload(); };
   private provider: TrackerProvider = 'none';
@@ -145,7 +150,8 @@ class AnalyticsService {
       if (config.autoTrack !== true) script.setAttribute('data-auto-track', 'false');
       if (config.doNotTrack !== false) script.setAttribute('data-do-not-track', 'true');
       if (config.domains?.length) script.setAttribute('data-domains', config.domains.join(','));
-      document.head.appendChild(script);
+      this.trackerScript = script;
+      if (!isAdminPath(window.location.pathname)) this.injectTrackerScript();
     } else if (config.provider === 'rybbit') {
       if (!config.websiteId || !config.hostUrl) {
         console.warn('Rybbit: missing websiteId or hostUrl');
@@ -170,7 +176,8 @@ class AnalyticsService {
       if (config.maskPatterns?.length) {
         script.setAttribute('data-mask-patterns', JSON.stringify(config.maskPatterns));
       }
-      document.head.appendChild(script);
+      this.trackerScript = script;
+      if (!isAdminPath(window.location.pathname)) this.injectTrackerScript();
     } else if (config.provider === 'custom') {
       this.customHeadHtml = (config.customHeadHtml || '').trim();
       // Scripts pasted here run with the privileges of whoever is signed in on
@@ -218,17 +225,33 @@ class AnalyticsService {
   }
 
   /**
-   * Keep the custom head HTML out of the admin UI across in-app navigation:
+   * Keep the custom head HTML and the Umami/Rybbit tracker script out of the
+   * admin UI across in-app navigation:
    * run it once a public route is shown, and reload into a clean document when
    * the admin UI is entered after it already ran in this page.
    */
   handleRouteChange(pathname: string) {
+    if (this.provider === 'umami' || this.provider === 'rybbit') {
+      if (!this.trackerScript) return;
+      if (isAdminPath(pathname)) {
+        if (this.trackerScriptInjected) this.reloadPage();
+        return;
+      }
+      this.injectTrackerScript();
+      return;
+    }
     if (this.provider !== 'custom' || !this.customHeadHtml) return;
     if (isAdminPath(pathname)) {
       if (this.customHeadInjected) this.reloadPage();
       return;
     }
     this.injectCustomHead();
+  }
+
+  private injectTrackerScript() {
+    if (this.trackerScriptInjected || !this.trackerScript) return;
+    this.trackerScriptInjected = true;
+    document.head.appendChild(this.trackerScript);
   }
 
   private injectCustomHead() {

@@ -80,6 +80,11 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     ready: false,
   });
   const lastResolvedIdentifier = useRef<string | null>(null);
+  // The pathname the latest route parse was for, and the pathname whose
+  // session probe has settled. Until they match the current location the
+  // context reports loading (see `isLoading` below).
+  const parsedPathRef = useRef<string | null>(null);
+  const [settledPath, setSettledPath] = useState<string | null>(null);
 
   useEffect(() => {
     cleanupOldGalleryAuth();
@@ -157,6 +162,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       }
     };
 
+    parsedPathRef.current = location.pathname;
     setRouteInfo(prev => ({ ...prev, ready: false }));
     parseRoute();
 
@@ -169,12 +175,15 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     if (!routeInfo.ready) {
       return;
     }
+    // A parse only reaches ready: true uncancelled, so this is its path.
+    const probedPath = parsedPathRef.current;
 
     if (!routeInfo.slug) {
       clearActiveGallerySlug();
       setIsAuthenticated(false);
       setEvent(null);
       setIsLoading(false);
+      setSettledPath(probedPath);
       return;
     }
 
@@ -301,6 +310,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         }
       } finally {
         setIsLoading(false);
+        setSettledPath(probedPath);
       }
     };
 
@@ -395,7 +405,14 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         login,
         clientLogin: clientLoginFn,
         logout,
-        isLoading,
+        // Derived during render, not only set from an effect: on a move from
+        // one gallery to another, the first render of the new route still
+        // carries the old gallery's settled state, and GalleryPage's public
+        // auto-login effect runs before this provider's effects do (children
+        // first). Loading until the probe for this very path has settled
+        // keeps a guest login from overwriting a session the probe would
+        // have restored (fork survey A3).
+        isLoading: isLoading || settledPath !== location.pathname,
         error: routeError ?? error,
       }}
     >

@@ -17,6 +17,7 @@ jest.mock('../../src/database/db', () => ({ db: jest.fn() }));
 jest.mock('../../src/services/secureImageService', () => ({
   cleanup: jest.fn(),
   createClientFingerprint: jest.fn(() => 'test-fingerprint'),
+  createRateLimitFingerprint: jest.fn(() => 'test-rate-fingerprint'),
 }));
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 

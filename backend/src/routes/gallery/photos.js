@@ -2,7 +2,7 @@ const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const router = express.Router();
 const { verifyGalleryAccess } = require('../../middleware/gallery');
-const { resolveGuest } = require('../../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -33,12 +33,13 @@ function notifyGalleryOpened(event, req) {
   logActivity('gallery_opened', {}, event.id, galleryActor(req));
 }
 
-router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
+router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedback, noStoreCache, async (req, res) => {
   try {
+    const guestIdentifier = await generateGuestIdentifier(req);
     const payload = await require('../../services/galleryQueryService').getGalleryPhotos({
       event: req.event, slug: req.params.slug, query: req.query,
-      identity: { guestId: req.guest?.id, guestIdentifier: generateGuestIdentifier(req) },
-      accessLevel: req.accessLevel, adminPreview: req.isAdminPreview,
+      identity: { guestId: req.guest?.id, guestIdentifier },
+      accessLevel: req.accessLevel, viaCustomer: req.viaCustomer, adminPreview: req.isAdminPreview,
       hiddenForGuest: guestBlockedByReveal(req),
     });
     // Log view — but NOT for the Live Slideshow kiosk. A running projector

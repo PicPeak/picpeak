@@ -97,6 +97,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
+            themed
             label={t('gallery.guestPrompt.nameLabel', 'Your name')}
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -107,6 +108,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
             maxLength={100}
           />
           <Input
+            themed
             type="email"
             label={
               requireEmail

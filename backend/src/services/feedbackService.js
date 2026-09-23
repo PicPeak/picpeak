@@ -1130,7 +1130,9 @@ class FeedbackService {
           'photo_feedback.color_label',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
-          'photo_feedback.created_at'
+          'photo_feedback.created_at',
+          // Who took / uploaded the photo (#1561), beside who reacted to it.
+          'photos.credit_name as credit'
         )
         .orderBy('photos.filename')
         .orderBy('photo_feedback.created_at');
@@ -1171,7 +1173,8 @@ class FeedbackService {
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.guest_identifier',
-          'photo_feedback.created_at'
+          'photo_feedback.created_at',
+          'photos.credit_name as credit'
         )
         .orderBy('photos.filename')
         .orderBy('photo_feedback.guest_identifier');
@@ -1188,6 +1191,7 @@ class FeedbackService {
           entry = {
             filename: row.filename,
             original_filename: row.original_filename || '',
+            credit: row.credit || '',
             guest_name: row.guest_name || '',
             guest_email: row.guest_email || '',
             is_favorited: false,

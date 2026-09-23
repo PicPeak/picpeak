@@ -27,7 +27,8 @@ const { scheduledTask } = require('../scheduledTask');
 const { auditedUpdate } = require('../accountingHistory');
 const signers = require('./signers');
 const signingEvents = require('./signingEvents');
-const { emitContractEvent } = require('./helpers');
+const { emitContractEvent, releaseQuoteOnDeadContract } = require('./helpers');
+const { hasColumnCached } = require('../../utils/schemaCache');
 const { getAppSetting } = require('../../utils/appSettings');
 const { toMillis } = require('../../utils/queueTimestamps');
 
@@ -44,6 +45,9 @@ const stopContractSigningSweep = () => task.stop();
 /** Expire one contract. Resolves true only for the run that flipped it. */
 async function expireContract(contract, now) {
   const stamp = new Date(now).toISOString();
+  // Resolved before the transaction: hasColumnCached reads through the
+  // global db and deadlocks the single-connection SQLite pool inside a trx.
+  const hasQuoteBackPointer = await hasColumnCached('quotes', 'converted_contract_id');
   const signedSignerIds = await db.transaction(async (trx) => {
     // Re-read under the lock: a link re-issued since the candidates were
     // read moves a deadline that runs from the latest link.
@@ -54,6 +58,10 @@ async function expireContract(contract, now) {
     const flipped = await auditedUpdate(trx, 'contracts', { id: contract.id, status: contract.status },
       { status: 'expired', updated_at: stamp }, { actor: { type: 'system' }, source: 'contract.expire' });
     if (!flipped) return null;
+    // An expired contract is dead, like a cancelled or declined one: its
+    // source quote may be converted into a new contract (issue 1588).
+    await releaseQuoteOnDeadContract(trx, contract.id, current.source_quote_id, hasQuoteBackPointer,
+      { actor: { type: 'system' }, source: 'contract.expire' });
     await signers.revokeAccess(trx, contract.id);
     const signed = (await signers.listSigners(contract.id, trx))
       .filter((row) => row.role === 'customer' && row.status === 'signed')
