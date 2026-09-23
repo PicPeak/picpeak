@@ -356,7 +356,9 @@
       "counter": "{{used}} sur {{limit}} téléchargements utilisés",
       "selectionCost": "Utilise {{cost}} de vos {{remaining}} téléchargements restants",
       "selectionTooLarge": "Limite de téléchargements : cette sélection en demande {{cost}}, il n’en reste que {{remaining}}",
-      "downloadAllBlocked": "Cette galerie contient plus de photos que vos téléchargements restants"
+      "downloadAllBlocked": "Cette galerie contient plus de photos que vos téléchargements restants",
+      "previewOnly": "Les téléchargements de cette galerie sont en taille d’aperçu. Les fichiers originaux sont réservés au client.",
+      "videoClientOnly": "Cette vidéo est réservée au client."
     },
     "credits": {
       "filterLabel": "Par",

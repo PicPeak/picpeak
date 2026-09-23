@@ -364,7 +364,9 @@
       "counter": "{{used}} de {{limit}} downloads usados",
       "selectionCost": "Usa {{cost}} dos seus {{remaining}} downloads restantes",
       "selectionTooLarge": "Limite de downloads: esta seleção precisa de {{cost}} downloads, restam apenas {{remaining}}",
-      "downloadAllBlocked": "Esta galeria tem mais fotos do que seus downloads restantes"
+      "downloadAllBlocked": "Esta galeria tem mais fotos do que seus downloads restantes",
+      "previewOnly": "Os downloads desta galeria estão em tamanho de pré-visualização. Os arquivos originais estão disponíveis para o cliente.",
+      "videoClientOnly": "Este vídeo está disponível apenas para o cliente."
     },
     "credits": {
       "filterLabel": "Por",

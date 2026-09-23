@@ -356,7 +356,9 @@
       "counter": "{{used}} van {{limit}} downloads gebruikt",
       "selectionCost": "Gebruikt {{cost}} van je {{remaining}} resterende downloads",
       "selectionTooLarge": "Downloadlimiet: deze selectie heeft {{cost}} downloads nodig, nog maar {{remaining}} over",
-      "downloadAllBlocked": "Deze galerij bevat meer foto’s dan je resterende downloads"
+      "downloadAllBlocked": "Deze galerij bevat meer foto’s dan je resterende downloads",
+      "previewOnly": "Downloads in deze galerij zijn op voorbeeldformaat. De originele bestanden zijn beschikbaar voor de klant.",
+      "videoClientOnly": "Deze video is alleen beschikbaar voor de klant."
     },
     "credits": {
       "filterLabel": "Door",

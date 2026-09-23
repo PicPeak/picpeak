@@ -146,6 +146,13 @@ async function deleteEventCascade(eventId, adminContext) {
   }
 
   await db.transaction(async (trx) => {
+    // Event row first (issue 1560): the download-limit grants lock the event
+    // row and then grant/photo rows, so taking them here in the opposite
+    // order could deadlock against a download on PostgreSQL. SQLite
+    // serialises writers anyway.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forUpdate().first();
+    }
     // 1. Delete activity logs (audit trail)
     await trx('activity_logs').where('event_id', eventId).del();
     // 2. Delete access logs

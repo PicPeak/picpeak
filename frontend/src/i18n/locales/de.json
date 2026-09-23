@@ -1810,7 +1810,9 @@
       "counter": "{{used}} von {{limit}} Downloads genutzt",
       "selectionCost": "Verbraucht {{cost}} deiner {{remaining}} verbleibenden Downloads",
       "selectionTooLarge": "Download-Limit: Diese Auswahl braucht {{cost}} Downloads, nur noch {{remaining}} übrig",
-      "downloadAllBlocked": "Diese Galerie enthält mehr Fotos, als du noch herunterladen kannst"
+      "downloadAllBlocked": "Diese Galerie enthält mehr Fotos, als du noch herunterladen kannst",
+      "previewOnly": "Downloads in dieser Galerie sind in Vorschaugröße. Die Originaldateien erhält der Kunde.",
+      "videoClientOnly": "Dieses Video ist nur für den Kunden verfügbar."
     },
     "credits": {
       "filterLabel": "Von",

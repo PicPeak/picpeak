@@ -44,7 +44,7 @@ interface DownloadQuotaProviderProps {
 export const DownloadQuotaProvider: React.FC<DownloadQuotaProviderProps> = ({ slug, event, children }) => {
   const queryClient = useQueryClient();
   const quota = quotaFromEvent(event);
-  const { limited, limit, used, remaining } = quota;
+  const { limited, limit, used, remaining, previewOnly } = quota;
 
   // A download (or a refusal) changes what is left; re-read the payload so
   // the counter and the per-photo "already downloaded" state follow.
@@ -74,8 +74,8 @@ export const DownloadQuotaProvider: React.FC<DownloadQuotaProviderProps> = ({ sl
   }, [limited, slug, queryClient]);
 
   const value = useMemo(
-    () => buildDownloadQuotaValue({ limited, limit, used, remaining }),
-    [limited, limit, used, remaining]
+    () => buildDownloadQuotaValue({ limited, limit, used, remaining, previewOnly }),
+    [limited, limit, used, remaining, previewOnly]
   );
   return <DownloadQuotaContext.Provider value={value}>{children}</DownloadQuotaContext.Provider>;
 };

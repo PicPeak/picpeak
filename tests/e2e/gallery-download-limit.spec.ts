@@ -7,10 +7,13 @@ import { passGalleryPasswordPrompt } from './_helpers/gallery';
 // Download limit (issue 1560): a gallery sold with N included photos. With a
 // limit of 1 and two photos: selecting both is flagged before the click, the
 // first photo downloads, the second is refused with the limit message, and
-// the first stays downloadable because it was already counted.
+// the first stays downloadable because it was already counted. Only the
+// client draws on the quota; a share-link guest downloads preview-size copies
+// and sees a note instead of the counter.
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
+const CLIENT_PIN = 'PlaywrightClient123!';
 
 async function createLimitedGallery(page: Page) {
   const token = await adminApiToken(page.request);
@@ -33,6 +36,12 @@ async function createLimitedGallery(page: Page) {
   expect(createResponse.ok(), await createResponse.text()).toBeTruthy();
   const event = await createResponse.json();
   await publishEvent(page.request, token, event.id);
+  const clientAccess = await page.request.put(`/api/admin/events/${event.id}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    data: { client_access_enabled: true, client_password: CLIENT_PIN },
+    failOnStatusCode: false,
+  });
+  expect(clientAccess.ok(), await clientAccess.text()).toBeTruthy();
 
   for (const file of ['img1.png', 'img2.png']) {
     const upload = await page.request.post(`/api/admin/events/${event.id}/upload`, {
@@ -53,8 +62,16 @@ test.describe('Gallery download limit (issue 1560)', () => {
   test('flags an oversized selection, grants one photo and refuses the next', async ({ page }) => {
     const event = await createLimitedGallery(page);
 
+    // A share-link guest: no counter they could not use, the preview note instead.
     await page.goto(event.share_link);
     await passGalleryPasswordPrompt(page, GALLERY_PASSWORD);
+    await expect(page.getByTestId('download-preview-only').first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('download-quota-counter')).toHaveCount(0);
+
+    // The client logs in with the PIN.
+    await page.goto(`/gallery/${event.slug}/client-access`);
+    await page.getByLabel(/Client PIN/i).fill(CLIENT_PIN);
+    await page.getByRole('button', { name: /Access Gallery/i }).click();
 
     const counter = page.getByTestId('download-quota-counter').first();
     await expect(counter).toContainText('0 of 1 downloads used');

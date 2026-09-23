@@ -356,7 +356,9 @@
       "counter": "Porabljenih prenosov: {{used}} od {{limit}}",
       "selectionCost": "Porabi {{cost}} od preostalih prenosov ({{remaining}})",
       "selectionTooLarge": "Omejitev prenosov: ta izbor potrebuje {{cost}} prenosov, preostalo jih je le {{remaining}}",
-      "downloadAllBlocked": "Ta galerija vsebuje več fotografij, kot vam je ostalo prenosov"
+      "downloadAllBlocked": "Ta galerija vsebuje več fotografij, kot vam je ostalo prenosov",
+      "previewOnly": "Prenosi v tej galeriji so v velikosti predogleda. Izvirne datoteke so na voljo stranki.",
+      "videoClientOnly": "Ta video je na voljo samo stranki."
     },
     "credits": {
       "filterLabel": "Avtor",

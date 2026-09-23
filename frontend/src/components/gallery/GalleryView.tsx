@@ -832,8 +832,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     
     // Download limit (issue 1560): one zip, which the server grants whole or
     // not at all. Photo by photo, a refusal halfway through would already have
-    // charged the ones before it. A refusal keeps the selection to trim.
-    if (downloadQuota.limited) {
+    // charged the ones before it. A refusal keeps the selection to trim. A
+    // preview-only guest gets one zip too, which leaves out the videos they
+    // cannot take rather than failing on them one by one.
+    if (downloadQuota.limited || downloadQuota.previewOnly) {
       try {
         await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
       } catch (error) {
@@ -1679,7 +1681,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           {/* Download limit (issue 1560): the guest's counter. */}
-          {allowDownloads && downloadQuota.limited && (
+          {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (
             <div className="mb-4">
               <DownloadQuotaNotice />
             </div>

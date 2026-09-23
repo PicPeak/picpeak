@@ -15,7 +15,7 @@
  */
 
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { withLocalCopy, resizeToBox } = require('./imageProcessor');
+const { withLocalCopy, resizeToBox, ensurePreviewImage } = require('./imageProcessor');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
 const fs = require('fs');
@@ -61,6 +61,31 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
 }
 
 /**
+ * The preview-size copy of a photo as a download (issue 1560): what a guest
+ * of a gallery with a download limit gets instead of the original. The same
+ * rendition the lightbox shows them, watermarked like any other download.
+ *
+ * @returns {Promise<{buffer: Buffer, contentType: string, extension: string}|null>}
+ *          null for a video (no preview tier) or when no preview can be made
+ */
+async function renderPreviewForDownload(photo, watermarkSettings) {
+  if (isVideo(photo)) return null;
+  const previewKey = await ensurePreviewImage(photo);
+  if (!previewKey) return null;
+  const wantsWatermark = !!(watermarkSettings && watermarkSettings.enabled);
+  const buffer = await withLocalCopy(previewKey, (localPath) => (wantsWatermark
+    ? watermarkService.applyWatermark(localPath, watermarkSettings)
+    : fs.promises.readFile(localPath)));
+  const webp = previewKey.endsWith('.webp');
+  return { buffer, contentType: webp ? 'image/webp' : 'image/jpeg', extension: webp ? '.webp' : '.jpg' };
+}
+
+/** A download name with the preview's extension in place of the original's. */
+function previewDownloadName(name, extension) {
+  return `${String(name).replace(/\.[^./\\]*$/, '')}${extension}`;
+}
+
+/**
  * Resolve the effective watermark settings for an event, or null when no
  * watermark applies. Same global-OR-event rule the download routes already
  * used, lifted here so the job builder can't drift from it.
@@ -79,6 +104,8 @@ async function resolveWatermarkSettings(event) {
 
 module.exports = {
   renderPhotoForDownload,
+  renderPreviewForDownload,
+  previewDownloadName,
   resolveWatermarkSettings,
   isVideo,
   getStorage,
