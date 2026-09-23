@@ -838,6 +838,18 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *   - Redact every contract nobody signed (cancelling a draft or sent one),
  *     and revoke every live signing link and session on the signed ones
  *     (contract/erasure.js).
+ *   - Cancel every `email_queue` row still pending for this customer's
+ *     address (so nothing queued before the erasure goes out after it), and
+ *     redact the variables + recipient on every row for this address that
+ *     isn't already gone — sent, failed or just-cancelled — so the archive
+ *     and any backup stop carrying their data (#1593). Matched on the
+ *     address as stored *before* this function rewrites it to the sentinel
+ *     below, case-insensitively (an address stored with different casing
+ *     than the account is still the same mailbox). Contract mail queued to
+ *     a signer's own address (not the account email) is covered only for
+ *     the unsigned contracts this erasure redacts, and only rows whose
+ *     email_data names one of those contracts — see
+ *     contractSignerQueueTargets below.
  *
  * What we keep:
  *   - The customer_accounts row itself (anonymized).
@@ -849,6 +861,41 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  * Wrapped in a transaction so a partial failure doesn't leave half-erased
  * state.
  */
+/**
+ * Who a redacted contract's invitations went to (issue 1593): for every
+ * unsigned contract the erasure plan redacts, its contract_number and the
+ * plaintext addresses of its signers. Read on the global connection BEFORE
+ * the erasure transaction, because contract/erasure.js clears the signers'
+ * email_enc inside it.
+ *
+ * Matching queued mail on a signer address alone would be wrong — the same
+ * person can sign for another customer too. So the queue match pairs the
+ * address with a contract: a row only counts when its email_data carries
+ * the contract_number (unique, migration 107) of a contract this erasure
+ * redacts AND it is addressed to one of that contract's own signers. Every
+ * contract mail queued to a signer carries contract_number (contract_sent,
+ * contract_fully_signed); the signing code is sent directly, never queued.
+ * Signed contracts are kept whole by the erasure, and so is the mail
+ * around them.
+ */
+async function contractSignerQueueTargets(contractPlan) {
+  if (!contractPlan || !contractPlan.hasSigners || !contractPlan.redact.length) return null;
+  const fieldEncryption = require('../utils/fieldEncryption');
+  const ids = contractPlan.redact.map((entry) => entry.id);
+  const contracts = await db('contracts').whereIn('id', ids).select('id', 'contract_number');
+  const signerRows = await db('contract_signers').whereIn('contract_id', ids).whereNotNull('email_enc')
+    .select('contract_id', 'email_enc');
+  const byContract = new Map();
+  for (const contract of contracts) {
+    const emails = new Set(signerRows
+      .filter((row) => Number(row.contract_id) === Number(contract.id))
+      .map((row) => String(fieldEncryption.tryDecrypt(row.email_enc) || '').trim().toLowerCase())
+      .filter(Boolean));
+    if (emails.size) byContract.set(Number(contract.id), { contractNumber: String(contract.contract_number), emails });
+  }
+  return byContract.size ? byContract : null;
+}
+
 async function eraseCustomer(id, erasedByAdminId) {
   const customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
@@ -878,10 +925,90 @@ async function eraseCustomer(id, erasedByAdminId) {
     ? { type: 'admin', id: erasedByAdminId, name: `Admin #${erasedByAdminId}` }
     : { type: 'system' };
   let erasedContracts = { cancelled: [], redacted: [], retained: [] };
+  const signerQueueTargets = await contractSignerQueueTargets(contractPlan);
+  // Campaigns touched by the email_queue cancellation below (#1593 bug 3) —
+  // their email_campaign_recipients rows and counters are recomputed once
+  // this transaction commits (recomputeCounts reads through the shared
+  // `db` connection, not `trx`, so calling it in here would read stale —
+  // or on SQLite, deadlock on — the not-yet-committed rows).
+  const touchedCampaignIds = new Set();
 
   await db.transaction(async (trx) => {
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
     erasedContracts = await contractErasure.apply(trx, contractPlan, eraseActor);
+
+    // email_queue (#1593): cancel what hasn't gone out yet, then redact the
+    // variables + recipient on every row for this address that isn't
+    // already gone (sent, failed, or the row just cancelled above) — done
+    // ahead of the customer_accounts update below so the match is still
+    // against the real address, not the sentinel.
+    const forCustomer = (q) => q.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+
+    // Contract mail queued to a signer's own address, attributed to one of
+    // the contracts this erasure just redacted (contractSignerQueueTargets).
+    let signerQueueIds = [];
+    if (signerQueueTargets) {
+      const erasedIds = new Set([...erasedContracts.cancelled, ...erasedContracts.redacted].map(Number));
+      const targets = [...signerQueueTargets.entries()]
+        .filter(([contractId]) => erasedIds.has(contractId))
+        .map(([, target]) => target);
+      const emails = [...new Set(targets.flatMap((target) => [...target.emails]))];
+      if (emails.length > 0) {
+        const candidates = await trx('email_queue')
+          .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
+          .whereIn('status', ['pending', 'sent', 'failed', 'cancelled'])
+          .select('id', 'recipient_email', 'email_data');
+        signerQueueIds = candidates.filter((row) => {
+          let data;
+          try {
+            data = typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data;
+          } catch (_) {
+            return false;
+          }
+          if (!data || data.contract_number === undefined || data.contract_number === null) return false;
+          const to = String(row.recipient_email || '').toLowerCase();
+          return targets.some((target) => target.contractNumber === String(data.contract_number)
+            && target.emails.has(to));
+        }).map((row) => row.id);
+      }
+    }
+    const matchQueue = (q) => (signerQueueIds.length > 0
+      ? q.where((w) => forCustomer(w).orWhereIn('id', signerQueueIds))
+      : forCustomer(q));
+
+    const cancelledQueueRows = await matchQueue(trx('email_queue')).where('status', 'pending')
+      .select('id', 'campaign_id');
+    if (cancelledQueueRows.length > 0) {
+      await trx('email_queue')
+        .whereIn('id', cancelledQueueRows.map((row) => row.id))
+        .update({ status: 'cancelled' });
+    }
+    await matchQueue(trx('email_queue'))
+      .whereIn('status', ['sent', 'failed', 'cancelled'])
+      .update({
+        recipient_email: sentinelEmail,
+        email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),
+        // Migration 119: the exact HTML sent (customer name, document
+        // titles, review notes baked in) for the Project Overview preview.
+        // Left untouched, sent rows kept full customer PII here forever —
+        // in the DB and in every backup — defeating the erasure.
+        rendered_html: null,
+      });
+
+    // Newsletter campaign bookkeeping (#1593 bug 3): a cancelled row that
+    // belongs to a campaign must flip its email_campaign_recipients row
+    // too, or that recipient stays 'queued' forever and
+    // newsletterService.recomputeCounts's stillQueued check keeps the
+    // whole campaign stuck at 'queued'/'sending' even once every other
+    // recipient resolved.
+    for (const row of cancelledQueueRows) {
+      if (!row.campaign_id) continue;
+      await trx('email_campaign_recipients')
+        .where({ campaign_id: row.campaign_id, email_queue_id: row.id })
+        .where('status', 'queued')
+        .update({ status: 'cancelled' });
+      touchedCampaignIds.add(row.campaign_id);
+    }
 
     await auditedUpdate(trx, 'customer_accounts', { id }, {
       email: sentinelEmail,
@@ -941,6 +1068,16 @@ async function eraseCustomer(id, erasedByAdminId) {
         { actor: erasedByAdminId || null, source: 'customer.erase' });
     }
   });
+
+  // Campaign counters (#1593 bug 3), recomputed now that the cancellations
+  // above have committed — recomputeCounts reads the recipient rows fresh
+  // through the shared `db` connection.
+  if (touchedCampaignIds.size > 0) {
+    const newsletterService = require('./newsletterService');
+    for (const campaignId of touchedCampaignIds) {
+      await newsletterService.recomputeCounts(campaignId);
+    }
+  }
 
   await customerDocumentsService.purgeFiles(erasedDocuments);
 

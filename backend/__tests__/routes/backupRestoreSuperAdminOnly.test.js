@@ -131,6 +131,33 @@ describe('backup destinations, restores and portable import are Super Admin only
     expect(await storedSetting('backup_include_database')).toBe(false);
   });
 
+  it('refuses the admin role changing where the backup manifest is written', async () => {
+    const res = await putConfig(adminToken, {
+      backup_manifest_path: '/data/db',
+      backup_manifest_format: 'json',
+    });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('SUPER_ADMIN_REQUIRED');
+    expect(res.body.fields).toEqual(expect.arrayContaining(['backup_manifest_path']));
+    expect(await storedSetting('backup_manifest_path')).toBeUndefined();
+  });
+
+  it('refuses a manifest format other than json or yaml, even for a Super Admin', async () => {
+    const res = await putConfig(superToken, { backup_manifest_format: 'json/../jwt.secret' });
+
+    expect(res.status).toBe(400);
+    expect(await storedSetting('backup_manifest_format')).toBeUndefined();
+  });
+
+  it('lets a Super Admin set the manifest path and a known format', async () => {
+    const res = await putConfig(superToken, { backup_manifest_path: '/srv/backups/manifests', backup_manifest_format: 'yaml' });
+
+    expect(res.status).toBe(200);
+    expect(await storedSetting('backup_manifest_path')).toBe('/srv/backups/manifests');
+    expect(await storedSetting('backup_manifest_format')).toBe('yaml');
+  });
+
   it('refuses database-inclusion values that are not true or false', async () => {
     // "0" would compare as off but read as on when the backup runs.
     await setBackupSettings({ backup_destination_type: 'local', backup_destination_path: '/srv/backups', backup_include_database: false });

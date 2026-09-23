@@ -44,6 +44,7 @@ function transformUser(user: any): AdminUser {
     roleName: user.roleName ?? user.role_name,
     roleDisplayName: user.roleDisplayName ?? user.role_display_name,
     createdByUsername: user.createdByUsername ?? user.created_by_username,
+    emailLinkEligible: user.emailLinkEligible ?? user.email_link_eligible,
   };
 }
 
@@ -102,6 +103,11 @@ interface CreateInvitationResponse {
 
 interface UpdateUserData {
   roleId?: number;
+  /**
+   * Re-saving an admin's own address as a Super Admin is what marks it as
+   * confirmed for SSO email linking (`email_link_eligible`, migration 227).
+   */
+  email?: string;
 }
 
 interface UpdateUserResponse {
@@ -190,6 +196,7 @@ export const userManagementService = {
     // Convert camelCase to snake_case for backend API
     const payload: Record<string, unknown> = {};
     if (data.roleId !== undefined) payload.role_id = data.roleId;
+    if (data.email !== undefined) payload.email = data.email;
     const response = await api.put<UpdateUserResponse>(`/admin/users/${id}`, payload);
     return transformUser(response.data.user);
   },

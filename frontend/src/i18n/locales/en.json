@@ -656,7 +656,16 @@
       "message": "Permanently delete {{name}}? This cannot be undone. Their pending invitations and API tokens will be removed; records they created elsewhere will be kept but de-attributed."
     },
     "activate": "Reactivate",
-    "delete": "Delete permanently"
+    "delete": "Delete permanently",
+    "ssoNotConfirmed": "Email not confirmed for SSO",
+    "confirmEmailForSso": "Confirm email for SSO",
+    "confirmEmail": "Confirm email",
+    "emailConfirmed": "Email confirmed for single sign-on",
+    "confirmEmailError": "Failed to confirm the email",
+    "confirmEmailForSsoDialog": {
+      "title": "Confirm this email for SSO?",
+      "message": "Confirm {{email}} as {{name}}'s address? A single sign-on login that arrives with this verified email will then be linked to this account. The address itself is not changed. Only confirm it if you know it belongs to them."
+    }
   },
   "systemHealth": {
     "title": "System health",
@@ -5122,7 +5131,9 @@
       "inactive": "Your admin account is deactivated.",
       "not_provisioned": "No admin account matches your SSO identity. Ask an administrator to invite you.",
       "no_email": "Your identity provider supplied no email address — an account cannot be created.",
-      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group."
+      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group.",
+      "email_unverified": "An admin account with your email exists, but its email address has not been confirmed by a Super Admin, so SSO cannot link to it. Ask a Super Admin to open Users, find your account and use \"Confirm email for SSO\", then try again.",
+      "email_ambiguous": "More than one admin account carries your email address, differing only in capitalisation, so SSO cannot tell which one is yours. Ask a Super Admin to change or remove one of them on the Users page, then try again."
     }
   },
   "slideshow": {

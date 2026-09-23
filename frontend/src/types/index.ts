@@ -367,6 +367,12 @@ export interface AdminUser {
   createdAt?: string | null;
   updatedAt?: string | null;
   createdByUsername?: string;
+  /**
+   * Whether a first SSO login may link to this admin by email
+   * (admin_users.email_link_eligible, migration 227). Undefined on a backend
+   * that predates the column — callers read that as eligible.
+   */
+  emailLinkEligible?: boolean;
 }
 
 export interface LoginResponse {
