@@ -49,6 +49,16 @@ async function archiveEvent(event) {
           'photos.media_type',
           'photos.mime_type',
           'photos.uploaded_at',
+          // Photo credits (#1561): who uploaded it and the name on it, which
+          // no file carries (a guest name, an admin correction), and the
+          // guest's visibility snapshot. The ZIP is a snapshot: a guest
+          // erased later is not rewritten out of an existing archive — the
+          // restore drops the credit of any guest no longer on the event.
+          'photos.uploaded_by',
+          'photos.credit_name',
+          'photos.credit_source',
+          'photos.uploader_guest_id',
+          'photos.credit_visible_to_guests',
           'photo_categories.name as category_name',
         );
       if (manifestRows.length > 0) {

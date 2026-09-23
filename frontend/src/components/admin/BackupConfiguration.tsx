@@ -52,7 +52,7 @@ interface BackupConfigurationProps {
 
 // Mirrors the settings the backend limits to Super Admins.
 const isRestrictedBackupSetting = (key: string) =>
-  /^backup_(destination_|s3_|rsync_)/.test(key)
+  /^backup_(destination_|s3_|rsync_|manifest_path$|manifest_format$)/.test(key)
   || key === 'backup_include_database'
   || key === 'backup_database_inline_dump';
 

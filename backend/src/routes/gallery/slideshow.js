@@ -160,9 +160,10 @@ async function slideshowQrDataUrl(event, req) {
     let { shareUrl, sharePath } = await buildShareLinkVariants({ slug: event.slug, shareToken });
     if (!/^https?:\/\//i.test(shareUrl) || QR_LOCAL_BASE_RE.test(shareUrl)) {
       // Prefer the kiosk's own window.location.origin (?origin=, validated):
-      // req.get('host') is NOT the browser origin behind the standard
-      // proxies — frontend/nginx.conf forwards $host (port stripped), so a
-      // compose LAN deployment on :3000 would encode port 80. A LOOPBACK
+      // req.get('host') is not reliably the browser origin: frontend/nginx.conf
+      // forwards $http_host (port kept), but an outer proxy forwarding $host
+      // strips a non-default port, so a deployment on :3000 behind one would
+      // encode port 80. A LOOPBACK
       // kiosk origin is rejected too: it is no more guest-reachable than
       // the loopback base it would replace (codex review of #848).
       const rawOrigin = req?.query?.origin;

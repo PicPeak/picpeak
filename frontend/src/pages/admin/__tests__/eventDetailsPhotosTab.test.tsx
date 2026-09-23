@@ -46,10 +46,12 @@ vi.mock('../../../services/events.service', () => ({
 
 const getEventPhotos = vi.fn();
 vi.mock('../../../services/photos.service', () => ({
+  CREDIT_FILTER_NONE: '__none__',
   photosService: {
     getEventPhotos: (...args: unknown[]) => getEventPhotos(...args),
     getFilterSummary: vi.fn().mockResolvedValue({}),
     getExportFormats: vi.fn().mockResolvedValue([]),
+    getPhotoCredits: vi.fn().mockResolvedValue({ credits: [], none: 0 }),
   },
 }));
 

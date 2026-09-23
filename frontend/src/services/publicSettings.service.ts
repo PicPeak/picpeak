@@ -95,6 +95,9 @@ export interface PublicSettings {
   event_require_expiration?: boolean;
   event_default_require_password?: boolean;
   event_default_feedback_enabled?: boolean;
+  // Uploader names (#1561)
+  event_default_guest_name_mode?: 'off' | 'optional' | 'required';
+  event_default_show_credits_to_guests?: boolean;
   // Per-type feedback defaults (#1044) — seed the create form's feedback panel.
   event_default_allow_ratings?: boolean;
   event_default_allow_likes?: boolean;
@@ -103,6 +106,8 @@ export interface PublicSettings {
   event_default_allow_reactions?: boolean;
   event_default_allow_color_labels?: boolean;
   event_default_keybind_mode?: 'colors' | 'lightroom';
+  // Download limit default (issue 1560). null = unlimited.
+  event_default_download_limit?: number | null;
   gallery_show_filter_bar?: boolean;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)

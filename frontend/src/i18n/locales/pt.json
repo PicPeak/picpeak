@@ -158,7 +158,15 @@
     "uploadingChunks_many": "{{count}} fragmentos a enviar",
     "uploadingChunks_one": "{{count}} fragmento a enviar",
     "uploadingChunks_other": "{{count}} fragmentos a enviar",
-    "retryFailed": "Tentar novamente os falhados"
+    "retryFailed": "Tentar novamente os falhados",
+    "uploadingAs": "A enviar como {{name}}",
+    "notYou": "Não é você?",
+    "yourName": "O seu nome",
+    "yourNameOptional": "O seu nome (opcional)",
+    "nameRequired": "Introduza o seu nome para enviar fotos.",
+    "nameSaveFailed": "Não foi possível guardar o seu nome. Tente novamente.",
+    "namePrivacyShown": "O seu nome fica guardado com as suas fotos e é mostrado aos outros convidados. O anfitrião pode removê-lo a qualquer momento.",
+    "namePrivacyHidden": "O seu nome fica guardado com as suas fotos para o anfitrião. Os outros convidados não o veem, e o anfitrião pode removê-lo a qualquer momento."
   },
   "navigation": {
     "dashboard": "Painel",
@@ -332,6 +340,7 @@
     },
     "footer": {
       "forgetMeConfirm": "O seu nome e seleções serão removidos desta galeria.",
+      "forgetMeConfirmUploads": "O seu nome será removido das fotos que carregou nesta galeria.",
       "forgetMe": "Esquecer-me ({{name}})",
       "socials": "Redes sociais"
     },
@@ -348,7 +357,25 @@
     "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
     "downloadEverything": "Baixar todas as fotos",
     "videoFormatUnsupported": "Este formato de vídeo não pode ser reproduzido neste navegador. Baixe o arquivo para assistir.",
-    "videoLoadFailed": "Não foi possível carregar este vídeo."
+    "videoLoadFailed": "Não foi possível carregar este vídeo.",
+    "downloadLimit": {
+      "reached": "Limite de downloads atingido. Entre em contato com seu fotógrafo para obter mais downloads.",
+      "notEnough": "Restam apenas {{remaining}} downloads. Selecione menos fotos ou entre em contato com seu fotógrafo.",
+      "counter": "{{used}} de {{limit}} downloads usados",
+      "selectionCost": "Usa {{cost}} dos seus {{remaining}} downloads restantes",
+      "selectionTooLarge": "Limite de downloads: esta seleção precisa de {{cost}} downloads, restam apenas {{remaining}}",
+      "downloadAllBlocked": "Esta galeria tem mais fotos do que seus downloads restantes",
+      "previewOnly": "Os downloads desta galeria estão em tamanho de pré-visualização. Os arquivos originais estão disponíveis para o cliente.",
+      "videoClientOnly": "Este vídeo está disponível apenas para o cliente."
+    },
+    "credits": {
+      "filterLabel": "Por",
+      "everyone": "Todos",
+      "unnamedGuests": "Convidados sem nome",
+      "photographer": "Fotógrafo",
+      "uploadedBy": "Enviada por {{name}}",
+      "photoBy": "Foto de {{name}}"
+    }
   },
   "categories": {
     "title": "Categorias de Fotos",
@@ -691,6 +718,26 @@
       "title": "Usar a foto principal como visualização ao compartilhar",
       "help": "Quando o URL desta galeria é compartilhado no WhatsApp, Facebook, Slack etc., a pré-visualização do link mostrará a foto principal acima. A miniatura é obtida sem autenticação pelos rastreadores de pré-visualização — quem compartilha o URL torna esta imagem efetivamente pública. Desativado por padrão; escolha uma foto principal que você esteja confortável em expor publicamente antes de ativar.",
       "heroRequired": "Escolha primeiro uma foto principal acima — esta opção a usa como imagem de pré-visualização no WhatsApp / Facebook / Slack."
+    },
+    "downloadLimit": "Limite de downloads",
+    "downloadLimitHelp": "Número máximo de fotos que o cliente pode baixar. 0 = ilimitado",
+    "downloadLimitUsage": "{{used}} / {{limit}} baixadas",
+    "downloadLimitReset": "Redefinir",
+    "downloadLimitResetConfirm": "Redefinir os downloads desta galeria? O cliente recebe o limite completo de volta e as fotos já baixadas voltam a contar.",
+    "downloadLimitResetDone": "Downloads redefinidos",
+    "downloadLimitResetFailed": "Não foi possível redefinir os downloads",
+    "uploaderNames": {
+      "label": "Nomes de quem envia",
+      "help": "Permite que os convidados indiquem o nome ao enviar, para que saiba quem enviou cada foto.",
+      "modes": {
+        "off": "Desligado",
+        "optional": "Opcional",
+        "required": "Obrigatório"
+      },
+      "showToGuests": "Mostrar os nomes aos convidados",
+      "showToGuestsHelp": "Os convidados veem os nomes das fotos enviadas enquanto isto está ligado; os nomes dados enquanto estava desligado ficam apenas para si e para o anfitrião. Desligar oculta todos os nomes aos convidados. Aplica-se também aos créditos do fotógrafo lidos do EXIF.",
+      "shownToGuests": "Visível para os convidados",
+      "hiddenFromGuests": "Visível apenas para si"
     }
   },
   "settings": {
@@ -917,7 +964,9 @@
       "defaultAllowColorLabels": "Etiquetas de cor",
       "defaultKeybindMode": "Atalhos predefinidos do visualizador",
       "keybindColors": "Apenas cores — 1 verde, 2 amarelo, 3 vermelho",
-      "keybindLightroom": "Lightroom — 1-5 estrelas, 6-9 cores"
+      "keybindLightroom": "Lightroom — 1-5 estrelas, 6-9 cores",
+      "defaultDownloadLimit": "Limite de downloads padrão",
+      "defaultDownloadLimitHelp": "Preenchido em novos eventos: quantas fotos um cliente pode baixar. 0 = ilimitado."
     },
     "imageSecurity": {
       "title": "Proteção de Imagem",
@@ -1205,6 +1254,16 @@
       "save": "Salvar configurações do cabeçalho",
       "saved": "Branding do painel do cliente salvo",
       "error": "Não foi possível salvar as configurações"
+    },
+    "creditBackfill": {
+      "title": "Autores das fotos",
+      "description": "Lê o autor (EXIF Artist, XMP Creator ou o nome no Copyright) das fotos adicionadas antes de os autores serem registados. Os envios de convidados e os nomes definidos à mão nunca são alterados.",
+      "withCredit": "Com autor",
+      "undecided": "Ainda por ler",
+      "result": "Última execução: {{success}} com autor, {{noCredit}} sem nome no ficheiro, {{failed}} inacessíveis",
+      "running": "A ler autores...",
+      "noneToRead": "Não há mais fotos por ler",
+      "button": "Ler autores do EXIF"
     }
   },
   "analytics": {
@@ -1690,7 +1749,26 @@
       "rateStars": "Classificar com {{count}} estrelas",
       "markError": "Não foi possível guardar a sua marca",
       "yourMarkColor": "A sua marca: {{color}}",
-      "yourMarkRating": "A sua classificação: {{count}}"
+      "yourMarkRating": "A sua classificação: {{count}}",
+      "columns": {
+        "credit": "Autor"
+      },
+      "credit": {
+        "label": "Autor",
+        "edit": "Editar",
+        "save": "Guardar nome",
+        "clear": "Remover nome",
+        "saved": "Nome guardado",
+        "cleared": "Nome removido",
+        "none": "Sem nome",
+        "unnamedGuest": "Convidado, sem nome",
+        "manualHint": "Um nome definido aqui é definitivo: os dados EXIF não o substituem.",
+        "bulkAction": "Definir nome",
+        "bulkTitle": "Definir o nome em {{count}} fotos",
+        "filterLabel": "Filtrar por autor",
+        "filterAll": "Todos os nomes",
+        "filterNone": "Sem nome"
+      }
     },
     "events": {
       "tabs": {

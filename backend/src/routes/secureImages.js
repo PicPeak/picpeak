@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
-const { withLocalCopy } = require('../services/imageProcessor');
+const { withLocalCopy, ensurePreviewImage } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
 const {
   getUseOriginalFilenames,
@@ -18,6 +18,11 @@ const {
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
+const {
+  grantDownloads, checkDownloads, downloadLimitOf, isOriginalWithheld,
+  settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
+} = require('../services/downloadQuota');
+const { renderPreviewForDownload, previewDownloadName, isVideo } = require('../services/downloadRendition');
 
 const router = express.Router();
 
@@ -69,7 +74,8 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       revealBypass: bypassesReveal(req),
       // TOCTOU: a client's token keeps serving a photo hidden after minting;
       // a guest's stops the moment it's hidden (checked at the serve route).
-      clientBypass: canSeeHiddenPhotos(req.accessLevel)
+      clientBypass: canSeeHiddenPhotos(req.accessLevel),
+      downloadLimitExempt: Boolean(req.isAdminPreview)
     };
 
     const token = secureImageService.generateSecureToken(
@@ -85,7 +91,8 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       { 
         ip: req.ip, 
         userAgent: req.get('User-Agent'), 
-        fingerprint: clientFingerprint 
+        fingerprint: clientFingerprint,
+        rateLimitFingerprint: secureImageService.createRateLimitFingerprint(req)
       },
       'token_generated'
     );
@@ -211,7 +218,19 @@ router.get('/:slug/secure/:photoId/:token',
       // Resolve photo through storage backend (managed) or fall back to local
       // path (external reference mode). secureImageService needs a local file,
       // so we materialize a tmp copy via withLocalCopy in S3 mode.
-      const storageKey = resolvePhotoStorageKey(event, photo);
+      let storageKey = resolvePhotoStorageKey(event, photo);
+      let contentType = resolvePhotoContentType(photo);
+
+      // Download limit (issue 1560): while the original is withheld, serve
+      // the preview tier here as well. Basic protection returns the source
+      // bytes unchanged, so this route would otherwise hand out the original.
+      if (await isOriginalWithheld(event, photo, { isAdminPreview: Boolean(tokenValidation.data?.downloadLimitExempt) })) {
+        storageKey = await ensurePreviewImage(photo);
+        if (!storageKey) {
+          return res.status(404).json({ error: 'Preview not available' });
+        }
+        contentType = storageKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      }
 
       // Get protection settings for this event
       const protectionSettings = {
@@ -246,7 +265,7 @@ router.get('/:slug/secure/:photoId/:token',
 
       // Set content type and security headers
       res.set({
-        'Content-Type': resolvePhotoContentType(photo),
+        'Content-Type': contentType,
         'Content-Length': processedImage.length,
         'X-Protection-Level': protectionSettings.protectionLevel,
         'X-Remaining-Uses': tokenValidation.remaining
@@ -343,6 +362,30 @@ router.get('/:slug/secure-download/:photoId/:token',
       const watermarkSettings = await watermarkService.getWatermarkSettings();
       const wantsWatermark = watermarkSettings && watermarkSettings.enabled;
 
+      // Download limit (issue 1560): a share-link guest of a limited gallery
+      // gets the preview-size copy and never draws on the quota; a video has
+      // none, so it is refused.
+      if (await isPreviewOnly(req)) {
+        const preview = await renderPreviewForDownload(photo, wantsWatermark ? watermarkSettings : null);
+        if (!preview) {
+          return isVideo(photo)
+            ? res.status(403).json(clientOnlyError())
+            : res.status(404).json({ error: 'Preview not available' });
+        }
+        if (req.method !== 'HEAD') {
+          await db('photos').where('id', photoId).increment('download_count', 1);
+          await secureImageService.logImageAccess(photoId, req.event.id, req.clientInfo, 'download');
+        }
+        const previewName = previewDownloadName(pickRawDownloadName(photo, await getUseOriginalFilenames()), preview.extension);
+        res.set({
+          'Content-Type': preview.contentType,
+          'Content-Disposition': buildContentDisposition(previewName),
+          'Content-Length': preview.buffer.length,
+          'X-Download-Protected': 'true'
+        });
+        return res.send(preview.buffer);
+      }
+
       let fileBuffer;
       try {
         if (wantsWatermark) {
@@ -367,6 +410,19 @@ router.get('/:slug/secure-download/:photoId/:token',
         });
         return res.status(404).json({ error: 'Photo file not found' });
       }
+
+      // Download limit (issue 1560), granted once the file is in hand and
+      // before any byte of it goes out.
+      // A HEAD probe answers without taking any of the quota.
+      if (req.method === 'HEAD' && downloadLimitOf(req.event)) {
+        const check = await checkDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+        if (!check.ok) return res.status(403).end();
+        res.set({ 'Content-Type': resolvePhotoContentType(photo), 'Content-Length': fileBuffer.length });
+        return res.end();
+      }
+      const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview, reserve: true });
+      if (!quota.ok) return refuseDownload(res, quota);
+      settleWhenDone(res, req.event.id, quota, responseDelivered(res, [photo.id]));
 
       // Update download count
       await db('photos').where('id', photoId).increment('download_count', 1);

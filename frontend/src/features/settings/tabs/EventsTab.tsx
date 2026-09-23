@@ -4,6 +4,7 @@ import { Button, Card } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { EventSettings } from '../hooks/useSettingsState';
 import { COLOR_LABEL_SWATCHES, COLOR_LABELS } from '../../../services/feedback.service';
+import { UploaderNameSettings } from '../../../components/admin/UploaderNameSettings';
 
 interface EventsTabProps {
   eventSettings: EventSettings;
@@ -280,6 +281,41 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               </select>
             </div>
           </div>
+
+          {/* Download limit default (issue 1560) */}
+          <div>
+            <label
+              className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1"
+              htmlFor="event_default_download_limit"
+            >
+              {t('settings.events.defaultDownloadLimit', 'Default download limit')}
+            </label>
+            <input
+              id="event_default_download_limit"
+              type="number"
+              min={0}
+              max={2147483647}
+              value={eventSettings.event_default_download_limit}
+              onChange={(e) => setEventSettings(prev => ({
+                ...prev,
+                event_default_download_limit: Math.max(0, parseInt(e.target.value, 10) || 0),
+              }))}
+              className="w-32 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm"
+            />
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              {t('settings.events.defaultDownloadLimitHelp', 'Pre-filled on new events: how many photos a client can download. 0 = unlimited.')}
+            </p>
+          </div>
+
+          {/* Uploader names (#1561): defaults for new galleries only. */}
+          <UploaderNameSettings
+            className="max-w-sm"
+            idPrefix="event-default-uploader-names"
+            mode={eventSettings.event_default_guest_name_mode}
+            onModeChange={(mode) => setEventSettings(prev => ({ ...prev, event_default_guest_name_mode: mode }))}
+            showToGuests={eventSettings.event_default_show_credits_to_guests}
+            onShowToGuestsChange={(show) => setEventSettings(prev => ({ ...prev, event_default_show_credits_to_guests: show }))}
+          />
 
           <div>
             <label className="flex items-start gap-3">

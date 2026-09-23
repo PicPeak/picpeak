@@ -10,6 +10,7 @@ jest.mock('../../database/db', () => {
     limit: jest.fn().mockReturnThis(),
     whereNull: jest.fn().mockReturnThis(),
     whereNotNull: jest.fn().mockReturnThis(),
+    whereNotIn: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
     delete: deleteMock,

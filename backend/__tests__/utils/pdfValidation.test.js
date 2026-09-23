@@ -25,6 +25,9 @@ const addAnnotation = (doc, action) => {
 };
 
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const zlib = require('zlib');
 const MB = 1024 * 1024;
 
@@ -243,4 +246,75 @@ test('the size and page caps apply', async () => {
   const buffer = await makePdf({ pages: 3 });
   expect(await codeOf(validatePdf(buffer, { maxPages: 2 }))).toBe('PDF_TOO_MANY_PAGES');
   expect(await codeOf(validatePdf(buffer, { maxBytes: 100 }))).toBe('PDF_TOO_LARGE');
+});
+
+describe('pdfValidation without a worker', () => {
+  afterEach(() => {
+    jest.dontMock('worker_threads');
+    jest.dontMock('../../src/utils/pdfInspect');
+    jest.resetModules();
+  });
+
+  it('refuses rather than inspecting in the main thread', async () => {
+    const buffer = await makePdf();
+    jest.resetModules();
+    jest.doMock('worker_threads', () => ({ Worker: function NoWorker() { throw new Error('no workers here'); } }));
+    const actual = jest.requireActual('../../src/utils/pdfInspect');
+    const inspect = jest.fn();
+    jest.doMock('../../src/utils/pdfInspect', () => ({ ...actual, inspectPdf: inspect }));
+    const { validatePdf: isolated } = require('../../src/utils/pdfValidation');
+    const err = await isolated(buffer).catch((e) => e);
+    expect(err.statusCode).toBe(422);
+    expect(err.code).toBe('DOCUMENT_CHECK_UNAVAILABLE');
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it('reaches a customer upload as DOCUMENT_CHECK_UNAVAILABLE, not as active content', async () => {
+    const file = path.join(os.tmpdir(), `pdf-no-worker-${process.pid}.pdf`);
+    fs.writeFileSync(file, await makePdf());
+    jest.resetModules();
+    jest.doMock('worker_threads', () => ({ Worker: function NoWorker() { throw new Error('no workers here'); } }));
+    const { _internal: { assertPdf } } = require('../../src/services/customerDocumentsService');
+    try {
+      const err = await assertPdf(file).catch((e) => e);
+      expect(err.statusCode).toBe(422);
+      expect(err.code).toBe('DOCUMENT_CHECK_UNAVAILABLE');
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+});
+
+describe('pdfValidation wait queue', () => {
+  afterEach(() => {
+    jest.dontMock('worker_threads');
+    jest.resetModules();
+  });
+
+  it('refuses with 503 once MAX_WAITING checks are queued behind the running ones', async () => {
+    const buffer = await makePdf();
+    jest.resetModules();
+    const workers = [];
+    const { EventEmitter } = require('events');
+    jest.doMock('worker_threads', () => ({
+      Worker: class FakeWorker extends EventEmitter {
+        constructor() { super(); workers.push(this); }
+        terminate() { return Promise.resolve(); }
+      },
+    }));
+    const { MAX_CONCURRENT, MAX_WAITING, validatePdf: queued } = require('../../src/utils/pdfValidation');
+    const accepted = Array.from({ length: MAX_CONCURRENT + MAX_WAITING }, () => queued(buffer));
+    const err = await queued(buffer).catch((e) => e);
+    expect(err.statusCode).toBe(503);
+    expect(err.code).toBe('DOCUMENT_CHECK_UNAVAILABLE');
+    // Drain: every queued check still gets its turn.
+    const info = { pages: 1, bytes: 1, sha256: 'x', normalised: new Uint8Array(1) };
+    let done = 0;
+    accepted.forEach((p) => p.then(() => { done += 1; }));
+    while (done < accepted.length) {
+      workers.splice(0).forEach((w) => w.emit('message', { ok: true, info }));
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(done).toBe(MAX_CONCURRENT + MAX_WAITING);
+  });
 });

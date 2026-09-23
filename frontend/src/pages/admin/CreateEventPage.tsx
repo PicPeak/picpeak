@@ -10,7 +10,8 @@ import {
   Eye,
   EyeOff,
   Image,
-  Key
+  Key,
+  Download
 } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -18,6 +19,8 @@ import { toast } from 'react-toastify';
 import { Button, Input, Card, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
+import { UploaderNameSettings } from '../../components/admin/UploaderNameSettings';
+import type { GuestNameMode } from '../../types';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -56,8 +59,13 @@ interface FormData {
   expires_in_days: number;
   allow_user_uploads: boolean;
   upload_category_id: number | null;
+  // Uploader names (#1561), seeded from Settings → Event Defaults.
+  guest_name_mode: GuestNameMode;
+  show_credits_to_guests: boolean;
   css_template_id: number | null;
   photo_cap: number;
+  // Download limit (issue 1560). 0 = unlimited.
+  download_limit: number;
   feedback_settings: {
     feedback_enabled: boolean;
     allow_ratings: boolean;
@@ -107,7 +115,11 @@ export const CreateEventPage: React.FC = () => {
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   // const [showPreview, setShowPreview] = useState(false);
   
+  // Re-arm on every effect run so React Strict Mode's mount→cleanup→mount
+  // cycle does not leave the ref permanently false (no toast / redirect, and
+  // a second click creates a duplicate event — fork survey A6 / #1563).
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -133,8 +145,11 @@ export const CreateEventPage: React.FC = () => {
     expires_in_days: 30,
     allow_user_uploads: false,
     upload_category_id: null,
+    guest_name_mode: 'off',
+    show_credits_to_guests: false,
     css_template_id: null,
     photo_cap: 0,
+    download_limit: 0,
     feedback_settings: {
       feedback_enabled: false,
       allow_ratings: true,
@@ -278,12 +293,36 @@ export const CreateEventPage: React.FC = () => {
     }));
   }, [publicSettings]);
 
+  // Download limit default from Settings > Events (issue 1560). Same one-shot
+  // apply; the form sends the field explicitly, so the server's own fallback
+  // only covers callers that omit it (the v1 API).
+  const downloadLimitDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (downloadLimitDefaultApplied.current) return;
+    if (publicSettings?.event_default_download_limit === undefined) return;
+    downloadLimitDefaultApplied.current = true;
+    setFormData(prev => ({ ...prev, download_limit: publicSettings.event_default_download_limit || 0 }));
+  }, [publicSettings]);
+
   // Honour the global guest-feedback defaults (#520 for the master toggle,
   // #1044 for the per-type ones). Same one-shot apply pattern as
   // require_password above. This form POSTs every sub-toggle explicitly, so
   // seeding them here is what makes the Settings > Events defaults actually
   // reach a gallery created through the UI — the server-side inheritance in
   // feedbackDefaults.js only covers callers that omit them (the v1 API).
+  // Uploader-name defaults (#1561), applied once like the feedback ones below.
+  const uploaderNameDefaultsApplied = useRef(false);
+  useEffect(() => {
+    if (uploaderNameDefaultsApplied.current) return;
+    if (publicSettings?.event_default_guest_name_mode === undefined) return;
+    uploaderNameDefaultsApplied.current = true;
+    setFormData(prev => ({
+      ...prev,
+      guest_name_mode: publicSettings.event_default_guest_name_mode || 'off',
+      show_credits_to_guests: publicSettings.event_default_show_credits_to_guests === true,
+    }));
+  }, [publicSettings]);
+
   const feedbackEnabledDefaultApplied = useRef(false);
   useEffect(() => {
     if (feedbackEnabledDefaultApplied.current) return;
@@ -500,8 +539,11 @@ export const CreateEventPage: React.FC = () => {
       expiration_days: requireExpiration ? formData.expires_in_days : undefined,
       allow_user_uploads: formData.allow_user_uploads,
       upload_category_id: formData.upload_category_id,
+      guest_name_mode: formData.guest_name_mode,
+      show_credits_to_guests: formData.show_credits_to_guests,
       css_template_id: formData.css_template_id,
       photo_cap: formData.photo_cap > 0 ? formData.photo_cap : null,
+      download_limit: formData.download_limit > 0 ? formData.download_limit : null,
       feedback_enabled: feedbackSettings.feedback_enabled,
       allow_ratings: feedbackSettings.allow_ratings,
       allow_likes: feedbackSettings.allow_likes,
@@ -1074,6 +1116,30 @@ export const CreateEventPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Download limit (issue 1560) */}
+            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <label htmlFor="create-download-limit" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                {t('events.downloadLimit', 'Download Limit')}
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="w-32">
+                  {/* Same 32-bit ceiling as photo_cap (migration 231). */}
+                  <Input
+                    id="create-download-limit"
+                    type="number"
+                    value={formData.download_limit}
+                    onChange={(e) => setFormData({ ...formData, download_limit: parseInt(e.target.value) || 0 })}
+                    min={0}
+                    max={2147483647}
+                    leftIcon={<Download className="w-5 h-5" />}
+                  />
+                </div>
+                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {t('events.downloadLimitHelp', 'Maximum number of photos the client can download. 0 = unlimited')}
+                </span>
+              </div>
+            </div>
+
             {/* Default Photo Sort */}
             <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -1175,6 +1241,15 @@ export const CreateEventPage: React.FC = () => {
                   </p>
                 </div>
               )}
+
+              <UploaderNameSettings
+                className="mt-4 ml-7"
+                idPrefix="create-uploader-names"
+                mode={formData.guest_name_mode}
+                onModeChange={(guest_name_mode) => setFormData(prev => ({ ...prev, guest_name_mode }))}
+                showToGuests={formData.show_credits_to_guests}
+                onShowToGuestsChange={(show_credits_to_guests) => setFormData(prev => ({ ...prev, show_credits_to_guests }))}
+              />
             </div>
           </div>
         </Card>

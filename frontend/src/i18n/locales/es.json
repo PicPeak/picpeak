@@ -156,7 +156,15 @@
     "limitReached": "Límite de subida alcanzado ({{limit}} archivos por lote)",
     "uploadingChunks": "Subiendo {{count}} archivos en {{total}} lotes...",
     "mediaCategory": "Categoría de medios",
-    "uploadAction": "Subir {{count}} archivos"
+    "uploadAction": "Subir {{count}} archivos",
+    "uploadingAs": "Subiendo como {{name}}",
+    "notYou": "¿No eres tú?",
+    "yourName": "Tu nombre",
+    "yourNameOptional": "Tu nombre (opcional)",
+    "nameRequired": "Introduce tu nombre para subir fotos.",
+    "nameSaveFailed": "No se pudo guardar tu nombre. Inténtalo de nuevo.",
+    "namePrivacyShown": "Tu nombre se guarda con tus fotos y se muestra a los demás invitados. El anfitrión puede eliminarlo en cualquier momento.",
+    "namePrivacyHidden": "Tu nombre se guarda con tus fotos para el anfitrión. Los demás invitados no lo ven, y el anfitrión puede eliminarlo en cualquier momento."
   },
   "navigation": {
     "dashboard": "Panel",
@@ -319,7 +327,28 @@
     "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
     "downloadEverything": "Descargar todas las fotos",
     "videoFormatUnsupported": "Este formato de vídeo no se puede reproducir en este navegador. Descárgalo para verlo.",
-    "videoLoadFailed": "No se ha podido cargar este vídeo."
+    "videoLoadFailed": "No se ha podido cargar este vídeo.",
+    "downloadLimit": {
+      "reached": "Límite de descargas alcanzado. Contacta con tu fotógrafo para obtener más descargas.",
+      "notEnough": "Solo quedan {{remaining}} descargas. Selecciona menos fotos o contacta con tu fotógrafo.",
+      "counter": "{{used}} de {{limit}} descargas usadas",
+      "selectionCost": "Usa {{cost}} de tus {{remaining}} descargas restantes",
+      "selectionTooLarge": "Límite de descargas: esta selección necesita {{cost}} descargas, solo quedan {{remaining}}",
+      "downloadAllBlocked": "Esta galería tiene más fotos que tus descargas restantes",
+      "previewOnly": "Las descargas de esta galería tienen tamaño de vista previa. Los archivos originales están disponibles para el cliente.",
+      "videoClientOnly": "Este vídeo solo está disponible para el cliente."
+    },
+    "credits": {
+      "filterLabel": "De",
+      "everyone": "Todos",
+      "unnamedGuests": "Invitados sin nombre",
+      "photographer": "Fotógrafo",
+      "uploadedBy": "Subida por {{name}}",
+      "photoBy": "Foto de {{name}}"
+    },
+    "footer": {
+      "forgetMeConfirmUploads": "Tu nombre se eliminará de las fotos que subiste a esta galería."
+    }
   },
   "categories": {
     "title": "Categorías de fotos",
@@ -693,7 +722,27 @@
     "noEventsDescription": "Crea tu primer evento para comenzar.",
     "bulkArchive": "Archivar",
     "confirmBulkArchive": "¿Seguro que quieres archivar {{count}} evento(s)?",
-    "confirmBulkArchiveDescription": "Esta acción no se puede deshacer. Los eventos archivados dejarán de ser accesibles públicamente."
+    "confirmBulkArchiveDescription": "Esta acción no se puede deshacer. Los eventos archivados dejarán de ser accesibles públicamente.",
+    "downloadLimit": "Límite de descargas",
+    "downloadLimitHelp": "Número máximo de fotos que el cliente puede descargar. 0 = ilimitado",
+    "downloadLimitUsage": "{{used}} / {{limit}} descargadas",
+    "downloadLimitReset": "Restablecer",
+    "downloadLimitResetConfirm": "¿Restablecer las descargas de esta galería? El cliente recupera el límite completo y las fotos ya descargadas vuelven a contar.",
+    "downloadLimitResetDone": "Descargas restablecidas",
+    "downloadLimitResetFailed": "No se pudieron restablecer las descargas",
+    "uploaderNames": {
+      "label": "Nombres de quien sube",
+      "help": "Permite a los invitados añadir su nombre al subir fotos, para que sepas quién subió cada una.",
+      "modes": {
+        "off": "Desactivado",
+        "optional": "Opcional",
+        "required": "Obligatorio"
+      },
+      "showToGuests": "Mostrar los nombres a los invitados",
+      "showToGuestsHelp": "Los invitados ven los nombres de las fotos subidas mientras esto está activado; los nombres dados mientras estaba desactivado quedan solo para ti y el anfitrión. Al desactivarlo se ocultan todos los nombres a los invitados. También afecta a los créditos del fotógrafo leídos del EXIF.",
+      "shownToGuests": "Visible para los invitados",
+      "hiddenFromGuests": "Visible solo para ti"
+    }
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -934,7 +983,9 @@
       "defaultAllowColorLabels": "Etiquetas de color",
       "defaultKeybindMode": "Atajos predeterminados del visor",
       "keybindColors": "Solo colores — 1 verde, 2 amarillo, 3 rojo",
-      "keybindLightroom": "Lightroom — 1-5 estrellas, 6-9 colores"
+      "keybindLightroom": "Lightroom — 1-5 estrellas, 6-9 colores",
+      "defaultDownloadLimit": "Límite de descargas predeterminado",
+      "defaultDownloadLimitHelp": "Valor inicial para nuevos eventos: cuántas fotos puede descargar un cliente. 0 = ilimitado."
     },
     "imageSecurity": {
       "title": "Proteger Imagen",
@@ -1075,6 +1126,16 @@
     },
     "customerSurface": {
       "save": "Guardar ajustes del encabezado"
+    },
+    "creditBackfill": {
+      "title": "Autores de las fotos",
+      "description": "Lee el autor (EXIF Artist, XMP Creator o el nombre del Copyright) de las fotos añadidas antes de que se registraran autores. Las subidas de invitados y los nombres fijados a mano nunca se modifican.",
+      "withCredit": "Con autor",
+      "undecided": "Aún sin leer",
+      "result": "Última ejecución: {{success}} con autor, {{noCredit}} sin nombre en el archivo, {{failed}} inaccesibles",
+      "running": "Leyendo autores...",
+      "noneToRead": "No quedan fotos por leer",
+      "button": "Leer autores del EXIF"
     }
   },
   "analytics": {
@@ -1592,7 +1653,26 @@
       "rateStars": "Valorar con {{count}} estrellas",
       "markError": "No se pudo guardar tu marca",
       "yourMarkColor": "Tu marca: {{color}}",
-      "yourMarkRating": "Tu valoración: {{count}}"
+      "yourMarkRating": "Tu valoración: {{count}}",
+      "columns": {
+        "credit": "Autor"
+      },
+      "credit": {
+        "label": "Autor",
+        "edit": "Editar",
+        "save": "Guardar nombre",
+        "clear": "Quitar nombre",
+        "saved": "Nombre guardado",
+        "cleared": "Nombre eliminado",
+        "none": "Sin nombre",
+        "unnamedGuest": "Invitado, sin nombre",
+        "manualHint": "Un nombre fijado aquí es definitivo: los datos EXIF no lo sustituyen.",
+        "bulkAction": "Fijar nombre",
+        "bulkTitle": "Fijar el nombre en {{count}} fotos",
+        "filterLabel": "Filtrar por autor",
+        "filterAll": "Todos los nombres",
+        "filterNone": "Sin nombre"
+      }
     },
     "guests": {
       "columns": {

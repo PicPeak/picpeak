@@ -1,10 +1,12 @@
 const express = require('express');
+const net = require('net');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership, scopeEventsQuery } = require('../middleware/ownership');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { decodeSettingValue } = require('./adminEvents/helpers');
 
 const router = express.Router();
@@ -356,9 +358,28 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
       return res.status(400).json({ error: 'IP address required' });
     }
 
+    // The middleware checks the list against rateLimitKey (issue 1564), so
+    // an entry has to be stored in that form: blocking an IPv6 address blocks
+    // its /64, and an IPv4-mapped address is stored as the dotted IPv4 one.
+    // Unblocking normalises the same way, so either spelling removes it.
+    // A /64 in CIDR form (as the list stores it) is accepted too; anything
+    // else that is not an address would be stored and never match, so it is
+    // refused instead of reported as blocked.
+    // A proxy-forwarded IPv6 address can be logged in URI form
+    // ([2001:db8::1] or [2001:db8::1]:443); rateLimitKey accepts that too.
+    const raw = typeof ip === 'string' ? ip.trim() : '';
+    const bracketed = raw.match(/^\[([^\]]+)\](?::\d+)?$/);
+    const text = bracketed ? bracketed[1] : raw;
+    const cidr = text.match(/^(.+)\/64$/);
+    const address = cidr ? cidr[1] : text;
+    if (net.isIP(address) === 0 || (cidr && net.isIPv6(address) === false)) {
+      return res.status(400).json({ error: 'Invalid IP address' });
+    }
+    const listKey = rateLimitKey({ ip: address });
+
     if (action === 'block') {
       // Add to blocked IPs in middleware
-      secureImageMiddleware.suspiciousIPs.add(ip);
+      secureImageMiddleware.suspiciousIPs.add(listKey);
       
       logger.warn('IP manually blocked by admin', {
         ip,
@@ -367,7 +388,7 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
       });
     } else if (action === 'unblock') {
       // Remove from blocked IPs
-      secureImageMiddleware.suspiciousIPs.delete(ip);
+      secureImageMiddleware.suspiciousIPs.delete(listKey);
       
       logger.info('IP manually unblocked by admin', {
         ip,

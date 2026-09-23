@@ -72,6 +72,8 @@ class PhotoExportService {
         'photos.height',
         'photos.size_bytes',
         'photos.uploaded_at',
+        // Photo credit (#1561) — the CSV/JSON column and the XMP dc:creator.
+        'photos.credit_name',
         'photo_categories.name as category_name'
       )
       .orderBy('photos.filename', 'asc');
@@ -206,7 +208,8 @@ class PhotoExportService {
       'width',
       'height',
       'size_bytes',
-      'uploaded_at'
+      'uploaded_at',
+      'credit'
     ];
 
     const rows = photos.map(photo => [
@@ -224,7 +227,8 @@ class PhotoExportService {
       photo.width || '',
       photo.height || '',
       photo.size_bytes || '',
-      photo.uploaded_at ? new Date(photo.uploaded_at).toISOString() : ''
+      photo.uploaded_at ? new Date(photo.uploaded_at).toISOString() : '',
+      photo.credit_name || ''
     ]);
 
     const csvContent = [
@@ -324,7 +328,8 @@ class PhotoExportService {
           height: photo.height || null
         },
         size_bytes: photo.size_bytes || null,
-        uploaded_at: photo.uploaded_at || null
+        uploaded_at: photo.uploaded_at || null,
+        credit: photo.credit_name || null
       }))
     };
 

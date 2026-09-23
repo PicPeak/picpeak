@@ -20,12 +20,14 @@ import type { Event } from '../../../types';
 import { Input, Card, Loading, MarkdownContent, LocalizedDateInput } from '../../../components/common';
 import { HeroPhotoSelector, FocalPointPicker, FeedbackSettings } from '../../../components/admin';
 import { CustomerAccountPicker } from '../../../components/admin/CustomerAccountPicker';
+import { UploaderNameSettings } from '../../../components/admin/UploaderNameSettings';
 import { api } from '../../../config/api';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import type { AdminPhoto } from '../../../services/photos.service';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../services/feedback.service';
 import { ExternalFolderPicker } from './ExternalFolderPicker';
+import { DownloadLimitUsage } from './DownloadLimitUsage';
 import { safeParseDate } from './utils';
 import { usePermission } from '../../../hooks/usePermission';
 import type { EditFormState } from './types';
@@ -411,6 +413,28 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
             </div>
           </div>
 
+          {/* Download limit (issue 1560) */}
+          <div>
+            <label htmlFor="event-download-limit" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              {t('events.downloadLimit', 'Download Limit')}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="event-download-limit"
+                type="number"
+                value={editForm.download_limit}
+                onChange={(e) => setEditForm(prev => ({ ...prev, download_limit: parseInt(e.target.value) || 0 }))}
+                min={0}
+                // events.download_limit is a signed 32-bit int (migration 231).
+                max={2147483647}
+                className="w-24 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              />
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {t('events.downloadLimitHelp', 'Maximum number of photos the client can download. 0 = unlimited')}
+              </span>
+            </div>
+          </div>
+
           {/* Default Photo Sort */}
           <div>
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
@@ -470,6 +494,17 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               </p>
             </div>
           )}
+
+          {/* Uploader names (#1561), beside the other guest upload options.
+              Not gated on uploads: the visibility switch also covers credits
+              read from EXIF. */}
+          <UploaderNameSettings
+            idPrefix="event-uploader-names"
+            mode={editForm.guest_name_mode}
+            onModeChange={(guest_name_mode) => setEditForm(prev => ({ ...prev, guest_name_mode }))}
+            showToGuests={editForm.show_credits_to_guests}
+            onShowToGuestsChange={(show_credits_to_guests) => setEditForm(prev => ({ ...prev, show_credits_to_guests }))}
+          />
 
           {/* Reveal mode (#838) — only meaningful with guest uploads */}
           {editForm.allow_user_uploads && (
@@ -962,6 +997,20 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
             </dd>
           </div>
 
+          {(event.guest_name_mode && event.guest_name_mode !== 'off') || Boolean(event.show_credits_to_guests) ? (
+            <div>
+              <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.uploaderNames.label')}</dt>
+              <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
+                {t(`events.uploaderNames.modes.${event.guest_name_mode || 'off'}`)}
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  {event.show_credits_to_guests
+                    ? t('events.uploaderNames.shownToGuests')
+                    : t('events.uploaderNames.hiddenFromGuests')}
+                </p>
+              </dd>
+            </div>
+          ) : null}
+
           {Boolean(event.reveal_mode) && (
             <div>
               <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.revealModeStatus', 'Reveal mode')}</dt>
@@ -1029,6 +1078,13 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                     <Download className="w-3 h-3 mr-1" />
                     {t('events.downloadsDisabled', 'Downloads disabled')}
                   </span>
+                )}
+                {!!event.allow_downloads && !!event.download_limit && (
+                  <DownloadLimitUsage
+                    eventId={event.id}
+                    downloadLimit={event.download_limit}
+                    ownedByOther={!!event.share_secrets_hidden}
+                  />
                 )}
                 {!!event.watermark_downloads && (
                   <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">

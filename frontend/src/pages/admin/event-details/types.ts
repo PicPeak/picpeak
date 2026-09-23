@@ -1,3 +1,5 @@
+import type { GuestNameMode } from '../../../types';
+
 export type EventDetailsTab = 'overview' | 'photos' | 'categories' | 'guests';
 
 export type EditFormState = {
@@ -10,6 +12,9 @@ export type EditFormState = {
   reveal_mode: boolean;
   reveal_at: string;
   upload_category_id: number | null;
+  // Uploader names (#1561)
+  guest_name_mode: GuestNameMode;
+  show_credits_to_guests: boolean;
   hero_photo_id: number | null;
   customer_name: string;
   customer_email: string;
@@ -37,6 +42,8 @@ export type EditFormState = {
   hero_image_anchor: string;
   // Photo cap
   photo_cap: number;
+  // Download limit (issue 1560). 0 = unlimited.
+  download_limit: number;
   // Default photo sort
   default_photo_sort: string;
   // Per-event promotional override (#440). Three-way mode:
@@ -65,6 +72,8 @@ export const INITIAL_EDIT_FORM: EditFormState = {
   reveal_mode: false,
   reveal_at: '',
   upload_category_id: null,
+  guest_name_mode: 'off',
+  show_credits_to_guests: false,
   hero_photo_id: null,
   customer_name: '',
   customer_email: '',
@@ -91,6 +100,7 @@ export const INITIAL_EDIT_FORM: EditFormState = {
   hero_image_anchor: 'center',
   // Photo cap
   photo_cap: 0,
+  download_limit: 0,
   // Default photo sort
   default_photo_sort: 'upload_date_desc',
   // Per-event promotional override (#440)

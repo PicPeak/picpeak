@@ -44,6 +44,16 @@ const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
 const { mergeMarks } = require('../../services/markMerge');
+const feedbackService = require('../../services/feedbackService');
+const archiver = require('archiver');
+const { getStorage } = require('../../services/storage');
+const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
+const { pickRawDownloadName } = require('../../services/downloadFilenameService');
+const { buildContentDisposition, sanitizeForZipEntry } = require('../../utils/filenameSanitizer');
+const { resolvePhotoContentType } = require('../../utils/photoContentType');
+const { pipeStreamToResponse } = require('../../utils/streamResponse');
+const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
+const { recordSingleDownload } = require('../../services/apiDownloadNotifications');
 
 const router = express.Router();
 
@@ -142,6 +152,7 @@ const photoUpload = async (req, res, next) => {
  *               hero_logo_visible: { type: boolean, nullable: true, description: "Show event logo in the hero block. When omitted, falls back to the global branding_logo_display_hero setting." }
  *               hero_logo_size: { type: string, nullable: true, enum: [small, medium, large, xlarge], description: "Hero logo size. When omitted, falls back to the global branding_logo_size setting." }
  *               hero_logo_position: { type: string, nullable: true, enum: [top, center, bottom], description: "Hero logo position. Defaults to 'top' (not settings-backed — see migration 084)." }
+ *               download_limit: { type: integer, minimum: 1, nullable: true, description: "Maximum number of distinct photos the gallery may download. null = unlimited. When omitted, falls back to the global event_default_download_limit setting." }
  *     responses:
  *       201:
  *         description: Event created
@@ -189,7 +200,8 @@ router.post(
     body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
     body('hero_logo_visible').optional().isBoolean(),
     body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
-    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom'])
+    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
+    body('download_limit').optional({ nullable: true }).not().isArray().isInt({ min: 1, max: 2147483647 }).toInt()
   ],
   async (req, res) => {
     try {
@@ -552,6 +564,9 @@ router.post(
         ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
       } catch { /* non-fatal */ }
 
+      // Credit from EXIF (#1561), read before the temp file is moved away.
+      const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
+
       let thumbRel = null;
       try {
         thumbRel = await generateThumbnail(tempPath);
@@ -583,7 +598,9 @@ router.post(
         height,
         media_type: 'image',
         mime_type: req.file.mimetype,
-        uploaded_at: new Date().toISOString()
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: 'admin',
+        ...credit
       }).returning('id');
       const id = insertResult[0]?.id || insertResult[0];
 
@@ -657,6 +674,34 @@ router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requ
     res.status(500).json({ error: 'Failed to build share link' });
   }
 });
+
+// The list filters, shared with the originals ZIP below so a caller can zip
+// exactly what it just listed.
+const photoFilterValidators = [
+  query('marked_only').optional().isBoolean(),
+  query('mark_source').optional().isIn(['client', 'mine', 'either']),
+  query('color_labels').optional().isString(),
+  query('my_color_labels').optional().isString(),
+  query('min_rating').optional().isFloat({ min: 0, max: 5 }).toFloat(),
+  query('my_min_rating').optional().isInt({ min: 1, max: 5 }).toInt(),
+  query('logic').optional().isIn(['AND', 'OR'])
+];
+
+function buildPhotoFilters(req) {
+  return {
+    min_rating: req.query.min_rating,
+    my_min_rating: req.query.my_min_rating,
+    color_labels: req.query.color_labels,
+    my_color_labels: req.query.my_color_labels,
+    marked_only: req.query.marked_only,
+    mark_source: req.query.mark_source || 'either',
+    // The token's owning admin. `my_*` filters and marks are per-admin
+    // (migration 183 is unique on photo_id + admin_id), so a second
+    // admin's triage is deliberately invisible here.
+    admin_id: req.admin.id,
+    logic: req.query.logic || 'AND'
+  };
+}
 
 /**
  * @openapi
@@ -773,13 +818,7 @@ router.get(
   [
     query('page').optional().isInt({ min: 1 }).toInt(),
     query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
-    query('marked_only').optional().isBoolean(),
-    query('mark_source').optional().isIn(['client', 'mine', 'either']),
-    query('color_labels').optional().isString(),
-    query('my_color_labels').optional().isString(),
-    query('min_rating').optional().isFloat({ min: 0, max: 5 }).toFloat(),
-    query('my_min_rating').optional().isInt({ min: 1, max: 5 }).toInt(),
-    query('logic').optional().isIn(['AND', 'OR'])
+    ...photoFilterValidators
   ],
   async (req, res) => {
     try {
@@ -795,20 +834,11 @@ router.get(
       const page = req.query.page || 1;
       const limit = req.query.limit || 50;
       const markSource = req.query.mark_source || 'either';
-
-      const filters = {
-        min_rating: req.query.min_rating,
-        my_min_rating: req.query.my_min_rating,
-        color_labels: req.query.color_labels,
-        my_color_labels: req.query.my_color_labels,
-        marked_only: req.query.marked_only,
-        mark_source: markSource,
-        // The token's owning admin. `my_*` filters and marks are per-admin
-        // (migration 183 is unique on photo_id + admin_id), so a second
-        // admin's triage is deliberately invisible here.
-        admin_id: req.admin.id,
-        logic: req.query.logic || 'AND'
-      };
+      const filters = buildPhotoFilters(req);
+      // Which colour-label set the event currently uses (#1197): a dormant
+      // set left behind by a mode switch must not answer a colour filter.
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(eventId);
 
       // Two-step on purpose: PhotoFilterBuilder knows how to FILTER on marks
       // but its select list carries none of them, while
@@ -817,7 +847,8 @@ router.get(
       // which also keeps the per-colour tally query bounded by page size.
       const filterBuilder = new PhotoFilterBuilder(
         db('photos').select('photos.id'),
-        eventId
+        eventId,
+        identityMode
       );
       filterBuilder
         .applyFilters(filters)
@@ -826,8 +857,8 @@ router.get(
 
       const [idRows, countResult, summary] = await Promise.all([
         filterBuilder.getQuery(),
-        PhotoFilterBuilder.buildCountQuery(db, eventId, filters),
-        PhotoFilterBuilder.getSummary(db, eventId)
+        PhotoFilterBuilder.buildCountQuery(db, eventId, filters, identityMode),
+        PhotoFilterBuilder.getSummary(db, eventId, identityMode)
       ]);
 
       const pageIds = idRows.map(r => r.id);
@@ -882,4 +913,661 @@ router.get(
   }
 );
 
+// ──────────────────────────────────────────────────────────────────────────
+// Original downloads (issue 1473)
+//
+// Integration access to the STORED original — not the gallery's download
+// rendition: no resize to the gallery standard, no watermark, no preview tier.
+// The gallery's own download routes stay the only guest path; these two never
+// touch its accounting (access_logs, photos.download_count, the download
+// limit) because an integration fetching photos is not a guest downloading
+// them. What they leave behind is one activity_logs row per request, ids only.
+// ──────────────────────────────────────────────────────────────────────────
+
+// The ZIP's ?ids= list. Matches the gallery's download-selected cap.
+const MAX_ZIP_IDS = 500;
+// Refuse up front rather than stream for hours: a request this big is better
+// split with ?ids= (the photo list is paginated anyway). Bytes come from
+// photos.size_bytes; a row without a recorded size (null or 0) is statted in
+// storage before the check rather than counted as zero (on GET only; HEAD
+// stops at the recorded-size check to stay cheap). The byte cap is also
+// enforced on the bytes actually streamed. An object so tests can lower it.
+const MAX_ZIP_PHOTOS = 5000;
+const zipLimits = { maxBytes: 20 * 1024 * 1024 * 1024, maxConcurrentPerToken: 2 };
+// ZIPs being built per API token (token id -> count). In-process on purpose:
+// PicPeak runs one backend process, and the cap only has to stop one token
+// from holding many long archive streams and storage reads at once.
+const zipsInFlight = new Map();
+const MISSING_MANIFEST_NAME = 'MISSING_FILES.txt';
+// Stats in flight while sizing rows without a recorded size.
+const SIZE_STAT_CONCURRENCY = 8;
+
+const isTrue = (value) => value === true || value === 1 || value === '1' || value === 'true';
+
+const isGoneError = (err) => Boolean(err) && (err.code === 'ENOENT'
+  || err.code === 'ENOTDIR'
+  || err.name === 'NoSuchKey'
+  || err.name === 'NotFound'
+  || err.$metadata?.httpStatusCode === 404);
+
+// LocalFsStorage refuses a key that climbs out of its root. For a download
+// that is a row naming no usable file, not a server error.
+const isUnsafeKeyError = (err) =>
+  /^LocalFsStorage: (path traversal rejected|invalid relative path)/.test(err?.message || '');
+
+// What gets logged about a failure: its class, never its message, which can
+// carry a storage key (event slug and filename).
+const errorClass = (err) => err?.code || err?.name || 'Error';
+
+// Runs after requireEventOwnership: the event exists and the caller may see
+// it. An archived event's originals live only inside its archive zip, which is
+// not a per-photo read (see the PR for why that is not attempted here).
+async function loadDownloadableEvent(req, res) {
+  const event = await db('events').where({ id: parseInt(req.params.id, 10) }).first();
+  if (!event) {
+    res.status(404).json({ error: 'Event not found' });
+    return null;
+  }
+  if (isTrue(event.is_archived)) {
+    res.status(409).json({
+      error: 'This event is archived; its originals are only in the archive. Restore the event to download them.',
+      code: 'EVENT_ARCHIVED'
+    });
+    return null;
+  }
+  return event;
+}
+
+// A row id as PostgreSQL's integer column accepts it. Anything else —
+// non-numeric, or past 2^31-1 — would be rejected there as a 500 before any
+// 404 or 400 could be answered.
+const PG_MAX_INT = 2147483647;
+const isRowId = (value) => /^\d{1,10}$/.test(String(value)) && Number(value) <= PG_MAX_INT;
+
+function requireNumericEventId(req, res, next) {
+  if (!isRowId(req.params.id)) return res.status(404).json({ error: 'Event not found' });
+  next();
+}
+
+/**
+ * Where a photo's stored original lives: `{ key }` in the storage backend
+ * (managed photos, local disk or S3) or `{ filePath }` on a local mount
+ * (external/reference photos). Both resolvers build it from the photo row,
+ * never from request input. null when the row names no usable location —
+ * including a managed key that normalises out of events/active/.
+ */
+function locateOriginal(event, photo) {
+  try {
+    const key = resolvePhotoStorageKey(event, photo);
+    if (key) {
+      return path.posix.normalize(key).startsWith('events/active/') ? { key } : null;
+    }
+    return { filePath: resolvePhotoFilePath(event, photo) };
+  } catch {
+    return null;
+  }
+}
+
+/** Byte size of the stored original, or null when it is missing. */
+async function statOriginal(location) {
+  if (location.key) {
+    try {
+      const stat = await getStorage().stat(location.key);
+      return stat ? stat.size : null;
+    } catch (err) {
+      if (isGoneError(err) || isUnsafeKeyError(err)) return null;
+      throw err;
+    }
+  }
+  try {
+    const stat = await fs.stat(location.filePath);
+    return stat.isFile() ? stat.size : null;
+  } catch (err) {
+    if (isGoneError(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * Open a photo's stored original. Returns null when the file is gone.
+ *
+ * `size` is always known on local disk; on S3 it costs a HEAD, which the ZIP
+ * skips (get() rejects on a missing key by itself) and leaves null.
+ */
+async function openOriginal(event, photo, { needSize = true } = {}) {
+  const location = locateOriginal(event, photo);
+  if (!location) return null;
+
+  let size = null;
+  // Local reads are lazy: a missing file would only error after the stream
+  // was handed on, so it is statted here instead.
+  if (needSize || !location.key || getStorage().kind() === 'local') {
+    size = await statOriginal(location);
+    if (size === null) return null;
+  }
+
+  if (!location.key) return { stream: fsSync.createReadStream(location.filePath), size };
+  try {
+    return { stream: await getStorage().get(location.key), size };
+  } catch (err) {
+    if (isGoneError(err) || isUnsafeKeyError(err)) return null;
+    throw err;
+  }
+}
+
+/**
+ * ZIP entry names: the original upload name, zip-safe (sanitizeForZipEntry
+ * replaces `:` and the rest of the Windows-reserved characters so entries
+ * extract cleanly there too) and duplicates suffixed `_1`, `_2` … compared
+ * case-insensitively, so `IMG.jpg` and `img.JPG` do not overwrite each other
+ * when extracted onto a case-insensitive filesystem.
+ */
+function zipEntryNames(rawNames) {
+  const taken = new Set();
+  return rawNames.map((raw) => {
+    const name = sanitizeForZipEntry(raw);
+    const ext = path.extname(name);
+    const stem = ext ? name.slice(0, -ext.length) : name;
+    let candidate = name;
+    for (let n = 1; taken.has(candidate.toLowerCase()); n += 1) candidate = `${stem}_${n}${ext}`;
+    taken.add(candidate.toLowerCase());
+    return candidate;
+  });
+}
+
+function setOriginalHeaders(res, photo, size) {
+  res.set({
+    'Content-Type': resolvePhotoContentType(photo),
+    // Always the original upload name, whatever the gallery's
+    // "use original filenames" setting says: an integration wants the name
+    // the photographer's files carry, not the renamed storage name.
+    'Content-Disposition': buildContentDisposition(pickRawDownloadName(photo, true)),
+    'Content-Length': size,
+    'X-Content-Type-Options': 'nosniff'
+  });
+}
+
+const downloadActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
+
+const zipTooLarge = (res, photoCount, totalBytes) => res.status(400).json({
+  error: `Archive too large (at most ${MAX_ZIP_PHOTOS} photos and ${zipLimits.maxBytes / (1024 ** 3)} GiB per request); split it with ids=`,
+  code: 'ZIP_TOO_LARGE',
+  photo_count: photoCount,
+  total_bytes: totalBytes
+});
+
+/**
+ * @openapi
+ * /events/{id}/photos/download:
+ *   get:
+ *     summary: Download an event's originals as a ZIP
+ *     description: >
+ *       Streams a ZIP of the stored originals (photos and videos) — not the
+ *       gallery's download rendition, so no resize and no watermark. Entries
+ *       are stored uncompressed and always named by the original upload
+ *       filename, independent of the "use original filenames" setting; `:`
+ *       becomes `_`, and duplicates (compared case-insensitively) get `_1`,
+ *       `_2` … suffixes. A photo whose file is missing is skipped and listed
+ *       by id in a `MISSING_FILES.txt` entry (`MISSING_FILES_1.txt` if a photo
+ *       already uses that name). Accepts the same filters as the photo list,
+ *       plus `ids`. Not counted as a gallery download. Requires the `read`
+ *       scope and the owner's `photos.view` and `photos.download` permissions.
+ *
+ *
+ *       The archive is streamed without a Content-Length. Archives over 4 GiB
+ *       are written as ZIP64, which some streaming unzip tools cannot read;
+ *       use a tool that reads the central directory (unzip 6, 7-Zip, Python
+ *       zipfile) or split the request with `ids`. If a stored file fails to
+ *       read after streaming has started, the connection is aborted rather
+ *       than ended, so a truncated archive never arrives as a complete
+ *       response; treat an incomplete transfer as a failure and retry.
+ *
+ *
+ *       HEAD is a cheap probe: it runs the filter, id and count checks and the
+ *       byte check on recorded sizes, then answers with the ZIP headers
+ *       without loading rows, statting files or building the archive. Rows
+ *       without a recorded size are only sized on GET, so a HEAD can answer
+ *       200 where the GET refuses with ZIP_TOO_LARGE; the GET also enforces
+ *       the byte cap on the bytes actually streamed. At most 2 archives per
+ *       token are built at once; another GET meanwhile gets 429
+ *       ZIP_CONCURRENCY.
+ *
+ *
+ *       Every request counts against the general API rate limit (default 300
+ *       requests per 15 minutes per client IP, Settings → Security → API rate limiting). For bulk
+ *       delivery use this endpoint, or `ids` batches of up to 500, rather than
+ *       one single-photo request per photo.
+ *     tags: [Photos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: ids
+ *         schema: { type: string }
+ *         description: Comma-separated photo ids of this event, at most 500. Every id must belong to the event.
+ *       - in: query
+ *         name: marked_only
+ *         schema: { type: boolean }
+ *       - in: query
+ *         name: mark_source
+ *         schema: { type: string, enum: [client, mine, either], default: either }
+ *       - in: query
+ *         name: color_labels
+ *         schema: { type: string }
+ *       - in: query
+ *         name: my_color_labels
+ *         schema: { type: string }
+ *       - in: query
+ *         name: min_rating
+ *         schema: { type: number, minimum: 0, maximum: 5 }
+ *       - in: query
+ *         name: my_min_rating
+ *         schema: { type: integer, minimum: 1, maximum: 5 }
+ *       - in: query
+ *         name: logic
+ *         schema: { type: string, enum: [AND, OR], default: AND }
+ *     responses:
+ *       200:
+ *         description: ZIP archive of the originals
+ *         content:
+ *           application/zip:
+ *             schema: { type: string, format: binary }
+ *       400: { description: "Invalid filter or ids (code INVALID_PHOTO_IDS, TOO_MANY_PHOTO_IDS), or over 5000 photos / 20 GiB (code ZIP_TOO_LARGE)" }
+ *       401: { description: Missing, invalid, revoked or expired token }
+ *       403: { description: Token lacks scope or permission, or the event belongs to another admin }
+ *       404: { description: Event not found, or no photos match (code NO_PHOTOS) }
+ *       409: { description: Event is archived (code EVENT_ARCHIVED) }
+ *       429: { description: "Rate limit exceeded, or this token already has 2 archives in progress (code ZIP_CONCURRENCY)" }
+ *       500: { description: "The archive could not be started. A failure after streaming started aborts the connection instead." }
+ */
+router.get(
+  '/events/:id/photos/download',
+  apiTokenAuth,
+  requireApiScope('read'),
+  requirePermission(['photos.view', 'photos.download'], { requireAll: true }),
+  requireNumericEventId,
+  requireEventOwnership,
+  [
+    query('ids').optional().isString(),
+    ...photoFilterValidators
+  ],
+  async (req, res) => {
+    let guard = null;
+    let archive = null;
+    let cancelled = false;
+    // Registered before the preflight: a client that leaves during the
+    // selection queries or size stats has closed before any archive exists,
+    // and a listener added later would never fire.
+    res.on('close', () => {
+      // Ended: the archive is fully written, nothing left to abort.
+      if (res.writableEnded || cancelled) return;
+      cancelled = true;
+      if (guard) guard.destroyAll();
+      if (archive) archive.abort();
+    });
+    // Or gone before the handler even ran (during auth and ownership).
+    if (res.destroyed) return;
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
+      }
+
+      const event = await loadDownloadableEvent(req, res);
+      if (!event) return;
+
+      let ids = null;
+      if (req.query.ids !== undefined) {
+        const parts = String(req.query.ids).split(',').map((s) => s.trim()).filter(Boolean);
+        if (!parts.length || !parts.every(isRowId)) {
+          return res.status(400).json({ error: 'ids must be a comma-separated list of photo ids', code: 'INVALID_PHOTO_IDS' });
+        }
+        ids = [...new Set(parts.map(Number))];
+        if (ids.length > MAX_ZIP_IDS) {
+          return res.status(400).json({ error: `At most ${MAX_ZIP_IDS} ids per request`, code: 'TOO_MANY_PHOTO_IDS' });
+        }
+        const owned = await db('photos').where('event_id', event.id).whereIn('id', ids).count('id as count').first();
+        if (Number(owned?.count || 0) !== ids.length) {
+          // Deliberately not naming the offenders: an id that isn't in this
+          // event is either a typo or someone else's photo.
+          return res.status(400).json({ error: 'One or more ids do not belong to this event', code: 'INVALID_PHOTO_IDS' });
+        }
+      }
+
+      // Same filter path, colour-label set and order as GET /events/:id/photos.
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(event.id);
+      const selection = () => {
+        const builder = new PhotoFilterBuilder(db('photos'), event.id, identityMode);
+        builder.applyFilters(buildPhotoFilters(req));
+        if (ids) builder.getQuery().whereIn('photos.id', ids);
+        return builder;
+      };
+
+      // Size the request before loading a single row. sum() comes back as a
+      // string on PostgreSQL (bigint) and skips rows with no recorded size.
+      // A row with a recorded size_bytes is trusted as-is here rather than
+      // re-statted against the live file: size_bytes is only ever written at
+      // import/replace time, so a file swapped afterwards on disk could make
+      // this preflight over- or under-count it. Re-verifying every row would
+      // mean a stat (an S3 HEAD, for external storage) per photo before this
+      // cheap COUNT/SUM check can even run, on top of what the unsized rows
+      // below already cost. A stale size is instead caught while streaming:
+      // the archive's output is counted and aborted once it passes the cap.
+      const totals = await selection().getQuery()
+        .count('photos.id as count')
+        .sum('photos.size_bytes as bytes')
+        .first();
+      const photoCount = Number(totals?.count) || 0;
+      let totalBytes = Number(totals?.bytes) || 0;
+      if (!photoCount) {
+        return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
+      }
+      if (photoCount > MAX_ZIP_PHOTOS || totalBytes > zipLimits.maxBytes) {
+        return zipTooLarge(res, photoCount, totalBytes);
+      }
+
+      // A probe, not a download: answered from the COUNT/SUM above alone. No
+      // rows loaded, no per-row storage stat (an S3 HEAD each), no archive,
+      // nothing logged. Unsized rows are only sized on GET, below.
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', buildContentDisposition(`${event.slug}-originals.zip`));
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.end();
+      }
+
+      // Per-token in-flight cap, taken before the row load and size stats so
+      // those are bounded too. No await between the check and the listener:
+      // a client gone by now has already set `cancelled`.
+      if (cancelled || res.destroyed) return;
+      const tokenId = req.apiToken.id;
+      const inFlight = zipsInFlight.get(tokenId) || 0;
+      if (inFlight >= zipLimits.maxConcurrentPerToken) {
+        return res.status(429).json({
+          error: `At most ${zipLimits.maxConcurrentPerToken} archives per token at once; wait for one to finish`,
+          code: 'ZIP_CONCURRENCY'
+        });
+      }
+      zipsInFlight.set(tokenId, inFlight + 1);
+      res.once('close', () => {
+        const left = (zipsInFlight.get(tokenId) || 1) - 1;
+        if (left > 0) zipsInFlight.set(tokenId, left);
+        else zipsInFlight.delete(tokenId);
+      });
+
+      const photos = await selection().applySorting('filename', 'asc').getQuery().select('photos.*');
+      if (!photos.length) {
+        return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
+      }
+
+      // Rows without a recorded size (legacy imports, or a 0 that no real
+      // original has) are sized from storage metadata, so they can't slip a
+      // large archive past the cap. A missing file counts as zero; it ends up
+      // in the manifest below.
+      const unsized = photos.filter((p) => !(Number(p.size_bytes) > 0));
+      for (let i = 0; i < unsized.length; i += SIZE_STAT_CONCURRENCY) {
+        // No more storage requests for a client that has left.
+        if (cancelled) return;
+        const sizes = await Promise.all(unsized.slice(i, i + SIZE_STAT_CONCURRENCY).map(async (p) => {
+          const location = locateOriginal(event, p);
+          return location ? (await statOriginal(location)) || 0 : 0;
+        }));
+        totalBytes += sizes.reduce((sum, size) => sum + size, 0);
+      }
+      if (photos.length > MAX_ZIP_PHOTOS || totalBytes > zipLimits.maxBytes) {
+        return zipTooLarge(res, photos.length, totalBytes);
+      }
+
+      // The manifest is named last, so a photo uploaded as MISSING_FILES.txt
+      // keeps its name and the manifest becomes MISSING_FILES_1.txt.
+      const entryNames = zipEntryNames([
+        ...photos.map((p) => pickRawDownloadName(p, true)),
+        MISSING_MANIFEST_NAME
+      ]);
+      const manifestName = entryNames.pop();
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', buildContentDisposition(`${event.slug}-originals.zip`));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (cancelled || res.destroyed) return;
+
+      // Photos and videos are already compressed; deflating them again costs
+      // CPU for nothing.
+      archive = archiver('zip', { store: true });
+
+      // A read that fails after the headers went out can no longer become an
+      // error status. Aborting only the archive ends it cleanly — the client
+      // then holds a truncated ZIP delivered as a complete 200, or, when the
+      // failed read was still queued, a response that never ends at all.
+      // Destroying the response breaks the connection instead, which every
+      // HTTP client reports as a failed transfer.
+      const abortArchive = (err, { level = 'error', ...details } = {}) => {
+        if (cancelled) return;
+        cancelled = true;
+        logger[level]('v1 originals zip aborted', {
+          eventId: event.id,
+          tokenId: req.apiToken.id,
+          error: errorClass(err),
+          ...details
+        });
+        guard.destroyAll();
+        archive.unpipe(res);
+        archive.abort();
+        res.destroy(err instanceof Error ? err : new Error('archive failed'));
+      };
+      guard = createArchiveStreamGuard({ onFatalError: abortArchive });
+      archive.on('error', (err) => abortArchive(err));
+      // The preflight trusts recorded sizes, so a file replaced after import
+      // can still be larger than its row says. Count what actually goes out
+      // and stop at the cap. The 200 headers are already sent, so this can
+      // only break the transfer (the client sees a failed download, never a
+      // complete-looking truncated ZIP).
+      let streamedBytes = 0;
+      archive.on('data', (chunk) => {
+        streamedBytes += chunk.length;
+        if (streamedBytes > zipLimits.maxBytes) {
+          const err = new Error('archive over the size cap');
+          err.code = 'ZIP_TOO_LARGE';
+          abortArchive(err, { level: 'warn', streamedBytes, maxBytes: zipLimits.maxBytes });
+        }
+      });
+      archive.pipe(res);
+
+      const missingIds = [];
+      let appended = 0;
+      for (let i = 0; i < photos.length; i += 1) {
+        if (!await guard.acquire()) break;
+        const source = await openOriginal(event, photos[i], { needSize: false });
+        if (!source) {
+          missingIds.push(photos[i].id);
+          continue;
+        }
+        archive.append(guard.track(source.stream), { name: entryNames[i] });
+        appended += 1;
+      }
+      if (cancelled) return;
+
+      if (missingIds.length) {
+        archive.append(
+          `These photo ids had no file in storage and are not in this archive:\n${missingIds.join('\n')}\n`,
+          { name: manifestName }
+        );
+      }
+
+      // On close, not finish: a client can hang up as soon as it has read
+      // the final chunk, before the response ever finishes. Ended means
+      // that chunk was written. An aborted archive still ends the response
+      // — truncated — so cancelled rules it out.
+      res.on('close', () => {
+        if (cancelled || !res.writableEnded) return;
+        logActivity('api_photos_zip_downloaded', {
+          via: 'api_v1',
+          token_id: req.apiToken.id,
+          // The bell entry names the token; the admin chose that label.
+          token_name: req.apiToken.name,
+          photo_count: appended,
+          missing_count: missingIds.length
+        }, event.id, downloadActor(req));
+      });
+
+      // finalize() settles on the archive's end or error, and an aborted
+      // archive may emit neither. The response closing ends the wait too, so
+      // the handler can never be left parked on a dead archive.
+      const finalized = archive.finalize();
+      finalized.catch(() => {}); // handled by abortArchive
+      await Promise.race([finalized, new Promise((resolve) => res.once('close', resolve))]);
+    } catch (error) {
+      if (guard) guard.destroyAll();
+      if (archive) {
+        archive.unpipe(res);
+        archive.abort();
+      }
+      logger.error('v1 GET /events/:id/photos/download failed', {
+        eventId: req.params.id,
+        error: errorClass(error)
+      });
+      if (cancelled || res.headersSent) {
+        if (!res.destroyed) res.destroy();
+        return;
+      }
+      // The ZIP headers describe a body that is not coming.
+      res.removeHeader('Content-Type');
+      res.removeHeader('Content-Disposition');
+      res.status(500).json({ error: 'Failed to build archive' });
+    }
+  }
+);
+
+/**
+ * @openapi
+ * /events/{id}/photos/{photoId}/download:
+ *   get:
+ *     summary: Download one original photo or video
+ *     description: >
+ *       Streams the stored original exactly as uploaded — not the gallery's
+ *       download rendition, so no resize and no watermark. The filename in
+ *       Content-Disposition is always the original upload name (RFC 5987
+ *       encoded), independent of the "use original filenames" setting. HEAD
+ *       answers the same headers, Content-Length included, without reading
+ *       the file. Range requests are not supported. Not counted as a gallery
+ *       download. Requires the `read` scope and the owner's `photos.view` and
+ *       `photos.download` permissions.
+ *
+ *
+ *       Every request counts against the general API rate limit (default 300
+ *       requests per 15 minutes per client IP, Settings → Security → API rate limiting). To
+ *       deliver a whole event, use the ZIP endpoint (optionally in `ids`
+ *       batches) instead of one request per photo.
+ *     tags: [Photos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: path
+ *         name: photoId
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: The original file
+ *         content:
+ *           image/*:
+ *             schema: { type: string, format: binary }
+ *           video/*:
+ *             schema: { type: string, format: binary }
+ *       401: { description: Missing, invalid, revoked or expired token }
+ *       403: { description: Token lacks scope or permission, or the event belongs to another admin }
+ *       404: { description: "Event or photo not found (a photo of another event is not found either), or the file is missing from storage (code PHOTO_FILE_MISSING)" }
+ *       409: { description: Event is archived (code EVENT_ARCHIVED) }
+ *       429: { description: Rate limit exceeded }
+ */
+router.get(
+  '/events/:id/photos/:photoId/download',
+  apiTokenAuth,
+  requireApiScope('read'),
+  requirePermission(['photos.view', 'photos.download'], { requireAll: true }),
+  requireNumericEventId,
+  requireEventOwnership,
+  async (req, res) => {
+    try {
+      const event = await loadDownloadableEvent(req, res);
+      if (!event) return;
+
+      // One answer for unknown, malformed and other-event ids.
+      const photo = isRowId(req.params.photoId)
+        ? await db('photos').where({ id: Number(req.params.photoId), event_id: event.id }).first()
+        : null;
+      if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+      const fileMissing = () => res.status(404)
+        .json({ error: 'The photo file is missing from storage', code: 'PHOTO_FILE_MISSING' });
+
+      // HEAD is answered from the row and a stat: no read is opened, which
+      // on S3 would start transferring the whole object.
+      if (req.method === 'HEAD') {
+        const location = locateOriginal(event, photo);
+        const size = location ? await statOriginal(location) : null;
+        if (size === null) return fileMissing();
+        setOriginalHeaders(res, photo, size);
+        return res.end();
+      }
+
+      const source = await openOriginal(event, photo);
+      if (!source) return fileMissing();
+      // A client that left while the read was opening has already closed,
+      // so pipeStreamToResponse's cleanup would never run for this stream.
+      if (res.destroyed) {
+        source.stream.destroy();
+        return;
+      }
+      setOriginalHeaders(res, photo, source.size);
+
+      // Logged once the whole file is out. 'finish' alone misses a client
+      // that hangs up the moment it has Content-Length bytes: its socket can
+      // close before the pipe gets to res.end(), so the response closes
+      // without ever finishing. Counting the bytes read into the response
+      // catches that without logging a transfer the client cut short.
+      let streamedBytes = 0;
+      let recorded = false;
+      const recordDownload = () => {
+        if (recorded || res.statusCode >= 400) return;
+        recorded = true;
+        // The audit row, ids only. The bell leaves these out and shows the
+        // token/event/hour summary instead (apiDownloadNotifications).
+        logActivity('api_photo_downloaded', {
+          via: 'api_v1',
+          token_id: req.apiToken.id,
+          photo_id: photo.id
+        }, event.id, downloadActor(req));
+        recordSingleDownload({
+          tokenId: req.apiToken.id,
+          tokenName: req.apiToken.name,
+          eventId: event.id,
+          actor: downloadActor(req)
+        });
+      };
+      res.on('finish', recordDownload);
+      res.on('close', () => {
+        if (Number.isFinite(source.size) && streamedBytes >= source.size) recordDownload();
+      });
+      pipeStreamToResponse(source.stream, res, { context: `v1 original ${photo.id}` });
+      source.stream.on('data', (chunk) => { streamedBytes += chunk.length; });
+    } catch (error) {
+      logger.error('v1 GET /events/:id/photos/:photoId/download failed', {
+        eventId: req.params.id,
+        photoId: req.params.photoId,
+        error: errorClass(error)
+      });
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to download photo' });
+    }
+  }
+);
+
 module.exports = router;
+module.exports.zipLimits = zipLimits;

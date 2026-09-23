@@ -155,7 +155,15 @@
     "transferring": "Overdragen",
     "uploadingChunks_one": "{{count}} deel wordt geüpload",
     "uploadingChunks_other": "{{count}} delen worden geüpload",
-    "retryFailed": "Mislukte opnieuw proberen"
+    "retryFailed": "Mislukte opnieuw proberen",
+    "uploadingAs": "Uploaden als {{name}}",
+    "notYou": "Niet jij?",
+    "yourName": "Je naam",
+    "yourNameOptional": "Je naam (optioneel)",
+    "nameRequired": "Vul je naam in om te uploaden.",
+    "nameSaveFailed": "Je naam kon niet worden opgeslagen. Probeer het opnieuw.",
+    "namePrivacyShown": "Je naam wordt bij je foto’s opgeslagen en aan andere gasten getoond. De gastheer kan hem altijd verwijderen.",
+    "namePrivacyHidden": "Je naam wordt bij je foto’s opgeslagen voor de gastheer. Andere gasten zien hem niet, en de gastheer kan hem altijd verwijderen."
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -325,6 +333,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Uw naam en selecties worden verwijderd uit deze galerij.",
+      "forgetMeConfirmUploads": "Uw naam wordt verwijderd van de foto’s die u naar deze galerij hebt geüpload.",
       "forgetMe": "Vergeet mij ({{name}})",
       "socials": "Sociale media"
     },
@@ -340,7 +349,25 @@
     "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
     "downloadEverything": "Alle foto's downloaden",
     "videoFormatUnsupported": "Deze video-indeling kan niet in deze browser worden afgespeeld. Download de video om hem te bekijken.",
-    "videoLoadFailed": "Deze video kon niet worden geladen."
+    "videoLoadFailed": "Deze video kon niet worden geladen.",
+    "downloadLimit": {
+      "reached": "Downloadlimiet bereikt. Neem contact op met je fotograaf voor meer downloads.",
+      "notEnough": "Nog maar {{remaining}} downloads over. Selecteer minder foto’s of neem contact op met je fotograaf.",
+      "counter": "{{used}} van {{limit}} downloads gebruikt",
+      "selectionCost": "Gebruikt {{cost}} van je {{remaining}} resterende downloads",
+      "selectionTooLarge": "Downloadlimiet: deze selectie heeft {{cost}} downloads nodig, nog maar {{remaining}} over",
+      "downloadAllBlocked": "Deze galerij bevat meer foto’s dan je resterende downloads",
+      "previewOnly": "Downloads in deze galerij zijn op voorbeeldformaat. De originele bestanden zijn beschikbaar voor de klant.",
+      "videoClientOnly": "Deze video is alleen beschikbaar voor de klant."
+    },
+    "credits": {
+      "filterLabel": "Door",
+      "everyone": "Iedereen",
+      "unnamedGuests": "Gasten zonder naam",
+      "photographer": "Fotograaf",
+      "uploadedBy": "Geüpload door {{name}}",
+      "photoBy": "Foto door {{name}}"
+    }
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -675,6 +702,26 @@
       "title": "Hero-foto gebruiken als social-share-voorbeeld",
       "help": "Wanneer deze galerij-URL wordt gedeeld op WhatsApp, Facebook, Slack enz., toont de link-preview de bovenstaande hero-foto. De thumbnail wordt niet-geauthenticeerd opgehaald door link-preview-crawlers — wie de URL deelt maakt deze afbeelding daarmee in feite openbaar. Standaard uit; kies eerst een hero die je bewust openbaar wilt tonen voordat je dit inschakelt.",
       "heroRequired": "Kies eerst hierboven een hero-foto — deze optie gebruikt die als WhatsApp- / Facebook- / Slack-voorbeeldafbeelding."
+    },
+    "downloadLimit": "Downloadlimiet",
+    "downloadLimitHelp": "Maximaal aantal foto’s dat de klant kan downloaden. 0 = onbeperkt",
+    "downloadLimitUsage": "{{used}} / {{limit}} gedownload",
+    "downloadLimitReset": "Resetten",
+    "downloadLimitResetConfirm": "Downloads voor deze galerij resetten? De klant krijgt de volledige limiet terug en al gedownloade foto’s tellen opnieuw.",
+    "downloadLimitResetDone": "Downloads gereset",
+    "downloadLimitResetFailed": "Downloads konden niet worden gereset",
+    "uploaderNames": {
+      "label": "Namen van uploaders",
+      "help": "Gasten kunnen bij het uploaden hun naam opgeven, zodat je weet wie welke foto heeft geüpload.",
+      "modes": {
+        "off": "Uit",
+        "optional": "Optioneel",
+        "required": "Verplicht"
+      },
+      "showToGuests": "Namen aan gasten tonen",
+      "showToGuestsHelp": "Gasten zien de namen bij uploads die zijn gedaan terwijl dit aan stond; namen die zijn opgegeven terwijl het uit stond, blijven alleen voor jou en de gastheer. Uitzetten verbergt alle namen voor gasten. Geldt ook voor fotografenvermeldingen uit EXIF.",
+      "shownToGuests": "Zichtbaar voor gasten",
+      "hiddenFromGuests": "Alleen zichtbaar voor jou"
     }
   },
   "settings": {
@@ -900,7 +947,9 @@
       "defaultAllowColorLabels": "Kleurlabels",
       "defaultKeybindMode": "Standaard sneltoetsen in de weergave",
       "keybindColors": "Alleen kleuren — 1 groen, 2 geel, 3 rood",
-      "keybindLightroom": "Lightroom — 1-5 sterren, 6-9 kleuren"
+      "keybindLightroom": "Lightroom — 1-5 sterren, 6-9 kleuren",
+      "defaultDownloadLimit": "Standaard downloadlimiet",
+      "defaultDownloadLimitHelp": "Vooraf ingevuld bij nieuwe events: hoeveel foto’s een klant kan downloaden. 0 = onbeperkt."
     },
     "imageSecurity": {
       "title": "Afbeeldingsbeveiliging",
@@ -1188,6 +1237,16 @@
       "save": "Kopregelinstellingen opslaan",
       "saved": "Branding van klantdashboard opgeslagen",
       "error": "Instellingen konden niet worden opgeslagen"
+    },
+    "creditBackfill": {
+      "title": "Fotomakers",
+      "description": "Leest de maker (EXIF Artist, XMP Creator of de naam in Copyright) voor foto’s die zijn toegevoegd voordat makers werden vastgelegd. Uploads van gasten en handmatig ingestelde namen worden nooit gewijzigd.",
+      "withCredit": "Met maker",
+      "undecided": "Nog niet gelezen",
+      "result": "Laatste run: {{success}} met maker, {{noCredit}} zonder naam in het bestand, {{failed}} onbereikbaar",
+      "running": "Makers worden gelezen...",
+      "noneToRead": "Geen foto’s meer te lezen",
+      "button": "Makers uit EXIF lezen"
     }
   },
   "analytics": {
@@ -1669,7 +1728,26 @@
       "rateStars": "{{count}} sterren geven",
       "markError": "Markering opslaan mislukt",
       "yourMarkColor": "Jouw markering: {{color}}",
-      "yourMarkRating": "Jouw beoordeling: {{count}}"
+      "yourMarkRating": "Jouw beoordeling: {{count}}",
+      "columns": {
+        "credit": "Maker"
+      },
+      "credit": {
+        "label": "Maker",
+        "edit": "Bewerken",
+        "save": "Naam opslaan",
+        "clear": "Naam verwijderen",
+        "saved": "Naam opgeslagen",
+        "cleared": "Naam verwijderd",
+        "none": "Geen naam",
+        "unnamedGuest": "Gast, zonder naam",
+        "manualHint": "Een naam die je hier instelt is definitief: EXIF-gegevens vervangen hem niet.",
+        "bulkAction": "Naam instellen",
+        "bulkTitle": "Naam instellen voor {{count}} foto’s",
+        "filterLabel": "Filteren op maker",
+        "filterAll": "Alle namen",
+        "filterNone": "Geen naam"
+      }
     },
     "events": {
       "tabs": {

@@ -155,7 +155,15 @@
     "processingFailed_one": "{{count}} photo n'a pas pu être traitée",
     "processingFailed_other": "{{count}} photos n'ont pas pu être traitées",
     "uploadingChunks_one": "{{count}} bloc en cours de téléversement",
-    "uploadingChunks_other": "{{count}} blocs en cours de téléversement"
+    "uploadingChunks_other": "{{count}} blocs en cours de téléversement",
+    "uploadingAs": "Envoi en tant que {{name}}",
+    "notYou": "Ce n’est pas vous ?",
+    "yourName": "Votre nom",
+    "yourNameOptional": "Votre nom (facultatif)",
+    "nameRequired": "Veuillez saisir votre nom pour envoyer des photos.",
+    "nameSaveFailed": "Votre nom n’a pas pu être enregistré. Veuillez réessayer.",
+    "namePrivacyShown": "Votre nom est enregistré avec vos photos et affiché aux autres invités. L’hôte peut le supprimer à tout moment.",
+    "namePrivacyHidden": "Votre nom est enregistré avec vos photos pour l’hôte. Les autres invités ne le voient pas, et l’hôte peut le supprimer à tout moment."
   },
   "navigation": {
     "dashboard": "Tableau de bord",
@@ -321,6 +329,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Votre nom et vos sélections seront supprimés de cette galerie.",
+      "forgetMeConfirmUploads": "Votre nom sera retiré des photos que vous avez ajoutées à cette galerie.",
       "forgetMe": "Oubliez-moi ({{name}})",
       "socials": "Réseaux sociaux"
     },
@@ -340,7 +349,25 @@
     "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}",
     "downloadEverything": "Télécharger toutes les photos",
     "videoFormatUnsupported": "Ce format vidéo ne peut pas être lu dans ce navigateur. Téléchargez-la pour la regarder.",
-    "videoLoadFailed": "Cette vidéo n'a pas pu être chargée."
+    "videoLoadFailed": "Cette vidéo n'a pas pu être chargée.",
+    "downloadLimit": {
+      "reached": "Limite de téléchargements atteinte. Contactez votre photographe pour obtenir plus de téléchargements.",
+      "notEnough": "Plus que {{remaining}} téléchargements. Sélectionnez moins de photos ou contactez votre photographe.",
+      "counter": "{{used}} sur {{limit}} téléchargements utilisés",
+      "selectionCost": "Utilise {{cost}} de vos {{remaining}} téléchargements restants",
+      "selectionTooLarge": "Limite de téléchargements : cette sélection en demande {{cost}}, il n’en reste que {{remaining}}",
+      "downloadAllBlocked": "Cette galerie contient plus de photos que vos téléchargements restants",
+      "previewOnly": "Les téléchargements de cette galerie sont en taille d’aperçu. Les fichiers originaux sont réservés au client.",
+      "videoClientOnly": "Cette vidéo est réservée au client."
+    },
+    "credits": {
+      "filterLabel": "Par",
+      "everyone": "Tout le monde",
+      "unnamedGuests": "Invités sans nom",
+      "photographer": "Photographe",
+      "uploadedBy": "Envoyée par {{name}}",
+      "photoBy": "Photo de {{name}}"
+    }
   },
   "categories": {
     "title": "Catégories de photos",
@@ -675,6 +702,26 @@
       "title": "Utiliser la photo d'en-tête comme aperçu de partage social",
       "help": "Lorsque cette URL de galerie est partagée sur WhatsApp, Facebook, Slack, etc., l'aperçu du lien affichera la photo d'en-tête ci-dessus. La miniature est récupérée de manière non authentifiée par les robots d'aperçu de lien — toute personne disposant de l'URL peut effectivement rendre cette image publique. Désactivé par défaut ; choisissez une photo d'en-tête que vous êtes prêt à afficher publiquement avant d'activer.",
       "heroRequired": "D'abord, choisissez une photo d'en-tête ci-dessus — cette option l'utilise comme image d'aperçu pour WhatsApp / Facebook / Slack."
+    },
+    "downloadLimit": "Limite de téléchargements",
+    "downloadLimitHelp": "Nombre maximal de photos que le client peut télécharger. 0 = illimité",
+    "downloadLimitUsage": "{{used}} / {{limit}} téléchargées",
+    "downloadLimitReset": "Réinitialiser",
+    "downloadLimitResetConfirm": "Réinitialiser les téléchargements de cette galerie ? Le client retrouve la limite complète, et les photos déjà téléchargées comptent à nouveau.",
+    "downloadLimitResetDone": "Téléchargements réinitialisés",
+    "downloadLimitResetFailed": "Impossible de réinitialiser les téléchargements",
+    "uploaderNames": {
+      "label": "Noms des invités à l’envoi",
+      "help": "Permet aux invités d’indiquer leur nom lors de l’envoi, pour que vous sachiez qui a envoyé quelle photo.",
+      "modes": {
+        "off": "Désactivé",
+        "optional": "Facultatif",
+        "required": "Obligatoire"
+      },
+      "showToGuests": "Afficher les noms aux invités",
+      "showToGuestsHelp": "Les invités voient les noms des photos envoyées pendant que cette option est activée ; les noms donnés pendant qu’elle était désactivée restent réservés à vous et à l’hôte. La désactiver masque tous les noms aux invités. S’applique aussi aux crédits du photographe lus dans l’EXIF.",
+      "shownToGuests": "Visible par les invités",
+      "hiddenFromGuests": "Visible par vous seul"
     }
   },
   "settings": {
@@ -904,7 +951,9 @@
       "defaultAllowColorLabels": "Étiquettes de couleur",
       "defaultKeybindMode": "Raccourcis par défaut de la visionneuse",
       "keybindColors": "Couleurs uniquement — 1 vert, 2 jaune, 3 rouge",
-      "keybindLightroom": "Lightroom — 1-5 étoiles, 6-9 couleurs"
+      "keybindLightroom": "Lightroom — 1-5 étoiles, 6-9 couleurs",
+      "defaultDownloadLimit": "Limite de téléchargements par défaut",
+      "defaultDownloadLimitHelp": "Prérempli pour les nouveaux événements : combien de photos un client peut télécharger. 0 = illimité."
     },
     "imageSecurity": {
       "title": "Protection des images",
@@ -1219,6 +1268,16 @@
       "running": "Vérification de l'orientation...",
       "resultSuccess": "Dernier passage : {{checked}} vérifiées, {{corrected}} corrigées, {{requeued}} remises en file pour la détection de visages, {{failed}} inaccessibles",
       "staleTiers": "{{count}} taille(s) en cache n'ont pas pu être supprimées et continueront de servir l'ancienne orientation — relancez une fois le stockage accessible en écriture."
+    },
+    "creditBackfill": {
+      "title": "Crédits photo",
+      "description": "Lit le crédit du photographe (EXIF Artist, XMP Creator ou le nom du Copyright) pour les photos ajoutées avant l’enregistrement des crédits. Les envois des invités et les noms définis à la main ne sont jamais modifiés.",
+      "withCredit": "Avec crédit",
+      "undecided": "Pas encore lues",
+      "result": "Dernière exécution : {{success}} créditées, {{noCredit}} sans nom dans le fichier, {{failed}} inaccessibles",
+      "running": "Lecture des crédits...",
+      "noneToRead": "Plus aucune photo à lire",
+      "button": "Lire les crédits EXIF"
     }
   },
   "analytics": {
@@ -1700,7 +1759,26 @@
       "rateStars": "Noter {{count}} étoiles",
       "markError": "Impossible d'enregistrer votre marque",
       "yourMarkColor": "Votre marque : {{color}}",
-      "yourMarkRating": "Votre note : {{count}}"
+      "yourMarkRating": "Votre note : {{count}}",
+      "columns": {
+        "credit": "Crédit"
+      },
+      "credit": {
+        "label": "Crédit",
+        "edit": "Modifier",
+        "save": "Enregistrer le nom",
+        "clear": "Retirer le nom",
+        "saved": "Nom enregistré",
+        "cleared": "Nom retiré",
+        "none": "Aucun nom",
+        "unnamedGuest": "Invité, sans nom",
+        "manualHint": "Un nom défini ici est définitif : les données EXIF ne le remplacent pas.",
+        "bulkAction": "Définir le nom",
+        "bulkTitle": "Définir le nom sur {{count}} photos",
+        "filterLabel": "Filtrer par crédit",
+        "filterAll": "Tous les noms",
+        "filterNone": "Aucun nom"
+      }
     },
     "events": {
       "tabs": {
