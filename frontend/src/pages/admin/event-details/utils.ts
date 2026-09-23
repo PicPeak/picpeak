@@ -17,3 +17,14 @@ export const safeParseDate = (dateValue: unknown): Date | null => {
   }
   return null;
 };
+
+/**
+ * Whether the event can have guest identities to manage: guest feedback
+ * mode, or guest uploads with uploader names (#1561), which register a guest
+ * whatever the feedback mode.
+ */
+export const eventHasGuests = (
+  event: { allow_user_uploads?: boolean; guest_name_mode?: string } | undefined,
+  feedbackSettings: { identity_mode?: string } | undefined,
+): boolean => feedbackSettings?.identity_mode === 'guest'
+  || (!!event?.allow_user_uploads && !!event?.guest_name_mode && event.guest_name_mode !== 'off');

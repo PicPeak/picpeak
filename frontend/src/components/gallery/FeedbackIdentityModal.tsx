@@ -64,6 +64,7 @@ export const FeedbackIdentityModal: React.FC<FeedbackIdentityModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
+            themed
             label={t('feedback.yourName', 'Your Name')}
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -72,6 +73,7 @@ export const FeedbackIdentityModal: React.FC<FeedbackIdentityModalProps> = ({
             required
           />
           <Input
+            themed
             type="email"
             label={t('feedback.yourEmail', 'Your Email')}
             value={email}

@@ -32,6 +32,7 @@ const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCr
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
+const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { validateHeroImageAnchor, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 /**
@@ -226,6 +227,9 @@ module.exports = (router) => {
     body('color_theme').optional().trim(),
     body('allow_user_uploads').optional().isBoolean().toBoolean(),
     body('upload_category_id').optional({ nullable: true, checkFalsy: true }).isInt(),
+    // Uploader names (#1561).
+    body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
+    body('show_credits_to_guests').optional().isBoolean().toBoolean(),
     body('allow_downloads').optional().isBoolean(),
     body('disable_right_click').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
@@ -903,6 +907,9 @@ module.exports = (router) => {
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
         upload_category_id: source.upload_category_id,
+        // Uploader names are part of the gallery's configuration (#1561).
+        guest_name_mode: source.guest_name_mode || 'off',
+        show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
@@ -938,6 +945,9 @@ module.exports = (router) => {
         hero_divider_style: source.hero_divider_style || 'wave',
         hero_image_anchor: source.hero_image_anchor || 'center',
         photo_cap: source.photo_cap || null,
+        // The limit is part of the package; the grants belong to the source
+        // gallery's client and stay behind (issue 1560).
+        download_limit: source.download_limit || null,
         is_draft: formatBoolean(true),
         default_photo_sort: source.default_photo_sort || 'upload_date_desc',
         // Client-access secrets and the OG-share opt-in deliberately do NOT
@@ -1039,6 +1049,9 @@ module.exports = (router) => {
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
+    // Uploader names (#1561).
+    body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
+    body('show_credits_to_guests').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -1069,6 +1082,9 @@ module.exports = (router) => {
       return !isNaN(num) && Number.isInteger(num);
     }).withMessage('hero_photo_id must be an integer or null'),
     body('allow_downloads').optional().isBoolean(),
+    // Download limit (issue 1560). null clears it; the column is a signed
+    // 32-bit int like photo_cap.
+    body('download_limit').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
     body('disable_right_click').optional().isBoolean(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),
@@ -1547,6 +1563,11 @@ module.exports = (router) => {
         } catch (_) {
         // color_theme is not JSON (e.g. preset name) – nothing to extract
         }
+      }
+
+      // Written through formatBoolean like the other event flags (#1561).
+      if (Object.prototype.hasOwnProperty.call(updates, 'show_credits_to_guests')) {
+        updates.show_credits_to_guests = formatBoolean(parseBooleanInput(updates.show_credits_to_guests, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

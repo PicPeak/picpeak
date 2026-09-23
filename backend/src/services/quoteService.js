@@ -2292,6 +2292,17 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       hold: options.draft === true,
     });
 
+    // Contract→invoice re-entry (contract/conversions.js): stamp the
+    // contract lineage in this same transaction, so a crash can never
+    // commit the invoices without the source_contract_id the contract
+    // path looks them up by.
+    if (options.sourceContractId) {
+      await auditedUpdate(trx, 'invoices',
+        (q) => q.where({ source_quote_id: quote.id }).whereNull('source_contract_id'),
+        { source_contract_id: options.sourceContractId },
+        { actor: adminId, source: 'contract.convert.invoices' });
+    }
+
     // Mark quote `converted` without a converted_event_id so the
     // existing transition rules still apply (can't be edited / sent
     // again). The list view's status badge says "converted"; admin

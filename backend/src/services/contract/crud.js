@@ -11,7 +11,7 @@ const { isUniqueViolation } = require('../../utils/dbErrors');
 const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
-const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
+const { adminActor, ensureCustomerActive, nextContractNumber, releaseQuoteOnDeadContract } = require('./helpers');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('../accountingHistory');
 
 
@@ -537,12 +537,25 @@ async function cancelContract(id, adminId) {
   const cancellable = ['draft', 'sent', 'awaiting_data'];
   const refused = (status) => new AppError(`Cannot cancel a contract with status '${status}'`, 409, 'CONTRACT_NOT_CANCELLABLE');
   if (!cancellable.includes(contract.status)) throw refused(contract.status);
-  // Conditional: a signature, an expiry or a seal landing since the read
-  // above must not be overwritten — nor get a `revoked` event after it.
-  const cancelled = await auditedUpdate(db, 'contracts', (q) => q.where({ id }).whereIn('status', cancellable), {
-    status: 'cancelled',
-    updated_at: new Date().toISOString(),
-  }, { actor: adminId, source: 'contract.cancel' });
+  // Resolved BEFORE the transaction opens — hasColumnCached deadlocks the
+  // single-connection SQLite pool when evaluated with a trx already open.
+  const hasQuoteContractBackPointer = contract.source_quote_id
+    ? await hasColumnCached('quotes', 'converted_contract_id')
+    : false;
+  const history = { actor: adminId, source: 'contract.cancel' };
+  const cancelled = await db.transaction(async (trx) => {
+    // Conditional: a signature, an expiry or a seal landing since the read
+    // above must not be overwritten — nor get a `revoked` event after it.
+    const updatedRows = await auditedUpdate(trx, 'contracts', (q) => q.where({ id }).whereIn('status', cancellable), {
+      status: 'cancelled',
+      updated_at: new Date().toISOString(),
+    }, history);
+    if (!updatedRows) return false;
+    // Release the source quote's converted_contract_id so a replacement
+    // contract can be created from it (issue 1588).
+    await releaseQuoteOnDeadContract(trx, id, contract.source_quote_id, hasQuoteContractBackPointer, history);
+    return true;
+  });
   if (!cancelled) {
     const now = await db('contracts').where({ id }).first('status');
     throw refused(now ? now.status : contract.status);

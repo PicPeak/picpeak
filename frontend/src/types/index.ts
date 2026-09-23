@@ -1,4 +1,8 @@
 // Event/Gallery types
+
+// Uploader names (#1561).
+export type GuestNameMode = 'off' | 'optional' | 'required';
+
 export interface Event {
   id: number;
   slug: string;
@@ -28,6 +32,10 @@ export interface Event {
     uploaded_at: string;
   }>;
   allow_user_uploads?: boolean;
+  // Uploader names (#1561): the upload dialog's name step, and whether guests
+  // see the names. SQLite hands the flag back as 0/1.
+  guest_name_mode?: GuestNameMode;
+  show_credits_to_guests?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -71,6 +79,8 @@ export interface Event {
   css_template_id?: number | null;
   // Photo cap
   photo_cap?: number | null;
+  // Download limit (issue 1560). null = unlimited.
+  download_limit?: number | null;
   // Draft mode
   is_draft?: boolean;
   // Client access (#172)
@@ -185,6 +195,9 @@ export interface Photo {
   // the lightbox download button when this is false (event-level allow_downloads
   // also has to be true — they AND together).
   category_allow_downloads?: boolean;
+  // Download limit (issue 1560): this gallery already downloaded the photo,
+  // so downloading it again is free. Always false on an unlimited gallery.
+  download_granted?: boolean;
   // People detected in this photo (#1074). Always present when the feature
   // is on for the event — an empty array means "scanned, nobody found",
   // which is different from the feature being off (see
@@ -192,6 +205,11 @@ export interface Photo {
   // filtered out server-side, so this never reveals a person the
   // photographer suppressed.
   person_ids?: number[];
+  // Photo credit (#1561). Present only when the viewer may see names
+  // (GalleryData.event.credits_visible). `uploaded_by_guest` tells a nameless
+  // guest upload apart from the photographer's own photos.
+  credit_name?: string | null;
+  uploaded_by_guest?: boolean;
   size: number;
   uploaded_at: string;
   captured_at?: string; // EXIF capture date (if available)
@@ -248,6 +266,8 @@ export interface DownloadJobState {
   photo_count: number;
   size_bytes: number | null;
   error?: string;
+  /** Set on a ready job the download limit would now refuse (issue 1560). */
+  download_limit_reached?: { limit?: number; used?: number; remaining?: number };
 }
 
 export interface PhotoCategory {
@@ -288,6 +308,14 @@ export interface GalleryData {
     allow_downloads?: boolean;
     /** True when a pre-built download zip is on disk, so "download all" can skip the build. */
     download_zip_ready?: boolean;
+    // Download limit (issue 1560). null = unlimited. Counted in distinct
+    // photos; `downloads_remaining` is null when there is no limit.
+    download_limit?: number | null;
+    downloads_used?: number;
+    downloads_remaining?: number | null;
+    // A share-link guest of a limited gallery: downloads are preview-size
+    // copies, and only the client draws on the quota.
+    download_preview_only?: boolean;
     disable_right_click?: boolean;
     watermark_downloads?: boolean;
     watermark_text?: string;
@@ -321,6 +349,10 @@ export interface GalleryData {
     // chose to keep the people strip to themselves. The whole face UI hangs
     // off this one boolean.
     people_enabled?: boolean;
+    // Uploader names (#1561). guest_name_mode drives the upload dialog's name
+    // step; credits_visible says whether photos carry credit_name at all.
+    guest_name_mode?: GuestNameMode;
+    credits_visible?: boolean;
   };
   categories?: PhotoCategory[];
   photos: Photo[];
@@ -367,6 +399,12 @@ export interface AdminUser {
   createdAt?: string | null;
   updatedAt?: string | null;
   createdByUsername?: string;
+  /**
+   * Whether a first SSO login may link to this admin by email
+   * (admin_users.email_link_eligible, migration 227). Undefined on a backend
+   * that predates the column — callers read that as eligible.
+   */
+  emailLinkEligible?: boolean;
 }
 
 export interface LoginResponse {
@@ -402,6 +440,7 @@ export interface GalleryAuthResponse {
     upload_category_id?: number | null;
     require_password?: boolean;
     photo_cap?: number | null;
+    download_limit?: number | null;
   };
   accessLevel?: GalleryAccessLevel;
 }

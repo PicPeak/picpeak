@@ -3,7 +3,7 @@ const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { feedbackRateLimit, generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
-const { resolveGuest } = require('../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const { db, logActivity } = require('../database/db');
@@ -61,13 +61,14 @@ router.get('/:slug/photos/:photoId/feedback',
   // guests enumerate comments/stats.
   blockHiddenGallery,
   resolveGuest,
+  scopeGuestToFeedback,
   validatePhotoId,
   checkValidation,
   async (req, res) => {
     try {
       const { photoId } = req.params;
       const event = req.event;
-      const guestIdentifier = generateGuestIdentifier(req);
+      const guestIdentifier = await generateGuestIdentifier(req);
       
       // Get feedback settings
       const settings = await feedbackService.getEventFeedbackSettings(event.id);
@@ -202,6 +203,7 @@ router.post('/:slug/photos/:photoId/feedback',
   // Reveal-gated (#838): no interacting with photos you cannot see.
   blockHiddenGallery,
   resolveGuest,
+  scopeGuestToFeedback,
   validatePhotoId,
   validateFeedbackSubmission,
   checkValidation,
@@ -229,7 +231,7 @@ router.post('/:slug/photos/:photoId/feedback',
         }
       }
 
-      const guestIdentifier = generateGuestIdentifier(req);
+      const guestIdentifier = await generateGuestIdentifier(req);
 
       // Check if specific feedback type is allowed
       const feedbackType = req.body.feedback_type;
@@ -458,6 +460,7 @@ router.get('/:slug/feedback-summary',
 router.get('/:slug/my-feedback',
   verifyGalleryAccess,
   resolveGuest,
+  scopeGuestToFeedback,
   async (req, res) => {
     try {
       const event = req.event;
@@ -485,7 +488,7 @@ router.get('/:slug/my-feedback',
       if (req.guest?.id) {
         query.where('photo_feedback.guest_id', req.guest.id);
       } else {
-        const guestIdentifier = generateGuestIdentifier(req);
+        const guestIdentifier = await generateGuestIdentifier(req);
         query.where('photo_feedback.guest_identifier', guestIdentifier);
       }
 

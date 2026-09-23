@@ -122,6 +122,8 @@ describe('Admin photos in reference mode', () => {
       table.string('processing_status', 16).notNullable().defaultTo('complete');
       table.string('upload_id', 64).nullable();
       table.boolean('auto_categorized');
+      // Initial schema (db.js); the queued upload writes it since #1561.
+      table.string('uploaded_by').defaultTo('admin');
       table.datetime('uploaded_at').defaultTo(db.fn.now());
       table.float('average_rating').defaultTo(0);
       table.integer('like_count').defaultTo(0);

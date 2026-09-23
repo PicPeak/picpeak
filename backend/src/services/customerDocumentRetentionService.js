@@ -20,6 +20,10 @@
  * database edit — either way, purging its bytes is the silent destruction
  * the issue rules out.
  *
+ * Every run also retries any purge whose claim (purge_claimed_at) survived a
+ * crash between the claim and the delete, once that claim is stale (#1592,
+ * migration 231) — see customerDocumentsService.retryStalePurgeClaims().
+ *
  * Time comparisons run in JS: a timestamp written through knex is epoch
  * milliseconds on SQLite and a Date on Postgres (see utils/queueTimestamps).
  */
@@ -82,6 +86,12 @@ async function runCustomerDocumentRetention(now = Date.now()) {
     await customerDocumentsService.purgeFiles(due);
     logger.info(`Customer documents: removed the files of ${due.length} deleted document(s)`);
   }
+
+  // A purge claimed by a process that then crashed before storage.delete()
+  // ran leaves purge_claimed_at set with no matching purged_at forever,
+  // invisible to the query above once it is claimed again -- this is what
+  // retries it (#1592).
+  await customerDocumentsService.retryStalePurgeClaims(now);
 }
 
 module.exports = {

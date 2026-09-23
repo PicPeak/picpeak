@@ -146,6 +146,13 @@ async function deleteEventCascade(eventId, adminContext) {
   }
 
   await db.transaction(async (trx) => {
+    // Event row first (issue 1560): the download-limit grants lock the event
+    // row and then grant/photo rows, so taking them here in the opposite
+    // order could deadlock against a download on PostgreSQL. SQLite
+    // serialises writers anyway.
+    if (trx.client.config.client === 'pg') {
+      await trx('events').where({ id: eventId }).forUpdate().first();
+    }
     // 1. Delete activity logs (audit trail)
     await trx('activity_logs').where('event_id', eventId).del();
     // 2. Delete access logs
@@ -168,6 +175,14 @@ async function deleteEventCascade(eventId, adminContext) {
     if (await trx.schema.hasTable('event_people_merge_dismissals')) {
       await trx('event_people_merge_dismissals').where('event_id', eventId).del();
     }
+    // Download-limit grants (issue 1560): the same inert-cascade reason.
+    if (await trx.schema.hasTable('event_download_grants')) {
+      await trx('event_download_grants').where('event_id', eventId).del();
+    }
+    // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
+    // SQLite caveat as photo_faces above — delete explicitly so an event's
+    // rate-limit tracking rows don't outlive it on the SQLite path.
+    await trx('feedback_rate_limits').where('event_id', eventId).del();
 
     await trx('photos').where('event_id', eventId).del();
     // 5. Finally delete the event row

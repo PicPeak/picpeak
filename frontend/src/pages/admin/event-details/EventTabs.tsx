@@ -4,6 +4,7 @@ import { Image } from 'lucide-react';
 import type { Event } from '../../../types';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../services/feedback.service';
 import type { EventDetailsTab } from './types';
+import { eventHasGuests } from './utils';
 
 interface EventTabsProps {
   event: Event;
@@ -59,7 +60,7 @@ export const EventTabs: React.FC<EventTabsProps> = ({
         >
           {t('events.categories')}
         </button>
-        {eventFeedbackSettings?.identity_mode === 'guest' && (
+        {eventHasGuests(event, eventFeedbackSettings) && (
           <button
             onClick={() => setActiveTab('guests')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${

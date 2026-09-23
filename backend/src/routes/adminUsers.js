@@ -11,12 +11,13 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const userManagementService = require('../services/userManagementService');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { toIso } = require('../utils/dateNormalize');
+const { parseBoolean } = require('../utils/dbCompat');
 const router = express.Router();
 
 /**
  * Transform user object from snake_case (DB) to camelCase (API)
  */
-function transformUser(user) {
+function transformUser(user, { ssoEligibility = false } = {}) {
   return {
     id: user.id,
     username: user.username,
@@ -29,7 +30,13 @@ function transformUser(user) {
     roleId: user.role_id,
     roleName: user.role_name,
     roleDisplayName: user.role_display_name,
-    createdByUsername: user.created_by_username
+    createdByUsername: user.created_by_username,
+    // Only a super_admin can confirm an email for SSO linking, and only they
+    // are shown the state, so the field travels for them alone. Undefined
+    // before migration 227 has run, which the Users page reads as eligible.
+    emailLinkEligible: ssoEligibility && user.email_link_eligible !== undefined
+      ? parseBoolean(user.email_link_eligible)
+      : undefined
   };
 }
 
@@ -77,7 +84,8 @@ router.get('/me/permissions', adminAuth, handleAsync(async (req, res) => {
  */
 router.get('/', adminAuth, requirePermission('users.view'), handleAsync(async (req, res) => {
   const users = await userManagementService.getAllAdminUsers();
-  res.json({ users: users.map(transformUser) });
+  const opts = { ssoEligibility: req.admin.roleName === 'super_admin' };
+  res.json({ users: users.map((user) => transformUser(user, opts)) });
 }));
 
 /**
@@ -155,7 +163,7 @@ router.get('/:id', [
     return res.status(403).json({ error: 'Access denied' });
   }
   const user = await userManagementService.getAdminUserById(targetId);
-  res.json({ user: transformUser(user) });
+  res.json({ user: transformUser(user, { ssoEligibility: req.admin.roleName === 'super_admin' }) });
 }));
 
 /**
@@ -180,7 +188,10 @@ router.put('/:id', [
     { roleName: req.admin.roleName }
   );
 
-  successResponse(res, { user: transformUser(user), message: 'User updated successfully' });
+  successResponse(res, {
+    user: transformUser(user, { ssoEligibility: req.admin.roleName === 'super_admin' }),
+    message: 'User updated successfully'
+  });
 }));
 
 /**

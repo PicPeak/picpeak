@@ -6,6 +6,7 @@ import { settingsService } from '../../../services/settings.service';
 import { adminService } from '../../../services/admin.service';
 import { useAdminAuth } from '../../../contexts';
 import { toBoolean, toNumber } from '../../../utils/parsers';
+import type { GuestNameMode } from '../../../types';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
 export const MAX_FILES_PER_UPLOAD_LIMIT = 2000;
@@ -129,6 +130,11 @@ export interface EventSettings {
   event_default_allow_reactions: boolean;
   event_default_allow_color_labels: boolean;
   event_default_keybind_mode: 'colors' | 'lightroom';
+  // Download limit for new events (issue 1560). 0 = unlimited.
+  event_default_download_limit: number;
+  // Uploader names for new galleries (#1561).
+  event_default_guest_name_mode: GuestNameMode;
+  event_default_show_credits_to_guests: boolean;
   gallery_show_filter_bar: boolean;
   event_phone_field_enabled: boolean;
 }
@@ -237,6 +243,9 @@ export function useSettingsState() {
     event_default_allow_reactions: true,
     event_default_allow_color_labels: false,
     event_default_keybind_mode: 'colors',
+    event_default_download_limit: 0,
+    event_default_guest_name_mode: 'off',
+    event_default_show_credits_to_guests: false,
     gallery_show_filter_bar: true,
     event_phone_field_enabled: false
   });
@@ -365,6 +374,13 @@ export function useSettingsState() {
         event_default_allow_reactions: toBoolean(settings.event_default_allow_reactions, true),
         event_default_allow_color_labels: toBoolean(settings.event_default_allow_color_labels, false),
         event_default_keybind_mode: settings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
+        event_default_download_limit: Number(settings.event_default_download_limit) > 0
+          ? Number(settings.event_default_download_limit)
+          : 0,
+        event_default_guest_name_mode: ['optional', 'required'].includes(settings.event_default_guest_name_mode)
+          ? settings.event_default_guest_name_mode
+          : 'off',
+        event_default_show_credits_to_guests: toBoolean(settings.event_default_show_credits_to_guests, false),
         gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
         event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
       });

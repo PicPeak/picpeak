@@ -822,7 +822,12 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     type="button"
                     className="text-xs text-muted-theme hover:text-theme transition-colors"
                     onClick={async () => {
-                      if (window.confirm(t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.'))) {
+                      // Outside guest identity mode the identity is only an
+                      // uploader name; feedback never belonged to it (#1561).
+                      const message = guestIdentity.identityMode === 'guest'
+                        ? t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.')
+                        : t('gallery.footer.forgetMeConfirmUploads', 'Your name will be removed from the photos you uploaded to this gallery.');
+                      if (window.confirm(message)) {
                         await guestIdentity.forget();
                       }
                     }}

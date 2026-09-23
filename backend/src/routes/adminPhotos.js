@@ -47,6 +47,7 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 // with the gallery upload route.
 const { findScopedCategory, outOfScopeCategoryError } = require('../utils/categoryScope');
 const { photoCapOf, countEventPhotos } = require('../services/photoCap');
+const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 
 // Configure multer for file uploads
 // IMPORTANT: Using synchronous functions to prevent file corruption
@@ -472,6 +473,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             mime_type: file.mimetype,
             processing_status: 'pending',
             upload_id: uploadId,
+            // Explicit rather than the column default (#1561); the worker
+            // reads the EXIF credit for admin rows.
+            uploaded_by: 'admin',
           })
           .returning('id');
         const photoId = inserted[0]?.id || inserted[0];
@@ -1130,6 +1134,20 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
       updateData.auto_categorized = false;
     }
 
+    // Credit (#1561): correct or clear a name on many photos at once — the
+    // joke name a guest used on 40 uploads is the case this exists for.
+    if (Object.prototype.hasOwnProperty.call(updates, 'credit_name')) {
+      const creditFields = manualCreditFields(updates.credit_name);
+      if (creditFields.error) {
+        return res.status(400).json({ error: creditFields.error });
+      }
+      Object.assign(updateData, creditFields);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
     await db('photos')
       .whereIn('id', photoIds)
       .where('event_id', eventId)
@@ -1146,6 +1164,57 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     res.json({ message: `${photoIds.length} photos updated successfully` });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photos');
+  }
+});
+
+// Photo credits (#1561) — the names on this event's photos with their counts,
+// for the grid's filter. `none` counts the photos without a name.
+router.get('/:eventId/photos/credits', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    const eventId = parseInt(req.params.eventId, 10);
+    const rows = await db('photos')
+      .where('event_id', eventId)
+      .whereNotNull('credit_name')
+      .groupBy('credit_name')
+      .select('credit_name')
+      .count('id as count')
+      .orderBy('credit_name', 'asc');
+    const none = await db('photos')
+      .where('event_id', eventId)
+      .whereNull('credit_name')
+      .count('id as count')
+      .first();
+    res.json({
+      credits: rows.map((r) => ({ name: r.credit_name, count: Number(r.count) })),
+      none: Number(none?.count || 0),
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load photo credits');
+  }
+});
+
+// Correct or clear one photo's credit (#1561). Its own route rather than a
+// field on PATCH /photos/:photoId, which clears the category of any request
+// that leaves category_id out.
+router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const { eventId, photoId } = req.params;
+    const creditFields = manualCreditFields(req.body?.credit_name);
+    if (creditFields.error) {
+      return res.status(400).json({ error: creditFields.error });
+    }
+    const updated = await db('photos')
+      .where({ id: photoId, event_id: eventId })
+      .update(creditFields);
+    if (!updated) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    await logActivity('photo_credit_updated', {
+      photo_id: Number(photoId), cleared: creditFields.credit_name === null,
+    }, parseInt(eventId, 10), { type: 'admin', id: req.admin.id, name: req.admin.username });
+    res.json({ credit_name: creditFields.credit_name, credit_source: creditFields.credit_source });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to update photo credit');
   }
 });
 
@@ -1208,7 +1277,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
 router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { category_id, type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label } = req.query;
+    const { category_id, type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label, credit } = req.query;
     const order = ['asc', 'desc'].includes(req.query.order) ? req.query.order : 'desc';
     const logic = req.query.logic === 'OR' ? 'OR' : 'AND';
 
@@ -1237,6 +1306,17 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // Keep type filter for backwards compatibility
     if (type) {
       query = query.where({ 'photos.type': type });
+    }
+
+    // Credit filter (#1561): an exact name, or CREDIT_NONE for the photos
+    // that carry none. Exact, not LIKE: the value comes from the names list
+    // below, and "Anna" must not also match "Annabel".
+    if (typeof credit === 'string' && credit !== '') {
+      if (credit === CREDIT_NONE) {
+        query = query.whereNull('photos.credit_name');
+      } else {
+        query = query.where('photos.credit_name', credit);
+      }
     }
 
     // Search by filename. original_filename is included because that is the
@@ -1419,7 +1499,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // column showed 0 regardless of what the DB counted. This, not
         // stale data, was why per-image downloads always displayed 0.
         view_count: photo.view_count || 0,
-        download_count: photo.download_count || 0
+        download_count: photo.download_count || 0,
+        // Photo credit (#1561). The admin always sees it, whatever the
+        // event's show-to-guests switch says.
+        credit_name: photo.credit_name || null,
+        credit_source: photo.credit_source || null,
+        uploaded_by: photo.uploaded_by === 'guest' ? 'guest' : 'admin'
       }))
     });
   } catch (error) {

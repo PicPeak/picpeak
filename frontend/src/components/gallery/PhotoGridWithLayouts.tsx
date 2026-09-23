@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -11,6 +11,9 @@ import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import { isDownloadLimitError, showDownloadLimitReached } from '../../utils/downloadLimit';
+import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 
 // Import all layouts
 import {
@@ -189,8 +192,21 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     setSelectedPhotos(newSelected);
   };
 
+  // Download limit (issue 1560).
+  const downloadQuota = useDownloadQuota();
+  const selectedPhotoList = useMemo(
+    () => photos.filter((photo) => selectedPhotos.has(photo.id)),
+    [photos, selectedPhotos]
+  );
+
   const handleDownload = (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Download limit (issue 1560): say why instead of sending a request the
+    // server is bound to refuse.
+    if (!downloadQuota.canDownload(photo)) {
+      showDownloadLimitReached({ remaining: 0 });
+      return;
+    }
     
     // Track individual photo download
     analyticsService.trackDownload(photo.id, slug, false);
@@ -214,6 +230,12 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   const handleDownloadSelected = async () => {
     if (selectedPhotos.size === 0) return;
     const ids = Array.from(selectedPhotos);
+    // Download limit (issue 1560): the selection stays, so the guest can
+    // trim it to what is left.
+    if (!downloadQuota.allows(selectedPhotoList)) {
+      showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
+      return;
+    }
 
     // Resolution picker (#858): when the gallery offers a choice, hand off to
     // the modal — it drives the job build and does the download itself.
@@ -227,8 +249,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     try {
       await galleryService.downloadSelectedPhotos(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
-    } catch {
-      toastify.error(t('gallery.downloadError'));
+    } catch (error) {
+      if (!isDownloadLimitError(error)) toastify.error(t('gallery.downloadError'));
     } finally {
       setSelectedPhotos(new Set());
       if (parentToggleSelectionMode) {
@@ -411,6 +433,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
                     size="sm"
                     leftIcon={<Package className="w-4 h-4" />}
                     onClick={handleDownloadSelected}
+                    disabled={!downloadQuota.allows(selectedPhotoList)}
                     className="text-xs sm:text-sm"
                   >
                     <span className="hidden sm:inline">{t('gallery.downloadSelected', { count: selectedPhotos.size })}</span>
@@ -418,6 +441,9 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
                   </Button>
                 )}
               </div>
+              {allowDownloads && selectedPhotos.size > 0 && (
+                <DownloadQuotaNotice photos={selectedPhotoList} className="text-xs sm:text-sm" />
+              )}
             </div>
           )}
         </div>
@@ -455,6 +481,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           choices={downloadChoices}
           standardResolution={downloadStandard}
           photoIds={resolutionPickerIds}
+          quotaPhotos={photos.filter((photo) => resolutionPickerIds.includes(photo.id))}
           onClose={() => {
             setResolutionPickerIds(null);
             setSelectedPhotos(new Set());

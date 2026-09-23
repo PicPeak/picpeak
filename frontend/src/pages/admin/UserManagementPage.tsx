@@ -16,6 +16,7 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
+  MailCheck,
 } from 'lucide-react';
 import { parseISO, isPast } from 'date-fns';
 
@@ -371,7 +372,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 export const UserManagementPage: React.FC = () => {
   const { t } = useTranslation();
   const { formatDistanceToNow } = useLocalizedDate()
-  const { hasAnyPermission } = usePermissions();
+  const { hasAnyPermission, isSuperAdmin } = usePermissions();
   const canManageRoles = hasAnyPermission(['roles.manage', 'users.view']);
 
   // State
@@ -382,9 +383,10 @@ export const UserManagementPage: React.FC = () => {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
-    type: 'deactivate' | 'activate' | 'delete' | 'cancelInvitation';
+    type: 'deactivate' | 'activate' | 'delete' | 'cancelInvitation' | 'confirmEmail';
     id: number;
     name: string;
+    email?: string;
   } | null>(null);
 
   // Queries
@@ -420,7 +422,9 @@ export const UserManagementPage: React.FC = () => {
       userManagementService.createInvitation({ email, role_id: roleId }),
     invalidateKeys: [['admin-invitations']],
     successMessage: t('userManagement.invitationSent'),
-    errorMessage: (error: Error) => error.message || t('userManagement.invitationError'),
+    // Same here: the function form would show axios's own "Request failed with
+    // status code 409" instead of the server's reason for refusing the invite.
+    errorMessage: t('userManagement.invitationError'),
     onSuccess: () => {
       createInvitationModal.close();
     },
@@ -465,6 +469,23 @@ export const UserManagementPage: React.FC = () => {
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userActivated', 'User reactivated successfully'),
     errorMessage: () => t('userManagement.activateUserError', 'Failed to reactivate user'),
+    onSuccess: () => {
+      setConfirmDialog(null);
+    },
+  });
+
+  // SSO email linking (migration 227): a Super Admin re-saving an admin's own
+  // address is what marks it as set by a trusted flow. The address itself does
+  // not change — this only confirms it — so the page sends it back unaltered.
+  const confirmEmailMutation = useMutationWithToast({
+    mutationFn: ({ id, email }: { id: number; email: string }) =>
+      userManagementService.updateUser(id, { email }),
+    invalidateKeys: [['admin-users']],
+    successMessage: t('userManagement.emailConfirmed', 'Email confirmed for single sign-on'),
+    // The string form, not a function: useMutationWithToast reads the server's
+    // own message first for that one and falls back to this. A 409 here means
+    // the address changed under the dialog, and saying so is the whole point.
+    errorMessage: t('userManagement.confirmEmailError', 'Failed to confirm the email'),
     onSuccess: () => {
       setConfirmDialog(null);
     },
@@ -547,6 +568,16 @@ export const UserManagementPage: React.FC = () => {
     });
   };
 
+  const handleConfirmEmail = (user: AdminUser) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'confirmEmail',
+      id: user.id,
+      name: user.username,
+      email: user.email,
+    });
+  };
+
   const handleCancelInvitation = (invitation: AdminInvitation) => {
     setConfirmDialog({
       isOpen: true,
@@ -565,6 +596,12 @@ export const UserManagementPage: React.FC = () => {
       activateUserMutation.mutate(confirmDialog.id);
     } else if (confirmDialog.type === 'delete') {
       deleteUserMutation.mutate(confirmDialog.id);
+    } else if (confirmDialog.type === 'confirmEmail') {
+      // The dialog is only ever opened from a row, which always has an
+      // address; an empty one would be a 400 with no useful message.
+      if (confirmDialog.email) {
+        confirmEmailMutation.mutate({ id: confirmDialog.id, email: confirmDialog.email });
+      }
     } else if (confirmDialog.type === 'cancelInvitation') {
       cancelInvitationMutation.mutate(confirmDialog.id);
     }
@@ -796,6 +833,12 @@ export const UserManagementPage: React.FC = () => {
                               {user.username}
                             </p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-400">{user.email}</p>
+                            {isSuperAdmin && user.emailLinkEligible === false && (
+                              <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+                                <AlertTriangle className="w-3 h-3" />
+                                {t('userManagement.ssoNotConfirmed', 'Email not confirmed for SSO')}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -838,6 +881,17 @@ export const UserManagementPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Only a Super Admin can set email_link_eligible, and the
+                              row only needs it while it is false (migration 227). */}
+                          {isSuperAdmin && user.emailLinkEligible === false && (
+                            <button
+                              onClick={() => handleConfirmEmail(user)}
+                              className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
+                              title={t('userManagement.confirmEmailForSso', 'Confirm email for SSO')}
+                            >
+                              <MailCheck className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleEditUser(user)}
                             className="p-1.5 text-neutral-400 hover:text-accent hover:bg-accent-dark/15 rounded-lg transition-colors"
@@ -1011,18 +1065,21 @@ export const UserManagementPage: React.FC = () => {
             confirmDialog.type === 'deactivate' ? t('userManagement.confirmDeactivate.title')
             : confirmDialog.type === 'activate'  ? t('userManagement.confirmActivate.title', 'Reactivate user?')
             : confirmDialog.type === 'delete'    ? t('userManagement.confirmDelete.title', 'Delete user permanently?')
+            : confirmDialog.type === 'confirmEmail' ? t('userManagement.confirmEmailForSsoDialog.title', 'Confirm this email for SSO?')
             : t('userManagement.confirmCancelInvitation.title')
           }
           message={
             confirmDialog.type === 'deactivate' ? t('userManagement.confirmDeactivate.message', { name: confirmDialog.name })
             : confirmDialog.type === 'activate'  ? t('userManagement.confirmActivate.message', 'Reactivate {{name}}? They will be able to log in again immediately.', { name: confirmDialog.name })
             : confirmDialog.type === 'delete'    ? t('userManagement.confirmDelete.message', 'Permanently delete {{name}}? This cannot be undone. Their pending invitations and API tokens will be removed; records they created elsewhere will be kept but de-attributed.', { name: confirmDialog.name })
+            : confirmDialog.type === 'confirmEmail' ? t('userManagement.confirmEmailForSsoDialog.message', 'Confirm {{email}} as {{name}}\'s address? A single sign-on login that arrives with this verified email will then be linked to this account. The address itself is not changed. Only confirm it if you know it belongs to them.', { name: confirmDialog.name, email: confirmDialog.email })
             : t('userManagement.confirmCancelInvitation.message', { email: confirmDialog.name })
           }
           confirmText={
             confirmDialog.type === 'deactivate' ? t('userManagement.deactivate')
             : confirmDialog.type === 'activate'  ? t('userManagement.activate', 'Reactivate')
             : confirmDialog.type === 'delete'    ? t('userManagement.delete', 'Delete permanently')
+            : confirmDialog.type === 'confirmEmail' ? t('userManagement.confirmEmail', 'Confirm email')
             // Not the generic `cancel` — that collides with ConfirmDialog's own
             // dismiss button, giving the dialog two "Cancel" buttons (QA I.04).
             : t('userManagement.cancelInvitation')
@@ -1031,6 +1088,7 @@ export const UserManagementPage: React.FC = () => {
             confirmDialog.type === 'deactivate' ? deactivateUserMutation.isPending
             : confirmDialog.type === 'activate'  ? activateUserMutation.isPending
             : confirmDialog.type === 'delete'    ? deleteUserMutation.isPending
+            : confirmDialog.type === 'confirmEmail' ? confirmEmailMutation.isPending
             : cancelInvitationMutation.isPending
           }
           variant={

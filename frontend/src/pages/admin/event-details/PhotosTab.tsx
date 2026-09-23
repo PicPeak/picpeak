@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { AlertCircle, Upload, X } from 'lucide-react';
 import type { Event } from '../../../types';
@@ -8,7 +8,7 @@ import { Button, Card, Loading } from '../../../components/common';
 import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu } from '../../../components/admin';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { externalMediaService } from '../../../services/externalMedia.service';
-import { AdminPhoto, type PhotoFilters as PhotoFilterParams, type FeedbackFilters, type FilterSummary } from '../../../services/photos.service';
+import { AdminPhoto, photosService, CREDIT_FILTER_NONE, type PhotoFilters as PhotoFilterParams, type FeedbackFilters, type FilterSummary } from '../../../services/photos.service';
 import { ExternalFolderPicker } from './ExternalFolderPicker';
 
 interface PhotosTabProps {
@@ -52,6 +52,16 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   const [selectedPhoto, setSelectedPhoto] = useState<{ photo: AdminPhoto; index: number } | null>(null);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<number[]>([]);
 
+  // Names on this event's photos, for the credit filter (#1561). Credit
+  // edits, uploads, imports and deletions invalidate
+  // ['admin-photo-credits', eventId].
+  const eventId = parseInt(id!);
+  const { data: creditSummary } = useQuery({
+    queryKey: ['admin-photo-credits', eventId],
+    queryFn: () => photosService.getPhotoCredits(eventId),
+    enabled: Number.isFinite(eventId),
+  });
+
   return (
     <div>
       {/* Photo Upload Modal */}
@@ -67,6 +77,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           // outcome toast belongs to PhotoUpload, which knows the counts.
           queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
           queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
+          queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
           refetchPhotos();
         }}
       />
@@ -87,6 +98,11 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           media_type: mediaType === 'all' ? undefined : mediaType
         }))}
         showMediaFilter={showMediaFilter}
+        credits={creditSummary?.credits}
+        creditNoneCount={creditSummary?.none}
+        creditNoneValue={CREDIT_FILTER_NONE}
+        selectedCredit={photoFilters.credit}
+        onCreditChange={(credit) => setPhotoFilters(prev => ({ ...prev, credit }))}
       />
 
       {/* Feedback Filter Panel for Export */}
@@ -159,6 +175,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           onPhotosDeleted={() => {
             refetchPhotos();
             queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
+            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
           }}
           onSelectionChange={setSelectedPhotoIds}
           categories={categories}
@@ -175,6 +192,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           onPhotoDeleted={() => {
             refetchPhotos();
             queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
+            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
             setSelectedPhoto(null);
           }}
           categories={categories}
@@ -219,6 +237,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
                     toast.success(t('toast.saveSuccess'));
                     queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
                     queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
+                    queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
                     setShowExternalImport(false);
                   } catch (e: any) {
                     toast.error(e?.response?.data?.error || 'Import failed');

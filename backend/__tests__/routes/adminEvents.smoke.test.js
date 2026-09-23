@@ -322,5 +322,22 @@ describe('admin events CRUD endpoints (smoke)', () => {
       const res = await auth(request(app).delete('/api/admin/events/999999'));
       expect(res.status).toBe(404);
     });
+
+    it('removes feedback_rate_limits rows for the deleted event (#1585)', async () => {
+      // feedback_rate_limits.event_id declares ON DELETE CASCADE, but SQLite
+      // only honours that with PRAGMA foreign_keys = ON, which PicPeak does
+      // not set — so on the SQLite path the cascade is inert and these rows
+      // would otherwise outlive the event. deleteEventCascade() must delete
+      // them explicitly, the same way it already does for photo_faces.
+      const id = await insertEvent(db, adminId);
+      await db('feedback_rate_limits').insert({
+        event_id: id, action_type: 'like', action_count: 1,
+        identifier: 'guest-1', window_start: new Date().toISOString(),
+      });
+      const res = await auth(request(app).delete(`/api/admin/events/${id}`));
+      expect(res.status).toBe(200);
+      const remaining = await db('feedback_rate_limits').where({ event_id: id });
+      expect(remaining).toHaveLength(0);
+    });
   });
 });

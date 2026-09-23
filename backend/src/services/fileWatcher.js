@@ -2,6 +2,7 @@ const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('sharp');
+const { resolveCredit } = require('./photoCredit');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -177,6 +178,10 @@ async function processNewPhoto(filePath) {
   const existingPhoto = await findExistingPhoto(event.id, path.basename(filePath), relativePath);
 
   if (!existingPhoto) {
+    // Credit from the file's EXIF (#1561). Only for a row about to be created,
+    // so a re-sweep of an imported folder reads nothing.
+    const credit = await resolveCredit({ localPath: filePath, isVideo });
+
     // Add to database
     const insertResult = await db('photos').insert({
       event_id: event.id,
@@ -190,7 +195,8 @@ async function processNewPhoto(filePath) {
       type: isVideo ? 'video' : photoType,
       size_bytes: stats.size,
       mime_type: mimeType,
-      ...(dimensions && { width: dimensions.width, height: dimensions.height })
+      ...(dimensions && { width: dimensions.width, height: dimensions.height }),
+      ...credit
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
 

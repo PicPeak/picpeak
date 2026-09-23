@@ -48,14 +48,24 @@ const WORKER_FILE = path.join(__dirname, 'pdfInspectWorker.js');
 // runs in its own worker, which is also what keeps the decode meter's
 // prototype patch from being shared (see pdfDecodeBudget).
 const MAX_CONCURRENT = 2;
+// Checks beyond the two running ones wait, but only so many: past that the
+// upload is refused as "try again later" (503) instead of piling up
+// requests, each holding its upload buffer, behind a 30 s budget apiece.
+// Same cap as the office check.
+const MAX_WAITING = 20;
 let running = 0;
 const waiting = [];
+
+const unavailable = (status) => new AppError(
+  'The PDF cannot be checked right now. Please try again later.', status, 'DOCUMENT_CHECK_UNAVAILABLE',
+);
 
 function acquire() {
   if (running < MAX_CONCURRENT) {
     running += 1;
     return Promise.resolve();
   }
+  if (waiting.length >= MAX_WAITING) return Promise.reject(unavailable(503));
   return new Promise((resolve) => waiting.push(resolve));
 }
 
@@ -79,7 +89,9 @@ function rethrow(error) {
  * Check a PDF and describe it: `{ pages, bytes, sha256, normalised }`.
  * Throws a 400 AppError with a stable code (see pdfInspect, plus
  * PDF_TOO_COMPLEX when a file expands past the inflate budget, or the parse
- * outgrows the worker's heap or its time).
+ * outgrows the worker's heap or its time), or a DOCUMENT_CHECK_UNAVAILABLE:
+ * 422 when no worker can be started, 503 when MAX_WAITING checks are already
+ * queued.
  *
  * `isolate: false` runs the checks in this process — for callers that
  * already hold bytes this gate accepted.
@@ -98,7 +110,7 @@ async function validatePdf(buffer, options = {}) {
     throw new AppError(`The PDF is larger than ${Math.round(maxBytes / (1024 * 1024))} MB`, 400, 'PDF_TOO_LARGE');
   }
 
-  await acquire();
+  await acquire(); // a refusal here holds no slot, so it skips release()
   try {
     return await runInWorker(buffer, limits, heapMb);
   } finally {
@@ -116,11 +128,12 @@ function runInWorker(buffer, limits, heapMb) {
         transferList: [bytes.buffer],
         resourceLimits: { maxOldGenerationSizeMb: heapMb, maxYoungGenerationSizeMb: Math.min(64, heapMb) },
       });
-    } catch (err) {
-      // No worker available (an unusual runtime): fall back to this process
-      // rather than refusing every upload. The decode meter nests, so two
-      // overlapping checks here still leave `ensureBuffer` as it found it.
-      inspectPdf(buffer, limits).then(resolve, reject);
+    } catch (_) {
+      // No worker available (an unusual runtime). Inspecting here would run
+      // without the heap, time and RSS budget the worker gives, so the upload
+      // is refused as "try again later" rather than checked unbudgeted — as
+      // the office and font checks do.
+      reject(unavailable(422));
       return;
     }
     let settled = false;
@@ -163,6 +176,8 @@ module.exports = {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_PAGES,
   DEFAULT_MAX_INFLATE_BYTES,
+  MAX_CONCURRENT,
+  MAX_WAITING,
   validatePdf,
   _internal,
 };

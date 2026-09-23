@@ -25,6 +25,7 @@ class XmpGenerator {
     const label = include_label ? this.mapLabel(photo) : null;
 
     const descriptionXml = include_description ? this.generateDescription(photo) : '';
+    const creatorXml = this.generateCreator(photo);
     const keywordsXml = include_keywords ? this.generateKeywords(photo) : '';
 
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -38,7 +39,8 @@ class XmpGenerator {
       xmlns:Iptc4xmpCore="http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
       xmp:Rating="${rating}"${label ? `
       xmp:Label="${label}"` : ''}>
-      ${descriptionXml}
+      ${descriptionXml}${creatorXml ? `
+      ${creatorXml}` : ''}
       ${keywordsXml}
     </rdf:Description>
   </rdf:RDF>
@@ -118,6 +120,22 @@ class XmpGenerator {
           <rdf:li xml:lang="x-default">${this.escapeXml(desc)}</rdf:li>
         </rdf:Alt>
       </dc:description>`;
+  }
+
+  /**
+   * dc:creator from the photo credit (#1561), so the name follows the sidecar
+   * into Lightroom's Creator field. Nothing when the photo has no credit —
+   * an empty element would clear a Creator the catalog already holds.
+   * @param {Object} photo - Photo object
+   * @returns {string} Creator XML, or ''
+   */
+  generateCreator(photo) {
+    if (!photo || !photo.credit_name) return '';
+    return `<dc:creator>
+        <rdf:Seq>
+          <rdf:li>${this.escapeXml(photo.credit_name)}</rdf:li>
+        </rdf:Seq>
+      </dc:creator>`;
   }
 
   /**

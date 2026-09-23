@@ -48,7 +48,7 @@ async function getConfiguredBackupRoots(trustedRoot) {
   } catch (_) {
     // best effort — fall through to whatever roots we already have
   }
-  for (const extra of (process.env.RESTORE_ALLOWED_ROOTS || '').split(':')) {
+  for (const extra of (process.env.RESTORE_ALLOWED_ROOTS || '').split(path.delimiter)) {
     if (extra.trim()) roots.push(extra.trim());
   }
   return roots.map((r) => path.resolve(r));

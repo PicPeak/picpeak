@@ -1,5 +1,5 @@
 import { api } from '../config/api';
-import type { Event } from '../types';
+import type { Event, GuestNameMode } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { toBoolean } from '../utils/parsers';
 
@@ -36,6 +36,9 @@ interface CreateEventData {
   expiration_days?: number;
   allow_user_uploads?: boolean;
   upload_category_id?: number | null;
+  // Uploader names (#1561); omitted = the Event Defaults value.
+  guest_name_mode?: GuestNameMode;
+  show_credits_to_guests?: boolean;
   feedback_enabled?: boolean;
   allow_ratings?: boolean;
   allow_likes?: boolean;
@@ -46,6 +49,7 @@ interface CreateEventData {
   moderate_comments?: boolean;
   show_feedback_to_guests?: boolean;
   photo_cap?: number | null;
+  download_limit?: number | null;
   default_photo_sort?: string;
   // Customer accounts assigned to this event (#354). Optional array of
   // customer_accounts.id; backend service diffs against the existing
@@ -72,6 +76,8 @@ interface UpdateEventData {
   expires_at?: string;
   is_active?: boolean;
   allow_user_uploads?: boolean;
+  guest_name_mode?: GuestNameMode;
+  show_credits_to_guests?: boolean;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -81,12 +87,19 @@ interface UpdateEventData {
   external_path?: string | null;
   external_watch?: boolean;
   photo_cap?: number | null;
+  download_limit?: number | null;
   default_photo_sort?: string;
   // Per-event opt-in for hero photo as social-share preview (#474).
   og_image_share_enabled?: boolean;
   // Customer accounts (#354). Same semantics as on CreateEventData;
   // omit the field to leave assignments untouched, send [] to clear.
   customer_account_ids?: number[];
+}
+
+export interface DownloadLimitUsage {
+  download_limit: number | null;
+  downloads_used: number;
+  downloads_remaining: number | null;
 }
 
 export type EventStatusFilter = 'active' | 'inactive' | 'archived' | 'draft' | 'expiring';
@@ -149,6 +162,18 @@ export const eventsService = {
   async createEvent(data: CreateEventData): Promise<Event> {
     const response = await api.post<Event>('/admin/events', data);
     return normalizeEvent(response.data as Event);
+  },
+
+  // Download limit usage (issue 1560). The limit itself is set through
+  // updateEvent; these read and reset what the gallery has used.
+  async getDownloadLimitUsage(id: number): Promise<DownloadLimitUsage> {
+    const response = await api.get<DownloadLimitUsage>(`/admin/events/${id}/download-limit`);
+    return response.data;
+  },
+
+  async resetDownloadLimitUsage(id: number): Promise<DownloadLimitUsage> {
+    const response = await api.post<DownloadLimitUsage>(`/admin/events/${id}/download-limit/reset`);
+    return response.data;
   },
 
   // Update event (admin)
