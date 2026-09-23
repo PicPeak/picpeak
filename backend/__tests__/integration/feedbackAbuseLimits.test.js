@@ -90,19 +90,60 @@ test('verified guest identities retain their server-issued identifiers', () => {
 });
 
 
-test('the sweep removes rows past 2x the widest configured window and keeps fresh ones (#1585)', async () => {
+test('the sweep cutoff matches consumeFeedbackLimit\'s window_start insert convention (#1585)', async () => {
+  // window_start is `table.timestamp(...)`; on SQLite that gives the column
+  // NUMERIC affinity, and consumeFeedbackLimit() (unchanged by this PR, see
+  // ~line 101) inserts window_start as a plain `Date`. A previous revision
+  // of the sweep computed its cutoff as `new Date(...).toISOString()` — a
+  // TEXT value. Comparing a TEXT cutoff against a NUMERIC-affinity column
+  // falls back to SQLite's storage-class sort order, where every INTEGER
+  // sorts below every TEXT value, so `window_start < cutoff` was true for
+  // EVERY row unconditionally: the sweep silently deleted the whole table
+  // on every run.
+  //
+  // We assert on the actual bound parameter — captured via knex's `query`
+  // event, before it reaches the driver — rather than on deleted/stored
+  // row values. Under Jest, sqlite3's native binding loses realm identity
+  // for a `Date` created inside the sandbox and mangles it into the
+  // literal string "[object Object]" (see CLAUDE.md's "Jest + SQLite date
+  // landmine"); that quirk is Jest-sandbox-only and would make a
+  // value-level round-trip assertion pass or fail for reasons unrelated to
+  // this bug. Checking the bound parameter's type sidesteps that quirk
+  // entirely and pins the exact regression: a string cutoff here fails
+  // against the original bug and a `Date` cutoff passes against the fix,
+  // on both SQLite and PostgreSQL.
+  const { sweepStaleFeedbackRateLimits } = require('../../src/middleware/feedbackRateLimit');
+  const captured = [];
+  const onQuery = (query) => {
+    if (/delete from .*feedback_rate_limits.*where.*window_start.*</is.test(query.sql)) captured.push(query);
+  };
+  db.on('query', onQuery);
+  try {
+    await sweepStaleFeedbackRateLimits();
+  } finally {
+    db.removeListener('query', onQuery);
+  }
+  expect(captured).toHaveLength(1);
+  expect(captured[0].bindings[0]).toBeInstanceOf(Date);
+});
+
+// Real end-to-end row-count coverage: only meaningful against a genuine
+// Postgres timestamptz column, which infers/casts its bound parameter from
+// column context regardless of the caller's realm. Against SQLite under
+// Jest the cutoff-type test above is the guard — see its comment for why a
+// value-level assertion here would be unreliable for reasons unrelated to
+// the bug being fixed. CI always provides PICPEAK_PG_TEST_URL (see
+// .github/workflows/tests.yml), so this still runs on every PR.
+(pgUrl ? test : test.skip)('the sweep removes rows past 2x the widest configured window and keeps fresh ones (#1585)', async () => {
   const { sweepStaleFeedbackRateLimits } = require('../../src/middleware/feedbackRateLimit');
   // Widest configured window here is comment's 3600s (see beforeAll), so the
-  // sweep's cutoff is 7200s ago. Timestamps are ISO strings, per the
-  // Jest+SQLite Date landmine (CLAUDE.md) — a raw Date stored through the
-  // sqlite3 driver under Jest round-trips as the literal string
-  // "[object Object]" instead of a comparable timestamp.
+  // sweep's cutoff is 7200s ago.
   const staleRow = { event_id: eventId, action_type: 'comment', action_count: 1,
-    identifier: 'stale-guest', window_start: new Date(Date.now() - 8000 * 1000).toISOString() };
+    identifier: 'stale-guest', window_start: new Date(Date.now() - 8000 * 1000) };
   const staleOtherActionRow = { event_id: eventId, action_type: 'like', action_count: 1,
-    identifier: 'stale-guest-2', window_start: new Date(Date.now() - 8000 * 1000).toISOString() };
+    identifier: 'stale-guest-2', window_start: new Date(Date.now() - 8000 * 1000) };
   const freshRow = { event_id: eventId, action_type: 'comment', action_count: 1,
-    identifier: 'fresh-guest', window_start: new Date(Date.now() - 100 * 1000).toISOString() };
+    identifier: 'fresh-guest', window_start: new Date(Date.now() - 100 * 1000) };
   await db('feedback_rate_limits').insert([staleRow, staleOtherActionRow, freshRow]);
 
   const deleted = await sweepStaleFeedbackRateLimits();
