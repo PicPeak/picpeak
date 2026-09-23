@@ -853,16 +853,32 @@ describe('Download limit (issue 1560)', () => {
       expect(await grantCount(limited.event.id)).toBe(0);
     });
 
-    it('the hero and preview routes of a video lead back to the counted route', async () => {
+    it('the preview route of a video leads back to the counted route', async () => {
       const { event, photoIds, guestToken } = await makeEvent({ limit: 1 });
       await makeVideo(event, photoIds[0]);
-      for (const route of ['hero', 'preview']) {
-        const res = await request(app)
-          .get(`/api/gallery/${event.slug}/${route}/${photoIds[0]}`)
-          .set('Authorization', `Bearer ${guestToken}`);
-        expect(res.status).toBe(302);
-        expect(res.headers.location).toBe(`/api/gallery/${event.slug}/photo/${photoIds[0]}`);
-      }
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/preview/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${guestToken}`);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe(`/api/gallery/${event.slug}/photo/${photoIds[0]}`);
+    });
+
+    it('a video hero is its poster frame and loading it takes no slot', async () => {
+      // A Premium/Story gallery whose first item is a video requests its hero
+      // on page load; that must not spend the client's last slot.
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      await makeVideo(event, photoIds[0]);
+      const hero = await request(app)
+        .get(`/api/gallery/${event.slug}/hero/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(hero.status).toBe(302);
+      expect(hero.headers.location).toBe(`/api/gallery/${event.slug}/thumbnail/${photoIds[0]}`);
+
+      await request(app).get(hero.headers.location).set('Authorization', `Bearer ${token}`)
+        .buffer(true).parse(drainBody);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await grantCount(event.id)).toBe(0);
+      expect((await quota.getQuota(event)).remaining).toBe(1);
     });
   });
 
