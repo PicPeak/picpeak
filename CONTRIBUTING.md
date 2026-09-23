@@ -55,6 +55,40 @@ Unsure where to begin? You can start by looking through these issues:
 
 > **📸 Screenshots are required for UI changes.** Any PR that changes a user-facing surface — a component, page, layout, style, or in-app copy — must include at least one screenshot of the result in the PR description, showing before/after where it helps reviewers see the difference. PRs that touch the UI without a screenshot will be asked to add one before review. Backend-only or otherwise non-visual changes don't need one.
 
+#### Where screenshots live
+
+- **Contributors working from a fork:** drag the image into the PR description or a comment. GitHub hosts it for you; there is nothing to push.
+- **Maintainers and anyone pushing to this repository:** commit screenshots to the `pr-assets` branch, never to a branch of their own. `pr-assets` is an orphan branch that holds only images, one folder per PR or issue:
+
+  ```
+  screenshots/<issue-or-pr>-<n>/<file>.png     # e.g. screenshots/1446-2/sign-step-dark.png
+  issue-assets/<topic>/<file>.png              # images for issue reports
+  ```
+
+  Link them through `raw.githubusercontent.com`:
+
+  ```markdown
+  <img width="420" alt="Sign step, dark" src="https://raw.githubusercontent.com/PicPeak/picpeak/pr-assets/screenshots/1446-2/sign-step-dark.png" />
+  ```
+
+  To add images, check the branch out in a separate worktree so your working branch stays untouched:
+
+  ```bash
+  git fetch origin pr-assets
+  git worktree add ../picpeak-pr-assets pr-assets
+  mkdir -p ../picpeak-pr-assets/screenshots/1446-2
+  cp ~/Desktop/sign-step-*.png ../picpeak-pr-assets/screenshots/1446-2/
+  git -C ../picpeak-pr-assets add screenshots/1446-2
+  git -C ../picpeak-pr-assets commit -m "chore: screenshots for 1446"
+  git -C ../picpeak-pr-assets push origin pr-assets
+  ```
+
+  Rules for `pr-assets`:
+  - Never delete it or force-push it. Every older PR and issue loads its images from it.
+  - Don't overwrite an existing file. Add a new name, such as `-v2.png`, because the raw CDN can keep serving the old image for a while.
+  - Images only (PNG/JPEG/WebP/GIF, short MP4/WebM). No code, no secrets, and nothing that shows real customer data.
+  - Don't create new `screenshots/*` branches; the old ones were folded into `pr-assets`.
+
 ## 💻 Development Setup
 
 ### Prerequisites
@@ -202,6 +236,8 @@ PicPeak runs on two long-lived branches:
 |---|---|---|
 | **`main`** | Active development. The next release is being assembled here. | Feature PRs. Most bugfix PRs. |
 | **`stable`** | Curated release channel. Production-recommended. | Security fixes and regular bugfix backports, kept small and free of unrelated features. |
+
+A third branch, `pr-assets`, only hosts PR and issue screenshots. It never holds code, and no PR targets it (see [Where screenshots live](#where-screenshots-live)).
 
 ### Which branch should my PR target?
 
