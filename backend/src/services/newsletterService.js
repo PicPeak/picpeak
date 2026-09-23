@@ -675,6 +675,9 @@ async function recordRecipientResult(queueRow, { status, errorMessage = null } =
 
   await db('email_campaign_recipients')
     .where({ campaign_id: queueRow.campaign_id, email_queue_id: queueRow.id })
+    // A recipient cancelled while its mail was in flight (campaign cancel,
+    // customer erasure — issue 1593) stays cancelled.
+    .whereNot('status', 'cancelled')
     .update(update);
 
   await recomputeCounts(queueRow.campaign_id);

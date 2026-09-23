@@ -86,11 +86,13 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     const { photoId } = req.params;
     const { protectionLevel = 'standard' } = req.query;
     
-    // Create client fingerprint
-    const clientFingerprint = secureImageService.createClientFingerprint(req);
-    
+    // Rate limit, suspicious-activity count and access log are keyed on the
+    // rate-limit fingerprint, where an IPv6 /64 is one client (issue 1564);
+    // the per-address one would reset the budget on every address in the /64.
+    const rateLimitFingerprint = secureImageService.createRateLimitFingerprint(req);
+
     // Check rate limiting
-    if (!secureImageService.checkRateLimit(clientFingerprint, 30, 60000)) {
+    if (!secureImageService.checkRateLimit(rateLimitFingerprint, 30, 60000)) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
     
@@ -113,7 +115,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     }
 
     // Check for suspicious activity
-    const isSuspicious = await secureImageService.detectSuspiciousActivity(clientFingerprint, photoId);
+    const isSuspicious = await secureImageService.detectSuspiciousActivity(rateLimitFingerprint, photoId);
     if (isSuspicious) {
       return res.status(429).json({ error: 'Suspicious activity detected' });
     }
@@ -122,7 +124,8 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     await secureImageService.logImageAccess(photoId, req.event.id, {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      fingerprint: clientFingerprint
+      fingerprint: secureImageService.createClientFingerprint(req),
+      rateLimitFingerprint
     }, 'view');
     
     // Get protection settings from event

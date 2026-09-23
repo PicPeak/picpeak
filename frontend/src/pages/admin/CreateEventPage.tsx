@@ -110,7 +110,11 @@ export const CreateEventPage: React.FC = () => {
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   // const [showPreview, setShowPreview] = useState(false);
   
+  // Re-arm on every effect run so React Strict Mode's mount→cleanup→mount
+  // cycle does not leave the ref permanently false (no toast / redirect, and
+  // a second click creates a duplicate event — fork survey A6 / #1563).
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };

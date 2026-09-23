@@ -35,9 +35,10 @@ function notifyGalleryOpened(event, req) {
 
 router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
   try {
+    const guestIdentifier = await generateGuestIdentifier(req);
     const payload = await require('../../services/galleryQueryService').getGalleryPhotos({
       event: req.event, slug: req.params.slug, query: req.query,
-      identity: { guestId: req.guest?.id, guestIdentifier: generateGuestIdentifier(req) },
+      identity: { guestId: req.guest?.id, guestIdentifier },
       accessLevel: req.accessLevel, viaCustomer: req.viaCustomer, adminPreview: req.isAdminPreview,
       hiddenForGuest: guestBlockedByReveal(req),
     });

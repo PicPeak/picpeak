@@ -14,6 +14,7 @@ const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
+const { hasColumnCached } = require('../utils/schemaCache');
 
 /**
  * Create a new admin user invitation
@@ -21,13 +22,19 @@ const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = requir
  * @returns {Promise<object>} Created invitation details
  */
 async function createInvitation({ email, roleId, invitedById, inviterRoleName }) {
-  // Check if email already exists
-  const existingUser = await db('admin_users').where('email', email).first();
+  // Check if email already exists — without case, so an invite cannot create
+  // a second row that a lowercased IdP claim would also match.
+  const existingUser = await db('admin_users')
+    .whereRaw('LOWER(email) = ?', [String(email).toLowerCase()])
+    .first();
   if (existingUser) {
     throw new ConflictError('User with this email already exists', 'email');
   }
 
-  // Check for pending invitation
+  // Check for pending invitation. Exact-case on purpose: two case-variant
+  // invitations may both be pending, and whichever is accepted second is
+  // refused by the LOWER(email) check in acceptInvitation, so no second
+  // admin row can come out of it.
   const pendingInvite = await db('admin_invitations')
     .where('email', email)
     .whereNull('accepted_at')
@@ -122,8 +129,10 @@ async function acceptInvitation({ token, username, password }) {
     throw new ConflictError('Username already taken', 'username');
   }
 
-  // Check email not taken (race condition protection)
-  const existingEmail = await db('admin_users').where('email', invitation.email).first();
+  // Check email not taken (race condition protection), without case
+  const existingEmail = await db('admin_users')
+    .whereRaw('LOWER(email) = ?', [String(invitation.email).toLowerCase()])
+    .first();
   if (existingEmail) {
     throw new ConflictError('Email already registered', 'email');
   }
@@ -179,23 +188,29 @@ async function acceptInvitation({ token, username, password }) {
  * @returns {Promise<object[]>}
  */
 async function getAllAdminUsers() {
+  const columns = [
+    'admin_users.id',
+    'admin_users.username',
+    'admin_users.email',
+    'admin_users.is_active',
+    'admin_users.last_login',
+    'admin_users.last_login_ip',
+    'admin_users.created_at',
+    'admin_users.updated_at',
+    'roles.id as role_id',
+    'roles.name as role_name',
+    'roles.display_name as role_display_name',
+    'creator.username as created_by_username'
+  ];
+  // The Users page offers "confirm this email for SSO" on the rows this is
+  // false for, so it has to travel with the list (migration 227).
+  if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+    columns.push('admin_users.email_link_eligible');
+  }
   return db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
     .leftJoin('admin_users as creator', 'creator.id', 'admin_users.created_by')
-    .select(
-      'admin_users.id',
-      'admin_users.username',
-      'admin_users.email',
-      'admin_users.is_active',
-      'admin_users.last_login',
-      'admin_users.last_login_ip',
-      'admin_users.created_at',
-      'admin_users.updated_at',
-      'roles.id as role_id',
-      'roles.name as role_name',
-      'roles.display_name as role_display_name',
-      'creator.username as created_by_username'
-    )
+    .select(columns)
     .orderBy('admin_users.created_at', 'desc');
 }
 
@@ -205,22 +220,26 @@ async function getAllAdminUsers() {
  * @returns {Promise<object>}
  */
 async function getAdminUserById(id) {
+  const columns = [
+    'admin_users.id',
+    'admin_users.username',
+    'admin_users.email',
+    'admin_users.is_active',
+    'admin_users.last_login',
+    'admin_users.last_login_ip',
+    'admin_users.created_at',
+    'admin_users.updated_at',
+    'roles.id as role_id',
+    'roles.name as role_name',
+    'roles.display_name as role_display_name'
+  ];
+  if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+    columns.push('admin_users.email_link_eligible');
+  }
   const user = await db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
     .where('admin_users.id', id)
-    .select(
-      'admin_users.id',
-      'admin_users.username',
-      'admin_users.email',
-      'admin_users.is_active',
-      'admin_users.last_login',
-      'admin_users.last_login_ip',
-      'admin_users.created_at',
-      'admin_users.updated_at',
-      'roles.id as role_id',
-      'roles.name as role_name',
-      'roles.display_name as role_display_name'
-    )
+    .select(columns)
     .first();
 
   if (!user) {
@@ -250,6 +269,18 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   }
 
   const allowedUpdates = {};
+  let confirmedAddress = null;
+
+  // Only a super_admin may change a super_admin account. users.edit is a
+  // delegable permission; without this a holder could rewrite a super_admin's
+  // username or email, which the dedicated routes (reset-password, role
+  // assignment, invitations) already refuse.
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  const actorIsSuperAdmin = requestingAdmin.roleName === 'super_admin';
+  const targetIsSuperAdmin = Boolean(superAdminRole && user.role_id === superAdminRole.id);
+  if (targetIsSuperAdmin && !actorIsSuperAdmin) {
+    throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
+  }
 
   if (updates.username !== undefined) {
     const existing = await db('admin_users')
@@ -263,14 +294,41 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   }
 
   if (updates.email !== undefined) {
+    // Without case, like the OIDC lookup: an existing Mara@Example.com must
+    // not let a second admin take mara@example.com.
     const existing = await db('admin_users')
-      .where('email', updates.email)
+      .whereRaw('LOWER(email) = ?', [String(updates.email).toLowerCase()])
       .whereNot('id', id)
       .first();
     if (existing) {
       throw new ConflictError('Email already in use', 'email');
     }
-    allowedUpdates.email = updates.email;
+    // The route lowercases what it receives (normalizeEmail keeps
+    // all_lowercase), so re-saving a mixed-case address would rewrite the
+    // stored one. Confirming an address must not edit it — compare without
+    // case and leave the column alone when it is the same address.
+    const sameAddress = String(updates.email).toLowerCase() === String(user.email || '').toLowerCase();
+    if (!sameAddress) {
+      allowedUpdates.email = updates.email;
+    } else {
+      // Confirming trusts the address as it was read at the top of this
+      // function, and writes no address of its own. The target can change
+      // their own email through PUT /admin/profile in between (which sets
+      // eligibility false); the write below must then not land on that new,
+      // unapproved address.
+      confirmedAddress = user.email;
+    }
+    // Whether a later SSO login may link to this account by email
+    // (oidcService, migration 227): an address set by a super_admin is
+    // trusted — saving it unchanged is how a super_admin confirms one — while
+    // a change by anyone else is not proof of ownership.
+    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+      if (actorIsSuperAdmin) {
+        allowedUpdates.email_link_eligible = formatBoolean(true);
+      } else if (!sameAddress) {
+        allowedUpdates.email_link_eligible = formatBoolean(false);
+      }
+    }
   }
 
   if (updates.role_id !== undefined) {
@@ -279,12 +337,8 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
       throw new NotFoundError('Role', updates.role_id);
     }
 
-    // Role hierarchy enforcement
-    const superAdminRole = await db('roles').where('name', 'super_admin').first();
-    const isSuperAdmin = requestingAdmin.roleName === 'super_admin';
-
     // Only super_admin can assign super_admin role
-    if (superAdminRole && role.id === superAdminRole.id && !isSuperAdmin) {
+    if (superAdminRole && role.id === superAdminRole.id && !actorIsSuperAdmin) {
       throw new ValidationError('Only Super Admins can assign the Super Admin role');
     }
 
@@ -321,7 +375,12 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 
   allowedUpdates.updated_at = new Date();
 
-  await db('admin_users').where('id', id).update(allowedUpdates);
+  const write = db('admin_users').where('id', id);
+  if (confirmedAddress !== null) write.where('email', confirmedAddress);
+  const written = await write.update(allowedUpdates);
+  if (confirmedAddress !== null && written !== 1) {
+    throw new ConflictError('The email address changed while this was open — reload and try again', 'email');
+  }
 
   await logActivity('admin_user_updated',
     { userId: id, changes: Object.keys(allowedUpdates) },
@@ -330,6 +389,23 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   );
 
   return getAdminUserById(id);
+}
+
+/**
+ * Only a super_admin may change a super_admin account (deactivate, activate,
+ * delete). users.delete is delegable; the dedicated routes for invitations,
+ * role assignment and password resets already hold the same line.
+ */
+async function assertMayManageSuperAdminTarget(target, actorId) {
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  if (!superAdminRole || target.role_id !== superAdminRole.id) return;
+  const actor = await db('admin_users')
+    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    .where('admin_users.id', actorId)
+    .first('roles.name as role_name');
+  if (!actor || actor.role_name !== 'super_admin') {
+    throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
+  }
 }
 
 /**
@@ -362,6 +438,10 @@ async function deactivateAdminUser(id, deactivatedById) {
     }
   }
 
+  // After the invariants above, which hold for every caller including a
+  // super_admin, so their specific message survives.
+  await assertMayManageSuperAdminTarget(user, deactivatedById);
+
   await db('admin_users').where('id', id).update({
     is_active: formatBoolean(false),
     updated_at: new Date()
@@ -393,6 +473,7 @@ async function activateAdminUser(id, activatedById) {
   if (!user) {
     throw new NotFoundError('Admin user', id);
   }
+  await assertMayManageSuperAdminTarget(user, activatedById);
 
   // No "last super admin" guard needed — activate only ever ADDS an
   // active super_admin, never removes one. No "can't activate
@@ -460,6 +541,10 @@ async function deleteAdminUser(id, deletedById) {
       throw new ValidationError('Cannot delete the last Super Admin');
     }
   }
+
+  // After the invariants above, which hold for every caller including a
+  // super_admin, so their specific message survives.
+  await assertMayManageSuperAdminTarget(user, deletedById);
 
   // Hard delete. FK ON DELETE rules in core migrations handle cascade:
   //   SET NULL on created_by_admin_id everywhere (events, photos,

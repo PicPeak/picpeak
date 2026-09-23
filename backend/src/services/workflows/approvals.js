@@ -57,16 +57,21 @@ async function createApproval(ctx) {
     }
     if (adminEmail) {
       const emailProcessor = require('../emailProcessor');
+      const emailData = {
+        prompt: cfg.prompt || 'A workflow needs your confirmation.',
+        confirm_url: confirmUrl,
+        deny_url: denyUrl,
+        ...(ctx.vars?.emailData || {}),
+      };
+      // Attachments are file paths the mailer reads from disk; run vars can
+      // come from a test-run payload, so they must never choose one (same
+      // rule as the send_email action).
+      delete emailData.attachments;
       await emailProcessor.queueEmail(
         ctx.vars?.eventId || null,
         adminEmail,
         cfg.emailType || 'workflow_approval',
-        {
-          prompt: cfg.prompt || 'A workflow needs your confirmation.',
-          confirm_url: confirmUrl,
-          deny_url: denyUrl,
-          ...(ctx.vars?.emailData || {}),
-        },
+        emailData,
         { respectBusinessHours: false }, // internal/admin → immediate
       );
     } else {

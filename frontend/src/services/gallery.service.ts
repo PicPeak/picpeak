@@ -247,10 +247,13 @@ export const galleryService = {
       // A download limit refusal (issue 1560) is final: the view endpoint
       // would hand over the preview as if it were the download.
       if (await readDownloadLimitError(error)) throw error;
-      // Fallback: view endpoint when /download isn't available (e.g.
-      // the original is missing and only a derivative remains). The
-      // view endpoint doesn't emit a download-oriented Content-Disposition,
-      // so serverFilename will be null and the caller's name wins.
+      // Fallback only when the original is missing (404). A 403 (downloads
+      // disabled / category blocked), 429 or 5xx must surface to the caller —
+      // silently substituting the view copy made refusals look like success
+      // (fork survey A4 / #1563).
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status !== 404) throw error;
+
       const response = await api.get<Blob>(`/gallery/${slug}/photo/${photoId}`, {
         responseType: 'blob',
       });

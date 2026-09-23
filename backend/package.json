@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.135.2-beta.0",
+  "version": "3.135.3-beta.0",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
@@ -77,7 +77,7 @@
     "eslint": "^8.40.0",
     "jest": "^29.5.0",
     "mock-fs": "^5.5.0",
-    "nodemon": "^3.1.10",
+    "nodemon": "^3.1.14",
     "supertest": "^6.3.3"
   },
   "overrides": {

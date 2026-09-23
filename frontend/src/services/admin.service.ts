@@ -208,6 +208,10 @@ export type ActivityType =
   | "webhook_deleted"
   | "api_token_created"
   | "api_token_revoked"
+  // v1 original downloads (issue 1473).
+  | "api_photo_downloaded"
+  | "api_photos_downloaded"
+  | "api_photos_zip_downloaded"
   | "event_type_created"
   | "event_type_updated"
   | "event_type_deleted"
@@ -513,6 +517,9 @@ export const adminService = {
       'webhook_deleted': `Webhook deleted: ${md.name || ''}`,
       'api_token_created': `API token created: ${md.name || ''}`,
       'api_token_revoked': `API token revoked: ${md.name || ''}`,
+      'api_photo_downloaded': `Original downloaded from ${activity.eventName || 'Unknown'} with API token #${md.token_id ?? ''}`,
+      'api_photos_downloaded': `API token "${md.token_name || ''}" downloaded ${md.count || 0} originals from ${activity.eventName || 'Unknown'}`,
+      'api_photos_zip_downloaded': `API token "${md.token_name || ''}" downloaded a ZIP of ${md.photo_count || 0} originals from ${activity.eventName || 'Unknown'}`,
       'event_type_created': `Event type created: ${md.name || ''}`,
       'event_type_updated': `Event type updated: ${md.name || ''}`,
       'event_type_deleted': `Event type deleted: ${md.name || ''}`,

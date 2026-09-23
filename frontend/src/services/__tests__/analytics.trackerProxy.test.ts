@@ -10,7 +10,7 @@
  * feature breaks again, invisibly, so the shapes are pinned here.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { analyticsService } from '../analytics.service';
 
@@ -81,5 +81,55 @@ describe('analytics tracker script injection', () => {
     });
 
     expect(document.head.querySelectorAll('script')).toHaveLength(0);
+  });
+});
+
+// The proxied tracker script runs same-origin with the privileges of whoever
+// is signed in, so it is kept out of the admin UI exactly like the custom head
+// HTML: deferred on admin routes, and entering the admin UI after it ran
+// reloads into a clean document.
+describe('tracker script and the admin UI', () => {
+  const scripts = () => document.head.querySelectorAll('script').length;
+  const serviceWithReload = () => {
+    const service = freshService();
+    service.reloadPage = vi.fn();
+    return service;
+  };
+
+  beforeEach(() => {
+    document.head.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.head.innerHTML = '';
+    window.history.pushState({}, '', '/');
+  });
+
+  it('does not load the tracker when the visit starts on an admin route', () => {
+    window.history.pushState({}, '', '/admin/dashboard');
+    const service = serviceWithReload();
+
+    service.initialize({ provider: 'umami', hostUrl: 'https://analytics.example.com', websiteId: 'site-123' });
+    expect(scripts()).toBe(0);
+
+    service.handleRouteChange('/admin/events');
+    expect(scripts()).toBe(0);
+    // Nothing ran yet, so staying in the admin UI must not reload.
+    expect(service.reloadPage).not.toHaveBeenCalled();
+
+    service.handleRouteChange('/gallery/summer-party');
+    service.handleRouteChange('/gallery/summer-party/photo/3');
+    expect(scripts()).toBe(1);
+  });
+
+  it('reloads when the admin UI is entered after the tracker ran', () => {
+    window.history.pushState({}, '', '/gallery/summer-party');
+    const service = serviceWithReload();
+
+    service.initialize({ provider: 'rybbit', hostUrl: 'https://rybbit.example.com', websiteId: 'site-456' });
+    expect(scripts()).toBe(1);
+
+    service.handleRouteChange('/admin');
+    expect(service.reloadPage).toHaveBeenCalledTimes(1);
   });
 });
