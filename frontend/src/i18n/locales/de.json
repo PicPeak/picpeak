@@ -3821,7 +3821,11 @@
       "bulkDeleteCompleted_other": "Massen-Löschung abgeschlossen: {{count}} Events entfernt",
       "bulkArchiveCompleted_one": "Massen-Archivierung abgeschlossen: {{count}} Event archiviert",
       "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert",
-      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
+      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes",
+      "apiPhotoDownloaded": "Original aus {{eventName}} mit API-Token #{{token_id}} heruntergeladen",
+      "apiPhotosDownloaded_one": "API-Token „{{token_name}}“ hat {{count}} Original aus {{eventName}} heruntergeladen",
+      "apiPhotosDownloaded_other": "API-Token „{{token_name}}“ hat {{count}} Originale aus {{eventName}} heruntergeladen",
+      "apiPhotosZipDownloaded": "API-Token „{{token_name}}“ hat ein ZIP mit {{photo_count}} Originalen aus {{eventName}} heruntergeladen"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4132,7 +4136,11 @@
       "newsletter_completed": "Newsletter abgeschlossen — {{sent}} gesendet, {{failed}} fehlgeschlagen",
       "newsletter_deleted": "Newsletter-Kampagne gelöscht",
       "customer_marketing_opt_out": "Newsletter-Einwilligung des Kunden geändert",
-      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
+      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes",
+      "api_photo_downloaded": "Original aus {{eventName}} mit API-Token #{{token_id}} heruntergeladen",
+      "api_photos_downloaded_one": "API-Token „{{token_name}}“ hat {{count}} Original aus {{eventName}} heruntergeladen",
+      "api_photos_downloaded_other": "API-Token „{{token_name}}“ hat {{count}} Originale aus {{eventName}} heruntergeladen",
+      "api_photos_zip_downloaded": "API-Token „{{token_name}}“ hat ein ZIP mit {{photo_count}} Originalen aus {{eventName}} heruntergeladen"
     },
     "people": {
       "title": "Personen in dieser Galerie",
