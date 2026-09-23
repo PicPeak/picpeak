@@ -127,4 +127,15 @@ describe('resolveLogoFile', () => {
     realpathSpy.mockImplementation((p) => (p === '/app/storage/uploads/logos/linked.png' ? '/etc/secret.png' : p));
     expect(await resolveLogoFile({ logo_path: 'uploads/logos/linked.png' })).toBeNull();
   });
+
+  it('returns the real path it checked, not the link name', async () => {
+    // Reading the checked target, not the name, leaves nothing to swap
+    // between the containment check and the read.
+    getAppSetting.mockResolvedValue(null);
+    existsSpy.mockImplementation((p) => p === '/app/storage/uploads/logos/current.png');
+    realpathSpy.mockImplementation((p) => (p === '/app/storage/uploads/logos/current.png'
+      ? '/app/storage/uploads/logos/2026/logo.png' : p));
+    expect(await resolveLogoFile({ logo_path: 'uploads/logos/current.png' }))
+      .toBe('/app/storage/uploads/logos/2026/logo.png');
+  });
 });
