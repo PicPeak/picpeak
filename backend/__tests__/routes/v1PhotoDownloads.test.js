@@ -633,6 +633,71 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(json(res).code).toBe('ZIP_TOO_LARGE');
     });
 
+    describe('with a lowered byte cap', () => {
+      // Required here, not at collection time: the route module must load
+      // after bootCrmDb has pointed the database at the test file.
+      let zipLimits; let defaultMax; let evId;
+      beforeAll(async () => {
+        ({ zipLimits } = require('../../src/routes/v1/events'));
+        defaultMax = zipLimits.maxBytes;
+        evId = await mkEvent('dl-stale', superId);
+      });
+      beforeEach(async () => {
+        zipLimits.maxBytes = 64 * 1024;
+        await db('photos').where({ event_id: evId }).delete();
+      });
+      afterAll(() => { zipLimits.maxBytes = defaultMax; });
+
+      it('stats a row recorded as 0 bytes instead of trusting it', async () => {
+        await mkPhoto('zero', evId, 'dl-stale', 'dl-stale_zero.jpg', crypto.randomBytes(128 * 1024), {
+          size_bytes: 0,
+        });
+        const res = await get(`/api/v1/events/${evId}/photos/download`);
+        expect(res.status).toBe(400);
+        expect(json(res).code).toBe('ZIP_TOO_LARGE');
+        expect(json(res).total_bytes).toBe(128 * 1024);
+      });
+
+      it('aborts the stream once the bytes actually sent pass the cap', async () => {
+        // Recorded as 10 bytes, 256 KiB on disk: the preflight lets it through.
+        await mkPhoto('stale', evId, 'dl-stale', 'dl-stale_big.jpg', crypto.randomBytes(256 * 1024), {
+          size_bytes: 10,
+        });
+        const logger = require('../../src/utils/logger');
+        const warn = jest.spyOn(logger, 'warn');
+        const server = http.createServer(app);
+        await new Promise((r) => server.listen(0, '127.0.0.1', r));
+        const { port } = server.address();
+        try {
+          const outcome = await new Promise((resolve) => {
+            const req = http.get({
+              host: '127.0.0.1', port, path: `/api/v1/events/${evId}/photos/download`,
+              headers: { Authorization: `Bearer ${readToken}` },
+            }, (res) => {
+              let received = 0;
+              res.on('data', (c) => { received += c.length; });
+              res.on('aborted', () => resolve({ status: res.statusCode, received, failed: true }));
+              res.on('error', () => resolve({ status: res.statusCode, received, failed: true }));
+              res.on('end', () => resolve({ status: res.statusCode, received, failed: !res.complete }));
+            });
+            req.on('error', () => resolve({ failed: true }));
+          });
+          expect(outcome.failed).toBe(true);
+          expect(outcome.received || 0).toBeLessThan(256 * 1024);
+          expect(warn).toHaveBeenCalledWith('v1 originals zip aborted', expect.objectContaining({
+            eventId: evId, error: 'ZIP_TOO_LARGE', maxBytes: 64 * 1024,
+          }));
+          await new Promise((r) => setTimeout(r, 100));
+          const zipRows = await db('activity_logs')
+            .where({ event_id: evId, activity_type: 'api_photos_zip_downloaded' });
+          expect(zipRows).toHaveLength(0);
+        } finally {
+          warn.mockRestore();
+          await new Promise((r) => server.close(r));
+        }
+      });
+    });
+
     it('answers 409 EVENT_ARCHIVED for an archived event', async () => {
       const res = await get(`/api/v1/events/${archivedEventId}/photos/download`);
       expect(res.status).toBe(409);

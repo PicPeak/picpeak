@@ -921,10 +921,11 @@ router.get(
 const MAX_ZIP_IDS = 500;
 // Refuse up front rather than stream for hours: a request this big is better
 // split with ?ids= (the photo list is paginated anyway). Bytes come from
-// photos.size_bytes; a row without a recorded size is statted in storage
-// before the check rather than counted as zero.
+// photos.size_bytes; a row without a recorded size (null or 0) is statted in
+// storage before the check rather than counted as zero. The byte cap is also
+// enforced on the bytes actually streamed. An object so tests can lower it.
 const MAX_ZIP_PHOTOS = 5000;
-const MAX_ZIP_BYTES = 20 * 1024 * 1024 * 1024;
+const zipLimits = { maxBytes: 20 * 1024 * 1024 * 1024 };
 const MISSING_MANIFEST_NAME = 'MISSING_FILES.txt';
 // Stats in flight while sizing rows without a recorded size.
 const SIZE_STAT_CONCURRENCY = 8;
@@ -1077,7 +1078,7 @@ function setOriginalHeaders(res, photo, size) {
 const downloadActor = (req) => ({ type: 'admin', id: req.admin.id, name: req.admin.username });
 
 const zipTooLarge = (res, photoCount, totalBytes) => res.status(400).json({
-  error: `Archive too large (at most ${MAX_ZIP_PHOTOS} photos and ${MAX_ZIP_BYTES / (1024 ** 3)} GiB per request); split it with ids=`,
+  error: `Archive too large (at most ${MAX_ZIP_PHOTOS} photos and ${zipLimits.maxBytes / (1024 ** 3)} GiB per request); split it with ids=`,
   code: 'ZIP_TOO_LARGE',
   photo_count: photoCount,
   total_bytes: totalBytes
@@ -1233,8 +1234,8 @@ router.get(
       // this preflight over- or under-count it. Re-verifying every row would
       // mean a stat (an S3 HEAD, for external storage) per photo before this
       // cheap COUNT/SUM check can even run, on top of what the unsized rows
-      // below already cost — accepted for now; the actual bytes streamed
-      // into the archive are always read from the real file regardless.
+      // below already cost. A stale size is instead caught while streaming:
+      // the archive's output is counted and aborted once it passes the cap.
       const totals = await selection().getQuery()
         .count('photos.id as count')
         .sum('photos.size_bytes as bytes')
@@ -1244,7 +1245,7 @@ router.get(
       if (!photoCount) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
       }
-      if (photoCount > MAX_ZIP_PHOTOS || totalBytes > MAX_ZIP_BYTES) {
+      if (photoCount > MAX_ZIP_PHOTOS || totalBytes > zipLimits.maxBytes) {
         return zipTooLarge(res, photoCount, totalBytes);
       }
 
@@ -1253,10 +1254,11 @@ router.get(
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
       }
 
-      // Rows without a recorded size (legacy imports) are sized from storage
-      // metadata, so they can't slip a large archive past the cap. A missing
-      // file counts as zero; it ends up in the manifest below.
-      const unsized = photos.filter((p) => p.size_bytes === null || p.size_bytes === undefined);
+      // Rows without a recorded size (legacy imports, or a 0 that no real
+      // original has) are sized from storage metadata, so they can't slip a
+      // large archive past the cap. A missing file counts as zero; it ends up
+      // in the manifest below.
+      const unsized = photos.filter((p) => !(Number(p.size_bytes) > 0));
       for (let i = 0; i < unsized.length; i += SIZE_STAT_CONCURRENCY) {
         // No more storage requests for a client that has left.
         if (cancelled) return;
@@ -1266,7 +1268,7 @@ router.get(
         }));
         totalBytes += sizes.reduce((sum, size) => sum + size, 0);
       }
-      if (photos.length > MAX_ZIP_PHOTOS || totalBytes > MAX_ZIP_BYTES) {
+      if (photos.length > MAX_ZIP_PHOTOS || totalBytes > zipLimits.maxBytes) {
         return zipTooLarge(res, photos.length, totalBytes);
       }
 
@@ -1295,13 +1297,14 @@ router.get(
       // failed read was still queued, a response that never ends at all.
       // Destroying the response breaks the connection instead, which every
       // HTTP client reports as a failed transfer.
-      const abortArchive = (err) => {
+      const abortArchive = (err, { level = 'error', ...details } = {}) => {
         if (cancelled) return;
         cancelled = true;
-        logger.error('v1 originals zip aborted', {
+        logger[level]('v1 originals zip aborted', {
           eventId: event.id,
           tokenId: req.apiToken.id,
-          error: errorClass(err)
+          error: errorClass(err),
+          ...details
         });
         guard.destroyAll();
         archive.unpipe(res);
@@ -1309,7 +1312,21 @@ router.get(
         res.destroy(err instanceof Error ? err : new Error('archive failed'));
       };
       guard = createArchiveStreamGuard({ onFatalError: abortArchive });
-      archive.on('error', abortArchive);
+      archive.on('error', (err) => abortArchive(err));
+      // The preflight trusts recorded sizes, so a file replaced after import
+      // can still be larger than its row says. Count what actually goes out
+      // and stop at the cap. The 200 headers are already sent, so this can
+      // only break the transfer (the client sees a failed download, never a
+      // complete-looking truncated ZIP).
+      let streamedBytes = 0;
+      archive.on('data', (chunk) => {
+        streamedBytes += chunk.length;
+        if (streamedBytes > zipLimits.maxBytes) {
+          const err = new Error('archive over the size cap');
+          err.code = 'ZIP_TOO_LARGE';
+          abortArchive(err, { level: 'warn', streamedBytes, maxBytes: zipLimits.maxBytes });
+        }
+      });
       archive.pipe(res);
 
       const missingIds = [];
@@ -1489,3 +1506,4 @@ router.get(
 );
 
 module.exports = router;
+module.exports.zipLimits = zipLimits;
