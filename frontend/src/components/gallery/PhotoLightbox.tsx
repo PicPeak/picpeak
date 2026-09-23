@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
@@ -1312,11 +1312,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           >
             {isVideoCurrent && videoLocked ? (
               <div className="w-full h-full flex items-center justify-center p-6">
+                {/* Theme-token panel, like the feedback panel: the lightbox
+                    ground is black, so a black panel would leave bare text. */}
                 <div
-                  className="max-w-sm rounded-lg bg-black/70 px-6 py-4 text-center text-sm text-white"
+                  className="max-w-sm flex flex-col items-center gap-3 rounded-lg border bg-surface px-6 py-5 text-center text-sm shadow-xl"
+                  style={{ color: 'var(--color-text)', borderColor: 'var(--color-surface-border)' }}
                   role="status"
                   data-testid="lightbox-video-locked"
                 >
+                  <Lock size={24} style={{ color: 'var(--color-muted-text)' }} aria-hidden="true" />
                   {videoUnavailableMessage(downloadQuota.previewOnly)}
                 </div>
               </div>
