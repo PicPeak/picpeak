@@ -887,6 +887,12 @@ async function eraseCustomer(id, erasedByAdminId) {
     ? { type: 'admin', id: erasedByAdminId, name: `Admin #${erasedByAdminId}` }
     : { type: 'system' };
   let erasedContracts = { cancelled: [], redacted: [], retained: [] };
+  // Campaigns touched by the email_queue cancellation below (#1593 bug 3) —
+  // their email_campaign_recipients rows and counters are recomputed once
+  // this transaction commits (recomputeCounts reads through the shared
+  // `db` connection, not `trx`, so calling it in here would read stale —
+  // or on SQLite, deadlock on — the not-yet-committed rows).
+  const touchedCampaignIds = new Set();
 
   await db.transaction(async (trx) => {
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
@@ -897,14 +903,40 @@ async function eraseCustomer(id, erasedByAdminId) {
     // already gone (sent, failed, or the row just cancelled above) — done
     // ahead of the customer_accounts update below so the match is still
     // against the real address, not the sentinel.
-    await trx('email_queue').where('recipient_email', customer.email).where('status', 'pending')
-      .update({ status: 'cancelled' });
+    const cancelledQueueRows = await trx('email_queue')
+      .where('recipient_email', customer.email).where('status', 'pending')
+      .select('id', 'campaign_id');
+    if (cancelledQueueRows.length > 0) {
+      await trx('email_queue')
+        .whereIn('id', cancelledQueueRows.map((row) => row.id))
+        .update({ status: 'cancelled' });
+    }
     await trx('email_queue').where('recipient_email', customer.email)
       .whereIn('status', ['sent', 'failed', 'cancelled'])
       .update({
         recipient_email: sentinelEmail,
         email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),
+        // Migration 119: the exact HTML sent (customer name, document
+        // titles, review notes baked in) for the Project Overview preview.
+        // Left untouched, sent rows kept full customer PII here forever —
+        // in the DB and in every backup — defeating the erasure.
+        rendered_html: null,
       });
+
+    // Newsletter campaign bookkeeping (#1593 bug 3): a cancelled row that
+    // belongs to a campaign must flip its email_campaign_recipients row
+    // too, or that recipient stays 'queued' forever and
+    // newsletterService.recomputeCounts's stillQueued check keeps the
+    // whole campaign stuck at 'queued'/'sending' even once every other
+    // recipient resolved.
+    for (const row of cancelledQueueRows) {
+      if (!row.campaign_id) continue;
+      await trx('email_campaign_recipients')
+        .where({ campaign_id: row.campaign_id, email_queue_id: row.id })
+        .where('status', 'queued')
+        .update({ status: 'cancelled' });
+      touchedCampaignIds.add(row.campaign_id);
+    }
 
     await auditedUpdate(trx, 'customer_accounts', { id }, {
       email: sentinelEmail,
@@ -964,6 +996,16 @@ async function eraseCustomer(id, erasedByAdminId) {
         { actor: erasedByAdminId || null, source: 'customer.erase' });
     }
   });
+
+  // Campaign counters (#1593 bug 3), recomputed now that the cancellations
+  // above have committed — recomputeCounts reads the recipient rows fresh
+  // through the shared `db` connection.
+  if (touchedCampaignIds.size > 0) {
+    const newsletterService = require('./newsletterService');
+    for (const campaignId of touchedCampaignIds) {
+      await newsletterService.recomputeCounts(campaignId);
+    }
+  }
 
   await customerDocumentsService.purgeFiles(erasedDocuments);
 
