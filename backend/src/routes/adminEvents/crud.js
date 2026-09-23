@@ -938,6 +938,9 @@ module.exports = (router) => {
         hero_divider_style: source.hero_divider_style || 'wave',
         hero_image_anchor: source.hero_image_anchor || 'center',
         photo_cap: source.photo_cap || null,
+        // The limit is part of the package; the grants belong to the source
+        // gallery's client and stay behind (issue 1560).
+        download_limit: source.download_limit || null,
         is_draft: formatBoolean(true),
         default_photo_sort: source.default_photo_sort || 'upload_date_desc',
         // Client-access secrets and the OG-share opt-in deliberately do NOT
@@ -1069,6 +1072,9 @@ module.exports = (router) => {
       return !isNaN(num) && Number.isInteger(num);
     }).withMessage('hero_photo_id must be an integer or null'),
     body('allow_downloads').optional().isBoolean(),
+    // Download limit (issue 1560). null clears it; the column is a signed
+    // 32-bit int like photo_cap.
+    body('download_limit').optional({ nullable: true }).isInt({ min: 1, max: 2147483647 }).toInt(),
     body('disable_right_click').optional().isBoolean(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),

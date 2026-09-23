@@ -4,6 +4,7 @@ const express = require('express');
 const buildChain = ({ firstResult, updateResult } = {}) => {
   const chain = {
     where: jest.fn().mockReturnThis(),
+    whereRaw: jest.fn().mockReturnThis(),
     whereNot: jest.fn().mockReturnThis(),
     select: jest.fn().mockReturnThis(),
     update: jest.fn().mockResolvedValue(updateResult ?? 1),
@@ -26,6 +27,10 @@ jest.mock('../../database/db', () => {
     logActivity: jest.fn().mockResolvedValue(undefined),
   };
 });
+
+jest.mock('../../utils/schemaCache', () => ({
+  hasColumnCached: jest.fn().mockResolvedValue(true),
+}));
 
 jest.mock('../../middleware/auth', () => ({
   adminAuth: (_req, _res, next) => {
@@ -56,10 +61,12 @@ describe('adminAuth profile updates', () => {
       must_change_password: false,
     };
 
+    const updateChain = buildChain({ updateResult: 1 });
     db.__setImplementations(
       buildChain({ firstResult: null }),          // username check
       buildChain({ firstResult: null }),          // email check
-      buildChain({ updateResult: 1 }),            // update
+      buildChain({ firstResult: { email: 'old@example.com' } }), // current email
+      updateChain,                                // update
       buildChain({ firstResult: updatedUser }),   // fetch updated user
     );
 
@@ -72,6 +79,14 @@ describe('adminAuth profile updates', () => {
       message: 'Admin profile updated successfully',
       user: updatedUser
     });
+    // A self-typed email is not proof of ownership: the account stops being
+    // eligible for SSO email linking (migration 227).
+    expect(updateChain.update).toHaveBeenCalledWith(expect.objectContaining({
+      email: updatedUser.email,
+      email_link_eligible: expect.anything(),
+    }));
+    const written = updateChain.update.mock.calls[0][0].email_link_eligible;
+    expect(Boolean(written)).toBe(false);
     expect(logActivity).toHaveBeenCalledWith(
       'admin_profile_updated',
       { username: updatedUser.username, email: updatedUser.email },

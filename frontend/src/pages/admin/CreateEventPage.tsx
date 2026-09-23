@@ -10,7 +10,8 @@ import {
   Eye,
   EyeOff,
   Image,
-  Key
+  Key,
+  Download
 } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -58,6 +59,8 @@ interface FormData {
   upload_category_id: number | null;
   css_template_id: number | null;
   photo_cap: number;
+  // Download limit (issue 1560). 0 = unlimited.
+  download_limit: number;
   feedback_settings: {
     feedback_enabled: boolean;
     allow_ratings: boolean;
@@ -107,7 +110,11 @@ export const CreateEventPage: React.FC = () => {
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   // const [showPreview, setShowPreview] = useState(false);
   
+  // Re-arm on every effect run so React Strict Mode's mount→cleanup→mount
+  // cycle does not leave the ref permanently false (no toast / redirect, and
+  // a second click creates a duplicate event — fork survey A6 / #1563).
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -135,6 +142,7 @@ export const CreateEventPage: React.FC = () => {
     upload_category_id: null,
     css_template_id: null,
     photo_cap: 0,
+    download_limit: 0,
     feedback_settings: {
       feedback_enabled: false,
       allow_ratings: true,
@@ -276,6 +284,17 @@ export const CreateEventPage: React.FC = () => {
       ...prev,
       require_password: publicSettings.event_default_require_password !== false
     }));
+  }, [publicSettings]);
+
+  // Download limit default from Settings > Events (issue 1560). Same one-shot
+  // apply; the form sends the field explicitly, so the server's own fallback
+  // only covers callers that omit it (the v1 API).
+  const downloadLimitDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (downloadLimitDefaultApplied.current) return;
+    if (publicSettings?.event_default_download_limit === undefined) return;
+    downloadLimitDefaultApplied.current = true;
+    setFormData(prev => ({ ...prev, download_limit: publicSettings.event_default_download_limit || 0 }));
   }, [publicSettings]);
 
   // Honour the global guest-feedback defaults (#520 for the master toggle,
@@ -502,6 +521,7 @@ export const CreateEventPage: React.FC = () => {
       upload_category_id: formData.upload_category_id,
       css_template_id: formData.css_template_id,
       photo_cap: formData.photo_cap > 0 ? formData.photo_cap : null,
+      download_limit: formData.download_limit > 0 ? formData.download_limit : null,
       feedback_enabled: feedbackSettings.feedback_enabled,
       allow_ratings: feedbackSettings.allow_ratings,
       allow_likes: feedbackSettings.allow_likes,
@@ -1070,6 +1090,30 @@ export const CreateEventPage: React.FC = () => {
                 </div>
                 <span className="text-sm text-neutral-600 dark:text-neutral-400">
                   {t('events.photoCapHelp', 'Maximum number of photos allowed. 0 = unlimited')}
+                </span>
+              </div>
+            </div>
+
+            {/* Download limit (issue 1560) */}
+            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <label htmlFor="create-download-limit" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                {t('events.downloadLimit', 'Download Limit')}
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="w-32">
+                  {/* Same 32-bit ceiling as photo_cap (migration 231). */}
+                  <Input
+                    id="create-download-limit"
+                    type="number"
+                    value={formData.download_limit}
+                    onChange={(e) => setFormData({ ...formData, download_limit: parseInt(e.target.value) || 0 })}
+                    min={0}
+                    max={2147483647}
+                    leftIcon={<Download className="w-5 h-5" />}
+                  />
+                </div>
+                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {t('events.downloadLimitHelp', 'Maximum number of photos the client can download. 0 = unlimited')}
                 </span>
               </div>
             </div>

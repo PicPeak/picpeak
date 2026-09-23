@@ -447,6 +447,7 @@ export const EventDetailsPage: React.FC = () => {
       hero_image_anchor: event.hero_image_anchor || 'center',
       // Photo cap
       photo_cap: event.photo_cap || 0,
+      download_limit: event.download_limit || 0,
       // Default photo sort
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Per-event promotional override (#440)
@@ -583,6 +584,7 @@ export const EventDetailsPage: React.FC = () => {
       hero_image_anchor: editForm.hero_image_anchor,
       // Photo cap
       photo_cap: editForm.photo_cap > 0 ? editForm.photo_cap : null,
+      download_limit: editForm.download_limit > 0 ? editForm.download_limit : null,
       // Default photo sort
       default_photo_sort: editForm.default_photo_sort,
       // Header style settings (decoupled from layout, #158)

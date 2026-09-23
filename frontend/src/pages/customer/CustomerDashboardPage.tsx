@@ -29,6 +29,7 @@ import { Button, Loading } from '../../components/common';
 import { formatMoneyMinor } from '../../utils/money';
 import { customerService, type CustomerDashboard, type CustomerEvent } from '../../services/customer.service';
 import { galleryService } from '../../services/gallery.service';
+import { isDownloadLimitError } from '../../utils/downloadLimit';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
 
 type SortKey = 'newest' | 'oldest' | 'name';
@@ -179,6 +180,8 @@ export const CustomerDashboardPage: React.FC = () => {
       await galleryService.downloadAllPhotos(slug, false);
       toast.success(t('customer.dashboard.downloadStarted', 'Download started for {{name}}', { name: eventName }));
     } catch (e: any) {
+      // A download limit refusal already said why (issue 1560).
+      if (isDownloadLimitError(e)) return;
       const status = e?.response?.status;
       if (status === 410) {
         toast.error(t('customer.dashboard.eventExpired', 'This gallery has expired.'));

@@ -37,6 +37,9 @@ import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
 import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
+import { DownloadQuotaProvider, buildDownloadQuotaValue } from '../../contexts/DownloadQuotaContext';
+import { isDownloadLimitError, quotaFromEvent, showDownloadLimitReached, type QuotaPhoto } from '../../utils/downloadLimit';
+import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
@@ -725,11 +728,35 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     ? (data.event.download_resolution.choices || [])
     : [];
 
+  // Download limit (issue 1560). Checked before any request so the guest sees
+  // why at once; the server enforces it regardless.
+  const downloadQuota = useMemo(() => buildDownloadQuotaValue(quotaFromEvent(data?.event)), [data?.event]);
+  const photosById = useMemo(
+    () => new Map((data?.photos || []).map((photo) => [photo.id, photo])),
+    [data?.photos]
+  );
+  // What /download-all ships: every photo this viewer sees, minus categories
+  // that opted out of downloads (#640).
+  const allDownloadablePhotos = useMemo(
+    () => (data?.photos || []).filter((photo) => photo.category_allow_downloads !== false),
+    [data?.photos]
+  );
+  const photosForIds = useCallback(
+    (ids: number[]): QuotaPhoto[] => ids.map((id) => photosById.get(id) || { id }),
+    [photosById]
+  );
+  const refuseOverQuota = (photos: QuotaPhoto[]): boolean => {
+    if (downloadQuota.allows(photos)) return false;
+    showDownloadLimitReached({ remaining: downloadQuota.remaining ?? 0 });
+    return true;
+  };
+
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
     if (!allowDownloads) {
       return;
     }
+    if (refuseOverQuota(allDownloadablePhotos)) return;
 
     // Hand off to the picker; it builds the archive as a job and downloads it.
     if (downloadChoices.length > 1) {
@@ -754,6 +781,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     if (!allowDownloads) {
       return;
     }
+    if (refuseOverQuota(photosForIds(Array.from(selectedPhotos)))) return;
 
     // Resolution picker (#858): sidebar-driven selections get the same choice
     // as the grid's own control, rather than silently downloading at the
@@ -771,9 +799,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: selectedPhotos.size
     });
     
-    // Download each selected photo
-    for (const photo of selectedPhotosList) {
-      await galleryService.downloadPhoto(slug, photo.id, photo.filename);
+    // Download limit (issue 1560): one zip, which the server grants whole or
+    // not at all. Photo by photo, a refusal halfway through would already have
+    // charged the ones before it. A refusal keeps the selection to trim. A
+    // preview-only guest gets one zip too, which leaves out the videos they
+    // cannot take rather than failing on them one by one.
+    if (downloadQuota.limited || downloadQuota.previewOnly) {
+      try {
+        await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
+      } catch (error) {
+        if (!isDownloadLimitError(error)) throw error;
+        return;
+      }
+    } else {
+      for (const photo of selectedPhotosList) {
+        await galleryService.downloadPhoto(slug, photo.id, photo.filename);
+      }
     }
     
     // Clear selection after download
@@ -800,6 +841,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const handleDownloadPeopleFiltered = async () => {
     if (!allowDownloads || peopleDownloadableIds.length === 0) return;
+    if (refuseOverQuota(photosForIds(peopleDownloadableIds))) return;
 
     // Same resolution-picker behaviour as every other multi-photo download.
     if (downloadChoices.length > 1) {
@@ -812,7 +854,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: peopleDownloadableIds.length,
     });
 
-    await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds);
+    await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds).catch((error) => {
+      // The limit refusal already told the guest why (issue 1560).
+      if (!isDownloadLimitError(error)) throw error;
+    });
   };
 
   // Download just the open folder (#1160). The event-wide "download all" still
@@ -848,6 +893,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const handleDownloadFolder = async () => {
     if (!allowDownloads || folderDownloadableIds.length === 0) return;
+    if (refuseOverQuota(photosForIds(folderDownloadIds))) return;
 
     // Same resolution-picker behaviour as every other multi-photo download.
     if (downloadChoices.length > 1) {
@@ -860,7 +906,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: folderDownloadIds.length,
     });
 
-    await galleryService.downloadSelectedPhotos(slug, folderDownloadIds);
+    await galleryService.downloadSelectedPhotos(slug, folderDownloadIds).catch((error) => {
+      // The limit refusal already told the guest why (issue 1560).
+      if (!isDownloadLimitError(error)) throw error;
+    });
   };
 
   // Calculate photo counts per category
@@ -1021,6 +1070,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
+            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
@@ -1115,7 +1165,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
     return (
-      <>
+      <DownloadQuotaProvider slug={slug} event={data?.event}>
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
@@ -1148,7 +1198,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 variant="outline"
                 size="sm"
                 onClick={handleDownloadAll}
-                disabled={downloadAllMutation.isPending}
+                disabled={downloadAllMutation.isPending || !downloadQuota.allows(allDownloadablePhotos)}
                 leftIcon={<Download className="w-4 h-4" />}
                 // No ml-auto: the right of this band belongs to Story's fixed
                 // nav (logout, favourites), and pushing the button over there
@@ -1253,13 +1303,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
+            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
             }}
           />
         )}
-      </>
+      </DownloadQuotaProvider>
     );
   }
 
@@ -1268,7 +1319,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   return (
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
-    <>
+    <DownloadQuotaProvider slug={slug} event={data?.event}>
       <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
       <GuestRecoveryModal />
       {/* Sidebar for non-grid layouts */}
@@ -1298,6 +1349,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // disabling it from the scoped count would show 0 on a folder-only
           // root and refuse a perfectly valid download (#1160).
           downloadAllTotal={data?.photos?.length || 0}
+          downloadAllPhotos={allDownloadablePhotos}
+          selectedPhotosForQuota={downloadQuota.limited ? photosForIds(Array.from(selectedPhotos)) : undefined}
           isMobile={isMobile}
           galleryLayout={theme.galleryLayout}
           allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
@@ -1583,6 +1636,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
+          {/* Download limit (issue 1560): the guest's counter. */}
+          {allowDownloads && (downloadQuota.limited || downloadQuota.previewOnly) && (
+            <div className="mb-4">
+              <DownloadQuotaNotice />
+            </div>
+          )}
           {folderNav}
           {/* A gallery whose photos ALL live in folders has an empty root grid,
               and PhotoGridWithLayouts unconditionally renders "no photos found"
@@ -1661,6 +1720,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             choices={downloadChoices}
             standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
+            quotaPhotos={resolutionPickerIds ? photosForIds(resolutionPickerIds) : allDownloadablePhotos}
             onClose={() => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
@@ -1681,7 +1741,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           />
         )}
       </GalleryLayout>
-    </>
+    </DownloadQuotaProvider>
     </GuestIdentityProvider>
   );
 };

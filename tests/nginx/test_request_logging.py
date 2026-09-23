@@ -156,5 +156,18 @@ http {
                                   unsafe_control=scenario == "unsafe-control")
 
 
+class HostForwardingTest(unittest.TestCase):
+    # The backend's CSRF fallback compares Origin's host:port with Host.
+    # $host drops the port, so on http://nas:3000 every mutation was refused;
+    # every proxied Host must carry the client's own Host header, port kept.
+    def test_every_proxied_host_keeps_the_port(self):
+        for filename in CONFIGS:
+            with self.subTest(config=filename):
+                values = re.findall(r"proxy_set_header\s+Host\s+(\S+?);",
+                                    (ROOT / filename).read_text())
+                for value in values:
+                    self.assertEqual(value, "$http_host")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

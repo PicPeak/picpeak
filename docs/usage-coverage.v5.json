@@ -629,6 +629,15 @@
         "POST /:id/extend"
       ]
     },
+    "adminEvents/downloadLimit.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Download limit usage and reset for one gallery (issue 1560): no product-usage middleware, counters or report triggers; the usage numbers stay on the install.",
+      "route_signatures": [
+        "GET /:id/download-limit",
+        "POST /:id/download-limit/reset"
+      ]
+    },
     "adminEvents/downloadResolutions.js": {
       "decision": "configuration",
       "signals": [
@@ -1645,7 +1654,9 @@
         "GET /events/:id",
         "POST /events/:id/photos",
         "GET /events/:id/share-link",
-        "GET /events/:id/photos"
+        "GET /events/:id/photos",
+        "GET /events/:id/photos/download",
+        "GET /events/:id/photos/:photoId/download"
       ]
     },
     "gallery/downloads.js": {

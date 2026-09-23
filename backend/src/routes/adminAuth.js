@@ -10,6 +10,8 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { setAdminAuthCookie, clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
+const { formatBoolean } = require('../utils/dbCompat');
+const { hasColumnCached } = require('../utils/schemaCache');
 const mfaService = require('../services/mfaService');
 const router = express.Router();
 
@@ -56,9 +58,11 @@ router.put('/profile', [
     throw new ConflictError('Username is already in use', 'username');
   }
 
-  // Check for email conflict
+  // Check for email conflict, without case — a rule that only holds on the
+  // user-management route is not a rule, and two rows differing only in case
+  // would both answer to one lowercased IdP claim.
   const existingEmail = await db('admin_users')
-    .where('email', email)
+    .whereRaw('LOWER(email) = ?', [String(email).toLowerCase()])
     .whereNot('id', adminId)
     .first();
 
@@ -66,13 +70,19 @@ router.put('/profile', [
     throw new ConflictError('Email address is already in use', 'email');
   }
 
+  const updates = { username, email, updated_at: new Date() };
+  // A self-typed email is not proof of owning the address, so it must not let
+  // a later SSO login link to this account by email (oidcService,
+  // migration 227). A super_admin's own change stays trusted.
+  const current = await db('admin_users').where('id', adminId).select('email').first();
+  if (current && String(current.email || '').toLowerCase() !== email && req.admin.roleName !== 'super_admin'
+      && await hasColumnCached('admin_users', 'email_link_eligible')) {
+    updates.email_link_eligible = formatBoolean(false);
+  }
+
   await db('admin_users')
     .where('id', adminId)
-    .update({
-      username,
-      email,
-      updated_at: new Date()
-    });
+    .update(updates);
 
   await logActivity('admin_profile_updated',
     { username, email },

@@ -71,6 +71,8 @@ export interface Event {
   css_template_id?: number | null;
   // Photo cap
   photo_cap?: number | null;
+  // Download limit (issue 1560). null = unlimited.
+  download_limit?: number | null;
   // Draft mode
   is_draft?: boolean;
   // Client access (#172)
@@ -185,6 +187,9 @@ export interface Photo {
   // the lightbox download button when this is false (event-level allow_downloads
   // also has to be true — they AND together).
   category_allow_downloads?: boolean;
+  // Download limit (issue 1560): this gallery already downloaded the photo,
+  // so downloading it again is free. Always false on an unlimited gallery.
+  download_granted?: boolean;
   // People detected in this photo (#1074). Always present when the feature
   // is on for the event — an empty array means "scanned, nobody found",
   // which is different from the feature being off (see
@@ -248,6 +253,8 @@ export interface DownloadJobState {
   photo_count: number;
   size_bytes: number | null;
   error?: string;
+  /** Set on a ready job the download limit would now refuse (issue 1560). */
+  download_limit_reached?: { limit?: number; used?: number; remaining?: number };
 }
 
 export interface PhotoCategory {
@@ -288,6 +295,14 @@ export interface GalleryData {
     allow_downloads?: boolean;
     /** True when a pre-built download zip is on disk, so "download all" can skip the build. */
     download_zip_ready?: boolean;
+    // Download limit (issue 1560). null = unlimited. Counted in distinct
+    // photos; `downloads_remaining` is null when there is no limit.
+    download_limit?: number | null;
+    downloads_used?: number;
+    downloads_remaining?: number | null;
+    // A share-link guest of a limited gallery: downloads are preview-size
+    // copies, and only the client draws on the quota.
+    download_preview_only?: boolean;
     disable_right_click?: boolean;
     watermark_downloads?: boolean;
     watermark_text?: string;
@@ -367,6 +382,12 @@ export interface AdminUser {
   createdAt?: string | null;
   updatedAt?: string | null;
   createdByUsername?: string;
+  /**
+   * Whether a first SSO login may link to this admin by email
+   * (admin_users.email_link_eligible, migration 227). Undefined on a backend
+   * that predates the column — callers read that as eligible.
+   */
+  emailLinkEligible?: boolean;
 }
 
 export interface LoginResponse {
@@ -402,6 +423,7 @@ export interface GalleryAuthResponse {
     upload_category_id?: number | null;
     require_password?: boolean;
     photo_cap?: number | null;
+    download_limit?: number | null;
   };
   accessLevel?: GalleryAccessLevel;
 }

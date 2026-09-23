@@ -6,8 +6,8 @@ const { rateLimitKey } = require('../utils/rateLimitKey');
 
 const { anonymousFeedbackIdentifier } = require('../utils/anonymousFeedbackIdentity');
 
-function generateGuestIdentifier(req) {
-  return req.guest?.identifier || anonymousFeedbackIdentifier(req);
+async function generateGuestIdentifier(req) {
+  return req.guest?.identifier || await anonymousFeedbackIdentifier(req);
 }
 
 /**
@@ -72,7 +72,7 @@ async function consumeFeedbackLimit(req, actionType) {
     max: Number.isSafeInteger(configured?.max) && configured.max > 0 ? configured.max : fallback.max,
     window: Number.isSafeInteger(configured?.window) && configured.window > 0 ? configured.window : fallback.window
   };
-  const identifier = generateGuestIdentifier(req);
+  const identifier = await generateGuestIdentifier(req);
   const ip = rateLimitKey(req) || 'unknown';
   const ipIdentifier = crypto.createHash('sha256').update(`feedback-ip:${ip}`).digest('hex');
   const budgets = [
@@ -102,6 +102,40 @@ async function consumeFeedbackLimit(req, actionType) {
     })));
     return { limited: false, limit: limit.max, remaining, window: limit.window };
   });
+}
+
+/**
+ * Backstop sweep for orphaned feedback_rate_limits rows (#1585).
+ *
+ * consumeFeedbackLimit() only ever deletes rows for the (event_id,
+ * action_type) pair it is currently processing, so a gallery that stops
+ * receiving feedback — or an action type nobody uses again — leaves its
+ * rows behind forever; each accepted action inserts two (guest + IP budget).
+ * This runs periodically (see feedbackRateLimitCleanupService) and deletes
+ * anything older than 2x the widest configured window across all action
+ * types — double, rather than the window itself, so a row is never swept
+ * out from under a request that is still mid-window against it.
+ */
+async function sweepStaleFeedbackRateLimits() {
+  const settings = await getRateLimitSettings();
+  const maxWindowSeconds = Object.keys(DEFAULT_RATE_LIMITS).reduce((max, actionType) => {
+    const configured = settings[actionType];
+    const window = Number.isSafeInteger(configured?.window) && configured.window > 0
+      ? configured.window
+      : DEFAULT_RATE_LIMITS[actionType].window;
+    return Math.max(max, window);
+  }, 0);
+  // A plain Date object, not .toISOString() — consumeFeedbackLimit() above
+  // inserts window_start as a Date too (line ~101), and window_start is a
+  // `table.timestamp(...)` column. On SQLite that gives it NUMERIC column
+  // affinity; comparing it against a TEXT cutoff falls back to SQLite's
+  // storage-class sort order, where every INTEGER sorts below every TEXT
+  // value — so a TEXT cutoff would match (and delete) every row
+  // unconditionally, regardless of actual age.
+  const cutoff = new Date(Date.now() - maxWindowSeconds * 2 * 1000);
+  const deleted = await db('feedback_rate_limits').where('window_start', '<', cutoff).delete();
+  if (deleted > 0) logger.info(`Feedback rate-limit sweep removed ${deleted} stale row(s)`);
+  return deleted;
 }
 
 function feedbackRateLimit(actionType) {
@@ -190,5 +224,6 @@ module.exports = {
   feedbackRateLimit,
   strictRateLimit,
   generateGuestIdentifier,
-  consumeFeedbackLimit
+  consumeFeedbackLimit,
+  sweepStaleFeedbackRateLimits
 };

@@ -632,6 +632,138 @@ describe('with the documents flag on', () => {
     expect(after.purged_at).toBeTruthy();
     expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(false);
   });
+
+  // -------------------------------------------------------------------
+  // #1592 — the purge claim survives a crash mid-delete
+  // -------------------------------------------------------------------
+
+  it('purges a row in one pass: claim, delete, then purged_at (#1592)', async () => {
+    const customerDocumentsService = require('../../src/services/customerDocumentsService');
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'one-pass.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    const row = await db('customer_documents').where({ id }).first('id', 'storage_key');
+    await db('customer_documents').where({ id }).update({ deleted_at: new Date().toISOString() });
+
+    await customerDocumentsService.purgeFiles([row]);
+
+    const after = await db('customer_documents').where({ id }).first();
+    expect(after.purge_claimed_at).toBeTruthy();
+    expect(after.purged_at).toBeTruthy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(false);
+  });
+
+  it('retries a purge claim that survived a crash before the delete (#1592)', async () => {
+    // A process that claims (sets purge_claimed_at) and dies before
+    // storage.delete() runs leaves the row exactly like this: claimed,
+    // bytes untouched, purged_at never set. No later sweep on
+    // whereNull('purged_at') alone could ever find it again.
+    const customerDocumentsService = require('../../src/services/customerDocumentsService');
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'crash-before-delete.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    const row = await db('customer_documents').where({ id }).first('id', 'storage_key');
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(true);
+
+    const staleClaim = new Date(Date.now() - 25 * 60 * 1000).toISOString();
+    await db('customer_documents').where({ id }).update({
+      deleted_at: new Date().toISOString(), purge_claimed_at: staleClaim,
+    });
+
+    await customerDocumentsService.retryStalePurgeClaims(Date.now());
+
+    const after = await db('customer_documents').where({ id }).first();
+    expect(after.purged_at).toBeTruthy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(false);
+  });
+
+  it('leaves a fresh (not yet stale) purge claim alone', async () => {
+    // A claim from a purge attempt that is still legitimately in flight must
+    // not be treated as abandoned just because a sweep happens to run.
+    const customerDocumentsService = require('../../src/services/customerDocumentsService');
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'fresh-claim.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    const row = await db('customer_documents').where({ id }).first('id', 'storage_key');
+    await db('customer_documents').where({ id }).update({
+      deleted_at: new Date().toISOString(), purge_claimed_at: new Date().toISOString(),
+    });
+
+    await customerDocumentsService.retryStalePurgeClaims(Date.now());
+
+    const after = await db('customer_documents').where({ id }).first();
+    expect(after.purged_at).toBeFalsy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(true);
+
+    // Clean up so later assertions in this file don't trip over this row.
+    await db('customer_documents').where({ id }).update({ purge_claimed_at: null, deleted_at: null });
+  });
+
+  it('a stale-claim retry keeps the bytes of a row linked to a contract after the claim (#1592)', async () => {
+    // updateLinks refuses a claimed row, so this state is only reachable by a
+    // link that raced the claim. The contract link wins: the retry leaves
+    // the bytes, and the claim stands so no later purge picks the row up.
+    const customerDocumentsService = require('../../src/services/customerDocumentsService');
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-STALE-${Date.now()}`, customer_account_id: customerA, title: 'Late link',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'claimed-then-linked.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    const row = await db('customer_documents').where({ id }).first('id', 'storage_key');
+    const staleClaim = new Date(Date.now() - 25 * 60 * 1000).toISOString();
+    // The claim was taken (contract_id was null at that moment); the link
+    // lands only afterwards, simulating the narrow post-claim race.
+    await db('customer_documents').where({ id }).update({
+      deleted_at: new Date().toISOString(), purge_claimed_at: staleClaim, contract_id: contractId,
+    });
+
+    await customerDocumentsService.retryStalePurgeClaims(Date.now());
+
+    const after = await db('customer_documents').where({ id }).first();
+    expect(after.purged_at).toBeFalsy();
+    expect(after.purge_claimed_at).toBeTruthy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(true);
+
+    await db('customer_documents').where({ id }).update({ contract_id: null, purge_claimed_at: null });
+    await db('contracts').where({ id: contractId }).del();
+  });
+
+  it('refuses to relink a document that is deleted or claimed for purging (#1592)', async () => {
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-RELINK-${Date.now()}`, customer_account_id: customerA, title: 'Relink',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'relink.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+
+    // Claimed but not yet marked deleted: getForAdmin still finds the row,
+    // so only the guard on the write itself stops the link.
+    await db('customer_documents').where({ id }).update({ purge_claimed_at: new Date().toISOString() });
+    const claimedRes = await asAdmin(request(adminApp).patch(`/api/admin/customers/${customerA}/documents/${id}`))
+      .send({ contractId });
+    expect(claimedRes.status).toBe(404);
+    expect((await db('customer_documents').where({ id }).first()).contract_id).toBeNull();
+
+    await db('customer_documents').where({ id }).update({
+      purge_claimed_at: null, deleted_at: new Date().toISOString(),
+    });
+    const deletedRes = await asAdmin(request(adminApp).patch(`/api/admin/customers/${customerA}/documents/${id}`))
+      .send({ contractId });
+    expect(deletedRes.status).toBe(404);
+    expect((await db('customer_documents').where({ id }).first()).contract_id).toBeNull();
+
+    await db('contracts').where({ id: contractId }).del();
+  });
 });
 
 describe('portal dashboard', () => {

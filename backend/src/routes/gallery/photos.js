@@ -35,10 +35,11 @@ function notifyGalleryOpened(event, req) {
 
 router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
   try {
+    const guestIdentifier = await generateGuestIdentifier(req);
     const payload = await require('../../services/galleryQueryService').getGalleryPhotos({
       event: req.event, slug: req.params.slug, query: req.query,
-      identity: { guestId: req.guest?.id, guestIdentifier: generateGuestIdentifier(req) },
-      accessLevel: req.accessLevel, adminPreview: req.isAdminPreview,
+      identity: { guestId: req.guest?.id, guestIdentifier },
+      accessLevel: req.accessLevel, viaCustomer: req.viaCustomer, adminPreview: req.isAdminPreview,
       hiddenForGuest: guestBlockedByReveal(req),
     });
     // Log view — but NOT for the Live Slideshow kiosk. A running projector

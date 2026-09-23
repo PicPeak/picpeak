@@ -12,6 +12,12 @@ interface VideoPlayerProps {
   controls?: boolean;
   width?: string | number;
   height?: string | number;
+  /** The <video> preload hint; the browser's default when omitted. */
+  preload?: 'none' | 'metadata' | 'auto';
+  /** Called when playback first starts. */
+  onPlaybackStart?: () => void;
+  /** Called when the source fails to load. */
+  onLoadError?: () => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -23,7 +29,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   loop = false,
   controls = true,
   width = '100%',
-  height = 'auto'
+  height = 'auto',
+  preload,
+  onPlaybackStart,
+  onLoadError,
 }) => {
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,6 +50,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // moment it fires, not the one captured when the mouse last moved.
   const isPlayingRef = useRef(false);
   const hoveringControlsRef = useRef(false);
+  // Read by the listeners below, which are only bound once.
+  const onPlaybackStartRef = useRef(onPlaybackStart);
+  const onLoadErrorRef = useRef(onLoadError);
+  onPlaybackStartRef.current = onPlaybackStart;
+  onLoadErrorRef.current = onLoadError;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -58,6 +72,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const handlePlay = () => {
       isPlayingRef.current = true;
       setIsPlaying(true);
+      onPlaybackStartRef.current?.();
     };
     // A paused video always shows its controls. Without this, a hide timer
     // armed during playback fired after the pause and left the guest with
@@ -85,6 +100,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           : t('gallery.videoLoadFailed', 'This video could not be loaded.')
       );
       setIsPlaying(false);
+      onLoadErrorRef.current?.();
     };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
@@ -261,6 +277,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         autoPlay={autoPlay}
         muted={muted}
         loop={loop}
+        preload={preload}
         className="w-full h-full object-contain"
         playsInline
         onClick={togglePlayPause}

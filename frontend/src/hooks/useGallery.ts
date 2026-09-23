@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { galleryService } from '../services';
 import { toast } from 'react-toastify';
+import { isDownloadLimitError } from '../utils/downloadLimit';
 
 export const useGalleryInfo = (slug?: string, token?: string, enabled: boolean = true) => {
   return useQuery({
@@ -59,7 +60,9 @@ export const useDownloadPhoto = () => {
     onSuccess: () => {
       toast.success('Photo downloaded successfully');
     },
-    onError: () => {
+    onError: (error) => {
+      // The limit refusal already said why (issue 1560).
+      if (isDownloadLimitError(error)) return;
       toast.error('Failed to download photo');
     },
   });
@@ -88,7 +91,8 @@ export const useSavePhotoToDevice = () => {
       photoId: number;
       filename: string;
     }) => galleryService.savePhotoToDevice(slug, photoId, filename),
-    onError: () => {
+    onError: (error) => {
+      if (isDownloadLimitError(error)) return;
       toast.error('Failed to save photo');
     },
   });
@@ -101,7 +105,8 @@ export const useDownloadAllPhotos = () => {
     onSuccess: () => {
       toast.success('Download started');
     },
-    onError: () => {
+    onError: (error) => {
+      if (isDownloadLimitError(error)) return;
       toast.error('Failed to download photos');
     },
   });

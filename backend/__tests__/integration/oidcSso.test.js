@@ -176,6 +176,113 @@ describe('OIDC SSO (#798)', () => {
     expect(victim.external_subject).toBeNull();
   });
 
+  it('does NOT link by verified email when the local email was not set by a trusted flow', async () => {
+    // email_link_eligible = false: the address was typed into a profile or
+    // set by a non-super admin, so it proves nothing about who owns it. A
+    // verified IdP identity with that email must not land on this row.
+    const role = await db('roles').where({ name: 'admin' }).first();
+    await db('admin_users').insert({
+      username: 'self-edited-admin',
+      email: 'claimed@example.com',
+      password_hash: await bcrypt.hash('ClaimedPass123', 4),
+      role_id: role.id,
+      is_active: 1,
+      auth_provider: 'local',
+      email_link_eligible: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    idp.setNextUser({ sub: 'sub-real-owner', email: 'claimed@example.com', email_verified: true });
+    const res = await ssoRoundTrip();
+    // A clear, specific refusal — not a JIT insert colliding on the email.
+    expect(res.headers.location).toMatch(/sso_error=email_unverified/);
+
+    const row = await db('admin_users').where({ email: 'claimed@example.com' }).first();
+    expect(row.external_subject).toBeNull();
+  });
+
+  it('links a mixed-case stored address — the claim is lowercased, the row need not be', async () => {
+    // "Confirm email for SSO" leaves the stored address as it is, and the
+    // bootstrap admin keeps ADMIN_EMAIL verbatim (001_init.js). A
+    // case-sensitive lookup would miss the row and JIT-provision a SECOND
+    // admin beside it, with the default role.
+    const role = await db('roles').where({ name: 'admin' }).first();
+    const [mixedId] = await db('admin_users').insert({
+      username: 'mixed-case-admin',
+      email: 'Mara.Owner@Example.com',
+      password_hash: await bcrypt.hash('MixedPass123', 4),
+      role_id: role.id,
+      is_active: 1,
+      auth_provider: 'local',
+      email_link_eligible: 1,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }).returning('id').then((r) => [r[0]?.id || r[0]]);
+
+    idp.setNextUser({ sub: 'sub-mara', email: 'Mara.Owner@Example.com', email_verified: true });
+    const res = await ssoRoundTrip();
+    expect(res.headers.location).toBe('http://localhost:5199/admin/dashboard');
+
+    const rows = await db('admin_users').whereRaw('LOWER(email) = ?', ['mara.owner@example.com']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(mixedId);
+    expect(rows[0].email).toBe('Mara.Owner@Example.com');
+    expect(rows[0].external_subject).toBe('sub-mara');
+    expect(rows[0].role_id).toBe(role.id);
+  });
+
+  it('refuses a mixed-case address that is not eligible, instead of provisioning a duplicate', async () => {
+    const role = await db('roles').where({ name: 'admin' }).first();
+    await db('admin_users').insert({
+      username: 'mixed-case-unconfirmed',
+      email: 'Not.Confirmed@Example.com',
+      password_hash: await bcrypt.hash('MixedPass123', 4),
+      role_id: role.id,
+      is_active: 1,
+      auth_provider: 'local',
+      email_link_eligible: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    idp.setNextUser({ sub: 'sub-not-confirmed', email: 'Not.Confirmed@Example.com', email_verified: true });
+    const res = await ssoRoundTrip();
+    expect(res.headers.location).toMatch(/sso_error=email_unverified/);
+
+    const rows = await db('admin_users').whereRaw('LOWER(email) = ?', ['not.confirmed@example.com']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].external_subject).toBeNull();
+  });
+
+  it('refuses to pick between two accounts whose addresses differ only in case', async () => {
+    // No case-insensitive unique index exists, so an older install can already
+    // hold such a pair. Matching without case must not hand the identity — and
+    // its mapped role — to whichever row the engine returns first.
+    const role = await db('roles').where({ name: 'admin' }).first();
+    for (const email of ['Twin@Example.com', 'twin@example.com']) {
+      await db('admin_users').insert({
+        username: `twin-${email}`,
+        email,
+        password_hash: await bcrypt.hash('TwinPass123', 4),
+        role_id: role.id,
+        is_active: 1,
+        auth_provider: 'local',
+        email_link_eligible: 1,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+    }
+
+    idp.setNextUser({ sub: 'sub-twin', email: 'twin@example.com', email_verified: true });
+    const res = await ssoRoundTrip();
+    expect(res.headers.location).toMatch(/sso_error=email_ambiguous/);
+
+    const rows = await db('admin_users').whereRaw('LOWER(email) = ?', ['twin@example.com']);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.external_subject === null)).toBe(true);
+  });
+
   it('refuses a deactivated admin with sso_error=inactive', async () => {
     await db('admin_users').where({ id: agentCookies.jitAdminId }).update({ is_active: 0 });
     idp.setNextUser({ sub: 'sub-jit-1', email: 'renamed@example.com', email_verified: true });
