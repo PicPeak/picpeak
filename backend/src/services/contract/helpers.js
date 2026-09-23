@@ -7,6 +7,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { nextDocumentNumber } = require('../../utils/documentSequences');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { auditedUpdate } = require('../accountingHistory');
 
 
 const SECTIONS_ORDER = ['basics', 'scope', 'privacy', 'commercial', 'nda', 'closing'];
@@ -144,14 +145,30 @@ const QUOTE_RELEASING_CONTRACT_STATUSES = ['cancelled', 'declined'];
  * value so a race can't clobber a different quote's newer pointer (e.g.
  * the quote was already re-converted to a fresh contract by the time this
  * transition lands).
+ *
+ * `hasBackPointer` is resolved by the caller BEFORE opening its
+ * transaction — hasColumnCached reads via the global db and deadlocks the
+ * single-connection SQLite pool when evaluated with a trx already open
+ * (same landmine documented in conversions.js). Left undefined it's
+ * resolved here instead, for callers (tests) that invoke this outside
+ * that hot path.
+ *
+ * `quotes` is an audited table (accountingHistory.js), so the write goes
+ * through auditedUpdate rather than a raw trx update.
  */
-async function releaseQuoteOnDeadContract(trx, contractId, sourceQuoteId) {
+async function releaseQuoteOnDeadContract(trx, contractId, sourceQuoteId, hasBackPointer, context = { actor: { type: 'system' }, source: 'contract.quote_release' }) {
   if (!sourceQuoteId) return;
-  const hasBackPointer = await hasColumnCached('quotes', 'converted_contract_id');
-  if (!hasBackPointer) return;
-  await trx('quotes')
-    .where({ id: sourceQuoteId, converted_contract_id: contractId })
-    .update({ converted_contract_id: null, updated_at: new Date().toISOString() });
+  const columnPresent = hasBackPointer === undefined
+    ? await hasColumnCached('quotes', 'converted_contract_id')
+    : hasBackPointer;
+  if (!columnPresent) return;
+  await auditedUpdate(
+    trx,
+    'quotes',
+    { id: sourceQuoteId, converted_contract_id: contractId },
+    { converted_contract_id: null, updated_at: new Date().toISOString() },
+    context,
+  );
 }
 
 module.exports = {

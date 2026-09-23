@@ -729,6 +729,11 @@ async function decline(sessionToken, { reason } = {}) {
   await ensureContractEmailTemplatesSeeded(db, logger);
   const text = reason ? String(reason).trim().slice(0, 1000) : '';
   const now = new Date();
+  // Resolved BEFORE the transaction opens — hasColumnCached deadlocks the
+  // single-connection SQLite pool when evaluated with a trx already open.
+  const hasQuoteContractBackPointer = contract.source_quote_id
+    ? await hasColumnCached('quotes', 'converted_contract_id')
+    : false;
   await db.transaction(async (trx) => {
     const current = await trx('contracts').where({ id: contract.id }).forUpdate().first();
     if (current.status !== 'sent') {
@@ -737,11 +742,12 @@ async function decline(sessionToken, { reason } = {}) {
     await trx('contract_signers').where({ id: signer.id }).update({
       status: 'declined', declined_at: now, decline_reason_enc: fieldEncryption.encrypt(text), updated_at: now,
     });
+    const history = { actor: { type: 'customer', name: signerName(signer) }, source: 'contract.decline' };
     await auditedUpdate(trx, 'contracts', { id: contract.id }, { status: 'declined', declined_at: now, updated_at: now },
-      { actor: { type: 'customer', name: signerName(signer) }, source: 'contract.decline' });
+      history);
     // Release the source quote's converted_contract_id so a replacement
     // contract can be created from it (issue 1588).
-    await releaseQuoteOnDeadContract(trx, contract.id, current.source_quote_id);
+    await releaseQuoteOnDeadContract(trx, contract.id, current.source_quote_id, hasQuoteContractBackPointer, history);
     await signers.revokeAccess(trx, contract.id);
     await signingEvents.appendEvent(trx, contract.id, {
       type: 'declined', actorType: 'signer', actorLabel: signerName(signer), signerId: signer.id, payload: { withReason: !!text },
