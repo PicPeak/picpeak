@@ -125,7 +125,14 @@ async function sweepStaleFeedbackRateLimits() {
       : DEFAULT_RATE_LIMITS[actionType].window;
     return Math.max(max, window);
   }, 0);
-  const cutoff = new Date(Date.now() - maxWindowSeconds * 2 * 1000).toISOString();
+  // A plain Date object, not .toISOString() — consumeFeedbackLimit() above
+  // inserts window_start as a Date too (line ~101), and window_start is a
+  // `table.timestamp(...)` column. On SQLite that gives it NUMERIC column
+  // affinity; comparing it against a TEXT cutoff falls back to SQLite's
+  // storage-class sort order, where every INTEGER sorts below every TEXT
+  // value — so a TEXT cutoff would match (and delete) every row
+  // unconditionally, regardless of actual age.
+  const cutoff = new Date(Date.now() - maxWindowSeconds * 2 * 1000);
   const deleted = await db('feedback_rate_limits').where('window_start', '<', cutoff).delete();
   if (deleted > 0) logger.info(`Feedback rate-limit sweep removed ${deleted} stale row(s)`);
   return deleted;
