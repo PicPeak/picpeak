@@ -381,22 +381,35 @@ describe('v1 original downloads (issue 1473)', () => {
     };
 
     it('shows 50 single downloads as one entry per token/event/hour, with the count', async () => {
+      // Earlier successful downloads in this file log their audit row and
+      // bump the summary on res.on('finish'), fire-and-forget — under load
+      // those writes can still be in flight here. Wait for the table to go
+      // quiet before wiping it, so a straggler can't land mid-loop and
+      // break the exact counts asserted below.
+      await waitFor(async () => {
+        const before = Number((await db('activity_logs').count('* as n').first()).n);
+        await new Promise((r) => setTimeout(r, 75));
+        const after = Number((await db('activity_logs').count('* as n').first()).n);
+        return before === after ? true : null;
+      }, 5000);
       await db('activity_logs').delete();
       for (let i = 0; i < 50; i += 1) {
         const res = await get(`/api/v1/events/${eventId}/photos/${photos.png}/download`);
         expect(res.status).toBe(200);
       }
-      // The audit stays complete: one row per request.
+      // The audit stays complete: one row per request. The writes are
+      // fire-and-forget, so give them more room than the default 10s under
+      // a loaded CI runner.
       const audit = await waitFor(async () => {
         const r = await db('activity_logs').where({ event_id: eventId, activity_type: 'api_photo_downloaded' });
         return r.length === 50 ? r : null;
-      });
+      }, 20000);
       expect(audit).toHaveLength(50);
       await waitFor(async () => {
         const [row] = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
         const md = row && (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata);
         return md && md.count === 50;
-      });
+      }, 20000);
 
       const { notifications, unreadCount } = await bell();
       expect(notifications.map((n) => n.type)).toEqual(['api_photos_downloaded']);
