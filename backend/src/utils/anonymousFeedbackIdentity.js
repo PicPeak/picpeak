@@ -72,6 +72,16 @@ async function claimIdentityAdoptionAttempt(trx, subject, eventId) {
   return inserted.length > 0;
 }
 
+// Trust level: best-effort migration, NOT proof of identity. The legacy key
+// is sha256("ip:userAgent"), so every guest behind the same IP (shared NAT,
+// venue Wi-Fi, carrier-grade NAT) with the same User-Agent string — or anyone
+// who spoofs that UA from that IP — maps to the same legacy key. Whichever of
+// them reaches this path first for the event re-keys all of those legacy rows
+// onto their own cookie. Worst case: another guest's likes/favourites/ratings/
+// comments on this event attach to a different cookie on the same IP+UA.
+// That grants nothing new: under the legacy scheme those guests were already
+// one indistinguishable identity sharing the same rows. Nothing here may be
+// used as an authorization or ownership signal beyond that.
 async function adoptLegacyFeedbackIdentity(req, subject, eventId, newIdentifier) {
   try {
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
