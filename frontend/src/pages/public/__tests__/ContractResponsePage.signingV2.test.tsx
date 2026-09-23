@@ -110,7 +110,6 @@ const httpError = (status: number, data: Record<string, unknown>) => Object.assi
 );
 
 const inviteSummary = {
-  contractNumber: 'V-2026-0007',
   status: 'sent',
   language: 'en',
   issuer: { companyName: 'Studio Licht', logoUrl: null, logoUrlDark: null },

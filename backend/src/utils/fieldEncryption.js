@@ -65,13 +65,20 @@ function looksLikeABrokenKey(value) {
   return false;
 }
 
-function keyFromEnv(raw, name = 'PICPEAK_EVIDENCE_KEY') {
-  const value = String(raw).trim();
+/** The 32 bytes `value` spells as 64 hex digits or 43 base64 characters, or null. */
+function rawKey(value) {
   if (/^[0-9a-f]{64}$/i.test(value)) return Buffer.from(value, 'hex');
   if (/^[A-Za-z0-9+/_-]{43}=?$/.test(value)) {
     const decoded = Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
     if (decoded.length === 32) return decoded;
   }
+  return null;
+}
+
+function keyFromEnv(raw, name = 'PICPEAK_EVIDENCE_KEY') {
+  const value = String(raw).trim();
+  const key = rawKey(value);
+  if (key) return key;
   if (looksLikeABrokenKey(value)) {
     throw new Error(
       `${name} looks like a 32-byte key with a character missing `
@@ -211,6 +218,17 @@ function keyStatus() {
   }
 }
 
+/**
+ * True when PICPEAK_EVIDENCE_KEY is set to a passphrase rather than a raw
+ * 32-byte key. A passphrase goes through scrypt with a fixed salt, so its
+ * strength is the passphrase's own; production should use a raw key
+ * (`openssl rand -hex 32`). Boot logs a warning for it (validateEnv).
+ */
+function usesPassphrase() {
+  const env = process.env.PICPEAK_EVIDENCE_KEY;
+  return !!env && !!env.trim() && !rawKey(env.trim());
+}
+
 /** The key a stored value was encrypted under, or null if it isn't one. */
 function keyIdOf(value) {
   const match = /^v1:([0-9a-f]{8}):/.exec(String(value || ''));
@@ -252,6 +270,7 @@ module.exports = {
   tryDecrypt,
   keyInfo,
   keyStatus,
+  usesPassphrase,
   keyIdOf,
   keyProblemAtBoot,
   ringKeyIds,
