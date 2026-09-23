@@ -556,6 +556,10 @@ async function listCustomers({
   //    than an error.
   //  - `groupMatch: 'any'` (default): in at least one of the selected groups.
   //  - `groupMatch: 'all'`: in every one of them.
+  // Archived groups are deliberately NOT excluded here: this is a view, and
+  // an archived group still describes who was in it. Actions exclude them
+  // instead (newsletter recipients, workflow group conditions); the
+  // Customers page simply doesn't offer archived groups as a filter.
   const groups = (Array.isArray(groupIds) ? groupIds : [])
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0);

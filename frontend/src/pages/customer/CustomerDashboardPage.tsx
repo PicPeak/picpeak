@@ -64,8 +64,9 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   const { format: fmtDate } = useLocalizedDate();
   const documents = items.documents ?? [];
   const requests = items.documentRequests ?? [];
+  const contractDetails = items.contractDetails ?? [];
   const total = items.quotes.length + items.contracts.length + items.invoices.length
-    + documents.length + requests.length;
+    + documents.length + requests.length + contractDetails.length;
   if (total === 0) return null;
 
   return (
@@ -98,6 +99,17 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
             </span>
             <Link to="/customer/contracts" className="text-sm underline text-theme">
               {t('customer.dashboard.viewContract', 'View contract')}
+            </Link>
+          </li>
+        ))}
+        {contractDetails.map((c) => (
+          <li key={`cd-${c.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-theme">
+              {t('customer.dashboard.contractDetailsNeeded', 'Complete your details for contract {{number}}', { number: c.contractNumber })}
+              {c.title && <span className="block text-xs text-muted-theme">{c.title}</span>}
+            </span>
+            <Link to="/customer/contracts" className="text-sm underline text-theme">
+              {t('customer.dashboard.completeDetails', 'Complete my details')}
             </Link>
           </li>
         ))}

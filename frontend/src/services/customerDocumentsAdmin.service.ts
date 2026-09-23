@@ -19,6 +19,8 @@ export interface AdminCustomerDocument {
   status: AdminCustomerDocumentStatus;
   reviewedAt: string | null;
   reviewNote: string | null;
+  /** Rejected by the malware scanner, not an admin's own content/format call. */
+  malwareFlagged: boolean;
   shared: boolean;
   sharedAt: string | null;
   unsharedAt: string | null;

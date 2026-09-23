@@ -50,3 +50,39 @@ describe('startup signing secret validation', () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(secret);
   });
 });
+
+describe('startup evidence key form', () => {
+  const prev = { secret: process.env.JWT_SECRET, key: process.env.PICPEAK_EVIDENCE_KEY };
+  let exit;
+  const passphraseWarned = () => logger.warn.mock.calls.some(([m]) => /PICPEAK_EVIDENCE_KEY is a passphrase/.test(m));
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    jest.clearAllMocks();
+    exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    for (const [name, value] of [['JWT_SECRET', prev.secret], ['PICPEAK_EVIDENCE_KEY', prev.key]]) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    exit.mockRestore();
+  });
+
+  test('warns when the key is a passphrase, without logging it', () => {
+    const passphrase = `correct horse battery staple ${crypto.randomBytes(4).toString('hex')}`;
+    process.env.PICPEAK_EVIDENCE_KEY = passphrase;
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+    expect(passphraseWarned()).toBe(true);
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(passphrase);
+  });
+
+  test.each([
+    ['hex', () => crypto.randomBytes(32).toString('hex')],
+    ['base64', () => crypto.randomBytes(32).toString('base64')],
+  ])('does not warn for a raw %s key', (_, make) => {
+    process.env.PICPEAK_EVIDENCE_KEY = make();
+    validateEnvironment();
+    expect(passphraseWarned()).toBe(false);
+  });
+});

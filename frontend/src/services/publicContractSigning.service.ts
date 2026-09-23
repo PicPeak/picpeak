@@ -26,9 +26,8 @@ export interface SigningIssuerSummary {
   logoUrlDark: string | null;
 }
 
-/** What an unverified link shows: enough to recognise it, nothing about the customer. */
+/** What an unverified link shows: enough to recognise it, nothing about the customer (nor the contract number). */
 export interface SigningInvite {
-  contractNumber: string;
   status: ContractStatus;
   language: string;
   issuer: SigningIssuerSummary | null;

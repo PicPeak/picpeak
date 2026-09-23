@@ -18,8 +18,8 @@
  *     outcome is not the customer's data, only the details around it are.
  *
  *   - a contract that carries AT LEAST ONE signature is KEPT WHOLE. It is
- *     evidence of a concluded — or partly concluded — agreement and stays
- *     for the retention period; the same stance erasure already takes for
+ *     evidence of a concluded — or partly concluded — agreement and stays,
+ *     every signer's encrypted evidence included, for the retention period; the same stance erasure already takes for
  *     contract-linked customer documents. Its live invitations and sessions
  *     are still revoked: erasure ends the customer's access to the portal,
  *     it does not erase the record.

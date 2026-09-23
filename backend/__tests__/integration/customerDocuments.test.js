@@ -375,6 +375,47 @@ describe('with the documents flag on', () => {
     expect(dl.body.code).toBe('DOCUMENT_REJECTED');
   });
 
+  it('refuses to mark a malware-flagged row clean, but still allows it for an ordinary rejection', async () => {
+    // A normal content/format rejection an admin makes by hand can still be
+    // reversed — the regression guard for the legit path this bug must not
+    // break.
+    const ordinary = await uploadAs(customerA, PDF, 'ordinary.pdf');
+    const ordinaryId = ordinary.body.document.id;
+    await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents/${ordinaryId}/review`))
+      .send({ status: 'rejected', note: 'Wrong contract version' });
+    const reversed = await asAdmin(request(adminApp)
+      .post(`/api/admin/customers/${customerA}/documents/${ordinaryId}/review`)).send({ status: 'clean' });
+    expect(reversed.status).toBe(200);
+
+    // A malware-flagged row (what customerDocumentRescanService writes once a
+    // delayed scan finds malware) may not be flipped to clean through the
+    // ordinary review path.
+    const malware = await uploadAs(customerA, PDF, 'malware.pdf');
+    const malwareId = malware.body.document.id;
+    await db('customer_documents').where({ id: malwareId }).update({
+      status: 'rejected',
+      review_note: 'The file did not pass the security check.',
+      malware_flagged: true,
+    });
+    const blocked = await asAdmin(request(adminApp)
+      .post(`/api/admin/customers/${customerA}/documents/${malwareId}/review`)).send({ status: 'clean' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('DOCUMENT_MALWARE_FLAGGED');
+    expect((await db('customer_documents').where({ id: malwareId }).first()).status).toBe('rejected');
+
+    // The admin list carries the flag, which the "Mark clean" button reads.
+    const list = await asAdmin(request(adminApp).get(`/api/admin/customers/${customerA}/documents`));
+    expect(list.body.documents.find((d) => d.id === malwareId).malwareFlagged).toBe(true);
+    expect(list.body.documents.find((d) => d.id === ordinaryId).malwareFlagged).toBe(false);
+
+    // Rejecting it again by hand (a different note) is still allowed — the
+    // guard only blocks the flip to clean.
+    const reRejected = await asAdmin(request(adminApp)
+      .post(`/api/admin/customers/${customerA}/documents/${malwareId}/review`))
+      .send({ status: 'rejected', note: 'still rejected' });
+    expect(reRejected.status).toBe(200);
+  });
+
   it('shares an admin upload with customer A only', async () => {
     const res = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
       .field('share', 'true')

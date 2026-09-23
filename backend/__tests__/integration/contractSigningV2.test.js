@@ -185,6 +185,10 @@ test('a link shows nothing about the customer until the emailed code is entered'
   expect(summary.signer.maskedEmail).toMatch(/\*\*\*/);
   expect(JSON.stringify(summary)).not.toContain(customerEmail);
   expect(JSON.stringify(summary)).not.toContain('Anna');
+  // Nor the contract number: it is shown after verification.
+  const { contract_number: contractNumber } = await db('contracts').where({ id: ids.contract }).first();
+  expect(JSON.stringify(summary)).not.toContain(contractNumber);
+  expect(Object.keys(summary).sort()).toEqual(['issuer', 'language', 'signer', 'status']);
   expect((await request(signingApp).get('/api/public/contract-signing/session')).status).toBe(401);
 
   await ok(request(signingApp).post(`/api/public/contract-signing/invite/${ids.link1}/code`));

@@ -300,6 +300,10 @@ function toAdminDto(row, views = [], adminNames = new Map()) {
     status: row.status,
     reviewedAt: toIso(row.reviewed_at) || null,
     reviewNote: row.review_note || null,
+    // Rejected by the scanner (customerDocumentRescanService), not an admin's
+    // own content/format call: the review endpoint refuses to flip this back
+    // to clean, and the UI hides "Mark clean" for it.
+    malwareFlagged: !!row.malware_flagged,
     shared: isShared(row),
     sharedAt: toIso(row.shared_at) || null,
     unsharedAt: toIso(row.unshared_at) || null,
@@ -595,6 +599,21 @@ async function setShared(customerId, documentId, shared, admin) {
 async function review(customerId, documentId, { status, note }, admin) {
   if (!['clean', 'rejected'].includes(status)) throw new ValidationError('status must be clean or rejected');
   const row = await getForAdmin(customerId, documentId);
+  // A scanner's malware verdict, not an ordinary content/format rejection:
+  // the normal review path may not un-reject it. Nothing in this codebase
+  // has a more-privileged override for a single row (super_admin gates
+  // whole-instance operations — backup restore, the raw DB dump — not a
+  // per-document call), so this is a hard refusal rather than a gated one.
+  // Only that verdict blocks review. A file still pending because the
+  // scanner is down, timed out or is too large to send stays reviewable:
+  // the admin's own judgment is the fallback for a missing verdict, as it is
+  // on an install with no scanner at all (documented in .env.example).
+  if (status === 'clean' && row.malware_flagged) {
+    throw new AppError(
+      'This file was flagged by the malware scanner and cannot be marked clean.',
+      409, 'DOCUMENT_MALWARE_FLAGGED',
+    );
+  }
   const now = new Date().toISOString();
   const update = {
     status,

@@ -69,6 +69,17 @@ function validateEnvironment() {
     );
   }
 
+  // A passphrase works, but it is stretched with a fixed salt, so the evidence
+  // is only as strong as the passphrase. A raw 32-byte key is the production
+  // form.
+  if (!keyProblem && fieldEncryption.usesPassphrase()) {
+    warnings.push(
+      'PICPEAK_EVIDENCE_KEY is a passphrase, not a 32-byte key. It is derived with scrypt and a fixed salt, '
+      + 'so signing evidence is only as strong as the passphrase. Use a raw key in production '
+      + '(openssl rand -hex 32; rotate with scripts/rotate-evidence-key.js).',
+    );
+  }
+
   // Log warnings
   warnings.forEach(warning => logger.warn(warning));
 

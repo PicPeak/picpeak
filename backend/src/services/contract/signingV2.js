@@ -650,14 +650,18 @@ function assertInvitable(contract, signer) {
   }
 }
 
-/** What an unverified link shows: enough to recognise it, nothing about the customer. */
+/**
+ * What an unverified link shows: enough to recognise it, nothing about the
+ * customer. Not the contract number either: the code step needs only the
+ * issuer, the language and the masked address, and the number is shown once
+ * the code is entered.
+ */
 async function invitationSummary(token) {
   const { signer, contract } = await signers.findInvitation(token);
   assertInvitable(contract, signer);
   const publicView = require('./publicView');
   const profile = await db('business_profile').where({ id: 1 }).first();
   return {
-    contractNumber: contract.contract_number,
     status: contract.status,
     language: contract.language,
     issuer: await publicView.issuerSummary(profile),
