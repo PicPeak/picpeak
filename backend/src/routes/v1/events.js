@@ -922,10 +922,15 @@ const MAX_ZIP_IDS = 500;
 // Refuse up front rather than stream for hours: a request this big is better
 // split with ?ids= (the photo list is paginated anyway). Bytes come from
 // photos.size_bytes; a row without a recorded size (null or 0) is statted in
-// storage before the check rather than counted as zero. The byte cap is also
+// storage before the check rather than counted as zero (on GET only; HEAD
+// stops at the recorded-size check to stay cheap). The byte cap is also
 // enforced on the bytes actually streamed. An object so tests can lower it.
 const MAX_ZIP_PHOTOS = 5000;
-const zipLimits = { maxBytes: 20 * 1024 * 1024 * 1024 };
+const zipLimits = { maxBytes: 20 * 1024 * 1024 * 1024, maxConcurrentPerToken: 2 };
+// ZIPs being built per API token (token id -> count). In-process on purpose:
+// PicPeak runs one backend process, and the cap only has to stop one token
+// from holding many long archive streams and storage reads at once.
+const zipsInFlight = new Map();
 const MISSING_MANIFEST_NAME = 'MISSING_FILES.txt';
 // Stats in flight while sizing rows without a recorded size.
 const SIZE_STAT_CONCURRENCY = 8;
@@ -1108,9 +1113,17 @@ const zipTooLarge = (res, photoCount, totalBytes) => res.status(400).json({
  *       zipfile) or split the request with `ids`. If a stored file fails to
  *       read after streaming has started, the connection is aborted rather
  *       than ended, so a truncated archive never arrives as a complete
- *       response; treat an incomplete transfer as a failure and retry. HEAD
- *       answers the status and headers a GET would, without building the
- *       archive.
+ *       response; treat an incomplete transfer as a failure and retry.
+ *
+ *
+ *       HEAD is a cheap probe: it runs the filter, id and count checks and the
+ *       byte check on recorded sizes, then answers with the ZIP headers
+ *       without loading rows, statting files or building the archive. Rows
+ *       without a recorded size are only sized on GET, so a HEAD can answer
+ *       200 where the GET refuses with ZIP_TOO_LARGE; the GET also enforces
+ *       the byte cap on the bytes actually streamed. At most 2 archives per
+ *       token are built at once; another GET meanwhile gets 429
+ *       ZIP_CONCURRENCY.
  *
  *
  *       Every request counts against the general API rate limit (default 300
@@ -1160,7 +1173,7 @@ const zipTooLarge = (res, photoCount, totalBytes) => res.status(400).json({
  *       403: { description: Token lacks scope or permission, or the event belongs to another admin }
  *       404: { description: Event not found, or no photos match (code NO_PHOTOS) }
  *       409: { description: Event is archived (code EVENT_ARCHIVED) }
- *       429: { description: Rate limit exceeded }
+ *       429: { description: "Rate limit exceeded, or this token already has 2 archives in progress (code ZIP_CONCURRENCY)" }
  *       500: { description: "The archive could not be started. A failure after streaming started aborts the connection instead." }
  */
 router.get(
@@ -1250,6 +1263,35 @@ router.get(
         return zipTooLarge(res, photoCount, totalBytes);
       }
 
+      // A probe, not a download: answered from the COUNT/SUM above alone. No
+      // rows loaded, no per-row storage stat (an S3 HEAD each), no archive,
+      // nothing logged. Unsized rows are only sized on GET, below.
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', buildContentDisposition(`${event.slug}-originals.zip`));
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        return res.end();
+      }
+
+      // Per-token in-flight cap, taken before the row load and size stats so
+      // those are bounded too. No await between the check and the listener:
+      // a client gone by now has already set `cancelled`.
+      if (cancelled || res.destroyed) return;
+      const tokenId = req.apiToken.id;
+      const inFlight = zipsInFlight.get(tokenId) || 0;
+      if (inFlight >= zipLimits.maxConcurrentPerToken) {
+        return res.status(429).json({
+          error: `At most ${zipLimits.maxConcurrentPerToken} archives per token at once; wait for one to finish`,
+          code: 'ZIP_CONCURRENCY'
+        });
+      }
+      zipsInFlight.set(tokenId, inFlight + 1);
+      res.once('close', () => {
+        const left = (zipsInFlight.get(tokenId) || 1) - 1;
+        if (left > 0) zipsInFlight.set(tokenId, left);
+        else zipsInFlight.delete(tokenId);
+      });
+
       const photos = await selection().applySorting('filename', 'asc').getQuery().select('photos.*');
       if (!photos.length) {
         return res.status(404).json({ error: 'No photos found', code: 'NO_PHOTOS' });
@@ -1284,8 +1326,6 @@ router.get(
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', buildContentDisposition(`${event.slug}-originals.zip`));
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      // A probe, not a download: no archive, nothing read, nothing logged.
-      if (req.method === 'HEAD') return res.end();
       if (cancelled || res.destroyed) return;
 
       // Photos and videos are already compressed; deflating them again costs

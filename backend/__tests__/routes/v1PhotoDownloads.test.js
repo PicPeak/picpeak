@@ -658,6 +658,41 @@ describe('v1 original downloads (issue 1473)', () => {
         expect(json(res).total_bytes).toBe(128 * 1024);
       });
 
+      it('answers HEAD from the recorded sizes alone, without statting unsized rows', async () => {
+        // Unsized and over the lowered cap on disk: GET stats it and refuses,
+        // HEAD stays on the COUNT/SUM preflight and never touches storage.
+        await mkPhoto('zeroHead', evId, 'dl-stale', 'dl-stale_zero_head.jpg', crypto.randomBytes(128 * 1024), {
+          size_bytes: 0,
+        });
+        const storage = require('../../src/services/storage').getStorage();
+        const stat = jest.spyOn(storage, 'stat');
+        try {
+          const head = await request(app)
+            .head(`/api/v1/events/${evId}/photos/download`)
+            .set('Authorization', `Bearer ${readToken}`);
+          expect(head.status).toBe(200);
+          expect(head.headers['content-type']).toBe('application/zip');
+          expect(stat).not.toHaveBeenCalled();
+
+          const res = await get(`/api/v1/events/${evId}/photos/download`);
+          expect(res.status).toBe(400);
+          expect(json(res).code).toBe('ZIP_TOO_LARGE');
+          expect(stat).toHaveBeenCalled();
+        } finally {
+          stat.mockRestore();
+        }
+      });
+
+      it('still refuses HEAD over the cap on recorded sizes', async () => {
+        await mkPhoto('sizedBig', evId, 'dl-stale', 'dl-stale_sized.jpg', Buffer.alloc(0), {
+          size_bytes: 128 * 1024,
+        }, false);
+        const head = await request(app)
+          .head(`/api/v1/events/${evId}/photos/download`)
+          .set('Authorization', `Bearer ${readToken}`);
+        expect(head.status).toBe(400);
+      });
+
       it('aborts the stream once the bytes actually sent pass the cap', async () => {
         // Recorded as 10 bytes, 256 KiB on disk: the preflight lets it through.
         await mkPhoto('stale', evId, 'dl-stale', 'dl-stale_big.jpg', crypto.randomBytes(256 * 1024), {
@@ -711,6 +746,56 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(noScope.status).toBe(403);
       expect(noPerm.status).toBe(403);
       expect(foreign.status).toBe(403);
+    });
+
+    it('caps the archives one token builds at once and frees the slot on close', async () => {
+      const { zipLimits } = require('../../src/routes/v1/events');
+      const defaultConcurrency = zipLimits.maxConcurrentPerToken;
+      zipLimits.maxConcurrentPerToken = 1;
+      const evId = await mkEvent('dl-concurrency', superId);
+      for (let i = 0; i < 2; i += 1) {
+        await mkPhoto(`conc${i}`, evId, 'dl-concurrency', `dl-concurrency_${i}.jpg`, crypto.randomBytes(4 * 1024 * 1024));
+      }
+      const server = http.createServer(app);
+      await new Promise((r) => server.listen(0, '127.0.0.1', r));
+      const { port } = server.address();
+      let held;
+      try {
+        // Hold one archive open: a 200 means the slot was taken, and a paused
+        // reader keeps the handler parked on backpressure.
+        await new Promise((resolve, reject) => {
+          held = http.get({
+            host: '127.0.0.1', port, path: `/api/v1/events/${evId}/photos/download`,
+            headers: { Authorization: `Bearer ${readToken}` },
+          }, (res) => {
+            res.pause();
+            if (res.statusCode !== 200) reject(new Error(`expected 200, got ${res.statusCode}`));
+            else resolve();
+          });
+          held.on('error', (err) => (err.code === 'ECONNRESET' ? undefined : reject(err)));
+        });
+
+        const refused = await get(`/api/v1/events/${evId}/photos/download`);
+        expect(refused.status).toBe(429);
+        expect(json(refused).code).toBe('ZIP_CONCURRENCY');
+
+        // HEAD builds nothing and is not held to the cap.
+        const head = await request(app)
+          .head(`/api/v1/events/${evId}/photos/download`)
+          .set('Authorization', `Bearer ${readToken}`);
+        expect(head.status).toBe(200);
+
+        held.destroy();
+        const after = await waitFor(async () => {
+          const r = await get(`/api/v1/events/${evId}/photos/download?ids=${photos.conc0}`);
+          return r.status === 200 ? r : null;
+        });
+        expect(Object.keys(await readZip(after.body))).toHaveLength(1);
+      } finally {
+        if (held) held.destroy();
+        zipLimits.maxConcurrentPerToken = defaultConcurrency;
+        await new Promise((r) => server.close(r));
+      }
     });
 
     it('survives a client that hangs up mid-archive', async () => {
