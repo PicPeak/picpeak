@@ -1182,7 +1182,8 @@ router.get(
     // selection queries or size stats has closed before any archive exists,
     // and a listener added later would never fire.
     res.on('close', () => {
-      if (res.writableFinished || cancelled) return;
+      // Ended: the archive is fully written, nothing left to abort.
+      if (res.writableEnded || cancelled) return;
       cancelled = true;
       if (guard) guard.destroyAll();
       if (archive) archive.abort();
@@ -1350,9 +1351,12 @@ router.get(
         );
       }
 
-      res.on('finish', () => {
-        // An aborted archive still ends the response — truncated.
-        if (cancelled) return;
+      // On close, not finish: a client can hang up as soon as it has read
+      // the final chunk, before the response ever finishes. Ended means
+      // that chunk was written. An aborted archive still ends the response
+      // — truncated — so cancelled rules it out.
+      res.on('close', () => {
+        if (cancelled || !res.writableEnded) return;
         logActivity('api_photos_zip_downloaded', {
           via: 'api_v1',
           token_id: req.apiToken.id,
@@ -1477,8 +1481,16 @@ router.get(
       }
       setOriginalHeaders(res, photo, source.size);
 
-      res.on('finish', () => {
-        if (res.statusCode >= 400) return;
+      // Logged once the whole file is out. 'finish' alone misses a client
+      // that hangs up the moment it has Content-Length bytes: its socket can
+      // close before the pipe gets to res.end(), so the response closes
+      // without ever finishing. Counting the bytes read into the response
+      // catches that without logging a transfer the client cut short.
+      let streamedBytes = 0;
+      let recorded = false;
+      const recordDownload = () => {
+        if (recorded || res.statusCode >= 400) return;
+        recorded = true;
         // The audit row, ids only. The bell leaves these out and shows the
         // token/event/hour summary instead (apiDownloadNotifications).
         logActivity('api_photo_downloaded', {
@@ -1492,8 +1504,13 @@ router.get(
           eventId: event.id,
           actor: downloadActor(req)
         });
+      };
+      res.on('finish', recordDownload);
+      res.on('close', () => {
+        if (Number.isFinite(source.size) && streamedBytes >= source.size) recordDownload();
       });
       pipeStreamToResponse(source.stream, res, { context: `v1 original ${photo.id}` });
+      source.stream.on('data', (chunk) => { streamedBytes += chunk.length; });
     } catch (error) {
       logger.error('v1 GET /events/:id/photos/:photoId/download failed', {
         eventId: req.params.id,
