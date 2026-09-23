@@ -295,8 +295,15 @@ router.get(
     // to answer "which candidate did/didn't exist", which relative paths answer
     // just as well without handing out the filesystem layout.
     const cwdStorage = path.join(process.cwd(), 'storage');
+    // Each root under its configured name and its real path: resolveLogoFile
+    // returns the real path it checked, which differs from the configured
+    // root whenever that root sits behind a symlink.
+    const realRoot = (root) => { try { return fs.realpathSync(root); } catch { return null; } };
+    const namedRoots = [['STORAGE', storageRoot], ['CWD_STORAGE', cwdStorage]]
+      .flatMap(([name, root]) => [[name, root], [name, realRoot(root)]])
+      .filter(([, root]) => root);
     const relativise = (p) => {
-      for (const [name, root] of [['STORAGE', storageRoot], ['CWD_STORAGE', cwdStorage]]) {
+      for (const [name, root] of namedRoots) {
         const rel = path.relative(root, p);
         if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
           return `<${name}>/${rel.split(path.sep).join('/')}`;
