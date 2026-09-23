@@ -1,5 +1,5 @@
 /**
- * Migration 231: one-time-adoption marker for legacy feedback identities
+ * Migration 234: one-time-adoption marker for legacy feedback identities
  * (issue 1584 follow-up).
  *
  * anonymousFeedbackIdentifier() only attempted the legacy-identity re-key
