@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.4](https://github.com/PicPeak/picpeak/compare/v3.133.3...v3.133.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* **backup:** store document paths relative to the storage root (stable) ([#1581](https://github.com/PicPeak/picpeak/issues/1581)) ([d93a03a](https://github.com/PicPeak/picpeak/commit/d93a03acd0a6926f9a8f1d1c23a78792a734143d))
+* **contracts:** claim a contract before converting it to an invoice (stable) ([#1609](https://github.com/PicPeak/picpeak/issues/1609)) ([3e0bd17](https://github.com/PicPeak/picpeak/commit/3e0bd17b3973a05dac7d03a9e64bf20eb0cef54b))
+* **contracts:** release a quote's converted_contract_id when its contract dies unsigned (stable) ([#1605](https://github.com/PicPeak/picpeak/issues/1605)) ([b870c6c](https://github.com/PicPeak/picpeak/commit/b870c6c623f1b2af5fc18b61ae9dcd0360ed9f2a))
+* **crm:** cancel and redact queued email on customer erasure (stable) ([#1603](https://github.com/PicPeak/picpeak/issues/1603)) ([3c7aeb6](https://github.com/PicPeak/picpeak/commit/3c7aeb642d3ef4f4c76c896f23ced0ccaef16a8b))
+* **customer-portal:** clear the query cache on logout and session loss (stable) ([#1607](https://github.com/PicPeak/picpeak/issues/1607)) ([6fee3f3](https://github.com/PicPeak/picpeak/commit/6fee3f3d2489f88cb48426e94d0d0c17cd5f02e4))
+* **feedback:** sweep stale feedback_rate_limits rows (stable) ([#1602](https://github.com/PicPeak/picpeak/issues/1602)) ([86b98e9](https://github.com/PicPeak/picpeak/commit/86b98e9267b29e33cf3b28bee92d719ee387e9f3))
+* **gallery:** abort the download ZIP connection when a storage read fails (stable) ([#1583](https://github.com/PicPeak/picpeak/issues/1583)) ([8facb22](https://github.com/PicPeak/picpeak/commit/8facb22a2abcc6f61bb55ce6308ef3caf93610a1))
+* **gallery:** re-key legacy feedback identities on first contact (stable) ([#1610](https://github.com/PicPeak/picpeak/issues/1610)) ([2e116ba](https://github.com/PicPeak/picpeak/commit/2e116ba45b89124f81c567b5eb3b98037b7e3d43))
+* **security:** cap protected-image requests per network (stable) ([#1596](https://github.com/PicPeak/picpeak/issues/1596)) ([378d12f](https://github.com/PicPeak/picpeak/commit/378d12fcccbf6ee648d56d0f43b06d4ab49dbd1a))
+* **security:** count an IPv6 /64 as one client in the secure-image limiter (stable) ([#1595](https://github.com/PicPeak/picpeak/issues/1595)) ([793839d](https://github.com/PicPeak/picpeak/commit/793839d2b9b0a402bfa14c566b5e24c11a310d22))
+
 ## [3.133.3](https://github.com/PicPeak/picpeak/compare/v3.133.2...v3.133.3) (2026-09-22)
 
 
