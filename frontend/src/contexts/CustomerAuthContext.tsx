@@ -134,6 +134,10 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
   // Reserved for future surface-level errors (login form errors are
   // handled inline on the login page itself, not here).
   const [error] = useState<string | null>(null);
+  // Tracks the last-rendered customer id outside React state so refreshSession
+  // (a stable useCallback, not recreated per render) can always compare
+  // against the *current* identity rather than a stale closure over `customer`.
+  const customerIdRef = React.useRef<CustomerProfile['id'] | null>(null);
 
   /**
    * Refetch the session from /api/customer/auth/session and update both
@@ -167,6 +171,19 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
       return;
     }
     if (response?.customer) {
+      // customer_token is a single domain-wide cookie (see
+      // customer.service.ts), so a second tab can log out customer A and
+      // log in as customer B while this tab stays open. That tab's next
+      // refreshSession() gets a plain 200 for customer B — never a 401 —
+      // so without this check the else-branch cache clear below never
+      // runs and customer A's cached dashboard/contracts/documents can
+      // render labeled as customer B's session (#1594). Also fires on a
+      // fresh login (previous id null); harmless since there's nothing
+      // stale to leak yet.
+      if (customerIdRef.current !== response.customer.id) {
+        clearCustomerPortalQueryCache(queryClient);
+      }
+      customerIdRef.current = response.customer.id;
       setCustomerState(response.customer);
       setFeatures(response.features);
       setBranding(response.branding);
@@ -180,6 +197,7 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
       // navigation), so a cached dashboard/contracts/documents query from
       // this customer would otherwise sit in the QueryClient and flash on
       // screen the moment the next customer logs in on the same device.
+      customerIdRef.current = null;
       setCustomerState(null);
       sessionStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(FEATURES_KEY);
@@ -244,12 +262,14 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
   }, [refreshSession]);
 
   const setCustomer = (c: CustomerProfile) => {
+    customerIdRef.current = c.id;
     setCustomerState(c);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(c));
     applyCustomerLocale(c.preferredLanguage);
   };
 
   const setSession = (s: { customer: CustomerProfile; features: CustomerFeatureFlags; branding: CustomerBrandingFlags }) => {
+    customerIdRef.current = s.customer.id;
     setCustomerState(s.customer);
     setFeatures(s.features);
     setBranding(s.branding);
@@ -261,6 +281,7 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
 
   const logout = async () => {
     await customerService.logout();
+    customerIdRef.current = null;
     setCustomerState(null);
     setFeatures(DEFAULT_FEATURES);
     setBranding(DEFAULT_BRANDING);

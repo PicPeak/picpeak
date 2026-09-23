@@ -160,4 +160,37 @@ describe('customer portal query cache clears on session loss (#1594)', () => {
     // At no point should Customer A's gallery have rendered for Customer B.
     expect(screen.queryByText('Alpha Wedding')).not.toBeInTheDocument();
   });
+
+  it('drops the cached dashboard when refreshSession resolves as a different customer without an intervening 401', async () => {
+    // customer_token is a single domain-wide cookie (customer.service.ts):
+    // Tab B can log out customer A and log back in as customer B while Tab A
+    // stays open. Tab A's next refreshSession() then gets a plain 200 for
+    // customer B — it never sees a 401 — so the success branch itself must
+    // clear the cache when the resolved identity changes.
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    sessionSpy.mockResolvedValue({ customer: customerA, features, branding });
+    dashboardSpy.mockResolvedValue(dashboardWith('Alpha Wedding'));
+    renderApp(qc);
+
+    expect(await screen.findByText('Alpha Wedding')).toBeInTheDocument();
+    expect(qc.getQueryData(['customer-dashboard'])).toBeTruthy();
+
+    // No 401 in between — the cookie was swapped out from under this tab by
+    // another tab, so the very next refreshSession() call resolves straight
+    // to customer B with a 200.
+    const removeQueriesSpy = vi.spyOn(qc, 'removeQueries');
+    sessionSpy.mockResolvedValue({ customer: customerB, features, branding });
+    dashboardSpy.mockResolvedValue(dashboardWith('Beta Shoot'));
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // The clear must happen as part of resolving customer B's session, not
+    // as an incidental side effect of the dashboard query simply refetching.
+    expect(removeQueriesSpy).toHaveBeenCalled();
+    expect(await screen.findByText('Beta Shoot')).toBeInTheDocument();
+    // At no point should Customer A's gallery have rendered for Customer B.
+    expect(screen.queryByText('Alpha Wedding')).not.toBeInTheDocument();
+  });
 });
