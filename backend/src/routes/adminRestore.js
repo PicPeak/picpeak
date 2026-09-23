@@ -785,7 +785,7 @@ async function getBackupConfig() {
  * (`backup_destination_path` + `backup_manifest_path`), so the disaster-
  * recovery flow is untouched: an operator restoring from a rescued mount
  * already has to point those settings at it for the backup to be listed.
- * RESTORE_ALLOWED_ROOTS (path.delimiter-separated) is an escape hatch for unusual
+ * RESTORE_ALLOWED_ROOTS (colon-separated; semicolon on Windows) is an escape hatch for unusual
  * layouts. S3 sources are URLs, not paths, and are validated elsewhere.
  *
  * @returns {Promise<string|null>} an error message, or null when acceptable
