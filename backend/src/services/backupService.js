@@ -1200,9 +1200,16 @@ async function runBackupInternal(isManual = false) {
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
+      // `file.checksum` (set by performLocalBackup/performS3Backup right
+      // before the copy/upload) reflects the bytes actually archived; prefer
+      // it over `legacySha256`, which collectLegacyStoredFiles computed
+      // earlier during the collection walk and can go stale if the source
+      // file changes between collection and the archive write.
       const legacyBacked = (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
         .map((file) => ({
-          rel: file.relativePath.split(path.sep).join('/'), values: file.legacyValues, sha256: file.legacySha256,
+          rel: file.relativePath.split(path.sep).join('/'),
+          values: file.legacyValues,
+          sha256: file.checksum || file.legacySha256,
         }));
       const legacyMap = storedPathMap(legacyBacked);
       const manifestOptions = {
