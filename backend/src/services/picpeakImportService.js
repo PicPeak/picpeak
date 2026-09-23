@@ -458,6 +458,32 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
+// Tables a migration seeds with mandatory system/lookup rows ONLY at table-
+// creation time (inside its `hasTable` guard, or — product_usage_state — a
+// one-time row-existence check that behaves the same way once the migration
+// has run), with no runtime re-seed path anywhere else in the app. Unlike
+// genuine user-data tables, clearing these to empty on a restore whose
+// archive predates the seeding migration is wrong: the row(s) are gone for
+// good (migrations never re-run once applied) and either crash a live
+// endpoint (product_usage_state) or silently break a feature with no
+// recovery UI (accounting chart of accounts/VAT codes/categories, CRM
+// payment-term templates, the contract block library). Verified by reading
+// each migration + its consuming service; other seed-in-guard tables such as
+// `business_profile`, `roles`/`permissions`, `backup_paths` and the various
+// email templates already self-heal at runtime (see businessProfileService
+// .getProfile(), _permissionsBoot.js, _backupPathsBoot.js, etc.) and are
+// deliberately NOT listed here.
+const SEED_ONLY_TABLES = new Set([
+  'product_usage_state',        // migrations/core/201_product_usage.js — id=1 singleton; UsageService.status() dereferences it unguarded
+  'ledger_accounts',             // migrations/core/129_create_ledger_accounts_and_vat_codes.js — Swiss/LI chart of accounts
+  'vat_codes',                   // migrations/core/129_create_ledger_accounts_and_vat_codes.js — MWST codes, FK to ledger_accounts
+  'expense_categories',          // migrations/core/124_create_inbound_documents_and_expenses.js — default expense category labels
+  'payment_term_templates',      // migrations/core/107_crm_consolidated.js — legacy system payment-term templates
+  'payment_net_days_templates',  // migrations/core/107_crm_consolidated.js — split net-days templates
+  'payment_timing_templates',    // migrations/core/107_crm_consolidated.js — split timing templates
+  'contract_blocks',             // migrations/core/107_crm_consolidated.js (orig. 130) — system contract clause library
+]);
+
 // Whole-DB replace in one transaction with FK enforcement suspended (pg:
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
@@ -508,7 +534,17 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // accounting_change_history when the archive predated it): `allTables`
     // already includes that table whenever this instance has it, which is
     // the same condition that fix checked for explicitly.
+    //
+    // Exception: a SEED_ONLY_TABLES table whose rows the archive does NOT
+    // carry (the archive predates the migration that seeds it) is skipped
+    // here rather than cleared — see SEED_ONLY_TABLES above. When the
+    // archive DOES carry the table (it's in `tables`), clear it as normal:
+    // the reinsert loop below replaces it with the archive's rows, and
+    // skipping the clear would leave stale local rows colliding with the
+    // reinserted ones on unique constraints (e.g. ledger_accounts.number).
+    const manifestTableSet = new Set(tables);
     for (const table of (allTables || tables)) {
+      if (SEED_ONLY_TABLES.has(table) && !manifestTableSet.has(table)) continue;
       await trx(table).del();
     }
 
