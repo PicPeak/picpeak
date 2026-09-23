@@ -261,15 +261,25 @@ export const CustomerAuthProvider: React.FC<ProviderProps> = ({ children }) => {
     };
   }, [refreshSession]);
 
+  // Same identity check as refreshSession's success branch: a direct A→B
+  // switch through setSession/setCustomer (a login without an intervening
+  // logout or 401) must not keep A's cached portal queries around.
+  const adoptCustomerId = (id: CustomerProfile['id']) => {
+    if (customerIdRef.current !== id) {
+      clearCustomerPortalQueryCache(queryClient);
+    }
+    customerIdRef.current = id;
+  };
+
   const setCustomer = (c: CustomerProfile) => {
-    customerIdRef.current = c.id;
+    adoptCustomerId(c.id);
     setCustomerState(c);
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(c));
     applyCustomerLocale(c.preferredLanguage);
   };
 
   const setSession = (s: { customer: CustomerProfile; features: CustomerFeatureFlags; branding: CustomerBrandingFlags }) => {
-    customerIdRef.current = s.customer.id;
+    adoptCustomerId(s.customer.id);
     setCustomerState(s.customer);
     setFeatures(s.features);
     setBranding(s.branding);
