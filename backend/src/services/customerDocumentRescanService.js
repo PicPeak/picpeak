@@ -101,6 +101,10 @@ async function rescanRow(row) {
       scanned_at: stamp,
       scan_claimed_until: null,
       review_note: 'The file did not pass the security check.',
+      // Distinguishes a scanner's verdict from an ordinary content/format
+      // rejection an admin makes by hand: customerDocumentsService.review()
+      // refuses to flip this back to clean through the normal review path.
+      malware_flagged: true,
       updated_at: stamp,
     };
   // Still pending and not deleted: an admin who decided (or deleted) in the

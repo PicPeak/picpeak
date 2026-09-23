@@ -254,6 +254,33 @@ describe('workflow engine', () => {
     expect(dryTaken).not.toContain('g5');
   });
 
+  test('customer_in_group ignores an archived group, like a newsletter group rule (#1443)', async () => {
+    const ts = new Date().toISOString();
+    const idOf = (rows) => (typeof rows[0] === 'object' ? rows[0].id : rows[0]);
+    const customer = idOf(await db('customer_accounts').insert({ email: 'wf-archived@example.com', is_active: true, created_at: ts }).returning('id'));
+    const [live, retired] = [
+      idOf(await db('customer_groups').insert({ name: 'WF Live', name_key: 'wf live', color: '#2563EB', sort_order: 3, is_archived: false, created_at: ts, updated_at: ts }).returning('id')),
+      idOf(await db('customer_groups').insert({ name: 'WF Retired', name_key: 'wf retired', color: '#2563EB', sort_order: 4, is_archived: false, created_at: ts, updated_at: ts }).returning('id')),
+    ];
+    await db('customer_group_members').insert([
+      { group_id: live, customer_account_id: customer },
+      { group_id: retired, customer_account_id: customer },
+    ]);
+
+    const cond = require('../../src/services/workflows/registry').getCondition('customer_in_group');
+    const ctx = (config) => ({ run: {}, node: { config }, vars: { customerAccountId: customer }, db });
+    expect(await cond(ctx({ groupIds: [retired] }))).toBe(true);
+    expect(await cond(ctx({ groupIds: [live, retired], match: 'all' }))).toBe(true);
+
+    await db('customer_groups').where({ id: retired }).update({ is_archived: true });
+    // any: the archived group alone matches nobody; a live one still matches.
+    expect(await cond(ctx({ groupIds: [retired] }))).toBe(false);
+    expect(await cond(ctx({ groupIds: [live, retired] }))).toBe(true);
+    // all: the archived group can't be satisfied any more.
+    expect(await cond(ctx({ groupIds: [retired], match: 'all' }))).toBe(false);
+    expect(await cond(ctx({ groupIds: [live, retired], match: 'all' }))).toBe(false);
+  });
+
   test('gate creates a pending approval + admin email, token confirm resumes the run', async () => {
     await makeWorkflow({
       trigger: 'approval.event',

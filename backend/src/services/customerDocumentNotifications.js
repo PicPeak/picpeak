@@ -103,6 +103,9 @@ async function notifyShared(doc, { notify } = {}) {
       document_link: `${base}/customer/documents/${doc.id}`,
       dashboard_link: `${base}/customer/documents`,
       __language: customer.preferred_language || undefined,
+      // Looked back up at send time (#1591): the share can be undone before
+      // the queue reaches this row.
+      __documentId: doc.id,
     }, ids, { respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-shared mail', { ...ids, error: err.message });
@@ -124,6 +127,9 @@ async function notifyUploaded(doc) {
       customer_name: customerDisplayName(customer),
       document_title: doc.original_name,
       admin_link: `${base}/admin/clients/accounts/${doc.customer_account_id}`,
+      // Looked back up at send time (#1591): the upload can be deleted
+      // before the queue reaches this row.
+      __documentId: doc.id,
     }, ids);
   } catch (err) {
     logger.warn('Could not prepare the document-uploaded mail', { ...ids, error: err.message });
@@ -146,6 +152,9 @@ async function notifyRejected(doc) {
       review_note: doc.review_note || '',
       document_link: `${base}/customer/documents/${doc.id}`,
       __language: customer.preferred_language || undefined,
+      // Looked back up at send time (#1591): a later acceptance can reverse
+      // the rejection before the queue reaches this row.
+      __documentId: doc.id,
     }, ids, { respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-rejected mail', { ...ids, error: err.message });
@@ -179,6 +188,9 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
         : '',
       upload_link: `${base}/customer/documents?request=${request.id}`,
       __language: customer.preferred_language || undefined,
+      // Looked back up at send time (#1591): the request can be fulfilled
+      // or cancelled before the queue reaches this row.
+      __requestId: request.id,
     }, ids, { respectBusinessHours: true });
   } catch (err) {
     logger.warn('Could not prepare the document-request mail', { ...ids, error: err.message });
