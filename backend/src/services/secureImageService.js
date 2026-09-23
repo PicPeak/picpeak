@@ -319,13 +319,18 @@ class SecureImageService {
    */
   async logImageAccess(photoId, eventId, clientInfo, accessType = 'view', metadata = {}) {
     try {
+      // client_fingerprint is what the suspicious-activity checks count on,
+      // so it is the rate-limit fingerprint: an IPv6 /64 is one client and
+      // rotating through it does not dilute the count (issue 1564). The raw
+      // address stays in client_ip for the audit trail.
+      const countKey = clientInfo.rateLimitFingerprint || clientInfo.fingerprint;
       const logEntry = {
         photo_id: photoId,
         event_id: eventId,
         client_ip: clientInfo.ip,
         user_agent: clientInfo.userAgent?.substring(0, 500), // Limit length
         access_type: accessType,
-        client_fingerprint: clientInfo.fingerprint?.substring(0, 32) || 'unknown',
+        client_fingerprint: countKey?.substring(0, 32) || 'unknown',
         accessed_at: new Date().toISOString(),
         metadata: JSON.stringify({
           timestamp: clientInfo.timestamp || Date.now(),
@@ -337,7 +342,7 @@ class SecureImageService {
 
       // Check for rapid successive access (potential scraping)
       if (accessType === 'view' || accessType === 'download') {
-        await this.checkForRapidAccess(clientInfo.fingerprint, photoId, eventId);
+        await this.checkForRapidAccess(countKey, photoId, eventId);
       }
 
     } catch (error) {
