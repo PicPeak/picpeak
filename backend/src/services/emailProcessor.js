@@ -1295,6 +1295,19 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           }
           sendResult = await sendCampaignEmail(email, emailData);
         } else {
+          // Same race as the newsletter branch above: the batch was
+          // materialised before this loop started, so a cancel/redact that
+          // lands in the gap (e.g. a customer erasure, #1593) would
+          // otherwise be silently overwritten below by this send re-writing
+          // the row back to 'sent' with the pre-erasure, unredacted data.
+          // Re-check the row is still pending immediately before sending.
+          const stillPending = await db('email_queue')
+            .where({ id: email.id, status: 'pending' })
+            .first('id');
+          if (!stillPending) {
+            logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
+            continue;
+          }
           sendResult = await sendTemplateEmail(
             email.recipient_email,
             email.email_type,
