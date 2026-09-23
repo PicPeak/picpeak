@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserRound, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Input } from '../common';
@@ -25,6 +25,12 @@ export const BulkCreditModal: React.FC<BulkCreditModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [name, setName] = useState('');
+  // The modal stays mounted while closed, so the last name would greet the
+  // next selection. Cleared on every close — a confirm that succeeded
+  // included; a refused one keeps the dialog open with the name to fix.
+  useEffect(() => {
+    if (!isOpen) setName('');
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

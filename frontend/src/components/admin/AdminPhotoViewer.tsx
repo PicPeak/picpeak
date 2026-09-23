@@ -142,8 +142,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       toast.success(value === null ? t('admin.photos.credit.cleared') : t('admin.photos.credit.saved'));
       queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
       onPhotoDeleted();
-    } catch {
-      toast.error(t('common.error'));
+    } catch (error: any) {
+      // The server says why a name was refused (e.g. nothing left once sanitised).
+      toast.error(error?.response?.data?.error || t('common.error'));
     } finally {
       setSavingCredit(false);
     }

@@ -242,8 +242,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       setIsCreditModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
       onPhotosDeleted(); // Refresh the photo list
-    } catch {
-      toast.error(t('common.error'));
+    } catch (error: any) {
+      // The server says why a name was refused (e.g. nothing left once sanitised).
+      toast.error(error?.response?.data?.error || t('common.error'));
     } finally {
       setIsUpdatingCredit(false);
     }
