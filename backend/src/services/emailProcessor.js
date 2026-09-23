@@ -12,7 +12,6 @@ const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
 const businessProfileService = require('./businessProfileService');
-const { resolveStoredPath } = require('../utils/storedPath');
 const { resolveStoredPathStrict } = require('../utils/safePath');
 
 /**
@@ -24,8 +23,12 @@ const { resolveStoredPathStrict } = require('../utils/safePath');
  * path is placed on this install's storage root (a row queued before a
  * restore names the old root) and checked with symlinks followed. A path
  * outside the storage root is refused: the email fails with that reason in
- * its queue row instead of mailing whatever file the row names. A file that
- * is simply missing keeps its placed path, and the send fails on it as before.
+ * its queue row instead of mailing whatever file the row names.
+ *
+ * Only the realpath the check returned is handed to the transport. A file
+ * that cannot be realpath'd (missing, or a symlink whose target is not there
+ * yet) is not attached by its unchecked path: the send fails like a deleted
+ * file always did, and the retry checks it again.
  */
 function attachmentFile(file, filename) {
   if (!file) return file;
@@ -37,7 +40,12 @@ function attachmentFile(file, filename) {
     refused.code = 'ATTACHMENT_REFUSED';
     throw refused;
   }
-  return placed || resolveStoredPath(file);
+  if (!placed) {
+    const missing = new Error(`Attachment "${filename || 'file'}" is missing from the storage directory`);
+    missing.code = 'ATTACHMENT_MISSING';
+    throw missing;
+  }
+  return placed;
 }
 
 /**
