@@ -13,11 +13,15 @@ import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 interface DownloadLimitUsageProps {
   eventId: number;
   downloadLimit: number;
+  // The event payload's share_secrets_hidden: this admin sees the event but
+  // cannot act on it (another owner's), and the reset route requires
+  // ownership, so Reset would only ever answer 403.
+  ownedByOther?: boolean;
 }
 
-export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId, downloadLimit }) => {
+export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId, downloadLimit, ownedByOther = false }) => {
   const { t } = useTranslation();
-  const canEdit = usePermission('events.edit');
+  const canEdit = usePermission('events.edit') && !ownedByOther;
 
   const { data: usage } = useQuery({
     // The limit is part of the key so an edit re-reads the usage at once.
