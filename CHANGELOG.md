@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.138.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.137.0-beta.0...v3.138.0-beta.0) (2026-09-23)
+
+
+### Features
+
+* **crm:** customer group filters, bulk assignment, create flow and segments ([#1576](https://github.com/PicPeak/picpeak/issues/1576)) ([6b03e73](https://github.com/PicPeak/picpeak/commit/6b03e737859e113c708e7f22d8ad4dc10ca35ce2))
+* **gallery:** uploader names and photo credits ([#1569](https://github.com/PicPeak/picpeak/issues/1569)) ([d1989ef](https://github.com/PicPeak/picpeak/commit/d1989ef6eea762059eb0ceebb94c71cb7aa3d686))
+
 ## [3.137.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.136.0-beta.0...v3.137.0-beta.0) (2026-09-23)
 
 
