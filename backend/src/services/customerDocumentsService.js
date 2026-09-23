@@ -604,6 +604,10 @@ async function review(customerId, documentId, { status, note }, admin) {
   // has a more-privileged override for a single row (super_admin gates
   // whole-instance operations — backup restore, the raw DB dump — not a
   // per-document call), so this is a hard refusal rather than a gated one.
+  // Only that verdict blocks review. A file still pending because the
+  // scanner is down, timed out or is too large to send stays reviewable:
+  // the admin's own judgment is the fallback for a missing verdict, as it is
+  // on an install with no scanner at all (documented in .env.example).
   if (status === 'clean' && row.malware_flagged) {
     throw new AppError(
       'This file was flagged by the malware scanner and cannot be marked clean.',

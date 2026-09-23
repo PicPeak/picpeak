@@ -378,7 +378,9 @@ async function readFirstEntry(file) {
 }
 
 /**
- * BEST-EFFORT. This is a denylist of the known active-content and
+ * BEST-EFFORT, and it fails open: a mechanism not listed here passes. (An
+ * unsupported *format* does not: anything but the four below is refused.)
+ * This is a denylist of the known active-content and
  * outside-content mechanisms of four large formats, not a proof that a file
  * is inert: it does not detect every mechanism they have (mail-merge data
  * connections, add-in manifests, VML and SVG content, form data sources and
