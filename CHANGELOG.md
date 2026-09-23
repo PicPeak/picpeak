@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.137.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.136.0-beta.0...v3.137.0-beta.0) (2026-09-23)
+
+
+### Features
+
+* **downloads:** per-event download limit ([#1568](https://github.com/PicPeak/picpeak/issues/1568)) ([f131c8b](https://github.com/PicPeak/picpeak/commit/f131c8b254e9df5aac01867624ad03e9c2002bd1))
+
+
+### Bug Fixes
+
+* **db:** scope pg_indexes lookups to the current schema ([#1629](https://github.com/PicPeak/picpeak/issues/1629)) ([95ecfc6](https://github.com/PicPeak/picpeak/commit/95ecfc6f40d886c36bee92a4f714fb216bc73b32))
+* **security:** cap feedback and protected-image requests per network ([#1575](https://github.com/PicPeak/picpeak/issues/1575)) ([06dcd5e](https://github.com/PicPeak/picpeak/commit/06dcd5ea859ed199560aa1f2afeec6cf593b3445))
+
 ## [3.136.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.135.3-beta.0...v3.136.0-beta.0) (2026-09-23)
 
 

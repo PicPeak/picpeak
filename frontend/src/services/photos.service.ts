@@ -34,6 +34,20 @@ export interface AdminPhoto {
   // the client's selections above, and never shown in the gallery.
   my_rating?: number | null;
   my_color_label?: string | null;
+  // Photo credit (#1561). The admin always sees it, whatever the event's
+  // show-to-guests switch says.
+  credit_name?: string | null;
+  credit_source?: 'guest' | 'exif' | 'manual' | null;
+  uploaded_by?: 'admin' | 'guest';
+}
+
+// Filter value for "photos without a credit" — mirrors CREDIT_NONE in
+// backend/src/services/photoCredit.js.
+export const CREDIT_FILTER_NONE = '__none__';
+
+export interface PhotoCreditSummary {
+  credits: Array<{ name: string; count: number }>;
+  none: number;
 }
 
 export interface PhotoFilters {
@@ -51,6 +65,8 @@ export interface PhotoFilters {
   colorLabels?: string[];
   /** Same, against the caller's own marks. */
   myColorLabels?: string[];
+  /** Exact credit name, or CREDIT_FILTER_NONE (#1561). */
+  credit?: string;
   logic?: 'AND' | 'OR';
 }
 
@@ -92,6 +108,7 @@ class PhotosService {
       if (filters.myColorLabels && filters.myColorLabels.length > 0) {
         params.append('my_color_label', filters.myColorLabels.join(','));
       }
+      if (filters.credit) params.append('credit', filters.credit);
       if (filters.logic) params.append('logic', filters.logic);
     }
     
@@ -103,6 +120,25 @@ class PhotosService {
     
     // Return photos as-is, URLs are already relative API paths
     return response.data.photos;
+  }
+
+  /** The names on this event's photos with their counts (#1561). */
+  async getPhotoCredits(eventId: number): Promise<PhotoCreditSummary> {
+    const response = await api.get(`/admin/photos/${eventId}/photos/credits`);
+    return response.data;
+  }
+
+  /**
+   * Correct or clear one photo's credit (#1561). null clears it; either way it
+   * becomes a manual credit that no later EXIF read overwrites.
+   */
+  async setPhotoCredit(
+    eventId: number,
+    photoId: number,
+    creditName: string | null
+  ): Promise<{ credit_name: string | null; credit_source: string }> {
+    const response = await api.put(`/admin/photos/${eventId}/photos/${photoId}/credit`, { credit_name: creditName });
+    return response.data;
   }
 
   async deletePhoto(eventId: number, photoId: number): Promise<void> {

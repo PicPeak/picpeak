@@ -15,7 +15,7 @@ import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type
 import { feedbackService, FeedbackSettings as FeedbackSettingsType } from '../../services/feedback.service';
 import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTemplates.service';
 import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
-import { safeParseDate } from './event-details/utils';
+import { safeParseDate, eventHasGuests } from './event-details/utils';
 import { INITIAL_EDIT_FORM, type EditFormState, type EventDetailsTab } from './event-details/types';
 import type { CustomerGroup } from '../../services/customerAdmin.service';
 import { EventDetailsHeader } from './event-details/EventDetailsHeader';
@@ -154,15 +154,19 @@ export const EventDetailsPage: React.FC = () => {
     enabled: !!id,
   });
 
-  // Guests is only rendered in guest identity mode, so a ?tab=guests deep link
-  // on any other event would show an empty content area. Snap back once the
-  // settings have actually loaded — not while they're still undefined.
+  // Guests exist in guest identity mode, and for uploader names (#1561) in
+  // any mode — the host must be able to remove or merge those too.
+  const showGuestsTab = eventHasGuests(event, eventFeedbackSettings);
+
+  // Guests is only rendered when the event can have any, so a ?tab=guests
+  // deep link on any other event would show an empty content area. Snap back
+  // once both have actually loaded — not while they're still undefined.
   useEffect(() => {
-    if (feedbackSettingsLoading) return;
-    if (activeTab === 'guests' && eventFeedbackSettings?.identity_mode !== 'guest') {
+    if (feedbackSettingsLoading || eventLoading) return;
+    if (activeTab === 'guests' && !showGuestsTab) {
       setActiveTab('overview');
     }
-  }, [feedbackSettingsLoading, eventFeedbackSettings?.identity_mode, activeTab]);
+  }, [feedbackSettingsLoading, eventLoading, showGuestsTab, activeTab]);
 
   // Update local feedback settings when fetched from server
   useEffect(() => {
@@ -416,6 +420,8 @@ export const EventDetailsPage: React.FC = () => {
         ? (() => { const d = new Date(event.reveal_at); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })()
         : '',
       upload_category_id: event.upload_category_id || null,
+      guest_name_mode: event.guest_name_mode || 'off',
+      show_credits_to_guests: Boolean(event.show_credits_to_guests),
       hero_photo_id: event.hero_photo_id || null,
       customer_name: event.customer_name || '',
       customer_email: event.customer_email || '',
@@ -562,6 +568,8 @@ export const EventDetailsPage: React.FC = () => {
     const updateData: any = {
       expires_at: editForm.expires_at || null,
       allow_user_uploads: editForm.allow_user_uploads,
+      guest_name_mode: editForm.guest_name_mode,
+      show_credits_to_guests: editForm.show_credits_to_guests,
       reveal_mode: editForm.allow_user_uploads && editForm.reveal_mode,
       reveal_at: editForm.allow_user_uploads && editForm.reveal_mode && editForm.reveal_at
         ? new Date(editForm.reveal_at).toISOString()
@@ -763,8 +771,8 @@ export const EventDetailsPage: React.FC = () => {
         <CategoriesTab id={id} />
       )}
 
-      {/* Guests Tab (only visible when identity_mode === 'guest') */}
-      {activeTab === 'guests' && eventFeedbackSettings?.identity_mode === 'guest' && (
+      {/* Guests Tab (guest identity mode, or uploader names on) */}
+      {activeTab === 'guests' && showGuestsTab && (
         <AdminGuestsList eventId={parseInt(id!)} eventName={event.event_name} />
       )}
 

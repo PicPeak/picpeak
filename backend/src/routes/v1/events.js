@@ -564,6 +564,9 @@ router.post(
         ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
       } catch { /* non-fatal */ }
 
+      // Credit from EXIF (#1561), read before the temp file is moved away.
+      const credit = await require('../../services/photoCredit').resolveCredit({ localPath: tempPath });
+
       let thumbRel = null;
       try {
         thumbRel = await generateThumbnail(tempPath);
@@ -595,7 +598,9 @@ router.post(
         height,
         media_type: 'image',
         mime_type: req.file.mimetype,
-        uploaded_at: new Date().toISOString()
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: 'admin',
+        ...credit
       }).returning('id');
       const id = insertResult[0]?.id || insertResult[0];
 

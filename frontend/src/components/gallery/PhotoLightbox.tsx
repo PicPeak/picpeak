@@ -981,6 +981,23 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </p>
             )}
 
+            {/* Photo credit (#1561). The field is only in the payload when
+                the gallery shows names to this viewer, so presence is the
+                whole gate. "Uploaded by" for a guest upload, "Photo by" for
+                the photographer's own photos carrying an EXIF or manual
+                credit. */}
+            {currentPhoto.credit_name && (
+              <p
+                className="text-xs opacity-75 truncate max-w-[14rem] sm:max-w-md mt-0.5"
+                title={currentPhoto.credit_name}
+                data-testid="lightbox-credit"
+              >
+                {currentPhoto.uploaded_by_guest
+                  ? t('gallery.credits.uploadedBy', { name: currentPhoto.credit_name })
+                  : t('gallery.credits.photoBy', { name: currentPhoto.credit_name })}
+              </p>
+            )}
+
             {/* People in this photo (#1074). The second way into the face
                 filter: a guest looking at a photo of themselves can act on
                 it without scrolling back to the strip.

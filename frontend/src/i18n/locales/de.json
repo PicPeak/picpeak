@@ -852,7 +852,15 @@
     "replacedFiles_other": "{{count}} Fotos ersetzt",
     "uploadingChunks_one": "{{count}} Teil wird hochgeladen",
     "uploadingChunks_other": "{{count}} Teile werden hochgeladen",
-    "fileTooLarge": "Datei zu groß: {{name}} (max. {{limit}}MB)"
+    "fileTooLarge": "Datei zu groß: {{name}} (max. {{limit}}MB)",
+    "uploadingAs": "Upload als {{name}}",
+    "notYou": "Nicht du?",
+    "yourName": "Dein Name",
+    "yourNameOptional": "Dein Name (optional)",
+    "nameRequired": "Bitte gib deinen Namen ein, um hochzuladen.",
+    "nameSaveFailed": "Dein Name konnte nicht gespeichert werden. Bitte versuche es erneut.",
+    "namePrivacyShown": "Dein Name wird mit deinen Fotos gespeichert und anderen Gästen angezeigt. Der Gastgeber kann ihn jederzeit entfernen.",
+    "namePrivacyHidden": "Dein Name wird mit deinen Fotos für den Gastgeber gespeichert. Andere Gäste sehen ihn nicht, und der Gastgeber kann ihn jederzeit entfernen."
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -1751,6 +1759,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Ihr Name und Ihre Auswahl werden aus dieser Galerie entfernt.",
+      "forgetMeConfirmUploads": "Ihr Name wird von den Fotos entfernt, die Sie in diese Galerie hochgeladen haben.",
       "forgetMe": "Mich vergessen ({{name}})",
       "notYou": "Nicht Sie?",
       "socials": "Soziale Netzwerke"
@@ -1823,6 +1832,14 @@
       "downloadAllBlocked": "Diese Galerie enthält mehr Fotos, als du noch herunterladen kannst",
       "previewOnly": "Downloads in dieser Galerie sind in Vorschaugröße. Die Originaldateien erhält der Kunde.",
       "videoClientOnly": "Dieses Video ist nur für den Kunden verfügbar."
+    },
+    "credits": {
+      "filterLabel": "Von",
+      "everyone": "Alle",
+      "unnamedGuests": "Gäste ohne Namen",
+      "photographer": "Fotograf",
+      "uploadedBy": "Hochgeladen von {{name}}",
+      "photoBy": "Foto von {{name}}"
     }
   },
   "categories": {
@@ -2304,7 +2321,20 @@
     "downloadLimitReset": "Zurücksetzen",
     "downloadLimitResetConfirm": "Downloads für diese Galerie zurücksetzen? Der Kunde erhält das volle Limit zurück, und bereits heruntergeladene Fotos zählen erneut.",
     "downloadLimitResetDone": "Downloads zurückgesetzt",
-    "downloadLimitResetFailed": "Downloads konnten nicht zurückgesetzt werden"
+    "downloadLimitResetFailed": "Downloads konnten nicht zurückgesetzt werden",
+    "uploaderNames": {
+      "label": "Namen beim Hochladen",
+      "help": "Gäste können beim Hochladen ihren Namen angeben, damit du weißt, wer welches Foto hochgeladen hat.",
+      "modes": {
+        "off": "Aus",
+        "optional": "Optional",
+        "required": "Pflicht"
+      },
+      "showToGuests": "Namen den Gästen anzeigen",
+      "showToGuestsHelp": "Gäste sehen die Namen bei Uploads, die hochgeladen wurden, während dies eingeschaltet war; Namen aus der Zeit, in der es aus war, bleiben dir und dem Gastgeber vorbehalten. Ausschalten verbirgt alle Namen vor Gästen. Gilt auch für Fotografen-Angaben aus den EXIF-Daten.",
+      "shownToGuests": "Für Gäste sichtbar",
+      "hiddenFromGuests": "Nur für dich sichtbar"
+    }
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -3263,7 +3293,17 @@
       "staleTiers_other": "{{count}} zwischengespeicherte Größen konnten nicht gelöscht werden und liefern weiterhin die alte Ausrichtung — bitte erneut ausführen, sobald der Speicher beschreibbar ist."
     },
     "saved": "Einstellungen gespeichert",
-    "saveError": "Einstellungen konnten nicht gespeichert werden"
+    "saveError": "Einstellungen konnten nicht gespeichert werden",
+    "creditBackfill": {
+      "title": "Foto-Urheber",
+      "description": "Liest die Urheberangabe (EXIF Artist, XMP Creator oder den Namen im Copyright) für Fotos, die vor der Erfassung von Urhebern hinzugefügt wurden. Gast-Uploads und von Hand gesetzte Namen werden nie verändert.",
+      "withCredit": "Mit Urheber",
+      "undecided": "Noch nicht gelesen",
+      "result": "Letzter Lauf: {{success}} mit Urheber, {{noCredit}} ohne Namen in der Datei, {{failed}} nicht erreichbar",
+      "running": "Urheber werden gelesen...",
+      "noneToRead": "Keine Fotos mehr zu lesen",
+      "button": "Urheber aus EXIF lesen"
+    }
   },
   "branding": {
     "title": "Branding & Themen",
@@ -3913,7 +3953,8 @@
         "actions": "Aktionen",
         "views": "Aufrufe",
         "downloads": "Downloads",
-        "likes": "Likes"
+        "likes": "Likes",
+        "credit": "Urheber"
       },
       "myMarks": "Ihre Markierungen",
       "myMarksHelp": "Nur für Sie sichtbar. Sie erscheinen nie in der Kundengalerie und werden als XMP nach Lightroom exportiert.",
@@ -3926,7 +3967,23 @@
       "rateStars_one": "Mit {{count}} Stern bewerten",
       "rateStars_other": "Mit {{count}} Sternen bewerten",
       "yourMarkRating_one": "Ihre Bewertung: {{count}}",
-      "yourMarkRating_other": "Ihre Bewertung: {{count}}"
+      "yourMarkRating_other": "Ihre Bewertung: {{count}}",
+      "credit": {
+        "label": "Urheber",
+        "edit": "Bearbeiten",
+        "save": "Namen speichern",
+        "clear": "Namen entfernen",
+        "saved": "Name gespeichert",
+        "cleared": "Name entfernt",
+        "none": "Kein Name",
+        "unnamedGuest": "Gast, ohne Namen",
+        "manualHint": "Ein hier gesetzter Name ist endgültig: Er wird nicht durch EXIF-Daten ersetzt.",
+        "bulkAction": "Namen setzen",
+        "bulkTitle": "Namen für {{count}} Fotos setzen",
+        "filterLabel": "Nach Urheber filtern",
+        "filterAll": "Alle Namen",
+        "filterNone": "Kein Name"
+      }
     },
     "events": {
       "tabs": {

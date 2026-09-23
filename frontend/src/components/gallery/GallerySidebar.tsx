@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera } from 'lucide-react';
 import { Button } from '../common';
-import { PhotoCategory } from '../../types';
+import { PhotoCategory, type Photo } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { GalleryFilter, type FilterType, type FeedbackFilterType } from './GalleryFilter';
 import { ColorLabelFilterChips } from './ColorLabelFilterChips';
+import { CreditFilterChips } from './CreditFilterChips';
 import type { ColorLabel } from '../../services/feedback.service';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import type { QuotaPhoto } from '../../utils/downloadLimit';
@@ -62,6 +63,11 @@ interface GallerySidebarProps {
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
+  // "By" filter (#1561). Rendered only when creditPhotos is passed — the
+  // gallery passes it only while names are visible to this viewer.
+  creditPhotos?: Photo[];
+  selectedCreditKey?: string | null;
+  onCreditChange?: (key: string | null) => void;
 }
 
 export const GallerySidebar: React.FC<GallerySidebarProps> = ({
@@ -104,7 +110,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   colorLabelCounts = {},
   mediaFilter = 'all',
   onMediaFilterChange,
-  showMediaFilter = false
+  showMediaFilter = false,
+  creditPhotos,
+  selectedCreditKey = null,
+  onCreditChange,
 }) => {
   const { t } = useTranslation();
   const downloadQuota = useDownloadQuota();
@@ -288,6 +297,20 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 />
               )}
             </div>
+          )}
+
+          {/* "By" section (#1561) */}
+          {creditPhotos && onCreditChange && (
+            <CreditFilterChips
+              variant="list"
+              className="gallery-sidebar-section p-4 border-b border-surface"
+              photos={creditPhotos}
+              selectedKey={selectedCreditKey}
+              onChange={(key) => {
+                onCreditChange(key);
+                if (isMobile) onClose();
+              }}
+            />
           )}
 
           {/* Categories Section - Hidden for carousel layout */}

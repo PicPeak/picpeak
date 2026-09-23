@@ -1,4 +1,8 @@
 // Event/Gallery types
+
+// Uploader names (#1561).
+export type GuestNameMode = 'off' | 'optional' | 'required';
+
 export interface Event {
   id: number;
   slug: string;
@@ -28,6 +32,10 @@ export interface Event {
     uploaded_at: string;
   }>;
   allow_user_uploads?: boolean;
+  // Uploader names (#1561): the upload dialog's name step, and whether guests
+  // see the names. SQLite hands the flag back as 0/1.
+  guest_name_mode?: GuestNameMode;
+  show_credits_to_guests?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -197,6 +205,11 @@ export interface Photo {
   // filtered out server-side, so this never reveals a person the
   // photographer suppressed.
   person_ids?: number[];
+  // Photo credit (#1561). Present only when the viewer may see names
+  // (GalleryData.event.credits_visible). `uploaded_by_guest` tells a nameless
+  // guest upload apart from the photographer's own photos.
+  credit_name?: string | null;
+  uploaded_by_guest?: boolean;
   size: number;
   uploaded_at: string;
   captured_at?: string; // EXIF capture date (if available)
@@ -336,6 +349,10 @@ export interface GalleryData {
     // chose to keep the people strip to themselves. The whole face UI hangs
     // off this one boolean.
     people_enabled?: boolean;
+    // Uploader names (#1561). guest_name_mode drives the upload dialog's name
+    // step; credits_visible says whether photos carry credit_name at all.
+    guest_name_mode?: GuestNameMode;
+    credits_visible?: boolean;
   };
   categories?: PhotoCategory[];
   photos: Photo[];

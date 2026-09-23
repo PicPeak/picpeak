@@ -19,6 +19,7 @@ const schema = Joi.object({
   welcome_message: optionalText,
   photo_cap: Joi.number().integer().min(1).allow(null),
   download_limit: Joi.number().integer().min(1).max(2147483647).allow(null),
+  guest_name_mode: Joi.string().valid('off', 'optional', 'required'),
   image_quality: Joi.number().integer().min(1).max(100),
   protection_level: Joi.string().valid('basic', 'standard', 'enhanced', 'maximum'),
   hero_logo_size: Joi.string().valid('small', 'medium', 'large', 'xlarge').allow(null),
@@ -28,7 +29,7 @@ const schema = Joi.object({
     'disable_right_click', 'watermark_downloads', 'enable_devtools_protection', 'use_canvas_rendering',
     'feedback_enabled', 'allow_ratings', 'allow_likes', 'allow_comments', 'allow_favorites',
     'allow_reactions', 'allow_color_labels', 'require_name_email', 'moderate_comments',
-    'show_feedback_to_guests', 'client_access_enabled', 'og_image_share_enabled']
+    'show_feedback_to_guests', 'client_access_enabled', 'og_image_share_enabled', 'show_credits_to_guests']
     .map(key => [key, Joi.boolean().truthy(1, '1').falsy(0, '0')])),
   hero_logo_visible: Joi.boolean().truthy(1, '1').falsy(0, '0').allow(null),
 }).unknown(true);

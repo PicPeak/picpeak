@@ -16,6 +16,7 @@ const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
 const { ALLOWED_MEDIA_TYPES, ALLOWED_VIDEO_TYPES } = require('../utils/fileSecurityUtils');
 const { toIso } = require('../utils/dateNormalize');
+const { clearGuestCredits } = require('../services/photoCredit');
 const router = express.Router();
 
 /**
@@ -393,6 +394,39 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Get list of extracted files to update database
       const extractedPhotos = [];
 
+      // Photo credits (#1561). A guest erased while the event was archived
+      // had their name cleared from rows that no longer existed, so the
+      // manifest still holds it; only a guest still on the event keeps theirs.
+      const activeGuestIds = new Set((await db('gallery_guests')
+        .where({ event_id: archive.id, is_deleted: formatBoolean(false) })
+        .pluck('id')).map(Number));
+      const creditFieldsOf = (entry) => {
+        if (!entry) return {};
+        const fields = {};
+        if (entry.uploaded_by === 'admin' || entry.uploaded_by === 'guest') fields.uploaded_by = entry.uploaded_by;
+        const source = ['guest', 'exif', 'manual'].includes(entry.credit_source) ? entry.credit_source : null;
+        const guestId = Number(entry.uploader_guest_id);
+        const guestKept = Number.isInteger(guestId) && activeGuestIds.has(guestId);
+        if (source === 'guest' && !guestKept) return fields;
+        // An admin's name on an erased guest's upload is about that guest,
+        // and goes with them (photoCredit.clearGuestCredits). Kept `manual`.
+        if (source === 'manual' && guestId > 0 && !guestKept) {
+          return { ...fields, credit_source: 'manual', credit_name: null };
+        }
+        if (source) {
+          fields.credit_source = source;
+          fields.credit_name = typeof entry.credit_name === 'string' && entry.credit_name ? entry.credit_name : null;
+        }
+        // The guest's visibility snapshot; a manifest without one (or with
+        // anything but true) restores as not shown to other guests.
+        if (source === 'guest') {
+          fields.credit_visible_to_guests = entry.credit_visible_to_guests === true
+            || entry.credit_visible_to_guests === 1;
+        }
+        if (guestKept) fields.uploader_guest_id = guestId;
+        return fields;
+      };
+
       // Category name -> id, resolved once per name for the whole restore.
       const categoriesMap = new Map();
 
@@ -569,7 +603,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 // shape the row had, and on SQLite a `new Date()` written
                 // through knex is epoch milliseconds, so normalise to ISO
                 // rather than write the number back.
-                uploaded_at: toIso(manifestEntry?.uploaded_at) || new Date().toISOString()
+                uploaded_at: toIso(manifestEntry?.uploaded_at) || new Date().toISOString(),
+                // Always written: every row goes into one multi-row insert,
+                // which on SQLite writes a key another row lacks as NULL,
+                // not the column default — and this column is NOT NULL.
+                credit_visible_to_guests: false,
+                ...creditFieldsOf(manifestEntry),
               });
             }
           } catch (statError) {
@@ -585,6 +624,17 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Insert new photos if any
       if (extractedPhotos.length > 0) {
         await db('photos').insert(extractedPhotos);
+        // A guest erased while this restore ran was not in the rows the
+        // erasure cleared; now that they are in, clear them (#1561).
+        const restoredGuestIds = [...new Set(extractedPhotos
+          .map((p) => p.uploader_guest_id).filter((id) => id != null))];
+        if (restoredGuestIds.length > 0) {
+          const erased = await db('gallery_guests')
+            .whereIn('id', restoredGuestIds)
+            .where('is_deleted', formatBoolean(true))
+            .pluck('id');
+          if (erased.length > 0) await clearGuestCredits(erased);
+        }
       }
       
     } catch (extractError) {

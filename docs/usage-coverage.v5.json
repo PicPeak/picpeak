@@ -1004,7 +1004,9 @@
         "POST /repair-capture-dates",
         "GET /repair-capture-dates/status",
         "POST /repair-orientation",
-        "GET /repair-orientation/status"
+        "GET /repair-orientation/status",
+        "POST /repair-credits",
+        "GET /repair-credits/status"
       ]
     },
     "adminPhotoExport.js": {
@@ -1045,6 +1047,8 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/credits",
+        "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/download",
         "GET /:eventId/photos",
         "GET /:eventId/photo/:photoId",

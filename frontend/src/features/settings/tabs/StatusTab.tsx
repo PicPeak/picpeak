@@ -9,6 +9,7 @@ import {
   Activity,
   Ruler,
   CalendarClock,
+  UserRound,
   RotateCw,
   AlertTriangle,
 } from 'lucide-react';
@@ -136,6 +137,27 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-orientation-status'] });
+    },
+  });
+
+  // Photo credits from EXIF (#1561). Same shape as the capture-date backfill.
+  const { data: creditStatus } = useQuery({
+    queryKey: ['photo-credit-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/photos/repair-credits/status');
+      return res.data;
+    },
+    enabled: isActive && canManageSystem,
+    refetchInterval: 10000,
+  });
+
+  const creditMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/photos/repair-credits');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-credit-status'] });
     },
   });
 
@@ -788,6 +810,70 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 : Number(captureDateStatus.withoutCaptureDate) === 0
                   ? t('settings.captureDates.noneToFill', 'All photos already have a capture date')
                   : t('settings.captureDates.button', 'Backfill Capture Dates')}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Photo credits (#1561) */}
+      {creditStatus && canManageSystem && (
+        <Card padding="md">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+            <UserRound className="w-5 h-5" />
+            {t('settings.creditBackfill.title')}
+          </h2>
+
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+            {t('settings.creditBackfill.description')}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{creditStatus.total}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.captureDates.totalPhotos', 'Total Photos')}</p>
+            </div>
+            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{creditStatus.withCredit}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.creditBackfill.withCredit')}</p>
+            </div>
+            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{creditStatus.undecided}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.creditBackfill.undecided')}</p>
+            </div>
+          </div>
+
+          {creditStatus.lastResult && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+              {t('settings.creditBackfill.result', {
+                success: creditStatus.lastResult.success,
+                noCredit: creditStatus.lastResult.noCredit,
+                failed: creditStatus.lastResult.failed,
+              })}
+              {Number(creditStatus.lastResult.skipped) > 0 && (
+                <span className="block text-amber-600 dark:text-amber-400 mt-1">
+                  {t('settings.captureDates.skipped', {
+                    count: creditStatus.lastResult.skipped,
+                    defaultValue: '{{count}} photo(s) were changed by something else while the run was reading them and were not updated.',
+                  })}
+                </span>
+              )}
+            </p>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => creditMutation.mutate()}
+              isLoading={creditMutation.isPending || creditStatus.isRunning}
+              disabled={Number(creditStatus.undecided) === 0 || creditStatus.isRunning}
+              leftIcon={<UserRound className="w-4 h-4" />}
+            >
+              {creditStatus.isRunning
+                ? t('settings.creditBackfill.running')
+                : Number(creditStatus.undecided) === 0
+                  ? t('settings.creditBackfill.noneToRead')
+                  : t('settings.creditBackfill.button')}
             </Button>
           </div>
         </Card>

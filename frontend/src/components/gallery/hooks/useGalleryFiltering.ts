@@ -3,6 +3,7 @@ import type { Photo, PhotoCategory } from '../../../types';
 import type { ColorLabel } from '../../../services/feedback.service';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { photosInScope } from '../folders';
+import { creditKeyOf } from '../../../utils/photoCredits';
 export type GallerySort = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
 export interface GalleryFilterOptions {
   sourcePhotos?: Photo[]; categories?: PhotoCategory[]; folderId: number | string | null;
@@ -10,10 +11,12 @@ export interface GalleryFilterOptions {
   watermarkEnabled: boolean; slug: string; activeFilters: FeedbackFilterType[]; activeColorFilters: ColorLabel[];
   mediaFilter: 'all' | 'photo' | 'video'; isGuestIdentityMode: boolean;
   myFeedbackPhotoIds: Record<FeedbackFilterType, Set<number>>; selectedPersonIds: number[]; peopleMatchAny: boolean;
+  // "By" filter (#1561): a key from utils/photoCredits, null = everyone.
+  selectedCreditKey?: string | null;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -84,6 +87,12 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
       });
     }
 
+    // Apply the "By" filter (#1561). Composes with the rest, so "Anna's photos
+    // that I liked" works.
+    if (selectedCreditKey) {
+      photos = photos.filter(photo => creditKeyOf(photo) === selectedCreditKey);
+    }
+
     // Apply colour-label filters (#1044). Guest-scoped by construction:
     // `my_color_label` is the requesting viewer's own label, which is what a
     // proofing client means by "show me my greens". Composes with (ANDs
@@ -134,5 +143,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
+  }, [sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey]);
 }
