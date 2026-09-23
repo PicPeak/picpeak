@@ -43,6 +43,7 @@
 const { auditedUpdate } = require('../accountingHistory');
 const signers = require('./signers');
 const signingEvents = require('./signingEvents');
+const { QUOTE_RELEASING_CONTRACT_STATUSES, releaseQuoteOnDeadContract } = require('./helpers');
 
 /** Placeholder keys in `rendered_content` that hold the customer's own data. */
 const PII_PLACEHOLDERS = ['customer_name', 'customer_address'];
@@ -85,9 +86,14 @@ async function plan(db, customerId) {
   if (!(await db.schema.hasTable('contracts'))) return null;
   const hasSigners = await db.schema.hasTable('contract_signers');
   const hasRedactedColumn = await db.schema.hasColumn('contracts', 'rendered_content_redacted_at');
+  // Quotes are accounting records and survive erasure, so a quote converted
+  // into a contract this erasure kills must lose its converted_contract_id
+  // the same way an admin cancel or a decline releases it (issue 1588).
+  const hasQuoteBackPointer = (await db.schema.hasTable('quotes'))
+    && (await db.schema.hasColumn('quotes', 'converted_contract_id'));
   const rows = await db('contracts').where({ customer_account_id: customerId })
-    .select('id', 'status', 'rendered_content', 'signed_by_customer_at', 'signed_by_admin_at', 'signed_pdf_path');
-  if (!rows.length) return { redact: [], retain: [], hasSigners, hasRedactedColumn };
+    .select('id', 'status', 'source_quote_id', 'rendered_content', 'signed_by_customer_at', 'signed_by_admin_at', 'signed_pdf_path');
+  if (!rows.length) return { redact: [], retain: [], hasSigners, hasRedactedColumn, hasQuoteBackPointer };
 
   const signedIds = hasSigners
     ? new Set((await db('contract_signers')
@@ -108,12 +114,13 @@ async function plan(db, customerId) {
       redact.push({
         id: row.id,
         status: row.status,
+        sourceQuoteId: row.source_quote_id || null,
         cancel: ['draft', 'sent'].includes(row.status),
         redacted: redactSnapshot(row.rendered_content),
       });
     }
   }
-  return { redact, retain, hasSigners, hasRedactedColumn };
+  return { redact, retain, hasSigners, hasRedactedColumn, hasQuoteBackPointer };
 }
 
 /** Revoke every way into a contract: signer links and sessions, action tokens. */
@@ -147,6 +154,14 @@ async function apply(trx, contractPlan, actor) {
       updated_at: stamp(),
     }, history);
     if (!applied) continue;
+    // A contract that ends up dead (cancelled here, or already cancelled /
+    // declined) releases its source quote so a replacement contract can be
+    // created from it — the helper only clears a pointer that still names
+    // this contract.
+    const endStatus = entry.cancel ? 'cancelled' : entry.status;
+    if (QUOTE_RELEASING_CONTRACT_STATUSES.includes(endStatus)) {
+      await releaseQuoteOnDeadContract(trx, entry.id, entry.sourceQuoteId, !!contractPlan.hasQuoteBackPointer, history);
+    }
     await revokeAllAccess(trx, entry.id, contractPlan.hasSigners);
     if (contractPlan.hasSigners) {
       // The evidence columns of a contract nobody signed. email_hash goes

@@ -131,4 +131,28 @@ describe('quote release on dead contract (issue 1588)', () => {
     expect(rowA.converted_contract_id).toBeNull();
     expect(Number(rowB.converted_contract_id)).toBe(Number(b.contractId));
   });
+
+  it('erasing the customer releases the quote of an unsigned contract it cancels', async () => {
+    // A second customer, so erasing it leaves the shared one alone.
+    const inserted = await db('customer_accounts').insert({
+      email: `erase-${crypto.randomBytes(3).toString('hex')}@example.com`,
+      display_name: 'Erase Me',
+      is_active: 1,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const eraseId = inserted[0]?.id ?? inserted[0];
+    const quoteId = await mkQuote();
+    await db('quotes').where({ id: quoteId }).update({ customer_account_id: eraseId });
+    const { contractId } = await contractService.createFromQuote(quoteId, adminId);
+    expect(Number((await converted(quoteId)).converted_contract_id)).toBe(Number(contractId));
+
+    await require('../../src/services/customerAccountsService').eraseCustomer(eraseId, adminId);
+
+    expect((await db('contracts').where({ id: contractId }).first('status')).status).toBe('cancelled');
+    // Erasure keeps the quote (an accounting record) — its pointer must not
+    // keep naming the contract erasure just killed.
+    const quote = await db('quotes').where({ id: quoteId }).first('id', 'converted_contract_id');
+    expect(quote).toBeTruthy();
+    expect(quote.converted_contract_id).toBeNull();
+  });
 });
