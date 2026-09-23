@@ -98,3 +98,95 @@ test('a claim released after a failed insert lets an immediate retry succeed onc
   expect(invoices).toHaveLength(1);
   expect(invoices[0].id).toBe(result.invoiceId);
 });
+
+test('a standalone contract converted long ago is not billed again once its claim goes stale', async () => {
+  const contractId = await makeFullySignedContract('TEST-RACE-3');
+  const first = await service.convertToInvoiceOnly(contractId, adminId);
+  // The claim stays set after success; age it past the staleness window.
+  await db('contracts').where({ id: contractId })
+    .update({ invoice_prepared_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() });
+
+  const again = await service.convertToInvoiceOnly(contractId, adminId);
+  expect(again).toMatchObject({ invoiceId: first.invoiceId, alreadyConverted: true });
+  expect(await db('invoices').where({ source_contract_id: contractId })).toHaveLength(1);
+});
+
+// Path A: the contract came from a quote, so the invoices are the quote's
+// installments and the contract lineage (invoices.source_contract_id) is
+// stamped onto them. Both must commit together.
+async function makeQuoteBackedContract(number) {
+  const quoteService = require('../../src/services/quoteService');
+  await db('customer_accounts').where({ id: customerId }).update({ feature_quotes: true, feature_bills: true });
+  const quoteId = await quoteService.createQuote({
+    customerAccountId: customerId, currency: 'CHF', vatRate: 0, eventName: 'Path A shoot',
+    lineItems: [{ position: 1, quantity: 1, description: 'Package', unit_price_minor: 100000, discount_percent: 0 }],
+  }, adminId);
+  const [contract] = await db('contracts').insert({
+    contract_number: number, customer_account_id: customerId, source_quote_id: quoteId,
+    issue_date: '2026-09-16', status: 'fully_signed', title: 'Quote contract', created_by_admin_id: adminId,
+  }).returning('id');
+  const contractId = contract.id ?? contract;
+  await db('quotes').where({ id: quoteId }).update({ status: 'accepted', converted_contract_id: contractId });
+  return { quoteId, contractId };
+}
+
+test('a failed lineage backfill rolls the quote conversion back and a retry links it once', async () => {
+  const { quoteId, contractId } = await makeQuoteBackedContract('TEST-RACE-A1');
+
+  const prototype = Object.getPrototypeOf(db.client);
+  const original = prototype._query;
+  let injected = false;
+  const spy = jest.spyOn(prototype, '_query').mockImplementation(function (connection, query) {
+    if (!injected && /^update ["`]invoices["`] set ["`]source_contract_id["`]/i.test(query.sql)) {
+      injected = true;
+      return Promise.reject(new Error('injected lineage backfill failure'));
+    }
+    return original.call(this, connection, query);
+  });
+  try {
+    await expect(service.convertToInvoiceOnly(contractId, adminId)).rejects.toThrow('injected lineage backfill failure');
+  } finally {
+    spy.mockRestore();
+  }
+  expect(injected).toBe(true);
+  // Full rollback: no invoices, the quote still convertible, the claim released.
+  expect(await db('invoices').where({ source_quote_id: quoteId })).toHaveLength(0);
+  expect((await db('quotes').where({ id: quoteId }).first()).status).toBe('accepted');
+  expect((await db('contracts').where({ id: contractId }).first()).invoice_prepared_at).toBeNull();
+
+  const result = await service.convertToInvoiceOnly(contractId, adminId);
+  const invoices = await db('invoices').where({ source_quote_id: quoteId }).orderBy('id');
+  expect(invoices).toHaveLength(1);
+  expect(invoices.every((i) => i.source_contract_id === contractId)).toBe(true);
+  expect(result.invoiceIds).toEqual(invoices.map((i) => i.id));
+
+  // A later call — even past the claim's staleness window — adopts them.
+  await db('contracts').where({ id: contractId })
+    .update({ invoice_prepared_at: new Date(Date.now() - 60 * 60 * 1000).toISOString() });
+  const again = await service.convertToInvoiceOnly(contractId, adminId);
+  expect(again).toMatchObject({ invoiceIds: invoices.map((i) => i.id), alreadyConverted: true });
+  expect(await db('invoices').where({ source_quote_id: quoteId })).toHaveLength(1);
+});
+
+test('two concurrent conversions of the same quote-backed contract create its invoices once', async () => {
+  const { quoteId, contractId } = await makeQuoteBackedContract('TEST-RACE-A2');
+
+  const settled = await Promise.allSettled([
+    service.convertToInvoiceOnly(contractId, adminId),
+    service.convertToInvoiceOnly(contractId, adminId),
+  ]);
+
+  const invoices = await db('invoices').where({ source_quote_id: quoteId }).orderBy('id');
+  expect(invoices).toHaveLength(1);
+  expect(invoices[0].source_contract_id).toBe(contractId);
+  const fulfilled = settled.filter((r) => r.status === 'fulfilled');
+  expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+  for (const r of fulfilled) expect(r.value.invoiceIds).toEqual([invoices[0].id]);
+  for (const r of settled.filter((s) => s.status === 'rejected')) {
+    expect(r.reason.code).toBe('INVOICE_CONVERSION_IN_PROGRESS');
+  }
+
+  const retry = await service.convertToInvoiceOnly(contractId, adminId);
+  expect(retry.invoiceIds).toEqual([invoices[0].id]);
+  expect(await db('invoices').where({ source_quote_id: quoteId })).toHaveLength(1);
+});
