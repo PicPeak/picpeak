@@ -1252,7 +1252,9 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // out, so a re-queued copy would mail a dead link. Refuse it here, the
         // one place every requeue path passes, instead of sending it.
         if (hasMaskedRecoveryLink(emailData)) {
-          await db('email_queue').where('id', email.id).update({
+          // Status-guarded: a row cancelled since the batch was fetched
+          // (e.g. a customer erasure, issue 1593) must stay cancelled.
+          await db('email_queue').where({ id: email.id, status: 'pending' }).update({
             status: 'failed',
             error_message: 'This invitation or password-reset email cannot be sent again: its link is not kept after sending. Send a new invitation or password reset instead.',
           });
@@ -1333,9 +1335,18 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
             sentUpdate.rendered_html = redactRecoveryLinks(redactRenderedHtml(sendResult.html, secrets));
           }
         } catch (_) { /* best-effort — never block the send on the preview */ }
-        await db('email_queue')
-          .where('id', email.id)
+        // Status-guarded: the stillPending re-check above can't cover the
+        // SMTP call itself. A customer erasure committing during it cancels
+        // and redacts this row (issue 1593); an unguarded update would flip
+        // it back to 'sent' and restore the pre-erasure data + HTML.
+        const markedSent = await db('email_queue')
+          .where({ id: email.id, status: 'pending' })
           .update(sentUpdate);
+        if (!markedSent) {
+          logger.info(`Email ${email.id} was sent but cancelled mid-send — leaving the cancelled row as is`);
+          result.sent += 1;
+          continue;
+        }
 
         // Campaign bookkeeping (#1264). Best-effort by contract — a failure
         // in the audit trail must never turn a delivered email into a
