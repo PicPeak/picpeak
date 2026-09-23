@@ -55,6 +55,9 @@ function inspectFont(buffer) {
   let familyName;
   try {
     numGlyphs = font.numGlyphs;
+    // No OS/2 table means no embedding restriction is declared (OpenType
+    // spec: fsType lives only there), so such a font passes the licence
+    // checks below. fontkit returns undefined only when the table is absent.
     fsType = font['OS/2'] ? font['OS/2'].fsType : null;
     familyName = font.familyName || null;
     // Touch what the renderer will read: metrics and a glyph run.
