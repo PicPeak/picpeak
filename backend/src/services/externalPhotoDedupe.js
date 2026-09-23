@@ -326,8 +326,14 @@ async function dedupeExternalPhotos(knex) {
 /** Is the index actually there? Asked of the catalog, not inferred. */
 async function externalRelpathIndexExists(knex) {
   const isPg = knex.client && knex.client.config && knex.client.config.client === 'pg';
+  // Scoped to the current schema: pg_indexes lists every schema, so a
+  // same-named index elsewhere would answer for this one, and reading a
+  // schema being dropped at that moment fails the query outright.
   const row = isPg
-    ? await knex('pg_indexes').where('indexname', INDEX_NAME).first()
+    ? await knex('pg_indexes')
+      .where('indexname', INDEX_NAME)
+      .whereRaw('schemaname = current_schema()')
+      .first()
     : await knex('sqlite_master').where({ type: 'index', name: INDEX_NAME }).first();
   return !!row;
 }

@@ -52,9 +52,11 @@ async function insertIfNotExists(knex, tableName, data, uniqueField) {
 async function createIndexIfNotExists(knex, tableName, columns, indexName) {
   // This is database-specific, works for PostgreSQL
   if (knex.client.config.client === 'pg') {
+    // Scoped to the current schema: pg_indexes lists every schema, and a
+    // same-named index in another one must not stop this one being created.
     const result = await knex.raw(`
-      SELECT 1 FROM pg_indexes 
-      WHERE tablename = ? AND indexname = ?
+      SELECT 1 FROM pg_indexes
+      WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?
     `, [tableName, indexName]);
     
     if (result.rows.length === 0) {
