@@ -478,12 +478,20 @@ async function review(customerId, documentId, { status, note }, admin) {
 async function updateLinks(customerId, documentId, links, admin) {
   const row = await getForAdmin(customerId, documentId);
   const resolved = await resolveLinks(customerId, links, { admin });
-  await db('customer_documents').where({ id: row.id }).update({
-    event_id: resolved.eventId,
-    project_id: resolved.projectId,
-    contract_id: resolved.contractId,
-    updated_at: new Date().toISOString(),
-  });
+  // Re-checked in the write itself: an erasure or retention sweep can delete
+  // and claim the row for purging after getForAdmin read it, and a contract
+  // link landing on a claimed row would not stop its bytes being deleted.
+  const updated = await db('customer_documents')
+    .where({ id: row.id })
+    .whereNull('deleted_at')
+    .whereNull('purge_claimed_at')
+    .update({
+      event_id: resolved.eventId,
+      project_id: resolved.projectId,
+      contract_id: resolved.contractId,
+      updated_at: new Date().toISOString(),
+    });
+  if (updated === 0) throw new NotFoundError('Document');
   await logActivity('customer_document_linked',
     { documentId: row.id, customerId, ...resolved }, resolved.eventId, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
 }
@@ -639,6 +647,11 @@ async function purgeFiles(rows) {
  * that a live purge would have finished. storage.delete() is a no-op when
  * the key is already gone, so retrying a delete that actually succeeded
  * before the crash is harmless.
+ *
+ * A claimed row that carries a contract link keeps its bytes: the link is
+ * the contractual record and wins over the claim. Its claim is left standing
+ * (the row stays out of every purge) rather than released, since a released
+ * claim is what let bytes go silently before.
  */
 async function retryStalePurgeClaims(now = Date.now()) {
   const storage = getStorage();
@@ -646,6 +659,7 @@ async function retryStalePurgeClaims(now = Date.now()) {
   const claimed = await db('customer_documents')
     .whereNotNull('purge_claimed_at')
     .whereNull('purged_at')
+    .whereNull('contract_id')
     .select('id', 'storage_key', 'purge_claimed_at');
   const stale = claimed.filter((r) => {
     const at = toMillis(r.purge_claimed_at);
