@@ -300,4 +300,86 @@ describe('customer erasure clears email_queue', () => {
     expect(erasedQueueRow.status).toBe('cancelled');
     expect(erasedQueueRow.recipient_email).not.toBe(alsoErased.email);
   });
+
+  it('does not let the mark-sent write undo an erasure that commits during the SMTP call', async () => {
+    // The stillPending re-check runs before the send; the erasure here lands
+    // DURING it (inside the mocked transport for this very row). The
+    // trailing mark-sent update must not flip the row back to 'sent' or
+    // restore the pre-erasure variables and rendered HTML.
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+
+    const midSend = await insertCustomer(db);
+    const now = new Date().toISOString();
+    const insert = await db('email_queue').insert({
+      recipient_email: midSend.email, email_type: 'gallery_created',
+      email_data: JSON.stringify({
+        customer_name: 'Mid Send Customer', host_name: 'Mid Send Customer', event_name: 'Mid Send Event', event_date: '2026-09-07',
+        gallery_link: 'https://photos.example/gallery/mid-send/tok', gallery_password: 'pw-secret',
+        expiry_date: null, welcome_message: '',
+      }),
+      status: 'pending', created_at: now, scheduled_at: now, retry_count: 0,
+    }).returning('id');
+    const queueId = insert[0]?.id ?? insert[0];
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const stub = stubWebhookTransport(async (mail) => {
+      await eraseCustomer(midSend.id, null);
+      return { messageId: `sent-${mail.to}` };
+    });
+    try {
+      const { processEmailQueue } = require('../../src/services/emailProcessor');
+      await processEmailQueue({ ignoreSchedule: true, onlyId: queueId });
+      expect(stub.mails.map((m) => m.to)).toEqual([midSend.email]);
+    } finally { stub.restore(); }
+
+    const row = await db('email_queue').where({ id: queueId }).first();
+    expect(row.status).toBe('cancelled');
+    expect(row.recipient_email).not.toBe(midSend.email);
+    expect(JSON.parse(row.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    expect(row.rendered_html).toBeFalsy();
+    expect(JSON.stringify(row)).not.toContain('Mid Send Customer');
+  });
+
+  it('keeps a campaign recipient cancelled when the erasure commits during its send', async () => {
+    await db('email_queue').where('status', 'pending').update({ status: 'cancelled' });
+
+    const recipient = await insertCustomer(db);
+    const [campaignId] = await db('email_campaigns').insert({
+      name: 'Mid-send erasure campaign', subject: 'Hello', body_html: '<p>Hi</p>',
+      status: 'sending', recipient_count: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).returning('id').then((r) => r.map((x) => x?.id ?? x));
+
+    const now = new Date().toISOString();
+    const insert = await db('email_queue').insert({
+      recipient_email: recipient.email, email_type: 'newsletter', campaign_id: campaignId,
+      email_data: JSON.stringify({ customerId: recipient.id, customer_name: 'Campaign Mid Send' }),
+      status: 'pending', created_at: now, scheduled_at: now, retry_count: 0,
+    }).returning('id');
+    const queueId = insert[0]?.id ?? insert[0];
+    await db('email_campaign_recipients').insert({
+      campaign_id: campaignId, customer_account_id: recipient.id, email: recipient.email,
+      email_queue_id: queueId, status: 'queued', created_at: now,
+    });
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    const stub = stubWebhookTransport(async (mail) => {
+      await eraseCustomer(recipient.id, null);
+      return { messageId: `sent-${mail.to}` };
+    });
+    try {
+      const { processEmailQueue } = require('../../src/services/emailProcessor');
+      await processEmailQueue({ ignoreSchedule: true, onlyId: queueId });
+      expect(stub.mails.map((m) => m.to)).toEqual([recipient.email]);
+    } finally { stub.restore(); }
+
+    const row = await db('email_queue').where({ id: queueId }).first();
+    expect(row.status).toBe('cancelled');
+    expect(JSON.parse(row.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    expect(row.rendered_html).toBeFalsy();
+
+    const recipientRow = await db('email_campaign_recipients').where({ campaign_id: campaignId, email_queue_id: queueId }).first();
+    expect(recipientRow.status).toBe('cancelled');
+    const campaign = await db('email_campaigns').where({ id: campaignId }).first();
+    expect(Number(campaign.sent_count)).toBe(0);
+  });
 });
