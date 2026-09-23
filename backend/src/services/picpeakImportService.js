@@ -473,6 +473,16 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 // email templates already self-heal at runtime (see businessProfileService
 // .getProfile(), _permissionsBoot.js, _backupPathsBoot.js, etc.) and are
 // deliberately NOT listed here.
+//
+// Guarded contract (seedOnlyTablesContract.test.js): after running every core
+// migration on a fresh DB, the set of exported tables that hold rows must
+// equal SEED_ONLY_TABLES plus that test's commented exemption list. A new
+// migration that seeds rows therefore fails the test until its table is
+// classified: add it HERE when an archive can predate the table and nothing
+// reseeds it at runtime; add it to the test's exemption list (with the reason)
+// otherwise. Never list a table that holds user data: a listed table the
+// archive lacks keeps its LOCAL rows across the restore, which is the #1586
+// leak shape this clear exists to close.
 const SEED_ONLY_TABLES = new Set([
   'product_usage_state',        // migrations/core/201_product_usage.js — id=1 singleton; UsageService.status() dereferences it unguarded
   'ledger_accounts',             // migrations/core/129_create_ledger_accounts_and_vat_codes.js — Swiss/LI chart of accounts
@@ -827,4 +837,5 @@ module.exports = {
   captureOperatorRole,
   preserveOperatorRole,
   resyncSequences,
+  SEED_ONLY_TABLES,
 };
