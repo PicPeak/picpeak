@@ -83,6 +83,59 @@ describe('secure image limiter (secureImageMiddleware.js)', () => {
     expect((await get(app, '2001:db8:1:3::77')).status).toBe(200);
   });
 
+  it('counts suspicious activity from two addresses in one /64 as one client', async () => {
+    const app = express();
+    app.set('trust proxy', true);
+    app.get('/img/:photoId', secureImageMiddleware.secureImageAccess, (req, res) => res.json({}));
+    const hit = (ip) => request(app).get('/img/7')
+      .set('X-Forwarded-For', ip)
+      .set('User-Agent', UA)
+      .set('Accept', 'image/*')
+      .set('Accept-Language', 'en')
+      .set('Accept-Encoding', 'gzip');
+    const detect = jest.spyOn(secureImageService, 'detectSuspiciousActivity').mockResolvedValue(true);
+    jest.spyOn(secureImageMiddleware, 'getRateLimitSettings')
+      .mockResolvedValue({ perMinute: 100, per5Minutes: 100, perHour: 500 });
+    try {
+      // Four flags put the client on the list; alternate between two
+      // addresses so a per-address counter would only reach two each.
+      for (const ip of ['2001:db8:1:2::a', '2001:db8:1:2::b', '2001:db8:1:2::a', '2001:db8:1:2::b']) {
+        expect((await hit(ip)).status).toBe(200);
+      }
+      const keys = new Set(detect.mock.calls.map(([key]) => key));
+      expect(keys.size).toBe(1);
+      expect([...secureImageMiddleware.rateLimitViolations.values()]).toEqual([4]);
+      expect([...secureImageMiddleware.suspiciousIPs]).toEqual(['2001:db8:1:2::/64']);
+      expect((await hit('2001:db8:1:2::c')).status).toBe(403);
+    } finally {
+      detect.mockRestore();
+    }
+  });
+
+  it('logs image access under the network key the suspicious-activity checks count on', async () => {
+    const inserted = [];
+    const { db } = require('../../src/database/db');
+    db.mockImplementation(() => ({ insert: async (row) => { inserted.push(row); } }));
+    const rapid = jest.spyOn(secureImageService, 'checkForRapidAccess').mockResolvedValue();
+    const reqFor = (ip) => ({ ip, get: (h) => ({ 'User-Agent': UA, 'Accept-Language': 'en', 'Accept-Encoding': 'gzip' })[h] });
+    try {
+      for (const ip of ['2001:db8:1:2::a', '2001:db8:1:2::b']) {
+        const req = reqFor(ip);
+        await secureImageService.logImageAccess(7, 1, {
+          ip,
+          fingerprint: secureImageService.createClientFingerprint(req),
+          rateLimitFingerprint: secureImageService.createRateLimitFingerprint(req),
+        }, 'view');
+      }
+      expect(inserted.map((r) => r.client_ip)).toEqual(['2001:db8:1:2::a', '2001:db8:1:2::b']);
+      expect(new Set(inserted.map((r) => r.client_fingerprint)).size).toBe(1);
+      expect(new Set(rapid.mock.calls.map(([key]) => key))).toEqual(new Set([inserted[0].client_fingerprint]));
+    } finally {
+      rapid.mockRestore();
+      db.mockReset();
+    }
+  });
+
   it('leaves IPv4 as it was: the rate-limit fingerprint is the token fingerprint', async () => {
     const res = await get(buildApp(), '203.0.113.7');
     expect(res.body.rateLimitFingerprint).toBe(res.body.fingerprint);

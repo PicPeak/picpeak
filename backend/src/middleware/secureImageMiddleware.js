@@ -114,10 +114,12 @@ class SecureImageMiddleware {
       return { passed: false, status: 429, message: 'Too many requests' };
     }
 
-    // 4. Check for suspicious patterns
+    // 4. Check for suspicious patterns. Counted per network like the limits
+    // above: keyed on the per-address fingerprint, rotating through an IPv6
+    // /64 spread the accesses over many counters and never tripped it.
     if (photoId) {
       const suspiciousActivity = await secureImageService.detectSuspiciousActivity(
-        clientInfo.fingerprint, 
+        clientInfo.rateLimitFingerprint,
         photoId
       );
       
