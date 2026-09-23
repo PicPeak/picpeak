@@ -84,9 +84,9 @@ test('discarding browser cookies does not bypass the independent IP budget', asy
   await post(request(app), comment('New browser'), 'fresh-browser').expect(429);
 });
 
-test('verified guest identities retain their server-issued identifiers', () => {
+test('verified guest identities retain their server-issued identifiers', async () => {
   const { generateGuestIdentifier } = require('../../src/middleware/feedbackRateLimit');
-  expect(generateGuestIdentifier({ guest: { identifier: 'verified-guest' } })).toBe('verified-guest');
+  expect(await generateGuestIdentifier({ guest: { identifier: 'verified-guest' } })).toBe('verified-guest');
 });
 
 

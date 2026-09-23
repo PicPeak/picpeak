@@ -6,8 +6,8 @@ const { rateLimitKey } = require('../utils/rateLimitKey');
 
 const { anonymousFeedbackIdentifier } = require('../utils/anonymousFeedbackIdentity');
 
-function generateGuestIdentifier(req) {
-  return req.guest?.identifier || anonymousFeedbackIdentifier(req);
+async function generateGuestIdentifier(req) {
+  return req.guest?.identifier || await anonymousFeedbackIdentifier(req);
 }
 
 /**
@@ -72,7 +72,7 @@ async function consumeFeedbackLimit(req, actionType) {
     max: Number.isSafeInteger(configured?.max) && configured.max > 0 ? configured.max : fallback.max,
     window: Number.isSafeInteger(configured?.window) && configured.window > 0 ? configured.window : fallback.window
   };
-  const identifier = generateGuestIdentifier(req);
+  const identifier = await generateGuestIdentifier(req);
   const ip = rateLimitKey(req) || 'unknown';
   const ipIdentifier = crypto.createHash('sha256').update(`feedback-ip:${ip}`).digest('hex');
   const budgets = [
