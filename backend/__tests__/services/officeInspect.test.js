@@ -404,3 +404,31 @@ describe('officeValidation without a worker', () => {
     jest.dontMock('../../src/utils/officeInspect');
   });
 });
+
+describe('officeValidation wait queue', () => {
+  it('refuses with 503 once MAX_WAITING checks are queued behind the running ones', async () => {
+    jest.resetModules();
+    const workers = [];
+    const { EventEmitter } = require('events');
+    jest.doMock('worker_threads', () => ({
+      Worker: class FakeWorker extends EventEmitter {
+        constructor() { super(); workers.push(this); }
+        terminate() { return Promise.resolve(); }
+      },
+    }));
+    const { MAX_CONCURRENT, MAX_WAITING, validateOffice } = require('../../src/utils/officeValidation');
+    const accepted = Array.from({ length: MAX_CONCURRENT + MAX_WAITING }, () => validateOffice('x.docx', 'docx'));
+    const err = await validateOffice('x.docx', 'docx').catch((e) => e);
+    expect(err.statusCode).toBe(503);
+    expect(err.code).toBe('DOCUMENT_CHECK_UNAVAILABLE');
+    // Drain: every queued check still gets its turn.
+    let done = 0;
+    accepted.forEach((p) => p.then(() => { done += 1; }));
+    while (done < accepted.length) {
+      workers.splice(0).forEach((w) => w.emit('message', { ok: true, info: {} }));
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(done).toBe(MAX_CONCURRENT + MAX_WAITING);
+    jest.dontMock('worker_threads');
+  });
+});
