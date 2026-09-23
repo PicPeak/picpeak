@@ -144,6 +144,75 @@ describe('legacy-root documents in archives', () => {
     expect(await contents()).toEqual({ only: 'LEGACY-ONLY', shadowed: 'LEGACY-SAME', root: 'ROOT-SAME' });
   });
 
+  it('records the archived bytes checksum, not a stale collection-time one, when the legacy file changes mid-backup', async () => {
+    // Regression test for the collect-time vs archive-time TOCTOU:
+    // collectLegacyStoredFiles hashes the legacy file once, well before
+    // performLocalBackup actually reads and copies it into the archive. A
+    // write landing on the file in between used to leave the manifest's
+    // stored_path_sha256 naming bytes the archive never actually holds.
+    const crypto = require('crypto');
+    const backupService = require('../../src/services/backupService');
+    const { root, legacy } = useInstall('source');
+    const legacyFile = path.join(legacy, 'business-docs', 'inbound', '2026', 'race.pdf');
+    write(legacyFile, 'BEFORE-BYTES');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({ original_filename: 'race', file_path: legacyFile });
+
+    await db('app_settings').where('setting_type', 'backup').del();
+    const destPath = path.join(root, '..', 'destination');
+    fs.mkdirSync(destPath, { recursive: true });
+    await db('app_settings').insert([
+      { setting_key: 'backup_destination_type', setting_value: JSON.stringify('local'), setting_type: 'backup' },
+      { setting_key: 'backup_destination_path', setting_value: JSON.stringify(destPath), setting_type: 'backup' },
+      { setting_key: 'backup_enabled', setting_value: JSON.stringify(true), setting_type: 'backup' },
+      { setting_key: 'backup_database_inline_dump', setting_value: JSON.stringify(false), setting_type: 'backup' },
+    ]).onConflict('setting_key').merge();
+    const fakeDump = path.join(destPath, 'fake.sql.gz');
+    fs.writeFileSync(fakeDump, 'pretend dump');
+    await db('database_backup_runs').insert({
+      started_at: new Date(),
+      completed_at: new Date(),
+      status: 'completed',
+      backup_type: 'pg',
+      file_path: fakeDump,
+      file_size_bytes: fs.statSync(fakeDump).size,
+      destination_path: fakeDump,
+    });
+
+    // Simulate a write landing on the legacy file right after the collection
+    // walk (collectLegacyStoredFiles) hashes it, before the archive step
+    // reads it again for the actual copy. collectLegacyStoredFiles hashes the
+    // realpath'd file (fs.realpathSync), which on macOS differs from the raw
+    // tmpdir path (/var/... vs /private/var/...), so compare realpaths.
+    const realLegacyFile = fs.realpathSync(legacyFile);
+    const realCreateReadStream = fs.createReadStream.bind(fs);
+    let raced = false;
+    const streamSpy = jest.spyOn(fs, 'createReadStream').mockImplementation((filePath, ...args) => {
+      const stream = realCreateReadStream(filePath, ...args);
+      if (!raced && typeof filePath === 'string' && fs.existsSync(filePath)
+          && fs.realpathSync(filePath) === realLegacyFile) {
+        raced = true;
+        stream.on('end', () => { fs.writeFileSync(legacyFile, 'AFTER-RACE-BYTES'); });
+      }
+      return stream;
+    });
+    try {
+      await backupService.runBackup(true);
+    } finally {
+      streamSpy.mockRestore();
+    }
+
+    const run = await db('backup_runs').orderBy('id', 'desc').first();
+    expect(run.status).toBe('completed');
+    const { manifest } = await backupService.getBackupManifest(run.id);
+    const rel = 'business-docs/inbound/2026/race.pdf';
+    const recordedSha256 = manifest.metadata.stored_path_sha256[rel];
+
+    const archivedBytes = fs.readFileSync(path.join(destPath, ...rel.split('/')));
+    expect(archivedBytes.toString()).toBe('AFTER-RACE-BYTES');
+    expect(recordedSha256).toBe(crypto.createHash('sha256').update(archivedBytes).digest('hex'));
+  });
+
   it('leaves out a legacy file reached through a symlink to outside the legacy root', async () => {
     const { collectLegacyStoredFiles } = require('../../src/utils/legacyStoredFiles');
     const { legacy } = useInstall('source');
@@ -239,5 +308,67 @@ describe('legacy-root documents in archives', () => {
     }, async () => true);
     expect(updated).toBe(0);
     expect((await db('inbound_documents').first()).file_path).toBe('/old/storage/business-docs/x.pdf');
+  });
+
+  it('verifies each entry immediately before its own update, not for the whole batch up front', async () => {
+    // Regression test for the TOCTOU gap: applyStoredPathMap used to verify()
+    // every entry first and only then run the batched updates, so a file
+    // that changed after ITS OWN verify() but before ITS OWN update (while a
+    // later entry's verify/update was still running) went unnoticed. Proven
+    // here by call order: with the old batched shape, both verify() calls
+    // ran before either update fired; with the fix, each entry's update
+    // follows immediately after that same entry's verify().
+    const { applyStoredPathMap } = require('../../src/utils/legacyStoredFiles');
+    const { root } = useInstall('source');
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'a.pdf'), 'A');
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'b.pdf'), 'B');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert([
+      { original_filename: 'a', file_path: '/old/a.pdf' },
+      { original_filename: 'b', file_path: '/old/b.pdf' },
+    ]);
+    const map = {
+      '/old/a.pdf': 'business-docs/inbound/2026/a.pdf',
+      '/old/b.pdf': 'business-docs/inbound/2026/b.pdf',
+    };
+
+    const order = [];
+    const verify = async (rel) => { order.push(`verify:${rel}`); return true; };
+
+    // A thin trace over the real knex instance: applyStoredPathMap only
+    // reaches `knex.schema.{hasTable,hasColumn}` and
+    // `knex(table).where(column, value).update(...)`, so that's all this
+    // needs to forward.
+    const tracedDb = (table) => {
+      const qb = db(table);
+      const originalWhere = qb.where.bind(qb);
+      return {
+        where: (column, value) => {
+          const whereQb = originalWhere(column, value);
+          const originalUpdate = whereQb.update.bind(whereQb);
+          whereQb.update = (payload) => {
+            order.push(`update:${value}`);
+            return originalUpdate(payload);
+          };
+          return whereQb;
+        },
+      };
+    };
+    tracedDb.schema = db.schema;
+
+    const updated = await applyStoredPathMap(tracedDb, map, verify);
+    expect(updated).toBe(2);
+
+    const verifyA = order.indexOf('verify:business-docs/inbound/2026/a.pdf');
+    const updateA = order.indexOf('update:/old/a.pdf');
+    const verifyB = order.indexOf('verify:business-docs/inbound/2026/b.pdf');
+    const updateB = order.indexOf('update:/old/b.pdf');
+    // Each entry's own update comes right after its own verify, and before
+    // the other entry's verify runs — proving the two are no longer split
+    // into a verify-everything phase followed by an update-everything phase.
+    expect(verifyA).toBeGreaterThanOrEqual(0);
+    expect(updateA).toBeGreaterThan(verifyA);
+    expect(updateA).toBeLessThan(verifyB);
+    expect(updateB).toBeGreaterThan(verifyB);
   });
 });

@@ -183,7 +183,7 @@ async function holdsBytes(file, sha256) {
  */
 async function applyStoredPathMap(knex, map, verify, { onlyUnreadable = false } = {}) {
   if (!map || typeof map !== 'object') return 0;
-  const entries = [];
+  const candidates = [];
   for (const [value, rel] of Object.entries(map)) {
     if (typeof value !== 'string' || !value || !isPlaceablePath(rel)) continue;
     // Without a restored database the row is the live one: while the file it
@@ -198,15 +198,28 @@ async function applyStoredPathMap(knex, map, verify, { onlyUnreadable = false } 
         : [path.resolve(process.cwd(), value), path.resolve(getStoragePath(), value)];
       if (literal.some((file) => fs.existsSync(file))) continue;
     }
-    // eslint-disable-next-line no-await-in-loop
-    if (await verify(rel)) entries.push([value, rel]);
+    candidates.push([value, rel]);
   }
-  if (!entries.length) return 0;
-  let updated = 0;
+  if (!candidates.length) return 0;
+  const tableColumns = [];
   for (const { table, column } of STORED_PATH_COLUMNS) {
     // eslint-disable-next-line no-await-in-loop
-    if (!(await knex.schema.hasTable(table)) || !(await knex.schema.hasColumn(table, column))) continue;
-    for (const [value, rel] of entries) {
+    if ((await knex.schema.hasTable(table)) && (await knex.schema.hasColumn(table, column))) {
+      tableColumns.push({ table, column });
+    }
+  }
+  if (!tableColumns.length) return 0;
+  let updated = 0;
+  for (const [value, rel] of candidates) {
+    // Verify immediately before this entry's own updates rather than up
+    // front for the whole batch: nothing stops a live write to this same
+    // storage-relative path during a restore, so a verify() done long before
+    // a later entry's update runs could go stale by the time that update
+    // fires. Re-checking right here keeps the gap to this one entry's own
+    // update statements.
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await verify(rel))) continue;
+    for (const { table, column } of tableColumns) {
       // eslint-disable-next-line no-await-in-loop
       updated += Number(await knex(table).where(column, value).update({ [column]: rel })) || 0;
     }
