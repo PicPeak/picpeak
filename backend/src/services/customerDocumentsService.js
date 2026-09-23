@@ -31,6 +31,7 @@ const { getStoragePath } = require('../config/storage');
 const { assertPathInside } = require('../utils/safePath');
 const { validatePdf } = require('../utils/pdfValidation');
 const { toIso } = require('../utils/dateNormalize');
+const { toMillis } = require('../utils/queueTimestamps');
 const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
 const { filterOwnedEventIds, ownedProjectIds } = require('../middleware/ownership');
 const documentScanService = require('./documentScanService');
@@ -171,6 +172,8 @@ const PDF_ERROR_CODES = {
   PDF_TOO_MANY_PAGES: [`A document may have at most ${MAX_DOCUMENT_PAGES} pages`, 'PDF_TOO_MANY_PAGES'],
   PDF_TOO_COMPLEX: [null, 'PDF_TOO_COMPLEX'],
   PDF_ACTIVE_CONTENT: [null, 'PDF_ACTIVE_CONTENT'],
+  // Not a verdict on the file: no worker could start, or the queue is full.
+  DOCUMENT_CHECK_UNAVAILABLE: [null, 'DOCUMENT_CHECK_UNAVAILABLE'],
 };
 
 function documentPdfError(err) {
@@ -655,12 +658,20 @@ async function afterRejection(row) {
 async function updateLinks(customerId, documentId, links, admin) {
   const row = await getForAdmin(customerId, documentId);
   const resolved = await resolveLinks(customerId, links, { admin });
-  await db('customer_documents').where({ id: row.id }).update({
-    event_id: resolved.eventId,
-    project_id: resolved.projectId,
-    contract_id: resolved.contractId,
-    updated_at: new Date().toISOString(),
-  });
+  // Re-checked in the write itself: an erasure or retention sweep can delete
+  // and claim the row for purging after getForAdmin read it, and a contract
+  // link landing on a claimed row would not stop its bytes being deleted.
+  const updated = await db('customer_documents')
+    .where({ id: row.id })
+    .whereNull('deleted_at')
+    .whereNull('purge_claimed_at')
+    .update({
+      event_id: resolved.eventId,
+      project_id: resolved.projectId,
+      contract_id: resolved.contractId,
+      updated_at: new Date().toISOString(),
+    });
+  if (updated === 0) throw new NotFoundError('Document');
   await logActivity('customer_document_linked',
     { documentId: row.id, customerId, ...resolved }, resolved.eventId, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
 }
@@ -815,13 +826,24 @@ async function markErasedForCustomer(customerId, trx) {
   return doomed;
 }
 
+// A purge claim older than this with no matching purged_at is treated as
+// abandoned by a process that died between claiming and deleting (#1592),
+// and is retried. A single claim-delete-stamp cycle is a storage call and a
+// couple of updates -- nowhere near this long -- so a live purge is never
+// mistaken for a stale one, while an abandoned claim is retried well inside
+// the sweep's own hourly cadence.
+const STALE_PURGE_CLAIM_MS = 20 * 60 * 1000;
+
 /**
  * Delete the bytes of the given rows and stamp purged_at. Best effort per file.
  *
- * The rows are a snapshot taken by the caller, so the stamp is claimed first
- * and only while the row is still unlinked from a contract: a link made since
- * the snapshot keeps the bytes. A failed delete releases the claim so the
- * next sweep tries again.
+ * The rows are a snapshot taken by the caller, so the claim is taken first
+ * and only while the row is still unlinked from a contract: a link made
+ * since the snapshot keeps the bytes. The claim (purge_claimed_at) is
+ * deliberately never released on failure -- including a crash between the
+ * claim and the delete -- because a released claim next to a delete that
+ * actually succeeded is exactly how the bytes got lost silently before
+ * (#1592). retryStalePurgeClaims() is what retries a claim that stalls.
  */
 async function purgeFiles(rows) {
   const storage = getStorage();
@@ -832,15 +854,50 @@ async function purgeFiles(rows) {
       claimed = (await db('customer_documents')
         .where({ id: r.id })
         .whereNull('contract_id')
-        .whereNull('purged_at')
-        .update({ purged_at: new Date().toISOString() })) > 0;
+        .whereNull('purge_claimed_at')
+        .update({ purge_claimed_at: new Date().toISOString() })) > 0;
       if (!claimed) continue;
       await storage.delete(r.storage_key);
+      await db('customer_documents').where({ id: r.id }).update({ purged_at: new Date().toISOString() });
     } catch (err) {
-      if (claimed) {
-        await db('customer_documents').where({ id: r.id }).update({ purged_at: null }).catch(() => {});
-      }
       logger.warn('Could not remove a customer document file', { documentId: r.id, error: err.message });
+    }
+  }
+}
+
+/**
+ * Retries the delete for rows whose purge_claimed_at survived a crash
+ * between the claim and storage.delete() (#1592). The claim itself is not
+ * repeated -- it already stands -- only the delete and the purged_at stamp
+ * that a live purge would have finished. storage.delete() is a no-op when
+ * the key is already gone, so retrying a delete that actually succeeded
+ * before the crash is harmless.
+ *
+ * A claimed row that carries a contract link keeps its bytes: the link is
+ * the contractual record and wins over the claim. Its claim is left standing
+ * (the row stays out of every purge) rather than released, since a released
+ * claim is what let bytes go silently before.
+ */
+async function retryStalePurgeClaims(now = Date.now()) {
+  const storage = getStorage();
+  const cutoff = now - STALE_PURGE_CLAIM_MS;
+  const claimed = await db('customer_documents')
+    .whereNotNull('purge_claimed_at')
+    .whereNull('purged_at')
+    .whereNull('contract_id')
+    .select('id', 'storage_key', 'purge_claimed_at');
+  const stale = claimed.filter((r) => {
+    const at = toMillis(r.purge_claimed_at);
+    return at !== null && at <= cutoff;
+  });
+  for (const r of stale) {
+    try {
+      assertStorageKey(r.storage_key);
+      await storage.delete(r.storage_key);
+      await db('customer_documents').where({ id: r.id }).whereNull('purged_at')
+        .update({ purged_at: new Date().toISOString() });
+    } catch (err) {
+      logger.warn('Could not remove a customer document file (stale purge claim retry)', { documentId: r.id, error: err.message });
     }
   }
 }
@@ -869,6 +926,7 @@ module.exports = {
   recordView,
   markErasedForCustomer,
   purgeFiles,
+  retryStalePurgeClaims,
   toCustomerDto,
   // exported for tests
   _internal: { cleanDisplayName, assertPdf, assertContent, assertStorageKey },

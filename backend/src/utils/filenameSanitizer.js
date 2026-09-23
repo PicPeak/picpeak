@@ -141,6 +141,9 @@ function sanitizeForZipEntry(name) {
     // Normalise path separators to underscore so `evil/../passwd` becomes
     // `evil_.._passwd` instead of an actual subpath.
     .replace(/[/\\]/g, '_')
+    // The rest of the Windows-reserved set: entries carrying these can't be
+    // extracted there even though the zip format itself allows them.
+    .replace(/[:*?"<>|]/g, '_')
     // Strip leading dots so `..` can't become an upward reference.
     .replace(/^\.+/, '')
     .trim();

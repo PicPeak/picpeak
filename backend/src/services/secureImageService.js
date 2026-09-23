@@ -3,12 +3,14 @@ const sharp = require('sharp');
 const { db } = require('../database/db');
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 class SecureImageService {
   constructor() {
     this.tokenCache = new Map();
     this.sessionTokens = new Map();
     this.rateLimitCache = new Map();
+    this.rateLimitWindows = new Map();
     this.cleanupTimer = null;
   }
 
@@ -28,6 +30,7 @@ class SecureImageService {
     this.tokenCache.clear();
     this.sessionTokens.clear();
     this.rateLimitCache.clear();
+    this.rateLimitWindows.clear();
   }
 
   /**
@@ -47,6 +50,9 @@ class SecureImageService {
       // delivering a photo hidden AFTER minting (TOCTOU). A guest's token
       // carries false, so it stops the moment the photo is hidden.
       clientBypass = false,
+      // Whether the minter was an admin preview, which a download limit
+      // exempts (issue 1560) — the serve route has no gallery session to ask.
+      downloadLimitExempt = false,
       galleryAccess = null
     } = options;
 
@@ -64,6 +70,7 @@ class SecureImageService {
       protectionLevel,
       revealBypass,
       clientBypass,
+      downloadLimitExempt,
       galleryAccess,
       createdAt: Date.now()
     };
@@ -144,11 +151,30 @@ class SecureImageService {
   }
 
   /**
-   * Create client fingerprint from request
+   * Create client fingerprint from request.
+   *
+   * Binds a secure image token to the device it was minted for, so it keys
+   * on the full address. Rate limits and block lists use
+   * createRateLimitFingerprint() instead (issue 1564).
    */
   createClientFingerprint(req) {
+    return this.fingerprintFor(req, req.ip);
+  }
+
+  /**
+   * The same fingerprint with the address collapsed by rateLimitKey: an IPv6
+   * /64 is one client, so rotating through it neither resets the image rate
+   * limit nor escapes a block. For a plain IPv4 client it equals
+   * createClientFingerprint(), so nothing changes there. Never use it for
+   * token binding: that would let every device in the /64 use one token.
+   */
+  createRateLimitFingerprint(req) {
+    return this.fingerprintFor(req, rateLimitKey(req) || req.ip);
+  }
+
+  fingerprintFor(req, address) {
     const components = [
-      req.ip,
+      address,
       req.get('User-Agent') || '',
       req.get('Accept-Language') || '',
       req.get('Accept-Encoding') || ''
@@ -165,26 +191,30 @@ class SecureImageService {
    * Rate limiting for image requests
    */
   checkRateLimit(clientId, limit = 50, windowMs = 60000) {
-    const now = Date.now();
-    const windowStart = now - windowMs;
-    
-    if (!this.rateLimitCache.has(clientId)) {
-      this.rateLimitCache.set(clientId, []);
-    }
-    
-    const requests = this.rateLimitCache.get(clientId);
-    
-    // Remove old requests outside the window
-    const recentRequests = requests.filter(timestamp => timestamp > windowStart);
-    this.rateLimitCache.set(clientId, recentRequests);
-    
-    if (recentRequests.length >= limit) {
-      return false;
-    }
-    
-    // Add current request
-    recentRequests.push(now);
+    if (!this.peekRateLimit(clientId, limit, windowMs)) return false;
+    this.recordRateLimit(clientId, windowMs);
     return true;
+  }
+
+  /**
+   * Whether one more request fits the window, without counting it. With
+   * recordRateLimit() a caller checks several windows before charging any,
+   * so a request refused by one window does not spend the others.
+   */
+  peekRateLimit(clientId, limit, windowMs) {
+    const windowStart = Date.now() - windowMs;
+    const recentRequests = (this.rateLimitCache.get(clientId) || [])
+      .filter(timestamp => timestamp > windowStart);
+    this.rateLimitCache.set(clientId, recentRequests);
+    // cleanup() prunes each key by its own window, not a fixed minute.
+    this.rateLimitWindows.set(clientId, windowMs);
+    return recentRequests.length < limit;
+  }
+
+  recordRateLimit(clientId, windowMs) {
+    if (!this.rateLimitCache.has(clientId)) this.rateLimitCache.set(clientId, []);
+    this.rateLimitWindows.set(clientId, windowMs);
+    this.rateLimitCache.get(clientId).push(Date.now());
   }
 
   /**
@@ -299,13 +329,18 @@ class SecureImageService {
    */
   async logImageAccess(photoId, eventId, clientInfo, accessType = 'view', metadata = {}) {
     try {
+      // client_fingerprint is what the suspicious-activity checks count on,
+      // so it is the rate-limit fingerprint: an IPv6 /64 is one client and
+      // rotating through it does not dilute the count (issue 1564). The raw
+      // address stays in client_ip for the audit trail.
+      const countKey = clientInfo.rateLimitFingerprint || clientInfo.fingerprint;
       const logEntry = {
         photo_id: photoId,
         event_id: eventId,
         client_ip: clientInfo.ip,
         user_agent: clientInfo.userAgent?.substring(0, 500), // Limit length
         access_type: accessType,
-        client_fingerprint: clientInfo.fingerprint?.substring(0, 32) || 'unknown',
+        client_fingerprint: countKey?.substring(0, 32) || 'unknown',
         accessed_at: new Date().toISOString(),
         metadata: JSON.stringify({
           timestamp: clientInfo.timestamp || Date.now(),
@@ -317,7 +352,7 @@ class SecureImageService {
 
       // Check for rapid successive access (potential scraping)
       if (accessType === 'view' || accessType === 'download') {
-        await this.checkForRapidAccess(clientInfo.fingerprint, photoId, eventId);
+        await this.checkForRapidAccess(countKey, photoId, eventId);
       }
 
     } catch (error) {
@@ -453,9 +488,13 @@ class SecureImageService {
       if (data.expiresAt <= now) this.tokenCache.delete(token);
     }
     for (const [clientId, requests] of this.rateLimitCache.entries()) {
-      const recent = requests.filter(timestamp => timestamp > now - 60000);
+      // A fixed minute here emptied the five-minute and hourly windows every
+      // minute, so only the per-minute limits ever held.
+      const windowMs = this.rateLimitWindows.get(clientId) || 60000;
+      const recent = requests.filter(timestamp => timestamp > now - windowMs);
       if (recent.length === 0) {
         this.rateLimitCache.delete(clientId);
+        this.rateLimitWindows.delete(clientId);
       } else {
         this.rateLimitCache.set(clientId, recent);
       }

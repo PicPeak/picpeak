@@ -340,7 +340,17 @@
     "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
     "downloadEverything": "Alle foto's downloaden",
     "videoFormatUnsupported": "Deze video-indeling kan niet in deze browser worden afgespeeld. Download de video om hem te bekijken.",
-    "videoLoadFailed": "Deze video kon niet worden geladen."
+    "videoLoadFailed": "Deze video kon niet worden geladen.",
+    "downloadLimit": {
+      "reached": "Downloadlimiet bereikt. Neem contact op met je fotograaf voor meer downloads.",
+      "notEnough": "Nog maar {{remaining}} downloads over. Selecteer minder foto’s of neem contact op met je fotograaf.",
+      "counter": "{{used}} van {{limit}} downloads gebruikt",
+      "selectionCost": "Gebruikt {{cost}} van je {{remaining}} resterende downloads",
+      "selectionTooLarge": "Downloadlimiet: deze selectie heeft {{cost}} downloads nodig, nog maar {{remaining}} over",
+      "downloadAllBlocked": "Deze galerij bevat meer foto’s dan je resterende downloads",
+      "previewOnly": "Downloads in deze galerij zijn op voorbeeldformaat. De originele bestanden zijn beschikbaar voor de klant.",
+      "videoClientOnly": "Deze video is alleen beschikbaar voor de klant."
+    }
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -675,7 +685,14 @@
       "title": "Hero-foto gebruiken als social-share-voorbeeld",
       "help": "Wanneer deze galerij-URL wordt gedeeld op WhatsApp, Facebook, Slack enz., toont de link-preview de bovenstaande hero-foto. De thumbnail wordt niet-geauthenticeerd opgehaald door link-preview-crawlers — wie de URL deelt maakt deze afbeelding daarmee in feite openbaar. Standaard uit; kies eerst een hero die je bewust openbaar wilt tonen voordat je dit inschakelt.",
       "heroRequired": "Kies eerst hierboven een hero-foto — deze optie gebruikt die als WhatsApp- / Facebook- / Slack-voorbeeldafbeelding."
-    }
+    },
+    "downloadLimit": "Downloadlimiet",
+    "downloadLimitHelp": "Maximaal aantal foto’s dat de klant kan downloaden. 0 = onbeperkt",
+    "downloadLimitUsage": "{{used}} / {{limit}} gedownload",
+    "downloadLimitReset": "Resetten",
+    "downloadLimitResetConfirm": "Downloads voor deze galerij resetten? De klant krijgt de volledige limiet terug en al gedownloade foto’s tellen opnieuw.",
+    "downloadLimitResetDone": "Downloads gereset",
+    "downloadLimitResetFailed": "Downloads konden niet worden gereset"
   },
   "settings": {
     "title": "Systeeminstellingen",
@@ -900,7 +917,9 @@
       "defaultAllowColorLabels": "Kleurlabels",
       "defaultKeybindMode": "Standaard sneltoetsen in de weergave",
       "keybindColors": "Alleen kleuren — 1 groen, 2 geel, 3 rood",
-      "keybindLightroom": "Lightroom — 1-5 sterren, 6-9 kleuren"
+      "keybindLightroom": "Lightroom — 1-5 sterren, 6-9 kleuren",
+      "defaultDownloadLimit": "Standaard downloadlimiet",
+      "defaultDownloadLimitHelp": "Vooraf ingevuld bij nieuwe events: hoeveel foto’s een klant kan downloaden. 0 = onbeperkt."
     },
     "imageSecurity": {
       "title": "Afbeeldingsbeveiliging",

@@ -656,7 +656,16 @@
       "message": "Permanently delete {{name}}? This cannot be undone. Their pending invitations and API tokens will be removed; records they created elsewhere will be kept but de-attributed."
     },
     "activate": "Reactivate",
-    "delete": "Delete permanently"
+    "delete": "Delete permanently",
+    "ssoNotConfirmed": "Email not confirmed for SSO",
+    "confirmEmailForSso": "Confirm email for SSO",
+    "confirmEmail": "Confirm email",
+    "emailConfirmed": "Email confirmed for single sign-on",
+    "confirmEmailError": "Failed to confirm the email",
+    "confirmEmailForSsoDialog": {
+      "title": "Confirm this email for SSO?",
+      "message": "Confirm {{email}} as {{name}}'s address? A single sign-on login that arrives with this verified email will then be linked to this account. The address itself is not changed. Only confirm it if you know it belongs to them."
+    }
   },
   "systemHealth": {
     "title": "System health",
@@ -1300,7 +1309,17 @@
     "preparingProgress_one": "{{count}} photos packaged",
     "preparingProgress_other": "{{count}} photos packaged",
     "videoFormatUnsupported": "This video format cannot be played in this browser. Download it to watch it.",
-    "videoLoadFailed": "This video could not be loaded."
+    "videoLoadFailed": "This video could not be loaded.",
+    "downloadLimit": {
+      "reached": "Download limit reached. Please contact your photographer for more downloads.",
+      "notEnough": "Only {{remaining}} downloads left. Please select fewer photos or contact your photographer.",
+      "counter": "{{used}} of {{limit}} downloads used",
+      "selectionCost": "Uses {{cost}} of your {{remaining}} remaining downloads",
+      "selectionTooLarge": "Download limit: this selection needs {{cost}} downloads, only {{remaining}} left",
+      "downloadAllBlocked": "This gallery holds more photos than your remaining downloads",
+      "previewOnly": "Downloads in this gallery are preview size. The original files are available to the client.",
+      "videoClientOnly": "This video is available to the client only."
+    }
   },
   "categories": {
     "title": "Photo Categories",
@@ -1774,7 +1793,14 @@
       "searching": "Searching…",
       "noResultsCanCreate": "No matches. Use “Create new customer” to add one.",
       "noResultsNoPermission": "No matches, and your role cannot create customers. Ask an administrator to add this customer."
-    }
+    },
+    "downloadLimit": "Download Limit",
+    "downloadLimitHelp": "Maximum number of photos the client can download. 0 = unlimited",
+    "downloadLimitUsage": "{{used}} / {{limit}} downloaded",
+    "downloadLimitReset": "Reset",
+    "downloadLimitResetConfirm": "Reset the downloads for this gallery? The client gets the full limit again, and photos already downloaded count again.",
+    "downloadLimitResetDone": "Downloads reset",
+    "downloadLimitResetFailed": "Could not reset the downloads"
   },
   "settings": {
     "title": "System Settings",
@@ -2038,7 +2064,9 @@
       "defaultAllowColorLabels": "Color labels",
       "defaultKeybindMode": "Default lightbox shortcuts",
       "keybindColors": "Colors only — 1 green, 2 yellow, 3 red",
-      "keybindLightroom": "Lightroom — 1-5 stars, 6-9 colors"
+      "keybindLightroom": "Lightroom — 1-5 stars, 6-9 colors",
+      "defaultDownloadLimit": "Default download limit",
+      "defaultDownloadLimitHelp": "Pre-filled on new events: how many photos a client can download. 0 = unlimited."
     },
     "imageSecurity": {
       "title": "Image Protection",
@@ -3367,7 +3395,11 @@
       "customerDocumentRequestCreated": "Document requested from a customer",
       "customerDocumentRequestCancelled": "Document request cancelled",
       "customerDocumentRequestFulfilled": "Customer answered a document request",
-      "customerDocumentRequestReminded": "Reminder sent for a document request"
+      "customerDocumentRequestReminded": "Reminder sent for a document request",
+      "apiPhotoDownloaded": "Original downloaded from {{eventName}} with API token #{{token_id}}",
+      "apiPhotosDownloaded_one": "API token “{{token_name}}” downloaded {{count}} original from {{eventName}}",
+      "apiPhotosDownloaded_other": "API token “{{token_name}}” downloaded {{count}} originals from {{eventName}}",
+      "apiPhotosZipDownloaded": "API token “{{token_name}}” downloaded a ZIP of {{photo_count}} originals from {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -3697,7 +3729,11 @@
       "customer_document_request_created": "Document requested from a customer",
       "customer_document_request_cancelled": "Document request cancelled",
       "customer_document_request_fulfilled": "Customer answered a document request",
-      "customer_document_request_reminded": "Reminder sent for a document request"
+      "customer_document_request_reminded": "Reminder sent for a document request",
+      "api_photo_downloaded": "Original downloaded from {{eventName}} with API token #{{token_id}}",
+      "api_photos_downloaded_one": "API token “{{token_name}}” downloaded {{count}} original from {{eventName}}",
+      "api_photos_downloaded_other": "API token “{{token_name}}” downloaded {{count}} originals from {{eventName}}",
+      "api_photos_zip_downloaded": "API token “{{token_name}}” downloaded a ZIP of {{photo_count}} originals from {{eventName}}"
     },
     "people": {
       "title": "People in this gallery",
@@ -5166,7 +5202,9 @@
       "inactive": "Your admin account is deactivated.",
       "not_provisioned": "No admin account matches your SSO identity. Ask an administrator to invite you.",
       "no_email": "Your identity provider supplied no email address — an account cannot be created.",
-      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group."
+      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group.",
+      "email_unverified": "An admin account with your email exists, but its email address has not been confirmed by a Super Admin, so SSO cannot link to it. Ask a Super Admin to open Users, find your account and use \"Confirm email for SSO\", then try again.",
+      "email_ambiguous": "More than one admin account carries your email address, differing only in capitalisation, so SSO cannot tell which one is yours. Ask a Super Admin to change or remove one of them on the Users page, then try again."
     }
   },
   "slideshow": {

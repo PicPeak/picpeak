@@ -6,6 +6,9 @@ import { useTranslation } from 'react-i18next';
 import { GalleryFilter, type FilterType, type FeedbackFilterType } from './GalleryFilter';
 import { ColorLabelFilterChips } from './ColorLabelFilterChips';
 import type { ColorLabel } from '../../services/feedback.service';
+import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import type { QuotaPhoto } from '../../utils/downloadLimit';
+import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 
 interface GallerySidebarProps {
   isOpen: boolean;
@@ -36,6 +39,10 @@ interface GallerySidebarProps {
    * disable it entirely on a folder-only root.
    */
   downloadAllTotal?: number;
+  // Download limit (issue 1560). The photos "Download all" would ship and the
+  // current selection, so both can be priced against what is left.
+  downloadAllPhotos?: QuotaPhoto[];
+  selectedPhotosForQuota?: QuotaPhoto[];
   isMobile: boolean;
   galleryLayout?: string;
   allowUploads?: boolean;
@@ -79,6 +86,8 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   photoCounts = {},
   totalPhotos,
   downloadAllTotal,
+  downloadAllPhotos,
+  selectedPhotosForQuota,
   isMobile,
   galleryLayout,
   allowUploads,
@@ -98,6 +107,8 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   showMediaFilter = false
 }) => {
   const { t } = useTranslation();
+  const downloadQuota = useDownloadQuota();
+  const downloadAllOverQuota = !!downloadAllPhotos && !downloadQuota.allows(downloadAllPhotos);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   // Close sidebar when clicking outside on mobile
@@ -208,12 +219,16 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
               </h3>
 
               <div className="space-y-2">
+                <DownloadQuotaNotice />
                 <Button
                   variant="primary"
                   size="sm"
                   leftIcon={<Download className="w-4 h-4" />}
                   onClick={onDownloadAll}
-                  disabled={isDownloading || (downloadAllTotal ?? totalPhotos) === 0}
+                  disabled={isDownloading || (downloadAllTotal ?? totalPhotos) === 0 || downloadAllOverQuota}
+                  title={downloadAllOverQuota
+                    ? t('gallery.downloadLimit.downloadAllBlocked', 'This gallery holds more photos than your remaining downloads')
+                    : undefined}
                   className="gallery-btn gallery-btn-download w-full"
                 >
                   {t('gallery.downloadAll')} ({downloadAllTotal ?? totalPhotos})
@@ -239,6 +254,9 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   >
                     {t('gallery.downloadSelected', { count: selectedCount })} ({selectedCount})
                   </Button>
+                )}
+                {isSelectionMode && selectedCount > 0 && selectedPhotosForQuota && (
+                  <DownloadQuotaNotice photos={selectedPhotosForQuota} />
                 )}
               </div>
             </div>

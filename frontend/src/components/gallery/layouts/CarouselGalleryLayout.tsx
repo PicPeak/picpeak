@@ -8,6 +8,8 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
+import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -67,6 +69,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const guestIdentity = useGuestIdentityOptional();
+  // Download limit (issue 1560); see PhotoCard for why aria-disabled.
+  const downloadQuota = useDownloadQuota();
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
   // Seed from server is_liked on first non-empty payload (#590 follow-up).
   // Mount-only so refetches don't clobber in-session optimistic toggles.
@@ -79,13 +83,17 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
 
   if (!currentPhoto) return null;
+  const currentPhotoAtLimit = !downloadQuota.canDownload(currentPhoto);
 
   return (
     <div className="photo-grid relative">
       {/* Main Carousel */}
       <div className="photo-card relative h-[50vh] sm:h-[60vh] lg:h-[70vh] bg-black rounded-lg overflow-hidden">
+        {/* A video's original cannot render as an image, and on a gallery
+            with a download limit fetching it takes a slot (issue 1560):
+            its poster instead. */}
         <AuthenticatedImage
-          src={currentPhoto.url}
+          src={currentPhoto.media_type === 'video' && currentPhoto.thumbnail_url ? currentPhoto.thumbnail_url : currentPhoto.url}
           alt={currentPhoto.filename}
           className="w-full h-full object-contain"
           isGallery={true}
@@ -159,8 +167,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={(e) => onDownload(currentPhoto, e)}
-                className="text-white hover:bg-white/20"
-                title="Download photo"
+                className={`text-white hover:bg-white/20${currentPhotoAtLimit ? ' opacity-50 cursor-not-allowed' : ''}`}
+                aria-disabled={currentPhotoAtLimit || undefined}
+                title={currentPhotoAtLimit ? downloadLimitReachedMessage() : 'Download photo'}
               >
                 <Download className="w-5 h-5" />
               </Button>

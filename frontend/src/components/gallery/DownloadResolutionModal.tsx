@@ -5,6 +5,12 @@ import { Download, Check, AlertCircle, X, Loader2 } from 'lucide-react';
 import { Button, Card } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import type { DownloadResolutionChoice, DownloadJobStatus } from '../../types';
+import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import {
+  isDownloadLimitError, isGalleryLimited, notifyDownloadQuotaChanged, showDownloadLimitReached,
+  type QuotaPhoto,
+} from '../../utils/downloadLimit';
+import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 
 /**
  * Resolution picker for gallery downloads (#858).
@@ -35,6 +41,8 @@ interface DownloadResolutionModalProps {
   standardResolution?: string;
   /** Omitted = the whole gallery. */
   photoIds?: number[];
+  /** The photos this download would ship, priced against the download limit (issue 1560). */
+  quotaPhotos?: QuotaPhoto[];
   onClose: () => void;
 }
 
@@ -43,9 +51,12 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   choices,
   standardResolution,
   photoIds,
+  quotaPhotos,
   onClose,
 }) => {
   const { t } = useTranslation();
+  const downloadQuota = useDownloadQuota();
+  const overQuota = !!quotaPhotos && !downloadQuota.allows(quotaPhotos);
   const [phase, setPhase] = useState<Phase>('choose');
   const [selected, setSelected] = useState<string>(choices[0]?.id ?? 'original');
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +101,12 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     // what the pre-built archive already contains — take it instead of
     // re-resizing and re-packaging the entire gallery for the same bytes.
     if (!photoIds && selected === standardResolution) {
-      await galleryService.downloadAllPhotos(slug, true);
+      try {
+        await galleryService.downloadAllPhotos(slug, true);
+      } catch (err) {
+        // The limit refusal already told the guest why (issue 1560).
+        if (!isDownloadLimitError(err)) throw err;
+      }
       onClose();
       return;
     }
@@ -107,17 +123,37 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
         return;
       }
       await poll(job.token);
-    } catch {
-      setError(t('gallery.downloadPrepFailed', 'Preparation failed'));
+    } catch (err) {
+      setError(isDownloadLimitError(err)
+        ? t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')
+        : t('gallery.downloadPrepFailed', 'Preparation failed'));
       setPhase('error');
     }
   }, [slug, selected, photoIds, poll, t, standardResolution, onClose]);
 
-  const download = useCallback(() => {
-    if (!tokenRef.current) return;
-    galleryService.downloadJobFile(slug, tokenRef.current, filename);
+  const download = useCallback(async () => {
+    const token = tokenRef.current;
+    if (!token) return;
+    // Download limit (issue 1560): the file is a browser navigation, which
+    // cannot show why it was refused. Ask first — another viewer may have
+    // used up the quota while this archive was being prepared.
+    if (isGalleryLimited(slug)) {
+      try {
+        const state = await galleryService.getDownloadJob(slug, token);
+        if (state.download_limit_reached) {
+          showDownloadLimitReached(state.download_limit_reached);
+          notifyDownloadQuotaChanged(slug);
+          setError(t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.'));
+          setPhase('error');
+          return;
+        }
+      } catch {
+        // The file route still enforces the limit; let it decide.
+      }
+    }
+    galleryService.downloadJobFile(slug, token, filename);
     onClose();
-  }, [slug, filename, onClose]);
+  }, [slug, filename, onClose, t]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -189,11 +225,14 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
                 </label>
               ))}
             </div>
+            {quotaPhotos && downloadQuota.limited && (
+              <DownloadQuotaNotice photos={quotaPhotos} className="mb-4" />
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={onClose}>
                 {t('common.cancel', 'Cancel')}
               </Button>
-              <Button variant="primary" onClick={start} leftIcon={<Download className="w-4 h-4" />}>
+              <Button variant="primary" onClick={start} disabled={overQuota} leftIcon={<Download className="w-4 h-4" />}>
                 {t('gallery.prepareDownload', 'Prepare download')}
               </Button>
             </div>

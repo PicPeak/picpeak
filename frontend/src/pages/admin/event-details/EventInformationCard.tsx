@@ -26,6 +26,7 @@ import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import type { AdminPhoto } from '../../../services/photos.service';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../services/feedback.service';
 import { ExternalFolderPicker } from './ExternalFolderPicker';
+import { DownloadLimitUsage } from './DownloadLimitUsage';
 import { safeParseDate } from './utils';
 import { usePermission } from '../../../hooks/usePermission';
 import type { EditFormState } from './types';
@@ -407,6 +408,28 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               />
               <span className="text-xs text-neutral-500 dark:text-neutral-400">
                 {t('events.photoCapHelp', 'Maximum number of photos allowed. 0 = unlimited')}
+              </span>
+            </div>
+          </div>
+
+          {/* Download limit (issue 1560) */}
+          <div>
+            <label htmlFor="event-download-limit" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              {t('events.downloadLimit', 'Download Limit')}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="event-download-limit"
+                type="number"
+                value={editForm.download_limit}
+                onChange={(e) => setEditForm(prev => ({ ...prev, download_limit: parseInt(e.target.value) || 0 }))}
+                min={0}
+                // events.download_limit is a signed 32-bit int (migration 231).
+                max={2147483647}
+                className="w-24 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              />
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                {t('events.downloadLimitHelp', 'Maximum number of photos the client can download. 0 = unlimited')}
               </span>
             </div>
           </div>
@@ -1029,6 +1052,13 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                     <Download className="w-3 h-3 mr-1" />
                     {t('events.downloadsDisabled', 'Downloads disabled')}
                   </span>
+                )}
+                {!!event.allow_downloads && !!event.download_limit && (
+                  <DownloadLimitUsage
+                    eventId={event.id}
+                    downloadLimit={event.download_limit}
+                    ownedByOther={!!event.share_secrets_hidden}
+                  />
                 )}
                 {!!event.watermark_downloads && (
                   <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">

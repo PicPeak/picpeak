@@ -340,7 +340,17 @@
     "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}",
     "downloadEverything": "Télécharger toutes les photos",
     "videoFormatUnsupported": "Ce format vidéo ne peut pas être lu dans ce navigateur. Téléchargez-la pour la regarder.",
-    "videoLoadFailed": "Cette vidéo n'a pas pu être chargée."
+    "videoLoadFailed": "Cette vidéo n'a pas pu être chargée.",
+    "downloadLimit": {
+      "reached": "Limite de téléchargements atteinte. Contactez votre photographe pour obtenir plus de téléchargements.",
+      "notEnough": "Plus que {{remaining}} téléchargements. Sélectionnez moins de photos ou contactez votre photographe.",
+      "counter": "{{used}} sur {{limit}} téléchargements utilisés",
+      "selectionCost": "Utilise {{cost}} de vos {{remaining}} téléchargements restants",
+      "selectionTooLarge": "Limite de téléchargements : cette sélection en demande {{cost}}, il n’en reste que {{remaining}}",
+      "downloadAllBlocked": "Cette galerie contient plus de photos que vos téléchargements restants",
+      "previewOnly": "Les téléchargements de cette galerie sont en taille d’aperçu. Les fichiers originaux sont réservés au client.",
+      "videoClientOnly": "Cette vidéo est réservée au client."
+    }
   },
   "categories": {
     "title": "Catégories de photos",
@@ -675,7 +685,14 @@
       "title": "Utiliser la photo d'en-tête comme aperçu de partage social",
       "help": "Lorsque cette URL de galerie est partagée sur WhatsApp, Facebook, Slack, etc., l'aperçu du lien affichera la photo d'en-tête ci-dessus. La miniature est récupérée de manière non authentifiée par les robots d'aperçu de lien — toute personne disposant de l'URL peut effectivement rendre cette image publique. Désactivé par défaut ; choisissez une photo d'en-tête que vous êtes prêt à afficher publiquement avant d'activer.",
       "heroRequired": "D'abord, choisissez une photo d'en-tête ci-dessus — cette option l'utilise comme image d'aperçu pour WhatsApp / Facebook / Slack."
-    }
+    },
+    "downloadLimit": "Limite de téléchargements",
+    "downloadLimitHelp": "Nombre maximal de photos que le client peut télécharger. 0 = illimité",
+    "downloadLimitUsage": "{{used}} / {{limit}} téléchargées",
+    "downloadLimitReset": "Réinitialiser",
+    "downloadLimitResetConfirm": "Réinitialiser les téléchargements de cette galerie ? Le client retrouve la limite complète, et les photos déjà téléchargées comptent à nouveau.",
+    "downloadLimitResetDone": "Téléchargements réinitialisés",
+    "downloadLimitResetFailed": "Impossible de réinitialiser les téléchargements"
   },
   "settings": {
     "title": "Paramètres système",
@@ -904,7 +921,9 @@
       "defaultAllowColorLabels": "Étiquettes de couleur",
       "defaultKeybindMode": "Raccourcis par défaut de la visionneuse",
       "keybindColors": "Couleurs uniquement — 1 vert, 2 jaune, 3 rouge",
-      "keybindLightroom": "Lightroom — 1-5 étoiles, 6-9 couleurs"
+      "keybindLightroom": "Lightroom — 1-5 étoiles, 6-9 couleurs",
+      "defaultDownloadLimit": "Limite de téléchargements par défaut",
+      "defaultDownloadLimitHelp": "Prérempli pour les nouveaux événements : combien de photos un client peut télécharger. 0 = illimité."
     },
     "imageSecurity": {
       "title": "Protection des images",

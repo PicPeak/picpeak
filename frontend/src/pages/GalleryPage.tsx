@@ -22,7 +22,10 @@ import { isAdminSessionExpired, isPasswordChangeRequired } from '../utils/passwo
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
-  const { isAuthenticated, login, event } = useGalleryAuth();
+  // isLoading is the session-restore probe. Public auto-login must wait for
+  // it — otherwise an empty-password guest token can overwrite a real client
+  // cookie while isAuthenticated is still false (fork survey A3 / #1563).
+  const { isAuthenticated, isLoading: isRestoringSession, login, event } = useGalleryAuth();
   const { t, i18n } = useTranslation();
   const { format } = useLocalizedDate();
   const { setTheme } = useTheme();
@@ -191,7 +194,7 @@ export const GalleryPage: React.FC = () => {
       return;
     }
 
-    if (galleryInfo && !isAdminPreview && isGalleryPublic(galleryInfo.requires_password) && !isAuthenticated && !autoLoginAttempted && !isLoadingSettings) {
+    if (galleryInfo && !isAdminPreview && isGalleryPublic(galleryInfo.requires_password) && !isRestoringSession && !isAuthenticated && !autoLoginAttempted && !isLoadingSettings) {
       setAutoLoginAttempted(true);
       setIsLoggingIn(true);
       login(resolvedSlug, '')
@@ -208,7 +211,7 @@ export const GalleryPage: React.FC = () => {
           setIsLoggingIn(false);
         });
     }
-  }, [galleryInfo, isAdminPreview, isAuthenticated, autoLoginAttempted, login, resolvedSlug, isResolvingIdentifier, isLoadingSettings]);
+  }, [galleryInfo, isAdminPreview, isAuthenticated, isRestoringSession, autoLoginAttempted, login, resolvedSlug, isResolvingIdentifier, isLoadingSettings]);
 
   // Calculate days until expiration (null if no expiration set)
   const daysUntilExpiration = galleryInfo?.expires_at

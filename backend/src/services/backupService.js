@@ -1043,8 +1043,8 @@ async function saveManifestToLocal(manifest, manifestFileName, config) {
   const manifestDir = config.backup_manifest_path
     || path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests');
   await fs.mkdir(manifestDir, { recursive: true });
-  const manifestPath = path.join(manifestDir, manifestFileName);
-  await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format || 'json');
+  const manifestPath = path.join(manifestDir, path.basename(manifestFileName));
+  await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format === 'yaml' ? 'yaml' : 'json');
   logger.info(`Backup manifest saved to ${manifestPath}`);
   return manifestPath;
 }
@@ -1052,12 +1052,14 @@ async function saveManifestToLocal(manifest, manifestFileName, config) {
 async function saveManifestToS3(manifest, manifestFileName, config, result) {
   const tempDir = path.join(getStoragePath(), 'temp');
   await fs.mkdir(tempDir, { recursive: true });
-  const tempManifestPath = path.join(tempDir, manifestFileName);
-  await backupManifest.saveManifest(manifest, tempManifestPath, config.backup_manifest_format || 'json');
+  const safeName = path.basename(manifestFileName);
+  const tempManifestPath = path.join(tempDir, safeName);
+  const format = config.backup_manifest_format === 'yaml' ? 'yaml' : 'json';
+  await backupManifest.saveManifest(manifest, tempManifestPath, format);
 
-  const manifestKey = path.posix.join(result.s3Prefix, 'manifests', manifestFileName);
+  const manifestKey = path.posix.join(result.s3Prefix, 'manifests', safeName);
   await result.s3Client.upload(tempManifestPath, manifestKey, {
-    contentType: config.backup_manifest_format === 'xml' ? 'application/xml' : 'application/json',
+    contentType: format === 'yaml' ? 'application/yaml' : 'application/json',
     metadata: {
       'backup-type': 'manifest',
       'manifest-version': manifest.version,
@@ -1159,7 +1161,9 @@ async function runBackupInternal(isManual = false) {
         files: manifestFiles,
         databaseInfo,
         parentBackupId: previousBackup ? previousBackup.manifest_id : null,
-        format: config.backup_manifest_format || 'json',
+        // The format becomes the manifest file extension, so only the two
+        // known values may reach the file name.
+        format: config.backup_manifest_format === 'yaml' ? 'yaml' : 'json',
         customMetadata: {
           backup_run_id: runId,
           destination_type: destinationType,

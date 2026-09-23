@@ -103,6 +103,8 @@ export interface PublicSettings {
   event_default_allow_reactions?: boolean;
   event_default_allow_color_labels?: boolean;
   event_default_keybind_mode?: 'colors' | 'lightroom';
+  // Download limit default (issue 1560). null = unlimited.
+  event_default_download_limit?: number | null;
   gallery_show_filter_bar?: boolean;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)

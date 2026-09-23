@@ -287,6 +287,62 @@ async function convertToEvent(contractId, adminId) {
   return { eventId, alreadyConverted: false };
 }
 
+// A claim older than this without a matching invoice is assumed to belong
+// to a request that crashed between winning the claim and finishing the
+// insert (process killed, connection dropped, etc) rather than one still
+// genuinely in flight — five minutes is comfortably longer than the
+// invoice-numbering + insert path ever takes, short enough that a real
+// crash doesn't wedge the contract for long. A clean throw releases the
+// claim immediately (see the try/catch below) so this cutoff only matters
+// for crashes the catch never ran for.
+const INVOICE_CLAIM_STALE_MS = 5 * 60 * 1000;
+
+/**
+ * Compare-and-set claim on a contract before converting it to an invoice —
+ * closes the race where two concurrent "Convert to invoice" requests (two
+ * replicas, or a double click) both pass the status check and both insert
+ * an invoice (#1589). Only one caller's UPDATE affects a row; that caller
+ * proceeds, everyone else backs off. Returns the claim timestamp string if
+ * this call won it, otherwise null.
+ */
+async function claimContractForInvoiceConversion(contractId, adminId) {
+  const claimedAt = new Date().toISOString();
+  const staleCutoff = new Date(Date.now() - INVOICE_CLAIM_STALE_MS).toISOString();
+  const count = await auditedUpdate(db, 'contracts',
+    (q) => q.where({ id: contractId, status: 'fully_signed' })
+      .andWhere((w) => w.whereNull('invoice_prepared_at').orWhere('invoice_prepared_at', '<', staleCutoff)),
+    { invoice_prepared_at: claimedAt },
+    { actor: adminId, source: 'contract.convert.invoices' });
+  return count === 1 ? claimedAt : null;
+}
+
+/** Best-effort release of a claim this call took but didn't use (the
+ * conversion itself threw). Only clears the claim if it's still exactly
+ * the one this call set, so it never clobbers a claim someone else took
+ * over via the staleness window. Never throws — a failed release just
+ * leaves the claim to expire on its own staleness cutoff. */
+async function releaseContractInvoiceClaim(contractId, adminId, claimedAt) {
+  try {
+    await auditedUpdate(db, 'contracts', { id: contractId, invoice_prepared_at: claimedAt },
+      { invoice_prepared_at: null },
+      { actor: adminId, source: 'contract.convert.invoices' });
+  } catch (releaseErr) {
+    logger.warn('Failed to release invoice conversion claim', { contractId, error: releaseErr.message });
+  }
+}
+
+/** The alreadyConverted result for a contract whose invoice(s) exist —
+ * looked up by the source_contract_id lineage — or null if none do. */
+async function existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer) {
+  if (!hasInvoiceContractBackPointer) return null;
+  const existing = await db('invoices').where({ source_contract_id: contractId }).orderBy('id').select('id');
+  if (!existing.length) return null;
+  if (contract.source_quote_id) {
+    return { installmentsCreated: existing.length, invoiceIds: existing.map((r) => r.id), alreadyConverted: true };
+  }
+  return { installmentsCreated: 1, invoiceId: existing[0].id, alreadyConverted: true };
+}
+
 /**
  * Convert a fully-signed contract directly into invoice(s) without
  * creating an event row. Same delegation pattern as convertToEvent.
@@ -305,18 +361,61 @@ async function convertToInvoiceOnly(contractId, adminId) {
   // migration 130. Skip the back-pointer update silently when the
   // column hasn't migrated yet.
   const hasInvoiceContractBackPointer = await hasColumnCached('invoices', 'source_contract_id');
+  // Migration 231 — skip the claim entirely on installs that haven't
+  // migrated yet (same schema-drift pattern as the back-pointer above).
+  const hasInvoicePreparedAt = await hasColumnCached('contracts', 'invoice_prepared_at');
 
+  // Taken before branching so it covers both Path A and Path B below —
+  // they're reached through the same contractId and the same
+  // check-then-act shape, so one per-contract claim protects both.
+  let claimedAt = null;
+  if (hasInvoicePreparedAt) {
+    // A claim is never cleared after a successful conversion, so once it
+    // goes stale a later call would re-claim it. Hand back the invoice a
+    // finished conversion produced before claiming, so that call (or a
+    // retry after a crash past the commit) adopts it instead of
+    // double-billing (Path B) or erroring on the converted quote (Path A).
+    const finished = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
+    if (finished) return finished;
+    claimedAt = await claimContractForInvoiceConversion(contractId, adminId);
+    if (!claimedAt) {
+      // Someone else already claimed this contract — a concurrent request
+      // that's still running, or one that already finished. Either way,
+      // hand back the invoice it produced instead of erroring, matching
+      // the alreadyConverted pattern used elsewhere in this file.
+      const existing = await existingContractInvoiceResult(contract, contractId, hasInvoiceContractBackPointer);
+      if (existing) return existing;
+      // Claimed but no invoice yet, and not stale enough to re-claim —
+      // a conversion is genuinely in progress right now.
+      throw new AppError(
+        'This contract is already being converted to an invoice. Try again shortly.',
+        409, 'INVOICE_CONVERSION_IN_PROGRESS',
+      );
+    }
+  }
+
+  try {
+    return await convertClaimedContractToInvoice(contract, contractId, adminId, hasInvoiceContractBackPointer);
+  } catch (err) {
+    if (claimedAt) await releaseContractInvoiceClaim(contractId, adminId, claimedAt);
+    throw err;
+  }
+}
+
+/** The actual conversion, run only once a claim (if the schema has the
+ * column) has been won. Split out of convertToInvoiceOnly so the claim
+ * can wrap it in a try/catch without re-indenting both branches. */
+async function convertClaimedContractToInvoice(contract, contractId, adminId, hasInvoiceContractBackPointer) {
   // Path A: contract has a source quote → replay its line items +
   // payment plan via quoteService (full installment schedule).
   if (contract.source_quote_id) {
     const quoteService = require('../quoteService');
-    const result = await quoteService.convertToInvoiceOnly(contract.source_quote_id, adminId, { fromContract: true });
-    if (hasInvoiceContractBackPointer) {
-      await auditedUpdate(db, 'invoices',
-        (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),
-        { source_contract_id: contractId },
-        { actor: adminId, source: 'contract.convert.invoices' });
-    }
+    // The lineage backfill rides the quote conversion's transaction — see
+    // sourceContractId in quoteService.convertToInvoiceOnly.
+    const result = await quoteService.convertToInvoiceOnly(contract.source_quote_id, adminId, {
+      fromContract: true,
+      sourceContractId: hasInvoiceContractBackPointer ? contractId : undefined,
+    });
     try {
       await logActivity('contract_converted_to_invoices',
         { contractId, quoteId: contract.source_quote_id, installments: result.installmentsCreated },
