@@ -812,8 +812,12 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *     exact-sent-HTML column) on every row for this address that isn't
  *     already gone — sent, failed or just-cancelled — so the archive and
  *     any backup stop carrying their data (#1593). Matched on the address
- *     as stored *before* this function rewrites it to the sentinel below.
- *     A cancelled row belonging to a newsletter campaign also flips its
+ *     as stored *before* this function rewrites it to the sentinel below,
+ *     case-insensitively (an address stored with different casing than the
+ *     account is still the same mailbox). Contract mail on this branch is
+ *     always queued to the account address (signatures v2 and its
+ *     per-signer addresses haven't landed here), so it is covered by the
+ *     same match. A cancelled row belonging to a newsletter campaign also flips its
  *     `email_campaign_recipients` row and rolls the campaign's counters,
  *     so a campaign whose last outstanding recipient was just erased
  *     doesn't stay stuck at queued/sending forever.
@@ -850,15 +854,15 @@ async function eraseCustomer(id, erasedByAdminId) {
     // already gone (sent, failed, or the row just cancelled above) — done
     // ahead of the customer_accounts update below so the match is still
     // against the real address, not the sentinel.
-    const cancelledQueueRows = await trx('email_queue')
-      .where('recipient_email', customer.email).where('status', 'pending')
+    const forCustomer = (q) => q.whereRaw('LOWER(recipient_email) = LOWER(?)', [customer.email]);
+    const cancelledQueueRows = await forCustomer(trx('email_queue')).where('status', 'pending')
       .select('id', 'campaign_id');
     if (cancelledQueueRows.length > 0) {
       await trx('email_queue')
         .whereIn('id', cancelledQueueRows.map((row) => row.id))
         .update({ status: 'cancelled' });
     }
-    await trx('email_queue').where('recipient_email', customer.email)
+    await forCustomer(trx('email_queue'))
       .whereIn('status', ['sent', 'failed', 'cancelled'])
       .update({
         recipient_email: sentinelEmail,

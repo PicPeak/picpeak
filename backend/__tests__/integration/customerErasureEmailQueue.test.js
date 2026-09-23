@@ -383,4 +383,30 @@ describe('customer erasure clears email_queue', () => {
     const campaign = await db('email_campaigns').where({ id: campaignId }).first();
     expect(Number(campaign.sent_count)).toBe(0);
   });
+
+  it('matches queued mail to the customer\'s address case-insensitively', async () => {
+    const mixed = await insertCustomer(db);
+    const now = new Date().toISOString();
+    const [pendingIns] = await db('email_queue').insert({
+      recipient_email: mixed.email.toUpperCase(), email_type: 'gallery_created', status: 'pending',
+      email_data: JSON.stringify({ customer_name: 'Mixed Case' }), created_at: now,
+    }).returning('id');
+    const [sentIns] = await db('email_queue').insert({
+      recipient_email: `Erase-Mailq-${mixed.email.slice('erase-mailq-'.length)}`, email_type: 'gallery_created',
+      status: 'sent', email_data: JSON.stringify({ customer_name: 'Mixed Case' }), rendered_html: '<p>Mixed Case</p>',
+      created_at: now,
+    }).returning('id');
+
+    const { eraseCustomer } = require('../../src/services/customerAccountsService');
+    await eraseCustomer(mixed.id, null);
+
+    const pending = await db('email_queue').where({ id: pendingIns?.id ?? pendingIns }).first();
+    expect(pending.status).toBe('cancelled');
+    expect(pending.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(JSON.parse(pending.email_data)).toEqual({ redacted: true, reason: 'customer_erased' });
+    const sent = await db('email_queue').where({ id: sentIns?.id ?? sentIns }).first();
+    expect(sent.status).toBe('sent');
+    expect(sent.recipient_email).toMatch(/@deleted\.invalid$/);
+    expect(sent.rendered_html).toBeFalsy();
+  });
 });
