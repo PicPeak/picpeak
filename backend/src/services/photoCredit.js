@@ -27,6 +27,7 @@ const exifr = require('exifr');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sanitizeName } = require('../utils/personName');
+const { parseBooleanInput } = require('../utils/parsers');
 
 const CREDIT_SOURCES = Object.freeze(['guest', 'exif', 'manual']);
 const GUEST_NAME_MODES = Object.freeze(['off', 'optional', 'required']);
@@ -119,12 +120,35 @@ async function extractExifCredit(filePath) {
 
 /**
  * The credit columns for a guest upload. `guest` is req.guest (or null for a
- * guest who left the optional name empty).
+ * guest who left the optional name empty); `event` is the event the upload
+ * is stored on.
+ *
+ * credit_visible_to_guests snapshots the guest's consent: the upload dialog
+ * said whether other guests would see the name, going by the event switch at
+ * that moment, and a later switch-on must not expose a name given under
+ * "other guests do not see it". Without an event it is false.
  */
-function guestCreditFields(guest) {
+function guestCreditFields(guest, event = null) {
   const name = guest ? creditName(guest.name) : '';
   if (!guest || !name) return {};
-  return { credit_name: name, credit_source: 'guest', uploader_guest_id: guest.id };
+  return {
+    credit_name: name,
+    credit_source: 'guest',
+    uploader_guest_id: guest.id,
+    credit_visible_to_guests: parseBooleanInput(event && event.show_credits_to_guests, false),
+  };
+}
+
+/**
+ * Whether a guest (not the PIN client) may see this photo's credit, given
+ * that the event switch is on. A `guest` credit also needs its own snapshot
+ * (guestCreditFields). An `exif` or `manual` credit follows the switch alone:
+ * the photographer's metadata and a name the admin typed are the host's own
+ * statements, not a consent a guest gave under different terms.
+ */
+function creditVisibleToGuest(photo) {
+  if (!photo || photo.credit_source !== 'guest') return true;
+  return parseBooleanInput(photo.credit_visible_to_guests, false);
 }
 
 /**
@@ -154,23 +178,36 @@ function creditOpenForExif(photo) {
 
 /**
  * The columns for an admin correction. A string sets the name, null or an
- * empty string clears it — both as `manual`, so neither the upload worker nor
- * the EXIF backfill puts a name back on a photo the admin cleared.
+ * empty (or blank) string clears it — both as `manual`, so neither the upload
+ * worker nor the EXIF backfill puts a name back on a photo the admin cleared.
  *
- * Returns null for a value that is neither (the route answers 400).
+ * Returns `{ error }` (the route answers 400 with it) for a value that is
+ * neither, and for a name that has nothing left once sanitised ("<>"): that
+ * was typed as a name, and storing it as a clear would tell the admin "saved"
+ * while removing the name.
  */
 function manualCreditFields(raw) {
   if (raw === null || raw === undefined) return { credit_name: null, credit_source: 'manual' };
-  if (typeof raw !== 'string') return null;
+  if (typeof raw !== 'string') return { error: 'credit_name must be a string or null' };
+  if (!raw.trim()) return { credit_name: null, credit_source: 'manual' };
   const name = creditName(raw);
-  return { credit_name: name || null, credit_source: 'manual' };
+  if (!name) return { error: 'This name has no characters that can be shown. Enter a different name, or clear it.' };
+  return { credit_name: name, credit_source: 'manual' };
 }
 
 /**
  * Erasure: a removed guest's name must not outlive them on the photos they
  * uploaded. The photos stay (they belong to the gallery); the credit and the
- * link to the removed identity go. Only `guest` credits are touched — an admin
- * who has since set a manual credit on the photo made a decision of their own.
+ * link to the removed identity go.
+ *
+ * A `manual` credit on a photo this guest uploaded is cleared too, kept as
+ * `manual`: the admin's edit of the name on this person's upload (their real
+ * name in place of a joke one) is still about this person. Kept `manual`
+ * so neither the worker nor the EXIF backfill fills the photo in again.
+ *
+ * Existing archive ZIPs are not rewritten: an archive is a snapshot, and its
+ * manifest may still carry the name. The restore drops it
+ * (adminArchives.js, creditFieldsOf) for any guest no longer on the event.
  *
  * Returns the number of photos cleared.
  */
@@ -180,15 +217,22 @@ async function clearGuestCredits(guestIds, trx = db) {
   const cleared = await trx('photos')
     .whereIn('uploader_guest_id', ids)
     .where('credit_source', 'guest')
-    .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
-  // A manual credit keeps its text, but the link to the removed identity goes.
-  // Not a guest credit: one inserted since the update above must keep its
-  // link, so settleGuestCredit can still find and clear it.
+    .update({
+      credit_name: null, credit_source: null, uploader_guest_id: null, credit_visible_to_guests: false,
+    });
+  const clearedManual = await trx('photos')
+    .whereIn('uploader_guest_id', ids)
+    .where('credit_source', 'manual')
+    .update({ credit_name: null, uploader_guest_id: null });
+  // Whatever else is linked (no credit, an EXIF one) keeps its credit, but the
+  // link to the removed identity goes. Not a guest credit: one inserted since
+  // the first update above must keep its link, so settleGuestCredit can still
+  // find and clear it.
   await trx('photos')
     .whereIn('uploader_guest_id', ids)
-    .where((q) => q.whereNull('credit_source').orWhereNot('credit_source', 'guest'))
+    .where((q) => q.whereNull('credit_source').orWhereNotIn('credit_source', ['guest', 'manual']))
     .update({ uploader_guest_id: null });
-  return cleared;
+  return cleared + clearedManual;
 }
 
 /**
@@ -209,7 +253,9 @@ async function settleGuestCredit(photoId, credit) {
     if (!gone) return;
     await db('photos')
       .where({ id: photoId, uploader_guest_id: guestId, credit_source: 'guest' })
-      .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
+      .update({
+        credit_name: null, credit_source: null, uploader_guest_id: null, credit_visible_to_guests: false,
+      });
     await db('photos')
       .where({ id: photoId, uploader_guest_id: guestId })
       .update({ uploader_guest_id: null });
@@ -249,6 +295,7 @@ module.exports = {
   creditFromMetadata,
   extractExifCredit,
   guestCreditFields,
+  creditVisibleToGuest,
   manualCreditFields,
   resolveCredit,
   creditOpenForExif,

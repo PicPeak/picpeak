@@ -1799,14 +1799,14 @@
     "downloadLimitResetFailed": "Could not reset the downloads",
     "uploaderNames": {
       "label": "Uploader names",
-      "help": "Lets guests add their name when uploading, so everyone can see who took which photo.",
+      "help": "Lets guests add their name when uploading, so you know who uploaded which photo.",
       "modes": {
         "off": "Off",
         "optional": "Optional",
         "required": "Required"
       },
       "showToGuests": "Show uploader names to guests",
-      "showToGuestsHelp": "When off, names are recorded for you and the host only. Also covers photographer credits read from EXIF.",
+      "showToGuestsHelp": "Guests see the names on uploads made while this is on; names given while it was off stay with you and the host. Turning it off hides all names from guests. Also covers photographer credits read from EXIF.",
       "shownToGuests": "Shown to guests",
       "hiddenFromGuests": "Visible to you only"
     }

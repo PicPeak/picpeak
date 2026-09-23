@@ -726,14 +726,14 @@
     "downloadLimitResetFailed": "Não foi possível redefinir os downloads",
     "uploaderNames": {
       "label": "Nomes de quem envia",
-      "help": "Permite que os convidados indiquem o nome ao enviar, para que todos vejam quem tirou cada foto.",
+      "help": "Permite que os convidados indiquem o nome ao enviar, para que saiba quem enviou cada foto.",
       "modes": {
         "off": "Desligado",
         "optional": "Opcional",
         "required": "Obrigatório"
       },
       "showToGuests": "Mostrar os nomes aos convidados",
-      "showToGuestsHelp": "Quando desligado, os nomes ficam registados apenas para si e para o anfitrião. Aplica-se também aos créditos do fotógrafo lidos do EXIF.",
+      "showToGuestsHelp": "Os convidados veem os nomes das fotos enviadas enquanto isto está ligado; os nomes dados enquanto estava desligado ficam apenas para si e para o anfitrião. Desligar oculta todos os nomes aos convidados. Aplica-se também aos créditos do fotógrafo lidos do EXIF.",
       "shownToGuests": "Visível para os convidados",
       "hiddenFromGuests": "Visível apenas para si"
     }

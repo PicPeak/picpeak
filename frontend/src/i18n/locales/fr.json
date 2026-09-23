@@ -710,14 +710,14 @@
     "downloadLimitResetFailed": "Impossible de réinitialiser les téléchargements",
     "uploaderNames": {
       "label": "Noms des invités à l’envoi",
-      "help": "Permet aux invités d’indiquer leur nom lors de l’envoi, pour que chacun voie qui a pris quelle photo.",
+      "help": "Permet aux invités d’indiquer leur nom lors de l’envoi, pour que vous sachiez qui a envoyé quelle photo.",
       "modes": {
         "off": "Désactivé",
         "optional": "Facultatif",
         "required": "Obligatoire"
       },
       "showToGuests": "Afficher les noms aux invités",
-      "showToGuestsHelp": "Si désactivé, les noms ne sont enregistrés que pour vous et l’hôte. S’applique aussi aux crédits du photographe lus dans l’EXIF.",
+      "showToGuestsHelp": "Les invités voient les noms des photos envoyées pendant que cette option est activée ; les noms donnés pendant qu’elle était désactivée restent réservés à vous et à l’hôte. La désactiver masque tous les noms aux invités. S’applique aussi aux crédits du photographe lus dans l’EXIF.",
       "shownToGuests": "Visible par les invités",
       "hiddenFromGuests": "Visible par vous seul"
     }

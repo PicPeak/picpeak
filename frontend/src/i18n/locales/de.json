@@ -2303,14 +2303,14 @@
     "downloadLimitResetFailed": "Downloads konnten nicht zurückgesetzt werden",
     "uploaderNames": {
       "label": "Namen beim Hochladen",
-      "help": "Gäste können beim Hochladen ihren Namen angeben, damit alle sehen, wer welches Foto gemacht hat.",
+      "help": "Gäste können beim Hochladen ihren Namen angeben, damit du weißt, wer welches Foto hochgeladen hat.",
       "modes": {
         "off": "Aus",
         "optional": "Optional",
         "required": "Pflicht"
       },
       "showToGuests": "Namen den Gästen anzeigen",
-      "showToGuestsHelp": "Wenn aus, werden die Namen nur für dich und den Gastgeber gespeichert. Gilt auch für Fotografen-Angaben aus den EXIF-Daten.",
+      "showToGuestsHelp": "Gäste sehen die Namen bei Uploads, die hochgeladen wurden, während dies eingeschaltet war; Namen aus der Zeit, in der es aus war, bleiben dir und dem Gastgeber vorbehalten. Ausschalten verbirgt alle Namen vor Gästen. Gilt auch für Fotografen-Angaben aus den EXIF-Daten.",
       "shownToGuests": "Für Gäste sichtbar",
       "hiddenFromGuests": "Nur für dich sichtbar"
     }

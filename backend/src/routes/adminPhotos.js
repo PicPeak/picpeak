@@ -1138,8 +1138,8 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
     // joke name a guest used on 40 uploads is the case this exists for.
     if (Object.prototype.hasOwnProperty.call(updates, 'credit_name')) {
       const creditFields = manualCreditFields(updates.credit_name);
-      if (!creditFields) {
-        return res.status(400).json({ error: 'credit_name must be a string or null' });
+      if (creditFields.error) {
+        return res.status(400).json({ error: creditFields.error });
       }
       Object.assign(updateData, creditFields);
     }
@@ -1200,8 +1200,8 @@ router.put('/:eventId/photos/:photoId/credit', adminAuth, requirePermission('pho
   try {
     const { eventId, photoId } = req.params;
     const creditFields = manualCreditFields(req.body?.credit_name);
-    if (!creditFields) {
-      return res.status(400).json({ error: 'credit_name must be a string or null' });
+    if (creditFields.error) {
+      return res.status(400).json({ error: creditFields.error });
     }
     const updated = await db('photos')
       .where({ id: photoId, event_id: eventId })

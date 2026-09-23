@@ -12,7 +12,7 @@ const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds } = require('./downloadQuota');
-const { guestNameModeOf } = require('./photoCredit');
+const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
@@ -411,8 +411,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
   const withholdOriginals = !!downloadQuota;
 
   // Uploader names / photo credits (#1561). Recorded for the admin; a guest
-  // sees them only when the per-event switch is on. The PIN client is the
-  // host, who sees them regardless — the same exemption the face strip makes.
+  // sees them only when the per-event switch is on, and a guest-given name
+  // only when the switch was also on as it was uploaded (creditVisibleToGuest)
+  // — turning it off hides every name again. The PIN client is the host, who
+  // sees them regardless — the same exemption the face strip makes.
   // Never for the slideshow: a projector link is display-only and easy to
   // leak, and a name on a wall screen is not what "show to guests" agreed to.
   const creditsVisible = accessLevel !== 'slideshow'
@@ -630,7 +632,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
         // lets the "By" filter tell a nameless guest upload from the
         // photographer's own photos.
         ...(creditsVisible ? {
-          credit_name: photo.credit_name || null,
+          credit_name: (isClient || creditVisibleToGuest(photo)) ? (photo.credit_name || null) : null,
           uploaded_by_guest: photo.uploaded_by === 'guest',
         } : {}),
         // Visibility (only included for clients)

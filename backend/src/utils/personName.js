@@ -27,7 +27,10 @@ const INVISIBLE_CHARS = /[\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2
 function sanitizeName(value, maxLength = MAX_NAME_LEN) {
   if (typeof value !== 'string') return '';
   const cleaned = value
-    .replace(/[<>&"']/g, '')
+    // Apostrophes stay ("O'Brien", "D’Angelo"): a name is rendered as React
+    // text, escaped by escapeXml in the XMP sidecar, and formula-neutralised
+    // and quoted in the CSV exports, so none of them needs it removed.
+    .replace(/[<>&"]/g, '')
     .replace(CONTROL_CHARS, ' ')
     .replace(INVISIBLE_CHARS, '')
     .replace(/\s+/g, ' ')

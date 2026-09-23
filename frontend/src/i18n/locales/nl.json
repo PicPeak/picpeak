@@ -710,14 +710,14 @@
     "downloadLimitResetFailed": "Downloads konden niet worden gereset",
     "uploaderNames": {
       "label": "Namen van uploaders",
-      "help": "Gasten kunnen bij het uploaden hun naam opgeven, zodat iedereen ziet wie welke foto heeft gemaakt.",
+      "help": "Gasten kunnen bij het uploaden hun naam opgeven, zodat je weet wie welke foto heeft geüpload.",
       "modes": {
         "off": "Uit",
         "optional": "Optioneel",
         "required": "Verplicht"
       },
       "showToGuests": "Namen aan gasten tonen",
-      "showToGuestsHelp": "Als dit uit staat, worden namen alleen voor jou en de gastheer vastgelegd. Geldt ook voor fotografenvermeldingen uit EXIF.",
+      "showToGuestsHelp": "Gasten zien de namen bij uploads die zijn gedaan terwijl dit aan stond; namen die zijn opgegeven terwijl het uit stond, blijven alleen voor jou en de gastheer. Uitzetten verbergt alle namen voor gasten. Geldt ook voor fotografenvermeldingen uit EXIF.",
       "shownToGuests": "Zichtbaar voor gasten",
       "hiddenFromGuests": "Alleen zichtbaar voor jou"
     }

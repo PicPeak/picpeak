@@ -11,7 +11,9 @@
  *  - registration works for uploads with feedback off, and stays refused when
  *    neither feature needs an identity
  *  - guests see names only with the per-event switch on; the PIN client always;
- *    the slideshow never
+ *    the slideshow never. A guest-given name also needs the switch to have been
+ *    on when it was uploaded (credit_visible_to_guests, the guest's consent)
+ *  - the slideshow cannot register a guest identity
  *  - admin uploads read the EXIF credit in the worker, guest uploads never do,
  *    and a manual credit survives both the worker and the backfill
  *  - removing a guest (admin delete or forget-me) takes their name off their
@@ -164,6 +166,17 @@ describe('Photo credits (issue 1561)', () => {
         credit_source: 'guest',
         uploader_guest_id: reg.body.guest.id,
       });
+      // The switch is off, so the guest was told other guests would not see it.
+      expect(Boolean(row.credit_visible_to_guests)).toBe(false);
+    });
+
+    it('snapshots the visibility switch as the upload is stored', async () => {
+      const { event, token } = await makeEvent({ show_credits_to_guests: 1 });
+      const reg = await register(event, token, 'Anna');
+      const res = await upload(event, token, reg.body.token);
+      expect(res.status).toBe(202);
+      const row = await db('photos').where({ id: res.body.photo_ids[0] }).first();
+      expect(Boolean(row.credit_visible_to_guests)).toBe(true);
     });
 
     it('optional mode accepts a nameless upload, still as a guest upload', async () => {
@@ -212,12 +225,30 @@ describe('Photo credits (issue 1561)', () => {
       expect(reg.status).toBe(200);
       expect(reg.body.guest.name).toBe('Anna b');
     });
+
+    it('keeps apostrophes in a name', async () => {
+      const { event, token } = await makeEvent();
+      const reg = await register(event, token, 'Siobhan O\'Brien');
+      expect(reg.body.guest.name).toBe('Siobhan O\'Brien');
+      const typographic = await register(event, token, 'Luca D\u2019Angelo');
+      expect(typographic.body.guest.name).toBe('Luca D\u2019Angelo');
+      const res = await upload(event, token, reg.body.token);
+      expect((await db('photos').where({ id: res.body.photo_ids[0] }).first()).credit_name).toBe('Siobhan O\'Brien');
+    });
   });
 
   describe('guest registration gate', () => {
     it('allows registration for uploader names with feedback off', async () => {
       const { event, token } = await makeEvent();
       expect((await register(event, token, 'Bea')).status).toBe(200);
+    });
+
+    it('refuses a slideshow token', async () => {
+      const { event } = await makeEvent();
+      const res = await register(event, galleryToken(event, { accessLevel: 'slideshow' }), 'Projector');
+      expect(res.status).toBe(403);
+      const guests = await db('gallery_guests').where({ event_id: event.id }).count('id as c').first();
+      expect(Number(guests.c)).toBe(0);
     });
 
     it('stays refused when neither feedback nor uploader names need it', async () => {
@@ -239,7 +270,9 @@ describe('Photo credits (issue 1561)', () => {
 
     it('withholds names from guests unless the switch is on', async () => {
       const { event, token } = await makeEvent();
-      await addPhoto(event, { credit_name: 'Anna', credit_source: 'guest', uploaded_by: 'guest' });
+      await addPhoto(event, {
+        credit_name: 'Anna', credit_source: 'guest', uploaded_by: 'guest', credit_visible_to_guests: 1,
+      });
 
       let body = await photosFor(event, token);
       expect(body.event.credits_visible).toBe(false);
@@ -250,6 +283,36 @@ describe('Photo credits (issue 1561)', () => {
       body = await photosFor(event, token);
       expect(body.event.credits_visible).toBe(true);
       expect(body.photos[0]).toMatchObject({ credit_name: 'Anna', uploaded_by_guest: true });
+    });
+
+    it('keeps a name given while the switch was off from guests when it is turned on', async () => {
+      // The snapshot each upload stores is pinned under "guest upload".
+      const { event, token } = await makeEvent({ show_credits_to_guests: 1 });
+      const guestPhoto = (name, shown) => addPhoto(event, {
+        credit_name: name, credit_source: 'guest', uploaded_by: 'guest', credit_visible_to_guests: shown ? 1 : 0,
+      });
+      const before = await guestPhoto('Anna', false);
+      const after = await guestPhoto('Bea', true);
+      // The host's own statements follow the switch alone.
+      const exif = await addPhoto(event, { credit_name: 'Studio Lumen', credit_source: 'exif' });
+      const manual = await addPhoto(event, { credit_name: 'Anna Example', credit_source: 'manual', uploaded_by: 'guest' });
+
+      const creditOf = (body, id) => body.photos.find((p) => p.id === id).credit_name;
+      let body = await photosFor(event, token);
+      expect(creditOf(body, before)).toBeNull();
+      expect(body.photos.find((p) => p.id === before).uploaded_by_guest).toBe(true);
+      expect(creditOf(body, after)).toBe('Bea');
+      expect(creditOf(body, exif)).toBe('Studio Lumen');
+      expect(creditOf(body, manual)).toBe('Anna Example');
+
+      // The host sees every name.
+      const client = await photosFor(event, galleryToken(event, { accessLevel: 'client' }));
+      expect(creditOf(client, before)).toBe('Anna');
+
+      // Off hides everything again, the snapshot included.
+      await db('events').where({ id: event.id }).update({ show_credits_to_guests: 0 });
+      body = await photosFor(event, token);
+      expect(body.photos.every((p) => !Object.prototype.hasOwnProperty.call(p, 'credit_name'))).toBe(true);
     });
 
     it('shows names to the PIN client regardless, and never to the slideshow', async () => {
@@ -375,6 +438,23 @@ describe('Photo credits (issue 1561)', () => {
         .send({ credit_name: 42 });
       expect(bad.status).toBe(400);
 
+      // A name with nothing left once sanitised is refused, not stored as a clear.
+      const empty = await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${a}/credit`))
+        .send({ credit_name: '<>' });
+      expect(empty.status).toBe(400);
+      expect(empty.body.error).toMatch(/no characters/);
+      expect((await db('photos').where({ id: a }).first()).credit_name).toBe('Anna Example');
+      const bulkEmpty = await admin(request(app).post(`/api/admin/photos/${event.id}/photos/bulk-update`))
+        .send({ photoIds: [a], updates: { credit_name: '<>' } });
+      expect(bulkEmpty.status).toBe(400);
+      // A blank string is the explicit clear.
+      const blank = await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${a}/credit`))
+        .send({ credit_name: '  ' });
+      expect(blank.status).toBe(200);
+      expect(blank.body.credit_name).toBeNull();
+      await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${a}/credit`))
+        .send({ credit_name: 'Anna Example' }).expect(200);
+
       const bulk = await admin(request(app).post(`/api/admin/photos/${event.id}/photos/bulk-update`))
         .send({ photoIds: [a], updates: { credit_name: null } });
       expect(bulk.status).toBe(200);
@@ -387,18 +467,23 @@ describe('Photo credits (issue 1561)', () => {
       const exporter = new PhotoExportService();
       const { event } = await makeEvent();
       await addPhoto(event, { credit_name: 'Anna & Co', credit_source: 'guest' });
+      await addPhoto(event, { credit_name: '=O\'Brien', credit_source: 'manual' });
 
       const csv = await exporter.exportPhotos(event.id, null, 'csv');
       expect(csv.content.split('\n')[0].endsWith(',credit')).toBe(true);
       expect(csv.content).toContain('"Anna & Co"');
+      // An apostrophe in a name reaches the CSV formula-neutralised and quoted.
+      expect(csv.content).toContain('"\'=O\'Brien"');
 
       const json = await exporter.exportPhotos(event.id, null, 'json');
-      expect(JSON.parse(json.content).photos[0].credit).toBe('Anna & Co');
+      expect(JSON.parse(json.content).photos.map((p) => p.credit)).toContain('Anna & Co');
 
       const photos = await exporter.getPhotosWithFeedback(event.id);
-      const xmp = exporter.xmpGenerator.generateXmp(photos[0]);
+      const anna = photos.find((p) => p.credit_name === 'Anna & Co');
+      const xmp = exporter.xmpGenerator.generateXmp(anna);
       expect(xmp).toContain('<dc:creator>');
       expect(xmp).toContain('Anna &amp; Co');
+      expect(exporter.xmpGenerator.generateXmp(photos.find((p) => p !== anna))).toContain('=O&apos;Brien');
       expect(exporter.xmpGenerator.generateXmp({ ...photos[0], credit_name: null })).not.toContain('dc:creator');
     });
   });
@@ -467,6 +552,32 @@ describe('Photo credits (issue 1561)', () => {
         .set('x-guest-token', bea.body.token);
       expect(forget.status).toBe(200);
       expect((await db('photos').where({ id: beaPhoto }).first()).credit_name).toBeNull();
+    });
+
+    it('erasure also clears a name the admin typed on the guest\'s upload', async () => {
+      const { event, token } = await makeEvent();
+      const anna = await register(event, token, 'Joker');
+      const bea = await register(event, token, 'Bea');
+      const annaPhoto = (await upload(event, token, anna.body.token)).body.photo_ids[0];
+      const beaPhoto = (await upload(event, token, bea.body.token)).body.photo_ids[0];
+      // The admin replaces the joke name with the guest's real one.
+      await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${annaPhoto}/credit`))
+        .send({ credit_name: 'Anna Example' }).expect(200);
+      await admin(request(app).put(`/api/admin/photos/${event.id}/photos/${beaPhoto}/credit`))
+        .send({ credit_name: 'Bea Example' }).expect(200);
+
+      await admin(request(app).delete(`/api/admin/events/${event.id}/guests/${anna.body.guest.id}`)).expect(200);
+      // Kept `manual`, so no worker or backfill fills the photo in again.
+      expect(await db('photos').where({ id: annaPhoto }).first())
+        .toMatchObject({ credit_name: null, credit_source: 'manual', uploader_guest_id: null });
+
+      await request(app)
+        .delete(`/api/gallery/${event.slug}/guest/me`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('x-guest-token', bea.body.token)
+        .expect(200);
+      expect(await db('photos').where({ id: beaPhoto }).first())
+        .toMatchObject({ credit_name: null, credit_source: 'manual', uploader_guest_id: null });
     });
 
     it('an upload that lands after its guest was erased keeps no name', async () => {

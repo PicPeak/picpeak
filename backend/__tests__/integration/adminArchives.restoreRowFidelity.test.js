@@ -303,13 +303,20 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     // The manifest is written with the archive, so it predates the erasure.
     const manifest = [
       { filename: 'kept.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Anna', credit_source: 'guest', uploader_guest_id: anna },
+      { filename: 'shown.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Anna', credit_source: 'guest', uploader_guest_id: anna, credit_visible_to_guests: true },
       { filename: 'erased.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Bea', credit_source: 'guest', uploader_guest_id: bea },
       { filename: 'cleared.jpg', type: 'individual', uploaded_by: 'admin', credit_name: null, credit_source: 'manual', uploader_guest_id: null },
+      // An admin's name on a guest's upload goes with that guest.
+      { filename: 'renamed-erased.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Bea Real', credit_source: 'manual', uploader_guest_id: bea },
+      { filename: 'renamed-kept.jpg', type: 'individual', uploaded_by: 'guest', credit_name: 'Anna Real', credit_source: 'manual', uploader_guest_id: anna },
     ];
     await writeArchive('credits.zip', {
       'individual/kept.jpg': BYTES,
+      'individual/shown.jpg': BYTES,
       'individual/erased.jpg': BYTES,
       'individual/cleared.jpg': BYTES,
+      'individual/renamed-erased.jpg': BYTES,
+      'individual/renamed-kept.jpg': BYTES,
       'photos_manifest.json': manifestOf(manifest),
     });
 
@@ -320,6 +327,11 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     expect(rows['erased.jpg']).toMatchObject({ uploaded_by: 'guest', credit_name: null, credit_source: null, uploader_guest_id: null });
     // A cleared credit stays decided, so the EXIF backfill cannot put one back.
     expect(rows['cleared.jpg']).toMatchObject({ credit_name: null, credit_source: 'manual' });
+    // The guest's visibility snapshot comes back; a manifest without one is not shown.
+    expect(Boolean(rows['kept.jpg'].credit_visible_to_guests)).toBe(false);
+    expect(Boolean(rows['shown.jpg'].credit_visible_to_guests)).toBe(true);
+    expect(rows['renamed-erased.jpg']).toMatchObject({ credit_name: null, credit_source: 'manual', uploader_guest_id: null });
+    expect(rows['renamed-kept.jpg']).toMatchObject({ credit_name: 'Anna Real', credit_source: 'manual', uploader_guest_id: anna });
   });
 
   it('keeps the original upload time rather than stamping the restore time', async () => {

@@ -18,6 +18,20 @@
  *   events.show_credits_to_guests
  *                             Default off: names are recorded for the admin,
  *                             and guests see them only when this is on.
+ *   photos.credit_visible_to_guests
+ *                             The guest's consent, snapshotted per photo: was
+ *                             show_credits_to_guests on when this guest upload
+ *                             was stored? The upload dialog told the guest
+ *                             whether other guests would see the name, so
+ *                             turning the switch on later must not expose the
+ *                             names given under "other guests do not see it".
+ *                             Guests see a `guest` credit only when this AND
+ *                             the event switch are on. Other sources ignore it.
+ *
+ * Rows that already carry a guest credit when the snapshot column is added
+ * (an install that ran an earlier build of this migration) are backfilled
+ * conservatively: visible only when their event's switch is on right now.
+ * Only when the column is new, so a re-run never widens a snapshot.
  *
  * Existing photos stay without a credit: no backfill here. The EXIF backfill
  * is an admin endpoint, because the originals may sit on a mount that is not
@@ -52,6 +66,16 @@ exports.up = async function up(knex) {
     table.boolean('show_credits_to_guests').notNullable().defaultTo(false);
   });
 
+  if (!(await knex.schema.hasColumn('photos', 'credit_visible_to_guests'))) {
+    await knex.schema.alterTable('photos', (table) => {
+      table.boolean('credit_visible_to_guests').notNullable().defaultTo(false);
+    });
+    await knex('photos')
+      .where('credit_source', 'guest')
+      .whereIn('event_id', knex('events').select('id').where('show_credits_to_guests', true))
+      .update({ credit_visible_to_guests: true });
+  }
+
   if (await knex.schema.hasTable('maintenance_jobs')) {
     const existing = await knex('maintenance_jobs').where({ job_name: CREDIT_JOB }).first();
     if (!existing) {
@@ -70,7 +94,7 @@ exports.down = async function down(knex) {
     } catch (e) {
       // Index never created (older SQLite path) — nothing to drop.
     }
-    for (const column of ['uploader_guest_id', 'credit_source', 'credit_name']) {
+    for (const column of ['credit_visible_to_guests', 'uploader_guest_id', 'credit_source', 'credit_name']) {
       if (await knex.schema.hasColumn('photos', column)) {
         await knex.schema.alterTable('photos', (t) => t.dropColumn(column));
       }

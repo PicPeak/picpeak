@@ -39,7 +39,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
         code: 'UPLOADER_NAME_REQUIRED',
       });
     }
-    const credit = nameMode === 'off' ? {} : guestCreditFields(uploader);
+    const credit = nameMode === 'off' ? {} : guestCreditFields(uploader, req.event);
 
     // The event's photo cap applies to guests too. Refused here before multer
     // writes anything, and checked again as each photo row is inserted.

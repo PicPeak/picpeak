@@ -710,14 +710,14 @@
     "downloadLimitResetFailed": "Prenosov ni bilo mogoče ponastaviti",
     "uploaderNames": {
       "label": "Imena pri nalaganju",
-      "help": "Gostje lahko ob nalaganju vpišejo svoje ime, da vsi vidijo, kdo je posnel katero fotografijo.",
+      "help": "Gostje lahko ob nalaganju vpišejo svoje ime, da veste, kdo je naložil katero fotografijo.",
       "modes": {
         "off": "Izklopljeno",
         "optional": "Neobvezno",
         "required": "Obvezno"
       },
       "showToGuests": "Pokaži imena gostom",
-      "showToGuestsHelp": "Ko je izklopljeno, se imena shranijo samo za vas in gostitelja. Velja tudi za avtorstvo fotografa iz EXIF.",
+      "showToGuestsHelp": "Gostje vidijo imena pri fotografijah, naloženih, ko je to vklopljeno; imena, vpisana, ko je bilo izklopljeno, ostanejo samo za vas in gostitelja. Izklop skrije vsa imena pred gosti. Velja tudi za avtorstvo fotografa iz EXIF.",
       "shownToGuests": "Vidno gostom",
       "hiddenFromGuests": "Vidno samo vam"
     }

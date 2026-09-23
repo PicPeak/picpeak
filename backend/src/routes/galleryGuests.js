@@ -4,7 +4,7 @@ const router = express.Router();
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
-const { verifyGalleryAccess } = require('../middleware/gallery');
+const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const guestRecovery = require('../services/guestRecoveryService');
@@ -73,7 +73,10 @@ function sanitizeEmail(value) {
  * that the frontend must send as the x-guest-token header on subsequent
  * feedback requests.
  */
-router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
+// denySlideshowToken: a projector link is display-only, and with uploader
+// names on, registration no longer needs feedback — without it a leaked
+// slideshow token could mint guest identities.
+router.post('/:slug/guest', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
   try {
     const ip = rateLimitKey(req) || 'unknown';
     if (!checkRegistrationRate(ip)) {

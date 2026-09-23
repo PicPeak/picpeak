@@ -408,9 +408,20 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         const guestId = Number(entry.uploader_guest_id);
         const guestKept = Number.isInteger(guestId) && activeGuestIds.has(guestId);
         if (source === 'guest' && !guestKept) return fields;
+        // An admin's name on an erased guest's upload is about that guest,
+        // and goes with them (photoCredit.clearGuestCredits). Kept `manual`.
+        if (source === 'manual' && guestId > 0 && !guestKept) {
+          return { ...fields, credit_source: 'manual', credit_name: null };
+        }
         if (source) {
           fields.credit_source = source;
           fields.credit_name = typeof entry.credit_name === 'string' && entry.credit_name ? entry.credit_name : null;
+        }
+        // The guest's visibility snapshot; a manifest without one (or with
+        // anything but true) restores as not shown to other guests.
+        if (source === 'guest') {
+          fields.credit_visible_to_guests = entry.credit_visible_to_guests === true
+            || entry.credit_visible_to_guests === 1;
         }
         if (guestKept) fields.uploader_guest_id = guestId;
         return fields;
@@ -593,6 +604,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 // through knex is epoch milliseconds, so normalise to ISO
                 // rather than write the number back.
                 uploaded_at: toIso(manifestEntry?.uploaded_at) || new Date().toISOString(),
+                // Always written: every row goes into one multi-row insert,
+                // which on SQLite writes a key another row lacks as NULL,
+                // not the column default — and this column is NOT NULL.
+                credit_visible_to_guests: false,
                 ...creditFieldsOf(manifestEntry),
               });
             }
