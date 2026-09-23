@@ -74,21 +74,19 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     const { photoId } = req.params;
     const { protectionLevel = 'standard' } = req.query;
     
-    // Create client fingerprint
-    const clientFingerprint = secureImageService.createClientFingerprint(req);
-    
-    // Check rate limiting. Keyed on the rate-limit fingerprint, where an IPv6
-    // /64 is one client (issue 1564), with the network cap above it
-    // (utils/networkRateCap.js): the fingerprint includes headers the client
-    // picks, so rotating them was a fresh budget. Both are checked before
-    // either is charged.
-    const deviceKey = secureImageService.createRateLimitFingerprint(req);
+    // Rate limit, suspicious-activity count and access log are keyed on the
+    // rate-limit fingerprint, where an IPv6 /64 is one client (issue 1564);
+    // the per-address one would reset the budget on every address in the /64.
+    // The network cap sits above it (utils/networkRateCap.js): the
+    // fingerprint includes headers the client picks, so rotating them was a
+    // fresh budget. Both are checked before either is charged.
+    const rateLimitFingerprint = secureImageService.createRateLimitFingerprint(req);
     const networkKey = `network:${rateLimitKey(req) || req.ip}_view`;
-    if (!secureImageService.peekRateLimit(deviceKey, 30, 60000)
+    if (!secureImageService.peekRateLimit(rateLimitFingerprint, 30, 60000)
       || !secureImageService.peekRateLimit(networkKey, networkLimit(30), 60000)) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
-    secureImageService.recordRateLimit(deviceKey, 60000);
+    secureImageService.recordRateLimit(rateLimitFingerprint, 60000);
     secureImageService.recordRateLimit(networkKey, 60000);
     
     // Get photo details
@@ -110,7 +108,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     }
 
     // Check for suspicious activity
-    const isSuspicious = await secureImageService.detectSuspiciousActivity(clientFingerprint, photoId);
+    const isSuspicious = await secureImageService.detectSuspiciousActivity(rateLimitFingerprint, photoId);
     if (isSuspicious) {
       return res.status(429).json({ error: 'Suspicious activity detected' });
     }
@@ -119,7 +117,8 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     await secureImageService.logImageAccess(photoId, req.event.id, {
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      fingerprint: clientFingerprint
+      fingerprint: secureImageService.createClientFingerprint(req),
+      rateLimitFingerprint
     }, 'view');
     
     // Get protection settings from event

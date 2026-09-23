@@ -85,7 +85,8 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       { 
         ip: req.ip, 
         userAgent: req.get('User-Agent'), 
-        fingerprint: clientFingerprint 
+        fingerprint: clientFingerprint,
+        rateLimitFingerprint: secureImageService.createRateLimitFingerprint(req)
       },
       'token_generated'
     );
