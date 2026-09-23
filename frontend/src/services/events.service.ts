@@ -159,8 +159,6 @@ export const eventsService = {
     return normalizeEvent(response.data as Event);
   },
 
-  // Update event (admin)
-  // Reveal now (#838): stamps revealed_at so the gallery opens for guests.
   // Download limit usage (issue 1560). The limit itself is set through
   // updateEvent; these read and reset what the gallery has used.
   async getDownloadLimitUsage(id: number): Promise<DownloadLimitUsage> {
@@ -173,6 +171,8 @@ export const eventsService = {
     return response.data;
   },
 
+  // Update event (admin)
+  // Reveal now (#838): stamps revealed_at so the gallery opens for guests.
   async revealEvent(id: number): Promise<{ revealed_at: string }> {
     const response = await api.post(`/admin/events/${id}/reveal`);
     return response.data;

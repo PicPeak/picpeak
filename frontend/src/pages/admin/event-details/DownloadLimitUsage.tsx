@@ -1,10 +1,10 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-toastify';
+import { useQuery } from '@tanstack/react-query';
 import { Download, RotateCcw } from 'lucide-react';
 import { eventsService } from '../../../services/events.service';
 import { usePermission } from '../../../hooks/usePermission';
+import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 
 // Download limit usage on the event page (issue 1560): "7 / 10 downloaded",
 // plus Reset, which clears the gallery's downloads so its whole quota is free
@@ -17,7 +17,6 @@ interface DownloadLimitUsageProps {
 
 export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId, downloadLimit }) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const canEdit = usePermission('events.edit');
 
   const { data: usage } = useQuery({
@@ -26,13 +25,13 @@ export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId,
     queryFn: () => eventsService.getDownloadLimitUsage(eventId),
   });
 
-  const resetMutation = useMutation({
+  // A string errorMessage: the server's own refusal (403 not your event, 404
+  // gone) is shown, with this as the fallback.
+  const resetMutation = useMutationWithToast({
     mutationFn: () => eventsService.resetDownloadLimitUsage(eventId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-event-download-limit', eventId] });
-      toast.success(t('events.downloadLimitResetDone', 'Downloads reset'));
-    },
-    onError: () => toast.error(t('events.downloadLimitResetFailed', 'Could not reset the downloads')),
+    invalidateKeys: [['admin-event-download-limit', eventId]],
+    successMessage: t('events.downloadLimitResetDone', 'Downloads reset'),
+    errorMessage: t('events.downloadLimitResetFailed', 'Could not reset the downloads'),
   });
 
   const used = usage?.downloads_used ?? 0;
