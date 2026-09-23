@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.140.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.139.0-beta.0...v3.140.0-beta.0) (2026-09-23)
+
+
+### Features
+
+* **contracts:** render worker, publish check, placeholder picker, editor UX, pre-send review, PDF layout and uploaded fonts ([#1579](https://github.com/PicPeak/picpeak/issues/1579)) ([5cc734f](https://github.com/PicPeak/picpeak/commit/5cc734f7ab438e9df856a66d1ca470fe1daa0664))
+
 ## [3.139.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.138.0-beta.0...v3.139.0-beta.0) (2026-09-23)
 
 
