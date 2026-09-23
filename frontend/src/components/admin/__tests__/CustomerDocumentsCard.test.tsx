@@ -61,6 +61,7 @@ vi.mock('../../../hooks/useLocalizedDate', () => ({
 const makeDoc = (over: Partial<AdminCustomerDocument>): AdminCustomerDocument => ({
   id: 1, name: 'agreement.pdf', sizeBytes: 1024, mimeType: 'application/pdf', sha256: 'x',
   uploaderType: 'admin', uploaderName: 'tester', status: 'clean', reviewedAt: null, reviewNote: null,
+  malwareFlagged: false,
   shared: false, sharedAt: null, unsharedAt: null, eventId: 7, eventName: 'Wedding', projectId: 3,
   contractId: null, contractNumber: null, createdAt: '2026-09-01T10:00:00Z',
   customerViewCount: 0, customerFirstViewedAt: null, customerLastViewedAt: null,
@@ -72,6 +73,7 @@ let notifyOnShare = true;
 const removeSpy = vi.fn(async () => undefined);
 const setLinksSpy = vi.fn(async () => undefined);
 const shareSpy = vi.fn(async (): Promise<string | undefined> => 'queued');
+const reviewSpy = vi.fn(async () => undefined);
 
 vi.mock('../../../services/customerDocumentsAdmin.service', () => ({
   customerDocumentsAdminService: {
@@ -81,6 +83,7 @@ vi.mock('../../../services/customerDocumentsAdmin.service', () => ({
     share: (...a: unknown[]) => shareSpy(...(a as [])),
     remove: (...a: unknown[]) => removeSpy(...(a as [])),
     setLinks: (...a: unknown[]) => setLinksSpy(...(a as [])),
+    review: (...a: unknown[]) => reviewSpy(...(a as [])),
   },
 }));
 vi.mock('../../../services/contracts.service', () => ({ contractsService: { list: vi.fn() } }));
@@ -215,5 +218,33 @@ describe('CustomerDocumentsCard — share notification (#1444)', () => {
       'Shared with the customer. The email to the customer could not be queued.',
     ));
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('CustomerDocumentsCard — malware-flagged rejection', () => {
+  beforeEach(() => {
+    reviewSpy.mockClear();
+    env.projects = false;
+    env.permissions = null;
+  });
+
+  it('disables Mark clean with a tooltip for a malware-flagged row and never calls review', async () => {
+    docs = [makeDoc({ id: 20, status: 'rejected', reviewNote: 'The file did not pass the security check.', malwareFlagged: true })];
+    renderCard();
+    const button = await screen.findByRole('button', { name: 'Mark clean' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', 'The malware scanner rejected this file. It cannot be marked clean.');
+    await userEvent.click(button);
+    expect(reviewSpy).not.toHaveBeenCalled();
+  });
+
+  it('still allows Mark clean for an ordinary rejection', async () => {
+    docs = [makeDoc({ id: 21, status: 'rejected', reviewNote: 'Wrong contract version', malwareFlagged: false })];
+    renderCard();
+    const button = await screen.findByRole('button', { name: 'Mark clean' });
+    expect(button).not.toBeDisabled();
+    expect(button).not.toHaveAttribute('title');
+    await userEvent.click(button);
+    await waitFor(() => expect(reviewSpy).toHaveBeenCalledWith(5, 21, 'clean'));
   });
 });
