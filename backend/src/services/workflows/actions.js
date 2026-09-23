@@ -50,6 +50,11 @@ registry.registerAction('send_email', async (ctx) => {
   const eventId = ctx.vars.eventId || null;
   const emailType = cfg.emailType || cfg.template || 'workflow_notification';
   const emailData = { ...(cfg.emailData || {}), ...(ctx.vars.emailData || {}) };
+  // Attachments are file paths the mailer reads from disk. Node config and run
+  // vars are author- (or test-run-payload-) controlled, so they must never
+  // choose a path; actions that attach documents build the list themselves
+  // from stored document paths (see escalate_to_collections).
+  delete emailData.attachments;
 
   // INTERNAL/admin = immediate; EXTERNAL/customer = business-hours floor.
   const respectBusinessHours = !isInternal;

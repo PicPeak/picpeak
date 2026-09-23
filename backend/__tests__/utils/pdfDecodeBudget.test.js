@@ -52,7 +52,7 @@ test('a filter chain is metered too — the encoding it arrives in makes no diff
 });
 
 test('two overlapping meters restore the original method, whatever the order', () => {
-  // The fallback path in pdfValidation runs the checks in this process, so
+  // `isolate: false` in pdfValidation runs the checks in this process, so
   // two can overlap. Restoring in the wrong order used to leave ensureBuffer
   // metered for every later pdf-lib call — pdf/merge.js included.
   const DecodeStream = require('pdf-lib/cjs/core/streams/DecodeStream').default;

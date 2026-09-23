@@ -39,6 +39,7 @@ RestrictedIssuer[custom.http_options] = integrationRequestOptions;
 const { db } = require('../database/db');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { formatBoolean } = require('../utils/dbCompat');
+const { hasColumnCached } = require('../utils/schemaCache');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const logger = require('../utils/logger');
 
@@ -605,11 +606,34 @@ async function resolveAdminFromClaims(claims) {
   // 2. One-time email link — verified emails only, and only onto rows that
   //    have no binding yet (a different identity on the row means a
   //    different IdP identity already owns it).
+  //    The local email must also have been set by a trusted flow
+  //    (email_link_eligible, migration 227): an email an admin typed into
+  //    their own profile, or that a non-super admin set on someone else's
+  //    account, is not proof of ownership and must not let an IdP identity
+  //    — and its mapped role — land on that row.
   if (email && emailVerified) {
-    const byEmail = await db('admin_users')
-      .where('email', email)
-      .whereNull('external_subject')
-      .first();
+    // The claim is lowercased above; the stored address may not be (the
+    // bootstrap admin keeps ADMIN_EMAIL verbatim, 001_init.js). Compare
+    // without case, or a mixed-case row is never matched here and the login
+    // is JIT-provisioned as a second admin beside it.
+    const byEmailQuery = db('admin_users')
+      .whereRaw('LOWER(email) = ?', [email])
+      .whereNull('external_subject');
+    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+      byEmailQuery.where('email_link_eligible', formatBoolean(true));
+    }
+    // More than one row can share an address once case is ignored (no
+    // case-insensitive unique index exists, and older installs may already
+    // hold a pair). Picking one would hand the IdP identity — and its mapped
+    // role — to whichever row the engine returned first, so refuse and let a
+    // Super Admin resolve the pair. The uniqueness checks stop new ones.
+    const byEmailRows = await byEmailQuery.limit(2);
+    if (byEmailRows.length > 1) {
+      const err = new Error('More than one admin account has this email address');
+      err.code = 'OIDC_EMAIL_AMBIGUOUS';
+      throw err;
+    }
+    const byEmail = byEmailRows[0];
     if (byEmail) {
       if (!byEmail.is_active) {
         const err = new Error('Admin account is deactivated');
@@ -645,6 +669,30 @@ async function resolveAdminFromClaims(claims) {
         sub,
       });
       return syncAdminRole({ ...byEmail, external_issuer: iss, external_subject: sub }, mappedRole);
+    }
+    // An unlinked admin with this email exists but its email was not set by a
+    // trusted flow. Refuse clearly instead of falling through to JIT
+    // provisioning, which would collide on the unique email.
+    // Way back in: a super_admin uses "Confirm email for SSO" on the Users
+    // page, which re-saves the address unchanged through PUT /admin/users/:id.
+    // If the refused account IS the only super_admin and local login is disabled,
+    // OIDC_BREAK_GLASS=true re-opens the password route (see
+    // isLocalLoginDisabled) so they can confirm their own email — no SQL.
+    // SIMPLE_SETUP.md documents both cases.
+    const unconfirmed = await db('admin_users')
+      .whereRaw('LOWER(email) = ?', [email])
+      .whereNull('external_subject')
+      .limit(2)
+      .select('id');
+    if (unconfirmed.length > 1) {
+      const err = new Error('More than one admin account has this email address');
+      err.code = 'OIDC_EMAIL_AMBIGUOUS';
+      throw err;
+    }
+    if (unconfirmed.length === 1) {
+      const err = new Error('An admin with this email exists but its email was not confirmed by a Super Admin');
+      err.code = 'OIDC_EMAIL_UNVERIFIED';
+      throw err;
     }
   }
 

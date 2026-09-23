@@ -81,6 +81,24 @@ const stripReservedSettingKeys = (settings) => {
   }
   return settings;
 };
+// Keys owned by the dedicated backup routes (PUT /admin/backup/config and
+// /admin/database-backup/config). Those routes apply their own permission
+// rules (super_admin for file-backup destinations and the manifest location)
+// and validate the values; a generic upsert would skip all of that. Writers
+// only — the generic reads still return these rows.
+const isBackupRouteOwnedKey = (key) => key.startsWith('backup_') || key.startsWith('database_backup_');
+// 400 (naming the keys) when a generic write carries backup-owned keys, rather
+// than dropping them silently; returns true if the request was rejected.
+const rejectBackupRouteOwnedKeys = (settings, res) => {
+  const keys = Object.keys(settings).filter(isBackupRouteOwnedKey);
+  if (keys.length === 0) return false;
+  res.status(400).json({
+    error: 'Backup settings are saved through the backup configuration, not the general settings',
+    code: 'BACKUP_SETTINGS_ELSEWHERE',
+    keys,
+  });
+  return true;
+};
 
 // Migration 174 hardening — per-key permission boundary for the GENERIC settings
 // writers. /general, /analytics, /seo and /security all upsert arbitrary
@@ -91,10 +109,41 @@ const stripReservedSettingKeys = (settings) => {
 // the caller isn't permitted to write is stripped before the upsert. The
 // dedicated routes still work because their caller holds the matching perm
 // (e.g. PUT /accounting is gated by settings.banking, so accounting_* survives).
+// analytics_umami_enabled belongs here too: publicSettings gates umami_url and
+// umami_website_id on it and App.tsx ORs it into the provider check, so it is
+// the on/off switch for the whole Umami path, not a selector. The Analytics
+// tab derives it from the provider dropdown, which is protected by the same
+// permission, so a legitimate save never newly 403s on it.
+const TRACKER_CODE_KEYS = new Set([
+  'analytics_tracker_provider',
+  'analytics_umami_enabled',
+  'analytics_umami_url',
+  'analytics_rybbit_url',
+  'analytics_custom_head_html',
+]);
+const parseStoredSetting = (row) => {
+  if (!row) return undefined;
+  try { return JSON.parse(row.setting_value); } catch (_) { return row.setting_value; }
+};
+// What a protected key reads as when it has no row yet, so a save that sends
+// the effective value back unchanged is not treated as a change. The provider
+// falls back to the legacy umami flag exactly like the Analytics tab does.
+const effectiveMissingSetting = async (key) => {
+  if (key === 'analytics_tracker_provider') {
+    const umami = parseStoredSetting(await db('app_settings').where({ setting_key: 'analytics_umami_enabled' }).first());
+    return umami === true || umami === 'true' ? 'umami' : 'none';
+  }
+  if (key === 'analytics_umami_enabled') return false;
+  return null;
+};
 const PROTECTED_SETTING_KEY_PERMS = [
   { match: (k) => k === 'general_site_url', perm: 'settings.domains' },
   { match: (k) => k.startsWith('security_'), perm: 'settings.security' },
   { match: (k) => k.startsWith('accounting_'), perm: 'settings.banking' },
+  // The tracker provider/URL and the custom head HTML decide which JavaScript
+  // the app serves from its own origin (the tracker proxy re-serves the
+  // configured script same-origin), so they need more than settings.edit.
+  { match: (k) => TRACKER_CODE_KEYS.has(k), perm: 'settings.integrations' },
 ];
 // Returns the list of {key, perm} the caller tried to CHANGE without the owning
 // permission. Callers 403 when it's non-empty rather than silently no-op'ing a
@@ -111,10 +160,7 @@ const collectUnauthorizedProtectedKeys = async (settings, adminId) => {
     if (!rule) continue;
     if (await userHasAnyPermission(adminId, [rule.perm])) continue;
     const row = await db('app_settings').where({ setting_key: key }).first();
-    let stored = null;
-    if (row) {
-      try { stored = JSON.parse(row.setting_value); } catch (_) { stored = row.setting_value; }
-    }
+    const stored = row ? parseStoredSetting(row) : await effectiveMissingSetting(key);
     if (String(stored ?? '') === String(settings[key] ?? '')) {
       delete settings[key]; // unchanged — let the rest of the save through
       continue;
@@ -1490,6 +1536,7 @@ router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, 
 router.put('/general', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const settings = stripReservedSettingKeys({ ...req.body });
+    if (rejectBackupRouteOwnedKeys(settings, res)) return;
     let uploadLimitTouched = false;
 
     // Migration 174: drop any protected key (site URL / security / accounting)
@@ -1715,6 +1762,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
 router.put('/security', adminAuth, requirePermission('settings.security'), async (req, res) => {
   try {
     const settings = stripReservedSettingKeys({ ...req.body });
+    if (rejectBackupRouteOwnedKeys(settings, res)) return;
     // A settings.security holder still can't write domain/accounting keys here.
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 
@@ -1758,6 +1806,7 @@ router.put('/security', adminAuth, requirePermission('settings.security'), async
 router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const settings = stripReservedSettingKeys({ ...req.body });
+    if (rejectBackupRouteOwnedKeys(settings, res)) return;
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 
     // Validate the provider switch (#663 Phase 1). Reject unknown values
@@ -1818,6 +1867,7 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
 router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const settings = stripReservedSettingKeys({ ...req.body });
+    if (rejectBackupRouteOwnedKeys(settings, res)) return;
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
 
     // Validate seo_blocked_ai_agents is an array of strings

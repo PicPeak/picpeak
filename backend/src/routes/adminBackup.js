@@ -20,7 +20,10 @@ const router = express.Router();
 // ends up with a full copy of this instance. backup.create is held by the
 // built-in admin role, so changing those settings is limited to super_admin.
 // Schedule, retention and which files to include stay on backup.create.
-const DESTINATION_SETTING_RE = /^backup_(destination_|s3_|rsync_)/;
+// The manifest path and format decide where the manifest file is written,
+// so they count as a destination too.
+const DESTINATION_SETTING_RE = /^backup_(destination_|s3_|rsync_|manifest_path$|manifest_format$)/;
+const MANIFEST_FORMATS = new Set(['json', 'yaml']);
 const DATABASE_SETTING_KEYS = new Set(['backup_include_database', 'backup_database_inline_dump']);
 const SECRET_MASK = '••••••••';
 
@@ -106,6 +109,11 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       if (Object.prototype.hasOwnProperty.call(updates || {}, key) && typeof updates[key] !== 'boolean') {
         return res.status(400).json({ error: `${key} must be true or false` });
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_manifest_format')
+        && !MANIFEST_FORMATS.has(updates.backup_manifest_format)) {
+      return res.status(400).json({ error: 'backup_manifest_format must be json or yaml' });
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
