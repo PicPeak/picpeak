@@ -1080,7 +1080,11 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                   </span>
                 )}
                 {!!event.allow_downloads && !!event.download_limit && (
-                  <DownloadLimitUsage eventId={event.id} downloadLimit={event.download_limit} />
+                  <DownloadLimitUsage
+                    eventId={event.id}
+                    downloadLimit={event.download_limit}
+                    ownedByOther={!!event.share_secrets_hidden}
+                  />
                 )}
                 {!!event.watermark_downloads && (
                   <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">

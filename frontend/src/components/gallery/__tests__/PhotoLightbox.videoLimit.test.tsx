@@ -61,6 +61,14 @@ describe('PhotoLightbox video on a limited gallery (issue 1560)', () => {
     expect(container.querySelector('video')).toBeNull();
   });
 
+  it('shows the message on a themed surface panel, not a black box on the black lightbox', () => {
+    renderLightbox(video(), { download_limit: null, download_preview_only: true });
+    const panel = screen.getByTestId('lightbox-video-locked');
+    expect(panel).toHaveClass('bg-surface');
+    expect(panel.className).not.toMatch(/bg-black/);
+    expect(panel.style.color).toBe('var(--color-text)');
+  });
+
   it('does not preload a video that would take a slot', () => {
     const { container } = renderLightbox(video(), { download_limit: 2, downloads_used: 1, downloads_remaining: 1 });
     expect(container.querySelector('video')?.getAttribute('preload')).toBe('none');
