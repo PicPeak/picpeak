@@ -274,3 +274,75 @@ test('batches the collision check across several legacy rows without an incorrec
     await db('photo_feedback').where({ photo_id: photoId2 }).delete();
   }
 });
+
+const cookieFor = (subject) => jwt.sign({ type: 'feedback' }, process.env.JWT_SECRET,
+  { issuer: 'picpeak-feedback', subject, expiresIn: '1h' });
+const identifierFor = (subject, forEventId) => crypto.createHmac('sha256', process.env.JWT_SECRET)
+  .update(`feedback:${forEventId}:${subject}`).digest('hex');
+
+test('adopts per event: one cookie subject visiting two galleries adopts the legacy rows in each', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+  // The cookie is scoped to /api/gallery, so one subject spans every event,
+  // and the legacy sha256(ip:userAgent) hash names none. A claim keyed on the
+  // subject alone would adopt the first gallery and skip the second forever.
+  const [eventB] = await db('events').insert({ slug: 'legacy-identity-b', event_type: 'wedding', event_name: 'Legacy Identity B',
+    event_date: '2026-09-16', host_email: 'h@example.test', admin_email: 'a@example.test',
+    password_hash: 'unused', share_link: '/gallery/legacy-identity-b/share', is_active: true, is_archived: false, is_draft: false }).returning('id');
+  const eventIdB = eventB.id ?? eventB;
+  const [photoB] = await db('photos').insert({ event_id: eventIdB, filename: 'legacy-b.jpg', path: 'legacy-b.jpg', type: 'individual' }).returning('id');
+  const photoIdB = photoB.id ?? photoB;
+  try {
+    const subject = 'd'.repeat(32);
+    const legacyRowA = await seedLegacyRow('like');
+    const now = new Date().toISOString();
+    const [rowB] = await db('photo_feedback').insert({ photo_id: photoIdB, event_id: eventIdB, feedback_type: 'like',
+      guest_identifier: legacyIdentifier(), is_hidden: false, is_approved: true, created_at: now, updated_at: now }).returning('id');
+    const legacyRowB = rowB.id ?? rowB;
+
+    const reqFor = (id) => ({ event: { id }, ip: IP, headers: { 'user-agent': USER_AGENT },
+      cookies: { picpeak_feedback: cookieFor(subject) }, res: { cookie: jest.fn() } });
+    expect(await anonymousFeedbackIdentifier(reqFor(eventId))).toBe(identifierFor(subject, eventId));
+    expect(await anonymousFeedbackIdentifier(reqFor(eventIdB))).toBe(identifierFor(subject, eventIdB));
+
+    expect((await db('photo_feedback').where({ id: legacyRowA }).first()).guest_identifier).toBe(identifierFor(subject, eventId));
+    expect((await db('photo_feedback').where({ id: legacyRowB }).first()).guest_identifier).toBe(identifierFor(subject, eventIdB));
+    expect(await db('feedback_identity_adoptions').where({ subject })).toHaveLength(2);
+  } finally {
+    await db('photo_feedback').where({ event_id: eventIdB }).delete();
+    await db('photos').where({ id: photoIdB }).delete();
+    await db('feedback_identity_adoptions').where({ event_id: eventIdB }).delete();
+    await db('events').where({ id: eventIdB }).delete();
+  }
+});
+
+test('a failed re-key leaves no adoption claim behind, so the next request adopts', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+  const subject = 'f'.repeat(32);
+  const legacyRowId = await seedLegacyRow('like');
+  const reqFn = () => ({ event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT },
+    cookies: { picpeak_feedback: cookieFor(subject) }, res: { cookie: jest.fn() } });
+
+  // Inside adoption, toISOString is called once for the claim's adopted_at
+  // and once for the re-key UPDATE's updated_at: fail the second, after the
+  // claim row has already been written in the same transaction.
+  const realToISOString = Date.prototype.toISOString;
+  let calls = 0;
+  const spy = jest.spyOn(Date.prototype, 'toISOString').mockImplementation(function () {
+    calls += 1;
+    if (calls === 2) throw new Error('forced re-key failure');
+    return realToISOString.call(this);
+  });
+  try {
+    // Feedback identity still resolves: adoption is best-effort.
+    expect(await anonymousFeedbackIdentifier(reqFn())).toBe(identifierFor(subject, eventId));
+  } finally {
+    spy.mockRestore();
+  }
+  expect(calls).toBeGreaterThanOrEqual(2);
+  expect(await db('feedback_identity_adoptions').where({ subject, event_id: eventId }).first()).toBeFalsy();
+  expect((await db('photo_feedback').where({ id: legacyRowId }).first()).guest_identifier).toBe(legacyIdentifier());
+
+  expect(await anonymousFeedbackIdentifier(reqFn())).toBe(identifierFor(subject, eventId));
+  expect(await db('feedback_identity_adoptions').where({ subject, event_id: eventId }).first()).toBeTruthy();
+  expect((await db('photo_feedback').where({ id: legacyRowId }).first()).guest_identifier).toBe(identifierFor(subject, eventId));
+});

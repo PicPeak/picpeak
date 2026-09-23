@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken');
 const { buildCookieOptionsWithExpiry } = require('./tokenUtils');
 const { db } = require('../database/db');
 const logger = require('./logger');
-const { isUniqueViolation } = require('./dbErrors');
 
 const COOKIE_NAME = 'picpeak_feedback';
 const ISSUER = 'picpeak-feedback';
@@ -43,8 +42,8 @@ async function anonymousFeedbackIdentifier(req) {
   // subject has never been through this path may be a returning guest whose
   // likes/ratings/favourites are still stored under that old hash — re-key
   // them onto the new identity so they aren't a stranger to their own
-  // feedback. Gated on the subject (feedback_identity_adoptions), not on
-  // isNewIdentity: a guest who picked up a cookie between #1571 shipping and
+  // feedback. Gated on the subject and event (feedback_identity_adoptions),
+  // not on isNewIdentity: a guest who picked up a cookie between #1571 shipping and
   // this adoption logic shipping already has a "not new" identity forever,
   // and would otherwise never be migrated. Safe to drop this block a release
   // or two after #1584 ships, once returning guests have re-adopted.
@@ -53,36 +52,35 @@ async function anonymousFeedbackIdentifier(req) {
   return identifier;
 }
 
-// Claims the one-time adoption attempt for `subject`. Returns true if this
-// call won the claim (no prior attempt recorded), false if adoption was
-// already attempted — by an earlier request, or by a concurrent racer that
-// won the insert. The insert's uniqueness on `subject` is the lock: two
-// concurrent first-contact requests for the same subject (e.g. two tabs
-// sharing one freshly-set cookie) can only have one winner.
-async function claimIdentityAdoptionAttempt(subject) {
-  try {
-    await db('feedback_identity_adoptions').insert({ subject, adopted_at: new Date().toISOString() });
-    return true;
-  } catch (error) {
-    if (isUniqueViolation(error)) return false;
-    // Table missing (pre-migration) or another transient error: don't block
-    // feedback from working over a failed claim. Treat as "already handled"
-    // so we skip adoption rather than skip feedback.
-    logger.error('Feedback identity adoption claim failed', { error: error.message });
-    return false;
-  }
+// Claims the one-time adoption attempt for (`subject`, `eventId`) inside the
+// re-key transaction `trx`. Returns true if this call won the claim (no prior
+// attempt recorded), false if adoption was already attempted — by an earlier
+// request, or by a concurrent racer that won the insert. The primary key on
+// (subject, event_id) is the lock: two concurrent first-contact requests for
+// the same subject (e.g. two tabs sharing one freshly-set cookie) can only
+// have one winner. Keyed per event because the cookie spans every gallery
+// while the legacy hash does not name one, and written through `trx` so a
+// rolled-back re-key also rolls back the claim and the next request retries.
+// ON CONFLICT DO NOTHING rather than catching a unique violation: on
+// PostgreSQL a failed statement would abort the whole transaction.
+async function claimIdentityAdoptionAttempt(trx, subject, eventId) {
+  const inserted = await trx('feedback_identity_adoptions')
+    .insert({ subject, event_id: eventId, adopted_at: new Date().toISOString() })
+    .onConflict(['subject', 'event_id'])
+    .ignore()
+    .returning('subject');
+  return inserted.length > 0;
 }
 
 async function adoptLegacyFeedbackIdentity(req, subject, eventId, newIdentifier) {
   try {
-    const claimed = await claimIdentityAdoptionAttempt(subject);
-    if (!claimed) return;
-
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.headers?.['user-agent'] || 'unknown';
     const legacyIdentifier = crypto.createHash('sha256').update(`${ip}:${userAgent}`).digest('hex');
 
     await db.transaction(async (trx) => {
+      if (!await claimIdentityAdoptionAttempt(trx, subject, eventId)) return;
+
       const legacyRows = await trx('photo_feedback')
         .where({ event_id: eventId, guest_identifier: legacyIdentifier })
         .select('id', 'photo_id', 'feedback_type');
