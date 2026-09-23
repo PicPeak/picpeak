@@ -116,6 +116,9 @@ services:
       - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
+      # Per-network ceiling above the per-device protected-image rate limits,
+      # as a multiple of the device limit. Unset = 20.
+      - RATE_LIMIT_NETWORK_MULTIPLIER=${RATE_LIMIT_NETWORK_MULTIPLIER:-}
     # No `user:` directive — as of #484, the container starts as root,
     # chowns the bind mounts to nodejs (UID 1001), then drops privileges
     # via su-exec. PUID/PGID env vars are no longer read; if you need

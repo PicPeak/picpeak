@@ -13,6 +13,8 @@ const { withLocalCopy } = require('../services/imageProcessor');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
+const { networkLimit } = require('../utils/networkRateCap');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
 
 const router = express.Router();
@@ -75,12 +77,17 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     // Rate limit, suspicious-activity count and access log are keyed on the
     // rate-limit fingerprint, where an IPv6 /64 is one client (issue 1564);
     // the per-address one would reset the budget on every address in the /64.
+    // The network cap sits above it (utils/networkRateCap.js): the
+    // fingerprint includes headers the client picks, so rotating them was a
+    // fresh budget. Both are checked before either is charged.
     const rateLimitFingerprint = secureImageService.createRateLimitFingerprint(req);
-
-    // Check rate limiting
-    if (!secureImageService.checkRateLimit(rateLimitFingerprint, 30, 60000)) {
+    const networkKey = `network:${rateLimitKey(req) || req.ip}_view`;
+    if (!secureImageService.peekRateLimit(rateLimitFingerprint, 30, 60000)
+      || !secureImageService.peekRateLimit(networkKey, networkLimit(30), 60000)) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
+    secureImageService.recordRateLimit(rateLimitFingerprint, 60000);
+    secureImageService.recordRateLimit(networkKey, 60000);
     
     // Get photo details
     const photo = await db('photos')

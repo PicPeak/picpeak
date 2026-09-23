@@ -3,6 +3,7 @@ const { db } = require('../database/db');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
+const { networkLimit } = require('../utils/networkRateCap');
 
 /**
  * Enhanced secure image middleware with comprehensive protection
@@ -167,12 +168,21 @@ class SecureImageMiddleware {
       { duration: 3600000, limit: settings.perHour || 500 } // 1 hour
     ];
 
+    // Check every window, device and network, before charging any: a
+    // request refused by one window must not spend the others. Charging the
+    // device windows before a network refusal ran a guest into violations
+    // (and a fingerprint block) for requests that were never served.
+    const deviceKey = (window) => `${clientInfo.rateLimitFingerprint}_${window.duration}`;
+    // The network cap (utils/networkRateCap.js). The device windows count per
+    // device, and the device includes headers the client picks; rotating them
+    // was a fresh budget each time. These count the network key alone, at a
+    // multiple of the device budget. Refused with a 429, but never added to
+    // the block list: at a venue the network is every guest, and one scraper
+    // on the wifi must not get the whole party blocked.
+    const networkKey = (window) => `network:${clientInfo.rateLimitAddress}_${window.duration}`;
+
     for (const window of windows) {
-      const allowed = secureImageService.checkRateLimit(
-        `${clientInfo.rateLimitFingerprint}_${window.duration}`,
-        window.limit,
-        window.duration
-      );
+      const allowed = secureImageService.peekRateLimit(deviceKey(window), window.limit, window.duration);
 
       if (!allowed) {
         // Track violations
@@ -197,6 +207,22 @@ class SecureImageMiddleware {
           violations: violations + 1
         };
       }
+    }
+
+    for (const window of windows) {
+      if (!secureImageService.peekRateLimit(networkKey(window), networkLimit(window.limit), window.duration)) {
+        return {
+          passed: false,
+          scope: 'network',
+          window: window.duration / 1000,
+          limit: networkLimit(window.limit)
+        };
+      }
+    }
+
+    for (const window of windows) {
+      secureImageService.recordRateLimit(deviceKey(window), window.duration);
+      secureImageService.recordRateLimit(networkKey(window), window.duration);
     }
 
     return { passed: true };
