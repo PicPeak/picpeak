@@ -87,10 +87,25 @@ function generateCandidates(raw, storageRoot) {
   return [...new Set(contained)];
 }
 
-function pickExisting(candidates) {
+// The candidates above are contained lexically; the file they name must be
+// too, with symlinks followed, since its bytes go into a customer's PDF.
+// Returns the real path it checked (or null), so the caller reads exactly
+// that file: returning the unresolved name would let a link swapped after
+// this check point the read somewhere else.
+function realPathInsideStorageRoots(file, storageRoot) {
+  const roots = [storageRoot, path.join(process.cwd(), 'storage')].map((root) => {
+    try { return fs.realpathSync(root); } catch (_) { return null; }
+  }).filter(Boolean);
+  const real = fs.realpathSync(file);
+  return roots.some((root) => real.startsWith(root + path.sep)) ? real : null;
+}
+
+function pickExisting(candidates, storageRoot) {
   for (const c of candidates) {
     try {
-      if (fs.existsSync(c) && fs.statSync(c).isFile()) return c;
+      if (!fs.existsSync(c) || !fs.statSync(c).isFile()) continue;
+      const real = realPathInsideStorageRoots(c, storageRoot);
+      if (real) return real;
     } catch (_) { /* ignore */ }
   }
   return null;
@@ -177,7 +192,7 @@ async function resolveLogoFile(profile) {
 
   for (const { source, value } of raws) {
     const candidates = generateCandidates(value, storageRoot);
-    const found = pickExisting(candidates);
+    const found = pickExisting(candidates, storageRoot);
     if (!found) continue;
     if (SUPPORTED_EXT.test(found)) {
       logger.info('Resolved PDF logo', { source, configured: value, resolved: found });

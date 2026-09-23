@@ -12,6 +12,41 @@ const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
 const businessProfileService = require('./businessProfileService');
+const { resolveStoredPathStrict } = require('../utils/safePath');
+
+/**
+ * The file a queued attachment names, or a refusal.
+ *
+ * Every sender queues a file it wrote under the storage root (business-docs
+ * or uploads; none attaches from a temp directory), and the row carries the
+ * path the sender saw. email_queue rows travel in a .picpeak archive, so a
+ * path is placed on this install's storage root (a row queued before a
+ * restore names the old root) and checked with symlinks followed. A path
+ * outside the storage root is refused: the email fails with that reason in
+ * its queue row instead of mailing whatever file the row names.
+ *
+ * Only the realpath the check returned is handed to the transport. A file
+ * that cannot be realpath'd (missing, or a symlink whose target is not there
+ * yet) is not attached by its unchecked path: the send fails like a deleted
+ * file always did, and the retry checks it again.
+ */
+function attachmentFile(file, filename) {
+  if (!file) return file;
+  let placed;
+  try {
+    placed = resolveStoredPathStrict(file);
+  } catch (err) {
+    const refused = new Error(`Attachment "${filename || 'file'}" was refused: it is not a file under the storage directory`);
+    refused.code = 'ATTACHMENT_REFUSED';
+    throw refused;
+  }
+  if (!placed) {
+    const missing = new Error(`Attachment "${filename || 'file'}" is missing from the storage directory`);
+    missing.code = 'ATTACHMENT_MISSING';
+    throw missing;
+  }
+  return placed;
+}
 
 /**
  * The From identity for an outbound message (#1225).
@@ -962,7 +997,7 @@ async function sendTemplateEmail(to, templateKey, variables, { usageEligible = t
         .filter((a) => a && (a.contentPath || a.path || a.content))
         .map((a) => ({
           filename: a.filename,
-          path: a.contentPath || a.path,
+          path: attachmentFile(a.contentPath || a.path, a.filename),
           content: a.content,
           contentType: a.contentType,
         }))
@@ -1093,7 +1128,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
   const atts = Array.isArray(attachments)
     ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
-      .map((a) => ({ filename: a.filename, path: a.contentPath || a.path, content: a.content, contentType: a.contentType }))
+      .map((a) => ({ filename: a.filename, path: attachmentFile(a.contentPath || a.path, a.filename), content: a.content, contentType: a.contentType }))
     : undefined;
   const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,
@@ -1364,6 +1399,17 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         logger.info(`Email ${email.id} sent successfully`);
       } catch (error) {
         result.failed += 1;
+        // A refused attachment will be refused on every retry: fail the row
+        // now, with the reason, rather than retrying or sending without it.
+        if (error && error.code === 'ATTACHMENT_REFUSED') {
+          try {
+            await db('email_queue').where('id', email.id).update({ status: 'failed', error_message: error.message });
+          } catch (updateError) {
+            logger.error(`Failed to mark email ${email.id} failed:`, updateError);
+          }
+          logger.error(`Email ${email.id} not sent: ${error.message}`);
+          continue;
+        }
         // Increment retry count. The variables stay in the clear on
         // failure: a row past the cap can still be re-queued (Messages
         // "retry" resets retry_count, ignoreSchedule skips the cap) and a

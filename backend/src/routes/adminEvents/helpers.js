@@ -219,7 +219,7 @@ async function deleteEventCascade(eventId, adminContext) {
 
     if (event.hero_logo_path) {
       try {
-        await fs.unlink(event.hero_logo_path);
+        await fs.unlink(require('../../utils/storedPath').resolveStoredPath(event.hero_logo_path) || '');
       } catch (fsErr) {
         logger.warn('Failed to delete event logo during cascade delete', { eventId, path: event.hero_logo_path, error: fsErr.message });
       }

@@ -8,6 +8,21 @@ const path = require('path');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const pdfStampService = require('../pdfStampService');
+const { toStoredPath } = require('../../utils/storedPath');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
+
+/**
+ * A signature image to stamp, symlinks followed. A missing or refused image
+ * comes back as null with `unavailable` set, so the stamp fails and is
+ * reported as failed instead of being skipped as "no signature".
+ */
+function signatureImage(stored) {
+  let file = null;
+  try { file = resolveStoredPathStrict(stored, contractPdfRoots()); } catch (err) {
+    logger.warn('Signature image refused', { code: err.code || err.name });
+  }
+  return { signaturePngPath: file, unavailable: !file };
+}
 
 
 /**
@@ -41,7 +56,7 @@ function sha256OfFile(filePath) {
  * comparison.
  */
 async function persistContractPdf(contract, buffer, suffix = '') {
-  if (!contract.contract_number) return { filePath: null, sha256: null };
+  if (!contract.contract_number) return { filePath: null, storedPath: null, sha256: null };
   const year = (contract.issue_date ? new Date(contract.issue_date) : new Date()).getFullYear();
   const root = path.join(getStoragePath(), 'business-docs', 'contract', String(year));
   fs.mkdirSync(root, { recursive: true });
@@ -60,7 +75,8 @@ async function persistContractPdf(contract, buffer, suffix = '') {
     : `${contract.contract_number}_${stamp}.pdf`;
   const filePath = path.join(root, fileName);
   fs.writeFileSync(filePath, buffer);
-  return { filePath, sha256: sha256OfBuffer(buffer) };
+  // filePath to use the file now; storedPath is what the contract row records.
+  return { filePath, storedPath: toStoredPath(filePath), sha256: sha256OfBuffer(buffer) };
 }
 
 // Maximum decoded signature image size. Defends against a customer
@@ -133,7 +149,7 @@ function buildSignatureStamps(contract) {
   const stamps = [];
   if (contract.signed_customer_signature_path) {
     stamps.push({
-      signaturePngPath: contract.signed_customer_signature_path,
+      ...signatureImage(contract.signed_customer_signature_path),
       role: 'customer',
       caption: {
         name: contract.signed_customer_name || '',
@@ -145,7 +161,7 @@ function buildSignatureStamps(contract) {
   }
   if (contract.signed_admin_signature_path) {
     stamps.push({
-      signaturePngPath: contract.signed_admin_signature_path,
+      ...signatureImage(contract.signed_admin_signature_path),
       role: 'admin',
       caption: {
         name: contract.signed_admin_name || '',

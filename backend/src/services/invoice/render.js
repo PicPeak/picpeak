@@ -280,19 +280,19 @@ async function renderInvoicePdfBuffer(invoiceId) {
   // Imported (historical) invoices store the original PDF on disk
   // — short-circuit the renderer and stream the file untouched so
   // legal documents stay byte-identical to the source. Path is
-  // stored relative to STORAGE_PATH but we accept absolute too.
+  // stored relative to STORAGE_PATH. The file goes to the customer, so
+  // it must be one the import route wrote: inside invoice-imports, with
+  // symlinks followed. Anything else (a crafted restore naming the
+  // evidence key, say) is refused with 403.
   if (data.invoice.imported_pdf_path) {
     const fs = require('fs');
     const path = require('path');
     const { getStoragePath } = require('../../config/storage');
-    const raw = String(data.invoice.imported_pdf_path).trim();
-    const candidates = [
-      path.isAbsolute(raw) ? raw : null,
-      path.join(getStoragePath(), raw.replace(/^\/+/, '')),
-    ].filter(Boolean);
-    const found = candidates.find((p) => {
-      try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; }
-    });
+    const { resolveStoredPathStrict } = require('../../utils/safePath');
+    const candidate = resolveStoredPathStrict(String(data.invoice.imported_pdf_path).trim(),
+      [path.join(getStoragePath(), 'business-docs', 'invoice-imports')]);
+    let found = null;
+    try { found = candidate && fs.statSync(candidate).isFile() ? candidate : null; } catch { found = null; }
     if (!found) {
       throw new AppError('Imported invoice PDF is missing on disk', 410);
     }

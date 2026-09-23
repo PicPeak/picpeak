@@ -25,7 +25,7 @@ const path = require('path');
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
-const { assertPathInside } = require('../../utils/safePath');
+const { assertStoredPathInside } = require('../../utils/safePath');
 const { getStoragePath } = require('../../config/storage');
 const { auditedUpdate } = require('../accountingHistory');
 
@@ -150,7 +150,7 @@ async function collectRebillProofAttachments(invoice, customer, proofInboundIds,
       markerErr = 'proof file missing (no stored PDF on the supplier invoice)';
     } else {
       try {
-        const safe = assertPathInside(row.file_path, [businessDocs]);
+        const safe = assertStoredPathInside(row.file_path, [businessDocs]);
         if (!fs.existsSync(safe)) {
           markerErr = 'proof file not found on disk at issue time';
         } else {

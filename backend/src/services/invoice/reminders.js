@@ -15,6 +15,7 @@ const { formatMajor } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { buildInvoiceRenderContext } = require('./render');
 const { auditedUpdate } = require('../accountingHistory');
+const { invoicePdfFile } = require('../../utils/storedDocumentPdf');
 
 
 /**
@@ -149,8 +150,9 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
 
   // Attach the (unchanged) original invoice PDF + the new Mahnung.
   const attachments = [];
-  if (invoice.pdf_path && fs.existsSync(invoice.pdf_path)) {
-    attachments.push({ filename: `${invoice.invoice_number}.pdf`, contentPath: invoice.pdf_path, contentType: 'application/pdf' });
+  const invoicePdf = invoicePdfFile(invoice.pdf_path);
+  if (invoicePdf) {
+    attachments.push({ filename: `${invoice.invoice_number}.pdf`, contentPath: invoicePdf, contentType: 'application/pdf' });
   }
   attachments.push({ filename: `${fresh.invoice_number}_Mahnung.pdf`, contentPath: mahnungPath, contentType: 'application/pdf' });
 

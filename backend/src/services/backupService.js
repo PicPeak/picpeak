@@ -13,6 +13,7 @@ const logger = require('../utils/logger');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
+const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const packageJson = require('../../package.json');
 
@@ -382,6 +383,20 @@ async function getDatabaseBackupInfoInternal() {
   }
 }
 
+function isExcludedName(name, excludePatterns) {
+  return excludePatterns.some(pattern => {
+    if (pattern.includes('*')) {
+      // Escape regex metacharacters before expanding the glob star — the
+      // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
+      // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      const regex = new RegExp(`^${escaped}$`);
+      return regex.test(name);
+    }
+    return name === pattern;
+  });
+}
+
 async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) {
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
@@ -389,19 +404,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
       const fullPath = path.join(dirPath, entry.name);
       const relativePath = path.relative(basePath, fullPath);
 
-      const isExcluded = excludePatterns.some(pattern => {
-        if (pattern.includes('*')) {
-          // Escape regex metacharacters before expanding the glob star — the
-          // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
-          // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
-          const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-          const regex = new RegExp(`^${escaped}$`);
-          return regex.test(entry.name);
-        }
-        return entry.name === pattern;
-      });
-
-      if (isExcluded) {
+      if (isExcludedName(entry.name, excludePatterns)) {
         continue;
       }
 
@@ -676,6 +679,40 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns);
   }
 
+  // Documents a row names in the legacy root (<cwd>/storage) when that is not
+  // the storage root: the walk above never sees them. Each is backed up under
+  // the storage-relative path the manifest's stored_path_map points its rows
+  // at, when a selected backup path covers that path.
+  // A failure here must not cost the rest of the backup.
+  let legacyFiles = [];
+  try {
+    legacyFiles = await collectLegacyStoredFiles(db);
+  } catch (error) {
+    logger.warn(`Could not list documents stored outside the storage root: ${error.message}`);
+  }
+  for (const legacy of legacyFiles) {
+    const target = targets.find((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
+    if (!target) continue;
+    // The walker's exclusions apply to every name below the backup path.
+    const below = legacy.rel.slice(target.path.length).split('/').filter(Boolean);
+    if (below.some((name) => isExcludedName(name, excludePatterns))) continue;
+    let stats;
+    try {
+      stats = await fs.stat(legacy.abs);
+    } catch (error) {
+      logger.warn(`Skipping a document stored outside the storage root that is no longer readable: ${error.code || error.message}`);
+      continue;
+    }
+    files.push({
+      path: legacy.abs,
+      relativePath: legacy.rel.split('/').join(path.sep),
+      size: stats.size,
+      modified: stats.mtime,
+      legacyValues: legacy.values,
+      legacySha256: legacy.sha256,
+    });
+  }
+
   return files;
 }
 
@@ -854,6 +891,14 @@ async function performRsyncBackup(config, files) {
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
   // file list (which only feeds manifests and file state).
+  // rsync transfers the storage root itself, so a legacy-root document (see
+  // getFilesToBackupInternal) is not in it: leave it out of the manifest
+  // rather than record a file the destination never received.
+  const legacyCount = files.filter((file) => file.legacyValues).length;
+  if (legacyCount) {
+    logger.warn(`rsync backup: ${legacyCount} document(s) stored outside the storage root are not transferred; use a local or S3 destination, or a .picpeak export, to include them`);
+    files = files.filter((file) => !file.legacyValues);
+  }
   const excludedPaths = await resolveExcludedBackupPaths(config);
   const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
@@ -1153,6 +1198,20 @@ async function runBackupInternal(isManual = false) {
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
 
+      // Rows naming a legacy-root document are pointed at its backed-up path
+      // on restore (restoreService). rsync leaves those documents out.
+      // `file.checksum` (set by performLocalBackup/performS3Backup right
+      // before the copy/upload) reflects the bytes actually archived; prefer
+      // it over `legacySha256`, which collectLegacyStoredFiles computed
+      // earlier during the collection walk and can go stale if the source
+      // file changes between collection and the archive write.
+      const legacyBacked = (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
+        .map((file) => ({
+          rel: file.relativePath.split(path.sep).join('/'),
+          values: file.legacyValues,
+          sha256: file.checksum || file.legacySha256,
+        }));
+      const legacyMap = storedPathMap(legacyBacked);
       const manifestOptions = {
         backupType: previousBackup ? 'incremental' : 'full',
         backupPath: result.backupPath,
@@ -1163,7 +1222,10 @@ async function runBackupInternal(isManual = false) {
         customMetadata: {
           backup_run_id: runId,
           destination_type: destinationType,
-          retentionDays: config.backup_retention_days || 30
+          retentionDays: config.backup_retention_days || 30,
+          ...(Object.keys(legacyMap).length
+            ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
+            : {})
         }
       };
 

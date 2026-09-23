@@ -454,6 +454,31 @@ class RestoreService {
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
 
+      // Documents the source read from its legacy root (<cwd>/storage) were
+      // backed up under a storage-relative path; point their rows at it once
+      // both the rows and the files are back (legacyStoredFiles.js).
+      // After the migrations, which leave these outside-root values alone.
+      // Every restore type: a database restore followed by a separate files
+      // restore only has both halves in place after the second one.
+      if (manifest.metadata && manifest.metadata.stored_path_map) {
+        try {
+          const { applyStoredPathMap, holdsBytes } = require('../utils/legacyStoredFiles');
+          const { getStoragePath } = require('../config/storage');
+          const root = getStoragePath();
+          const sums = manifest.metadata.stored_path_sha256 || {};
+          // Only where the backed-up bytes are actually there: after a partial
+          // restore a different file may sit at the mapped path.
+          // A files-only or selective restore leaves the live rows: those are
+          // moved only when the document they name is gone.
+          const updated = await applyStoredPathMap(db, manifest.metadata.stored_path_map,
+            (rel) => holdsBytes(path.join(root, ...rel.split('/')), sums[rel]),
+            { onlyUnreadable: !['full', 'database'].includes(options.restoreType) });
+          if (updated) this.log('info', `Pointed ${updated} restored document path(s) at their backed-up location`);
+        } catch (err) {
+          this.log('warn', `Updating restored document paths failed: ${err.message}`);
+        }
+      }
+
       // Faces last (#1163). This used to run in step 6, before the migrations
       // above. On a backup predating migration 187 that meant queueing rows
       // whose external_relpath was still relative to events.external_path

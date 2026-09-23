@@ -45,6 +45,7 @@ const emailProcessor = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
+const { toStoredPath } = require('../utils/storedPath');
 const fs = require('fs');
 const path = require('path');
 
@@ -1017,7 +1018,7 @@ async function sendQuote(id, adminId) {
     await auditedUpdate(trx, 'quotes', { id }, {
       status: 'sent',
       sent_at: new Date(),
-      pdf_path: pdfPath,
+      pdf_path: toStoredPath(pdfPath),
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
       updated_at: new Date(),
     }, { actor: adminId, source: 'quote.send' });
