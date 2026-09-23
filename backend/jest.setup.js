@@ -1,9 +1,11 @@
-// Pin the test environment at module scope so it lands before any test file
+// Set the test environment at module scope so it lands before any test file
 // requires knexfile (which calls dotenv.config() at load). A local .env with
 // DATABASE_CLIENT=pg would otherwise point the suite at the developer's real
 // Postgres — dotenv does not override vars already set here (fork survey A5).
+// Only a default: an explicit `DATABASE_CLIENT=pg npx jest …` from the shell
+// is how engine-sensitive changes are checked on Postgres, and must win.
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_CLIENT = 'sqlite3';
+if (!process.env.DATABASE_CLIENT) process.env.DATABASE_CLIENT = 'sqlite3';
 
 // Supertest 6 binds an IPv6 wildcard listener but hardcodes an IPv4 URL.
 // macOS can allocate that IPv6 port while a different IPv4 service owns it.
