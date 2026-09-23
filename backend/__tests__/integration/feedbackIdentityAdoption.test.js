@@ -178,3 +178,99 @@ test('leaves a legacy row alone when the new identity already holds a row for th
     randomBytesSpy.mockRestore();
   }
 });
+
+test('adopts a guest who already holds a valid cookie from before adoption shipped, once, then never again', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+
+  // Simulates the #1584 migration-completeness gap: a cookie minted by
+  // #1571, before the re-key logic in #1584 existed. isNewIdentity is false
+  // on every request from here on, so the gate has to be "adoption was
+  // never attempted for this subject", not "this cookie is brand new".
+  const preexistingSubject = 'c'.repeat(32);
+  const preexistingCookie = jwt.sign({ type: 'feedback' }, process.env.JWT_SECRET,
+    { issuer: 'picpeak-feedback', subject: preexistingSubject, expiresIn: '1h' });
+  const expectedIdentifier = crypto.createHmac('sha256', process.env.JWT_SECRET)
+    .update(`feedback:${eventId}:${preexistingSubject}`).digest('hex');
+
+  const legacyRowId = await seedLegacyRow('like');
+  const req1 = { event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT },
+    cookies: { picpeak_feedback: preexistingCookie }, res: { cookie: jest.fn() } };
+  const identifier1 = await anonymousFeedbackIdentifier(req1);
+  expect(identifier1).toBe(expectedIdentifier);
+  expect(req1.res.cookie).not.toHaveBeenCalled(); // already had a valid cookie — none re-issued
+
+  expect(await db('feedback_identity_adoptions').where({ subject: preexistingSubject }).first()).toBeTruthy();
+  expect((await db('photo_feedback').where({ id: legacyRowId }).first()).guest_identifier).toBe(expectedIdentifier);
+
+  // A later legacy-shaped row shows up under the same IP/UA (e.g. another
+  // stray pre-cookie write). Adoption must not run again for this subject.
+  const laterLegacyRowId = await seedLegacyRow('favorite');
+  const req2 = { event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT },
+    cookies: { picpeak_feedback: preexistingCookie }, res: { cookie: jest.fn() } };
+  const identifier2 = await anonymousFeedbackIdentifier(req2);
+  expect(identifier2).toBe(expectedIdentifier);
+  expect((await db('photo_feedback').where({ id: laterLegacyRowId }).first()).guest_identifier).toBe(legacyIdentifier());
+});
+
+test('two concurrent first-contact requests from the same browser re-key the legacy row exactly once', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+  const legacyRowId = await seedLegacyRow('like');
+
+  const makeConcurrentReq = () => ({ event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT },
+    cookies: {}, res: { cookie: jest.fn() } });
+  const req1 = makeConcurrentReq();
+  const req2 = makeConcurrentReq();
+
+  // Two tabs with no cookie yet, sharing IP/UA: each mints its own new
+  // subject. Without locking around the legacy-row lookup + update, both
+  // could re-key (or corrupt) the same row.
+  const [identifier1, identifier2] = await Promise.all([
+    anonymousFeedbackIdentifier(req1),
+    anonymousFeedbackIdentifier(req2),
+  ]);
+  expect(identifier1).not.toBe(identifier2);
+
+  const rekeyed = await db('photo_feedback').where({ id: legacyRowId }).first();
+  expect([identifier1, identifier2]).toContain(rekeyed.guest_identifier); // exactly one racer won it
+
+  const rows = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'like' });
+  expect(rows).toHaveLength(1); // no duplication from the race
+});
+
+test('batches the collision check across several legacy rows without an incorrect merge', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+  const [photo2] = await db('photos')
+    .insert({ event_id: eventId, filename: 'legacy2.jpg', path: 'legacy2.jpg', type: 'individual' })
+    .returning('id');
+  const photoId2 = photo2.id ?? photo2;
+
+  const fixedSubject = 'e'.repeat(32);
+  const randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from(fixedSubject, 'hex'));
+  try {
+    const expectedIdentifier = crypto.createHmac('sha256', process.env.JWT_SECRET)
+      .update(`feedback:${eventId}:${fixedSubject}`).digest('hex');
+    const now = new Date().toISOString();
+    const insertRow = (overrides) => db('photo_feedback').insert({
+      event_id: eventId, is_hidden: false, is_approved: true, created_at: now, updated_at: now, ...overrides,
+    }).returning('id').then(([row]) => row.id ?? row);
+
+    // Photo 1: no collision — must be re-keyed.
+    const freeRowId = await seedLegacyRow('like');
+    // Photo 2: a 'favorite' collision with the new identity — must be left alone.
+    const collidingLegacyId = await insertRow({ photo_id: photoId2, feedback_type: 'favorite', guest_identifier: legacyIdentifier() });
+    await insertRow({ photo_id: photoId2, feedback_type: 'favorite', guest_identifier: expectedIdentifier });
+    // A comment on the same photo, under the same legacy identifier: comments
+    // are never deduplicated, so it must re-key despite the favorite collision.
+    const commentId = await insertRow({ photo_id: photoId2, feedback_type: 'comment', guest_identifier: legacyIdentifier(), comment_text: 'hi' });
+
+    const req = { event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT }, cookies: {}, res: { cookie: jest.fn() } };
+    expect(await anonymousFeedbackIdentifier(req)).toBe(expectedIdentifier);
+
+    expect((await db('photo_feedback').where({ id: freeRowId }).first()).guest_identifier).toBe(expectedIdentifier);
+    expect((await db('photo_feedback').where({ id: collidingLegacyId }).first()).guest_identifier).toBe(legacyIdentifier());
+    expect((await db('photo_feedback').where({ id: commentId }).first()).guest_identifier).toBe(expectedIdentifier);
+  } finally {
+    randomBytesSpy.mockRestore();
+    await db('photo_feedback').where({ photo_id: photoId2 }).delete();
+  }
+});
