@@ -121,8 +121,10 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
     }
 
     const sshKeyUpdate = (updates || {}).backup_rsync_ssh_key;
-    if (typeof sshKeyUpdate === 'string' && sshKeyUpdate !== SECRET_MASK && sshKeyUpdate.trim() !== ''
-        && !isSshKeyPath(sshKeyUpdate.trim())) {
+    const sshKeyNotPath = (sshKeyUpdate !== undefined && sshKeyUpdate !== null && typeof sshKeyUpdate !== 'string')
+      || (typeof sshKeyUpdate === 'string' && sshKeyUpdate !== SECRET_MASK && sshKeyUpdate.trim() !== ''
+        && !isSshKeyPath(sshKeyUpdate.trim()));
+    if (sshKeyNotPath) {
       return res.status(400).json({
         error: 'backup_rsync_ssh_key must be the absolute path to a private key file, not the key itself',
         code: 'RSYNC_SSH_KEY_NOT_PATH',
