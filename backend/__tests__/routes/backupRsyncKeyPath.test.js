@@ -98,6 +98,12 @@ describe('rsync SSH key is a key file path', () => {
       expect(res.body.code).toBe('RSYNC_SSH_KEY_NOT_PATH');
     });
 
+    it('refuses a value that is not a string at all', async () => {
+      const res = await as(request(app).put('/api/admin/backup/config')).send({ backup_rsync_ssh_key: ['/app/data/ssh/id_ed25519'] });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('RSYNC_SSH_KEY_NOT_PATH');
+    });
+
     it('stores an absolute key file path, trimmed', async () => {
       const res = await as(request(app).put('/api/admin/backup/config')).send({ backup_rsync_ssh_key: ' /app/data/ssh/id_ed25519 ' });
       expect(res.status).toBe(200);
