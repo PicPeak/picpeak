@@ -24,6 +24,7 @@ const archiver = require('archiver');
 
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
@@ -799,11 +800,12 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
 
   res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-  if (source.type === 'stream') {
-    source.value.pipe(res);
-  } else {
-    fs.createReadStream(source.value).pipe(res);
-  }
+  // Through the helper, never a bare pipe: the local read stream opens lazily
+  // and an S3 body can drop mid-transfer, and a source 'error' with no
+  // listener is an uncaught throw that ends the process. This route is
+  // public, so that would be an unauthenticated crash.
+  const body = source.type === 'stream' ? source.value : fs.createReadStream(source.value);
+  pipeStreamToResponse(body, res, { context: `transfer ${transfer.id} photo ${row.id}` });
   return true;
 }
 
@@ -823,7 +825,7 @@ async function streamTransferExtraFile(transfer, extraId, res, { beforeStream = 
   if (!(await allowStream(beforeStream, stream))) return false;
   res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(row.original_filename)}"`);
-  stream.pipe(res);
+  pipeStreamToResponse(stream, res, { context: `transfer ${transfer.id} extra file ${row.id}` });
   return true;
 }
 
