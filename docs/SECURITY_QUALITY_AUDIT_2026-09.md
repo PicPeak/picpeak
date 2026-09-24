@@ -319,7 +319,7 @@ The real SQLite boolean bug class is JS-side strict comparison of *read* values 
 | SSRF | `networkValidation.isHostAllowed` + pinned requests on webhooks, email webhook, S3 endpoint, SMTP/IMAP, analytics proxy path allowlist + private-IP check in production |
 | Secret redaction | Backup S3/rsync keys, SMTP, OIDC, recaptcha, analytics API keys masked on GET |
 | XSS | DOMPurify on CMS / welcome / markdown / legal; CSS sanitizer blocks `@import` / escapes |
-| Feature flags | Server-side re-checks on tax report, transfers, CRM surfaces; `adminDev` needs flag **and** `PICPEAK_ENABLE_DEV_TOOLS=1` |
+| Feature flags | Server-side re-checks on tax report (`adminTaxReport.js:35`), transfers, CRM surfaces; `projects` and `calendar` gate inline (`adminProjects.js:51-57`, `adminCalendar.js:61-73`); `clients` is derived from its children (`adminFeatureFlags.js:206-217`) and has no router, so the fork-survey note in issue 1563 §C about missing gates is disproved; `adminDev` needs flag **and** `PICPEAK_ENABLE_DEV_TOOLS=1` |
 | Static uploads | Only logos/favicons via `secureStatic`; contracts/transfers not an open tree |
 | Env | Short/example `JWT_SECRET` rejected in `validateEnv` |
 | Authz regressions | `backend/__tests__/routes/authzPermissionGaps.test.js` (API tokens, event mass-assign, category hero) |
