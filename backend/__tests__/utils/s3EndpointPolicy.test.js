@@ -29,6 +29,9 @@ describe('classifyAddress', () => {
     ['127.0.0.1', 'approvable'],
     ['fd00::1', 'approvable'],
     ['169.254.169.254', 'forbidden'],
+    ['fd00:ec2::254', 'forbidden'],
+    ['fd00:ec2:0:0:0:0:0:254', 'forbidden'],
+    ['100.100.100.200', 'forbidden'],
     ['::ffff:169.254.169.254', 'forbidden'],
     ['fe80::1', 'forbidden'],
     ['100.64.0.1', 'forbidden'],
@@ -81,6 +84,9 @@ describe('assertS3EndpointAllowed (production)', () => {
     await expect(policy.assertS3EndpointAllowed('http://metadata.google.internal', { allowPrivate: true }))
       .rejects.toMatchObject({ code: 'S3_ENDPOINT_FORBIDDEN' });
     await expect(policy.assertS3EndpointAllowed('http://[fe80::1]:9000', { allowPrivate: true }))
+      .rejects.toMatchObject({ code: 'S3_ENDPOINT_FORBIDDEN' });
+    // AWS's IPv6 metadata endpoint sits in the approvable unique-local range.
+    await expect(policy.assertS3EndpointAllowed('http://[fd00:ec2::254]', { allowPrivate: true }))
       .rejects.toMatchObject({ code: 'S3_ENDPOINT_FORBIDDEN' });
   });
 

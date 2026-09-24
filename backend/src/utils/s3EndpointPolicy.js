@@ -25,6 +25,10 @@ const { isPrivateIP } = require('./networkValidation');
 const APPROVAL_SETTING = 'backup_s3_private_endpoint_approval';
 const METADATA_HOSTS = new Set(['metadata.google.internal', 'metadata.google', 'metadata']);
 const APPROVABLE_RANGES = new Set(['private', 'loopback', 'uniqueLocal']);
+// Metadata services that sit inside an otherwise approvable range. The IPv4
+// ones are link-local or CGNAT and already refused by range; AWS's IPv6
+// endpoint is unique-local, so it is named here.
+const METADATA_ADDRESSES = new Set([ipaddr.parse('fd00:ec2::254').toNormalizedString()]);
 
 class S3EndpointError extends Error {
   constructor(code, message, details = {}) {
@@ -57,6 +61,7 @@ function endpointOrigin(endpoint, sslEnabled = true) {
 function classifyAddress(address) {
   let parsed;
   try { parsed = ipaddr.process(address); } catch { return 'forbidden'; }
+  if (parsed.kind() === 'ipv6' && METADATA_ADDRESSES.has(parsed.toNormalizedString())) return 'forbidden';
   const range = parsed.range();
   if (range === 'unicast' && !isPrivateIP(parsed.toString())) return 'public';
   return APPROVABLE_RANGES.has(range) ? 'approvable' : 'forbidden';
