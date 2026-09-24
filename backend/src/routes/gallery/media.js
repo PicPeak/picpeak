@@ -17,6 +17,7 @@ const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = 
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
+const { safePathJoin } = require('../../utils/fileSecurityUtils');
 const {
   isOriginalWithheld, currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
@@ -294,7 +295,13 @@ router.get('/:slug/photo/:photoId',
                 return pipeStreamToResponse(wmStream, res, { context: `watermarked photo ${photo.id}` });
               }
             } else {
-              const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
+              // The column is a storage-relative key written by
+              // watermarkService, but it is read straight from a row that a
+              // crafted .picpeak import (or a compromised DB) can poison, so
+              // a raw join would let a `../` value hand any file the process
+              // can read to a gallery guest. safePathJoin throws on escape and
+              // the catch below falls back to on-the-fly watermarking.
+              const watermarkFilePath = safePathJoin(getStoragePath(), photo.watermark_path);
               if (fs.existsSync(watermarkFilePath)) {
                 res.set({
                   'Content-Type': resolvePhotoContentType(photo),
@@ -306,7 +313,7 @@ router.get('/:slug/photo/:photoId',
               }
             }
           } catch (err) {
-            logger.warn(`Pre-generated watermark not found for photo ${photoId}, falling back to on-the-fly`);
+            logger.warn(`Pre-generated watermark unusable for photo ${photoId} (${err.message}), falling back to on-the-fly`);
           }
         }
 
