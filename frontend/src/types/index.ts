@@ -183,8 +183,6 @@ export interface Photo {
   // the same /preview/:id URL, so an install that never flipped the toggle
   // stops serving multi-megabyte originals to display a photo on screen.
   slideshow_url?: string | null;
-  secure_url_template?: string;
-  download_url_template?: string;
   type: 'collage' | 'individual' | 'video';
   category_id?: number | string | null;
   category_name?: string;
