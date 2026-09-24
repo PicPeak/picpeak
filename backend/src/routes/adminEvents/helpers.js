@@ -106,8 +106,10 @@ async function deleteEventCascade(eventId, adminContext) {
 
   // The archive zip is typically the largest single object an event owns, and
   // archiveService writes it through the backend (`storage.putFromFile`, see
-  // archiveService.js:160) — so the `fs.unlink` below is a no-op on S3 and the
-  // zip outlives the event it belongs to.
+  // archiveService.js:160). The sweep below is the only thing that removes it:
+  // it used to be joined onto STORAGE_PATH and unlinked as well, which was a
+  // no-op on S3 and, for a row carrying `../`, an unlink outside storage. The
+  // backend refuses such a key.
   if (event.archive_path) storageKeys.add(event.archive_path);
 
   // The download caches are the subtle ones: they live UNDER
@@ -215,16 +217,6 @@ async function deleteEventCascade(eventId, adminContext) {
         await fs.rm(eventFolderPath, { recursive: true, force: true });
       } catch (fsErr) {
         logger.warn('Failed to delete event folder during cascade delete', { eventId, path: eventFolderPath, error: fsErr.message });
-      }
-    }
-
-    if (event.archive_path) {
-      const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../../storage');
-      const archiveFile = path.join(storagePath, event.archive_path);
-      try {
-        await fs.unlink(archiveFile);
-      } catch (fsErr) {
-        logger.warn('Failed to delete archive file during cascade delete', { eventId, path: archiveFile, error: fsErr.message });
       }
     }
 

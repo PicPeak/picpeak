@@ -37,7 +37,7 @@ const router = express.Router();
 // probed) once an admin disables the feature under Settings → Features.
 router.use(requireFeatureFlag('transfers'));
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 
@@ -49,7 +49,10 @@ const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders:
 const TOKEN_RE = /^[A-Za-z0-9]{4,16}$/;
 
 async function loadUploadTransfer(req, res) {
-  const ip = clientIpForAudit(req);
+  // Keyed like the limiters above: an IPv6 /64 counts as one client, so a
+  // guesser rotating addresses inside one allocation does not reset the
+  // count. The audit log keeps the full address (clientIpForAudit).
+  const ip = rateLimitKey(req);
   // Short upload codes retain their pre-lookup lockout, isolated from the
   // high-entropy document links so one surface cannot disable the other.
   if (tokenLock.isIpLocked(ip, 'transfer_uploads')) {

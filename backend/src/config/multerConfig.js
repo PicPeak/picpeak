@@ -15,7 +15,7 @@ const logger = require('../utils/logger');
  * Get the storage path from environment or default
  * @returns {string}
  */
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('./storage');
 
 /**
  * Default allowed MIME types for different upload types

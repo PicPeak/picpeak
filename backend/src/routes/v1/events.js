@@ -71,7 +71,7 @@ const router = express.Router();
 // caller's own marks); the v1 surface exposes no export formats.
 const photoExportService = new PhotoExportService();
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../../storage');
+const { getStoragePath } = require('../../config/storage');
 
 // ──────────────────────────────────────────────────────────────────────────
 // Multer for single-photo upload. Lean — no replace-by-name, no batching.

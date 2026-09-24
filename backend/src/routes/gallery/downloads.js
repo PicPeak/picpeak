@@ -23,7 +23,7 @@ const {
   pickRequestedResolution,
   parseResolution,
 } = require('../../utils/downloadResolutions');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos, isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
@@ -143,7 +143,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     // Block guest access to hidden photos
-    if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
       return res.status(403).json({ error: 'Photo not available' });
     }
 

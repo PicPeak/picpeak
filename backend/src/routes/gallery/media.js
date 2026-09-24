@@ -13,6 +13,7 @@ const { pipeStreamToResponse } = require('../../utils/streamResponse');
 
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
+const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
@@ -68,7 +69,7 @@ router.post('/:slug/photo/:photoId/view',
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
       // Admin preview (#981 review) is excluded from per-photo view analytics.
@@ -98,7 +99,7 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -364,7 +365,7 @@ router.get('/:slug/thumbnail/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -480,7 +481,7 @@ router.get('/:slug/hero/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -591,7 +592,7 @@ router.get('/:slug/preview/:photoId',
         return res.status(404).json({ error: 'Photo not found' });
       }
 
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 

@@ -19,6 +19,11 @@ describe('assertZipEntriesWithin (ZIP-slip guard, GHSA-jfhw-fj23-fx6x)', () => {
     expect(() => assertZipEntriesWithin(entries, root)).toThrow(/escapes the extraction directory/);
   });
 
+  it('rejects a backslash traversal entry, which the storage backends read as slashes', () => {
+    const entries = [{ name: '..\\..\\uploads\\logos\\evil.svg' }];
+    expect(() => assertZipEntriesWithin(entries, root)).toThrow(/escapes the extraction directory/);
+  });
+
   it('rejects an absolute-path entry', () => {
     const entries = [{ name: '/etc/cron.d/evil' }];
     expect(() => assertZipEntriesWithin(entries, root)).toThrow(/escapes the extraction directory/);

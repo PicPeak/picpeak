@@ -168,5 +168,5 @@ module.exports = {
   preMulterTokenGuard,
   // Exported for tests + future routes that need the same lock
   // surface (e.g. payment-check actions).
-  _internal: { recordBadAttempt, isIpLocked, badAttempts, MAX_BAD_ATTEMPT_IPS },
+  _internal: { recordBadAttempt, isIpLocked, badAttempts, MAX_BAD_ATTEMPT_IPS, BAD_ATTEMPT_LIMIT },
 };

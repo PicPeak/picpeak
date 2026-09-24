@@ -56,7 +56,7 @@ function normaliseEventTimeTriple({ event_time_start, event_time_end, is_full_da
   return { event_time_start: start, event_time_end: end, is_full_day: false };
 }
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 // Cache for schema detection
 let customerColumnCache = null;

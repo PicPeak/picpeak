@@ -34,10 +34,12 @@ const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { filterOwnedEventIds } = require('../middleware/ownership');
 
 // Unambiguous alphabet for the client upload token — no 0/O/1/I/L to keep it
-// easy to read aloud / type from an email. 6 chars ≈ 31 bits; brute force is
-// mitigated by the per-route rate limiter + IP lockout on the upload endpoint.
+// easy to read aloud / type from an email. 31 characters, so 10 of them give
+// about 49.6 bits; the 6-character codes issued before (about 29.7 bits)
+// stay valid, the route accepts 4 to 16. Guessing is further slowed by the
+// per-route rate limiter and the per-network lockout on the upload endpoint.
 const UPLOAD_TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const UPLOAD_TOKEN_LENGTH = 6;
+const UPLOAD_TOKEN_LENGTH = 10;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -50,9 +52,9 @@ function generateDownloadToken() {
   return crypto.randomBytes(32).toString('hex'); // 64 hex chars
 }
 
-function generateUploadTokenCandidate() {
+function generateUploadTokenCandidate(length = UPLOAD_TOKEN_LENGTH) {
   let out = '';
-  for (let i = 0; i < UPLOAD_TOKEN_LENGTH; i += 1) {
+  for (let i = 0; i < length; i += 1) {
     // crypto.randomInt is unbiased over [0, len); a plain byte % len would
     // over-represent the first (256 % len) characters of the alphabet.
     out += UPLOAD_TOKEN_ALPHABET[crypto.randomInt(0, UPLOAD_TOKEN_ALPHABET.length)];
@@ -84,8 +86,9 @@ async function generateUniqueUploadToken(conn = db) {
     const clash = await conn('transfers').where({ upload_token: candidate }).first('id');
     if (!clash) return candidate;
   }
-  // Astronomically unlikely; fall back to a longer token so we never loop.
-  return generateUploadTokenCandidate() + generateUploadTokenCandidate();
+  // Astronomically unlikely; fall back to a longer token so we never loop,
+  // still within the 16 characters the public route accepts.
+  return generateUploadTokenCandidate(UPLOAD_TOKEN_LENGTH + 4);
 }
 
 /** Storage-relative directory that holds a transfer's client uploads. */
@@ -1043,6 +1046,7 @@ module.exports = {
   // public
   getTransferByToken,
   getTransferByUploadToken,
+  generateUniqueUploadToken,
   getPublicView,
   assertDownloadable,
   claimDownload,

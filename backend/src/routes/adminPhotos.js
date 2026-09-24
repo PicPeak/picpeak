@@ -41,7 +41,7 @@ const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get storage path from environment or default
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 // Category ids are resolved within one event's scope (#500 / #525); shared
 // with the gallery upload route.

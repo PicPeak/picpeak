@@ -208,7 +208,11 @@ function assertZipEntriesWithin(entries, extractRoot) {
   for (const entry of entries || []) {
     const name = entry && entry.name;
     if (!name) continue;
-    const target = path.resolve(rootResolved, name);
+    // Backslashes are plain characters to path.resolve on Linux, so
+    // `..\..\x` reads as one long filename that stays inside the root. The
+    // storage backends turn them into '/' before normalising, and so would
+    // an extract on Windows, so the check has to see the same path they do.
+    const target = path.resolve(rootResolved, name.replace(/\\/g, '/'));
     if (target !== rootResolved && !target.startsWith(prefix)) {
       throw new AppError(
         `Archive contains an entry that escapes the extraction directory: ${name}`,

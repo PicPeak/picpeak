@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 
 // Get storage path from environment or default
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 const getChunksPath = () => path.join(getStoragePath(), 'chunks');
 
 // In-memory store for active uploads (in production, consider Redis)

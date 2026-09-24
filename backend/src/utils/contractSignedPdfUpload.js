@@ -17,7 +17,7 @@ const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
 const { db } = require('../database/db');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 const signedPdfUpload = multer({
   storage: multer.diskStorage({

@@ -62,9 +62,16 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   type="text"
                   value={clientPin}
                   onChange={(e) => setClientPin(e.target.value)}
+                  minLength={6}
                   placeholder={t('clientAccess.pinPlaceholder')}
+                  aria-describedby="client-pin-helper"
                   className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
                 />
+                {/* Not a form, so minLength alone never blocks the save; the
+                    handler below checks the floor and this line names it. */}
+                <p id="client-pin-helper" className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  {t('clientAccess.pinHelperText')}
+                </p>
               </div>
               <Button
                 variant="outline"
@@ -72,6 +79,10 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 leftIcon={<Key className="w-4 h-4" />}
                 onClick={async () => {
                   if (!clientPin.trim()) return;
+                  if (clientPin.length < 6) {
+                    toast.error(t('clientAccess.pinHelperText'));
+                    return;
+                  }
                   try {
                     await eventsService.updateEvent(event.id, { client_password: clientPin });
                     setClientPin('');
@@ -81,7 +92,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                     toast.error(t('common.error'));
                   }
                 }}
-                disabled={!clientPin.trim()}
+                disabled={!clientPin.trim() || clientPin.length < 6}
               >
                 {t('clientAccess.setPin')}
               </Button>

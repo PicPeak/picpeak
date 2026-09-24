@@ -67,7 +67,7 @@ router.use(adminAuth);
 router.use(requireContractsFlag);
 
 // ----- multer upload (wet-signed PDF) --------------------------------
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 const signedPdfStorage = multer.diskStorage({
   destination: async (req, file, cb) => {

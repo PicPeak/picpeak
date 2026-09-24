@@ -41,7 +41,7 @@ const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileS
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 // Reserved first-run bootstrap keys — never writable through the generic
 // settings upserts in this file: setup_wizard_completed is a one-way marker
@@ -1963,16 +1963,19 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       .whereNotNull('archive_path')
       .select('archive_path');
 
+    // The zip lives wherever archiveService put it: the storage backend, not
+    // necessarily the local STORAGE_PATH. The backend also refuses a key that
+    // climbs out of its root, which a raw path.join did not.
     let archiveStorage = 0;
+    const { getStorage } = require('../services/storage');
     for (const archive of archives) {
       if (archive.archive_path) {
         try {
-          const storagePath = getStoragePath();
-          const fullArchivePath = path.join(storagePath, archive.archive_path);
-          const stats = await fs.stat(fullArchivePath);
-          archiveStorage += stats.size;
+          const stats = await getStorage().stat(archive.archive_path);
+          if (stats) archiveStorage += stats.size;
+          else logger.error('Archive file not found:', archive.archive_path);
         } catch (error) {
-          logger.error('Archive file not found:', archive.archive_path, error.message);
+          logger.error('Archive file not readable:', archive.archive_path, error.message);
         }
       }
     }

@@ -1190,6 +1190,7 @@ export const CreateEventPage: React.FC = () => {
                     placeholder={t('clientAccess.pinPlaceholder')}
                     value={formData.client_password}
                     onChange={handleInputChange('client_password')}
+                    minLength={6}
                     leftIcon={<Key className="w-5 h-5" />}
                     helperText={t('clientAccess.pinHelperText')}
                   />
