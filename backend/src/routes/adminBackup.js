@@ -16,6 +16,7 @@ const S3StorageAdapter = require('../services/storage/s3Storage');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
+  backupS3Ssl,
   classifyS3Endpoint,
   endpointOrigin,
   isPrivateEndpointApproved,
@@ -837,6 +838,7 @@ router.get('/s3/buckets', adminAuth, requirePermission('backup.view'), async (re
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
       forcePathStyle: config.backup_s3_force_path_style || false,
+      sslEnabled: backupS3Ssl(config),
       ...backupS3Access(config)
     });
     
@@ -870,6 +872,7 @@ router.get('/s3/files', adminAuth, requirePermission('backup.view'), async (req,
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
       forcePathStyle: config.backup_s3_force_path_style || false,
+      sslEnabled: backupS3Ssl(config),
       ...backupS3Access(config)
     });
     
@@ -907,6 +910,7 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
       forcePathStyle: config.backup_s3_force_path_style || false,
+      sslEnabled: backupS3Ssl(config),
       ...backupS3Access(config)
     });
     
@@ -968,6 +972,7 @@ router.post('/s3/test-upload', adminAuth, requirePermission('backup.create'), as
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
       forcePathStyle: config.backup_s3_force_path_style || false,
+      sslEnabled: backupS3Ssl(config),
       ...backupS3Access(config)
     });
     
@@ -1057,6 +1062,7 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         secretAccessKey: config.backup_s3_secret_key,
         region: config.backup_s3_region || 'us-east-1',
         forcePathStyle: config.backup_s3_force_path_style || false,
+        sslEnabled: backupS3Ssl(config),
         ...backupS3Access(config)
       });
         
