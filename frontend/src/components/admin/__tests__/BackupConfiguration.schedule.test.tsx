@@ -62,6 +62,28 @@ describe('BackupConfiguration schedule', () => {
   });
 });
 
+describe('BackupConfiguration schedule: every stored shape saves back what runs', () => {
+  // Backend order (resolveScheduleCron): named label, then a five-field
+  // backup_schedule_cron, then a cron in backup_schedule, else daily 02:00.
+  it.each([
+    ['custom label, no cron', { backup_schedule: 'custom' }, { backup_schedule: 'daily' }],
+    ['unknown label, no cron', { backup_schedule: 'yearly' }, { backup_schedule: 'daily' }],
+    ['unknown label with a cron', { backup_schedule: 'yearly', backup_schedule_cron: '0 6 * * *' }, { backup_schedule: 'custom', backup_schedule_cron: '0 6 * * *' }],
+    ['a cron and no label', { backup_schedule_cron: '0 5 * * *' }, { backup_schedule: 'custom', backup_schedule_cron: '0 5 * * *' }],
+    ['a named label in another case', { backup_schedule: ' Weekly ' }, { backup_schedule: 'weekly' }],
+    ['monthly', { backup_schedule: 'monthly', backup_schedule_cron: '0 3 * * *' }, { backup_schedule: 'monthly' }],
+  ])('%s', async (_name, stored, expected) => {
+    const onSave = renderForm(stored);
+    await save();
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining(expected));
+  });
+
+  it('shows monthly as monthly', () => {
+    renderForm({ backup_schedule: 'monthly' });
+    expect(scheduleSelect().value).toBe('monthly');
+  });
+});
+
 describe('BackupConfiguration destination highlight', () => {
   it('marks the selected destination with classes Tailwind actually emits', () => {
     renderForm({});

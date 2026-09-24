@@ -4374,6 +4374,7 @@
           "hourly": "Every hour",
           "daily": "Daily",
           "weekly": "Weekly",
+          "monthly": "Monthly",
           "custom": "Custom cron expression"
         },
         "customCron": "Cron Expression",

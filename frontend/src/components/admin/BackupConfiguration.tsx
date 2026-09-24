@@ -50,26 +50,32 @@ interface BackupConfigurationProps {
   canManageDestination?: boolean;
 }
 
-const SCHEDULE_OPTION_VALUES = ['hourly', 'daily', 'weekly', 'custom'];
 const isCronExpression = (value: unknown): value is string =>
   typeof value === 'string' && /^\s*\S+(\s+\S+){4}\s*$/.test(value);
+// The labels the backend runs by name (backupService NAMED_SCHEDULES). A
+// named label wins over any cron there, so a save keeps it as it is.
+const NAMED_SCHEDULES = ['hourly', 'daily', 'weekly', 'monthly'];
 
 /**
  * The schedule fields as the form should show them: the schedule the backend
- * actually runs (backupService resolveScheduleCron). An older install can
- * hold a cron expression in backup_schedule itself. The select has no option
- * for that, so it showed "Every hour", and saving sent the form's default
- * backup_schedule_cron, which the backend then preferred: the backup moved to
- * 03:00 without anyone choosing it. Such a value is shown as Custom with the
- * cron that is in effect.
+ * actually runs, in resolveScheduleCron's order — a named label, then a
+ * five-field backup_schedule_cron, then a cron held in backup_schedule
+ * itself, else daily at 02:00. Anything else the select cannot show: it
+ * displayed "Every hour", and a save sent the form's own defaults, which the
+ * backend then preferred, moving the backup without anyone choosing it.
  */
 function scheduleFromConfig(config: Partial<BackupFormData>): Partial<BackupFormData> {
-  const label = config.backup_schedule;
-  if (typeof label !== 'string' || SCHEDULE_OPTION_VALUES.includes(label.trim().toLowerCase()) || !isCronExpression(label)) {
-    return {};
+  const hasLabel = typeof config.backup_schedule === 'string';
+  const hasCron = typeof config.backup_schedule_cron === 'string';
+  if (!hasLabel && !hasCron) return {};
+  const label = hasLabel ? config.backup_schedule!.trim() : '';
+  const name = label.toLowerCase();
+  if (NAMED_SCHEDULES.includes(name)) return { backup_schedule: name };
+  if (isCronExpression(config.backup_schedule_cron)) {
+    return { backup_schedule: 'custom', backup_schedule_cron: config.backup_schedule_cron.trim() };
   }
-  const cron = isCronExpression(config.backup_schedule_cron) ? config.backup_schedule_cron : label;
-  return { backup_schedule: 'custom', backup_schedule_cron: cron.trim() };
+  if (isCronExpression(label)) return { backup_schedule: 'custom', backup_schedule_cron: label };
+  return { backup_schedule: 'daily' };
 }
 
 // Mirrors the settings the backend limits to Super Admins.
@@ -114,6 +120,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     { value: 'hourly', label: t('backup.configuration.schedule.options.hourly') },
     { value: 'daily', label: t('backup.configuration.schedule.options.daily') },
     { value: 'weekly', label: t('backup.configuration.schedule.options.weekly') },
+    { value: 'monthly', label: t('backup.configuration.schedule.options.monthly') },
     { value: 'custom', label: t('backup.configuration.schedule.options.custom') }
   ];
 
