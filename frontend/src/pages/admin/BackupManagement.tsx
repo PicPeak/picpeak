@@ -7,6 +7,7 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
+  XCircle,
   Clock,
   Loader2,
   Shield,
@@ -28,6 +29,7 @@ import { PicpeakExportCard } from '../../components/admin/PicpeakBackupCard';
 import { BackupIntegrityCard } from '../../components/admin/BackupIntegrityCard';
 import { BackupCoverageCard } from '../../components/admin/BackupCoverageCard';
 import { api } from '../../config/api';
+import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
 
@@ -41,6 +43,9 @@ export const BackupManagement: React.FC = () => {
   const { user } = useAdminAuth();
   const isSuperAdmin = user?.role?.name === 'super_admin';
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
+  // Set when a save is refused because the S3 endpoint is private, so the
+  // configuration form can offer the Super Admin approval (issue 1641).
+  const [privateEndpointOrigin, setPrivateEndpointOrigin] = useState<string | null>(null);
 
   const tabs = [
     { id: 'dashboard' as const, label: t('backup.tabs.dashboard'), icon: HardDrive },
@@ -84,9 +89,24 @@ export const BackupManagement: React.FC = () => {
       return response.data;
     },
     successMessage: t('backup.messages.configUpdated'),
-    errorMessage: t('backup.messages.configUpdateFailed'),
+    // Known codes get translated text; anything else keeps the server's
+    // message, then the generic fallback.
+    errorMessage: (error: unknown) => backupErrorText(backupErrorCode(error), t)
+      ?? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+      ?? t('backup.messages.configUpdateFailed'),
     invalidateKeys: [['backup-config']],
+    onMutate: () => setPrivateEndpointOrigin(null),
+    onError: (error: unknown) => {
+      const data = (error as { response?: { data?: { code?: string; origin?: string } } }).response?.data;
+      if (data?.code === 'S3_PRIVATE_ENDPOINT' && data.origin) setPrivateEndpointOrigin(data.origin);
+    },
   });
+
+  // The header describes the newest attempt, whatever its outcome — it is not
+  // "the last backup". A failed attempt is red even when an older one
+  // succeeded; the dashboard shows that older success separately.
+  const latestAttempt = backupStatus?.lastBackup;
+  const lastSuccessful = backupStatus?.lastSuccessfulBackup;
 
   if (statusLoading || configLoading) {
     return (
@@ -116,11 +136,39 @@ export const BackupManagement: React.FC = () => {
                   <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
                   <span className="text-blue-600 dark:text-blue-400 font-medium">{t('backup.status.inProgress')}</span>
                 </>
-              ) : backupStatus?.lastBackup ? (
+              ) : latestAttempt?.status === 'running' ? (
+                <>
+                  <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                  <span className="text-blue-600 dark:text-blue-400 font-medium">
+                    {t('backup.status.latestAttemptRunning')}: {fmtDateTime(latestAttempt.created_at)}
+                  </span>
+                </>
+              ) : latestAttempt?.status === 'failed' ? (
+                <>
+                  <XCircle className="h-5 w-5 text-red-500" />
+                  <span className="text-red-700 dark:text-red-400 font-medium">
+                    {t('backup.status.latestAttemptFailed')}: {fmtDateTime(latestAttempt.created_at)}
+                  </span>
+                  {lastSuccessful && (
+                    <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                      · {t('backup.status.lastSuccessfulBackup')}: {fmtDateTime(lastSuccessful.created_at)}
+                    </span>
+                  )}
+                </>
+              ) : latestAttempt?.status === 'completed' ? (
                 <>
                   <CheckCircle className="h-5 w-5 text-green-500" />
                   <span className="text-neutral-700 dark:text-neutral-300">
-                    {t('backup.status.lastBackup')}: {fmtDateTime(backupStatus.lastBackup.created_at)}
+                    {t('backup.status.lastBackup')}: {fmtDateTime(latestAttempt.created_at)}
+                  </span>
+                </>
+              ) : latestAttempt ? (
+                <>
+                  <AlertCircle className="h-5 w-5 text-amber-500" />
+                  <span className="text-neutral-700 dark:text-neutral-300">
+                    {t('backup.status.latestAttempt')}: {fmtDateTime(latestAttempt.created_at)}
+                    {' · '}
+                    {t(`backup.dashboard.status.${latestAttempt.status}`, String(latestAttempt.status))}
                   </span>
                 </>
               ) : (
@@ -218,6 +266,7 @@ export const BackupManagement: React.FC = () => {
             onSave={(newConfig: unknown) => updateConfigMutation.mutate(newConfig)}
             isSaving={updateConfigMutation.isPending}
             canManageDestination={isSuperAdmin}
+            privateEndpointOrigin={privateEndpointOrigin}
           />
         )}
 

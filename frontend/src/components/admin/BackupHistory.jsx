@@ -31,6 +31,7 @@ import { useMutationWithToast } from '../../hooks';
 // AM/PM) and 'PPP' (US-locale long date), which ignored the settings —
 // Ralf 2026-05-31 flagged "11:25 PM" on a 24h-configured install.
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 const statusIcons = {
   completed: { icon: CheckCircle, color: 'text-green-500' },
@@ -385,7 +386,7 @@ export const BackupHistory = () => {
                                 <div className="space-y-2">
                                   <h4 className="font-medium text-red-900 dark:text-red-200">{t('backup.history.details.errorDetails')}</h4>
                                   <p className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 p-2 rounded">
-                                    {backup.error_message}
+                                    {backupErrorText(backupErrorCode(backup.error_message), t) ?? backup.error_message}
                                   </p>
                                 </div>
                               )}
