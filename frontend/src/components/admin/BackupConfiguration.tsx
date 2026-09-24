@@ -227,13 +227,15 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     case 'local':
       return { destination_type: 'local', path: formData.backup_destination_path };
     case 'rsync':
-      // The backend's rsync test takes a key FILE path; the form holds key
-      // content, so the key is not sent and the test runs without it.
+      // ssh_key is a key FILE path. The mask stands for the saved value, so
+      // it is left out and the backend uses what is saved.
       return {
         destination_type: 'rsync',
         host: formData.backup_rsync_host,
         user: formData.backup_rsync_user,
         path: formData.backup_rsync_path,
+        ...(formData.backup_rsync_ssh_key && formData.backup_rsync_ssh_key !== SECRET_MASK
+          && { ssh_key: formData.backup_rsync_ssh_key.trim() }),
       };
     default:
       return {
