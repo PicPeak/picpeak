@@ -122,14 +122,27 @@ function isPrivateEndpointApproved(endpoint, sslEnabled, approval) {
   return Boolean(origin && typeof approval === 'string' && approval.trim() === origin);
 }
 
-const readSslSetting = (value) => !(value === false || value === 'false' || value === 0 || value === '0');
+/**
+ * backup_s3_ssl_enabled as a backup run reads it (backupService
+ * normalizeBoolean), defaulting to on when unset — the approval origin and
+ * the scheme a client connects with must never disagree.
+ */
+function backupS3Ssl(config) {
+  const value = config ? config.backup_s3_ssl_enabled : undefined;
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+  }
+  return Boolean(value);
+}
 
 /** The allowPrivateEndpoint flag for an S3 client built from backup settings. */
 function backupS3Access(config) {
   if (!config) return { allowPrivateEndpoint: false };
-  const sslEnabled = config.backup_s3_ssl_enabled === undefined || config.backup_s3_ssl_enabled === null
-    ? true
-    : readSslSetting(config.backup_s3_ssl_enabled);
+  const sslEnabled = backupS3Ssl(config);
   return {
     allowPrivateEndpoint: isPrivateEndpointApproved(config.backup_s3_endpoint, sslEnabled, config[APPROVAL_SETTING]),
   };
@@ -205,6 +218,7 @@ module.exports = {
   classifyS3Endpoint,
   isPrivateEndpointApproved,
   backupS3Access,
+  backupS3Ssl,
   assertS3EndpointAllowed,
   assertLiteralEndpointAllowed,
   s3EndpointAgents,

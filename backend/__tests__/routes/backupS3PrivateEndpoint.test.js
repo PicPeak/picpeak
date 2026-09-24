@@ -180,6 +180,18 @@ describe('private S3 backup endpoints (issue 1641)', () => {
     });
   });
 
+  describe('management routes', () => {
+    it('browse an approved endpoint over the scheme backups use, with SSL off', async () => {
+      const origin = `http://127.0.0.1:${port}`;
+      await setBackupSettings({
+        ...s3(`127.0.0.1:${port}`), backup_s3_ssl_enabled: false, [APPROVAL]: origin,
+      });
+      await request(app).get('/api/admin/backup/s3/files').set('Authorization', `Bearer ${superToken}`);
+      // Reached over HTTP: an HTTPS client would never produce a request here.
+      expect(s3Requests).toBeGreaterThan(0);
+    });
+  });
+
   describe('restore from S3', () => {
     const { restoreService } = require('../../src/services/restoreService');
 
