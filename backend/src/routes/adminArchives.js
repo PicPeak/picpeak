@@ -649,8 +649,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
     await db('events')
       .where('id', req.params.id)
       .update({
-        is_archived: false,
-        is_active: true,
+        is_archived: formatBoolean(false),
+        is_active: formatBoolean(true),
         archive_path: null,
         // Cleared with the path it measures — a restored event has no zip, and
         // a stale size would be re-shown verbatim if it is archived again
