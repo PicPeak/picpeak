@@ -4261,7 +4261,11 @@
       "nextBackup": "Next backup",
       "notScheduled": "Not scheduled",
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "latestAttempt": "Latest attempt",
+      "latestAttemptRunning": "Latest attempt running since",
+      "latestAttemptFailed": "Latest attempt failed",
+      "lastSuccessfulBackup": "Last successful backup"
     },
     "actions": {
       "runBackupNow": "Run Backup Now",
@@ -4414,7 +4418,14 @@
       "testingConnection": "Testing connection...",
       "saveSettings": "Save Configuration",
       "savingSettings": "Saving...",
-      "destinationSuperAdminOnly": "Only a Super Admin can change where backups are stored or whether they include the database."
+      "destinationSuperAdminOnly": "Only a Super Admin can change where backups are stored or whether they include the database.",
+      "privateEndpoint": {
+        "title": "This S3 endpoint is on an internal network",
+        "body": "Private and internal addresses are blocked by default, because a backup destination the server connects to can otherwise be used to reach internal services. Approve this exact endpoint only if it is your own S3-compatible storage (for example MinIO or RustFS). The approval covers only this scheme, host and port; link-local and cloud-metadata addresses can never be approved.",
+        "approve": "I approve backups to this internal endpoint",
+        "hint": "Test the connection or save the configuration to apply the approval.",
+        "approved": "Approved internal endpoint: {{origin}}"
+      }
     },
     "history": {
       "searchPlaceholder": "Search backups...",
@@ -4596,6 +4607,15 @@
       "backupFailed": "Failed to start backup",
       "configUpdated": "Backup configuration updated",
       "configUpdateFailed": "Failed to update configuration"
+    },
+    "errors": {
+      "S3_PRIVATE_ENDPOINT": "The S3 endpoint is on a private or internal network. A Super Admin has to approve this exact endpoint before it can be used.",
+      "S3_ENDPOINT_FORBIDDEN": "The S3 endpoint points to a link-local, cloud-metadata or reserved address. Such destinations can never be approved.",
+      "S3_ENDPOINT_UNRESOLVED": "The S3 endpoint hostname could not be resolved.",
+      "S3_ENDPOINT_INVALID": "The S3 endpoint is not a valid URL.",
+      "S3_APPROVAL_MISMATCH": "The approval does not match the configured S3 endpoint. Approve the endpoint again.",
+      "S3_CONFIG_INCOMPLETE": "Endpoint, bucket and credentials are required. After changing the endpoint, enter the secret key again.",
+      "S3_CONNECTION_FAILED": "The S3 bucket could not be reached with these settings. Check the endpoint, bucket and credentials."
     }
   },
   "cssTemplates": {

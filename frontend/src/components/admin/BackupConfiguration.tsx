@@ -11,10 +11,13 @@ import {
   Loader2,
   Database,
   Image,
-  FileArchive
+  FileArchive,
+  ShieldAlert
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input } from '../common';
+import { api } from '../../config/api';
+import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 interface BackupFormData {
   backup_enabled: boolean;
@@ -48,6 +51,21 @@ interface BackupConfigurationProps {
   isSaving: boolean;
   /** Where backups go and whether they include the database: Super Admin only. */
   canManageDestination?: boolean;
+  /**
+   * The origin of a private S3 endpoint the last save was refused for
+   * (S3_PRIVATE_ENDPOINT), so the form can ask a Super Admin to approve it.
+   */
+  privateEndpointOrigin?: string | null;
+}
+
+const APPROVAL_KEY = 'backup_s3_private_endpoint_approval';
+const SECRET_MASK = '••••••••';
+
+interface TestConnectionResult {
+  success: boolean;
+  message?: string;
+  code?: string;
+  origin?: string;
 }
 
 const isCronExpression = (value: unknown): value is string =>
@@ -94,6 +112,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   onSave,
   isSaving,
   canManageDestination = true,
+  privateEndpointOrigin = null,
 }) => {
   const { t } = useTranslation();
 
@@ -162,6 +181,22 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   });
 
   const [testingConnection, setTestingConnection] = useState(false);
+  // A private S3 endpoint the backend asked to have approved, and whether the
+  // Super Admin ticked the approval. Both reset when the endpoint changes.
+  const [pendingPrivateOrigin, setPendingPrivateOrigin] = useState<string | null>(null);
+  const [approvePrivate, setApprovePrivate] = useState(false);
+
+  useEffect(() => {
+    if (privateEndpointOrigin) {
+      setPendingPrivateOrigin(privateEndpointOrigin);
+      setApprovePrivate(false);
+    }
+  }, [privateEndpointOrigin]);
+
+  const storedApproval = typeof (config as Record<string, unknown> | undefined)?.[APPROVAL_KEY] === 'string'
+    ? (config as Record<string, string>)[APPROVAL_KEY]
+    : '';
+  const approvedOrigin = approvePrivate && pendingPrivateOrigin ? pendingPrivateOrigin : null;
 
   useEffect(() => {
     if (config) {
@@ -174,6 +209,10 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   }, [config]);
 
   const handleChange = <K extends keyof BackupFormData>(field: K, value: BackupFormData[K]) => {
+    if (field === 'backup_s3_endpoint') {
+      setPendingPrivateOrigin(null);
+      setApprovePrivate(false);
+    }
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -217,20 +256,62 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
       return;
     }
 
+    // The stored approval came in with the config; it is only ever sent back
+    // as a fresh, explicit approval of the endpoint in the form.
+    const { [APPROVAL_KEY]: _storedApproval, ...fields } = formData as BackupFormData & Record<string, unknown>;
     // Other roles leave the destination alone, so it is not sent at all.
     onSave(canManageDestination
-      ? formData
-      : Object.fromEntries(Object.entries(formData).filter(([key]) => !isRestrictedBackupSetting(key))));
+      ? { ...fields, ...(approvedOrigin && { [APPROVAL_KEY]: approvedOrigin }) }
+      : Object.fromEntries(Object.entries(fields).filter(([key]) => !isRestrictedBackupSetting(key))));
+  };
+
+  const connectionTestPayload = () => {
+    switch (formData.backup_destination_type) {
+    case 'local':
+      return { destination_type: 'local', path: formData.backup_destination_path };
+    case 'rsync':
+      // ssh_key is a key FILE path. The mask stands for the saved value, so
+      // it is left out and the backend uses what is saved; an emptied field
+      // is sent as '' and tested without a key.
+      return {
+        destination_type: 'rsync',
+        host: formData.backup_rsync_host,
+        user: formData.backup_rsync_user,
+        path: formData.backup_rsync_path,
+        ...(formData.backup_rsync_ssh_key !== SECRET_MASK
+          && { ssh_key: (formData.backup_rsync_ssh_key || '').trim() }),
+      };
+    default:
+      return {
+        destination_type: 's3',
+        endpoint: formData.backup_s3_endpoint,
+        bucket: formData.backup_s3_bucket,
+        region: formData.backup_s3_region,
+        access_key: formData.backup_s3_access_key,
+        secret_key: formData.backup_s3_secret_key || SECRET_MASK,
+        ...(approvedOrigin && { private_endpoint_approval: approvedOrigin }),
+      };
+    }
   };
 
   const testConnection = async () => {
     setTestingConnection(true);
     try {
-      // TODO: Implement connection test endpoint
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      toast.success(t('backup.configuration.messages.connectionSuccess'));
+      const { data } = await api.post<TestConnectionResult>('/admin/backup/test-connection', connectionTestPayload());
+      if (data.success) {
+        toast.success(t('backup.configuration.messages.connectionSuccess'));
+        return;
+      }
+      const code = backupErrorCode(data);
+      if (code === 'S3_PRIVATE_ENDPOINT' && data.origin) {
+        setPendingPrivateOrigin(data.origin);
+        toast.warning(backupErrorText(code, t));
+        return;
+      }
+      toast.error(`${t('backup.configuration.messages.connectionFailed')}: ${backupErrorText(code, t) ?? data.message ?? ''}`);
     } catch (error) {
-      toast.error(t('backup.configuration.messages.connectionFailed') + ': ' + (error as Error).message);
+      const server = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      toast.error(`${t('backup.configuration.messages.connectionFailed')}: ${backupErrorText(backupErrorCode(error), t) ?? server ?? (error as Error).message}`);
     } finally {
       setTestingConnection(false);
     }
@@ -254,7 +335,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               onChange={(e) => handleChange('backup_enabled', e.target.checked)}
               className="sr-only peer"
             />
-            <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 dark:after:border-neutral-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+            <div className="w-11 h-6 bg-neutral-200 dark:bg-neutral-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 dark:after:border-neutral-500 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
           </label>
         </div>
       </Card>
@@ -460,6 +541,44 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                   </div>
                 </div>
               </div>
+              {pendingPrivateOrigin && canManageDestination && (
+                <div role="alert" className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 p-4">
+                  <div className="flex">
+                    <ShieldAlert className="h-5 w-5 flex-shrink-0 text-amber-500 mt-0.5" />
+                    <div className="ml-3 space-y-2">
+                      <h4 className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                        {t('backup.configuration.privateEndpoint.title')}
+                      </h4>
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
+                        {t('backup.configuration.privateEndpoint.body')}
+                      </p>
+                      <p className="text-sm">
+                        <code className="rounded bg-amber-100 dark:bg-amber-900/60 px-1.5 py-0.5 text-amber-900 dark:text-amber-100 break-all">
+                          {pendingPrivateOrigin}
+                        </code>
+                      </p>
+                      <label className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={approvePrivate}
+                          onChange={(e) => setApprovePrivate(e.target.checked)}
+                          className="mt-0.5 rounded border-amber-400 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span>{t('backup.configuration.privateEndpoint.approve')}</span>
+                      </label>
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        {t('backup.configuration.privateEndpoint.hint')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {!pendingPrivateOrigin && storedApproval && (
+                <p className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+                  <ShieldAlert className="h-4 w-4 text-amber-500" />
+                  <span>{t('backup.configuration.privateEndpoint.approved', { origin: storedApproval })}</span>
+                </p>
+              )}
             </>
           )}
 

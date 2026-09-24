@@ -21,6 +21,7 @@ import {
 // and general_time_format settings apply uniformly.
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { Card, Button } from '../common';
+import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 export type HealthStatus = 'excellent' | 'good' | 'warning' | 'critical';
 export type BackupDestinationType = 's3' | 'rsync' | 'local';
@@ -78,6 +79,15 @@ interface BackupDashboardProps {
   isBackupRunning: boolean;
 }
 
+// Full class names, never assembled from parts: Tailwind only emits classes
+// it finds verbatim in the source (issue 1641).
+const statCardColors: Record<string, { box: string; icon: string }> = {
+  blue: { box: 'bg-blue-100 dark:bg-blue-900/40', icon: 'text-blue-600 dark:text-blue-400' },
+  green: { box: 'bg-green-100 dark:bg-green-900/40', icon: 'text-green-600 dark:text-green-400' },
+  purple: { box: 'bg-purple-100 dark:bg-purple-900/40', icon: 'text-purple-600 dark:text-purple-400' },
+  gray: { box: 'bg-gray-100 dark:bg-gray-900/40', icon: 'text-gray-600 dark:text-gray-400' },
+};
+
 const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color = 'blue', subtext }) => (
   <Card className="p-6">
     <div className="flex items-center justify-between">
@@ -88,8 +98,8 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color = '
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{subtext}</p>
         )}
       </div>
-      <div className={`p-3 bg-${color}-100 dark:bg-${color}-900/40 rounded-lg`}>
-        <Icon className={`h-6 w-6 text-${color}-600 dark:text-${color}-400`} />
+      <div className={`p-3 rounded-lg ${(statCardColors[color] ?? statCardColors.blue).box}`}>
+        <Icon className={`h-6 w-6 ${(statCardColors[color] ?? statCardColors.blue).icon}`} />
       </div>
     </div>
   </Card>
@@ -103,11 +113,11 @@ const formatBytes = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
-const healthColors: Record<HealthStatus, string> = {
-  excellent: 'green',
-  good: 'blue',
-  warning: 'amber',
-  critical: 'red',
+const healthColors: Record<HealthStatus, { badge: string; ring: string }> = {
+  excellent: { badge: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300', ring: 'text-green-500' },
+  good: { badge: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300', ring: 'text-blue-500' },
+  warning: { badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300', ring: 'text-amber-500' },
+  critical: { badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300', ring: 'text-red-500' },
 };
 
 export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config, onRunBackup, isBackupRunning }) => {
@@ -185,7 +195,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('backup.dashboard.health.title')}</h3>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium bg-${healthColors[health.status]}-100 dark:bg-${healthColors[health.status]}-900/40 text-${healthColors[health.status]}-700 dark:text-${healthColors[health.status]}-300`}>
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${healthColors[health.status].badge}`}>
             {t(`backup.dashboard.healthStatus.${health.status}`)}
           </span>
         </div>
@@ -210,7 +220,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 strokeWidth="8"
                 fill="none"
                 strokeDasharray={`${(health.score / 100) * 226} 226`}
-                className={`text-${healthColors[health.status]}-500`}
+                className={healthColors[health.status].ring}
               />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
@@ -244,7 +254,8 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 {t(`backup.dashboard.status.${lastBackup.status}`, lastBackup.status)}
                 {lastBackup.status === 'failed' && lastBackup.error_message && (
                   <span className="block text-xs text-red-600 dark:text-red-400 mt-0.5">
-                    {lastBackup.error_message.split('\n')[0].slice(0, 200)}
+                    {backupErrorText(backupErrorCode(lastBackup.error_message), t)
+                      ?? lastBackup.error_message.split('\n')[0].slice(0, 200)}
                   </span>
                 )}
               </p>

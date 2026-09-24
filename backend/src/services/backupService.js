@@ -15,6 +15,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
+const { backupS3Access } = require('../utils/s3EndpointPolicy');
 const packageJson = require('../../package.json');
 
 const service = {};
@@ -949,7 +950,8 @@ async function performS3Backup(config, files) {
       forcePathStyle: normalizeBoolean(config.backup_s3_force_path_style),
       sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : normalizeBoolean(config.backup_s3_ssl_enabled),
       maxRetries: config.backup_s3_max_retries || 3,
-      retryDelay: config.backup_s3_retry_delay || 1000
+      retryDelay: config.backup_s3_retry_delay || 1000,
+      ...backupS3Access(config)
     };
 
     const s3Client = new S3StorageAdapter(s3Config);
@@ -1620,6 +1622,7 @@ async function loadManifestFromAnywhere(manifestPath, config) {
     sslEnabled: cfg && cfg.backup_s3_ssl_enabled !== undefined
       ? normalizeBoolean(cfg.backup_s3_ssl_enabled)
       : true,
+    ...backupS3Access(cfg),
   });
 
   try {
@@ -1685,7 +1688,8 @@ async function getBackupManifest(backupRunId) {
     forcePathStyle: config ? normalizeBoolean(config.backup_s3_force_path_style) : false,
     sslEnabled: config && config.backup_s3_ssl_enabled !== undefined
       ? normalizeBoolean(config.backup_s3_ssl_enabled)
-      : true
+      : true,
+    ...backupS3Access(config)
   });
 
   await s3Client.download(key, tempPath);
@@ -1727,7 +1731,8 @@ async function validateBackupManifest(manifestPath) {
         accessKeyId: config.backup_s3_access_key,
         secretAccessKey: config.backup_s3_secret_key,
         forcePathStyle: normalizeBoolean(config.backup_s3_force_path_style),
-        sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : normalizeBoolean(config.backup_s3_ssl_enabled)
+        sslEnabled: config.backup_s3_ssl_enabled === undefined ? true : normalizeBoolean(config.backup_s3_ssl_enabled),
+        ...backupS3Access(config)
       });
 
       await s3Client.download(key, tempPath);

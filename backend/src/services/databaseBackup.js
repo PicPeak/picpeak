@@ -39,7 +39,25 @@ function getStoragePath() {
 // the non-root backend cannot create /backup under a root-owned /.
 const LEGACY_DESTINATION = '/backup/database';
 
+// Writable as it stands, or creatable: the nearest existing ancestor must be
+// writable. A present-but-read-only directory is not usable.
+async function canWriteOrCreate(dir) {
+  let current = path.resolve(dir);
+  for (;;) {
+    try {
+      await fs.access(current, fsConstants.W_OK);
+      return true;
+    } catch (error) {
+      if (error.code !== 'ENOENT') return false;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
 async function canWriteLegacyDestination() {
+  // Only /backup/database itself or /backup: never all the way up to /.
   for (const dir of [LEGACY_DESTINATION, path.dirname(LEGACY_DESTINATION)]) {
     try {
       await fs.access(dir, fsConstants.W_OK);
@@ -52,8 +70,7 @@ async function canWriteLegacyDestination() {
   return false;
 }
 
-async function readFileBackupDestination() {
-  const row = await db('app_settings').where({ setting_key: 'backup_destination_path' }).first();
+function readSettingValue(row) {
   if (!row || row.setting_value == null) return null;
   let value = row.setting_value;
   try { value = JSON.parse(value); } catch (_) { /* stored unquoted */ }
@@ -61,16 +78,36 @@ async function readFileBackupDestination() {
 }
 
 /**
+ * The file-backup directory, when the dump can share it: the file backup
+ * goes to a LOCAL destination and the backend can write there. With S3 or
+ * rsync selected, backup_destination_path is a leftover that nothing mounts
+ * (often the historical /backup/picpeak), so it is not used (issue 1641).
+ */
+async function readFileBackupDestination() {
+  const rows = await db('app_settings')
+    .whereIn('setting_key', ['backup_destination_path', 'backup_destination_type'])
+    .select('setting_key', 'setting_value');
+  const byKey = new Map(rows.map((row) => [row.setting_key, readSettingValue(row)]));
+  const type = byKey.get('backup_destination_type') || 'local';
+  const destination = byKey.get('backup_destination_path');
+  if (type !== 'local' || !destination) return null;
+  return (await canWriteOrCreate(destination)) ? destination : null;
+}
+
+/**
  * Where a database dump goes when the caller did not pass a destination.
  *
  * A customised database_backup_destination_path wins. Unset, empty or still
  * the seeded /backup/database, the dump stays at /backup/database only where
- * that location is usable; otherwise it goes under the file-backup
- * destination (<backup_destination_path>/database, or
- * <storage>/backups/database), where the file backup that follows the inline
- * dump writes anyway. Before, every install without a /backup mount failed
- * with "EACCES: permission denied, mkdir '/backup'" no matter which backup
- * destination was configured (issue 1365).
+ * that location is usable; otherwise it goes under a local, writable
+ * file-backup destination (<backup_destination_path>/database), and failing
+ * that under <storage>/backups/database. For an S3 or rsync backup the dump is
+ * only staged there: the backup run uploads it with the files.
+ *
+ * Before issue 1365, every install without a /backup mount failed with
+ * "EACCES: permission denied, mkdir '/backup'" no matter which backup
+ * destination was configured; before issue 1641, an S3 install whose stale
+ * local path pointed below /backup still did.
  */
 async function resolveDatabaseBackupDestination(config) {
   const configured = typeof config.database_backup_destination_path === 'string'
