@@ -34,9 +34,10 @@ function getStoragePath() {
 
 // The historical default, also what migration 030 seeds into
 // database_backup_destination_path. It only exists when something is mounted
-// there: docker-compose.yml mounts ./backup and the all-in-one image symlinks
-// it to /data/backup, but docker-compose.production.yml mounts nothing, and
-// the non-root backend cannot create /backup under a root-owned /.
+// there: both compose files mount ./backup and the all-in-one image symlinks
+// it to /data/backup, but an install that mounts nothing there (production
+// compose before the mount was added) runs the backend as non-root, which
+// cannot create /backup under a root-owned /.
 const LEGACY_DESTINATION = '/backup/database';
 
 // Writable as it stands, or creatable: the nearest existing ancestor must be

@@ -31,9 +31,9 @@ unset _pair _var _file _cur
 DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs}"
 
 # The backup root is adopted when explicitly configured, but never gates boot:
-# docker-compose.production.yml does not mount /backup, so a hardened non-root
-# deployment would fail `mkdir -p /backup` against a root-owned / and refuse to
-# start over a directory it never needed.
+# both compose files mount /backup and set BACKUP_DIR, but a hardened non-root
+# deployment that mounts nothing there would fail `mkdir -p /backup` against a
+# root-owned / and refuse to start over a directory it never needed.
 if [ -n "${BACKUP_DIR:-}" ]; then
   DATA_DIRS="$DATA_DIRS $BACKUP_DIR"
 fi
