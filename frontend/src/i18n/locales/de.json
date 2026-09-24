@@ -1273,7 +1273,11 @@
       "nextBackup": "Nächstes Backup",
       "notScheduled": "Nicht geplant",
       "enabled": "Aktiviert",
-      "disabled": "Deaktiviert"
+      "disabled": "Deaktiviert",
+      "latestAttempt": "Letzter Versuch",
+      "latestAttemptRunning": "Letzter Versuch läuft seit",
+      "latestAttemptFailed": "Letzter Versuch fehlgeschlagen",
+      "lastSuccessfulBackup": "Letztes erfolgreiches Backup"
     },
     "actions": {
       "runBackupNow": "Backup jetzt starten",
@@ -1423,7 +1427,14 @@
       "saveSettings": "Konfiguration speichern",
       "savingSettings": "Speichern...",
       "destinationSuperAdminOnly": "Nur ein Super Admin kann ändern, wo Backups gespeichert werden und ob sie die Datenbank enthalten.",
-      "enableBackupHelp": "Automatisch Backups nach dem konfigurierten Zeitplan erstellen"
+      "enableBackupHelp": "Automatisch Backups nach dem konfigurierten Zeitplan erstellen",
+      "privateEndpoint": {
+        "title": "Dieser S3-Endpunkt liegt in einem internen Netzwerk",
+        "body": "Private und interne Adressen sind standardmäßig gesperrt, weil ein Backup-Ziel, zu dem sich der Server verbindet, sonst genutzt werden kann, um interne Dienste zu erreichen. Geben Sie diesen Endpunkt nur frei, wenn es Ihr eigener S3-kompatibler Speicher ist (zum Beispiel MinIO oder RustFS). Die Freigabe gilt nur für genau dieses Schema, diesen Host und diesen Port; Link-Local- und Cloud-Metadaten-Adressen können nie freigegeben werden.",
+        "approve": "Ich gebe Backups an diesen internen Endpunkt frei",
+        "hint": "Testen Sie die Verbindung oder speichern Sie die Konfiguration, um die Freigabe anzuwenden.",
+        "approved": "Freigegebener interner Endpunkt: {{origin}}"
+      }
     },
     "history": {
       "searchPlaceholder": "Backups suchen...",
@@ -1605,6 +1616,15 @@
       "backupFailed": "Backup konnte nicht gestartet werden",
       "configUpdated": "Backup-Konfiguration aktualisiert",
       "configUpdateFailed": "Konfiguration konnte nicht aktualisiert werden"
+    },
+    "errors": {
+      "S3_PRIVATE_ENDPOINT": "Der S3-Endpunkt liegt in einem privaten oder internen Netzwerk. Ein Super-Admin muss genau diesen Endpunkt freigeben, bevor er genutzt werden kann.",
+      "S3_ENDPOINT_FORBIDDEN": "Der S3-Endpunkt zeigt auf eine Link-Local-, Cloud-Metadaten- oder reservierte Adresse. Solche Ziele können nie freigegeben werden.",
+      "S3_ENDPOINT_UNRESOLVED": "Der Hostname des S3-Endpunkts konnte nicht aufgelöst werden.",
+      "S3_ENDPOINT_INVALID": "Der S3-Endpunkt ist keine gültige URL.",
+      "S3_APPROVAL_MISMATCH": "Die Freigabe passt nicht zum konfigurierten S3-Endpunkt. Geben Sie den Endpunkt erneut frei.",
+      "S3_CONFIG_INCOMPLETE": "Endpunkt, Bucket und Zugangsdaten sind erforderlich. Nach einer Änderung des Endpunkts muss der Secret Key erneut eingegeben werden.",
+      "S3_CONNECTION_FAILED": "Der S3-Bucket ist mit diesen Einstellungen nicht erreichbar. Prüfen Sie Endpunkt, Bucket und Zugangsdaten."
     }
   },
   "archives": {
