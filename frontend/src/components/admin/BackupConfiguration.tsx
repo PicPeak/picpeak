@@ -84,6 +84,11 @@ const isRestrictedBackupSetting = (key: string) =>
   || key === 'backup_include_database'
   || key === 'backup_database_inline_dump';
 
+// The rsync SSH key setting is a key file path. GET /config masks anything
+// else, i.e. a private key pasted before the field asked for a path.
+const SSH_KEY_PATH = /^\/[a-zA-Z0-9._/@:-]+$/;
+const isMaskedSshKey = (value: string) => value === '••••••••';
+
 export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   config,
   onSave,
@@ -153,8 +158,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   });
 
   const [showSecrets, setShowSecrets] = useState({
-    s3_secret_key: false,
-    ssh_key: false
+    s3_secret_key: false
   });
 
   const [testingConnection, setTestingConnection] = useState(false);
@@ -192,6 +196,15 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
 
     if (missingFields.length > 0) {
       toast.error(t('backup.configuration.messages.requiredFields'));
+      return;
+    }
+
+    // The rsync backup hands this to `ssh -i`: it is the path of a key file,
+    // never the key itself. The backend refuses anything else too.
+    const sshKey = formData.backup_rsync_ssh_key.trim();
+    if (canManageDestination && formData.backup_destination_type === 'rsync'
+      && sshKey && !isMaskedSshKey(sshKey) && !SSH_KEY_PATH.test(sshKey)) {
+      toast.error(t('backup.configuration.messages.rsyncSshKeyNotPath'));
       return;
     }
 
@@ -349,22 +362,20 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                   {t('backup.configuration.fields.rsyncSshKey')}
                 </label>
-                <div className="relative">
-                  <textarea
-                    value={formData.backup_rsync_ssh_key}
-                    onChange={(e) => handleChange('backup_rsync_ssh_key', e.target.value)}
-                    placeholder={t('backup.configuration.fields.rsyncSshKeyPlaceholder')}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
-                    rows={4}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecrets(prev => ({ ...prev, ssh_key: !prev.ssh_key }))}
-                    className="absolute top-2 right-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                  >
-                    {showSecrets.ssh_key ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
+                <Input
+                  type="text"
+                  value={formData.backup_rsync_ssh_key}
+                  onChange={(e) => handleChange('backup_rsync_ssh_key', e.target.value)}
+                  placeholder={t('backup.configuration.fields.rsyncSshKeyPlaceholder')}
+                  className="font-mono text-sm"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                {isMaskedSshKey(formData.backup_rsync_ssh_key) && (
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                    {t('backup.configuration.fields.rsyncSshKeyStoredNotPath')}
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                   {t('backup.configuration.fields.rsyncSshKeyHelp')}
                 </p>

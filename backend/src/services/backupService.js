@@ -825,6 +825,12 @@ function buildRsyncArgs(config, extraExcludes = []) {
 
   const args = ['-avz', '--delete', '--stats'];
   if (config.backup_rsync_ssh_key) {
+    // The setting is a key FILE path. The form used to ask for the key
+    // itself, so a pasted key can still be stored here; name that plainly
+    // instead of reporting "disallowed characters".
+    if (/PRIVATE KEY|\n/.test(String(config.backup_rsync_ssh_key))) {
+      throw new Error('The rsync SSH key setting holds a pasted key, not a key file path. Enter the absolute path to a private key file.');
+    }
     const sshKey = validateRsyncParam(config.backup_rsync_ssh_key, 'SSH key path');
     const fs = require('fs');
     if (!fs.existsSync(sshKey) || !fs.statSync(sshKey).isFile()) {
