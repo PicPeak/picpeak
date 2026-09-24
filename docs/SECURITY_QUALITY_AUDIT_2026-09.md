@@ -466,8 +466,8 @@ Ordered by ROI × risk. Each should be its own PR with tests. Packages 1 and 2 h
 
 | # | Focus | Checklist IDs | Notes |
 |---|--------|---------------|-------|
-| 1 | Path containment, both ends | M1 | `safePathJoin` on watermark + archive + remaining DB→disk sites **and** path-column validation in `picpeakImportService`; include a `../` fixture that must 403 on read and be rejected on import |
-| 2 | Stream error handling | M2 | `pipeStreamToResponse` on `transferService`, `adminTransfers`, `adminArchives` download; assert a stream error does not crash the process |
+| 1 | Path containment, both ends | M1 | **PR 1660**: watermark send + `.picpeak` import validation, with `../` fixtures. **PR 1659** (fork item A1): archive routes onto the storage backend. Left after both: the `archive_path` joins in `adminSettings.js:1971`, `adminSystem.js:293`, `adminEvents/helpers.js:223`, to move onto `storage.stat` / `storage.delete` once 1659 lands |
+| 2 | Stream error handling | M2 | Archive download → **PR 1659** (`pipeStreamToResponse`, body opened before headers). Still open: `transferService.js:803-828`, `adminTransfers.js:388/393`; assert a stream error does not crash the process |
 | 3 | Dead admin change-password route | §2.3 | Delete `auth.js:840`; collapse or document the dual photos URL trees; single backup mount (L2) |
 | 4 | Image token flow | M3, M7, L4 | First confirm whether `secureToken.service.ts` is dead; then either signed-payload verify + `timingSafeEqual`, or delete the flow |
 | 5 | Product / ops | M5, M6 | Longer upload tokens + /64-keyed lockout; SSH host-key pinning; fix the `:796` comment |
