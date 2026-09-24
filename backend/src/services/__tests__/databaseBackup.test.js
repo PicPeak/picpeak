@@ -233,17 +233,37 @@ describe('DatabaseBackupService', () => {
     const originalStoragePath = process.env.STORAGE_PATH;
     const enoent = () => Object.assign(new Error('no such directory'), { code: 'ENOENT' });
 
-    const mockSettings = ({ databasePath, fileBackupDestination }) => {
-      db.mockReturnValue({
-        where: jest.fn().mockReturnThis(),
-        select: jest.fn().mockResolvedValue(databasePath === undefined ? [] : [
-          { setting_key: 'database_backup_destination_path', setting_value: JSON.stringify(databasePath) }
-        ]),
-        first: jest.fn().mockResolvedValue(fileBackupDestination === undefined ? undefined : {
-          setting_value: JSON.stringify(fileBackupDestination)
-        })
+    const mockSettings = ({ databasePath, fileBackupDestination, fileBackupType }) => {
+      const rows = [];
+      if (databasePath !== undefined) {
+        rows.push({ setting_key: 'database_backup_destination_path', setting_value: JSON.stringify(databasePath) });
+      }
+      if (fileBackupDestination !== undefined) {
+        rows.push({ setting_key: 'backup_destination_path', setting_value: JSON.stringify(fileBackupDestination) });
+      }
+      if (fileBackupType !== undefined) {
+        rows.push({ setting_key: 'backup_destination_type', setting_value: JSON.stringify(fileBackupType) });
+      }
+      db.mockImplementation(() => {
+        let keys = null;
+        const query = {
+          where: jest.fn().mockReturnThis(),
+          whereIn: jest.fn((column, values) => { keys = values; return query; }),
+          // getBackupConfig reads the database_backup settings; the file-backup
+          // lookup asks for its keys with whereIn.
+          select: jest.fn(() => Promise.resolve(keys
+            ? rows.filter((row) => keys.includes(row.setting_key))
+            : rows.filter((row) => row.setting_key.startsWith('database_')))),
+        };
+        return query;
       });
     };
+
+    // Everything under /srv is writable; /backup, / and the rest are not.
+    const srvWritable = () => jest.spyOn(fs, 'access').mockImplementation(async (dir) => {
+      if (dir === '/srv' || String(dir).startsWith('/srv/')) return undefined;
+      throw dir === '/' ? Object.assign(new Error('read-only'), { code: 'EACCES' }) : enoent();
+    });
 
     const mkdirTarget = async () => {
       const stop = new Error('stop after mkdir');
@@ -269,14 +289,14 @@ describe('DatabaseBackupService', () => {
 
     it('writes under the file-backup destination when /backup is not mounted', async () => {
       mockSettings({ databasePath: '/backup/database', fileBackupDestination: '/srv/picpeak-backups' });
-      jest.spyOn(fs, 'access').mockRejectedValue(enoent());
+      srvWritable();
 
       expect(await mkdirTarget()).toBe(path.join('/srv/picpeak-backups', 'database'));
     });
 
     it('treats an unset database path like the seeded default', async () => {
       mockSettings({ fileBackupDestination: '/srv/picpeak-backups' });
-      jest.spyOn(fs, 'access').mockRejectedValue(enoent());
+      srvWritable();
 
       expect(await mkdirTarget()).toBe(path.join('/srv/picpeak-backups', 'database'));
     });
@@ -289,9 +309,37 @@ describe('DatabaseBackupService', () => {
       expect(await mkdirTarget()).toBe(path.join('/tmp/picpeak-1365-storage', 'backups', 'database'));
     });
 
+    // Issue 1641: with S3 selected, backup_destination_path is a leftover
+    // nothing mounts — often the historical /backup/picpeak — and the dump
+    // failed with "Cannot create the database backup directory
+    // /backup/picpeak/database: EACCES" before S3 was ever contacted.
+    it('stages under <storage>/backups/database for an S3 backup whose local path is stale', async () => {
+      process.env.STORAGE_PATH = '/srv/picpeak-storage';
+      mockSettings({ databasePath: '/backup/database', fileBackupDestination: '/backup/picpeak', fileBackupType: 's3' });
+      srvWritable();
+
+      expect(await mkdirTarget()).toBe(path.join('/srv/picpeak-storage', 'backups', 'database'));
+    });
+
+    it('does not use a writable local path either while S3 is selected', async () => {
+      process.env.STORAGE_PATH = '/srv/picpeak-storage';
+      mockSettings({ databasePath: '/backup/database', fileBackupDestination: '/srv/old-local-backups', fileBackupType: 's3' });
+      srvWritable();
+
+      expect(await mkdirTarget()).toBe(path.join('/srv/picpeak-storage', 'backups', 'database'));
+    });
+
+    it('falls back to storage when the local file-backup destination is not writable', async () => {
+      process.env.STORAGE_PATH = '/srv/picpeak-storage';
+      mockSettings({ databasePath: '/backup/database', fileBackupDestination: '/backup/picpeak', fileBackupType: 'local' });
+      srvWritable();
+
+      expect(await mkdirTarget()).toBe(path.join('/srv/picpeak-storage', 'backups', 'database'));
+    });
+
     it('names the directory and the setting when it cannot be created, and logs it', async () => {
       mockSettings({ databasePath: '/backup/database', fileBackupDestination: '/srv/picpeak-backups' });
-      jest.spyOn(fs, 'access').mockRejectedValue(enoent());
+      srvWritable();
       jest.spyOn(fs, 'mkdir').mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
       const target = path.join('/srv/picpeak-backups', 'database');
 
