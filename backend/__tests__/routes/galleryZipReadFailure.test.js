@@ -23,7 +23,7 @@ process.env.TEST_DATABASE_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-gzipfail-')), 'db.sqlite',
 );
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'gzipfail-test-secret';
-// External (reference) photos are read by archiver itself via archive.file().
+// External (reference) photos are appended as read streams of files under here.
 process.env.EXTERNAL_MEDIA_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-gzipfail-ext-'));
 
 const { Readable } = require('stream');
@@ -84,7 +84,7 @@ const cookieParser = require('cookie-parser');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 describe('gallery ZIP with a failing storage read', () => {
-  let db; let cleanup; let app; const photoIds = [];
+  let db; let cleanup; let app; const photoIds = []; const mixedPhotoIds = [];
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -121,18 +121,20 @@ describe('gallery ZIP with a failing storage read', () => {
     }).returning('id');
     const mixedId = mixed[0]?.id ?? mixed[0];
     fs.writeFileSync(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'big.mov'), crypto.randomBytes(16 * 1024 * 1024));
-    await db('photos').insert({
+    const big = await db('photos').insert({
       event_id: mixedId, filename: 'big.mov', path: 'big.mov', type: 'individual',
       source_origin: 'external', external_relpath: 'big.mov', media_type: 'video',
       mime_type: 'video/quicktime', size_bytes: 16 * 1024 * 1024,
       uploaded_at: new Date().toISOString(),
-    });
+    }).returning('id');
+    mixedPhotoIds.push(big[0]?.id ?? big[0]);
     mockBodies.set(`events/active/${MIXED_SLUG}/b.jpg`, crypto.randomBytes(256 * 1024));
-    await db('photos').insert({
+    const small = await db('photos').insert({
       event_id: mixedId, filename: 'b.jpg', path: `${MIXED_SLUG}/b.jpg`, type: 'individual',
       source_origin: 'managed', mime_type: 'image/jpeg', size_bytes: 256 * 1024,
       uploaded_at: new Date(Date.now() - 1000).toISOString(),
-    });
+    }).returning('id');
+    mixedPhotoIds.push(small[0]?.id ?? small[0]);
 
     app = express();
     app.use(express.json());
@@ -181,23 +183,79 @@ describe('gallery ZIP with a failing storage read', () => {
     ['download-selected', () => ['POST', `/api/gallery/${SLUG}/download-selected`, { photo_ids: photoIds }]],
   ];
 
-  // Open descriptors of this process (macOS and Linux both expose /dev/fd).
-  const openFds = () => fs.readdirSync('/dev/fd').length;
+  // Handles this process holds on the external file. Counting every open
+  // descriptor is not enough: the test server's own sockets close in the same
+  // window and hide one leaked file. /proc on Linux (CI), lsof on macOS.
+  const EXTERNAL_FILE = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'big.mov');
+  const handlesToExternal = () => {
+    const real = fs.realpathSync(EXTERNAL_FILE);
+    if (fs.existsSync('/proc/self/fd')) {
+      return fs.readdirSync('/proc/self/fd').filter((fd) => {
+        try { return fs.readlinkSync(`/proc/self/fd/${fd}`) === real; } catch { return false; }
+      }).length;
+    }
+    const out = require('child_process').execFileSync('lsof', ['-Fn', '-p', String(process.pid)], { encoding: 'utf8' });
+    return out.split('\n').filter((line) => line === `n${real}` || line === `n${EXTERNAL_FILE}`).length;
+  };
+  const closedWithin = async (ms) => {
+    for (let waited = 0; waited < ms && handlesToExternal() > 0; waited += 50) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return handlesToExternal();
+  };
+
+  // A slow client that hangs up once the external file is actually being
+  // copied, rather than after a guessed delay that may land before it opens.
+  const disconnectWhileCopying = (method, url, body) => new Promise((resolve) => {
+    const server = http.createServer(app);
+    server.listen(0, '127.0.0.1', () => {
+      let sawOpen = false;
+      const payload = body ? JSON.stringify(body) : null;
+      const req = http.request({
+        host: '127.0.0.1', port: server.address().port, path: url, method,
+        headers: payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {},
+      }, (res) => {
+        res.on('data', () => { res.pause(); setTimeout(() => res.resume(), 5); });
+        res.on('error', () => {});
+        const giveUp = setTimeout(() => { clearInterval(poll); req.destroy(); }, 5000);
+        const poll = setInterval(() => {
+          if (handlesToExternal() > 0) { sawOpen = true; clearInterval(poll); clearTimeout(giveUp); req.destroy(); }
+        }, 20);
+      });
+      req.on('error', () => {});
+      req.on('close', () => {
+        server.closeAllConnections?.();
+        server.close(() => resolve(sawOpen));
+      });
+      if (payload) req.write(payload);
+      req.end();
+    });
+  });
 
   it('closes an external file being copied when a queued read fails', async () => {
-    // archive.file() sources are not in the stream guard. Unpiping the
-    // archive on abort left the active one paused with its descriptor open.
     // 'late': the queued read fails once the external copy is under way.
     mockMode.value = 'late';
-    const before = openFds();
-    // A slow client keeps the external copy running when the read fails.
-    expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
-    let after = openFds();
-    for (let i = 0; i < 40 && after > before; i += 1) {
-      await new Promise((r) => setTimeout(r, 50));
-      after = openFds();
-    }
-    expect(after).toBeLessThanOrEqual(before);
+    // Proof the copy really was under way: without it, a request that failed
+    // before the file was ever opened would pass the check below too.
+    let sawOpen = false;
+    const watch = setInterval(() => { if (handlesToExternal() > 0) sawOpen = true; }, 10);
+    try {
+      // A slow client keeps the external copy running when the read fails.
+      expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
+    } finally { clearInterval(watch); }
+    expect(sawOpen).toBe(true);
+    expect(await closedWithin(2000)).toBe(0);
+  });
+
+  // Issue 1587: a guest closing the tab while an external file is being
+  // copied left that file open, one descriptor per cancelled download.
+  it.each([
+    ['download-all', () => ['GET', `/api/gallery/${MIXED_SLUG}/download-all`, null]],
+    ['download-selected', () => ['POST', `/api/gallery/${MIXED_SLUG}/download-selected`, { photo_ids: mixedPhotoIds }]],
+  ])('%s closes an external file being copied when the client disconnects', async (_route, args) => {
+    mockMode.value = 'none';
+    expect(await disconnectWhileCopying(...args())).toBe(true);
+    expect(await closedWithin(2000)).toBe(0);
   });
 
   describe.each(cases)('%s', (_name, args) => {
