@@ -396,6 +396,32 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     expect(Object.keys(written).sort()).toEqual(['b.jpg', 'c.jpg']);
   });
 
+  it('keeps every file when a fallback name collides with another entry in turn', async () => {
+    // Recorded zip paths make the lookup exact, and an archive written before
+    // the duplicate-row cleanup can carry two rows with one internal filename.
+    // Entries z.jpg and k.jpg both resolve to k.jpg, so both fall back to
+    // their own names; w.jpg resolves to z.jpg and now meets z.jpg's
+    // fallback. A single pass never rechecks that and overwrites one file.
+    const slug = 'legacy-chain-collision-event';
+    const archiveRelPath = await writeArchive('legacy-chain.zip', {
+      'individual/z.jpg': Buffer.from('bytes Z'),
+      'individual/k.jpg': Buffer.from('bytes K'),
+      'individual/w.jpg': Buffer.from('bytes W'),
+      'photos_manifest.json': manifestOf([
+        { filename: 'k.jpg', zip_path: 'individual/z.jpg', type: 'individual' },
+        { filename: 'k.jpg', zip_path: 'individual/k.jpg', type: 'individual' },
+        { filename: 'z.jpg', zip_path: 'individual/w.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, slug);
+
+    await restore(eventId);
+
+    const dir = path.join(storagePath, `events/active/${slug}/individual`);
+    const contents = fs.readdirSync(dir).map((f) => fs.readFileSync(path.join(dir, f)).toString()).sort();
+    expect(contents).toEqual(['bytes K', 'bytes W', 'bytes Z']);
+  });
+
   it('rebuilds a missing row under the canonical name when the entry carries the original', async () => {
     const slug = 'original-name-norow-event';
     const archiveRelPath = await writeArchive('original-name-norow.zip', {

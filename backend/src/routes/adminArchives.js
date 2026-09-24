@@ -589,12 +589,23 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         keyCounts.set(storageKey, (keyCounts.get(storageKey) || 0) + 1);
         planned.push({ entry, entryName, dirPath, manifestEntry, filename, storageKey });
       }
-      for (const item of planned) {
-        if (keyCounts.get(item.storageKey) > 1) {
-          logger.warn(`Archive restore: ${item.storageKey} is the destination of more than one entry; restoring ${item.entry.name} under its own name`, { eventId: archive.id });
-          item.filename = item.entryName;
-          item.storageKey = path.posix.join(eventPrefix, item.dirPath, item.entryName);
+      // A fallback name can itself be another entry's resolved key (an
+      // untracked b.jpg beside a row whose original is b.jpg), so repeat
+      // until every key is unique. Each pass moves at least one more entry
+      // onto its zip name, and zip names are unique, so this terminates.
+      for (;;) {
+        let moved = 0;
+        for (const item of planned) {
+          if (keyCounts.get(item.storageKey) > 1 && item.filename !== item.entryName) {
+            logger.warn(`Archive restore: ${item.storageKey} is the destination of more than one entry; restoring ${item.entry.name} under its own name`, { eventId: archive.id });
+            item.filename = item.entryName;
+            item.storageKey = path.posix.join(eventPrefix, item.dirPath, item.entryName);
+            moved += 1;
+          }
         }
+        if (!moved) break;
+        keyCounts.clear();
+        for (const item of planned) keyCounts.set(item.storageKey, (keyCounts.get(item.storageKey) || 0) + 1);
       }
 
       for (const { entry, dirPath, manifestEntry, filename, storageKey } of planned) {
