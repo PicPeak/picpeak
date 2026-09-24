@@ -1537,24 +1537,29 @@ async function resizeToBox(inputBuffer, box, options = {}) {
   try {
     const probe = sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none' });
     const metadata = await probe.metadata();
-    // Already inside the box — hand back the original bytes rather than
-    // re-encoding, which would only cost quality and CPU. Measured in the
-    // orientation the image is delivered in: for EXIF orientation 5-8 the raw
-    // width and height are transposed, so a raw 2000x1000 tagged 6 (shown as
-    // 1000x2000) would otherwise "fit" a 2048x1024 box and come back twice as
-    // tall as asked (issue 1639).
-    const oriented = orientedDimensions(metadata);
-    if (oriented.width && oriented.height
-      && oriented.width <= box.width && oriented.height <= box.height) {
-      return inputBuffer;
-    }
-
-    const format = (metadata.format || '').toLowerCase();
     // Animated sources must be re-opened with `animated: true`, otherwise
     // sharp keeps only the first frame and the download silently loses its
     // animation. `.rotate()` would flatten an animated source, so it is
     // applied only to stills (where EXIF orientation actually exists).
     const animated = (metadata.pages || 1) > 1;
+
+    // Already inside the box — hand back the original bytes rather than
+    // re-encoding, which would only cost quality and CPU. Measured on the
+    // dimensions the output would have: a still is rotated below, so for
+    // EXIF orientation 5-8 its width and height are transposed — a raw
+    // 2000x1000 tagged 6 (shown as 1000x2000) would otherwise "fit" a
+    // 2048x1024 box and come back twice as tall as asked (issue 1639). An
+    // animation is never rotated, so its raw dimensions are the ones that
+    // count. metadata.height of an animation spans every frame; pageHeight
+    // is one frame.
+    const fit = animated
+      ? { width: metadata.width, height: metadata.pageHeight || metadata.height }
+      : orientedDimensions(metadata);
+    if (fit.width && fit.height && fit.width <= box.width && fit.height <= box.height) {
+      return inputBuffer;
+    }
+
+    const format = (metadata.format || '').toLowerCase();
     const image = animated
       ? sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none', animated: true })
       : probe.rotate();

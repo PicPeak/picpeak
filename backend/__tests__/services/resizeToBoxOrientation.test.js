@@ -62,4 +62,25 @@ describe('resizeToBox fit check uses the delivered orientation (issue 1639)', ()
     const [width, height] = await delivered(await resizeToBox(await jpeg(3000, 1500), { width: 2048, height: 1024 }));
     expect([width, height]).toEqual([2048, 1024]);
   });
+
+  // An animation is never rotated by resizeToBox (.rotate() would flatten
+  // it), so its fit is decided on the raw frame size, as before issue 1639.
+  const animatedWebp = async (width, height, orientation) => {
+    const frame = (r) => sharp({ create: { width, height, channels: 3, background: { r, g: 0, b: 0 } } }).png().toBuffer();
+    return sharp([await frame(255), await frame(0)], { join: { animated: true } })
+      .webp().withMetadata({ orientation }).toBuffer();
+  };
+
+  it('resizes an animation whose raw frames exceed the box, keeping every frame', async () => {
+    const output = await resizeToBox(await animatedWebp(1000, 2000, 6), { width: 2048, height: 1024 });
+    const meta = await sharp(output, { animated: true }).metadata();
+    expect(meta.pages).toBe(2);
+    expect(meta.width).toBeLessThanOrEqual(2048);
+    expect(meta.pageHeight).toBeLessThanOrEqual(1024);
+  });
+
+  it('hands back an animation whose raw frames fit the box untouched', async () => {
+    const input = await animatedWebp(2000, 1000, 6);
+    expect(await resizeToBox(input, { width: 2048, height: 1024 })).toBe(input);
+  });
 });
