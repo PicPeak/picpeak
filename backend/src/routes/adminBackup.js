@@ -24,6 +24,14 @@ const DESTINATION_SETTING_RE = /^backup_(destination_|s3_|rsync_)/;
 const DATABASE_SETTING_KEYS = new Set(['backup_include_database', 'backup_database_inline_dump']);
 const SECRET_MASK = '••••••••';
 
+// backup_rsync_ssh_key is the PATH of a private key file: buildRsyncArgs
+// hands it to `ssh -i`. The form used to ask for the key itself, so some
+// installs hold a pasted private key here instead; that value stays masked
+// and is refused on save. Same charset and length as validateRsyncParam.
+const isSshKeyPath = (value) => typeof value === 'string'
+  && value.length <= 1024
+  && /^\/[a-zA-Z0-9._/@:-]+$/.test(value);
+
 // Read like backupService.normalizeBoolean, which decides what a backup
 // actually does: booleans as they are, 'true'/'false' strings, and anything
 // else by truthiness.
@@ -87,7 +95,11 @@ router.get('/config', adminAuth, requirePermission('backup.view'), async (req, r
     // config endpoints do. The PUT below skips the mask sentinel, so the
     // form round-trips without clobbering the real values.
     if (config.backup_s3_secret_key) config.backup_s3_secret_key = '••••••••';
-    if (config.backup_rsync_ssh_key) config.backup_rsync_ssh_key = '••••••••';
+    // A key file path is not a secret and is shown; anything else is a
+    // pasted key and stays masked.
+    if (config.backup_rsync_ssh_key && !isSshKeyPath(config.backup_rsync_ssh_key)) {
+      config.backup_rsync_ssh_key = '••••••••';
+    }
 
     res.json(config);
   } catch (error) {
@@ -106,6 +118,18 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       if (Object.prototype.hasOwnProperty.call(updates || {}, key) && typeof updates[key] !== 'boolean') {
         return res.status(400).json({ error: `${key} must be true or false` });
       }
+    }
+
+    const sshKeyUpdate = (updates || {}).backup_rsync_ssh_key;
+    if (typeof sshKeyUpdate === 'string' && sshKeyUpdate !== SECRET_MASK && sshKeyUpdate.trim() !== ''
+        && !isSshKeyPath(sshKeyUpdate.trim())) {
+      return res.status(400).json({
+        error: 'backup_rsync_ssh_key must be the absolute path to a private key file, not the key itself',
+        code: 'RSYNC_SSH_KEY_NOT_PATH',
+      });
+    }
+    if (typeof sshKeyUpdate === 'string' && sshKeyUpdate !== SECRET_MASK) {
+      updates.backup_rsync_ssh_key = sshKeyUpdate.trim();
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
@@ -453,7 +477,22 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
 
       const host = sanitizeInput(config.host);
       const user = sanitizeInput(config.user);
-      const sshKeyPath = sanitizeInput(config.ssh_key);
+      // The key file path from the form, or the saved one when the form
+      // holds the mask or sends none. A value that is not a path (a pasted
+      // key) is never handed to ssh.
+      const requestedKey = typeof config.ssh_key === 'string' ? config.ssh_key.trim() : '';
+      const keyCandidate = requestedKey && requestedKey !== SECRET_MASK
+        ? requestedKey
+        : (await getBackupConfig()).backup_rsync_ssh_key;
+      if (keyCandidate && !isSshKeyPath(keyCandidate)) {
+        res.json({
+          success: false,
+          code: 'RSYNC_SSH_KEY_NOT_PATH',
+          message: 'The SSH key setting must be the absolute path to a private key file, not the key itself',
+        });
+        break;
+      }
+      const sshKeyPath = keyCandidate || null;
 
       if (!host) {
         res.json({ success: false, message: 'Invalid host specified' });
