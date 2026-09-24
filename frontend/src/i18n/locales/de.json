@@ -1327,6 +1327,7 @@
           "hourly": "Jede Stunde",
           "daily": "Täglich",
           "weekly": "Wöchentlich",
+          "monthly": "Monatlich",
           "custom": "Benutzerdefinierter Cron-Ausdruck"
         },
         "customCron": "Cron-Ausdruck",
