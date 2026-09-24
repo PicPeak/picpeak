@@ -217,10 +217,10 @@ describe('gallery ZIP with a failing storage read', () => {
       }, (res) => {
         res.on('data', () => { res.pause(); setTimeout(() => res.resume(), 5); });
         res.on('error', () => {});
+        const giveUp = setTimeout(() => { clearInterval(poll); req.destroy(); }, 5000);
         const poll = setInterval(() => {
-          if (handlesToExternal() > 0) { sawOpen = true; clearInterval(poll); req.destroy(); }
+          if (handlesToExternal() > 0) { sawOpen = true; clearInterval(poll); clearTimeout(giveUp); req.destroy(); }
         }, 20);
-        setTimeout(() => { clearInterval(poll); req.destroy(); }, 5000);
       });
       req.on('error', () => {});
       req.on('close', () => {
@@ -235,8 +235,15 @@ describe('gallery ZIP with a failing storage read', () => {
   it('closes an external file being copied when a queued read fails', async () => {
     // 'late': the queued read fails once the external copy is under way.
     mockMode.value = 'late';
-    // A slow client keeps the external copy running when the read fails.
-    expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
+    // Proof the copy really was under way: without it, a request that failed
+    // before the file was ever opened would pass the check below too.
+    let sawOpen = false;
+    const watch = setInterval(() => { if (handlesToExternal() > 0) sawOpen = true; }, 10);
+    try {
+      // A slow client keeps the external copy running when the read fails.
+      expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
+    } finally { clearInterval(watch); }
+    expect(sawOpen).toBe(true);
     expect(await closedWithin(2000)).toBe(0);
   });
 
