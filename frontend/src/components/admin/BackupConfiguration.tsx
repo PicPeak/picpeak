@@ -50,6 +50,28 @@ interface BackupConfigurationProps {
   canManageDestination?: boolean;
 }
 
+const SCHEDULE_OPTION_VALUES = ['hourly', 'daily', 'weekly', 'custom'];
+const isCronExpression = (value: unknown): value is string =>
+  typeof value === 'string' && /^\s*\S+(\s+\S+){4}\s*$/.test(value);
+
+/**
+ * The schedule fields as the form should show them: the schedule the backend
+ * actually runs (backupService resolveScheduleCron). An older install can
+ * hold a cron expression in backup_schedule itself. The select has no option
+ * for that, so it showed "Every hour", and saving sent the form's default
+ * backup_schedule_cron, which the backend then preferred: the backup moved to
+ * 03:00 without anyone choosing it. Such a value is shown as Custom with the
+ * cron that is in effect.
+ */
+function scheduleFromConfig(config: Partial<BackupFormData>): Partial<BackupFormData> {
+  const label = config.backup_schedule;
+  if (typeof label !== 'string' || SCHEDULE_OPTION_VALUES.includes(label.trim().toLowerCase()) || !isCronExpression(label)) {
+    return {};
+  }
+  const cron = isCronExpression(config.backup_schedule_cron) ? config.backup_schedule_cron : label;
+  return { backup_schedule: 'custom', backup_schedule_cron: cron.trim() };
+}
+
 // Mirrors the settings the backend limits to Super Admins.
 const isRestrictedBackupSetting = (key: string) =>
   /^backup_(destination_|s3_|rsync_)/.test(key)
@@ -134,7 +156,8 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     if (config) {
       setFormData(prev => ({
         ...prev,
-        ...config
+        ...config,
+        ...scheduleFromConfig(config)
       }));
     }
   }, [config]);
@@ -169,7 +192,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     // falls back to daily 02:00 otherwise. For named schedules the stored
     // cron is kept (the backend prefers the label), so switching back to
     // Custom keeps the previously saved expression.
-    if (formData.backup_schedule === 'custom' && !/^\s*\S+(\s+\S+){4}\s*$/.test(formData.backup_schedule_cron)) {
+    if (formData.backup_schedule === 'custom' && !isCronExpression(formData.backup_schedule_cron)) {
       toast.error(t('backup.configuration.messages.invalidCron', 'Please enter a valid cron expression (5 fields)'));
       return;
     }
@@ -237,13 +260,13 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                 onClick={() => handleChange('backup_destination_type', type.id)}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   formData.backup_destination_type === type.id
-                    ? 'border-primary bg-accent-dark/15'
+                    ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20'
                     : 'border-neutral-200 dark:border-neutral-600 hover:border-neutral-300 dark:hover:border-neutral-500'
                 }`}
               >
                 <Icon className={`h-8 w-8 mb-2 mx-auto ${
                   formData.backup_destination_type === type.id
-                    ? 'text-primary'
+                    ? 'text-primary-600 dark:text-primary-400'
                     : 'text-neutral-400'
                 }`} />
                 <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{type.name}</h4>
@@ -324,7 +347,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                     value={formData.backup_rsync_ssh_key}
                     onChange={(e) => handleChange('backup_rsync_ssh_key', e.target.value)}
                     placeholder={t('backup.configuration.fields.rsyncSshKeyPlaceholder')}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary focus:border-primary font-mono text-sm"
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
                     rows={4}
                   />
                   <button
@@ -462,7 +485,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
             <select
               value={formData.backup_schedule}
               onChange={(e) => handleChange('backup_schedule', e.target.value)}
-              className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+              className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
               {scheduleOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -518,7 +541,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               checked={formData.backup_include_database}
               onChange={(e) => handleChange('backup_include_database', e.target.checked)}
               disabled={!canManageDestination}
-              className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
             />
             <div className="ml-3">
               <div className="flex items-center space-x-2">
@@ -534,7 +557,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               type="checkbox"
               checked={formData.backup_include_photos}
               onChange={(e) => handleChange('backup_include_photos', e.target.checked)}
-              className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
             />
             <div className="ml-3">
               <div className="flex items-center space-x-2">
@@ -550,7 +573,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               type="checkbox"
               checked={formData.backup_include_archives}
               onChange={(e) => handleChange('backup_include_archives', e.target.checked)}
-              className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
             />
             <div className="ml-3">
               <div className="flex items-center space-x-2">
@@ -566,7 +589,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
               type="checkbox"
               checked={formData.backup_include_thumbnails}
               onChange={(e) => handleChange('backup_include_thumbnails', e.target.checked)}
-              className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
             />
             <div className="ml-3">
               <div className="flex items-center space-x-2">
