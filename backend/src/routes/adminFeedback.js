@@ -1,5 +1,5 @@
 const express = require('express');
-const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+const { csvCell, objectsToCsv } = require('../utils/spreadsheetSafe');
 const router = express.Router();
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -469,33 +469,15 @@ router.delete('/word-filters/:id',
   }
 );
 
-// Helper function to convert JSON to CSV. Improvements over the original
-// (#640 part #6): handles booleans (rendered yes/no for spreadsheet
-// readability), nulls/undefined (rendered as empty), and escapes strings
-// containing newlines as well as commas/quotes — comments with line breaks
-// were silently breaking the CSV row count before this.
+// CSV export. Booleans render as yes/no and nulls as empty for spreadsheet
+// readability (#640 part #6); quoting and formula neutralisation
+// (GHSA-3cw3) are the shared csvCell.
 function convertToCSV(data) {
-  if (!data || data.length === 0) return '';
-
-  const headers = Object.keys(data[0]);
-  const csvHeaders = headers.join(',');
-
-  const csvRows = data.map(row => {
-    return headers.map(header => {
-      const value = row[header];
-      if (value === null || value === undefined) return '';
-      if (typeof value === 'boolean') return value ? 'yes' : 'no';
-      // Formula-neutralize user-controlled cells (guest_name/comment_text)
-      // before quoting — quoting alone doesn't stop `=cmd()` (GHSA-3cw3).
-      const neutralized = neutralizeSpreadsheetFormula(value);
-      if (neutralized.includes(',') || neutralized.includes('"') || neutralized.includes('\n') || neutralized.includes('\r')) {
-        return `"${neutralized.replace(/"/g, '""')}"`;
-      }
-      return neutralized;
-    }).join(',');
+  return objectsToCsv(data, (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'boolean') return value ? 'yes' : 'no';
+    return csvCell(value);
   });
-
-  return [csvHeaders, ...csvRows].join('\n');
 }
 
 module.exports = router;

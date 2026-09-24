@@ -549,14 +549,7 @@ router.get('/export', adminAuth, requirePermission(['settings.view', 'image_secu
 /**
  * Helper function to convert data to CSV
  */
-const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
-
-function csvCell(value) {
-  // Formula-neutralize, then RFC-4180 quote (the previous join('') did
-  // neither — GHSA-37p4).
-  const s = neutralizeSpreadsheetFormula(value);
-  return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
+const { csvCell } = require('../utils/spreadsheetSafe');
 
 function convertToCSV(data) {
   // Simplified CSV conversion for security logs

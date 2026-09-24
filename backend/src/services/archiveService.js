@@ -1,5 +1,5 @@
 const archiver = require('archiver');
-const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+const { objectsToCsv } = require('../utils/spreadsheetSafe');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
@@ -307,26 +307,10 @@ async function archiveEvent(event) {
   }
 }
 
-// Helper function to convert JSON to CSV
+// Feedback rows to CSV; quoting and formula neutralisation (GHSA-q82f)
+// are the shared csvCell.
 function convertToCSV(data) {
-  if (!data || data.length === 0) return '';
-
-  const headers = Object.keys(data[0]);
-  const csvHeaders = headers.join(',');
-
-  const csvRows = data.map(row => {
-    return headers.map(header => {
-      // Formula-neutralize before quoting (guest_name/comment_text are
-      // user-controlled); the old check didn't even escape \n/\r (GHSA-q82f).
-      const value = neutralizeSpreadsheetFormula(row[header]);
-      if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
-        return `"${value.replace(/"/g, '""')}"`;
-      }
-      return value;
-    }).join(',');
-  });
-
-  return [csvHeaders, ...csvRows].join('\n');
+  return objectsToCsv(data);
 }
 
 module.exports = { archiveEvent };

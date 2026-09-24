@@ -16,4 +16,24 @@ function neutralizeSpreadsheetFormula(value) {
   return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
 }
 
-module.exports = { neutralizeSpreadsheetFormula };
+/**
+ * One CSV cell: formula-neutralised, then RFC-4180 quoted when it holds a
+ * comma, quote or line break. Callers that render some values differently
+ * (booleans as yes/no, say) map them first and hand the rest here.
+ */
+function csvCell(value) {
+  const s = neutralizeSpreadsheetFormula(value);
+  return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Rows of plain objects to CSV: the first row's keys are the header, every
+ * row is rendered through `cell`. Empty input gives an empty string.
+ */
+function objectsToCsv(rows, cell = csvCell) {
+  if (!rows || rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  return [headers.join(','), ...rows.map((row) => headers.map((h) => cell(row[h])).join(','))].join('\n');
+}
+
+module.exports = { neutralizeSpreadsheetFormula, csvCell, objectsToCsv };
