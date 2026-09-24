@@ -368,6 +368,34 @@ describe('archive restore rebuilds the photo row faithfully', () => {
       .rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('keeps both files when a legacy archive sends two entries to one canonical name', async () => {
+    // No zip_path recorded (older archive) and original-name downloads were
+    // on: row A's original equals row B's internal name. By name, entry
+    // b.jpg (row A's bytes) resolves to canonical b.jpg and so does c.jpg
+    // (row B's), so the second put would overwrite the first. The group
+    // falls back to the names the zip gave it; nothing is lost.
+    const slug = 'legacy-collision-event';
+    const A = Buffer.from('bytes of row A');
+    const C = Buffer.from('bytes of row B');
+    const archiveRelPath = await writeArchive('legacy-collision.zip', {
+      'individual/b.jpg': A,
+      'individual/c.jpg': C,
+      'photos_manifest.json': manifestOf([
+        { filename: 'a.jpg', original_filename: 'b.jpg', type: 'individual' },
+        { filename: 'b.jpg', original_filename: 'c.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, slug);
+
+    await restore(eventId);
+
+    const dir = path.join(storagePath, `events/active/${slug}/individual`);
+    const written = Object.fromEntries(fs.readdirSync(dir).map((f) => [f, fs.readFileSync(path.join(dir, f))]));
+    const contents = Object.values(written).map((b) => b.toString());
+    expect(contents).toEqual(expect.arrayContaining(['bytes of row A', 'bytes of row B']));
+    expect(Object.keys(written).sort()).toEqual(['b.jpg', 'c.jpg']);
+  });
+
   it('rebuilds a missing row under the canonical name when the entry carries the original', async () => {
     const slug = 'original-name-norow-event';
     const archiveRelPath = await writeArchive('original-name-norow.zip', {
