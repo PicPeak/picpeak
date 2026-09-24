@@ -8,6 +8,9 @@ const stream = require('stream');
 const crypto = require('crypto');
 const logger = require('../../utils/logger');
 const { formatBytes } = require('../../utils/formatBytes');
+const {
+  S3EndpointError, policyApplies, assertLiteralEndpointAllowed, assertS3EndpointAllowed, s3EndpointAgents,
+} = require('../../utils/s3EndpointPolicy');
 
 /**
  * S3 Storage Adapter for handling file uploads to S3 and S3-compatible services
@@ -46,6 +49,8 @@ class S3StorageAdapter extends stream.EventEmitter {
    *   DNS-resolved address set (see utils/pinnedRequest). Opt-in; when omitted the SDK's
    *   default agent (its own DNS resolution) is used, matching prior behavior.
    * @param {https.Agent} [config.httpsAgent] - Same as httpAgent, for TLS connections.
+   * @param {boolean} [config.allowPrivateEndpoint=false] - A Super Admin approved this exact
+   *   private endpoint origin (backup_s3_private_endpoint_approval). Production only.
    */
   constructor(config) {
     super();
@@ -123,13 +128,17 @@ class S3StorageAdapter extends stream.EventEmitter {
         endpoint = this.config.sslEnabled ? `https://${endpoint}` : `http://${endpoint}`;
       }
 
-      // SSRF protection: block private/internal S3 endpoints in production
-      // Local endpoints (e.g. MinIO on localhost) are allowed in development
-      if (process.env.NODE_ENV === 'production') {
-        const { validateExternalUrl } = require('../../utils/networkValidation');
-        const urlCheck = validateExternalUrl(endpoint);
-        if (!urlCheck.valid) {
-          throw new Error(`Invalid S3 endpoint: ${urlCheck.error}`);
+      // SSRF protection, production only (dev points at localhost MinIO
+      // deliberately). A private endpoint needs allowPrivateEndpoint, which
+      // callers set only when a Super Admin approved this exact origin
+      // (utils/s3EndpointPolicy). IP literals and internal names are decided
+      // here; hostnames by the agents below, on every connection, so a DNS
+      // answer that changes after this point cannot reach an internal address.
+      if (policyApplies()) {
+        const policy = { sslEnabled: this.config.sslEnabled, allowPrivate: this.config.allowPrivateEndpoint === true };
+        assertLiteralEndpointAllowed(endpoint, policy);
+        if (!this.config.httpAgent && !this.config.httpsAgent) {
+          Object.assign(s3Config.requestHandler, s3EndpointAgents(endpoint, policy));
         }
       }
 
@@ -172,21 +181,19 @@ class S3StorageAdapter extends stream.EventEmitter {
       // (the constructor's literal check can't catch a public-looking
       // hostname that resolves to an internal IP). Prod-only, matching the
       // constructor gate — dev points at localhost MinIO deliberately.
-      if (process.env.NODE_ENV === 'production' && this.config.endpoint) {
-        const { isHostAllowed } = require('../../utils/networkValidation');
-        const { hostname } = new URL(
-          /^https?:\/\//.test(this.config.endpoint) ? this.config.endpoint : `https://${this.config.endpoint}`
-        );
-        if (!(await isHostAllowed(hostname))) {
-          throw new Error('S3 endpoint resolves to a private or internal network address');
-        }
-      }
+      await assertS3EndpointAllowed(this.config.endpoint, {
+        sslEnabled: this.config.sslEnabled,
+        allowPrivate: this.config.allowPrivateEndpoint === true,
+      });
       await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       logger.info(`Successfully connected to S3 bucket: ${this.bucket}`);
       return true;
     } catch (error) {
       logger.error(`Failed to connect to S3 bucket ${this.bucket}:`, error);
-      throw new Error(`S3 connection test failed: ${error.message}`);
+      const wrapped = new Error(`S3 connection test failed: ${error.message}`);
+      // Keep the policy's stable code for callers that answer with it.
+      if (error instanceof S3EndpointError) wrapped.code = error.code;
+      throw wrapped;
     }
   }
   

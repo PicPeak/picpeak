@@ -231,7 +231,9 @@ describe('Enhanced Backup Service Tests', () => {
         forcePathStyle: false,
         sslEnabled: true,
         maxRetries: 3,
-        retryDelay: 1000
+        retryDelay: 1000,
+        // A public endpoint with no stored approval (issue 1641).
+        allowPrivateEndpoint: false
       });
       
       expect(mockS3Client.testConnection).toHaveBeenCalled();
@@ -753,6 +755,23 @@ describe('Enhanced Backup Service Tests', () => {
         nextScheduledRun: expect.any(String),
         nextBackup: expect.any(String)
       });
+    });
+
+    // Issue 1641: the management header read lastBackup as "last successful".
+    // The two fields mean different things and must stay apart.
+    it('reports a failed newest attempt as lastBackup and the older success as lastSuccessfulBackup', async () => {
+      const recentRuns = [
+        { id: 2, started_at: new Date('2026-09-24T08:38:00Z'), status: 'failed', error_message: 'EACCES' },
+        { id: 1, started_at: new Date('2026-09-23T03:00:00Z'), completed_at: new Date('2026-09-23T03:05:00Z'), status: 'completed' },
+      ];
+      mockDb.limit.mockResolvedValue(recentRuns);
+      mockDb.select.mockResolvedValue([]);
+
+      const status = await backupService.getBackupStatus();
+
+      expect(status.lastBackup).toMatchObject({ id: 2, status: 'failed' });
+      expect(status.lastSuccessfulBackup).toMatchObject({ id: 1, status: 'completed' });
+      expect(status.isHealthy).toBe(false);
     });
 
     it('should clean up old backup runs', async () => {

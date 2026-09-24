@@ -13,6 +13,14 @@ const path = require('path');
 const crypto = require('crypto');
 const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
+const {
+  APPROVAL_SETTING: S3_APPROVAL_SETTING,
+  backupS3Access,
+  classifyS3Endpoint,
+  endpointOrigin,
+  isPrivateEndpointApproved,
+  policyApplies: s3PolicyApplies,
+} = require('../utils/s3EndpointPolicy');
 
 const router = express.Router();
 
@@ -65,6 +73,61 @@ async function changedRestrictedBackupSettings(updates) {
     }
   }));
   return keys.filter((key) => comparableBackupSetting(key, updates[key]) !== comparableBackupSetting(key, stored.get(key)));
+}
+
+const S3_ERROR_MESSAGES = {
+  S3_PRIVATE_ENDPOINT: 'S3 endpoint resolves to a private or internal network address. A Super Admin must approve this exact endpoint before it can be used.',
+  S3_ENDPOINT_FORBIDDEN: 'S3 endpoint resolves to a link-local, metadata or reserved address, which can never be approved',
+  S3_ENDPOINT_UNRESOLVED: 'S3 endpoint hostname could not be resolved',
+  S3_ENDPOINT_INVALID: 'S3 endpoint is not a valid URL',
+  S3_APPROVAL_MISMATCH: 'The approval does not match the configured S3 endpoint',
+};
+
+const s3ErrorBody = (code, origin) => ({
+  error: S3_ERROR_MESSAGES[code] || 'S3 endpoint is not permitted',
+  code,
+  severity: code === 'S3_PRIVATE_ENDPOINT' ? 'warning' : 'error',
+  ...(origin && { origin }),
+  ...(code === 'S3_PRIVATE_ENDPOINT' && { requiresApproval: true }),
+});
+
+const S3_STATUS_CODES = {
+  approvable: 'S3_PRIVATE_ENDPOINT',
+  forbidden: 'S3_ENDPOINT_FORBIDDEN',
+  unresolved: 'S3_ENDPOINT_UNRESOLVED',
+  invalid: 'S3_ENDPOINT_INVALID',
+};
+
+/**
+ * Vet the S3 endpoint a config update would leave in place. Returns
+ * { error } with a 400 body, or {} — clearing a stored approval when the
+ * endpoint it approved is no longer the configured one.
+ */
+async function checkS3EndpointUpdate(updates) {
+  const touched = ['backup_s3_endpoint', 'backup_s3_ssl_enabled', S3_APPROVAL_SETTING]
+    .some((key) => Object.prototype.hasOwnProperty.call(updates || {}, key) && updates[key] !== SECRET_MASK);
+  if (!touched || !s3PolicyApplies()) return {};
+
+  const effective = { ...(await getBackupConfig()) };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== SECRET_MASK) effective[key] = value;
+  }
+  if (!effective.backup_s3_endpoint) return {};
+
+  const sslEnabled = readBackupBoolean(effective.backup_s3_ssl_enabled ?? true);
+  const { status, origin } = await classifyS3Endpoint(effective.backup_s3_endpoint, sslEnabled);
+  const approval = typeof effective[S3_APPROVAL_SETTING] === 'string' ? effective[S3_APPROVAL_SETTING].trim() : '';
+  const approvalSupplied = typeof updates[S3_APPROVAL_SETTING] === 'string' && updates[S3_APPROVAL_SETTING].trim() !== '';
+
+  if (approvalSupplied && updates[S3_APPROVAL_SETTING].trim() !== origin) {
+    return { error: s3ErrorBody('S3_APPROVAL_MISMATCH', origin) };
+  }
+  if (status === 'approvable' && approval === origin) return {};
+  if (status !== 'public') return { error: s3ErrorBody(S3_STATUS_CODES[status], origin) };
+  // A public endpoint needs no approval; drop one left over from an earlier
+  // private endpoint so it cannot silently come back into force.
+  if (approval) updates[S3_APPROVAL_SETTING] = '';
+  return {};
 }
 
 // Get backup configuration
@@ -139,23 +202,21 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       }
     }
 
-    // SSRF: validate an S3 endpoint whenever one is supplied — NOT only when
-    // the payload also flips backup_destination_type to 's3'. The PUT
-    // persists every backup_* field independently, so with S3 already
-    // selected a caller could PATCH just backup_s3_endpoint to a
+    // SSRF: validate the S3 endpoint whenever it (or its approval) is
+    // supplied — NOT only when the payload also flips backup_destination_type
+    // to 's3'. The PUT persists every backup_* field independently, so with
+    // S3 already selected a caller could PATCH just backup_s3_endpoint to a
     // private-resolving host; the management ops (manifest, bucket/file
     // browse, cleanup, test-upload) then connect without going through
     // testConnection. Prod-only; dev points at localhost MinIO deliberately.
-    if (process.env.NODE_ENV === 'production'
-        && updates.backup_s3_endpoint && updates.backup_s3_endpoint !== '••••••••') {
-      const rawEndpoint = updates.backup_s3_endpoint;
-      const withProto = /^https?:\/\//.test(rawEndpoint) ? rawEndpoint : `https://${rawEndpoint}`;
-      let epHost = null;
-      try { epHost = new URL(withProto).hostname; } catch { epHost = null; }
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!epHost || !(await isHostAllowed(epHost))) {
-        return res.status(400).json({ error: 'S3 endpoint resolves to a private or internal network address' });
-      }
+    //
+    // A private endpoint is accepted only with a Super Admin's approval of
+    // that exact origin (issue 1641). The approval key matches
+    // DESTINATION_SETTING_RE, so the Super Admin check above already covers
+    // who may set it.
+    const endpointUpdate = await checkS3EndpointUpdate(updates);
+    if (endpointUpdate.error) {
+      return res.status(400).json(endpointUpdate.error);
     }
 
     // Update settings
@@ -540,10 +601,48 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       break;
     }
 
-    case 's3':
-      // Test S3 connection (would need AWS SDK)
-      res.json({ success: false, message: 'S3 testing not implemented yet' });
+    case 's3': {
+      // A real HeadBucket against the values in the form (issue 1641).
+      const stored = await getBackupConfig();
+      const endpoint = typeof config.endpoint === 'string' ? config.endpoint.trim() : '';
+      const sameEndpoint = endpointOrigin(endpoint) === endpointOrigin(stored.backup_s3_endpoint);
+      // The form holds the mask for a saved secret. Reuse the stored one only
+      // against the endpoint it was saved for, so a test cannot send the
+      // saved credentials somewhere new.
+      const secretKey = config.secret_key === SECRET_MASK
+        ? (sameEndpoint ? stored.backup_s3_secret_key : '')
+        : config.secret_key;
+      if (!config.bucket || !config.access_key || !secretKey) {
+        res.json({ success: false, code: 'S3_CONFIG_INCOMPLETE', message: 'S3 test requires endpoint, bucket and credentials' });
+        break;
+      }
+      const approval = typeof config.private_endpoint_approval === 'string'
+        ? config.private_endpoint_approval
+        : stored[S3_APPROVAL_SETTING];
+      try {
+        const s3Adapter = new S3StorageAdapter({
+          endpoint: endpoint || undefined,
+          bucket: config.bucket,
+          accessKeyId: config.access_key,
+          secretAccessKey: secretKey,
+          region: config.region || 'us-east-1',
+          allowPrivateEndpoint: isPrivateEndpointApproved(endpoint, true, approval),
+          maxRetries: 1,
+          connectionTimeout: 10000,
+          socketTimeout: 15000,
+        });
+        await s3Adapter.testConnection();
+        res.json({ success: true, message: 'S3 bucket is reachable' });
+      } catch (error) {
+        if (S3_ERROR_MESSAGES[error.code]) {
+          res.json({ success: false, ...s3ErrorBody(error.code, error.origin || endpointOrigin(endpoint)), message: S3_ERROR_MESSAGES[error.code] });
+          break;
+        }
+        logger.warn('S3 connection test failed', { bucket: config.bucket, error: error.message });
+        res.json({ success: false, code: 'S3_CONNECTION_FAILED', message: 'Could not reach the S3 bucket with these settings. Check server logs for details.' });
+      }
       break;
+    }
         
     default:
       res.status(400).json({ error: 'Invalid destination type' });
@@ -723,7 +822,8 @@ router.get('/s3/buckets', adminAuth, requirePermission('backup.view'), async (re
       accessKeyId: config.backup_s3_access_key,
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
-      forcePathStyle: config.backup_s3_force_path_style || false
+      forcePathStyle: config.backup_s3_force_path_style || false,
+      ...backupS3Access(config)
     });
     
     // List buckets using the S3 client
@@ -755,7 +855,8 @@ router.get('/s3/files', adminAuth, requirePermission('backup.view'), async (req,
       accessKeyId: config.backup_s3_access_key,
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
-      forcePathStyle: config.backup_s3_force_path_style || false
+      forcePathStyle: config.backup_s3_force_path_style || false,
+      ...backupS3Access(config)
     });
     
     const result = await s3Adapter.list(prefix, {
@@ -791,7 +892,8 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
       accessKeyId: config.backup_s3_access_key,
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
-      forcePathStyle: config.backup_s3_force_path_style || false
+      forcePathStyle: config.backup_s3_force_path_style || false,
+      ...backupS3Access(config)
     });
     
     const cutoffDate = new Date();
@@ -851,7 +953,8 @@ router.post('/s3/test-upload', adminAuth, requirePermission('backup.create'), as
       accessKeyId: config.backup_s3_access_key,
       secretAccessKey: config.backup_s3_secret_key,
       region: config.backup_s3_region || 'us-east-1',
-      forcePathStyle: config.backup_s3_force_path_style || false
+      forcePathStyle: config.backup_s3_force_path_style || false,
+      ...backupS3Access(config)
     });
     
     // Create test content
@@ -939,7 +1042,8 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         accessKeyId: config.backup_s3_access_key,
         secretAccessKey: config.backup_s3_secret_key,
         region: config.backup_s3_region || 'us-east-1',
-        forcePathStyle: config.backup_s3_force_path_style || false
+        forcePathStyle: config.backup_s3_force_path_style || false,
+        ...backupS3Access(config)
       });
         
       // List all files for this backup
