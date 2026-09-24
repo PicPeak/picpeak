@@ -4357,15 +4357,16 @@
         "rsyncUserPlaceholder": "backup-user",
         "rsyncPath": "Remote Path",
         "rsyncPathPlaceholder": "/home/backup/photo-sharing",
-        "rsyncSshKey": "SSH Private Key",
-        "rsyncSshKeyHelp": "SSH private key for authentication (optional)",
-        "rsyncSshKeyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+        "rsyncSshKey": "SSH key file",
+        "rsyncSshKeyHelp": "Absolute path to a private key file the backend can read, for example under the mounted /app/data. The key itself is not entered here. The file must be readable only by the backend user (chmod 600). Optional; without it ssh uses its default configuration.",
+        "rsyncSshKeyPlaceholder": "/app/data/ssh/backup_ed25519",
         "s3Endpoint": "S3 Endpoint",
         "s3EndpointHelp": "S3 API endpoint (e.g., s3.amazonaws.com)",
         "s3Bucket": "Bucket Name",
         "s3AccessKey": "Access Key ID",
         "s3SecretKey": "Secret Access Key",
-        "s3Region": "Region"
+        "s3Region": "Region",
+        "rsyncSshKeyStoredNotPath": "A pasted private key is saved here instead of a key file path, so rsync backups cannot use it. Enter the path to a key file, or clear the field."
       },
       "schedule": {
         "title": "Backup Schedule",
@@ -4407,7 +4408,8 @@
         "requiredFields": "Please fill in all required fields",
         "connectionSuccess": "Connection test successful!",
         "connectionFailed": "Connection test failed",
-        "invalidCron": "Please enter a valid cron expression (5 fields)"
+        "invalidCron": "Please enter a valid cron expression (5 fields)",
+        "rsyncSshKeyNotPath": "The SSH key must be the absolute path to a private key file (for example /app/data/ssh/backup_ed25519), not the key itself."
       },
       "testingConnection": "Testing connection...",
       "saveSettings": "Save Configuration",

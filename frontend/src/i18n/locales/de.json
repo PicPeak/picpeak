@@ -1310,15 +1310,16 @@
         "rsyncUserPlaceholder": "backup-benutzer",
         "rsyncPath": "Remote-Pfad",
         "rsyncPathPlaceholder": "/home/backup/foto-sharing",
-        "rsyncSshKey": "SSH Private Key",
-        "rsyncSshKeyHelp": "SSH Private Key für Authentifizierung (optional)",
-        "rsyncSshKeyPlaceholder": "-----BEGIN RSA PRIVATE KEY-----",
+        "rsyncSshKey": "SSH-Schlüsseldatei",
+        "rsyncSshKeyHelp": "Absoluter Pfad zu einer privaten Schlüsseldatei, die das Backend lesen kann, zum Beispiel unter dem eingebundenen /app/data. Der Schlüssel selbst wird hier nicht eingetragen. Die Datei darf nur für den Backend-Benutzer lesbar sein (chmod 600). Optional; ohne Angabe verwendet ssh seine Standardkonfiguration.",
+        "rsyncSshKeyPlaceholder": "/app/data/ssh/backup_ed25519",
         "s3Endpoint": "S3-Endpunkt",
         "s3EndpointHelp": "S3 API-Endpunkt (z.B. s3.amazonaws.com)",
         "s3Bucket": "Bucket-Name",
         "s3AccessKey": "Zugriffsschlüssel-ID",
         "s3SecretKey": "Geheimer Zugriffsschlüssel",
-        "s3Region": "Region"
+        "s3Region": "Region",
+        "rsyncSshKeyStoredNotPath": "Hier ist ein eingefügter privater Schlüssel statt eines Dateipfads gespeichert, deshalb können Rsync-Backups ihn nicht verwenden. Geben Sie den Pfad zu einer Schlüsseldatei ein oder leeren Sie das Feld."
       },
       "schedule": {
         "title": "Backup-Zeitplan",
@@ -1360,7 +1361,8 @@
         "requiredFields": "Bitte füllen Sie alle erforderlichen Felder aus",
         "connectionSuccess": "Verbindungstest erfolgreich!",
         "connectionFailed": "Verbindungstest fehlgeschlagen",
-        "invalidCron": "Bitte geben Sie einen gültigen Cron-Ausdruck ein (5 Felder)"
+        "invalidCron": "Bitte geben Sie einen gültigen Cron-Ausdruck ein (5 Felder)",
+        "rsyncSshKeyNotPath": "Der SSH-Schlüssel muss der absolute Pfad zu einer privaten Schlüsseldatei sein (zum Beispiel /app/data/ssh/backup_ed25519), nicht der Schlüssel selbst."
       },
       "testingConnection": "Teste Verbindung...",
       "saveSettings": "Konfiguration speichern",
