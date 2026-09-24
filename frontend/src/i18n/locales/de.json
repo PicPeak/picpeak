@@ -5317,7 +5317,7 @@
     "adminTitle": "Kundenzugang",
     "enableToggle": "Kundenzugang aktivieren",
     "enableDescription": "Ermöglichen Sie Kunden, Fotos zu überprüfen und auszublenden, bevor die Galerie mit den Gästen geteilt wird.",
-    "pinHelperText": "Der Kunde verwendet diese PIN, um die Überprüfungsseite aufzurufen.",
+    "pinHelperText": "Der Kunde verwendet diese PIN, um die Überprüfungsseite aufzurufen. Mindestens 6 Zeichen.",
     "pinUpdated": "Kunden-PIN aktualisiert",
     "setPin": "PIN festlegen",
     "linkLabel": "Kundenzugangs-Link",

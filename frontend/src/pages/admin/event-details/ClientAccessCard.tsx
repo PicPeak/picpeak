@@ -62,6 +62,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   type="text"
                   value={clientPin}
                   onChange={(e) => setClientPin(e.target.value)}
+                  minLength={6}
                   placeholder={t('clientAccess.pinPlaceholder')}
                   className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
                 />

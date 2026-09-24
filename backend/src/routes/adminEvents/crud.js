@@ -35,6 +35,20 @@ const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
 const { validateHeroImageAnchor, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
+// Client PIN floor. The PIN guards the client review page and used to accept
+// any string, one character included. Six is the least that the login
+// lockout makes worth guessing at. An empty string keeps its meaning: "no
+// client password" on create, "leave it alone" on update. Existing events
+// are not touched; only a submitted value is checked, before it is hashed.
+const CLIENT_PASSWORD_MIN_LENGTH = 6;
+const validateClientPassword = (value) => {
+  if (typeof value !== 'string') throw new Error('Client password must be a string');
+  if (value.length > 0 && value.length < CLIENT_PASSWORD_MIN_LENGTH) {
+    throw new Error(`Client password must be at least ${CLIENT_PASSWORD_MIN_LENGTH} characters`);
+  }
+  return true;
+};
+
 /**
  * `events.slug` is UNIQUE, and both routes that mint one do a read-then-insert
  * (`while (await db('events').where({ slug }).first())`) — a check two
@@ -264,7 +278,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
-    body('client_password').optional().isString(),
+    body('client_password').optional().custom(validateClientPassword),
     body('default_photo_sort').optional().isIn([
       'upload_date_desc', 'upload_date_asc',
       'capture_date_desc', 'capture_date_asc',
@@ -1121,7 +1135,7 @@ module.exports = (router) => {
     body('hero_image_anchor').optional().custom(validateHeroImageAnchor),
     // Client access settings (#172)
     body('client_access_enabled').optional().isBoolean(),
-    body('client_password').optional().isString(),
+    body('client_password').optional().custom(validateClientPassword),
     body('regenerate_client_token').optional().isBoolean(),
     body('default_photo_sort').optional().isIn([
       'upload_date_desc', 'upload_date_asc',

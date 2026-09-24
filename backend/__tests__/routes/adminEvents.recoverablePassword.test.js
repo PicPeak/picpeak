@@ -24,7 +24,7 @@ const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../
 const vault = require('../../src/utils/galleryPasswordVault');
 
 const PASSWORD = 'Meadow-Lark-77!';
-const PIN = '4321';
+const PIN = '432100';
 
 describe('recoverable gallery passwords', () => {
   let db; let cleanup; let app; let token; let adminId;
@@ -137,10 +137,10 @@ describe('recoverable gallery passwords', () => {
     });
 
     it('editing the client PIN and the gallery password updates the copies', async () => {
-      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({ client_password: '9999', password: 'Quiet-River-33!' });
+      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({ client_password: '999900', password: 'Quiet-River-33!' });
       expect(res.status).toBe(200);
       const row = await stored(id);
-      expect(vault.decryptPassword(row.client_password_recoverable)).toBe('9999');
+      expect(vault.decryptPassword(row.client_password_recoverable)).toBe('999900');
       expect(vault.decryptPassword(row.password_recoverable)).toBe('Quiet-River-33!');
     });
 
