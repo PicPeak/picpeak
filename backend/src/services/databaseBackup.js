@@ -28,9 +28,7 @@ const packageJson = require('../../package.json');
 // createSQLiteBackup below.
 const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissals'];
 
-function getStoragePath() {
-  return process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-}
+const { getStoragePath } = require('../config/storage');
 
 // The historical default, also what migration 030 seeds into
 // database_backup_destination_path. It only exists when something is mounted

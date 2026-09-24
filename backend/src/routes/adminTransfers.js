@@ -34,7 +34,7 @@ const router = express.Router();
 // then the temp copy is removed — same shape as the public client-upload route.
 const ADMIN_MAX_FILES = 50;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 const tempStorage = multer.diskStorage({
   destination: (req, file, cb) => {

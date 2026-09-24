@@ -11,7 +11,7 @@ const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 /**
  * Get photos for an event with optional filtering

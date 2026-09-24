@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const logger = require('./logger');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 /**
  * Clean up old temporary upload directories

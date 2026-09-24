@@ -37,7 +37,7 @@ const router = express.Router();
 // probed) once an admin disables the feature under Settings → Features.
 router.use(requireFeatureFlag('transfers'));
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 

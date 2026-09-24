@@ -123,9 +123,7 @@ async function resolveConfigWithFallback() {
   return config;
 }
 
-function getStoragePath() {
-  return process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-}
+const { getStoragePath } = require('../config/storage');
 
 function normalizeBoolean(value) {
   if (typeof value === 'boolean') {

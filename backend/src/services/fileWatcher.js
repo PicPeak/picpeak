@@ -12,7 +12,7 @@ const { isVideoMimeType } = require('./videoProcessor');
 const mime = require('mime-types');
 const downloadZipService = require('./downloadZipService');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 const WATCH_PATH = () => path.join(getStoragePath(), 'events/active');
 
 // Bound concurrent watcher work. chokidar fires 'add' once per file — with no

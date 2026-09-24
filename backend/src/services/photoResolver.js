@@ -2,7 +2,7 @@ const path = require('path');
 const { resolveExternalPhotoPath } = require('./externalMediaService');
 const { safePathJoin } = require('../utils/fileSecurityUtils');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 /**
  * Resolve a managed photo's relative key under the storage backend.

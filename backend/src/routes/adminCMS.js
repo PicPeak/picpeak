@@ -12,7 +12,7 @@ const { validateFileType } = require('../utils/fileSecurityUtils');
 const logger = require('../utils/logger');
 const router = express.Router();
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+const { getStoragePath } = require('../config/storage');
 
 // Multer config for per-page logo uploads. Stores into the same
 // /uploads/logos directory the global branding logo uses, with a
