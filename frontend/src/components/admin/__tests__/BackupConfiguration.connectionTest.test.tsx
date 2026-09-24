@@ -144,6 +144,12 @@ describe('BackupConfiguration rsync connection test', () => {
     }));
   });
 
+  it('sends an emptied key as empty, to test without one', async () => {
+    renderForm({ ...rsync, backup_rsync_ssh_key: '' });
+    await userEvent.click(testButton());
+    expect(post.mock.calls[0][1]).toHaveProperty('ssh_key', '');
+  });
+
   it('leaves the mask out so the saved value is used', async () => {
     renderForm({ ...rsync, backup_rsync_ssh_key: '••••••••' });
     await userEvent.click(testButton());
