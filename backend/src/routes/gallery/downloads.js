@@ -402,10 +402,11 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
   guard.destroyAll();
   archive.unpipe(res);
   archive.abort();
-  // abort() waits for the entry being copied, and an archive.file() source
-  // (external photos) is not in the guard: with nothing reading the archive
-  // any more it would stay paused with its descriptor open. Discard the
-  // rest instead, so that entry runs to its end and closes.
+  // abort() waits for the entry being copied. With nothing reading the
+  // archive any more that entry would stay paused with its file open, so
+  // discard the rest and let it run to its end and close. External photos
+  // are also closed by guard.destroyAll() above, since they are appended as
+  // tracked streams (issue 1587).
   archive.resume();
   res.destroy(err instanceof Error ? err : new Error('archive failed'));
 }
@@ -642,7 +643,12 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           const stream = await storage.get(storageKey);
           archive.append(guard.track(stream), { name: archiveName });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName });
+          // A tracked stream rather than archive.file(): archiver opens a
+          // file() source itself, out of the guard's reach, so a guest who
+          // closed the tab mid-copy left that file open for good (issue
+          // 1587). Same shape as main.
+          if (!await guard.acquire()) break;
+          archive.append(guard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name: archiveName });
         }
         appendedIds.push(photo.id);
       } catch (err) {
@@ -832,7 +838,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           const stream = await selectedStorage.get(storageKey);
           archive.append(selectedGuard.track(stream), { name });
         } else {
-          archive.file(resolvePhotoFilePath(req.event, photo), { name });
+          // Tracked, not archive.file(): see download-all (issue 1587).
+          if (!await selectedGuard.acquire()) break;
+          archive.append(selectedGuard.track(fs.createReadStream(resolvePhotoFilePath(req.event, photo))), { name });
         }
         appendedIds.push(photo.id);
       } catch (err) {
