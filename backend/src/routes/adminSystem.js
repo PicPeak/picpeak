@@ -284,17 +284,19 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
       .whereNotNull('archive_path')
       .select('archive_path');
 
+    // The zip lives wherever archiveService put it: the storage backend, not
+    // necessarily the local STORAGE_PATH. The backend also refuses a key that
+    // climbs out of its root, which a raw path.join did not.
     let archiveStorage = 0;
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-    
+    const { getStorage } = require('../services/storage');
     for (const archive of archives) {
       if (archive.archive_path) {
         try {
-          const fullArchivePath = path.join(storagePath, archive.archive_path);
-          const stats = await fs.stat(fullArchivePath);
-          archiveStorage += stats.size;
+          const stats = await getStorage().stat(archive.archive_path);
+          if (stats) archiveStorage += stats.size;
+          else logger.error('Archive file not found:', archive.archive_path);
         } catch (error) {
-          logger.error('Archive file not found:', archive.archive_path);
+          logger.error('Archive file not readable:', archive.archive_path, error.message);
         }
       }
     }

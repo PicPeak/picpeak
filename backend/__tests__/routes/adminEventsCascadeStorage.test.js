@@ -174,6 +174,25 @@ describe('deleteEventCascade — storage cleanup', () => {
     ]));
   });
 
+  it('never unlinks a file outside storage for a row whose archive key climbs out', async () => {
+    // A raw path.join(STORAGE_PATH, '../x') reaches the parent directory; the
+    // storage backend is the only thing allowed to remove an archive, and it
+    // refuses such a key.
+    const fs = require('fs');
+    const outside = path.join(process.env.STORAGE_PATH, '..', 'cascade-outside.zip');
+    fs.mkdirSync(path.dirname(outside), { recursive: true });
+    fs.writeFileSync(outside, 'zip');
+    const original = mockEvent.archive_path;
+    mockEvent.archive_path = '../cascade-outside.zip';
+    try {
+      await deleteEventCascade(42, { id: 1, username: 'admin' });
+      expect(fs.existsSync(outside)).toBe(true);
+    } finally {
+      mockEvent.archive_path = original;
+      fs.rmSync(outside, { force: true });
+    }
+  });
+
   it('deletes the download caches, which only fs.rm ever covered', async () => {
     await deleteEventCascade(42, { id: 1, username: 'admin' });
 
