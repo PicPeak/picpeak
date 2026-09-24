@@ -1523,17 +1523,6 @@
         "POST /:slug/guest/redeem"
       ]
     },
-    "protectedImages.js": {
-      "decision": "excluded",
-      "signals": [],
-      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": [
-        "GET /:slug/photo/:photoId/view",
-        "POST /:slug/photo/:photoId/generate-secure-token",
-        "POST /:slug/photo/:photoId/generate-url",
-        "GET /:slug/photo/:photoId/signed/:token"
-      ]
-    },
     "publicCMS.js": {
       "decision": "excluded",
       "signals": [],
@@ -1633,17 +1622,6 @@
       "route_signatures": [
         "GET /:token/:action",
         "POST /:token/:action"
-      ]
-    },
-    "secureImages.js": {
-      "decision": "excluded",
-      "signals": [],
-      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": [
-        "POST /:slug/generate-token",
-        "GET /:slug/secure/:photoId/:token",
-        "GET /:slug/secure-download/:photoId/:token",
-        "GET /security/stats"
       ]
     },
     "setup.js": {

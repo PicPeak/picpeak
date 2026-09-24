@@ -145,8 +145,6 @@ describe('Download limit (issue 1560)', () => {
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
-    app.use('/api/secure-images', require('../../src/routes/secureImages'));
-    app.use('/api/images', require('../../src/routes/protectedImages'));
   }, 120000);
 
   afterAll(async () => {
@@ -574,58 +572,6 @@ describe('Download limit (issue 1560)', () => {
         .expect(200);
     });
 
-    it('the secure-image route serves the preview, not the original, of a non-granted image', async () => {
-      const { event, photoIds } = await makeEvent({ limit: 2 });
-      await db('events').where({ id: event.id }).update({ protection_level: 'basic', require_password: 0 });
-      const secureImageService = require('../../src/services/secureImageService');
-      const mint = (photoId, extra = {}) => secureImageService.generateSecureToken(
-        photoId,
-        `gallery_public_${event.id}_${Date.now()}`,
-        {
-          clientFingerprint: 'test-fp', maxUses: 100, expiresIn: 3600,
-          galleryAccess: require('../../src/services/galleryAccessService').grant({ id: event.id }, 'public'),
-          ...extra,
-        },
-      );
-      const view = (photoId, token) => request(app)
-        .get(`/api/secure-images/${event.slug}/secure/${photoId}/${token}`)
-        .buffer(true)
-        .parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
-
-      // Basic protection hands out the source bytes unchanged — the original.
-      const withheld = await view(photoIds[1], mint(photoIds[1]));
-      expect(withheld.status).toBe(200);
-      expect(Buffer.compare(withheld.body, jpeg)).not.toBe(0);
-
-      const exempt = await view(photoIds[1], mint(photoIds[1], { downloadLimitExempt: true }));
-      expect(exempt.status).toBe(200);
-      expect(Buffer.compare(exempt.body, jpeg)).toBe(0);
-
-      await quota.grantDownloads(event, [photoIds[0]]);
-      const granted = await view(photoIds[0], mint(photoIds[0]));
-      expect(granted.status).toBe(200);
-      expect(Buffer.compare(granted.body, jpeg)).toBe(0);
-    });
-
-    it('the legacy protected-image route serves the preview of a non-granted image', async () => {
-      const { event, photoIds, token } = await makeEvent({ limit: 2 });
-      await db('events').where({ id: event.id }).update({ protection_level: 'basic', add_fingerprint: 0 });
-      const view = (photoId) => request(app)
-        .get(`/api/images/${event.slug}/photo/${photoId}/view`)
-        .set('Authorization', `Bearer ${token}`)
-        .buffer(true)
-        .parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
-
-      const withheld = await view(photoIds[1]);
-      expect(withheld.status).toBe(200);
-      expect(Buffer.compare(withheld.body, jpeg)).not.toBe(0);
-
-      await quota.grantDownloads(event, [photoIds[0]]);
-      const granted = await view(photoIds[0]);
-      expect(granted.status).toBe(200);
-      expect(Buffer.compare(granted.body, jpeg)).toBe(0);
-    });
-
     it('the preview route does not bounce back to a withheld original', async () => {
       const { event, photoIds, token } = await makeEvent({ limit: 1 });
       // A photo row whose source is gone: the preview cannot be generated.
@@ -961,25 +907,6 @@ describe('Download limit (issue 1560)', () => {
         .set('Authorization', `Bearer ${guestToken}`);
       expect(file.status).toBe(403);
       expect(file.body).toMatchObject({ preview_only: true });
-      expect(await grantCount(event.id)).toBe(0);
-    });
-
-    it('get the preview-size copy from secure-download', async () => {
-      const { event, photoIds, guestToken } = await makeEvent({ limit: 1 });
-      await db('events').where({ id: event.id }).update({ require_password: 0 });
-      const current = await db('events').where({ id: event.id }).first();
-      const secureImageService = require('../../src/services/secureImageService');
-      const token = secureImageService.generateSecureToken(photoIds[0], `gallery_public_${event.id}_${Date.now()}`, {
-        clientFingerprint: 'test-fp', maxUses: 10, expiresIn: 3600,
-        galleryAccess: require('../../src/services/galleryAccessService').grant(current, 'public'),
-      });
-      const res = await request(app)
-        .get(`/api/secure-images/${event.slug}/secure-download/${photoIds[0]}/${token}`)
-        .set('Authorization', `Bearer ${guestToken}`)
-        .buffer(true).parse(drainBody);
-      expect(res.status).toBe(200);
-      expect(res.headers['content-disposition']).toContain('attachment');
-      expect(Buffer.compare(res.body, jpeg)).not.toBe(0);
       expect(await grantCount(event.id)).toBe(0);
     });
 

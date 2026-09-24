@@ -96,8 +96,6 @@ describe('hidden-photo access control (GHSA cluster)', () => {
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
-    app.use('/api/images', require('../../src/routes/protectedImages'));
-    app.use('/api/secure-images', require('../../src/routes/secureImages'));
   }, 120000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -136,105 +134,6 @@ describe('hidden-photo access control (GHSA cluster)', () => {
     });
   });
 
-  describe('protected-image view (GHSA-9cc4)', () => {
-    it('403s a hidden photo for a guest', async () => {
-      const res = await request(app)
-        .get(`/api/images/${SLUG}/photo/${hiddenId}/view`)
-        .set('Authorization', `Bearer ${guestToken()}`);
-      expect(res.status).toBe(403);
-    });
-    it('serves a visible photo for a guest', async () => {
-      const res = await request(app)
-        .get(`/api/images/${SLUG}/photo/${visibleId}/view`)
-        .set('Authorization', `Bearer ${guestToken()}`);
-      expect(res.status).toBe(200);
-    });
-    it('serves a hidden photo for a client', async () => {
-      const res = await request(app)
-        .get(`/api/images/${SLUG}/photo/${hiddenId}/view`)
-        .set('Authorization', `Bearer ${clientToken()}`);
-      expect(res.status).toBe(200);
-    });
-  });
-
-  describe('signed-URL mint (GHSA-3jvw)', () => {
-    it('403s minting a signed URL for a hidden photo as a guest', async () => {
-      const res = await request(app)
-        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-url`)
-        .set('Authorization', `Bearer ${guestToken()}`);
-      expect(res.status).toBe(403);
-    });
-    it('mints for a client', async () => {
-      const res = await request(app)
-        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-url`)
-        .set('Authorization', `Bearer ${clientToken()}`);
-      expect(res.status).toBe(200);
-      expect(res.body.url).toContain('/signed/');
-    });
-  });
-
-  describe('legacy secure-token mint (protectedImages generate-secure-token)', () => {
-    it('403s a hidden photo for a guest', async () => {
-      const res = await request(app)
-        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-secure-token`)
-        .set('Authorization', `Bearer ${guestToken()}`);
-      expect(res.status).toBe(403);
-    });
-    it('mints for a client', async () => {
-      const res = await request(app)
-        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-secure-token`)
-        .set('Authorization', `Bearer ${clientToken()}`);
-      expect(res.status).toBe(200);
-      expect(res.body.token).toBeDefined();
-    });
-  });
-
-  describe('secure-token mint (GHSA-2hqg)', () => {
-    it('403s minting a secure token for a hidden photo as a guest', async () => {
-      const res = await request(app)
-        .post(`/api/secure-images/${SLUG}/generate-token`)
-        .set('Authorization', `Bearer ${guestToken()}`)
-        .send({ photoId: hiddenId });
-      expect(res.status).toBe(403);
-    });
-    it('mints for a client', async () => {
-      const res = await request(app)
-        .post(`/api/secure-images/${SLUG}/generate-token`)
-        .set('Authorization', `Bearer ${clientToken()}`)
-        .send({ photoId: hiddenId });
-      expect(res.status).toBe(200);
-      expect(res.body.token).toBeDefined();
-    });
-  });
-
   // A capability minted while a photo is visible must stop serving once the
   // photo is hidden — unless minted by a client (clientBypass in the token).
-  describe('signed-URL TOCTOU (hidden AFTER minting)', () => {
-    afterEach(async () => {
-      await db('photos').where({ id: visibleId }).update({ visibility: 'visible' });
-    });
-
-    it("a guest's pre-minted signed URL stops serving once the photo is hidden", async () => {
-      const mint = await request(app)
-        .post(`/api/images/${SLUG}/photo/${visibleId}/generate-url`)
-        .set('Authorization', `Bearer ${guestToken()}`);
-      expect(mint.status).toBe(200);
-      const url = mint.body.url;
-      // Still visible → serves.
-      expect((await request(app).get(url)).status).toBe(200);
-      // Hide it → the guest token (no clientBypass) must now be refused.
-      await db('photos').where({ id: visibleId }).update({ visibility: 'hidden' });
-      expect((await request(app).get(url)).status).toBe(403);
-    });
-
-    it("a client's pre-minted signed URL keeps serving after the photo is hidden", async () => {
-      const mint = await request(app)
-        .post(`/api/images/${SLUG}/photo/${visibleId}/generate-url`)
-        .set('Authorization', `Bearer ${clientToken()}`);
-      expect(mint.status).toBe(200);
-      const url = mint.body.url;
-      await db('photos').where({ id: visibleId }).update({ visibility: 'hidden' });
-      expect((await request(app).get(url)).status).toBe(200);
-    });
-  });
 });
