@@ -65,7 +65,7 @@ function mountRoutes(app) {
   app.post('/api/customer/auth/login', (req, res) => fail(res));
   app.post('/api/customer/auth/password-reset', (req, res) => fail(res));
   // Password changes verify the current password before replacing it.
-  app.post('/api/auth/admin/change-password', (req, res) => fail(res));
+  app.post('/api/admin/auth/change-password', (req, res) => fail(res));
   app.post('/api/customer/profile/password', (req, res) => fail(res));
 
   // Benign endpoints living under the very same prefixes the old registrations
@@ -125,7 +125,7 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
     ['/api/setup/admin'],
     ['/api/customer/auth/login'],
     ['/api/customer/auth/password-reset'],
-    ['/api/auth/admin/change-password'],
+    ['/api/admin/auth/change-password'],
     ['/api/customer/profile/password']
   ])('429s %s once the budget is spent', async (endpoint) => {
     const app = await buildApp();
