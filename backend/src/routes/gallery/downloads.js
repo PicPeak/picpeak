@@ -510,10 +510,13 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
   guard.destroyAll();
   archive.unpipe(res);
   archive.abort();
-  // abort() waits for the entry being copied, and an archive.file() source
-  // (external photos) is not in the guard: with nothing reading the archive
-  // any more it would stay paused with its descriptor open. Discard the
-  // rest instead, so that entry runs to its end and closes.
+  // abort() waits for the entry being copied. With nothing reading the
+  // archive any more that entry would stay paused with its file open, so
+  // discard the rest and let it run to its end and close. External photos
+  // are also closed by guard.destroyAll() above, since they are appended as
+  // tracked streams, and releaseUnshipped's 'data' listener keeps the archive
+  // flowing too; the tests in galleryZipReadFailure.test.js check the file
+  // itself is closed, which only fails once all three are gone (issue 1587).
   archive.resume();
   if (!res.destroyed) {
     res.destroy(err instanceof Error ? err : undefined);
