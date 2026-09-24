@@ -143,7 +143,7 @@ SSRF to private IPs is already blocked via `isHostAllowed` on the test path — 
 
 **Why Low:** PicPeak is single-process by design — `docs/single-container.md:231` ("No Redis, so nothing here scales horizontally — run one container"), the compose `backend` has a fixed `container_name`, and there is no Redis client in `package.json`. So the failure mode is a 403 after a process restart, only at `protection_level` enhanced/maximum (default `standard`, migration 038).
 
-**Separate finding to check:** on main the shipped frontend never calls the secure-token flow — `frontend/src/services/secureToken.service.ts` is imported nowhere under `frontend/src`. Verify in the running app that full-size images still load at enhanced/maximum; if they do, the token path is dead code and this item collapses into cleanup.
+**Finding (checked 2026-09-24):** at enhanced/maximum the photo list carries `/api/secure-images/<slug>/secure/<id>/{{token}}` URLs (`galleryQueryService.js:531`) and the photo route answers a 302 JSON pointing at `generate-token` (`media.js:117-124`). Nothing in the shipped frontend fills `{{token}}` or calls `generate-token`: `secureToken.service.ts` is imported nowhere and `ProtectedImage` is rendered nowhere (issue 1297). Full-size images at those levels therefore answer 403, which matches the `GET /api/secure-images ... 403` lines in issue 1370's logs. Wiring the token flow in, or serving those levels through the JWT route, is a product decision; until then the token store is dead weight on the server side.
 
 **Related doc bug:** `.github/workflows/README-DOCKER.md:92` shows `replicas: 3`, which the single-container doc contradicts.
 
@@ -467,11 +467,11 @@ Ordered by ROI × risk. Each should be its own PR with tests. Packages 1 and 2 h
 | # | Focus | Checklist IDs | Notes |
 |---|--------|---------------|-------|
 | 1 | Path containment, both ends | M1 | **PR 1660**: watermark send + `.picpeak` import validation, with `../` fixtures. **PR 1659** (fork item A1): archive routes onto the storage backend. Left after both: the `archive_path` joins in `adminSettings.js:1971`, `adminSystem.js:293`, `adminEvents/helpers.js:223`, to move onto `storage.stat` / `storage.delete` once 1659 lands |
-| 2 | Stream error handling | M2 | Archive download → **PR 1659** (`pipeStreamToResponse`, body opened before headers). Still open: `transferService.js:803-828`, `adminTransfers.js:388/393`; assert a stream error does not crash the process |
-| 3 | Dead admin change-password route | §2.3 | Delete `auth.js:840`; collapse or document the dual photos URL trees; single backup mount (L2) |
-| 4 | Image token flow | M3, M7, L4 | First confirm whether `secureToken.service.ts` is dead; then either signed-payload verify + `timingSafeEqual`, or delete the flow |
-| 5 | Product / ops | M5, M6 | Longer upload tokens + /64-keyed lockout; SSH host-key pinning; fix the `:796` comment |
-| 6 | Docs | M4 | State single-replica in `README-DOCKER.md` (drop `replicas: 3`) |
+| 2 | Stream error handling | M2 | Archive download → **PR 1659**; transfer and admin-upload streams → **PR 1663** (four fail-first tests, body opened before headers) |
+| 3 | Cleanup bundle | §2.3, L2, L1, M4 | **PR 1661**: dead change-password route deleted (and the credential rate-limit gate re-pointed at the live route, which it had never covered), single backup mount, roles-schema classifier narrowed to `roles.*` / `admin_users.role_id`, one replica in the Docker README. Still open: document or collapse the dual photos URL trees |
+| 4 | Image token flow | M3, M7, L4 | M7 → **PR 1662** (`timingSafeEqual`). M3 checked: the server side is alive, the client side is dead, see the M3 finding below; product decision pending |
+| 5 | Product / ops | M5, M6 | **PR 1662**: ten-character upload codes, lockout keyed on the /64 like the limiter, `StrictHostKeyChecking=accept-new` with a known_hosts file next to the SSH key (`BACKUP_SSH_KNOWN_HOSTS` overrides), comment fixed |
+| 6 | Docs | M4 | → **PR 1661** |
 | 7 | Debt (no rush) | §2.1–2.2 | quote/PDF split; settings router split; GalleryView extraction |
 | 8 | Hygiene | Q1–Q6, §2.4 | `canSeeHiddenPhotos` everywhere; one `getStoragePath`; one CSV helper; `formatBoolean` on writes |
 
