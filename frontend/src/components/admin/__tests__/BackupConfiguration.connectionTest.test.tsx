@@ -126,6 +126,31 @@ describe('BackupConfiguration connection test', () => {
   });
 });
 
+describe('BackupConfiguration rsync connection test', () => {
+  const rsync = {
+    backup_destination_type: 'rsync' as const,
+    backup_rsync_host: 'backup.example.com',
+    backup_rsync_user: 'picpeak',
+    backup_rsync_path: '/srv/backups',
+  };
+
+  beforeEach(() => post.mockReset().mockResolvedValue({ data: { success: true } }));
+
+  it('sends a typed key file path', async () => {
+    renderForm({ ...rsync, backup_rsync_ssh_key: '/app/data/ssh/backup_ed25519' });
+    await userEvent.click(testButton());
+    expect(post).toHaveBeenCalledWith('/admin/backup/test-connection', expect.objectContaining({
+      destination_type: 'rsync', ssh_key: '/app/data/ssh/backup_ed25519',
+    }));
+  });
+
+  it('leaves the mask out so the saved value is used', async () => {
+    renderForm({ ...rsync, backup_rsync_ssh_key: '••••••••' });
+    await userEvent.click(testButton());
+    expect(post.mock.calls[0][1]).not.toHaveProperty('ssh_key');
+  });
+});
+
 describe('automatic-backup switch', () => {
   it('colours the track with a defined token when on', () => {
     renderForm();
