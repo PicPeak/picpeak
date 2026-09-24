@@ -1837,10 +1837,37 @@ END $$;`
       : `https://${s3Config.endpoint}`;
     const urlCheck = await validateExternalUrlAsync(endpointUrl);
     if (!urlCheck.valid) {
+      const approved = urlCheck.reason === 'private' && await this.approvedPrivateS3Agents(s3Config);
+      if (approved) return approved;
       throw new Error('S3 endpoint resolves to a private or internal network address');
     }
     const { httpAgent, httpsAgent } = pinnedRequestOptions(urlCheck);
     return { httpAgent, httpsAgent };
+  }
+
+  /**
+   * A private endpoint a Super Admin approved for backups (issue 1641) is
+   * restorable from too. Its agents re-validate every connection instead of
+   * pinning, which holds the same line against rebinding; link-local and
+   * metadata answers stay refused. Null when not approved, including when the
+   * approval cannot be read.
+   */
+  async approvedPrivateS3Agents(s3Config) {
+    const policy = require('../utils/s3EndpointPolicy');
+    let approval = null;
+    try {
+      const row = await db('app_settings').where({ setting_key: policy.APPROVAL_SETTING }).first();
+      approval = row ? row.setting_value : null;
+      try { approval = JSON.parse(approval); } catch (_) { /* stored unquoted */ }
+    } catch (error) {
+      logger.warn('Could not read the S3 private endpoint approval; treating it as absent', { error: error.message });
+      return null;
+    }
+    const sslEnabled = s3Config.sslEnabled !== false;
+    if (!policy.isPrivateEndpointApproved(s3Config.endpoint, sslEnabled, approval)) return null;
+    const access = { sslEnabled, allowPrivate: true };
+    await policy.assertS3EndpointAllowed(s3Config.endpoint, access);
+    return { ...policy.s3EndpointAgents(s3Config.endpoint, access), allowPrivateEndpoint: true };
   }
 
   /**
