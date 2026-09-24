@@ -63,6 +63,9 @@ beforeAll(async () => {
   ({ adminId, customerId } = await seedMinimal(db));
   await db('feature_flags').where({ key: 'documents' }).update({ value: 1 });
   require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
+  // The templates are seeded at boot in production; without them a mail that
+  // should go out fails instead, and the send cases below could not tell.
+  await require('../../src/services/crmEmailTemplates').ensureCrmEmailTemplatesSeeded(db, require('../../src/utils/logger'));
 }, 120000);
 
 afterAll(async () => { if (cleanup) await cleanup(); });
@@ -172,5 +175,95 @@ describe('customer document notifications, checked again at send time (#1591)', 
     const after = await db('email_queue').where({ id: row.id }).first();
     expect(after.status).toBe('cancelled');
     expect(after.error_message).toMatch(/fulfilled or cancelled/);
+  });
+  // The branches the tests above leave out, and the mails that must still go
+  // out: a check that cancelled too much would pass every test above.
+  const sendQueued = async (emailType) => {
+    const { processEmailQueue } = require('../../src/services/emailProcessor');
+    const row = await db('email_queue').where({ email_type: emailType, status: 'pending' }).orderBy('id', 'desc').first();
+    expect(row).toBeTruthy();
+    const stub = stubWebhookTransport();
+    try {
+      await processEmailQueue({ ignoreSchedule: true, onlyId: row.id });
+    } finally { stub.restore(); }
+    return { mails: stub.mails, after: await db('email_queue').where({ id: row.id }).first() };
+  };
+  const admin = () => ({ id: adminId, username: 'tester' });
+
+  it('sends a document-shared mail when the document is still shared', async () => {
+    const { notifyShared } = require('../../src/services/customerDocumentNotifications');
+    const doc = await insertDocument({ shared_at: new Date().toISOString() });
+    expect(await notifyShared(doc)).toBe('queued');
+
+    const { mails, after } = await sendQueued('customer_document_shared');
+    expect(mails).toHaveLength(1);
+    expect(after.status).toBe('sent');
+  });
+
+  it('sends the mail for a document shared again after an unshare', async () => {
+    const { notifyShared } = require('../../src/services/customerDocumentNotifications');
+    const { setShared } = require('../../src/services/customerDocumentsService');
+    const doc = await insertDocument({ shared_at: new Date().toISOString() });
+    await setShared(customerId, doc.id, false, admin());
+    await setShared(customerId, doc.id, true, admin());
+    expect(await notifyShared(await db('customer_documents').where({ id: doc.id }).first())).toBe('queued');
+
+    const { mails, after } = await sendQueued('customer_document_shared');
+    expect(mails).toHaveLength(1);
+    expect(after.status).toBe('sent');
+  });
+
+  it('drops a rejection mail once the upload has been accepted after all, and sends it while still rejected', async () => {
+    const { notifyRejected } = require('../../src/services/customerDocumentNotifications');
+    const { review } = require('../../src/services/customerDocumentsService');
+
+    const reversed = await insertDocument({ uploader_type: 'customer', uploader_id: customerId, status: 'rejected', review_note: 'Blurry' });
+    expect(await notifyRejected(reversed)).toBe('queued');
+    await review(customerId, reversed.id, { status: 'clean' }, admin());
+    const dropped = await sendQueued('customer_document_reviewed');
+    expect(dropped.mails).toHaveLength(0);
+    expect(dropped.after.status).toBe('cancelled');
+    expect(dropped.after.error_message).toMatch(/reviewed again/);
+
+    const kept = await insertDocument({ uploader_type: 'customer', uploader_id: customerId, status: 'rejected', review_note: 'Blurry' });
+    expect(await notifyRejected(kept)).toBe('queued');
+    const sent = await sendQueued('customer_document_reviewed');
+    expect(sent.mails).toHaveLength(1);
+    expect(sent.after.status).toBe('sent');
+  });
+
+  it('drops the studio\'s upload mail once the upload has been deleted', async () => {
+    const businessProfileService = require('../../src/services/businessProfileService');
+    const profile = jest.spyOn(businessProfileService, 'getProfile').mockResolvedValue({ profile: { email: 'studio@example.com' } });
+    try {
+      const { notifyUploaded } = require('../../src/services/customerDocumentNotifications');
+      const { softDelete } = require('../../src/services/customerDocumentsService');
+      const doc = await insertDocument({ uploader_type: 'customer', uploader_id: customerId });
+      expect(await notifyUploaded(doc)).toBe('queued');
+      await softDelete(customerId, doc.id, admin());
+
+      const { mails, after } = await sendQueued('customer_document_uploaded_admin');
+      expect(mails).toHaveLength(0);
+      expect(after.status).toBe('cancelled');
+      expect(after.error_message).toMatch(/deleted/);
+    } finally { profile.mockRestore(); }
+  });
+
+  it('drops the first request mail once the request has been cancelled, and sends it while open', async () => {
+    const requestsService = require('../../src/services/customerDocumentRequestsService');
+    const { notifyRequest } = require('../../src/services/customerDocumentNotifications');
+
+    const cancelled = await requestsService.create(customerId, { title: 'Passport' }, admin());
+    expect(await notifyRequest(cancelled)).toBe('queued');
+    await requestsService.cancel(customerId, cancelled.id, admin());
+    const dropped = await sendQueued('customer_document_requested');
+    expect(dropped.mails).toHaveLength(0);
+    expect(dropped.after.status).toBe('cancelled');
+
+    const open = await requestsService.create(customerId, { title: 'Invoice address' }, admin());
+    expect(await notifyRequest(open)).toBe('queued');
+    const sent = await sendQueued('customer_document_requested');
+    expect(sent.mails).toHaveLength(1);
+    expect(sent.after.status).toBe('sent');
   });
 });
