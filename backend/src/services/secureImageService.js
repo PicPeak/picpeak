@@ -1,14 +1,10 @@
 const crypto = require('crypto');
-const sharp = require('sharp');
 const { db } = require('../database/db');
-const fs = require('fs').promises;
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 
 class SecureImageService {
   constructor() {
-    this.tokenCache = new Map();
-    this.sessionTokens = new Map();
     this.rateLimitCache = new Map();
     this.rateLimitWindows = new Map();
     this.cleanupTimer = null;
@@ -27,127 +23,8 @@ class SecureImageService {
 
   dispose() {
     this.stop();
-    this.tokenCache.clear();
-    this.sessionTokens.clear();
     this.rateLimitCache.clear();
     this.rateLimitWindows.clear();
-  }
-
-  /**
-   * Generate a secure, time-limited, single-use token for image access
-   */
-  generateSecureToken(photoId, sessionId, options = {}) {
-    const {
-      expiresIn = 300, // 5 minutes default
-      maxUses = 1,
-      clientFingerprint = '',
-      protectionLevel = 'standard',
-      // Reveal mode (#838): whether the minting context bypasses the
-      // hidden-gallery gate — re-checked at SERVE time so a re-hide
-      // invalidates in-flight guest tokens without breaking the slideshow.
-      revealBypass = false,
-      // Whether the minter was a PIN-client — lets the serve route keep
-      // delivering a photo hidden AFTER minting (TOCTOU). A guest's token
-      // carries false, so it stops the moment the photo is hidden.
-      clientBypass = false,
-      // Whether the minter was an admin preview, which a download limit
-      // exempts (issue 1560) — the serve route has no gallery session to ask.
-      downloadLimitExempt = false,
-      galleryAccess = null
-    } = options;
-
-    if (!Number.isFinite(Number(expiresIn)) || Number(expiresIn) <= 0 || Number(expiresIn) > 3600) {
-      throw new (require('../utils/errors').ValidationError)('Invalid image token lifetime');
-    }
-
-    const tokenData = {
-      photoId: parseInt(photoId),
-      sessionId,
-      clientFingerprint,
-      expiresAt: Date.now() + (expiresIn * 1000),
-      maxUses,
-      usedCount: 0,
-      protectionLevel,
-      revealBypass,
-      clientBypass,
-      downloadLimitExempt,
-      galleryAccess,
-      createdAt: Date.now()
-    };
-
-    // Create tamper-proof token
-    const tokenPayload = Buffer.from(JSON.stringify(tokenData)).toString('base64');
-    const imageSecret = process.env.IMAGE_SECRET || process.env.JWT_SECRET + '_IMAGE_PROTECTION';
-    const signature = crypto
-      .createHmac('sha256', process.env.JWT_SECRET + imageSecret)
-      .update(tokenPayload)
-      .digest('hex');
-    
-    const token = `${tokenPayload}.${signature}`;
-    
-    // Cache token with metadata
-    this.tokenCache.set(token, tokenData);
-    
-    // One owned timer per service, not one live handle per issued token.
-    this.start();
-
-    return token;
-  }
-
-  /**
-   * Verify and consume secure token
-   */
-  verifySecureToken(token, clientFingerprint = '') {
-    try {
-      const cached = this.tokenCache.get(token);
-      if (!cached) {
-        return { valid: false, reason: 'Token not found or expired' };
-      }
-
-      // Verify token integrity
-      const [payload, signature] = token.split('.');
-      const imageSecret = process.env.IMAGE_SECRET || process.env.JWT_SECRET + '_IMAGE_PROTECTION';
-      const expectedSignature = crypto
-        .createHmac('sha256', process.env.JWT_SECRET + imageSecret)
-        .update(payload)
-        .digest('hex');
-
-      if (signature !== expectedSignature) {
-        return { valid: false, reason: 'Token tampered' };
-      }
-
-      // Check expiration
-      if (Date.now() > cached.expiresAt) {
-        this.tokenCache.delete(token);
-        return { valid: false, reason: 'Token expired' };
-      }
-
-      // Check usage count
-      if (cached.usedCount >= cached.maxUses) {
-        return { valid: false, reason: 'Token max uses exceeded' };
-      }
-
-      // Verify client fingerprint for enhanced security
-      if (cached.protectionLevel === 'enhanced' && cached.clientFingerprint !== clientFingerprint) {
-        return { valid: false, reason: 'Client fingerprint mismatch' };
-      }
-
-      // Consume usage
-      cached.usedCount++;
-      
-      // Remove token if max uses reached
-      if (cached.usedCount >= cached.maxUses) {
-        this.tokenCache.delete(token);
-      }
-
-      return { 
-        valid: true, 
-        data: cached,
-        remaining: cached.maxUses - cached.usedCount
-      };
-    } catch (error) {
-      return { valid: false, reason: 'Token verification failed' };
-    }
   }
 
   /**
@@ -212,116 +89,12 @@ class SecureImageService {
   }
 
   recordRateLimit(clientId, windowMs) {
+    // The sweep used to start with the first minted token; the rate windows
+    // are what is left to prune, so it starts with the first charge.
+    this.start();
     if (!this.rateLimitCache.has(clientId)) this.rateLimitCache.set(clientId, []);
     this.rateLimitWindows.set(clientId, windowMs);
     this.rateLimitCache.get(clientId).push(Date.now());
-  }
-
-  /**
-   * Process image with protection measures
-   * For basic/standard protection without fingerprinting, returns original file
-   * For enhanced/maximum protection, applies quality reduction and fingerprinting
-   */
-  async processProtectedImage(imagePath, options = {}) {
-    const {
-      protectionLevel = 'standard',
-      quality = 85,
-      maxWidth = 1920,
-      maxHeight = 1080,
-      addFingerprint = true
-    } = options;
-
-    try {
-      // For basic protection level, always return original file without processing
-      if (protectionLevel === 'basic') {
-        return await fs.readFile(imagePath);
-      }
-
-      // For standard protection without fingerprinting, return original file
-      // This avoids unnecessary recompression when no protection features are needed
-      if (protectionLevel === 'standard' && !addFingerprint) {
-        return await fs.readFile(imagePath);
-      }
-
-      // Get metadata to check if processing is actually needed
-      const metadata = await sharp(imagePath).metadata();
-
-      // For standard protection with fingerprint only (no resize needed, no quality change),
-      // we can add fingerprint without full recompression by preserving format
-      const needsResize = metadata.width > maxWidth || metadata.height > maxHeight;
-      const needsQualityReduction = protectionLevel === 'enhanced' || protectionLevel === 'maximum';
-
-      // If standard protection and only fingerprinting is needed, and image doesn't need resize,
-      // just add metadata without recompressing
-      if (protectionLevel === 'standard' && addFingerprint && !needsResize) {
-        let image = sharp(imagePath);
-
-        // Add fingerprint to metadata without changing image quality
-        const fingerprint = crypto.randomBytes(16).toString('hex');
-
-        // Preserve original format with high quality
-        const format = metadata.format || 'jpeg';
-        if (format === 'png') {
-          image = image.png({ compressionLevel: 6 });
-        } else if (format === 'webp') {
-          image = image.webp({ quality: 95 });
-        } else {
-          image = image.jpeg({ quality: 100, mozjpeg: true });
-        }
-
-        image = image.withMetadata({
-          exif: { IFD0: { ImageDescription: `Protected:${fingerprint}` } }
-        });
-
-        return await image.toBuffer();
-      }
-
-      // For enhanced/maximum protection or when resize is needed, do full processing
-      let image = sharp(imagePath);
-      let effectiveQuality = quality;
-
-      // Resize if too large
-      if (needsResize) {
-        image = image.resize(maxWidth, maxHeight, {
-          fit: 'inside',
-          withoutEnlargement: true
-        });
-      }
-
-      // Apply quality reduction for protection
-      if (protectionLevel === 'enhanced') {
-        effectiveQuality = Math.min(quality, 70);
-      } else if (protectionLevel === 'maximum') {
-        effectiveQuality = Math.min(quality, 60);
-      }
-
-      // Preserve original format when possible, apply quality settings
-      const format = metadata.format || 'jpeg';
-      if (format === 'png' && !needsQualityReduction) {
-        image = image.png({ compressionLevel: 6 });
-      } else if (format === 'webp') {
-        image = image.webp({ quality: effectiveQuality });
-      } else {
-        // JPEG or when quality reduction is needed (convert to JPEG)
-        image = image.jpeg({ quality: effectiveQuality, progressive: true });
-      }
-
-      // Add invisible watermark/fingerprint
-      if (addFingerprint) {
-        const fingerprint = crypto.randomBytes(16).toString('hex');
-
-        // Embed fingerprint in metadata
-        image = image.withMetadata({
-          exif: { IFD0: { ImageDescription: `Protected:${fingerprint}` } }
-        });
-      }
-
-      return await image.toBuffer();
-    } catch (error) {
-      logger.error('Error processing protected image:', error);
-      // Return original on error
-      return await fs.readFile(imagePath);
-    }
   }
 
   /**
@@ -484,9 +257,6 @@ class SecureImageService {
   cleanup() {
     // Clear expired rate limit entries
     const now = Date.now();
-    for (const [token, data] of this.tokenCache) {
-      if (data.expiresAt <= now) this.tokenCache.delete(token);
-    }
     for (const [clientId, requests] of this.rateLimitCache.entries()) {
       // A fixed minute here emptied the five-minute and hourly windows every
       // minute, so only the per-minute limits ever held.

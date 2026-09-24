@@ -104,7 +104,6 @@ const authRoutes = require('./src/routes/auth');
 const galleryRoutes = require('./src/routes/gallery');
 const adminRoutes = require('./src/routes/admin');
 const adminAuthRoutes = require('./src/routes/adminAuth');
-const secureImagesRoutes = require('./src/routes/secureImages');
 const setupRoutes = require('./src/routes/setup');
 
 const app = express();
@@ -169,7 +168,7 @@ app.use((req, res, next) => {
   }
 
   const path = req.path || '';
-  const slugMatch = path.match(/\/api\/(?:gallery|secure-images)\/([^\/]+)/);
+  const slugMatch = path.match(/\/api\/gallery\/([^\/]+)/);
   const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
   const adminToken = getAdminTokenFromRequest(req);
   const galleryToken = getGalleryTokenFromRequest(req, slug);
@@ -177,8 +176,7 @@ app.use((req, res, next) => {
   const isAdminRequest = path.startsWith('/api/admin') || path.startsWith('/admin');
   const isGalleryRequest = Boolean(slugMatch)
     || path.startsWith('/api/gallery')
-    || path.startsWith('/gallery')
-    || path.startsWith('/api/secure-images');
+    || path.startsWith('/gallery');
 
   // Prefer admin credentials on admin routes so gallery sessions cannot override them.
   if (isAdminRequest) {
@@ -950,8 +948,6 @@ app.use('/api/invite', require('./src/routes/acceptInvite'));
 app.use('/api/public/settings', require('./src/routes/publicSettings'));
 app.use('/api/public/fonts', require('./src/routes/publicFonts'));
 app.use('/api/public', require('./src/routes/publicCMS'));
-app.use('/api/images', require('./src/routes/protectedImages'));
-app.use('/api/secure-images', secureImagesRoutes);
 
 // Optional: Serve built frontend (native installs and the all-in-one image, #1042)
 // Set when the SPA is being served, and registered as a catch-all AFTER the

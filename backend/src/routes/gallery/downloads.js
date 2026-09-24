@@ -1298,7 +1298,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 // overcount preloads AND undercount swipe-throughs. Instead the lightbox
 // pings this endpoint exactly when a photo becomes the visible slide.
 // This also covers enhanced/maximum-protection galleries, whose bytes
-// are served by /api/secure-images and never pass the routes below.
+// were served by the removed /api/secure-images routes and never passed the routes below.
 // The slideshow kiosk is excluded (denySlideshowToken; migration 138).
 
 module.exports = router;

@@ -18,7 +18,7 @@
  * strips the mount path from req.url for the duration of a mounted middleware,
  * and rateLimitService's own decisions are written against the full path
  * (`req.path.startsWith('/api/public/')` for the public-endpoints-only mode, and
- * the `/api/(gallery|secure-images)/:slug` regex that finds the gallery token to
+ * the `/api/gallery/:slug` regex that finds the gallery token to
  * skip on). Mounting it would silently break both.
  */
 

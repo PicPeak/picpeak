@@ -572,8 +572,6 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
             && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
           ? `/api/gallery/${slug}/preview/${photo.id}${wmQuery}`
           : null,
-        secure_url_template: `/api/secure-images/${slug}/secure/${photo.id}/{{token}}`,
-        download_url_template: `/api/secure-images/${slug}/secure-download/${photo.id}/{{token}}`,
         type: photo.type,
         category_id: photo.category_id || null,
         category_name: photo.category_id && categoryMap[photo.category_id] ? categoryMap[photo.category_id].name : null,
