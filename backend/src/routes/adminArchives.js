@@ -555,6 +555,17 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // did. A failed put fails the restore: the event stays archived with
       // its zip intact, and a retry puts the same keys again.
       const stagingFile = path.join(tmpDir, 'entry');
+      // Resolve every entry's destination BEFORE writing any of them. For an
+      // archive without recorded zip paths the name lookup can send two
+      // entries to one key: with original-name downloads on, one row's
+      // original can equal another row's internal name, so `b.jpg` (really
+      // row A's bytes) keeps its name while `c.jpg` resolves to row B's
+      // internal `b.jpg`, and the second put would overwrite the first.
+      // Such a group goes back under the names the zip gave it, which is
+      // what every restore did before the rename, and the collision is
+      // logged; nothing is lost, the rows just resolve as they used to.
+      const planned = [];
+      const keyCounts = new Map();
       for (const entry of entries) {
         if (entry.isDirectory) continue;
         const entryName = path.basename(entry.name);
@@ -575,6 +586,29 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         // pointing at a deleted object and inserted a second row beside it.
         const filename = manifestEntry?.filename || entryName;
         const storageKey = path.posix.join(eventPrefix, dirPath, filename);
+        keyCounts.set(storageKey, (keyCounts.get(storageKey) || 0) + 1);
+        planned.push({ entry, entryName, dirPath, manifestEntry, filename, storageKey });
+      }
+      // A fallback name can itself be another entry's resolved key (an
+      // untracked b.jpg beside a row whose original is b.jpg), so repeat
+      // until every key is unique. Each pass moves at least one more entry
+      // onto its zip name, and zip names are unique, so this terminates.
+      for (;;) {
+        let moved = 0;
+        for (const item of planned) {
+          if (keyCounts.get(item.storageKey) > 1 && item.filename !== item.entryName) {
+            logger.warn(`Archive restore: ${item.storageKey} is the destination of more than one entry; restoring ${item.entry.name} under its own name`, { eventId: archive.id });
+            item.filename = item.entryName;
+            item.storageKey = path.posix.join(eventPrefix, item.dirPath, item.entryName);
+            moved += 1;
+          }
+        }
+        if (!moved) break;
+        keyCounts.clear();
+        for (const item of planned) keyCounts.set(item.storageKey, (keyCounts.get(item.storageKey) || 0) + 1);
+      }
+
+      for (const { entry, dirPath, manifestEntry, filename, storageKey } of planned) {
         await zip.extract(entry, stagingFile);
         await storage.putFromFile(storageKey, stagingFile);
         await fs.rm(stagingFile, { force: true });
