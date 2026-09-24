@@ -5,6 +5,24 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.142.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.0-beta.0...v3.142.1-beta.0) (2026-09-24)
+
+
+### Bug Fixes
+
+* **archives:** read, restore and download event archives through the storage backend ([#1659](https://github.com/PicPeak/picpeak/issues/1659)) ([c606de3](https://github.com/PicPeak/picpeak/commit/c606de332847a1b8e6fc0c5194713bac01198668))
+* **auth:** audit cleanup bundle: dead change-password route, single backup mount, stricter roles fallback, one replica ([#1661](https://github.com/PicPeak/picpeak/issues/1661)) ([4dfd463](https://github.com/PicPeak/picpeak/commit/4dfd463205b60d86080e2508323bf4b1fd3be0d7))
+* **backup:** approvable internal S3 endpoints, a real connection test and honest backup status ([#1642](https://github.com/PicPeak/picpeak/issues/1642)) ([4634f09](https://github.com/PicPeak/picpeak/commit/4634f09379ba6b0cbe3b04acb3dbde82b0a28e3e))
+* **backup:** ask for the rsync SSH key file path, not the key ([#1644](https://github.com/PicPeak/picpeak/issues/1644)) ([dc7d5e6](https://github.com/PicPeak/picpeak/commit/dc7d5e616e77de17071eea0ebaf3a93d82c06db8))
+* **backup:** stop the form from moving a cron schedule, and mark the selected destination ([#1643](https://github.com/PicPeak/picpeak/issues/1643)) ([d2efcd1](https://github.com/PicPeak/picpeak/commit/d2efcd150106e7b051dbb8eb3e2b9938e0e85006))
+* **docker:** mount /backup in the production compose and let the entrypoint own it ([#1664](https://github.com/PicPeak/picpeak/issues/1664)) ([14c94cd](https://github.com/PicPeak/picpeak/commit/14c94cd4c057c7bd88488930edf136d28e3805a5))
+* **events:** require at least six characters for a client password ([#1666](https://github.com/PicPeak/picpeak/issues/1666)) ([82ae07a](https://github.com/PicPeak/picpeak/commit/82ae07af87f860b065243282b8ddc19c4e91fd23))
+* **gallery:** serve still images at enhanced and maximum protection instead of a dead token bounce ([#1667](https://github.com/PicPeak/picpeak/issues/1667)) ([87b4ef3](https://github.com/PicPeak/picpeak/commit/87b4ef3ada16b13426148b6e406acf031e5642ed))
+* **images:** decide a resize is unneeded from the delivered orientation ([#1645](https://github.com/PicPeak/picpeak/issues/1645)) ([2c3f1b5](https://github.com/PicPeak/picpeak/commit/2c3f1b5c57d00c5283ccbad5bd3118274e14bb8a))
+* **security:** contain watermark and archive paths on read and on .picpeak import ([#1660](https://github.com/PicPeak/picpeak/issues/1660)) ([89b579f](https://github.com/PicPeak/picpeak/commit/89b579f8fee9b8b2226472e0b39bf7fddabd44ce))
+* **security:** pin rsync host keys, longer upload codes with a per-network lockout, constant-time image token compare ([#1662](https://github.com/PicPeak/picpeak/issues/1662)) ([599bf03](https://github.com/PicPeak/picpeak/commit/599bf034645d6b52cbfbb644e0b231acfb5771d5))
+* **transfers:** stream downloads through the error-handling helper ([#1663](https://github.com/PicPeak/picpeak/issues/1663)) ([e933fb3](https://github.com/PicPeak/picpeak/commit/e933fb36fae021c2770d6c047f31ec09dcb8cbe9))
+
 ## [3.142.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.141.2-beta.0...v3.142.0-beta.0) (2026-09-24)
 
 
