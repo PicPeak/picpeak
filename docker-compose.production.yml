@@ -111,6 +111,12 @@ services:
       - REDIS_HOST=redis
       - STORAGE_PATH=/app/storage
       - PHOTOS_DIR=/app/storage/events
+      # Built-in backups land under /backup (migrations 029 + 030 seed
+      # /backup/picpeak and /backup/database). The entrypoint creates the
+      # subfolders and hands the mount to UID 1001 only when BACKUP_DIR names
+      # it; without the mount below the backend ran as UID 1001 against a
+      # root-owned / and every local backup failed with EACCES (issue 1365).
+      - BACKUP_DIR=/backup
       - PICPEAK_RELEASE_CHANNEL=${PICPEAK_CHANNEL:-stable}
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
@@ -154,6 +160,11 @@ services:
       - ${APP_STORAGE:-./storage}:/app/storage
       - ${LOGS:-./logs}:/app/logs
       - ${APP_DATA:-./data}:/app/data
+      # Where local backups are written (see BACKUP_DIR above). The host
+      # directory is created by Docker on first start and chowned to 1001 by
+      # the entrypoint; keep it outside APP_STORAGE, or the backup would
+      # include itself.
+      - ${APP_BACKUP:-./backup}:/backup
       - picpeak-secrets:/run/secrets:ro
     ports:
       - "${BACKEND_PORT:-3001}:3000"

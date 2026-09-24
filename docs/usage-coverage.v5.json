@@ -1438,7 +1438,6 @@
         "POST /gallery/share-login",
         "POST /gallery/logout",
         "GET /session",
-        "POST /admin/change-password",
         "POST /password-strength",
         "GET /admin/sso/login",
         "GET /admin/sso/callback"

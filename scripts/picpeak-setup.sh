@@ -730,6 +730,7 @@ BACKEND_PORT=3001
 APP_STORAGE=./storage
 APP_DATA=./data
 LOGS=./logs
+APP_BACKUP=./backup
 
 # Admin — the account is created in the browser via a one-time /setup token.
 ADMIN_EMAIL=$ADMIN_EMAIL

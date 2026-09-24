@@ -185,7 +185,6 @@ export interface Photo {
   slideshow_url?: string | null;
   secure_url_template?: string;
   download_url_template?: string;
-  requires_token?: boolean;
   type: 'collage' | 'individual' | 'video';
   category_id?: number | string | null;
   category_name?: string;

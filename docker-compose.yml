@@ -106,6 +106,9 @@ services:
       - ADMIN_URL=${ADMIN_URL:-}
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage
+      # Makes the entrypoint create /backup/picpeak and /backup/database and
+      # chown the ./backup mount to UID 1001 (same as production).
+      - BACKUP_DIR=/backup
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
       # External-media folder watcher (issue 1187); all optional, see .env.example.

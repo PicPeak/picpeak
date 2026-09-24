@@ -462,6 +462,37 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
   });
 }
 
+// Columns that name a file by a key relative to a root this install joins it
+// onto: the storage root for archives, photos and their derived files, the
+// external media root for referenced photos. Readers contain most of them
+// (photoResolver, the storage backends), but archive_path and watermark_path
+// are joined raw in places, and the rows arrive here straight from the
+// archive's ndjson, so a crafted .picpeak could plant `../` values that reach
+// files outside storage. No legitimate row carries a `..` segment in any of
+// these columns, so the whole import is refused rather than the row skipped:
+// a backup that was tampered with is not one to restore in part.
+const CONTAINED_PATH_COLUMNS = {
+  events: ['archive_path'],
+  photos: ['path', 'thumbnail_path', 'watermark_path', 'external_relpath'],
+};
+
+function assertContainedPaths(table, rows) {
+  const columns = CONTAINED_PATH_COLUMNS[table];
+  if (!columns) return;
+  for (const row of rows) {
+    for (const column of columns) {
+      const value = row[column];
+      if (typeof value !== 'string' || !value) continue;
+      if (value.split(/[\\/]+/).includes('..')) {
+        throw archiveLimitError(
+          `The backup's ${table}.${column} contains a path that climbs out of its directory (${JSON.stringify(value)}); the archive is refused.`,
+          400,
+        );
+      }
+    }
+  }
+}
+
 // Stored file paths (storedPath.js). A source install recorded generated PDFs,
 // signature images and uploads as absolute paths under ITS storage root; the
 // files land under this install's root (restoreFiles), so each path is
@@ -617,6 +648,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
       prepared = serialiseJsonColumns(prepared, toSerialise);
       prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
+      assertContainedPaths(table, prepared);
       await trx.batchInsert(table, prepared, 100);
     }
 
@@ -864,6 +896,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
 }
 
 module.exports = {
+  assertContainedPaths,
   importFromPicpeak,
   readManifestFromZip,
   validateManifest,

@@ -27,8 +27,17 @@ function isMissingRolesSchema(err) {
   const message = String(err.message || '');
 
   // Postgres is authoritative via SQLSTATE: 42P01 undefined_table, 42703
-  // undefined_column. Both are schema conditions, never transient.
-  if (err.code === '42P01' || err.code === '42703') return true;
+  // undefined_column. Both are schema conditions, never transient — but only
+  // the table check may stand on the code alone. 42703 is raised for ANY
+  // column the join projects, and the callers add columns to that projection
+  // (must_change_password, role_display_name), so a projection that names a
+  // column an install lacks would read as "no roles schema" and fabricate
+  // super_admin for every admin on it. The column named in the message has to
+  // be one the roles join itself needs, the same two shapes as on SQLite.
+  if (err.code === '42P01') return true;
+  if (err.code === '42703') {
+    return /column (roles\.\w+|admin_users\.role_id) does not exist/i.test(message);
+  }
 
   // SQLite carries no SQLSTATE, so the driver's wording is all there is — but
   // it must be matched EXACTLY, naming the object the roles join needs. A

@@ -17,6 +17,7 @@ const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = 
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
+const { safePathJoin } = require('../../utils/fileSecurityUtils');
 const {
   isOriginalWithheld, currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
@@ -104,24 +105,12 @@ router.get('/:slug/photo/:photoId',
       // Check if this is a video
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
 
-      // Check protection level - basic and standard protection allow direct JWT access
-      const protectionLevel = req.event.protection_level || 'standard';
-
-      // Videos are exempt (#1370). The secure-images endpoint this bounces to
-      // pipes every byte through sharp (secureImageService.processProtectedImage),
-      // which throws on an mp4 — so under enhanced/maximum a video was
-      // unservable by either route, and the lightbox showed a poster stuck at
-      // 0:00. Serving it here instead is not a new exposure: thumbnails of the
-      // same videos already come from this route at every protection level, and
-      // the guest still needs a valid gallery token to get here at all.
-      if (!isVideo && (protectionLevel === 'enhanced' || protectionLevel === 'maximum')) {
-        // For enhanced/maximum protection, redirect to secure endpoint
-        return res.status(302).json({
-          error: 'Secure access required',
-          secureEndpoint: `/api/secure-images/${req.params.slug}/generate-token`,
-          photoId: photoId
-        });
-      }
+      // Every protection level is served here. Enhanced/maximum used to answer
+      // a 302 JSON pointing at /api/secure-images/.../generate-token, which no
+      // shipped frontend code calls, so still images at those levels were a
+      // broken tile (#1370 exempted videos from the same bounce). The levels
+      // are client-side rendering modes; the guest still needs a valid gallery
+      // token to get here at all.
 
       // Download limit (issue 1560). While one applies, guests get the preview
       // tier rather than the original, which would otherwise be a full-size
@@ -294,7 +283,13 @@ router.get('/:slug/photo/:photoId',
                 return pipeStreamToResponse(wmStream, res, { context: `watermarked photo ${photo.id}` });
               }
             } else {
-              const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
+              // The column is a storage-relative key written by
+              // watermarkService, but it is read straight from a row that a
+              // crafted .picpeak import (or a compromised DB) can poison, so
+              // a raw join would let a `../` value hand any file the process
+              // can read to a gallery guest. safePathJoin throws on escape and
+              // the catch below falls back to on-the-fly watermarking.
+              const watermarkFilePath = safePathJoin(getStoragePath(), photo.watermark_path);
               if (fs.existsSync(watermarkFilePath)) {
                 res.set({
                   'Content-Type': resolvePhotoContentType(photo),
@@ -306,7 +301,7 @@ router.get('/:slug/photo/:photoId',
               }
             }
           } catch (err) {
-            logger.warn(`Pre-generated watermark not found for photo ${photoId}, falling back to on-the-fly`);
+            logger.warn(`Pre-generated watermark unusable for photo ${photoId} (${err.message}), falling back to on-the-fly`);
           }
         }
 

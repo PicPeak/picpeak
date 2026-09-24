@@ -112,7 +112,13 @@ class SecureImageService {
         .update(payload)
         .digest('hex');
 
-      if (signature !== expectedSignature) {
+      // Constant-time: the Map lookup above already means a caller needs the
+      // exact issued token to get here, so this is consistency, not a live
+      // oracle. Length is checked first because timingSafeEqual throws on a
+      // mismatch, and a malformed hex string decodes to a shorter buffer.
+      const given = Buffer.from(String(signature || ''), 'hex');
+      const expected = Buffer.from(expectedSignature, 'hex');
+      if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
         return { valid: false, reason: 'Token tampered' };
       }
 

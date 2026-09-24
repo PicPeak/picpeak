@@ -89,7 +89,10 @@ kind: Deployment
 metadata:
   name: picpeak-backend
 spec:
-  replicas: 3
+  # One replica: the backend keeps rate-limit windows, secure-image tokens
+  # and the backup mutex in process memory, so it does not scale horizontally
+  # (see docs/single-container.md).
+  replicas: 1
   template:
     spec:
       containers:

@@ -24,6 +24,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('../services/storage');
 const transferService = require('../services/transferService');
 const logger = require('../utils/logger');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const fs = require('fs');
 
 const router = express.Router();
@@ -382,15 +383,21 @@ router.get('/:id/uploads/:uploadId/download',
       parseInt(req.params.id, 10), parseInt(req.params.uploadId, 10),
     );
     if (!upload) return res.status(404).json({ error: 'Upload not found' });
+    // Open the body BEFORE the attachment headers go on: on S3 `get` awaits
+    // GetObject and can reject, and with Content-Disposition already set the
+    // error handler would answer JSON that the browser saves as the file.
+    let body;
+    if (upload.localPath && fs.existsSync(upload.localPath)) {
+      body = fs.createReadStream(upload.localPath);
+    } else {
+      // S3 / non-local backend: stream via the storage abstraction.
+      body = await getStorage().get(upload.stored_path);
+    }
     res.setHeader('Content-Type', upload.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(upload.original_filename)}"`);
-    if (upload.localPath && fs.existsSync(upload.localPath)) {
-      return fs.createReadStream(upload.localPath).pipe(res);
-    }
-    // S3 / non-local backend: stream via the storage abstraction.
-    const { getStorage } = require('../services/storage');
-    const stream = await getStorage().get(upload.stored_path);
-    return stream.pipe(res);
+    // Through the helper, never a bare pipe: the local read stream opens
+    // lazily and a source 'error' with no listener ends the process.
+    pipeStreamToResponse(body, res, { context: `transfer ${upload.transfer_id} upload ${upload.id}` });
   }),
 );
 
