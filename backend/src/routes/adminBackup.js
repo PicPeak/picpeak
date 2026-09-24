@@ -486,12 +486,13 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       const host = sanitizeInput(config.host);
       const user = sanitizeInput(config.user);
       // The key file path from the form, or the saved one when the form
-      // holds the mask or sends none. A value that is not a path (a pasted
+      // holds the mask or sends none. An explicit '' tests without a key, as
+      // saving the emptied field would. A value that is not a path (a pasted
       // key) is never handed to ssh.
-      const requestedKey = typeof config.ssh_key === 'string' ? config.ssh_key.trim() : '';
-      const keyCandidate = requestedKey && requestedKey !== SECRET_MASK
-        ? requestedKey
-        : (await getBackupConfig()).backup_rsync_ssh_key;
+      const useSavedKey = typeof config.ssh_key !== 'string' || config.ssh_key.trim() === SECRET_MASK;
+      const keyCandidate = useSavedKey
+        ? (await getBackupConfig()).backup_rsync_ssh_key
+        : config.ssh_key.trim();
       if (keyCandidate && !isSshKeyPath(keyCandidate)) {
         res.json({
           success: false,

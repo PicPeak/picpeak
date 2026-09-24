@@ -135,6 +135,26 @@ describe('rsync SSH key is a key file path', () => {
       expect(res.body).toMatchObject({ success: false, message: 'SSH key file not found' });
     });
 
+    it('tests without a key when the field was emptied, not with the saved one', async () => {
+      await setBackupSettings({ backup_rsync_ssh_key: '/app/data/ssh/saved_key' });
+      // Stand in for ssh: record its arguments and succeed.
+      const { EventEmitter } = require('events');
+      const childProcess = require('child_process');
+      const spawn = jest.spyOn(childProcess, 'spawn').mockImplementation(() => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+        setImmediate(() => proc.emit('close', 0));
+        return proc;
+      });
+      try {
+        const res = await testRsync({ ssh_key: '' });
+        expect(res.body.success).toBe(true);
+        const [cmd, args] = spawn.mock.calls[0];
+        expect(cmd).toBe('ssh');
+        expect(args).not.toContain('-i');
+      } finally { spawn.mockRestore(); }
+    });
+
     it('reports a saved pasted key rather than using it', async () => {
       await setBackupSettings({ backup_rsync_ssh_key: PASTED_KEY });
       const res = await testRsync({});
