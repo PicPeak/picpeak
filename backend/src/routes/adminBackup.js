@@ -4,7 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
 const { clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { revokeToken } = require('../utils/tokenRevocation');
-const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
+const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest, sshHostKeyOptions } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { formatBytes } = require('../utils/formatBytes');
@@ -606,7 +606,14 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         }
         sshArgs.push('-i', sshKeyPath);
       }
-      sshArgs.push('-o', 'StrictHostKeyChecking=no');
+      // Same host-key policy as the backup run: record the key on first
+      // contact, refuse a host whose key changed since.
+      try {
+        sshArgs.push(...sshHostKeyOptions(sshKeyPath || null));
+      } catch (optionError) {
+        res.json({ success: false, message: optionError.message });
+        break;
+      }
       sshArgs.push('-o', 'ConnectTimeout=10');
       sshArgs.push('-o', 'BatchMode=yes');
 
@@ -647,7 +654,13 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
           destination: host,
           error: error.message
         });
-        res.json({ success: false, message: 'Rsync connection failed. Check server logs for details.' });
+        const hostKeyChanged = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(error.message);
+        res.json({
+          success: false,
+          message: hostKeyChanged
+            ? 'The SSH host key of this destination differs from the one recorded on first contact. If the server was reinstalled on purpose, remove its line from the known_hosts file next to the SSH key and test again.'
+            : 'Rsync connection failed. Check server logs for details.'
+        });
       }
       break;
     }

@@ -797,6 +797,37 @@ async function performLocalBackup(config, files) {
   };
 }
 
+/**
+ * Where the SSH host keys of the rsync destination are recorded. An explicit
+ * BACKUP_SSH_KNOWN_HOSTS wins; otherwise the file sits next to the configured
+ * private key, which the operator already keeps on persistent storage. With
+ * no key configured, ssh uses its own default file.
+ */
+function resolveKnownHostsPath(sshKeyPath) {
+  const fromEnv = process.env.BACKUP_SSH_KNOWN_HOSTS;
+  if (fromEnv) return validateRsyncParam(fromEnv, 'BACKUP_SSH_KNOWN_HOSTS');
+  if (sshKeyPath) return path.join(path.dirname(sshKeyPath), 'known_hosts');
+  return null;
+}
+
+/**
+ * SSH options that pin the rsync destination's host key. The first connection
+ * records the key (trust on first use); a later connection to the same host
+ * with a different key fails instead of silently syncing the backup, and the
+ * probe on "test connection", to a host that answers with another key. This
+ * replaced StrictHostKeyChecking=no, which accepted any key every time.
+ *
+ * Every value here has passed validateRsyncParam (no spaces or quotes), so the
+ * same list can be joined into rsync's `-e` string, which rsync splits on
+ * spaces itself, or handed to ssh argv-style.
+ */
+function sshHostKeyOptions(sshKeyPath) {
+  const options = ['-o', 'StrictHostKeyChecking=accept-new'];
+  const knownHosts = resolveKnownHostsPath(sshKeyPath);
+  if (knownHosts) options.push('-o', `UserKnownHostsFile=${knownHosts}`);
+  return options;
+}
+
 function validateRsyncParam(value, label) {
   if (!value || typeof value !== 'string') return null;
   if (!/^[a-zA-Z0-9._/@:-]+$/.test(value)) {
@@ -837,8 +868,10 @@ function buildRsyncArgs(config, extraExcludes = []) {
     if (!fs.existsSync(sshKey) || !fs.statSync(sshKey).isFile()) {
       throw new Error('SSH key file not found or is not a file');
     }
-    // Pass SSH options as separate array elements to avoid shell interpretation
-    args.push('-e', `ssh -i ${sshKey} -o StrictHostKeyChecking=no`);
+    // rsync splits the -e command on spaces itself (no shell). The key path
+    // passed validateRsyncParam, so it holds neither, and the host-key options
+    // are fixed strings or a path validated the same way.
+    args.push('-e', ['ssh', '-i', sshKey, ...sshHostKeyOptions(sshKey)].join(' '));
   }
 
   // Same noise filters as the walker, plus the de-selected backup paths
@@ -1764,6 +1797,8 @@ service.runBackup = runBackupInternal;
 service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
+service.sshHostKeyOptions = sshHostKeyOptions;
+service.resolveKnownHostsPath = resolveKnownHostsPath;
 service.getBackupStatus = getBackupStatus;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getBackupManifest = getBackupManifest;
