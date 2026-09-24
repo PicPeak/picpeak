@@ -505,17 +505,16 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     reveal_at: hiddenForGuest ? (event.reveal_at || null) : undefined,
     categories: categories,
     photos: photos.map(photo => {
-      // Videos always take the JWT route (#1370). The secure-images template
-      // below can never serve one — the route runs the bytes through sharp,
-      // which throws on an mp4 — and nothing substitutes the {{token}}
-      // placeholder for the <video> element either, so under enhanced/maximum
-      // a video resolved to a 403 and the lightbox sat at 0:00. The matching
-      // exemption is in routes/gallery/media.js.
+      // Every protection level takes the JWT route. Under enhanced/maximum
+      // this used to emit `/api/secure-images/.../{{token}}` and rely on the
+      // frontend to mint a token and fill the placeholder; nothing in the
+      // shipped frontend does (the service that could is imported nowhere),
+      // so every still image at those levels answered 403 — the same failure
+      // #1370 fixed for videos only. Enhanced and maximum are client-side
+      // rendering modes (canvas, context-menu and shortcut guards); the bytes
+      // come from the same authenticated route as at standard.
       const isVideo = photo.media_type === 'video'
         || (photo.mime_type && photo.mime_type.startsWith('video/'));
-      const useJwtUrl = isVideo
-        || protectionSettings.protection_level === 'basic'
-        || protectionSettings.protection_level === 'standard';
       // Watermark version (cache-busting) + admin-preview flag (#868). In
       // preview mode no gallery cookie is minted, so each <img> request must
       // re-assert the admin session — thread the flag onto every /api/gallery
@@ -528,11 +527,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // granted yet (routes/gallery/media.js), so point straight at the
       // preview instead of at a redirect.
       const originalWithheld = withholdOriginals && !isVideo && !deliveredIds.has(Number(photo.id));
-      const photoUrl = !useJwtUrl
-        ? `/api/secure-images/${slug}/secure/${photo.id}/{{token}}`
-        : originalWithheld
-          ? previewUrl
-          : `/api/gallery/${slug}/photo/${photo.id}${wmQuery}`;
+      const photoUrl = originalWithheld
+        ? previewUrl
+        : `/api/gallery/${slug}/photo/${photo.id}${wmQuery}`;
 
       return {
         id: photo.id,
@@ -597,8 +594,6 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Image dimensions for layout calculations
         width: photo.width || null,
         height: photo.height || null,
-        // Fixed: Use the calculated useJwtUrl variable instead of recalculating
-        requires_token: !useJwtUrl,
         // EXIF capture date
         captured_at: toIso(photo.captured_at) || null,
         // Media type
