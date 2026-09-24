@@ -613,7 +613,12 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // A real HeadBucket against the values in the form (issue 1641).
       const stored = await getBackupConfig();
       const endpoint = typeof config.endpoint === 'string' ? config.endpoint.trim() : '';
-      const sameEndpoint = endpointOrigin(endpoint) === endpointOrigin(stored.backup_s3_endpoint);
+      // The scheme a scheme-less endpoint gets, as a backup run would use it:
+      // the form has no SSL field, so the saved setting applies unless the
+      // caller sends one.
+      const sslEnabled = readBackupBoolean(config.ssl_enabled ?? stored.backup_s3_ssl_enabled ?? true);
+      const storedSsl = readBackupBoolean(stored.backup_s3_ssl_enabled ?? true);
+      const sameEndpoint = endpointOrigin(endpoint, sslEnabled) === endpointOrigin(stored.backup_s3_endpoint, storedSsl);
       // The form holds the mask for a saved secret. Reuse the stored one only
       // against the endpoint it was saved for, so a test cannot send the
       // saved credentials somewhere new.
@@ -634,7 +639,8 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
           accessKeyId: config.access_key,
           secretAccessKey: secretKey,
           region: config.region || 'us-east-1',
-          allowPrivateEndpoint: isPrivateEndpointApproved(endpoint, true, approval),
+          sslEnabled,
+          allowPrivateEndpoint: isPrivateEndpointApproved(endpoint, sslEnabled, approval),
           maxRetries: 1,
           connectionTimeout: 10000,
           socketTimeout: 15000,
@@ -643,7 +649,7 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         res.json({ success: true, message: 'S3 bucket is reachable' });
       } catch (error) {
         if (S3_ERROR_MESSAGES[error.code]) {
-          res.json({ success: false, ...s3ErrorBody(error.code, error.origin || endpointOrigin(endpoint)), message: S3_ERROR_MESSAGES[error.code] });
+          res.json({ success: false, ...s3ErrorBody(error.code, error.origin || endpointOrigin(endpoint, sslEnabled)), message: S3_ERROR_MESSAGES[error.code] });
           break;
         }
         logger.warn('S3 connection test failed', { bucket: config.bucket, error: error.message });

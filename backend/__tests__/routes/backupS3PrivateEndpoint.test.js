@@ -216,6 +216,18 @@ describe('private S3 backup endpoints (issue 1641)', () => {
       expect(s3Requests).toBeGreaterThan(0);
     });
 
+    it('uses the saved SSL setting for an endpoint without a scheme, as a backup run does', async () => {
+      await setBackupSettings({ backup_s3_ssl_enabled: false });
+      const bare = `127.0.0.1:${port}`;
+      const refused = await testConnection({ endpoint: bare, ...creds });
+      // The origin to approve is the HTTP one a backup would connect to.
+      expect(refused.body).toMatchObject({ code: 'S3_PRIVATE_ENDPOINT', origin: `http://127.0.0.1:${port}` });
+
+      const res = await testConnection({ endpoint: bare, ...creds, private_endpoint_approval: `http://127.0.0.1:${port}` });
+      expect(res.body.success).toBe(true);
+      expect(s3Requests).toBeGreaterThan(0);
+    });
+
     it('reports failure for a bucket that does not answer', async () => {
       const res = await testConnection({
         endpoint: endpoint(), ...creds, bucket: 'missing', private_endpoint_approval: endpoint(),
