@@ -1702,9 +1702,8 @@ router.get(
  *           The box is a maximum, not a guarantee. A rendition is skipped and
  *           the stored bytes are served unchanged when the image cannot be
  *           re-encoded safely: HEIC/HEIF detected from the BYTES (the stored
- *           type is not always right about that), a source sharp cannot decode,
- *           and — see issue #1639 — an EXIF-rotated image whose unrotated
- *           dimensions fit a non-square box. In each case the response is the
+ *           type is not always right about that), and a source sharp cannot
+ *           decode. In each case the response is the
  *           correct bytes under the correct type, but larger than asked for, so
  *           a client that must not exceed a size should check what it received.
  *     responses:

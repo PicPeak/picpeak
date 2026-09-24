@@ -1538,9 +1538,14 @@ async function resizeToBox(inputBuffer, box, options = {}) {
     const probe = sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none' });
     const metadata = await probe.metadata();
     // Already inside the box — hand back the original bytes rather than
-    // re-encoding, which would only cost quality and CPU.
-    if (metadata.width && metadata.height
-      && metadata.width <= box.width && metadata.height <= box.height) {
+    // re-encoding, which would only cost quality and CPU. Measured in the
+    // orientation the image is delivered in: for EXIF orientation 5-8 the raw
+    // width and height are transposed, so a raw 2000x1000 tagged 6 (shown as
+    // 1000x2000) would otherwise "fit" a 2048x1024 box and come back twice as
+    // tall as asked (issue 1639).
+    const oriented = orientedDimensions(metadata);
+    if (oriented.width && oriented.height
+      && oriented.width <= box.width && oriented.height <= box.height) {
       return inputBuffer;
     }
 
