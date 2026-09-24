@@ -753,6 +753,13 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
       return res.status(404).json({ error: 'Archive file not found in storage' });
     }
 
+    // Open the body BEFORE the zip headers go on: on S3 `get` awaits the
+    // GetObject call and can reject after `stat` succeeded (the object was
+    // deleted in between, or a transient). With the headers already set, the
+    // route's catch would answer a JSON error under application/zip and a
+    // stale Content-Length, so the browser saves a broken "slug.zip".
+    const body = await storage.get(archive.archive_path);
+
     // Set headers for download
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', stats.size);
@@ -761,7 +768,7 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
     // Stream the file. The helper owns the error path: a local read stream
     // opens lazily and an S3 body can drop mid-transfer, and either error
     // with no listener would take the process down.
-    pipeStreamToResponse(await storage.get(archive.archive_path), res, { context: 'archive' });
+    pipeStreamToResponse(body, res, { context: 'archive' });
 
     // Log download
     await db('activity_logs').insert({
