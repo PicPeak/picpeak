@@ -151,6 +151,7 @@
     "noCategory": "Sem categoria",
     "eventSpecific": "(Específico do evento)",
     "clickToUpload": "Clique para enviar ou arraste e solte",
+    "takePhoto": "Tirar uma foto",
     "fileRequirements": "{{formats}} (máx. {{sizeLimit}}MB por arquivo, {{limit}} arquivos por envio)",
     "videoSizeLimit": "Vídeos: máx. {{sizeLimit}}MB por arquivo",
     "selectedFiles": "Arquivos selecionados",

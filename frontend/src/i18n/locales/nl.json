@@ -132,6 +132,7 @@
     "noCategory": "Geen categorie",
     "eventSpecific": "(Evenement-specifiek)",
     "clickToUpload": "Klik om te uploaden of sleep bestanden hierheen",
+    "takePhoto": "Foto maken",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}} MB per bestand, {{limit}} bestanden per upload)",
     "selectedFiles": "Geselecteerde bestanden",
     "uploading": "Uploaden...",

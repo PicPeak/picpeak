@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Upload, X, CheckCircle, Loader2, UserRound } from 'lucide-react';
+import { Upload, X, CheckCircle, Loader2, UserRound, Camera } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { Button, Input } from '../common';
@@ -47,6 +47,15 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   requireEmail = false,
 }) => {
   const { t } = useTranslation();
+
+  // A second, single-shot input that opens the camera directly. The dropzone's
+  // input opens the system chooser, which on some Android 14+ builds (MIUI
+  // among them) is the restricted photo picker with no camera entry, so a guest
+  // standing at the event has no way to take a photo from here. `capture`
+  // bypasses the picker; the button only shows at phone widths, where a camera
+  // is what the guest has. Kept AFTER the dropzone input in the DOM so the
+  // first file input stays the ordinary one (issue 1563, B4).
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const identityContext = useGuestIdentityOptional();
   const askName = nameMode !== 'off' && !!slug;
   const [identity, setIdentity] = useState<GuestIdentity | null>(() => (askName ? getGuestIdentity(slug) : null));
@@ -533,6 +542,28 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                   />
                 </div>
               </label>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileSelect}
+                disabled={uploading}
+                data-testid="camera-input"
+              />
+              <div className="mt-3 flex justify-center sm:hidden">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={uploading}
+                  className="text-xs"
+                >
+                  <Camera className="w-4 h-4 mr-2" />
+                  {t('upload.takePhoto')}
+                </Button>
+              </div>
             </div>
 
             {/* Selected Files */}

@@ -826,6 +826,7 @@
     "noCategory": "Keine Kategorie",
     "eventSpecific": "(Veranstaltungsspezifisch)",
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
+    "takePhoto": "Foto aufnehmen",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}}MB pro Datei, {{limit}} Dateien pro Upload)",
     "videoSizeLimit": "Videos: max. {{sizeLimit}}MB pro Datei",
     "selectedFiles": "Ausgewählte Dateien",

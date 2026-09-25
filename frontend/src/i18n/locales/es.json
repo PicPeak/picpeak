@@ -127,6 +127,7 @@
     "noCategory": "Sin categoría",
     "eventSpecific": "(Específico del evento)",
     "clickToUpload": "Haz clic para subir o arrastra y suelta",
+    "takePhoto": "Tomar una foto",
     "fileRequirements": "{{formats}} (máx. {{sizeLimit}}MB por archivo, {{limit}} archivos por subida)",
     "fileRequirementsMedia": "Imágenes JPEG, PNG o WebP y videos MP4/MOV/WEBM (máx. 50MB por archivo, {{limit}} archivos por subida)",
     "unsupportedFiles": "Algunos archivos se omitieron porque el formato no es compatible (usa JPEG/PNG/WebP/MP4/MOV/WEBM).",

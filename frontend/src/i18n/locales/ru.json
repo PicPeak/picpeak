@@ -132,6 +132,7 @@
     "noCategory": "Без категории",
     "eventSpecific": "(Для конкретного события)",
     "clickToUpload": "Нажмите для загрузки или перетащите файлы",
+    "takePhoto": "Сделать фото",
     "fileRequirements": "{{formats}} (макс. {{sizeLimit}} МБ на файл, {{limit}} файлов за загрузку)",
     "selectedFiles": "Выбранные файлы",
     "uploading": "Загрузка...",
