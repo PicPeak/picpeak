@@ -1605,6 +1605,12 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       status: 'pending',
       retry_count: 0,
       created_at: new Date(),
+      // Explicit NULL, never the column default. The default is
+      // CURRENT_TIMESTAMP, which on SQLite is the text '2026-09-25 08:57:45'
+      // in a column the processor compares against a number — and SQLite
+      // sorts every number below every text, so such a row is never due
+      // (issue 1670). NULL is what the processor's whereNull() looks for.
+      scheduled_at: null,
     };
     let snappedFrom = null;
     // Base time to schedule from:
@@ -1627,7 +1633,7 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       if (snapped.getTime() !== baseTime.getTime()) snappedFrom = baseTime;
       // Persist a future scheduled_at for an explicit scheduledAt always;
       // for the respectBusinessHours floor only when it actually moved the
-      // time forward (inside hours → leave null → processor sends at once).
+      // time forward (inside hours → stays null → processor sends at once).
       if (options.scheduledAt || snappedFrom) row.scheduled_at = snapped;
     }
     await db('email_queue').insert(row);
