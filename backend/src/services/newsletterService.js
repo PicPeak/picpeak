@@ -25,7 +25,7 @@ const sanitizeHtml = require('sanitize-html');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
-const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
+const { formatBoolean } = require('../utils/dbCompat');
 const { sanitizeCSS } = require('../utils/cssSanitizer');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
 const { getFrontendBaseUrl, getApiBaseUrl } = require('../utils/frontendUrl');
@@ -501,9 +501,7 @@ function parseRecipientIds(campaign) {
  * binding landmine documented in CLAUDE.md, where a sandbox-created Date is
  * stored as the literal string "[object Object]".
  */
-function queueTimestamp(ms) {
-  return isPostgreSQL() ? new Date(ms) : ms;
-}
+const { queueTimestamp } = require('../utils/queueTimestamps');
 
 // ---------------------------------------------------------------------------
 // Queueing

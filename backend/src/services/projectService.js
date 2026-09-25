@@ -769,6 +769,9 @@ async function resendEmail(emailId, adminId = null) {
     status: 'pending',
     retry_count: 0,
     created_at: new Date(),
+    // Explicit NULL: the column default is text on SQLite and never comes
+    // due (issue 1670) — see queueEmail.
+    scheduled_at: null,
   }).returning('id');
   const id = (insert[0] && typeof insert[0] === 'object') ? insert[0].id : insert[0];
   await logEmailAction('project_email_resent', id, row, adminId);

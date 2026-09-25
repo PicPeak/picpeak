@@ -532,8 +532,10 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         email_type: 'gallery_created',
         email_data: JSON.stringify(emailData),
         status: 'pending',
-        created_at: new Date()
-        // scheduled_at will use default value
+        created_at: new Date(),
+        // Explicit NULL, not the column default: on SQLite the default is
+        // text and the processor never picks the row up (issue 1670).
+        scheduled_at: null
       });
     } catch (queueError) {
       logger.warn('Failed to queue gallery_created email on create', { eventId, error: queueError.message });

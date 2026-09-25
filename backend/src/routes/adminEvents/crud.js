@@ -167,7 +167,10 @@ async function queueGalleryCreatedEmail(event, { password, requirePassword } = {
       welcome_message: event.welcome_message || ''
     }),
     status: 'pending',
-    created_at: new Date()
+    created_at: new Date(),
+    // Explicit NULL: the column default is text on SQLite and never comes
+    // due (issue 1670) — see queueEmail.
+    scheduled_at: null
   });
   return true;
 }

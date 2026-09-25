@@ -17,6 +17,7 @@ const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers')
 const logger = require('../utils/logger');
 const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = require('../utils/emailSecretRedaction');
 const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
+const { queueTimestamp } = require('../utils/queueTimestamps');
 
 // Shared wording for a masked password that may not follow a changed server.
 const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
@@ -914,7 +915,10 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
       status: 'sent',
       origin: 'manual',
       rendered_html: html,
-      created_at: new Date().toISOString(),
+      // Engine-shaped like queueEmail's rows, so the queue orders and filters
+      // on one shape per engine (issue 1670). Already sent, so no schedule.
+      created_at: queueTimestamp(Date.now()),
+      scheduled_at: null,
       sent_at: new Date().toISOString(),
     });
     res.json({ ok: true });
