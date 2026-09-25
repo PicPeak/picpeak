@@ -7756,7 +7756,7 @@
     "crm_invoices_vat_note_text": {
       "label": "MwSt.- / Freitext-Hinweis auf Rechnungen",
       "placeholder": "z. B. Gemäß § 6 Abs. 1 Z 27 UStG 1994 wird keine Umsatzsteuer berechnet (Kleinunternehmer).",
-      "help": "Wird direkt unter der MwSt.-Zeile auf jeder Rechnungs-PDF gedruckt. Ist das Unternehmen nicht MwSt-pflichtig (Einstellungen → Buchhaltung), steht der Hinweis auf Rechnungen und Angeboten ohne MwSt an Stelle dieser Zeile. Leer lassen zum Ausblenden. Bitte den genauen Wortlaut mit Ihrem Steuerberater abstimmen."
+      "help": "Wird direkt unter der MwSt.-Zeile auf jeder Rechnung ausgegeben. Ist das Unternehmen nicht mehrwertsteuerpflichtig (Einstellungen → Buchhaltung), ersetzt der Text diese Zeile auf Rechnungen ohne MwSt. Auf Angeboten erscheint er nie — ein Angebot ist nicht das Steuerdokument. Leer lassen, um ihn auszublenden. Bitte den genauen Wortlaut mit Ihrem Treuhänder bzw. Steuerberater abstimmen."
     },
     "crm_invoices_skonto_percent_default": {
       "label": "Standard-Skonto %"

@@ -7755,7 +7755,7 @@
     "crm_invoices_vat_note_text": {
       "label": "VAT / free-text note on invoices",
       "placeholder": "e.g. Gemäß § 6 Abs. 1 Z 27 UStG 1994 wird keine Umsatzsteuer berechnet (Kleinunternehmer).",
-      "help": "Printed directly under the MwSt. line on every invoice PDF. If the business isn't VAT-registered (Settings → Accounting), it replaces that line on invoices and quotes without VAT. Leave empty to hide. Please confirm the exact wording with your tax advisor."
+      "help": "Printed directly under the MwSt. line on every invoice PDF. If the business isn't VAT-registered (Settings → Accounting), it replaces that line on invoices without VAT. Quotes never carry it — an offer is not the tax document. Leave empty to hide. Please confirm the exact wording with your tax advisor."
     },
     "crm_invoices_skonto_percent_default": {
       "label": "Skonto rate (default %)"

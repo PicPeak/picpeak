@@ -2302,12 +2302,22 @@ function renderDocument(type, context) {
             : '';
           return `${t(ctx.locale, relationKey)} ${t(ctx.locale, titleKey)} ${ref.number}${datePart}`;
         };
+        // A reference that is nothing but a number — an invoice naming the quote
+        // it came from — is a row like any other: "Referenz: LBM-Q-2026-0010",
+        // the number in the value column, aligned with the dates above it.
+        //
+        // The others carry a relationship AND a date, because they have to: a
+        // Storno's link to the invoice it reverses is the §14c-defensible one
+        // and wants both numbers and the original issue date. Those don't fit a
+        // column sized for dates, so they stay a complete row under the address
+        // field, where there is width for the whole sentence.
+        const numberReferences = [];
         const references = [];
         if (isStorno && ctx.doc.cancelsInvoice) {
           references.push(datedReference('reference_cancels', 'invoice_title', ctx.doc.cancelsInvoice));
         }
         if (type === 'invoice' && !isStorno && ctx.doc.sourceQuoteNumber) {
-          references.push(`${t(ctx.locale, 'quote_title')} ${ctx.doc.sourceQuoteNumber}`);
+          numberReferences.push([t(ctx.locale, 'reference_number_label'), ctx.doc.sourceQuoteNumber]);
         }
         if (type === 'invoice' && !isStorno && ctx.doc.replacesInvoice) {
           references.push(datedReference('reference_replaces', 'invoice_title', ctx.doc.replacesInvoice));
@@ -2335,10 +2345,12 @@ function renderDocument(type, context) {
         doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(letterhead.size).fillColor(themeColor(doc, 'text'));
         const referenceLabel = t(ctx.locale, 'reference_label');
         const besideField = [...metaRows];
-        const underField = [];
-        references.forEach((value) => {
-          if (doc.widthOfString(value) + 2 <= grid.valueW) besideField.push([referenceLabel, value]);
-          else underField.push([referenceLabel, value]);
+        const underField = references.map((value) => [referenceLabel, value]);
+        numberReferences.forEach(([label, value]) => {
+          // A number that still outruns the column — an unusually long custom
+          // format — falls back to a complete row rather than being cut.
+          if (doc.widthOfString(value) + 2 <= grid.valueW) besideField.push([label, value]);
+          else underField.push([label, value]);
         });
 
         let y = windowOn

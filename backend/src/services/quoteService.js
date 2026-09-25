@@ -917,18 +917,18 @@ async function buildRenderContext(quote, lineItems) {
   const roundingAdjustmentMinor = ensureInt(quote.net_amount_minor) - displayedNetMinor;
 
   // Not VAT-registered (Settings → Accounting): a quote without VAT shows no
-  // MwSt. row, and the invoices' VAT note stands in its place. A registered
-  // business's quotes stay as they were (no note).
+  // MwSt. row, and nothing stands in its place. The note that fills that gap on
+  // an invoice is an invoice's statement — the setting is
+  // `crm_invoices_vat_note_text`, and MWSTG Art. 10 Abs. 2 is something a bill
+  // declares, not an offer. A quote that repeated it read as though the offer
+  // itself were the tax document.
   const vatRegistered = await getVatRegisteredSetting();
-  const vatNoteRaw = vatRegistered === false ? await getAppSetting('crm_invoices_vat_note_text') : null;
-  const vatNote = typeof vatNoteRaw === 'string' && vatNoteRaw.trim() ? vatNoteRaw.trim() : null;
 
   return {
     locale: quote.language || profile?.default_locale || 'de',
     currency: quote.currency,
     qrFormat: 'none', // quotes never carry a Swiss QR-bill
     vatRegistered,
-    vatNote,
     dateFormat,
     // PDF theme (#1445): font family, colours, footer, page numbers.
     theme: await pdfThemeService.resolveTheme('quote'),

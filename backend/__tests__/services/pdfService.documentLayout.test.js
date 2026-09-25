@@ -499,6 +499,40 @@ describe('references', () => {
     expect(reference.y).toBeLessThan(findExact(calls, t('de', 'storno_title')).y);
   });
 
+  test('a quote reference is a row of the block, in the same two columns', async () => {
+    // Just a number, so it goes in the value column under the dates:
+    // "Referenz: LBM-Q-2026-0010". Composing "Angebot LBM-Q-2026-0010" into the
+    // value instead pushed it past a column sized for dates as soon as the
+    // numbering carried a business prefix, and it fell out of the block.
+    const drawn = recordDrawing();
+    await pdfService.renderInvoiceToBuffer(invoice([shortItem(1)], {}, {
+      invoiceNumber: 'LBM-R-2026-0009', sourceQuoteNumber: 'LBM-Q-2026-0010',
+    }));
+    const calls = drawn();
+
+    const label = findExact(calls, `${t('de', 'reference_number_label')}:`);
+    const value = findExact(calls, 'LBM-Q-2026-0010');
+    const otherLabel = findExact(calls, `${t('de', 'invoice_number_label')}:`);
+    const otherValue = findExact(calls, 'LBM-R-2026-0009');
+
+    expect(label.x).toBe(otherLabel.x);
+    expect(value.x).toBe(otherValue.x);
+    expect(value.y).toBeGreaterThan(otherValue.y);
+  });
+
+  test('a reference too long even for the block drops under the address field', async () => {
+    const drawn = recordDrawing();
+    await pdfService.renderInvoiceToBuffer(invoice([shortItem(1)], {}, {
+      kind: 'storno', invoiceNumber: 'LBM-S-2026-0003',
+      cancelsInvoice: { number: 'LBM-R-2026-0009', issueDate: '2026-10-09' },
+    }));
+    const calls = drawn();
+
+    const reference = find(calls, t('de', 'reference_cancels'));
+    const anyMetaRow = findExact(calls, `${t('de', 'invoice_number_label')}:`);
+    expect(reference.x).toBeLessThan(anyMetaRow.x);
+  });
+
   test('an invoice names the quote it came from', async () => {
     const drawn = recordDrawing();
     await pdfService.renderInvoiceToBuffer(invoice([shortItem(1)], {}, { sourceQuoteNumber: 'Q-2026-0044' }));
@@ -508,8 +542,7 @@ describe('references', () => {
     // one full-width row under the address field — both carry the label.
     const value = find(calls, 'Q-2026-0044');
     expect(value).toBeTruthy();
-    expect(findExact(calls, `${t('de', 'reference_label')}:`) || value.text.includes(t('de', 'reference_label')))
-      .toBeTruthy();
+    expect(findExact(calls, `${t('de', 'reference_number_label')}:`)).toBeTruthy();
     expect(value.y).toBeLessThan(findExact(calls, t('de', 'invoice_title')).y);
   });
 });
