@@ -34,7 +34,7 @@ async function createQueue(db) {
 const due = (db, nowMs) => db('email_queue')
   .where('status', 'pending').where('retry_count', '<', 3)
   .andWhere(function () { this.whereNull('scheduled_at').orWhere('scheduled_at', '<=', nowMs); })
-  .orderBy('scheduled_at', 'asc').orderBy('created_at', 'asc');
+  .orderByRaw('COALESCE(scheduled_at, created_at) ASC').orderBy('id', 'asc');
 
 const shapes = (db) => db('email_queue')
   .select('email_type', 'status', 'error_message', 'scheduled_at', 'created_at',
@@ -77,7 +77,7 @@ describe('migration 256 on SQLite', () => {
 
   test('the precondition: a default-shaped row is text and is not due, whatever its age', async () => {
     const before = await due(db, now);
-    expect(before.map((r) => r.email_type)).toEqual(['null_now', 'ms_stuck_elsewhere']);
+    expect(before.map((r) => r.email_type)).toEqual(['ms_stuck_elsewhere', 'null_now']);
     const rows = await shapes(db);
     expect(rows.find((r) => r.email_type === 'fresh_default').scheduled_type).toBe('text');
   });
@@ -99,7 +99,8 @@ describe('migration 256 on SQLite', () => {
   test('a fresh stuck row goes out on the next run; a stale one is parked as failed, with a reason', async () => {
     await migration.up(db);
     const after = await due(db, now);
-    expect(after.map((r) => r.email_type).sort()).toEqual(['fresh_default', 'garbage', 'ms_stuck_elsewhere', 'null_now']);
+    // Oldest effective time first: a NULL schedule counts from created_at.
+    expect(after.map((r) => r.email_type)).toEqual(['ms_stuck_elsewhere', 'fresh_default', 'garbage', 'null_now']);
 
     const stale = (await shapes(db)).find((r) => r.email_type === 'stale_default');
     expect(stale.status).toBe('failed');
