@@ -96,7 +96,7 @@ async function claimNextPhoto() {
       if (!row) return null;
       await trx('photos').where('id', row.id).update({
         processing_status: 'processing',
-        processing_started_at: new Date(),
+        processing_started_at: new Date().toISOString(),
       });
       return row;
     });
@@ -114,7 +114,7 @@ async function claimNextPhoto() {
       .where({ id: row.id, processing_status: 'pending' })
       .update({
         processing_status: 'processing',
-        processing_started_at: new Date(),
+        processing_started_at: new Date().toISOString(),
       });
     return updated > 0 ? row : null;
   });
@@ -160,7 +160,13 @@ async function workerLoop(workerIdx) {
 async function janitorLoop() {
   while (running) {
     try {
-      const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS);
+      // Written as ISO above, compared as ISO here: on SQLite the column is
+      // whatever text or number the writer bound, and a Date bound inside
+      // Jest arrives as "[object Object]" (CLAUDE.md), so both sides use the
+      // same string shape. A row still holding the old numeric shape from a
+      // process that died mid-flight sorts below any text and is reset too,
+      // which is the right outcome for it.
+      const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
       const reset = await db('photos')
         .where('processing_status', 'processing')
         .where('processing_started_at', '<', cutoff)
