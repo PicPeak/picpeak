@@ -61,6 +61,10 @@ describe('migration 256 on SQLite', () => {
       { ...pending, email_type: 'stale_default', scheduled_at: sqliteText(now - 30 * 24 * HOUR), created_at: sqliteText(now - 30 * 24 * HOUR) },
       // an ISO string, the shape a manual message writes into created_at
       { ...pending, email_type: 'iso_sent', status: 'sent', scheduled_at: new Date(now - 2 * HOUR).toISOString(), created_at: new Date(now - 2 * HOUR).toISOString() },
+      // an ISO schedule from three days ago, still pending: what a Postgres-
+      // sourced .picpeak archive carries. Legitimate, unsent for its own
+      // reasons — converted, never parked.
+      { ...pending, email_type: 'iso_pending_old', scheduled_at: new Date(now - 3 * 24 * HOUR).toISOString(), created_at: new Date(now - 3 * 24 * HOUR).toISOString() },
       // a newsletter row: already milliseconds, an hour in the future
       { ...pending, email_type: 'ms_future', scheduled_at: now + HOUR, created_at: now },
       // a millisecond row that was due for a week and stayed pending — SMTP
@@ -100,7 +104,7 @@ describe('migration 256 on SQLite', () => {
     await migration.up(db);
     const after = await due(db, now);
     // Oldest effective time first: a NULL schedule counts from created_at.
-    expect(after.map((r) => r.email_type)).toEqual(['ms_stuck_elsewhere', 'fresh_default', 'garbage', 'null_now']);
+    expect(after.map((r) => r.email_type)).toEqual(['ms_stuck_elsewhere', 'iso_pending_old', 'fresh_default', 'garbage', 'null_now']);
 
     const stale = (await shapes(db)).find((r) => r.email_type === 'stale_default');
     expect(stale.status).toBe('failed');
@@ -114,6 +118,15 @@ describe('migration 256 on SQLite', () => {
     const stuck = (await shapes(db)).find((r) => r.email_type === 'ms_stuck_elsewhere');
     expect(stuck.status).toBe('pending');
     expect(stuck.error_message).toBeNull();
+  });
+
+  test('does not park an ISO schedule either — only the column default\'s own shape never came due', async () => {
+    await migration.up(db);
+    const iso = (await shapes(db)).find((r) => r.email_type === 'iso_pending_old');
+    expect(iso.status).toBe('pending');
+    expect(iso.error_message).toBeNull();
+    expect(iso.scheduled_type).toBe('integer');
+    expect(Math.abs(iso.scheduled_at - (now - 3 * 24 * HOUR))).toBeLessThan(1000);
   });
 
   test('an unreadable text value becomes NULL, which is due', async () => {

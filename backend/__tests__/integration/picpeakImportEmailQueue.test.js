@@ -34,6 +34,9 @@ beforeAll(async () => {
     { email_type: 'fresh_default', scheduled_at: sqliteText(now - 60e3), created_at: sqliteText(now - 60e3) },
     { email_type: 'stale_default', scheduled_at: sqliteText(now - 30 * 24 * HOUR), created_at: sqliteText(now - 30 * 24 * HOUR) },
     { email_type: 'ms_future', scheduled_at: now + HOUR, created_at: now },
+    // what a Postgres-sourced archive would carry: an ISO schedule, pending
+    // for three days — converted, not parked
+    { email_type: 'iso_pending_old', scheduled_at: new Date(now - 3 * 24 * HOUR).toISOString(), created_at: new Date(now - 3 * 24 * HOUR).toISOString() },
   ]) {
     await db('email_queue').insert({ recipient_email: 'a@b.c', status: 'pending', retry_count: 0, ...row });
   }
@@ -53,7 +56,7 @@ test('the imported rows carry the shape the processor compares against', async (
     .select('email_type', 'status', 'error_message', 'scheduled_at',
       db.raw('typeof(scheduled_at) as scheduled_type'), db.raw('typeof(created_at) as created_type'))
     .orderBy('id');
-  expect(rows.map((r) => r.email_type).sort()).toEqual(['fresh_default', 'ms_future', 'stale_default']);
+  expect(rows.map((r) => r.email_type).sort()).toEqual(['fresh_default', 'iso_pending_old', 'ms_future', 'stale_default']);
   for (const row of rows) {
     expect(row.scheduled_type).toBe('integer');
     expect(row.created_type).toBe('integer');
@@ -68,4 +71,6 @@ test('a fresh stuck row is pending and due; a stale one is parked with the reaso
   expect(byType.stale_default.error_message).toBe(STALE_MESSAGE);
   expect(byType.ms_future.status).toBe('pending');
   expect(byType.ms_future.scheduled_at).toBeGreaterThan(Date.now());
+  expect(byType.iso_pending_old.status).toBe('pending');
+  expect(byType.iso_pending_old.error_message).toBeNull();
 });
