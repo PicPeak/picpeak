@@ -203,7 +203,10 @@ export interface CustomerInvitationSummary {
  * in `data`; the older customer routes answer with the payload itself. One
  * place to stop caring which.
  */
-const unwrap = (payload: any): any => (payload && payload.data !== undefined ? payload.data : payload);
+type Enveloped<T> = T | { data: T };
+const isEnveloped = <T,>(payload: Enveloped<T>): payload is { data: T } =>
+  !!payload && typeof payload === 'object' && 'data' in payload && (payload as { data?: T }).data !== undefined;
+const unwrap = <T,>(payload: Enveloped<T>): T => (isEnveloped(payload) ? payload.data : payload);
 
 /** One row of a customer's timeline (GET /admin/customers/:id/activity, #1444). */
 export interface CustomerActivityEntry {
@@ -245,7 +248,7 @@ export const customerAdminService = {
   // ---- groups (#1443) ----------------------------------------------------
 
   async listGroups(includeArchived = false): Promise<CustomerGroup[]> {
-    const response = await api.get<{ groups: CustomerGroup[] } | { data: { groups: CustomerGroup[] } }>(
+    const response = await api.get<Enveloped<{ groups: CustomerGroup[] }>>(
       '/admin/customers/groups',
       { params: includeArchived ? { includeArchived: 'true' } : undefined }
     );
@@ -262,12 +265,12 @@ export const customerAdminService = {
   },
 
   async createGroup(payload: CustomerGroupPayload): Promise<CustomerGroup> {
-    const response = await api.post('/admin/customers/groups', payload);
+    const response = await api.post<Enveloped<{ group: CustomerGroup }>>('/admin/customers/groups', payload);
     return unwrap(response.data).group;
   },
 
   async updateGroup(id: number, payload: CustomerGroupPayload): Promise<CustomerGroup> {
-    const response = await api.put(`/admin/customers/groups/${id}`, payload);
+    const response = await api.put<Enveloped<{ group: CustomerGroup }>>(`/admin/customers/groups/${id}`, payload);
     return unwrap(response.data).group;
   },
 
@@ -276,7 +279,7 @@ export const customerAdminService = {
   },
 
   async reorderGroups(orderedIds: number[]): Promise<CustomerGroup[]> {
-    const response = await api.post('/admin/customers/groups/reorder', { orderedIds });
+    const response = await api.post<Enveloped<{ groups: CustomerGroup[] }>>('/admin/customers/groups/reorder', { orderedIds });
     return unwrap(response.data).groups;
   },
 
@@ -285,13 +288,13 @@ export const customerAdminService = {
    * With `dryRun` nothing is written; the answer is the preview.
    */
   async bulkAssignGroups(payload: CustomerGroupBulkPayload): Promise<CustomerGroupBulkResult> {
-    const response = await api.post('/admin/customers/groups/bulk-assign', payload);
+    const response = await api.post<Enveloped<CustomerGroupBulkResult>>('/admin/customers/groups/bulk-assign', payload);
     return unwrap(response.data);
   },
 
   /** Replace a customer's groups with exactly these ids. */
   async setCustomerGroups(id: number, groupIds: number[]): Promise<CustomerGroup[]> {
-    const response = await api.put(`/admin/customers/${id}/groups`, { groupIds });
+    const response = await api.put<Enveloped<{ groups: CustomerGroup[] }>>(`/admin/customers/${id}/groups`, { groupIds });
     return unwrap(response.data).groups;
   },
 
@@ -386,10 +389,10 @@ export const customerAdminService = {
    * generates a 7-day single-use token and emails the customer.
    */
   async sendPasswordReset(id: number): Promise<{ email: string; expiresAt: string }> {
-    const response = await api.post<{ data: { email: string; expiresAt: string } } | { email: string; expiresAt: string }>(
+    const response = await api.post<Enveloped<{ email: string; expiresAt: string }>>(
       `/admin/customers/${id}/password-reset`,
     );
-    return ((response.data as any).data ?? response.data) as { email: string; expiresAt: string };
+    return unwrap(response.data);
   },
 
   /**
@@ -405,11 +408,11 @@ export const customerAdminService = {
    * No separate token-blacklist call needed.
    */
   async setEvents(id: number, eventIds: number[]): Promise<{ added: number; removed: number }> {
-    const response = await api.put<{ data: { added: number; removed: number } } | { added: number; removed: number }>(
+    const response = await api.put<Enveloped<{ added: number; removed: number }>>(
       `/admin/customers/${id}/events`,
       { event_ids: eventIds },
     );
-    return ((response.data as any).data ?? response.data) as { added: number; removed: number };
+    return unwrap(response.data);
   },
 
   /**
@@ -423,11 +426,11 @@ export const customerAdminService = {
     email: string,
     prefill?: CustomerInvitePrefill,
   ): Promise<{ id: number; email: string; expiresAt: string }> {
-    const response = await api.post<{ data: { invitation: { id: number; email: string; expiresAt: string } } }>(
+    const response = await api.post<Enveloped<{ invitation: { id: number; email: string; expiresAt: string } }>>(
       '/admin/customers/invite',
       { email, prefill },
     );
-    return (response.data as any).data?.invitation ?? (response.data as any).invitation;
+    return unwrap(response.data).invitation;
   },
 
   async listInvitations(): Promise<CustomerInvitationSummary[]> {
@@ -456,11 +459,11 @@ export const customerAdminService = {
     /** Needs customers.groups.manage; the server refuses the whole create without it. */
     groupIds?: number[],
   ): Promise<CustomerAccountDetail> {
-    const response = await api.post<{ data: { customer: CustomerAccountDetail } } | { customer: CustomerAccountDetail }>(
+    const response = await api.post<Enveloped<{ customer: CustomerAccountDetail }>>(
       '/admin/customers',
       groupIds && groupIds.length > 0 ? { email, prefill, groupIds } : { email, prefill },
     );
-    return ((response.data as any).data ?? response.data).customer;
+    return unwrap(response.data).customer;
   },
 
   /**
@@ -475,10 +478,10 @@ export const customerAdminService = {
    * already has a password set.
    */
   async sendInvite(id: number): Promise<{ id: number; email: string; expiresAt: string }> {
-    const response = await api.post<{ data: { invitation: { id: number; email: string; expiresAt: string } } }>(
+    const response = await api.post<Enveloped<{ invitation: { id: number; email: string; expiresAt: string } }>>(
       `/admin/customers/${id}/send-invite`,
     );
-    return (response.data as any).data?.invitation ?? (response.data as any).invitation;
+    return unwrap(response.data).invitation;
   },
 
   // -------------------------------------------------------------------
@@ -486,22 +489,22 @@ export const customerAdminService = {
   // -------------------------------------------------------------------
 
   async listHourEntries(customerId: number, status?: HourEntryStatus): Promise<HourEntry[]> {
-    const response = await api.get<{ data: { entries: HourEntry[] } }>(
+    const response = await api.get<Enveloped<{ entries: HourEntry[] }>>(
       `/admin/customers/${customerId}/hour-entries`,
       { params: status ? { status } : undefined },
     );
-    return ((response.data as any).data?.entries ?? (response.data as any).entries) || [];
+    return unwrap(response.data).entries || [];
   },
 
   async createHourEntry(
     customerId: number,
     payload: HourEntryCreatePayload,
   ): Promise<{ id: number; status: HourEntryStatus; invoiceId?: number }> {
-    const response = await api.post(
+    const response = await api.post<Enveloped<{ id: number; status: HourEntryStatus; invoiceId?: number }>>(
       `/admin/customers/${customerId}/hour-entries`,
       payload,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   async updateHourEntry(
@@ -509,28 +512,28 @@ export const customerAdminService = {
     entryId: number,
     payload: HourEntryUpdatePayload,
   ): Promise<{ id: number }> {
-    const response = await api.put(
+    const response = await api.put<Enveloped<{ id: number }>>(
       `/admin/customers/${customerId}/hour-entries/${entryId}`,
       payload,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   async deleteHourEntry(customerId: number, entryId: number): Promise<{ deleted: true }> {
-    const response = await api.delete(
+    const response = await api.delete<Enveloped<{ deleted: true }>>(
       `/admin/customers/${customerId}/hour-entries/${entryId}`,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   /** Per-event flow only — mints a standalone invoice from all
    *  unbilled entries and stamps them billed. Monthly-mode customers
    *  auto-bill on save and get a 409 here. */
   async billUnbilledHourEntries(customerId: number): Promise<{ invoiceId: number; entriesBilled: number }> {
-    const response = await api.post(
+    const response = await api.post<Enveloped<{ invoiceId: number; entriesBilled: number }>>(
       `/admin/customers/${customerId}/hour-entries/bill`,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   /** Combine open hours and/or open re-bills into ONE invoice (#866, Feature 3).
@@ -539,38 +542,38 @@ export const customerAdminService = {
     customerId: number,
     opts: { includeHours: boolean; includeRebills: boolean },
   ): Promise<{ invoiceId: number; entriesBilled: number; rebillsBilled: number }> {
-    const response = await api.post(
+    const response = await api.post<Enveloped<{ invoiceId: number; entriesBilled: number; rebillsBilled: number }>>(
       `/admin/customers/${customerId}/bill-combined`,
       opts,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   /** Landing aggregate for /admin/clients/hours — every customer that
    *  currently carries unbilled hour entries, with open hours + open
    *  amount (install default currency). Sorted by open amount desc. */
   async getUnbilledHoursSummary(): Promise<UnbilledHoursSummaryRow[]> {
-    const response = await api.get(`/admin/customers/hour-entries/unbilled-summary`);
-    return ((response.data as any).data?.summary ?? (response.data as any).summary) || [];
+    const response = await api.get<Enveloped<{ summary: UnbilledHoursSummaryRow[] }>>(`/admin/customers/hour-entries/unbilled-summary`);
+    return unwrap(response.data).summary || [];
   },
 
   /** Admin override — issue the customer's running monthly draft now,
    *  bypassing the cadence-day wait. 409 when no draft exists or the
    *  draft is empty. Returns the issued invoice id + number. */
   async triggerMonthlyBill(customerId: number): Promise<{ invoiceId: number; invoiceNumber: string }> {
-    const response = await api.post(
+    const response = await api.post<Enveloped<{ invoiceId: number; invoiceNumber: string }>>(
       `/admin/customers/${customerId}/trigger-monthly-bill`,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 
   /** Preview the customer's open monthly draft (line items + totals).
    *  Returns null when nothing has been queued for the current period. */
   async getMonthlyDraft(customerId: number): Promise<{ draft: MonthlyDraftPreview | null }> {
-    const response = await api.get(
+    const response = await api.get<Enveloped<{ draft: MonthlyDraftPreview | null }>>(
       `/admin/customers/${customerId}/monthly-draft`,
     );
-    return (response.data as any).data ?? response.data;
+    return unwrap(response.data);
   },
 };
 
