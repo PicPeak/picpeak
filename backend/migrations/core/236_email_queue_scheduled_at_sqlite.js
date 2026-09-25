@@ -1,7 +1,13 @@
 'use strict';
 
 /**
- * Migration 256: make the email queue's stuck rows due on SQLite (issue 1670).
+ * Migration 236 (stable; 256 on main): make the email queue's stuck rows due on
+ * SQLite (issue 1670).
+ *
+ * Stable twin of main's 256_email_queue_scheduled_at_sqlite.js. The runner
+ * keys its ledger on the filename, so on a promote main's copy runs again on
+ * installs that ran this one. That is safe: the work is idempotent — a second
+ * run finds no text timestamps and changes nothing.
  *
  * `email_queue.scheduled_at` defaults to CURRENT_TIMESTAMP. On PostgreSQL that
  * is a timestamp and the processor's `scheduled_at <= now()` finds it. On

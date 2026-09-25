@@ -2,7 +2,7 @@
  * A .picpeak import normalises the email queue it brings back (issue 1670).
  *
  * The import batch-inserts archived rows as they were, text timestamps
- * included, and migration 256 will not run again on a target that already
+ * included, and migration 236 will not run again on a target that already
  * recorded it. Without the hook, a queue archived on an older SQLite install
  * would come back in the shape the processor never picks up.
  */

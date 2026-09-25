@@ -559,7 +559,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
       await trx.batchInsert(table, prepared, 100);
       // Archived queue rows come back as they were, text timestamps included,
-      // and migration 256 will not run again on this target (issue 1670).
+      // and migration 236 will not run again on this target (issue 1670).
       if (table === 'email_queue') await normaliseSqliteEmailQueue(trx);
     }
 

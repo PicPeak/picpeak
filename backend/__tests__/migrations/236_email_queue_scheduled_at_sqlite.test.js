@@ -1,5 +1,5 @@
 /**
- * Migration 256: the email queue's stuck rows come due on SQLite (issue 1670).
+ * Migration 236 (stable; 256 on main): the email queue's stuck rows come due on SQLite (issue 1670).
  *
  * The processor binds a Date, which the sqlite3 driver stores as epoch
  * milliseconds, and compares `scheduled_at <= ?`. A row left to the column
@@ -10,7 +10,7 @@
  * trivially true, which is exactly how this went unnoticed.
  */
 const knex = require('knex');
-const migration = require('../../migrations/core/256_email_queue_scheduled_at_sqlite');
+const migration = require('../../migrations/core/236_email_queue_scheduled_at_sqlite');
 
 const HOUR = 3600 * 1000;
 
@@ -43,7 +43,7 @@ const shapes = (db) => db('email_queue')
 
 const sqliteText = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 
-describe('migration 256 on SQLite', () => {
+describe('migration 236 on SQLite', () => {
   let db;
   const now = Date.now();
 

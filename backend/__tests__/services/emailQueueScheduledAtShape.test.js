@@ -10,7 +10,7 @@
  * out at once.
  *
  * Under Jest a Date binds as the literal "[object Object]" (CLAUDE.md), so
- * only the NULL shape is asserted at the database here; migration 256's test
+ * only the NULL shape is asserted at the database here; migration 236's test
  * exercises the due predicate with numbers.
  */
 const path = require('path');

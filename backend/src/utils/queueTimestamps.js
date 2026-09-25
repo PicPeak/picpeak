@@ -62,7 +62,7 @@ const sqliteMillis = (column) => `CAST(strftime('%s', ${column}) AS INTEGER) * 1
 
 /**
  * Make text timestamps in email_queue due on SQLite (issue 1670). Shared by
- * migration 256 and the .picpeak import, which batch-inserts archived rows as
+ * migration 236 and the .picpeak import, which batch-inserts archived rows as
  * they were and would otherwise bring the stuck shape back after the
  * migration has run. No-op on Postgres and without the table. Idempotent.
  *
