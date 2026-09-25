@@ -4,8 +4,9 @@
  * The dropzone's file input opens the system chooser, which on some Android
  * 14+ builds is the restricted photo picker with no camera entry. A second,
  * single-shot input with `capture="environment"` bypasses it, behind a button
- * that only shows at phone widths. It feeds the same selection handler, so a
- * captured photo is treated exactly like a picked one.
+ * that shows on coarse-pointer devices and only when the upload policy would
+ * accept a JPEG. It feeds the same selection handler, so a captured photo is
+ * treated exactly like a picked one.
  */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -24,14 +25,34 @@ vi.mock('react-i18next', async () => {
 });
 vi.mock('react-toastify', () => ({ toast: { warning: vi.fn(), info: vi.fn(), error: vi.fn(), success: vi.fn() } }));
 vi.mock('../../../config/api', () => ({ api: { post: vi.fn() } }));
-vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => ({ data: {} }) }));
+const publicSettings = vi.hoisted(() => ({ data: {} as Record<string, unknown> }));
+vi.mock('../../../hooks/usePublicSettings', () => ({ usePublicSettings: () => publicSettings }));
 
 const renderUploader = () => render(
   <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={vi.fn()} onClose={vi.fn()} />
 );
 
 describe('UserPhotoUpload camera button', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => { vi.clearAllMocks(); publicSettings.data = {}; });
+
+  it('is not offered when the upload policy would refuse a JPEG', () => {
+    publicSettings.data = { allowed_file_types: 'png,webp' };
+    const { container } = renderUploader();
+    expect(container.querySelectorAll('input[type="file"]')).toHaveLength(1);
+    expect(screen.queryByTestId('camera-input')).toBeNull();
+  });
+
+  it('is not offered on a fine-pointer device', () => {
+    const matchMedia = vi.fn().mockReturnValue({ matches: false });
+    vi.stubGlobal('matchMedia', matchMedia);
+    try {
+      renderUploader();
+      expect(matchMedia).toHaveBeenCalledWith('(pointer: coarse)');
+      expect(screen.queryByTestId('camera-input')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it('offers a capture input that opens the camera, separate from the dropzone input', () => {
     const { container } = renderUploader();
