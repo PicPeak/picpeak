@@ -42,6 +42,20 @@ describe('UserPhotoUpload camera button', () => {
     expect(screen.queryByTestId('camera-input')).toBeNull();
   });
 
+  it('is offered on a coarse-pointer device', () => {
+    // jsdom has no matchMedia, so the other cases reach the button through
+    // the fallback; this one pins the query itself.
+    const matchMedia = vi.fn().mockReturnValue({ matches: true });
+    vi.stubGlobal('matchMedia', matchMedia);
+    try {
+      renderUploader();
+      expect(matchMedia).toHaveBeenCalledWith('(pointer: coarse)');
+      expect(screen.getByTestId('camera-input')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('is not offered on a fine-pointer device', () => {
     const matchMedia = vi.fn().mockReturnValue({ matches: false });
     vi.stubGlobal('matchMedia', matchMedia);
