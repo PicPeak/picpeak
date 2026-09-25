@@ -12,6 +12,9 @@
  * Thumbnails, previews and heroes are NOT covered here: they stay stripped on
  * purpose (privacy — GPS), see withMetadata(false) in imageProcessor.
  */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const sharp = require('sharp');
 const exifr = require('exifr');
 
@@ -95,9 +98,37 @@ describe('a download resized to the gallery standard (issue 1649)', () => {
   });
 });
 
+describe('the watermarked gallery-view rendition', () => {
+  // applyWatermark also makes the image a VIEWER sees (gallery/media.js, the
+  // persisted watermark_path). That one stays stripped like every other
+  // rendition: a guest who cannot download must not read the GPS tag.
+  test('still strips metadata by default', async () => {
+    const out = await watermarkService.applyWatermark(await tagged(1200, 800), watermark);
+    expect(Buffer.isBuffer(out)).toBe(true);
+    expect(await readTags(out)).toBeNull();
+    expect((await sharp(out).metadata()).exif).toBeUndefined();
+  });
+
+  test('is cached apart from the download of the same file', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-wm-'));
+    const file = path.join(dir, 'tagged.jpg');
+    fs.writeFileSync(file, await tagged(1200, 800));
+    try {
+      const view = await watermarkService.applyWatermark(file, watermark);
+      const download = await watermarkService.applyWatermark(file, watermark, { keepMetadata: true });
+      const viewAgain = await watermarkService.applyWatermark(file, watermark);
+      expect(await readTags(download)).toMatchObject({ artist: ARTIST });
+      expect(await readTags(view)).toBeNull();
+      expect(await readTags(viewAgain)).toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a watermarked download (issue 1649)', () => {
   test('keeps the EXIF credit and the XMP block', async () => {
-    const out = await watermarkService.applyWatermark(await tagged(1200, 800), watermark);
+    const out = await watermarkService.applyWatermark(await tagged(1200, 800), watermark, { keepMetadata: true });
     expect(Buffer.isBuffer(out)).toBe(true);
     const tags = await readTags(out);
     expect(tags).toMatchObject({ artist: ARTIST, copyright: COPYRIGHT });
@@ -105,7 +136,7 @@ describe('a watermarked download (issue 1649)', () => {
   });
 
   test('does not leave the orientation tag behind on the rotated pixels', async () => {
-    const out = await watermarkService.applyWatermark(await tagged(1200, 600, { orientation: 6 }), watermark);
+    const out = await watermarkService.applyWatermark(await tagged(1200, 600, { orientation: 6 }), watermark, { keepMetadata: true });
     const meta = await sharp(out).metadata();
     expect(meta.orientation === undefined || meta.orientation === 1).toBe(true);
     expect(meta.height).toBeGreaterThan(meta.width);
