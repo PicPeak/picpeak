@@ -36,6 +36,7 @@ import { FeatureCard } from '../components/FeatureCard';
 import { SidebarPreview } from '../components/SidebarPreview';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import type { FeatureStatus } from '../components/StatusBadge';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 interface SectionProps {
   title: string;
@@ -93,27 +94,13 @@ export const FeaturesTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <SectionPageHeader
+        icon={ToggleRight}
+        title={t('settings.features.title', 'Features')}
+        description={t('settings.features.intro', 'Turn product surfaces on or off. Enabled features appear in the left navigation and become available to your team. Some features are still in beta — turn them on to try them, or off to hide them.')}
+        className=""
+      />
       <Card padding="md">
-        {/* Header */}
-        <div className="mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-700">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-accent-soft text-on-accent-soft flex items-center justify-center">
-              <ToggleRight className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                {t('settings.features.title', 'Features')}
-              </h2>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5 max-w-2xl">
-                {t(
-                  'settings.features.intro',
-                  'Turn product surfaces on or off. Enabled features appear in the left navigation and become available to your team. Some features are still in beta — flip them on to try them, off to hide them.',
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Core */}
         <Section title={t('settings.features.sections.core', 'Core')}>
           <FeatureCard

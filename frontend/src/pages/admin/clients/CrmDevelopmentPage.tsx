@@ -22,6 +22,7 @@ import { Button, Card, Loading } from '../../../components/common';
 import { billsService, type InvoiceStatus } from '../../../services/bills.service';
 import { devToolsService, type CrmEmailTemplateKey } from '../../../services/devTools.service';
 import { toast } from 'react-toastify';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 // Translation keys for each template's display title + description.
 // The lookup table holds (titleKey, titleFallback, descKey, descFallback)
@@ -194,16 +195,11 @@ export const CrmDevelopmentPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-          <Wrench className="w-5 h-5" />
-          {t('crmDev.title', 'CRM Development')}
-        </h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-          {t('crmDev.subtitle',
-            'Internal tools for verifying CRM flows. Hidden by default — enabled via Settings → Features → Development.')}
-        </p>
-      </div>
+      <SectionPageHeader
+        icon={Wrench}
+        title={t('crmDev.title', 'CRM Development')}
+        description={t('crmDev.subtitle', 'Internal tools for verifying CRM flows. Hidden by default — enabled via Settings → Features → Development.')}
+      />
 
       <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-3 mb-5 flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 shrink-0" />

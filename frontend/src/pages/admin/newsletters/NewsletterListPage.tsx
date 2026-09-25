@@ -17,6 +17,7 @@ import { usePermissions } from '../../../contexts/PermissionsContext';
 import {
   newslettersService, type Campaign, type CampaignStatus,
 } from '../../../services/newsletters.service';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200',
@@ -89,22 +90,20 @@ export const NewsletterListPage: React.FC = () => {
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6 gap-4">
-        <div>
-          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {t('newsletters.title', 'Newsletters')}
-          </h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-            {t('newsletters.subtitle',
-              'Send a campaign to your customer accounts. Everyone who has opted out is skipped automatically, and every send carries an unsubscribe link.')}
-          </p>
-        </div>
-        {canSend && (
-          <Button onClick={createDraft} leftIcon={<Plus className="w-4 h-4" />}>
-            {t('newsletters.new', 'New campaign')}
-          </Button>
+      <SectionPageHeader
+        icon={Megaphone}
+        title={t('newsletters.title', 'Newsletters')}
+        description={t('newsletters.subtitle', 'Send a campaign to your customer accounts. Everyone who has opted out is skipped automatically, and every send carries an unsubscribe link.')}
+        actions={(
+          <>
+          {canSend && (
+            <Button onClick={createDraft} leftIcon={<Plus className="w-4 h-4" />}>
+              {t('newsletters.new', 'New campaign')}
+            </Button>
+          )}
+          </>
         )}
-      </div>
+      />
 
       <div className="mb-4">
         <select

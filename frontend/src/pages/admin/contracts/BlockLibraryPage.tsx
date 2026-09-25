@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
+import { ScrollText, ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { SUPPORTED_LANGUAGES } from '../../../components/common/LanguageSelector';
 import { useMutationWithToast } from '../../../hooks';
@@ -36,6 +36,7 @@ import {
   type ContractBlockSection,
   CONTRACT_SECTIONS,
 } from '../../../services/contracts.service';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 // Locale → block column mapping. Keys mirror SUPPORTED_LANGUAGES.code;
 // values are the ContractBlock field names. Used to resolve which body
@@ -236,7 +237,7 @@ export const BlockLibraryPage: React.FC = () => {
     // bare layout; adding our own container made the contracts grid
     // measurably narrower than the email grid.
     <div>
-      <div className="mb-4 flex items-center gap-3 flex-wrap">
+      <div className="mb-3">
         <Link
           to="/admin/clients/contracts"
           className="inline-flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-400 hover:text-accent-dark"
@@ -244,14 +245,19 @@ export const BlockLibraryPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" />
           {t('contracts.blocks.back', 'Back to contracts')}
         </Link>
-        <h1 className="text-2xl font-bold flex-1 text-neutral-900 dark:text-neutral-100">
-          {t('contracts.blocks.title', 'Contract block library')}
-        </h1>
-        <label className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
-          <input type="checkbox" checked={hideInactive} onChange={(e) => setHideInactive(e.target.checked)} />
-          {t('contracts.blocks.hideInactive', 'Hide inactive')}
-        </label>
       </div>
+      <SectionPageHeader
+        icon={ScrollText}
+        title={t('contracts.blocks.title', 'Contract block library')}
+        actions={(
+          <>
+          <label className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+            <input type="checkbox" checked={hideInactive} onChange={(e) => setHideInactive(e.target.checked)} />
+            {t('contracts.blocks.hideInactive', 'Hide inactive')}
+          </label>
+          </>
+        )}
+      />
 
       {/* Disclaimer banner — kept; the seeded blocks come with a legal
           disclaimer per the maintainer's "legal/financial defaults are

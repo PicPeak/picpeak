@@ -32,7 +32,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Save, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
+import { Mail, ArrowLeft, Save, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
 import { Button, Card, Loading, Input } from '../../../components/common';
 import { SUPPORTED_LANGUAGES } from '../../../components/common/LanguageSelector';
 import { EmailTemplateEditor } from '../../../components/admin/EmailTemplateEditor';
@@ -41,6 +41,7 @@ import { emailService, type EmailTemplateTranslation } from '../../../services/e
 import { settingsService } from '../../../services/settings.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../../hooks';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const TEMPLATE_KEY_DEFAULT = 'event_reminder_default';
 const TEMPLATE_KEY_PREFIX = 'event_reminder_';
@@ -246,18 +247,15 @@ export const ReminderTemplatesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-3">
         <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        {/* Explicit neutral colours (not `text-theme` / `text-muted-theme`):
-            those resolve to the gallery branding theme's --color-text, which
-            is applied globally on <html> and renders near-white inside the
-            light admin chrome (QA S13). */}
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-          {t('reminderTemplates.title', 'Pre-event reminder emails')}
-        </h1>
       </div>
+      <SectionPageHeader
+        icon={Mail}
+        title={t('reminderTemplates.title', 'Pre-event reminder emails')}
+      />
 
       {/* Schedule (on/off + lead time): in Workflows when the engine is live,
           else the legacy global controls. */}

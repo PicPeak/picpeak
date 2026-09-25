@@ -14,7 +14,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search, BookOpen } from 'lucide-react';
+import { ScrollText, Plus, Search, BookOpen } from 'lucide-react';
 import { Button, Card, Loading, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
 import {
   contractsService,
@@ -23,6 +23,7 @@ import {
 } from '../../../services/contracts.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { contractStatusLabel } from '../../../utils/contractStatus';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const STATUSES: ContractStatus[] = [
   'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled', 'expired', 'awaiting_data',
@@ -64,44 +65,35 @@ export const ContractsListPage: React.FC = () => {
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
   return (
-    <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('contracts.title', 'Contracts')}</h1>
-            {/* Beta badge — matches Customers + Quotes + Invoices. */}
-            <span
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title="Beta — feature is functional but still evolving"
-            >
-              {t('navigation.betaTag', 'Beta')}
-            </span>
-          </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            {t('contracts.subtitle', 'Compose contracts from reusable blocks and have customers sign in-browser or upload a wet-signed PDF.')}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link to="/admin/clients/contracts/templates">
-            <Button variant="outline">{t('contracts.list.templates', 'Templates')}</Button>
-          </Link>
-          <Link to="/admin/clients/contracts/attachments">
-            <Button variant="outline">{t('contracts.list.attachments', 'Attachments')}</Button>
-          </Link>
-          <Link to="/admin/clients/contracts/blocks">
-            <Button variant="outline">
-              <BookOpen className="w-4 h-4 mr-1" />
-              {t('contracts.list.blocksLibrary', 'Block library')}
-            </Button>
-          </Link>
-          <Link to="/admin/clients/contracts/new">
-            <Button>
-              <Plus className="w-4 h-4 mr-1" />
-              {t('contracts.list.new', 'New contract')}
-            </Button>
-          </Link>
-        </div>
-      </div>
+    <div>
+      <SectionPageHeader
+        icon={ScrollText}
+        title={t('contracts.title', 'Contracts')}
+        beta
+        description={t('contracts.subtitle', 'Compose contracts from reusable blocks and have customers sign in-browser or upload a wet-signed PDF.')}
+        actions={(
+          <>
+            <Link to="/admin/clients/contracts/templates">
+              <Button variant="outline">{t('contracts.list.templates', 'Templates')}</Button>
+            </Link>
+            <Link to="/admin/clients/contracts/attachments">
+              <Button variant="outline">{t('contracts.list.attachments', 'Attachments')}</Button>
+            </Link>
+            <Link to="/admin/clients/contracts/blocks">
+              <Button variant="outline">
+                <BookOpen className="w-4 h-4 mr-1" />
+                {t('contracts.list.blocksLibrary', 'Block library')}
+              </Button>
+            </Link>
+            <Link to="/admin/clients/contracts/new">
+              <Button>
+                <Plus className="w-4 h-4 mr-1" />
+                {t('contracts.list.new', 'New contract')}
+              </Button>
+            </Link>
+          </>
+        )}
+      />
 
       <Card padding="lg">
         <div className="flex flex-wrap items-center gap-3">

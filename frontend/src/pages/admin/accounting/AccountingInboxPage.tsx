@@ -23,6 +23,7 @@ import {
   accountingService, categoryLabel,
   type InboundDocument, type Disposition, type MarkupType, type PaymentMethod, type ExpenseCategory,
 } from '../../../services/accounting.service';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const DISPOSITIONS: Disposition[] = ['rebill', 'durchlaufend', 'eigener_aufwand', 'duplikat', 'abgelehnt'];
 const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'paypal', 'card', 'other'];
@@ -387,6 +388,11 @@ export const AccountingInboxPage: React.FC = () => {
 
   return (
     <div>
+      <SectionPageHeader
+        icon={Inbox}
+        title={t('accounting.subnav.incomingInvoices', 'Incoming invoices')}
+        description={t('accounting.inbox.subtitle', 'Supplier invoices captured by camera, upload or the incoming mailbox, ready to categorise and re-bill.')}
+      />
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile('camera')} />
       <input ref={uploadRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={onFile('upload')} />
 

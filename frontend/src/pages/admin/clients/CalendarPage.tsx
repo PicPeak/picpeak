@@ -63,6 +63,8 @@ import { customerAdminService } from '../../../services/customerAdmin.service';
 import { getCalendarView, setCalendarView, type CalendarView } from '../../../utils/calendarPrefs';
 import { HourEntryDragCreateModal } from './HourEntryDragCreateModal';
 import { HourEntryInlinePopover } from './HourEntryInlinePopover';
+import { Calendar as CalendarIcon } from 'lucide-react';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 // Color tokens. Hex literals (rather than tailwind utility classes)
 // because FullCalendar applies these as inline `background-color` /
@@ -466,33 +468,30 @@ export const CalendarPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {t('calendar.pageTitle', 'Calendar')}
-          </h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            {t('calendar.subtitle',
-              'Events, logged hours, and pending quotes/contracts in one view.')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={view === 'dayGridMonth' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => setView('dayGridMonth')}
-          >
-            {t('calendar.viewMonth', 'Month')}
-          </Button>
-          <Button
-            variant={view === 'timeGridWeek' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => setView('timeGridWeek')}
-          >
-            {t('calendar.viewWeek', 'Week')}
-          </Button>
-        </div>
-      </div>
+      <SectionPageHeader
+        icon={CalendarIcon}
+        title={t('calendar.pageTitle', 'Calendar')}
+        description={t('calendar.subtitle', 'Events, logged hours, and pending quotes/contracts in one view.')}
+        className=""
+        actions={(
+          <>
+            <Button
+              variant={view === 'dayGridMonth' ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setView('dayGridMonth')}
+            >
+              {t('calendar.viewMonth', 'Month')}
+            </Button>
+            <Button
+              variant={view === 'timeGridWeek' ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setView('timeGridWeek')}
+            >
+              {t('calendar.viewWeek', 'Week')}
+            </Button>
+          </>
+        )}
+      />
 
       <Legend />
 
