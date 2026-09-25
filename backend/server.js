@@ -826,6 +826,13 @@ app.use('/api/admin/feedback', require('./src/routes/adminFeedback'));
 app.use('/api/admin', require('./src/routes/adminGuests'));
 app.use('/api/admin/image-security', require('./src/routes/adminImageSecurity'));
 app.use('/api/admin/thumbnails', require('./src/routes/adminThumbnails'));
+// adminPhotos is mounted twice on purpose (audit §2.3, issue 1670): here as
+// /api/admin/photos/:eventId/... for the media and repair endpoints the admin
+// UI reads (thumbnail, photo, preview, repair-* jobs), and in routes/admin.js
+// as /api/admin/events/:eventId/photos/... for the CRUD calls photos.service.ts
+// makes. Both sit behind the same global middleware; neither tree is dead, so
+// neither is removed. adminPhotoDimensions shares the prefix for the same
+// reason.
 app.use('/api/admin/photos', require('./src/routes/adminPhotoDimensions'));
 app.use('/api/admin/photos', require('./src/routes/adminPhotos'));
 app.use('/api/admin/photo-export', require('./src/routes/adminPhotoExport'));
