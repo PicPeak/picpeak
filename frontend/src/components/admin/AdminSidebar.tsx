@@ -375,27 +375,32 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
 
         {/* Section mode: back row + section title pinned above the
             scrolling list so they stay reachable however long the list
-            gets. */}
+            gets. The back row uses the item styles so it sits in the same
+            type scale and icon column as the list; the divider runs
+            directly under it, so the title reads as the list's heading
+            rather than as part of the back row (review on PR 1689). */}
         {section && (
-          <div className={`flex-shrink-0 border-b border-neutral-200 dark:border-neutral-700 pt-3 pb-2 animate-panel-in-right ${
-            collapsed ? 'px-4 lg:px-2' : 'px-4'
-          }`}>
-            <button
-              type="button"
-              onClick={() => setPeekMain(true)}
-              title={collapsed ? t('admin.backToMenu', 'Back to menu') : undefined}
-              className={`w-full flex items-center py-1.5 text-xs font-medium rounded-lg text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors ${
-                collapsed ? 'px-3 lg:px-0 lg:justify-center' : 'px-3'
-              }`}
-            >
-              <ArrowLeft className={`w-4 h-4 flex-shrink-0 ${collapsed ? 'mr-2 lg:mr-0' : 'mr-2'}`} />
-              <span className={collapsed ? 'lg:hidden' : ''}>{t('admin.backToMenu', 'Back to menu')}</span>
-            </button>
-            <div className={`flex items-center px-3 mt-2 mb-1 ${collapsed ? 'lg:hidden' : ''}`}>
-              <section.icon className="w-5 h-5 mr-3 flex-shrink-0 text-neutral-700 dark:text-neutral-300" />
-              <span className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                {section.title}
-              </span>
+          <div className="flex-shrink-0 animate-panel-in-right">
+            <div className={`border-b border-neutral-200 dark:border-neutral-700 py-2 ${
+              collapsed ? 'px-4 lg:px-2' : 'px-4'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setPeekMain(true)}
+                title={collapsed ? t('admin.backToMenu', 'Back to menu') : undefined}
+                className={`w-full text-left ${itemClass(false)}`}
+              >
+                <ArrowLeft className={iconClass(false)} />
+                <span className={collapsed ? 'lg:hidden' : ''}>{t('admin.backToMenu', 'Back to menu')}</span>
+              </button>
+            </div>
+            <div className={`flex items-center px-3 pt-4 ${collapsed ? 'lg:hidden px-4' : 'px-4'}`}>
+              <div className="flex items-center px-3">
+                <section.icon className="w-5 h-5 mr-3 flex-shrink-0 text-neutral-700 dark:text-neutral-300" />
+                <span className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+                  {section.title}
+                </span>
+              </div>
             </div>
           </div>
         )}
