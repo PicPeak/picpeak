@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.142.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.1-beta.0...v3.142.2-beta.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* **audit:** ISO processing claim, tunable watcher window, issuer on every auxiliary jwt.verify ([#1673](https://github.com/PicPeak/picpeak/issues/1673)) ([e507c17](https://github.com/PicPeak/picpeak/commit/e507c17e6511177f7c96e5169516c7f327d3151d))
+* **security:** generic admin 500 bodies, no swallowed stats writes, tighter preview and analytics sandboxes ([#1672](https://github.com/PicPeak/picpeak/issues/1672)) ([652e5ba](https://github.com/PicPeak/picpeak/commit/652e5ba826a1ee54adec4606dccd82ccf210b159))
+* **setup:** super_admin-only wizard completion, documented photos mounts, typed customer admin envelopes ([#1671](https://github.com/PicPeak/picpeak/issues/1671)) ([bbbc0ff](https://github.com/PicPeak/picpeak/commit/bbbc0ffbc1002906e60d51b81573651be939dbc6))
+
 ## [3.142.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.0-beta.0...v3.142.1-beta.0) (2026-09-24)
 
 
