@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.143.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.2-beta.0...v3.143.0-beta.0) (2026-09-25)
+
+
+### Features
+
+* **i18n:** complete Brazilian Portuguese for guest-facing screens ([#1657](https://github.com/PicPeak/picpeak/issues/1657)) ([8fafcca](https://github.com/PicPeak/picpeak/commit/8fafcca27815e3a4c66c5c8fa445dbdd667642ae))
+
 ## [3.142.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.1-beta.0...v3.142.2-beta.0) (2026-09-25)
 
 
