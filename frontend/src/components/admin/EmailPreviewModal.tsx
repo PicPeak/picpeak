@@ -76,7 +76,11 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
                 srcDoc={htmlContent}
                 className="w-full h-[600px] border-0"
                 title="Email Preview"
-                sandbox="allow-same-origin"
+                // Same posture as the inbound-mail pane: no scripts, no
+                // same-origin. The preview needs neither; images and styles
+                // still render, and nothing reaches contentDocument.
+                sandbox=""
+                referrerPolicy="no-referrer"
               />
             </div>
           ) : (

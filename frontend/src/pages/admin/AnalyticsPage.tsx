@@ -256,6 +256,12 @@ export const AnalyticsPage: React.FC = () => {
             src={umamiConfig.shareUrl}
             className="w-full h-full border-0"
             title="Umami Analytics Dashboard"
+            // An admin-configured third-party page: it gets what a dashboard
+            // needs (its own scripts, its own origin, links, forms) and
+            // nothing more — no top-navigation, no popups without user
+            // activation, no referrer.
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups-to-escape-sandbox allow-popups"
+            referrerPolicy="no-referrer"
           />
         </Card>
       </div>

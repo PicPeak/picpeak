@@ -493,7 +493,8 @@ export const CMSPage: React.FC = () => {
                   <div className="rounded-xl border border-neutral-200 dark:border-neutral-700 overflow-hidden shadow-sm bg-white dark:bg-neutral-800">
                     <iframe
                       title="public-site-preview"
-                      sandbox="allow-same-origin"
+                      sandbox=""
+                      referrerPolicy="no-referrer"
                       className="w-full h-[480px] bg-white"
                       srcDoc={publicSitePreview}
                     />
