@@ -8,15 +8,13 @@ const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse } = require('../../utils/routeHelpers');
-const { requireEventOwnership, scopeEventsListQuery } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsListQuery, scopeEventsQuery } = require('../../middleware/ownership');
 const { getQuota, resetGrants } = require('../../services/downloadQuota');
 
 async function loadOwnedEvent(req) {
-  let q = db('events').where('id', req.params.id);
-  if (req.admin.roleName === 'editor') {
-    q = q.where('created_by', req.admin.id);
-  }
-  return q.first();
+  // Ownership: the rule requireEventOwnership already enforced, kept as
+  // defence in depth (issue 1670, §2.4).
+  return scopeEventsQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
 function usageBody(event, quota) {

@@ -13,7 +13,7 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { parseBooleanInput } = require('../../utils/parsers');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const {
   getDownloadGlobals,
   resolveEventDownloadPolicy,
@@ -22,11 +22,9 @@ const {
 const downloadZipService = require('../../services/downloadZipService');
 
 async function loadOwnedEvent(req) {
-  let q = db('events').where('id', req.params.id);
-  if (req.admin.roleName === 'editor') {
-    q = q.where('created_by', req.admin.id);
-  }
-  return q.first();
+  // Ownership: the rule requireEventOwnership already enforced, kept as
+  // defence in depth (issue 1670, §2.4).
+  return scopeEventsQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
 module.exports = (router) => {

@@ -12,7 +12,7 @@ const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { parseBooleanInput } = require('../../utils/parsers');
 const logger = require('../../utils/logger');
@@ -60,11 +60,9 @@ function buildPersonFacesQuery(dbi, eventId, personId) {
 
 
 async function loadOwnedEvent(req) {
-  let q = db('events').where('id', req.params.id);
-  if (req.admin.roleName === 'editor') {
-    q = q.where('created_by', req.admin.id);
-  }
-  return q.first();
+  // Ownership: the rule requireEventOwnership already enforced, kept as
+  // defence in depth (issue 1670, §2.4).
+  return scopeEventsQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
 module.exports = (router) => {

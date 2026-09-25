@@ -10,7 +10,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const crypto = require('crypto');
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { parseBooleanInput } = require('../../utils/parsers');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
 const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const { SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS, SLIDESHOW_ORDERS } = require('./helpers');
@@ -30,11 +30,9 @@ async function buildSlideshowUrl(slug, token) {
 // already gates the route; this re-applies the created_by filter for editors so the
 // 404 is identical to the rest of this file).
 async function loadOwnedEvent(req) {
-  let q = db('events').where('id', req.params.id);
-  if (req.admin.roleName === 'editor') {
-    q = q.where('created_by', req.admin.id);
-  }
-  return q.first();
+  // Ownership: the rule requireEventOwnership already enforced, kept as
+  // defence in depth (issue 1670, §2.4).
+  return scopeEventsQuery(db('events').where('id', req.params.id), req.admin).first();
 }
 
 module.exports = (router) => {

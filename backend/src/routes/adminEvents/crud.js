@@ -24,7 +24,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { requireEventOwnership, scopeEventsListQuery, withoutForeignEventSecrets } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery } = require('../../middleware/ownership');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
 const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCredentialCutoff');
@@ -1442,12 +1442,9 @@ module.exports = (router) => {
       });
 
       // Check if event exists
-      let eventQuery = db('events').where('id', id);
-      // Editor role can only edit their own events
-      if (req.admin.roleName === 'editor') {
-        eventQuery = eventQuery.where('created_by', req.admin.id);
-      }
-      const event = await eventQuery.first();
+      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // defence in depth (issue 1670, §2.4).
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
@@ -1772,12 +1769,9 @@ module.exports = (router) => {
     try {
       const { id } = req.params;
 
-      let eventQuery = db('events').where('id', id);
-      // Editor role can only edit their own events
-      if (req.admin.roleName === 'editor') {
-        eventQuery = eventQuery.where('created_by', req.admin.id);
-      }
-      const event = await eventQuery.first();
+      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // defence in depth (issue 1670, §2.4).
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
@@ -1822,13 +1816,9 @@ module.exports = (router) => {
       const { id } = req.params;
       const { days } = req.body;
 
-      let eventQuery = db('events').where('id', id);
-      // Editor role can only touch their own events (defence in depth alongside
-      // requireEventOwnership).
-      if (req.admin.roleName === 'editor') {
-        eventQuery = eventQuery.where('created_by', req.admin.id);
-      }
-      const event = await eventQuery.first();
+      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // defence in depth (issue 1670, §2.4).
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
