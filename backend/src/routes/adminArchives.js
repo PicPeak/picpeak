@@ -723,7 +723,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       }
     } catch (extractError) {
       logger.error('Archive extraction error:', extractError);
-      return res.status(500).json({ error: 'Failed to extract archive: ' + extractError.message });
+      // The full error is in the log line above; the message can carry a
+      // storage key or a backend's own text, neither of which belongs in the
+      // response.
+      return res.status(500).json({ error: 'Failed to extract archive' });
     } finally {
       if (zip) await zip.close().catch(() => {});
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});

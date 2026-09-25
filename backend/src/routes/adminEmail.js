@@ -708,7 +708,7 @@ router.post('/flush-queue', adminAuth, requirePermission('email.send'), async (r
     res.json({ message: 'Email queue flushed', ...summary });
   } catch (error) {
     logger.error('Flush email queue error:', error);
-    res.status(500).json({ error: 'Failed to flush email queue', details: error.message });
+    res.status(500).json({ error: 'Failed to flush email queue' });
   }
 });
 
@@ -807,7 +807,7 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
     });
   } catch (error) {
     logger.error('List email queue error:', error);
-    res.status(500).json({ error: 'Failed to load email queue', details: error.message });
+    res.status(500).json({ error: 'Failed to load email queue' });
   }
 });
 
@@ -864,7 +864,7 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
     });
   } catch (error) {
     logger.error('Get email queue item error:', error);
-    res.status(500).json({ error: 'Failed to load email', details: error.message });
+    res.status(500).json({ error: 'Failed to load email' });
   }
 });
 
@@ -920,7 +920,7 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
     res.json({ ok: true });
   } catch (error) {
     logger.error('Manual send error:', error);
-    res.status(500).json({ error: 'Failed to send message', details: error.message });
+    res.status(500).json({ error: 'Failed to send message' });
   }
 });
 

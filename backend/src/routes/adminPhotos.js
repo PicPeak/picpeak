@@ -1808,7 +1808,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
       return res.status(error.statusCode).json({ error: error.message });
     }
     logger.error('Error uploading chunk:', error);
-    res.status(500).json({ error: error.message || 'Failed to upload chunk' });
+    res.status(500).json({ error: 'Failed to upload chunk' });
   }
 });
 
@@ -1883,7 +1883,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       return res.status(error.statusCode).json({ error: error.message });
     }
     logger.error('Error completing chunked upload:', error);
-    res.status(500).json({ error: error.message || 'Failed to complete upload' });
+    res.status(500).json({ error: 'Failed to complete upload' });
   }
 });
 
