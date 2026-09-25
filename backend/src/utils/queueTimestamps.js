@@ -70,9 +70,11 @@ const sqliteMillis = (column) => `CAST(strftime('%s', ${column}) AS INTEGER) * 1
  *      day is parked as `failed` with a reason — a gallery welcome or an
  *      expiry warning delivered months late would do more harm than good; it
  *      stays visible under System health → Failures, whose retry route
- *      re-queues it. A pending row that already holds a number was due and
- *      unsent for some other reason (SMTP down, retries exhausted) and is not
- *      touched;
+ *      re-queues it. Only the column default's own shape ('YYYY-MM-DD
+ *      HH:MM:SS', no zone) is a row that never came due: an ISO string is a
+ *      Postgres-sourced archive's legitimate schedule (or a shape that came
+ *      due there), and a number was due and unsent for some other reason
+ *      (SMTP down, retries exhausted). Neither is parked;
  *   2. every text scheduled_at / created_at becomes epoch milliseconds;
  *   3. a text scheduled_at strftime cannot read becomes NULL — the row was
  *      meant to send at once, which is what leaving the default meant.
@@ -84,10 +86,14 @@ async function normaliseSqliteEmailQueue(knex, { now = Date.now() } = {}) {
   if (!(await knex.schema.hasTable('email_queue'))) return;
   if (!(await knex.schema.hasColumn('email_queue', 'scheduled_at'))) return;
 
+  // CURRENT_TIMESTAMP's shape and no other: a space between date and time,
+  // no 'T', no zone. SQLITE_NAIVE_TIMESTAMP, as a GLOB.
+  const NAIVE_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]*';
   await knex.raw(
     'UPDATE email_queue SET status = ?, error_message = ? '
-    + `WHERE status = 'pending' AND typeof(scheduled_at) = 'text' AND ${sqliteMillis('scheduled_at')} < ?`,
-    ['failed', STALE_MESSAGE, now - STALE_AFTER_MS],
+    + 'WHERE status = \'pending\' AND typeof(scheduled_at) = \'text\' AND scheduled_at GLOB ? '
+    + `AND ${sqliteMillis('scheduled_at')} < ?`,
+    ['failed', STALE_MESSAGE, NAIVE_GLOB, now - STALE_AFTER_MS],
   );
   for (const column of ['scheduled_at', 'created_at']) {
     if (!(await knex.schema.hasColumn('email_queue', column))) continue;
