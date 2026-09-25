@@ -196,7 +196,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       await feedbackService.submitFeedback(slug!, String(currentPhoto.id), {
                         feedback_type: 'like',
                       });
-                    } catch (_) {}
+                    } catch (err) {
+                      // Same rule as PhotoCard: keep the optimistic state, a
+                      // refresh reconciles; but never swallow it silently.
+                      console.warn('Like submit failed, keeping optimistic UI', err);
+                    }
                     return;
                   }
                   if (feedbackOptions?.requireNameEmail && !savedIdentity) {
@@ -217,7 +221,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       guest_name: savedIdentity?.name,
                       guest_email: savedIdentity?.email,
                     });
-                  } catch (_) {}
+                  } catch (err) {
+                    console.warn('Like submit failed, keeping optimistic UI', err);
+                  }
                 }}
                 className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-red-400' : 'text-white'}`}
                 title="Like photo"

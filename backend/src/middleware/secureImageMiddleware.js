@@ -396,7 +396,9 @@ class SecureImageMiddleware {
 
       // Store in database if needed
       if (process.env.LOG_SECURITY_EVENTS === 'true') {
-        await db('security_logs').insert(logData).catch(console.error);
+        await db('security_logs').insert(logData).catch((insertError) => {
+          logger.warn('Security event could not be stored', { eventType, error: insertError.message });
+        });
       }
     } catch (error) {
       logger.error('Error logging security event:', error);
