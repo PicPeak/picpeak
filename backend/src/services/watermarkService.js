@@ -219,6 +219,12 @@ class WatermarkService {
         left: Math.max(0, Math.floor(position.left))
       }]);
 
+      // Keep the photo's EXIF, XMP and IPTC on the watermarked download
+      // (issue 1649) — same reasoning as resizeToBox: the credit travels with
+      // the file. rotate() above has already corrected the pixels, and
+      // keepMetadata() resets the Orientation tag to 1 to match.
+      watermarkedImage = watermarkedImage.keepMetadata();
+
       // Preserve original format with high quality settings
       const format = metadata.format || 'jpeg';
       let watermarkedBuffer;
