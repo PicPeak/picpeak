@@ -131,14 +131,14 @@ describe('CreateEventPage — Client Access is set up here, not after the fact',
     });
     fireEvent.click(clientAccessToggle());
     fireEvent.change(screen.getByPlaceholderText('clientAccess.pinPlaceholder'), {
-      target: { value: '4821' },
+      target: { value: '482193' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'events.createEvent' }));
 
     await waitFor(() => expect(createEvent).toHaveBeenCalledTimes(1));
     expect(createEvent.mock.calls[0][0]).toMatchObject({
       client_access_enabled: true,
-      client_password: '4821',
+      client_password: '482193',
     });
   });
 
@@ -150,7 +150,7 @@ describe('CreateEventPage — Client Access is set up here, not after the fact',
     });
     fireEvent.click(clientAccessToggle());
     fireEvent.change(screen.getByPlaceholderText('clientAccess.pinPlaceholder'), {
-      target: { value: '4821' },
+      target: { value: '482193' },
     });
     fireEvent.click(clientAccessToggle());
     fireEvent.click(screen.getByRole('button', { name: 'events.createEvent' }));
