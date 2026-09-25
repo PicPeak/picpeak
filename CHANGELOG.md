@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.145.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.2-beta.0...v3.145.0-beta.0) (2026-09-25)
+
+
+### Features
+
+* **admin:** make Client Access findable when creating an event ([#1686](https://github.com/PicPeak/picpeak/issues/1686)) ([421584d](https://github.com/PicPeak/picpeak/commit/421584d0827efbef9f0430a80728b1ab9e03de0d))
+* **gallery:** a camera button on the guest upload for phones whose picker hides the camera ([#1687](https://github.com/PicPeak/picpeak/issues/1687)) ([e8516d3](https://github.com/PicPeak/picpeak/commit/e8516d36ff369a40e7811aa9916b0d038ee280cf))
+
 ## [3.144.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.1-beta.0...v3.144.2-beta.0) (2026-09-25)
 
 
