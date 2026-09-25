@@ -30,6 +30,7 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { setSessionsValidAfter } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION, EXCLUDED_TABLES, listDataTables } = require('./picpeakExportService');
+const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
 const {
   dedupeExternalPhotos,
   createExternalRelpathIndex,
@@ -650,6 +651,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
       assertContainedPaths(table, prepared);
       await trx.batchInsert(table, prepared, 100);
+      // Archived queue rows come back as they were, text timestamps included,
+      // and migration 256 will not run again on this target (issue 1670).
+      if (table === 'email_queue') await normaliseSqliteEmailQueue(trx);
     }
 
     // Restore the constraint the load ran without. Deduping first because the

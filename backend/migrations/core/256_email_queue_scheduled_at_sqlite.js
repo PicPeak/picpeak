@@ -15,7 +15,7 @@
  * came due. The single-container image runs SQLite by default.
  *
  * The writers now store an explicit NULL. This migration takes care of the
- * rows already there, on SQLite only:
+ * rows already there, on SQLite only (normaliseSqliteEmailQueue):
  *
  *   1. every text `scheduled_at` / `created_at` becomes epoch milliseconds,
  *      the shape the processor compares against and the newsletter code
@@ -32,47 +32,14 @@
  * to restore them for.
  */
 
-const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
-const STALE_MESSAGE = 'Never picked up: scheduled_at was stored as text on SQLite (issue 1670). '
-  + 'Retry from System health → Failures if it is still wanted.';
+const {
+  normaliseSqliteEmailQueue, STALE_AFTER_MS, STALE_MESSAGE,
+} = require('../../src/utils/queueTimestamps');
 
-function isSqlite(knex) {
-  return (knex.client.config.client || '').toLowerCase().includes('sqlite');
-}
-
-// SQLite's strftime('%s') parses both CURRENT_TIMESTAMP's 'YYYY-MM-DD HH:MM:SS'
-// and an ISO 'YYYY-MM-DDTHH:MM:SS.SSSZ', and returns NULL for anything else.
-const toMillis = (column) => `CAST(strftime('%s', ${column}) AS INTEGER) * 1000`;
-
+// The work itself lives in utils/queueTimestamps so the .picpeak import can
+// run it on the rows it batch-inserts after this migration has already run.
 exports.up = async function up(knex) {
-  if (!isSqlite(knex)) return;
-  if (!(await knex.schema.hasTable('email_queue'))) return;
-  if (!(await knex.schema.hasColumn('email_queue', 'scheduled_at'))) return;
-
-  // 2. first, while the text shape still identifies the stuck rows: a row
-  //    that never came due and has been waiting more than a day. A pending
-  //    row that already holds a number was due and unsent for some other
-  //    reason (SMTP down, retries exhausted) and is not this migration's.
-  const cutoff = Date.now() - STALE_AFTER_MS;
-  await knex.raw(
-    'UPDATE email_queue SET status = ?, error_message = ? '
-    + `WHERE status = 'pending' AND typeof(scheduled_at) = 'text' AND ${toMillis('scheduled_at')} < ?`,
-    ['failed', STALE_MESSAGE, cutoff],
-  );
-
-  // 1. the shape.
-  for (const column of ['scheduled_at', 'created_at']) {
-    if (!(await knex.schema.hasColumn('email_queue', column))) continue;
-    await knex.raw(
-      `UPDATE email_queue SET ${column} = ${toMillis(column)} `
-      + `WHERE typeof(${column}) = 'text' AND strftime('%s', ${column}) IS NOT NULL`,
-    );
-  }
-  // A text value strftime could not read: the row was meant to send at once
-  // (that is what leaving the default meant), so let it.
-  await knex.raw('UPDATE email_queue SET scheduled_at = NULL WHERE typeof(scheduled_at) = \'text\'');
-
-  // Idempotent: a second run finds no text values and changes nothing.
+  await normaliseSqliteEmailQueue(knex);
 };
 
 exports.down = async function down() {

@@ -1291,9 +1291,13 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
       // schedule and the retry cap: the admin is forcing a retry, typically
       // right after fixing SMTP. Without this, emails that failed 3× during
       // an SMTP outage are stuck "pending" forever with no way to resend.
+      // Oldest effective time first. scheduled_at is NULL for mail that goes
+      // out at once (issue 1670), and Postgres sorts NULL last on ASC where
+      // SQLite sorts it first — either would let one kind starve the other
+      // under a full batch. COALESCE puts every row at the time it became due.
       pendingEmails = await query
-        .orderBy('scheduled_at', 'asc')
-        .orderBy('created_at', 'asc')
+        .orderByRaw('COALESCE(scheduled_at, created_at) ASC')
+        .orderBy('id', 'asc')
         .limit(limit);
     } catch (dbError) {
       logger.error('Failed to query email queue:', dbError);
