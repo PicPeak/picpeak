@@ -291,7 +291,7 @@ export const CustomerDetailPage: React.FC = () => {
   }
   if (error || !customer) {
     return (
-      <div className="container py-6">
+      <div>
         <div className="text-sm text-red-600 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
           {t('customers.detail.loadError', 'Could not load customer')}
@@ -301,7 +301,7 @@ export const CustomerDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <Link

@@ -32,6 +32,7 @@ import { businessProfileService } from '../../services/businessProfile.service';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from "../../components/common/LanguageSelector.tsx";
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 /**
  * Template categorisation (migration 098). Sidebar sections render
@@ -503,10 +504,11 @@ export const EmailConfigPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('email.title')}</h1>
-        <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('email.subtitle')}</p>
-      </div>
+      <SectionPageHeader
+        icon={Mail}
+        title={t('email.title')}
+        description={t('email.subtitle')}
+      />
 
       {/* Tab Navigation */}
       <div className="border-b border-neutral-200 dark:border-neutral-700 mb-6">

@@ -16,6 +16,7 @@ import { Button, Card, Input, Loading } from '../../../components/common';
 import { projectsService, type ProjectSummary } from '../../../services/projects.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatMoneyMinor } from '../../../utils/money';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 /** Render a project's rolled-up value (newest stage per deal, cumulative),
  *  one entry per currency. Convention (deliberately differs from the Events
@@ -56,17 +57,11 @@ export const ProjectsListPage: React.FC = () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-            <FolderKanban className="w-6 h-6 text-neutral-500" />
-            {t('projects.title', 'Project Overview')}
-          </h1>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-            {t('projects.subtitle', 'Group events into projects and see every email, document, gallery and hour in one cockpit.')}
-          </p>
-        </div>
-      </div>
+      <SectionPageHeader
+        icon={FolderKanban}
+        title={t('projects.title', 'Project Overview')}
+        description={t('projects.subtitle', 'Group events into projects and see every email, document, gallery and hour in one cockpit.')}
+      />
 
       {/* Inline create */}
       <Card className="mb-4">

@@ -6,13 +6,14 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Layers, Plus, Search } from 'lucide-react';
+import { FileText, Layers, Plus, Search } from 'lucide-react';
 import { TemplatePickerModal } from '../../../components/admin/quotes/TemplatePickerModal';
 import { quotesService, type QuoteStatus, type QuoteSort } from '../../../services/quotes.service';
 import { Button, Card, Loading, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'declined', 'expired', 'converted'];
 
@@ -52,34 +53,24 @@ export const QuotesListPage: React.FC = () => {
   };
 
   return (
-    <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('quotes.title', 'Quotes')}</h1>
-            {/* Beta badge — feature is functional but the surface is
-                still evolving (matches Customers + Invoices). */}
-            <span
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title="Beta — feature is functional but still evolving"
-            >
-              {t('navigation.betaTag', 'Beta')}
-            </span>
-          </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            {t('quotes.subtitle', 'Send, track and convert quotes into events.')}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link to="/admin/clients/quotes/catalog">
-            <Button variant="outline"><Layers className="w-4 h-4 mr-1" />{t('quotes.catalog.title', 'Catalogue & templates')}</Button>
-          </Link>
-          <PermissionGate permission="quotes.manage">
-            <Button onClick={() => setPickerOpen(true)}><Plus className="w-4 h-4 mr-1" />{t('quotes.new', 'New quote')}</Button>
-          </PermissionGate>
-        </div>
-        <TemplatePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
-      </div>
+    <div>
+      <SectionPageHeader
+        icon={FileText}
+        title={t('quotes.title', 'Quotes')}
+        beta
+        description={t('quotes.subtitle', 'Send, track and convert quotes into events.')}
+        actions={(
+          <>
+            <Link to="/admin/clients/quotes/catalog">
+              <Button variant="outline"><Layers className="w-4 h-4 mr-1" />{t('quotes.catalog.title', 'Catalogue & templates')}</Button>
+            </Link>
+            <PermissionGate permission="quotes.manage">
+              <Button onClick={() => setPickerOpen(true)}><Plus className="w-4 h-4 mr-1" />{t('quotes.new', 'New quote')}</Button>
+            </PermissionGate>
+          </>
+        )}
+      />
+      <TemplatePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
 
       <Card padding="lg">
         <div className="flex flex-wrap items-center gap-3">

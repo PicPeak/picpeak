@@ -31,6 +31,7 @@ import { ledgerService, type ExportFormat } from '../../../services/ledger.servi
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const LEDGER_FORMATS: ExportFormat[] = ['generic', 'banana', 'banana_ie', 'bexio'];
 
@@ -205,29 +206,20 @@ export const TaxReportPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <SectionPageHeader
+        icon={Calculator}
+        title={t('taxReport.title', 'Tax report')}
+        description={t('taxReport.intro', 'Period-scoped revenue list with net + VAT breakdown grouped by VAT rate. Cancelled invoices stay visible for audit-trail continuity but are excluded from totals.')}
+        className=""
+      />
       {/* Top row — filter card on the left (stacked rows, narrower
           footprint), compact totals card on the right. Both cards sit
-          above the table so the table gets the full content width. */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
+          above the table so the table gets the full content width. The
+          right column only exists while the totals card renders, so an
+          empty period doesn't leave the filter card narrow beside a hole. */}
+      <div className={`grid grid-cols-1 gap-6 items-start ${hasAnyData && report ? 'lg:grid-cols-[1fr_300px]' : ''}`}>
         {/* Filter card (left) */}
         <Card padding="md">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-accent-soft text-on-accent-soft flex items-center justify-center flex-shrink-0">
-              <Calculator className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                {t('taxReport.title', 'Tax report')}
-              </h1>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
-                {t(
-                  'taxReport.intro',
-                  'Period-scoped revenue list with net + VAT breakdown grouped by VAT rate. Cancelled invoices stay visible for audit-trail continuity but are excluded from totals.',
-                )}
-              </p>
-            </div>
-          </div>
-
           {/* Filters stacked vertically per the agreed layout:
               Row 1: period preset (full width)
               Row 2: from / to (side-by-side)

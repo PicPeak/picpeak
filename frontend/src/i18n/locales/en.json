@@ -3983,6 +3983,7 @@
     "viewReleaseNotes": "View release notes on GitHub",
     "expandSidebar": "Expand sidebar",
     "collapseSidebar": "Collapse sidebar",
+    "backToMenu": "Back to menu",
     "viewOnGithub": "View PicPeak on GitHub"
   },
   "acceptInvitation": {
@@ -4948,11 +4949,6 @@
     "title": "System Maintenance",
     "message": "We're currently performing scheduled maintenance to improve our service. We'll be back online shortly.",
     "urgentMatters": "For urgent matters, please contact"
-  },
-  "migrationBanner": {
-    "title": "PicPeak's image registry has moved",
-    "body": "Update your docker-compose.yml to pull from {{newPath}} — the old path is no longer being updated.",
-    "link": "See migration notes"
   },
   "passwordChange": {
     "title": "Change Password",
@@ -6458,6 +6454,7 @@
       "flat": "Flat"
     },
     "inbox": {
+      "subtitle": "Supplier invoices captured by camera, upload or the incoming mailbox, ready to categorise and re-bill.",
       "captureTitle": "Capture a supplier invoice",
       "captureBody": "Photograph a paper invoice with your device camera, or upload a PDF / image.",
       "scanCamera": "Scan with camera",
@@ -6585,6 +6582,7 @@
       "other": "Other"
     },
     "ledger": {
+      "subtitle": "Internal expenses such as mileage, per diems and cash receipts, booked to an event or the company.",
       "allStatuses": "All statuses",
       "allDispositions": "All dispositions",
       "allKinds": "All types",

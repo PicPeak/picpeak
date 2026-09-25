@@ -16,6 +16,7 @@ import { PdfThemeCard } from '../../components/admin/PdfThemeCard';
 import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 export const BrandingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -385,28 +386,29 @@ export const BrandingPage: React.FC = () => {
     <ErrorBoundary>
       <div>
         {/* Page Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('branding.title')}</h1>
-            <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('branding.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              leftIcon={<Eye className="w-4 h-4" />}
-              onClick={handlePreview}
-            >
-              {t('branding.preview')}
-            </Button>
-            <Button
-              variant="primary"
-              leftIcon={<Save className="w-4 h-4" />}
-              onClick={handleSave}
-            >
-              {t('branding.saveChanges')}
-            </Button>
-          </div>
-        </div>
+        <SectionPageHeader
+          icon={Palette}
+          title={t('branding.title')}
+          description={t('branding.subtitle')}
+          actions={(
+            <>
+              <Button
+                variant="outline"
+                leftIcon={<Eye className="w-4 h-4" />}
+                onClick={handlePreview}
+              >
+                {t('branding.preview')}
+              </Button>
+              <Button
+                variant="primary"
+                leftIcon={<Save className="w-4 h-4" />}
+                onClick={handleSave}
+              >
+                {t('branding.saveChanges')}
+              </Button>
+            </>
+          )}
+        />
 
         {/* Company Branding */}
         <Card padding="md" className="mb-6">

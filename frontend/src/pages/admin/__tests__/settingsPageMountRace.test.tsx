@@ -98,21 +98,22 @@ describe('SettingsPage fresh-mount permission race (QA J.08)', () => {
   it('still lands on the deep-linked tab once permissions arrive', () => {
     renderAt('webhooks');
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Webhooks' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Webhooks' })).toBeInTheDocument();
   });
 
   it('does not crash when the role has no settings tab permissions at all', () => {
     permissionsState.hasAnyPermission = () => false;
 
     expect(() => renderAt('webhooks')).not.toThrow();
-    expect(screen.getByText('settings.title')).toBeInTheDocument();
+    // No permitted tab → no section heading, and nothing else to crash on.
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   });
 
   it('keeps the CRM behaviour tab for an install with documents but no quotes, bills or contracts', () => {
     flagsState.flags = { documents: true };
     try {
       renderAt('crm');
-      expect(screen.getByRole('heading', { level: 2, name: 'CRM behaviour' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'CRM behaviour' })).toBeInTheDocument();
     } finally {
       flagsState.flags = {};
     }

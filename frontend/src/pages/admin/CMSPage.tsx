@@ -14,6 +14,7 @@ import { settingsService, PublicSiteBranding } from '../../services/settings.ser
 import { buildResourceUrl } from '../../utils/url';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 export const CMSPage: React.FC = () => {
   const { t } = useTranslation();
@@ -375,10 +376,11 @@ export const CMSPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('cms.title')}</h1>
-        <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('cms.subtitle')}</p>
-      </div>
+      <SectionPageHeader
+        icon={FileText}
+        title={t('cms.title')}
+        description={t('cms.subtitle')}
+      />
 
       <div className="mb-8">
         <Card className="space-y-6">
