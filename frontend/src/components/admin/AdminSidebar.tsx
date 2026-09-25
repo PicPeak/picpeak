@@ -327,7 +327,19 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           collapsed ? 'lg:justify-center lg:px-2 px-6 justify-between' : 'justify-between px-6'
         }`}>
           <div className="flex items-center gap-2 min-w-0">
-            {showLogoBrand ? (
+            {section ? (
+              <>
+                {/* Section mode: the section's icon + title replace the
+                    brand while the admin is inside Settings / CRM /
+                    Accounting, so the sidebar reads top-down as
+                    "where am I → back → pages". On the collapsed rail
+                    only the icon shows, centered like the favicon. */}
+                <section.icon className="w-6 h-6 flex-shrink-0 text-neutral-700 dark:text-neutral-300" />
+                <span className={`text-xl font-bold text-neutral-900 dark:text-neutral-100 truncate ${collapsed ? 'lg:hidden' : ''}`}>
+                  {section.title}
+                </span>
+              </>
+            ) : showLogoBrand ? (
               <>
                 {/* Logo brand variant — fed by Branding > Logo
                     Position = "Sidebar". On the collapsed rail, only
@@ -373,12 +385,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           </button>
         </div>
 
-        {/* Section mode: back row + section title pinned above the
-            scrolling list so they stay reachable however long the list
-            gets. The back row uses the item styles so it sits in the same
-            type scale and icon column as the list; the divider runs
-            directly under it, so the title reads as the list's heading
-            rather than as part of the back row (review on PR 1689). */}
+        {/* Section mode: back row pinned above the scrolling list so it
+            stays reachable however long the list gets. It uses the item
+            styles so it sits in the same type scale and icon column as
+            the list. The section title lives in the brand row above. */}
         {section && (
           <div className="flex-shrink-0 animate-panel-in-right">
             <div className={`border-b border-neutral-200 dark:border-neutral-700 py-2 ${
@@ -393,14 +403,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 <ArrowLeft className={iconClass(false)} />
                 <span className={collapsed ? 'lg:hidden' : ''}>{t('admin.backToMenu', 'Back to menu')}</span>
               </button>
-            </div>
-            <div className={`flex items-center px-3 pt-4 ${collapsed ? 'lg:hidden px-4' : 'px-4'}`}>
-              <div className="flex items-center px-3">
-                <section.icon className="w-5 h-5 mr-3 flex-shrink-0 text-neutral-700 dark:text-neutral-300" />
-                <span className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-                  {section.title}
-                </span>
-              </div>
             </div>
           </div>
         )}
