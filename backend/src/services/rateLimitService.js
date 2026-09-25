@@ -124,7 +124,9 @@ function isAuthenticated(req) {
     const slugMatch = req.path.match(/\/api\/gallery\/([^/]+)/);
     const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
     const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Same verification the auth middleware applies: a token that would not
+    // pass adminAuth must not buy an unlimited budget either.
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
     
     // Check if token is valid
     if (!decoded || typeof decoded !== 'object') {
@@ -180,7 +182,7 @@ function isOwnGalleryImageRequest(req) {
   try {
     const token = getGalleryTokenFromRequest(req, slug);
     if (!token) return false;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
     return Boolean(decoded) && typeof decoded === 'object'
       && decoded.type === 'gallery' && decoded.eventSlug === slug;
   } catch (error) {

@@ -375,7 +375,7 @@ router.post('/logout', async (req, res) => {
       endSession(token);
 
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
         logger.info('User logged out', { 
           userId: decoded.id,
           username: decoded.username,
@@ -771,6 +771,7 @@ router.get('/session', async (req, res) => {
       // every protected endpoint rejected them with 401, producing a
       // /admin/login → /admin/dashboard → /admin/login redirect loop).
       const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
         issuer: 'picpeak-auth'
       });
 
@@ -969,7 +970,7 @@ router.get('/admin/sso/callback', async (req, res) => {
 
   let stash;
   try {
-    stash = jwt.verify(stashCookie, process.env.JWT_SECRET, { issuer: 'picpeak-auth' });
+    stash = jwt.verify(stashCookie, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
     if (stash.type !== 'oidc_state') throw new Error('wrong token type');
   } catch (_) {
     return fail('state');
