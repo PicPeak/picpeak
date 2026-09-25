@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.144.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.0-beta.0...v3.144.1-beta.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* **downloads:** keep EXIF, XMP and IPTC on resized and watermarked downloads ([#1678](https://github.com/PicPeak/picpeak/issues/1678)) ([d416c04](https://github.com/PicPeak/picpeak/commit/d416c049f8297c2c7358dfa6c924b2dc1ad709ad))
+* **email:** queued mail left to the column default never came due on SQLite ([#1681](https://github.com/PicPeak/picpeak/issues/1681)) ([ec1dbac](https://github.com/PicPeak/picpeak/commit/ec1dbac6b3ce2ed13c607a2cc9f78e64b07e8b55))
+
 ## [3.144.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.143.0-beta.0...v3.144.0-beta.0) (2026-09-25)
 
 
