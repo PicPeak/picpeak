@@ -44,7 +44,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
   return (
     <div
       data-testid="settings-save-bar"
-      className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 mt-8 px-4 sm:px-6 lg:px-8 py-3 bg-white/95 dark:bg-neutral-900/95 backdrop-blur border-t border-neutral-200 dark:border-neutral-700"
+      className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 mt-8 px-4 sm:px-6 lg:px-8 py-3 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-700"
     >
       <div className="flex flex-wrap items-center justify-end gap-2">
         {isDirty && (
