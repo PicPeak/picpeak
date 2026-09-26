@@ -12,13 +12,12 @@
  *  - a video over the photo cap but under the video cap is accepted
  *  - a video over the video cap is dropped too
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
 
 import { PhotoUpload } from '../PhotoUpload';
+import { renderWithUploadSession as renderWithClient } from './uploadTestUtils';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -59,10 +58,6 @@ vi.mock('../../../services/settings.service', () => ({
   },
 }));
 
-const renderWithClient = (ui: ReactElement) => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-};
 
 const file = (name: string, type: string, mb: number) =>
   new File([new Uint8Array(Math.round(mb * 1024 * 1024))], name, { type });

@@ -7,16 +7,16 @@
  *   - rejected:   from the upload response's `errors: [{filename, error}]`
  *   - transfer:   from a whole-chunk POST failure (the `catch` path)
  *   - processing: from useUploadProgress's `failedPhotos`
- * plus the settle contract (hasFailures true/false) the modal relies on to
- * decide whether to auto-close, and dismissal.
+ * plus the outcome the bar shows for a clean run, and dismissal. The upload
+ * runs in UploadSessionProvider and the report renders in UploadProgressBar,
+ * so every test mounts both around the picker.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
 
 import { PhotoUpload } from '../PhotoUpload';
+import { renderWithUploadSession as renderWithClient } from './uploadTestUtils';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -62,10 +62,6 @@ vi.mock('../../../services/settings.service', () => ({
   settingsService: { getAllSettings: vi.fn().mockResolvedValue({}) },
 }));
 
-const renderWithClient = (ui: ReactElement) => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-};
 
 async function uploadFile(container: HTMLElement, user: ReturnType<typeof userEvent.setup>) {
   const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -80,7 +76,7 @@ describe('PhotoUpload failure report', () => {
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('names rejected + processing failures and settles with hasFailures', async () => {
+  it('names rejected + processing failures and keeps the bar up', async () => {
     postMock.mockResolvedValue({
       data: { successCount: 1, count: 1, upload_id: 'u1', errors: [{ filename: 'too-big.png', error: 'File too large' }] },
     });
@@ -89,9 +85,8 @@ describe('PhotoUpload failure report', () => {
       failedPhotos: [{ id: 5, filename: 'corrupt.jpg', error: 'Unsupported format' }],
       isComplete: true, isReady: true,
     };
-    const onUploadSettled = vi.fn();
     const user = userEvent.setup();
-    const { container } = renderWithClient(<PhotoUpload eventId={1} onUploadSettled={onUploadSettled} />);
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
 
     await uploadFile(container, user);
 
@@ -102,9 +97,9 @@ describe('PhotoUpload failure report', () => {
     expect(within(report).getByText('corrupt.jpg')).toBeInTheDocument();
     expect(within(report).getByText('Processing failed')).toBeInTheDocument();
 
-    // Contract with the modal: the real component fires onUploadSettled and,
-    // because something failed, asks the host NOT to auto-close.
-    await waitFor(() => expect(onUploadSettled).toHaveBeenCalledWith({ hasFailures: true }));
+    // Something failed, so the bar stays until the user dismisses it.
+    const bar = screen.getByTestId('upload-progress-bar');
+    expect(within(bar).getByRole('button', { name: /Dismiss/i })).toBeInTheDocument();
   });
 
   it('reports a whole-chunk transfer failure by name', async () => {
@@ -120,19 +115,18 @@ describe('PhotoUpload failure report', () => {
     expect(within(report).getByText('Transfer failed')).toBeInTheDocument();
   });
 
-  it('settles clean when nothing fails, so the modal can auto-close', async () => {
+  it('shows the uploaded count and no report when nothing fails', async () => {
     postMock.mockResolvedValue({ data: { successCount: 1, count: 1, upload_id: 'u1', errors: [] } });
     hoisted.aggregate = {
       total: 1, pending: 0, processing: 0, complete: 1, failed: 0,
       failedPhotos: [], isComplete: true, isReady: true,
     };
-    const onUploadSettled = vi.fn();
     const user = userEvent.setup();
-    const { container } = renderWithClient(<PhotoUpload eventId={1} onUploadSettled={onUploadSettled} />);
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
 
     await uploadFile(container, user);
 
-    await waitFor(() => expect(onUploadSettled).toHaveBeenCalledWith({ hasFailures: false }));
+    await waitFor(() => expect(screen.getByText('upload.bar.uploaded')).toBeInTheDocument());
     expect(screen.queryByTestId('upload-failure-report')).not.toBeInTheDocument();
   });
 
@@ -144,9 +138,10 @@ describe('PhotoUpload failure report', () => {
     const { container } = renderWithClient(<PhotoUpload eventId={1} />);
 
     await uploadFile(container, user);
-    const report = await screen.findByTestId('upload-failure-report');
+    await screen.findByTestId('upload-failure-report');
 
-    await user.click(within(report).getByRole('button', { name: /Dismiss/i }));
+    await user.click(screen.getByRole('button', { name: /Dismiss/i }));
     expect(screen.queryByTestId('upload-failure-report')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('upload-progress-bar')).not.toBeInTheDocument();
   });
 });

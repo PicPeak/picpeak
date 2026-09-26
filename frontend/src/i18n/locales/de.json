@@ -844,15 +844,15 @@
     "someFilesFailed": "Einige Dateien konnten nicht hochgeladen werden",
     "failures": {
       "title": "{{count}} Datei(en) konnten nicht hochgeladen werden",
-      "toast": "{{count}} Datei(en) konnten nicht hochgeladen werden – siehe Liste unten.",
+      "toast": "{{count}} Datei(en) konnten nicht hochgeladen werden – Details in der Upload-Leiste oben.",
       "kindRejected": "Abgelehnt",
       "kindTransfer": "Übertragung fehlgeschlagen",
       "kindProcessing": "Verarbeitung fehlgeschlagen",
       "transferReason": "Übertragung fehlgeschlagen",
       "unknownReason": "Unbekannter Fehler",
       "unknownFile": "Unbekannte Datei",
-      "toast_one": "{{count}} Datei konnte nicht hochgeladen werden – siehe Liste unten.",
-      "toast_other": "{{count}} Dateien konnten nicht hochgeladen werden – siehe Liste unten.",
+      "toast_one": "{{count}} Datei konnte nicht hochgeladen werden – Details in der Upload-Leiste oben.",
+      "toast_other": "{{count}} Dateien konnten nicht hochgeladen werden – Details in der Upload-Leiste oben.",
       "title_one": "{{count}} Datei konnte nicht hochgeladen werden",
       "title_other": "{{count}} Dateien konnten nicht hochgeladen werden"
     },
@@ -877,7 +877,15 @@
     "nameRequired": "Bitte gib deinen Namen ein, um hochzuladen.",
     "nameSaveFailed": "Dein Name konnte nicht gespeichert werden. Bitte versuche es erneut.",
     "namePrivacyShown": "Dein Name wird mit deinen Fotos gespeichert und anderen Gästen angezeigt. Der Gastgeber kann ihn jederzeit entfernen.",
-    "namePrivacyHidden": "Dein Name wird mit deinen Fotos für den Gastgeber gespeichert. Andere Gäste sehen ihn nicht, und der Gastgeber kann ihn jederzeit entfernen."
+    "namePrivacyHidden": "Dein Name wird mit deinen Fotos für den Gastgeber gespeichert. Andere Gäste sehen ihn nicht, und der Gastgeber kann ihn jederzeit entfernen.",
+    "alreadyRunning": "Es läuft bereits ein Upload. Er muss abgeschlossen sein, bevor der nächste starten kann.",
+    "bar": {
+      "uploading_one": "{{count}} Datei wird hochgeladen",
+      "uploading_other": "{{count}} Dateien werden hochgeladen",
+      "uploaded_one": "{{count}} Datei hochgeladen",
+      "uploaded_other": "{{count}} Dateien hochgeladen",
+      "viewEvent": "Zur Veranstaltung"
+    }
   },
   "navigation": {
     "dashboard": "Dashboard",

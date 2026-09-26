@@ -844,15 +844,15 @@
     "someFilesFailed": "Some files failed to upload",
     "failures": {
       "title": "{{count}} file(s) could not be uploaded",
-      "toast": "{{count}} file(s) could not be uploaded — see the list below.",
+      "toast": "{{count}} file(s) could not be uploaded — details in the upload bar at the top.",
       "kindRejected": "Rejected",
       "kindTransfer": "Transfer failed",
       "kindProcessing": "Processing failed",
       "transferReason": "Transfer failed",
       "unknownReason": "Unknown error",
       "unknownFile": "Unknown file",
-      "toast_one": "{{count}} file(s) could not be uploaded — see the list below.",
-      "toast_other": "{{count}} file(s) could not be uploaded — see the list below.",
+      "toast_one": "{{count}} file could not be uploaded — details in the upload bar at the top.",
+      "toast_other": "{{count}} files could not be uploaded — details in the upload bar at the top.",
       "title_one": "{{count}} file(s) could not be uploaded",
       "title_other": "{{count}} file(s) could not be uploaded"
     },
@@ -877,7 +877,15 @@
     "nameRequired": "Please enter your name to upload.",
     "nameSaveFailed": "Your name could not be saved. Please try again.",
     "namePrivacyShown": "Your name is saved with your photos and shown to other guests. The host can remove it at any time.",
-    "namePrivacyHidden": "Your name is saved with your photos for the host. Other guests do not see it, and the host can remove it at any time."
+    "namePrivacyHidden": "Your name is saved with your photos for the host. Other guests do not see it, and the host can remove it at any time.",
+    "alreadyRunning": "An upload is already running. It has to finish before the next one can start.",
+    "bar": {
+      "uploading_one": "Uploading {{count}} file",
+      "uploading_other": "Uploading {{count}} files",
+      "uploaded_one": "{{count}} file uploaded",
+      "uploaded_other": "{{count}} files uploaded",
+      "viewEvent": "View event"
+    }
   },
   "navigation": {
     "dashboard": "Dashboard",

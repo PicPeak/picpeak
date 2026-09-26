@@ -8,33 +8,20 @@ interface PhotoUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   eventId: number;
-  onUploadComplete?: () => void;
 }
 
+// The modal is only the picker. Once the files are handed to the upload
+// session it closes; progress, the outcome and the failure report live in
+// UploadProgressBar under the admin header, so the user is not held here
+// while bytes move and the worker processes (discussion 1541).
 export const PhotoUploadModal: React.FC<PhotoUploadModalProps> = ({
   isOpen,
   onClose,
   eventId,
-  onUploadComplete
 }) => {
   const { t } = useTranslation();
 
   if (!isOpen) return null;
-
-  // Refresh the host's grid, but do NOT close here — closing is decided by
-  // onUploadSettled so a partial-failure upload keeps the modal (and its
-  // failure report) open.
-  const handleUploadComplete = () => {
-    onUploadComplete?.();
-  };
-
-  // Auto-close only on a clean upload; keep the modal open when some files
-  // failed so the report stays visible until the user dismisses it.
-  const handleUploadSettled = ({ hasFailures }: { hasFailures: boolean }) => {
-    if (!hasFailures) {
-      onClose();
-    }
-  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -54,11 +41,7 @@ export const PhotoUploadModal: React.FC<PhotoUploadModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <PhotoUpload
-            eventId={eventId}
-            onUploadComplete={handleUploadComplete}
-            onUploadSettled={handleUploadSettled}
-          />
+          <PhotoUpload eventId={eventId} onUploadStarted={onClose} />
         </div>
       </div>
     </div>
