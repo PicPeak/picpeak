@@ -61,7 +61,7 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
   return (
     <Card padding="lg">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-heading">
           <Tags className="h-5 w-5" /> {t('customers.detail.groupsSection', 'Groups')}
         </h2>
         {canManage && !editing && (
@@ -73,7 +73,7 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
 
       {!editing ? (
         assigned.length === 0 ? (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-muted">
             {t('customers.groups.noneAssigned', 'This customer is in no group.')}
           </p>
         ) : (
@@ -84,14 +84,14 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
       ) : (
         <div className="space-y-3">
           {options.length === 0 ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            <p className="text-sm text-muted">
               {t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')}
             </p>
           ) : (
             <ul className="space-y-2">
               {options.map((group) => (
                 <li key={group.id}>
-                  <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                  <label className="flex items-center gap-2 text-sm text-body">
                     <input
                       type="checkbox"
                       checked={selected.includes(group.id)}
@@ -104,7 +104,7 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
                     <GroupDot color={group.color} className="h-2.5 w-2.5" />
                     <span>{group.name}</span>
                     {group.isArchived && (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="text-xs text-muted">
                         {t('customers.groups.archived', 'Archived')}
                       </span>
                     )}

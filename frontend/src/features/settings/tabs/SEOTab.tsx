@@ -120,7 +120,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
       <Card padding="md">
         <div className="flex items-center gap-2 mb-4">
           <Globe className="w-5 h-5 text-primary-600" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('settings.seo.indexingTitle', 'Search Engine Indexing')}</h2>
+          <h2 className="text-lg font-semibold text-heading">{t('settings.seo.indexingTitle', 'Search Engine Indexing')}</h2>
         </div>
 
         <div className="space-y-4">
@@ -132,8 +132,8 @@ export const SEOTab: React.FC<SEOTabProps> = ({
               className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.allowIndexing', 'Allow search engine indexing')}</span>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.allowIndexingHelp', 'When disabled, all crawlers are blocked via robots.txt. Recommended off for private photo platforms.')}</p>
+              <span className="text-sm font-medium text-body">{t('settings.seo.allowIndexing', 'Allow search engine indexing')}</span>
+              <p className="text-sm text-muted mt-0.5">{t('settings.seo.allowIndexingHelp', 'When disabled, all crawlers are blocked via robots.txt. Recommended off for private photo platforms.')}</p>
             </div>
           </label>
 
@@ -147,7 +147,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
               onChange={(e) => setSeoSettings(prev => ({ ...prev, sitemap_url: e.target.value }))}
               placeholder="https://example.com/sitemap.xml"
             />
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{t('settings.seo.sitemapUrlHelp', 'Optional. Added to robots.txt if provided.')}</p>
+            <p className="mt-1 text-sm text-muted">{t('settings.seo.sitemapUrlHelp', 'Optional. Added to robots.txt if provided.')}</p>
           </div>
         </div>
       </Card>
@@ -156,7 +156,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
       <Card padding="md">
         <div className="flex items-center gap-2 mb-4">
           <Bot className="w-5 h-5 text-primary-600" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('settings.seo.aiBlockingTitle', 'AI & Bot Blocking')}</h2>
+          <h2 className="text-lg font-semibold text-heading">{t('settings.seo.aiBlockingTitle', 'AI & Bot Blocking')}</h2>
         </div>
 
         <div className="space-y-4">
@@ -168,8 +168,8 @@ export const SEOTab: React.FC<SEOTabProps> = ({
               className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.blockAiCrawlers', 'Block AI/LLM crawlers')}</span>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.blockAiCrawlersHelp', 'Prevent AI training bots from accessing your content.')}</p>
+              <span className="text-sm font-medium text-body">{t('settings.seo.blockAiCrawlers', 'Block AI/LLM crawlers')}</span>
+              <p className="text-sm text-muted mt-0.5">{t('settings.seo.blockAiCrawlersHelp', 'Prevent AI training bots from accessing your content.')}</p>
             </div>
           </label>
 
@@ -180,7 +180,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
               </label>
               <div className="flex flex-wrap gap-2 mb-3">
                 {seoSettings.blocked_ai_agents.map(agent => (
-                  <span key={agent} className="inline-flex items-center gap-1 px-2.5 py-1 bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-full text-sm">
+                  <span key={agent} className="inline-flex items-center gap-1 px-2.5 py-1 bg-inset text-body rounded-full text-sm">
                     {agent}
                     <button
                       onClick={() => handleRemoveAgent(agent)}
@@ -214,8 +214,8 @@ export const SEOTab: React.FC<SEOTabProps> = ({
               className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
             />
             <div>
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.blockSocialBots', 'Block social media preview bots')}</span>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.blockSocialBotsHelp', 'Prevent link previews on Twitter, Facebook, LinkedIn, etc.')}</p>
+              <span className="text-sm font-medium text-body">{t('settings.seo.blockSocialBots', 'Block social media preview bots')}</span>
+              <p className="text-sm text-muted mt-0.5">{t('settings.seo.blockSocialBotsHelp', 'Prevent link previews on Twitter, Facebook, LinkedIn, etc.')}</p>
             </div>
           </label>
         </div>
@@ -225,7 +225,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
       <Card padding="md">
         <div className="flex items-center gap-2 mb-4">
           <Shield className="w-5 h-5 text-primary-600" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('settings.seo.metaTagsTitle', 'Meta Tags & Custom Rules')}</h2>
+          <h2 className="text-lg font-semibold text-heading">{t('settings.seo.metaTagsTitle', 'Meta Tags & Custom Rules')}</h2>
         </div>
 
         <div className="space-y-4">
@@ -238,8 +238,8 @@ export const SEOTab: React.FC<SEOTabProps> = ({
                 className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.metaNoindex', 'Add noindex meta tag')}</span>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.metaNoindexHelp', 'Tells search engines not to index pages (HTML-level, complements robots.txt).')}</p>
+                <span className="text-sm font-medium text-body">{t('settings.seo.metaNoindex', 'Add noindex meta tag')}</span>
+                <p className="text-sm text-muted mt-0.5">{t('settings.seo.metaNoindexHelp', 'Tells search engines not to index pages (HTML-level, complements robots.txt).')}</p>
               </div>
             </label>
 
@@ -251,8 +251,8 @@ export const SEOTab: React.FC<SEOTabProps> = ({
                 className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.metaNofollow', 'Add nofollow meta tag')}</span>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.metaNofollowHelp', 'Tells search engines not to follow links on pages.')}</p>
+                <span className="text-sm font-medium text-body">{t('settings.seo.metaNofollow', 'Add nofollow meta tag')}</span>
+                <p className="text-sm text-muted mt-0.5">{t('settings.seo.metaNofollowHelp', 'Tells search engines not to follow links on pages.')}</p>
               </div>
             </label>
 
@@ -264,21 +264,21 @@ export const SEOTab: React.FC<SEOTabProps> = ({
                 className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.seo.metaNoai', 'Add noai/noimageai meta tag')}</span>
-                <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">{t('settings.seo.metaNoaiHelp', 'Signals that content should not be used for AI training.')}</p>
+                <span className="text-sm font-medium text-body">{t('settings.seo.metaNoai', 'Add noai/noimageai meta tag')}</span>
+                <p className="text-sm text-muted mt-0.5">{t('settings.seo.metaNoaiHelp', 'Signals that content should not be used for AI training.')}</p>
               </div>
             </label>
           </div>
 
           {/* Custom Rules */}
-          <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4">
-            <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">{t('settings.seo.customRules', 'Custom robots.txt rules')}</h3>
+          <div className="border-t border-line pt-4">
+            <h3 className="text-sm font-medium text-body mb-3">{t('settings.seo.customRules', 'Custom robots.txt rules')}</h3>
 
             {seoSettings.custom_rules.length > 0 && (
               <div className="space-y-2 mb-3">
                 {seoSettings.custom_rules.map((rule, index) => (
-                  <div key={index} className="flex items-center gap-2 p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg text-sm">
-                    <code className="flex-1 text-neutral-700 dark:text-neutral-300">
+                  <div key={index} className="flex items-center gap-2 p-2 bg-subtle rounded-lg text-sm">
+                    <code className="flex-1 text-body">
                       User-agent: {rule.userAgent} / Disallow: {rule.disallow.join(', ')}
                     </code>
                     <button
@@ -312,7 +312,7 @@ export const SEOTab: React.FC<SEOTabProps> = ({
           </div>
 
           {/* robots.txt Preview */}
-          <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4">
+          <div className="border-t border-line pt-4">
             <button
               onClick={() => setShowPreview(!showPreview)}
               className="flex items-center gap-2 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"

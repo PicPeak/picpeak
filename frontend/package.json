@@ -8,6 +8,7 @@
     "build": "node ./scripts/build.js",
     "build:check": "tsc -b && node ./scripts/build.js",
     "lint": "eslint .",
+    "codemod:ui-tokens": "node scripts/codemod-ui-tokens.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "i18n:extract": "i18next-cli extract",

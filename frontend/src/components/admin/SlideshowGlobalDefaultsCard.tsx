@@ -45,8 +45,8 @@ const DEFAULTS: SlideshowGlobalDefaults = {
 };
 
 const inputClass =
-  'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
-const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+  'w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm';
+const labelClass = 'block text-sm font-medium text-body mb-1';
 
 export const SlideshowGlobalDefaultsCard: React.FC = () => {
   const { t } = useTranslation();
@@ -92,11 +92,11 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
 
   return (
     <Card padding="md" className="mb-6">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
         <MonitorPlay className="w-5 h-5" />
         {t('slideshow.globalTitle', 'Global slideshow settings')}
       </h2>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+      <p className="text-xs text-muted mb-4">
         {t('slideshow.globalDescription', 'Defaults for every slideshow. Events can override the watermark on or off.')}
       </p>
 
@@ -115,17 +115,17 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
               </option>
             ))}
           </select>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-xs text-muted mt-1">
             {t('slideshow.fitHint', '"Fill" crops to fill the screen; "Black bars" shows the whole photo — better for portrait images.')}
           </p>
         </div>
 
         {/* Default display style new slideshows inherit (override per event) */}
-        <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+        <div className="pt-2 border-t border-line">
+          <p className="text-sm font-medium text-body mb-1">
             {t('slideshow.presetTitle', 'Default style for new slideshows')}
           </p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+          <p className="text-xs text-muted mb-3">
             {t('slideshow.presetHint', 'Applied to events created from now on; each event can still override it.')}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -179,19 +179,19 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
           </div>
         </div>
 
-        <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="pt-2 border-t border-line">
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
-            className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
             checked={val.slideshow_watermark_enabled}
             onChange={(e) => setVal({ ...val, slideshow_watermark_enabled: e.target.checked })}
           />
           <div>
-            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            <span className="text-sm font-medium text-body">
               {t('slideshow.watermarkToggle', 'Logo watermark')}
             </span>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted mt-1">
               {t('slideshow.watermarkDescription', 'Overlay a white, semi-transparent logo in a corner (like a TV station ident).')}
             </p>
           </div>
@@ -265,19 +265,19 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         </div>
 
         {/* Share-link QR overlay (#837) */}
-        <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="pt-2 border-t border-line">
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
-            className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
             checked={val.slideshow_qr_enabled}
             onChange={(e) => setVal({ ...val, slideshow_qr_enabled: e.target.checked })}
           />
           <div>
-            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+            <span className="text-sm font-medium text-body">
               {t('slideshow.qrToggle', 'Gallery QR code')}
             </span>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted mt-1">
               {t('slideshow.qrDescription', 'Show the gallery link as a QR code so guests can scan it straight off the screen.')}
             </p>
           </div>

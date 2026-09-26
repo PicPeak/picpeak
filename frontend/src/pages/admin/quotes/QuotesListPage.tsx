@@ -56,7 +56,7 @@ export const QuotesListPage: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('quotes.title', 'Quotes')}</h1>
+            <h1 className="text-2xl font-bold text-heading">{t('quotes.title', 'Quotes')}</h1>
             {/* Beta badge — feature is functional but the surface is
                 still evolving (matches Customers + Invoices). */}
             <span
@@ -66,7 +66,7 @@ export const QuotesListPage: React.FC = () => {
               {t('navigation.betaTag', 'Beta')}
             </span>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             {t('quotes.subtitle', 'Send, track and convert quotes into events.')}
           </p>
         </div>
@@ -88,7 +88,7 @@ export const QuotesListPage: React.FC = () => {
             <input
               type="text"
               placeholder={t('quotes.searchPlaceholder', 'Search by number, customer, event…') as string}
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full pl-9 pr-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
@@ -102,7 +102,7 @@ export const QuotesListPage: React.FC = () => {
                 className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                   active
                     ? 'bg-accent-dark text-white border-accent-dark'
-                    : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600'
+                    : 'bg-panel text-body border-line-strong'
                 }`}
               >{t(`quotes.status.${s}`, s)}</button>
             );
@@ -113,12 +113,12 @@ export const QuotesListPage: React.FC = () => {
             single-card layout used by Customers/Invitations. */}
         <div className="mt-4">
           {isLoading ? <Loading /> : !data || data.quotes.length === 0 ? (
-            <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">{t('quotes.empty', 'No quotes yet.')}</p>
+            <p className="text-center text-muted py-8">{t('quotes.empty', 'No quotes yet.')}</p>
           ) : (
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+            <div className="rounded-lg border border-line overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                  <thead className="bg-subtle text-body">
                     <tr>
                       <SortableHeader label="#" columnKey="number" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
                       <SortableHeader label={t('quotes.table.customer', 'Customer')} columnKey="customer" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
@@ -131,7 +131,7 @@ export const QuotesListPage: React.FC = () => {
                   <tbody>
                     {data.quotes.map((q) => (
                       <tr key={q.id}
-                        className="border-t border-neutral-200 dark:border-neutral-700 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                        className="border-t border-line cursor-pointer hover:bg-hover-soft"
                         onClick={() => navigate(`/admin/clients/quotes/${q.id}`)}
                       >
                         <td className="px-3 py-2 font-mono text-xs">{q.quoteNumber}</td>
@@ -155,8 +155,8 @@ export const QuotesListPage: React.FC = () => {
                 </table>
               </div>
               {data.pagination.totalPages > 1 && (
-                <div className="flex justify-between items-center px-3 py-2 border-t border-neutral-200 dark:border-neutral-700 text-sm">
-                  <span className="text-neutral-500 dark:text-neutral-400">
+                <div className="flex justify-between items-center px-3 py-2 border-t border-line text-sm">
+                  <span className="text-muted">
                     {t('quotes.pagination', 'Page {{page}} of {{total}} · {{count}} quotes', {
                       page: data.pagination.page, total: data.pagination.totalPages, count: data.pagination.total,
                     })}

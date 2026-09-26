@@ -42,7 +42,7 @@ export const EventThemeSection: React.FC<EventThemeSectionProps> = ({
       {/* Theme & Style */}
       {isEditing && !event.is_archived && (
         <Card padding="md">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.themeAndStyle')}</h2>
+          <h2 className="text-lg font-semibold text-heading mb-4">{t('branding.themeAndStyle')}</h2>
           <ThemeCustomizerEnhanced
             value={currentTheme || GALLERY_THEME_PRESETS.default.config}
             forceColorMode={publicSettings?.branding_force_color_mode ?? null}
@@ -104,7 +104,7 @@ export const EventThemeSection: React.FC<EventThemeSectionProps> = ({
       {/* Theme Display (when not editing) */}
       {!isEditing && !event.is_archived && (
         <Card padding="md">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.galleryTheme')}</h2>
+          <h2 className="text-lg font-semibold text-heading mb-4">{t('events.galleryTheme')}</h2>
           <ThemeDisplay
             theme={event.color_theme || GALLERY_THEME_PRESETS.default.config}
             presetName={event.color_theme && !event.color_theme.startsWith('{') ? event.color_theme : undefined}

@@ -43,7 +43,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       {label && (
         <label
           htmlFor={selectId}
-          className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+          className="block text-sm font-medium text-body mb-1.5"
         >
           {label}
         </label>

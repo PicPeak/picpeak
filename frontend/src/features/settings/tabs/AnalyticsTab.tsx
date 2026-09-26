@@ -88,10 +88,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   return (
     <div className="space-y-6">
       <Card padding="md">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+        <h2 className="text-lg font-semibold text-heading mb-1">
           {t('settings.analytics.providerHeading', 'Analytics provider')}
         </h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-sm text-soft mb-4">
           {t(
             'settings.analytics.providerDescription',
             'Pick which tracker to use for the public gallery, or paste your own script. The admin dashboard\'s device-breakdown chart only enriches when you pick Umami or Rybbit — those expose a metrics API. Other providers (Plausible, Matomo, GA4, …) work via the Custom mode below.',
@@ -100,7 +100,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 
         {/* Provider dropdown — single source of truth for which panel renders. */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <label className="block text-sm font-medium text-body mb-1">
             {t('settings.analytics.providerLabel', 'Provider')}
           </label>
           <select
@@ -109,7 +109,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               ...prev,
               tracker_provider: e.target.value as TrackerProvider,
             }))}
-            className="w-full sm:w-72 px-3 py-2 text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+            className="w-full sm:w-72 px-3 py-2 text-sm border border-line-strong rounded-lg bg-shell text-heading"
           >
             {PROVIDER_OPTIONS.map((p) => (
               <option key={p} value={p}>
@@ -123,7 +123,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         {provider === 'umami' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.umamiUrl')}
               </label>
               <Input
@@ -133,13 +133,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 placeholder="https://analytics.yourdomain.com"
                 leftIcon={<Globe className="w-5 h-5 text-neutral-400" />}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t('settings.analytics.umamiUrlHelp')}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.websiteId')}
               </label>
               <Input
@@ -149,13 +149,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t('settings.analytics.websiteIdHelp')}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.shareUrl')}
               </label>
               <Input
@@ -165,13 +165,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 placeholder="https://analytics.yourdomain.com/share/..."
                 leftIcon={<Activity className="w-5 h-5 text-neutral-400" />}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t('settings.analytics.shareUrlHelp')}
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.umamiApiKey', 'API key')}
               </label>
               <Input
@@ -182,7 +182,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
                 autoComplete="off"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t(
                   'settings.analytics.umamiApiKeyHelp',
                   'Optional. Required only for the device-breakdown chart on the Analytics dashboard. Generate in Umami → Settings → Profile → API Keys. Stored masked as •••••••• once saved — leave the masked value to keep the existing key.',
@@ -198,7 +198,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         {provider === 'rybbit' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.rybbitUrl', 'Rybbit URL')}
               </label>
               <Input
@@ -208,7 +208,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 placeholder="https://app.rybbit.io"
                 leftIcon={<Globe className="w-5 h-5 text-neutral-400" />}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t(
                   'settings.analytics.rybbitUrlHelp',
                   'Your Rybbit instance URL — `https://app.rybbit.io` for the SaaS, or `https://rybbit.yourdomain.com` for self-hosted.',
@@ -217,7 +217,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.rybbitWebsiteId', 'Site ID')}
               </label>
               <Input
@@ -227,7 +227,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t(
                   'settings.analytics.rybbitWebsiteIdHelp',
                   'Found in Rybbit → Sites → your site → Tracking script.',
@@ -236,7 +236,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.rybbitApiKey', 'API key')}
               </label>
               <Input
@@ -247,7 +247,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
                 autoComplete="off"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t(
                   'settings.analytics.rybbitApiKeyHelp',
                   'Optional. Required only for the device-breakdown chart. Generate in Rybbit → Account → Settings → API Keys. Stored masked as •••••••• once saved.',
@@ -263,7 +263,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
         {provider === 'custom' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.analytics.customHeadHtml', 'Custom <head> HTML')}
               </label>
               <div className="relative">
@@ -276,10 +276,10 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                   placeholder={'<script async defer data-domain="example.com" src="https://plausible.io/js/script.js"></script>'}
                   rows={6}
                   spellCheck={false}
-                  className="w-full pl-10 pr-3 py-2 font-mono text-xs border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                  className="w-full pl-10 pr-3 py-2 font-mono text-xs border border-line-strong rounded-lg bg-shell text-heading"
                 />
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {t(
                   'settings.analytics.customHeadHtmlHelp',
                   'Paste your tracker\'s `<head>` snippet (Plausible, Matomo, Pirsch, GA4, GoatCounter, Fathom, Cloudflare Web Analytics, …). Sanitised on save: only `<script>` / `<noscript>` / `<link rel="preconnect|dns-prefetch">` / `<meta>` tags survive, and event-handler attributes are stripped. The admin dashboard\'s device-breakdown chart falls back to a server-side user-agent heuristic in this mode — pick Umami or Rybbit if you want the tracker-side numbers.',
@@ -319,22 +319,22 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 
       {/* Backend Analytics Info */}
       <Card padding="md">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('settings.analytics.backendAnalytics')}</h2>
-        <p className="text-sm text-neutral-700 dark:text-neutral-300 mb-4">{t('settings.analytics.backendAnalyticsText')}</p>
+        <h2 className="text-lg font-semibold text-heading mb-4">{t('settings.analytics.backendAnalytics')}</h2>
+        <p className="text-sm text-body mb-4">{t('settings.analytics.backendAnalyticsText')}</p>
 
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">{t('settings.analytics.tracked')}</h3>
-            <ul className="text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+          <div className="bg-subtle rounded-lg p-4">
+            <h3 className="text-sm font-medium text-heading mb-2">{t('settings.analytics.tracked')}</h3>
+            <ul className="text-xs text-soft space-y-1">
               <li>• {t('settings.analytics.galleryViews')}</li>
               <li>• {t('settings.analytics.photoDownloads')}</li>
               <li>• {t('settings.analytics.uniqueVisitors')}</li>
               <li>• {t('settings.analytics.deviceTypes')}</li>
             </ul>
           </div>
-          <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">{t('settings.analytics.privacy')}</h3>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400">
+          <div className="bg-subtle rounded-lg p-4">
+            <h3 className="text-sm font-medium text-heading mb-2">{t('settings.analytics.privacy')}</h3>
+            <p className="text-xs text-soft">
               {t('settings.analytics.privacyText')}
             </p>
           </div>

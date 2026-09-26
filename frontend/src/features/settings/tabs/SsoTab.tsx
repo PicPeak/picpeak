@@ -132,13 +132,13 @@ export const SsoTab: React.FC = () => {
               SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the
               same `settings.sso.title` key, so repeating it stacked two
               identical H2s on top of each other (QA warning). */}
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('settings.sso.intro', 'Let admins sign in through your identity provider (Keycloak, Authentik, Pocket ID, or any OIDC-compliant IdP). Local email/password login stays available as a fallback.')}
           </p>
 
           {/* Redirect URI for the IdP client registration */}
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-3">
-            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+          <div className="rounded-lg border border-line bg-subtle p-3">
+            <p className="text-xs font-medium text-soft">
               {t('settings.sso.redirectUri', 'Redirect URI (register this on your IdP client)')}
             </p>
             <div className="mt-2 flex items-center gap-2">
@@ -148,7 +148,7 @@ export const SsoTab: React.FC = () => {
               <button
                 type="button"
                 onClick={copyRedirectUri}
-                className="flex-shrink-0 rounded-md border border-neutral-200 dark:border-neutral-600 bg-white dark:bg-neutral-700 p-2 text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 transition-colors"
+                className="flex-shrink-0 rounded-md border border-line bg-inset p-2 text-muted hover:text-neutral-700 transition-colors"
                 aria-label={t('common.copy', 'Copy')}
                 title={t('common.copy', 'Copy')}
               >
@@ -163,7 +163,7 @@ export const SsoTab: React.FC = () => {
             value={form.oidc_issuer_url}
             onChange={(e) => set('oidc_issuer_url', e.target.value)}
           />
-          <p className="-mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="-mt-2 text-xs text-muted">
             {t('settings.sso.issuerHint', 'The base URL that serves /.well-known/openid-configuration.')}
           </p>
 
@@ -184,7 +184,7 @@ export const SsoTab: React.FC = () => {
                 value={newSecret}
                 onChange={(e) => setNewSecret(e.target.value)}
               />
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="mt-1 text-xs text-muted">
                 {t('settings.sso.secretHint', 'Stored encrypted; never shown again. Leave blank to keep the current one.')}
               </p>
             </div>
@@ -199,15 +199,15 @@ export const SsoTab: React.FC = () => {
           <label className="flex items-start gap-3 pt-1 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
               checked={form.oidc_autoprovision}
               onChange={(e) => set('oidc_autoprovision', e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              <span className="block text-sm font-medium text-body">
                 {t('settings.sso.autoprovision', 'Auto-provision unknown users')}
               </span>
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="block text-xs text-muted">
                 {t('settings.sso.autoprovisionHint', 'Create an admin account on first SSO login. Off: only existing/linked admins can sign in.')}
               </span>
             </span>
@@ -215,13 +215,13 @@ export const SsoTab: React.FC = () => {
 
           {form.oidc_autoprovision && (
             <div className="max-w-xs">
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.sso.defaultRole', 'Role for new users')}
               </label>
               <select
                 value={form.oidc_default_role}
                 onChange={(e) => set('oidc_default_role', e.target.value)}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
               >
                 <option value="viewer">{t('users.roles.viewer', 'Viewer')}</option>
                 <option value="editor">{t('users.roles.editor', 'Editor')}</option>
@@ -241,21 +241,21 @@ export const SsoTab: React.FC = () => {
           <label className="flex items-start gap-3 pt-1 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
               checked={form.oidc_enabled}
               onChange={(e) => set('oidc_enabled', e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              <span className="block text-sm font-medium text-body">
                 {t('settings.sso.enabled', 'Enable SSO login')}
               </span>
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="block text-xs text-muted">
                 {t('settings.sso.enabledHint', 'Shows the SSO button on the admin login page. Requires issuer, client ID and secret.')}
               </span>
             </span>
           </label>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="flex items-center gap-3 pt-4 border-t border-line">
             <Button
               variant="primary"
               leftIcon={<Save className="w-4 h-4" />}
@@ -273,7 +273,7 @@ export const SsoTab: React.FC = () => {
               {t('settings.sso.test', 'Test connection')}
             </Button>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-muted">
             {t('settings.sso.testHint', 'Test runs OIDC discovery against the saved configuration — save first.')}
           </p>
         </div>
@@ -284,26 +284,26 @@ export const SsoTab: React.FC = () => {
         <div className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <UserCog className="w-5 h-5 text-neutral-500" />
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-lg font-semibold text-heading">
               {t('settings.sso.roleMapping.title', 'Role mapping')}
             </h2>
           </div>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('settings.sso.roleMapping.intro', 'Assign PicPeak roles from a role or group claim in the ID token. Roles are re-evaluated on every SSO login — the IdP becomes the source of truth.')}
           </p>
 
           <label className="flex items-start gap-3 pt-1 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
               checked={form.oidc_role_mapping_enabled}
               onChange={(e) => set('oidc_role_mapping_enabled', e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              <span className="block text-sm font-medium text-body">
                 {t('settings.sso.roleMapping.enabled', 'Enable role mapping')}
               </span>
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="block text-xs text-muted">
                 {t('settings.sso.roleMapping.enabledHint', 'Off: existing admins keep their role and new users get the default role above.')}
               </span>
             </span>
@@ -318,17 +318,17 @@ export const SsoTab: React.FC = () => {
                   value={form.oidc_roles_claim}
                   onChange={(e) => set('oidc_roles_claim', e.target.value)}
                 />
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                <p className="mt-1 text-xs text-muted">
                   {t('settings.sso.roleMapping.claimHint', 'Keycloak: realm_access.roles · Authentik: groups · Entra ID: roles or groups')}
                 </p>
               </div>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                <p className="text-sm font-medium text-body">
                   {t('settings.sso.roleMapping.mappings', 'Mappings (IdP value → PicPeak role)')}
                 </p>
                 {mappingRows.length === 0 && (
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-muted">
                     {t('settings.sso.roleMapping.noMappings', 'No mappings yet — without one, no login gets a role from the IdP.')}
                   </p>
                 )}
@@ -344,7 +344,7 @@ export const SsoTab: React.FC = () => {
                     <select
                       value={row.role}
                       onChange={(e) => setRow(index, { role: e.target.value })}
-                      className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                      className="px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                     >
                       {Object.entries(ROLE_OPTIONS).map(([role, label]) => (
                         <option key={role} value={role}>{t(`users.roles.${role}`, label)}</option>
@@ -374,15 +374,15 @@ export const SsoTab: React.FC = () => {
               <label className="flex items-start gap-3 pt-1 cursor-pointer">
                 <input
                   type="checkbox"
-                  className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                  className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
                   checked={form.oidc_require_mapped_role}
                   onChange={(e) => set('oidc_require_mapped_role', e.target.checked)}
                 />
                 <span className="min-w-0">
-                  <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                  <span className="block text-sm font-medium text-body">
                     {t('settings.sso.roleMapping.requireRole', 'Require a mapped role to sign in')}
                   </span>
-                  <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="block text-xs text-muted">
                     {t('settings.sso.roleMapping.requireRoleHint', 'Refuse SSO logins whose token maps to no role — only members of the mapped IdP groups get in. The last active Super Admin is never demoted by mapping.')}
                   </span>
                 </span>
@@ -397,7 +397,7 @@ export const SsoTab: React.FC = () => {
         <div className="p-6 space-y-4">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-neutral-500" />
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-lg font-semibold text-heading">
               {t('settings.sso.policy.title', 'Login policy')}
             </h2>
           </div>
@@ -405,15 +405,15 @@ export const SsoTab: React.FC = () => {
           <label className="flex items-start gap-3 pt-1 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
               checked={form.oidc_disable_local_login}
               onChange={(e) => set('oidc_disable_local_login', e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              <span className="block text-sm font-medium text-body">
                 {t('settings.sso.policy.disableLocalLogin', 'Disable local password login')}
               </span>
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="block text-xs text-muted">
                 {t('settings.sso.policy.disableLocalLoginHint', 'The login page shows only the SSO button and the API refuses password logins. Only possible while SSO is enabled; turning SSO off restores password login automatically.')}
               </span>
             </span>
@@ -429,15 +429,15 @@ export const SsoTab: React.FC = () => {
           <label className="flex items-start gap-3 pt-1 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
               checked={form.oidc_logout_from_idp}
               onChange={(e) => set('oidc_logout_from_idp', e.target.checked)}
             />
             <span className="min-w-0">
-              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              <span className="block text-sm font-medium text-body">
                 {t('settings.sso.policy.logoutFromIdp', 'Also sign out of the identity provider')}
               </span>
-              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="block text-xs text-muted">
                 {t('settings.sso.policy.logoutFromIdpHint', 'Logging out of PicPeak also ends the IdP session (RP-initiated logout). Only applies to sessions that signed in via SSO; without this, logging out of PicPeak leaves the IdP session alive and the next SSO click signs straight back in.')}
               </span>
             </span>
@@ -445,10 +445,10 @@ export const SsoTab: React.FC = () => {
 
           {form.oidc_logout_from_idp && form.post_logout_redirect_uri && (
             <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-3">
-              <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
+              <p className="text-xs font-medium text-body mb-1">
                 {t('settings.sso.policy.postLogoutRedirectUri', 'Post-logout redirect URI (register this on your IdP client, e.g. Keycloak "Valid post logout redirect URIs")')}
               </p>
-              <code className="block text-xs text-neutral-800 dark:text-neutral-200 break-all">
+              <code className="block text-xs text-body break-all">
                 {form.post_logout_redirect_uri}
               </code>
             </div>

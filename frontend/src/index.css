@@ -1,4 +1,10 @@
 /*
+ * CSS @import must precede every other rule, or the browser drops it, so the
+ * design tokens (frontend/STYLING.md) are imported before the @font-face block.
+ */
+@import './styles/tokens.css';
+
+/*
  * Self-hosted Inter is bootstrapped here so the very first paint —
  * before React mounts and runs the dynamic @font-face injector — has
  * the default body font available. Replaces the previous Google Fonts
@@ -10,7 +16,11 @@
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/Inter/600.woff2') format('woff2'); }
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Inter/700.woff2') format('woff2'); }
 
-/* Import image protection styles */
+/* Import image protection styles.
+   NOTE: an @import below @font-face is dropped by CSS (Vite warns on every
+   build), so this stylesheet has not been applied since the self-hosted fonts
+   landed. Moving it up restores gallery protection overlays, which is a
+   visible change for guests and is therefore left for its own PR. */
 @import './styles/image-protection.css';
 
 @tailwind base;
@@ -18,61 +28,6 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /*
-     * Theme CSS Variables — 8-token CI palette.
-     * Token names are kept aligned with frontend/src/types/theme.types.ts
-     * (ThemeConfig). ThemeContext.applyTheme() writes these from the active
-     * theme/branding settings; values here are the "Classic Grid" defaults.
-     */
-    --color-background: #fafafa;        /* page base */
-    --color-surface: #ffffff;           /* cards, nav, alternating sections */
-    --color-elevated: #f5f5f5;          /* raised panels */
-    --color-surface-border: #e5e5e5;    /* dividers, borders (a.k.a. border token) */
-    --color-text: #171717;              /* primary text */
-    --color-muted-text: #737373;        /* secondary text */
-    --color-accent: #22c55e;            /* links, focus rings, hover */
-    --color-accent-dark: #5C8762;       /* primary CTA fill */
-
-    /* Legacy aliases — kept for any consumer that still reads --color-primary.
-     * Both resolve to the accent-dark token (the previous "primary" CTA color). */
-    --color-primary: #5C8762;
-    --color-primary-light: #7aa583;
-    --color-primary-dark: #4a6f4f;
-
-    --font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
-    --heading-font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
-    --border-radius: 0.5rem;
-    --font-size-base: 16px;
-    --shadow-default: 0 4px 6px rgba(0,0,0,0.1);
-
-    /* Tailwind RGB values for primary color (legacy, used by primary-* utilities) */
-    --tw-color-primary: 92 135 98;
-    --radius: 0.5rem;
-  }
-
-  /*
-   * Admin dark mode unification.
-   * AdminDarkModeContext toggles `.dark` on <html> without going through
-   * applyTheme(). Previously this only flipped the components that had
-   * explicit `.dark .x` overrides; everything else (cards/inputs/buttons
-   * that now read CSS variables) stayed light. We re-declare the 8-token
-   * defaults under `.dark` so the same variables resolve to a dark palette
-   * whenever the class is present. Gallery applyTheme() still wins because
-   * it writes inline `--color-*` styles on the html element, which beat the
-   * .dark stylesheet rule in the cascade.
-   */
-  .dark {
-    --color-background: #0a0a0a;
-    --color-surface: #171717;
-    --color-elevated: #1f1f1f;
-    --color-surface-border: #262626;
-    --color-text: #f5f5f5;
-    --color-muted-text: #a3a3a3;
-    --color-accent: #22c55e;
-    --color-accent-dark: #5C8762;
-  }
-
   * {
     font-family: var(--font-family);
   }
@@ -105,28 +60,17 @@
     height: 10px;
   }
 
-  ::-webkit-scrollbar-track {
-    @apply bg-neutral-100;
+    ::-webkit-scrollbar-track {
+    background-color: var(--ui-inset);
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-neutral-300 rounded-full;
+    background-color: var(--ui-fill-strong);
+    @apply rounded-full;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-400;
-  }
-
-  .dark ::-webkit-scrollbar-track {
-    @apply bg-neutral-800;
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    @apply bg-neutral-600;
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    @apply bg-neutral-500;
+    background-color: var(--ui-text-faint);
   }
 }
 
@@ -207,11 +151,11 @@
    */
   .input {
     @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
-    @apply bg-white border-neutral-300 text-neutral-900;
+        @apply bg-panel border-line-strong text-heading;
   }
 
   .input::placeholder {
-    @apply text-neutral-500;
+    @apply text-muted;
   }
 
   /* Gallery-specific input that uses theme variables */
@@ -230,8 +174,8 @@
    * migration safety (visible border lightness change otherwise); the
    * .dark .card override below handles admin dark mode. Gallery uses
    * .card-themed which binds to the 8-token palette. */
-  .card {
-    @apply rounded-xl border bg-white border-neutral-200;
+    .card {
+    @apply rounded-xl border bg-panel border-line;
     box-shadow: var(--shadow-default);
   }
 
@@ -452,21 +396,10 @@
     @apply bg-red-100 text-red-800;
   }
 
-  /* Admin dark mode overrides (via Tailwind dark: class on html) */
-  .dark .card {
-    @apply bg-neutral-800 border-neutral-700;
-  }
-
+    /* Admin dark mode: .card and .input flip through the --ui-* tokens
+     (src/styles/tokens.css); only the themed card keeps an override. */
   .dark .card-themed {
     @apply bg-neutral-800 border-neutral-700;
-  }
-
-  .dark .input {
-    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
-  }
-
-  .dark .input::placeholder {
-    @apply text-neutral-500;
   }
 
   /*
@@ -595,33 +528,36 @@
     @apply bg-neutral-800;
   }
 
-  /* Table styles for admin dark mode */
-  .dark table {
+  /* Table and select defaults for admin dark mode. `:where()` keeps them at
+     single-class specificity so a token utility on the element (bg-subtle,
+     text-muted, ...) wins, as the old dark: variants did; a bare element with
+     no colour class still gets these. */
+  .dark :where(table) {
     @apply bg-neutral-800;
   }
 
-  .dark thead {
+  .dark :where(thead) {
     @apply bg-neutral-900/50;
   }
 
-  .dark th {
+  .dark :where(th) {
     @apply text-neutral-300 border-neutral-700;
   }
 
-  .dark td {
+  .dark :where(td) {
     @apply text-neutral-200 border-neutral-700;
   }
 
-  .dark tbody tr {
+  .dark :where(tbody tr) {
     @apply border-neutral-700;
   }
 
-  .dark tbody tr:hover {
+  .dark :where(tbody tr):hover {
     @apply bg-neutral-700/50;
   }
 
   /* Select/dropdown for admin dark mode */
-  .dark select {
+  .dark :where(select) {
     @apply bg-neutral-800 border-neutral-700 text-neutral-100;
   }
 

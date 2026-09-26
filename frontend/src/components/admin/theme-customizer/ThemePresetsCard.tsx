@@ -30,7 +30,7 @@ export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+      <h3 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
         <Sparkles className="w-5 h-5" />
         {t('branding.themePresets')}
       </h3>
@@ -43,14 +43,14 @@ export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
             className={`relative p-4 rounded-lg border-2 transition-all text-left ${
               selectedPreset === key
                 ? 'tile-selected'
-                : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                : 'border-line hover:border-line-strong'
             }`}
           >
             <div className="flex items-start justify-between mb-2">
               <div>
-                <span className="font-medium text-sm block text-neutral-900 dark:text-neutral-100">{theme.name}</span>
+                <span className="font-medium text-sm block text-heading">{theme.name}</span>
                 {theme.description && (
-                  <span className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 block">{theme.description}</span>
+                  <span className="text-xs text-soft mt-1 block">{theme.description}</span>
                 )}
               </div>
               {selectedPreset === key && (
@@ -62,19 +62,19 @@ export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
                 {/* Preview swatches: background, surface, accent-dark, accent
                     — gives a quick read of the preset's full palette. */}
                 <div
-                  className="w-5 h-5 rounded-full border border-neutral-200 dark:border-neutral-600"
+                  className="w-5 h-5 rounded-full border border-line"
                   style={{ backgroundColor: theme.config.backgroundColor }}
                 />
                 <div
-                  className="w-5 h-5 rounded-full border border-neutral-200 dark:border-neutral-600"
+                  className="w-5 h-5 rounded-full border border-line"
                   style={{ backgroundColor: theme.config.surfaceColor || theme.config.backgroundColor }}
                 />
                 <div
-                  className="w-5 h-5 rounded-full border border-neutral-200 dark:border-neutral-600"
+                  className="w-5 h-5 rounded-full border border-line"
                   style={{ backgroundColor: theme.config.accentDarkColor || theme.config.primaryColor }}
                 />
                 <div
-                  className="w-5 h-5 rounded-full border border-neutral-200 dark:border-neutral-600"
+                  className="w-5 h-5 rounded-full border border-line"
                   style={{ backgroundColor: theme.config.accentColor }}
                 />
               </div>

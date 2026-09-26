@@ -91,7 +91,7 @@ export const DocumentLineageCard: React.FC<DocumentLineageCardProps> = ({
   if (isLoading) {
     return (
       <Card padding="md" className={className}>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted">
           {t('dealLineage.loading', 'Loading related documents…')}
         </p>
       </Card>
@@ -128,7 +128,7 @@ export const DocumentLineageCard: React.FC<DocumentLineageCardProps> = ({
         <h2 className="font-semibold mb-1 flex items-center gap-2">
           {t('dealLineage.title', 'Related documents')}
         </h2>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="text-xs text-muted">
           {t('dealLineage.empty', 'No other documents share this deal yet. New invoices, contracts, or installments will show up here once created.')}
         </p>
       </Card>
@@ -256,13 +256,13 @@ const Group: React.FC<{
   action?: React.ReactNode;
 }> = ({ icon, label, count, children, action }) => (
   <div className="mb-3 last:mb-0">
-    <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-1">
+    <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted mb-1">
       {icon}
       <span>{label}</span>
       <span>({count})</span>
       {action}
     </div>
-    <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+    <ul className="divide-y divide-line">
       {children}
     </ul>
   </div>
@@ -282,19 +282,19 @@ const Row: React.FC<{
   const inner = (
     <div className="flex items-center justify-between gap-3 py-1.5">
       <div className="flex items-center gap-2 min-w-0">
-        <span className={`font-mono text-sm ${isCurrent ? 'text-neutral-500 dark:text-neutral-400' : ''}`}>{number}</span>
+        <span className={`font-mono text-sm ${isCurrent ? 'text-muted' : ''}`}>{number}</span>
         {badge && (
           <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
             {badge}
           </span>
         )}
         {meta && (
-          <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{meta}</span>
+          <span className="text-xs text-muted truncate">{meta}</span>
         )}
       </div>
       <div className="flex items-center gap-2 shrink-0 text-xs">
         {right && <span className="tabular-nums">{right}</span>}
-        <span className="text-neutral-500 dark:text-neutral-400">{t(statusKey, statusFallback)}</span>
+        <span className="text-muted">{t(statusKey, statusFallback)}</span>
       </div>
     </div>
   );

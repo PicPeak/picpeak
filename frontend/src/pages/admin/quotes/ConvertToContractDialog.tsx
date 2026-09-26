@@ -65,17 +65,17 @@ export const ConvertToContractDialog: React.FC<{
         </>
       )}
     >
-      <p className="text-sm text-neutral-700 dark:text-neutral-300 mb-3">
+      <p className="text-sm text-body mb-3">
         {t('quotes.confirmConvertToContract',
           'Draft a contract from this quote? The customer + admin will both sign before event / invoice creation.')}
       </p>
       {usable.length > 0 && (
         <div>
-          <label htmlFor="convert-contract-template" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <label htmlFor="convert-contract-template" className="block text-sm font-medium text-body mb-1">
             {t('quotes.contractTemplate', 'Contract template')}
           </label>
           <select id="convert-contract-template" value={choice} onChange={(e) => { setTouched(true); setChoice(e.target.value); }}
-            className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100">
+            className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm text-heading">
             {!choice && (
               <option value="">{t('quotes.contractTemplateAuto', 'As the quote\'s template says (else the default)')}</option>
             )}
@@ -86,7 +86,7 @@ export const ConvertToContractDialog: React.FC<{
             ))}
           </select>
           {fromQuoteName && (
-            <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-soft mt-1">
               {t('quotes.contractTemplateFromQuote', 'Preselected by the quote\'s template: {{name}}', { name: fromQuoteName })}
             </p>
           )}

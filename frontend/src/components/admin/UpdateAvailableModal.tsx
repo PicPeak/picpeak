@@ -135,14 +135,14 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="flex items-start justify-between p-5 border-b border-line">
           <div className="flex items-start gap-3">
             <ArrowUpCircle className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" />
             <div>
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              <h2 className="text-lg font-semibold text-heading">
                 {t('admin.updates.modalTitle', 'Update available')}
               </h2>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
+              <p className="text-sm text-muted mt-0.5">
                 {t('admin.updates.modalSubtitle', 'v{{current}} → v{{latest}}', {
                   current: currentVersion,
                   latest: latestVersion,
@@ -152,7 +152,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+            className="text-neutral-400 hover:text-body"
             aria-label={t('common.close', 'Close')}
           >
             <X className="w-5 h-5" />
@@ -163,7 +163,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Upgrade instructions */}
           <section>
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+            <h3 className="text-sm font-semibold text-heading mb-2">
               {t('admin.updates.howToUpgrade', 'How to upgrade')}
             </h3>
             {instructionsLoading && (
@@ -172,7 +172,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
             {!instructionsLoading && instructions?.instructions && (
               <div className="space-y-3">
                 {instructions.environment?.description && (
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-muted">
                     {t('admin.updates.detectedEnv', 'Detected environment: {{env}}', {
                       env: instructions.environment.description,
                     })}
@@ -182,7 +182,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
                   const key = `step-${idx}`;
                   return (
                     <div key={key}>
-                      <p className="text-sm text-neutral-700 dark:text-neutral-300 mb-1">
+                      <p className="text-sm text-body mb-1">
                         {idx + 1}. {step.description}
                       </p>
                       {step.command && (
@@ -205,7 +205,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
                   );
                 })}
                 {instructions.instructions.notes && instructions.instructions.notes.length > 0 && (
-                  <ul className="text-xs text-neutral-500 dark:text-neutral-400 list-disc list-inside space-y-1">
+                  <ul className="text-xs text-muted list-disc list-inside space-y-1">
                     {instructions.instructions.notes.map((note, idx) => (
                       <li key={idx}>{note}</li>
                     ))}
@@ -217,7 +217,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
 
           {/* Aggregated changelog */}
           <section>
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+            <h3 className="text-sm font-semibold text-heading mb-2">
               {t('admin.updates.releaseNotes', 'Release notes')}
             </h3>
             {changelogLoading && (
@@ -240,17 +240,17 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
                   return (
                     <div
                       key={release.version}
-                      className="border border-neutral-200 dark:border-neutral-700 rounded"
+                      className="border border-line rounded"
                     >
                       <button
                         onClick={() => toggle(release.version)}
-                        className="w-full flex items-center justify-between p-3 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                        className="w-full flex items-center justify-between p-3 hover:bg-hover-soft"
                       >
                         <div className="flex items-center gap-2 text-left">
                           {isOpen
                             ? <ChevronDown className="w-4 h-4 text-neutral-500" />
                             : <ChevronRight className="w-4 h-4 text-neutral-500" />}
-                          <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                          <span className="text-sm font-medium text-heading">
                             {release.name}
                           </span>
                           {release.publishedAt && (
@@ -271,7 +271,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
                         </a>
                       </button>
                       {isOpen && release.body && (
-                        <div className="px-4 pb-4 pt-1 border-t border-neutral-100 dark:border-neutral-800">
+                        <div className="px-4 pb-4 pt-1 border-t border-line-faint">
                           <MarkdownContent
                             source={release.body}
                             className="text-sm prose prose-sm dark:prose-invert max-w-none"
@@ -292,7 +292,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 p-4 border-t border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/50">
+        <div className="flex items-center justify-between gap-3 p-4 border-t border-line bg-neutral-50 dark:bg-neutral-900/50">
           <Button
             variant="ghost"
             size="sm"

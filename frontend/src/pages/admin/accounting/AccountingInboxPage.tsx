@@ -33,12 +33,12 @@ const BOOKING_DISPOSITIONS: Disposition[] = ['rebill', 'durchlaufend'];
 const statusClasses: Record<string, string> = {
   unsorted: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
   categorized: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  declined: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300',
-  duplicate: 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300',
+  declined: 'bg-fill text-body',
+  duplicate: 'bg-fill text-body',
 };
 
-const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+const labelCls = 'block text-sm font-medium text-body mb-1';
+const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 
 /**
  * Reusable rasterised-document preview. PDFs render as server-side page
@@ -66,7 +66,7 @@ const DocumentPreview: React.FC<{ doc: InboundDocument; maxHeight?: string; init
   }, [doc.id, isPdf, page]);
   return (
     <div>
-      <div className="overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800" style={{ maxHeight }}>
+      <div className="overflow-auto rounded-md border border-line bg-subtle" style={{ maxHeight }}>
         {previewError ? <div className="flex items-center justify-center px-3 py-16 text-center text-sm text-neutral-500">{t('accounting.inbox.previewError', 'Preview unavailable — enter the fields manually.')}</div>
           : imgUrl ? <img src={imgUrl} alt="document page" className="w-full h-auto" />
             : <div className="flex items-center justify-center px-3 py-16 text-sm text-neutral-500">{t('accounting.inbox.previewLoading', 'Loading preview…')}</div>}
@@ -76,11 +76,11 @@ const DocumentPreview: React.FC<{ doc: InboundDocument; maxHeight?: string; init
       {isPdf && (
         <div className="mt-2 flex items-center justify-center gap-3 text-sm">
           <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>{t('accounting.inbox.prevPage', 'Prev')}</Button>
-          <span className="text-neutral-600 dark:text-neutral-400">{t('accounting.inbox.pageOf', 'Page {{n}} / {{total}}', { n: page, total: pageCount })}</span>
+          <span className="text-soft">{t('accounting.inbox.pageOf', 'Page {{n}} / {{total}}', { n: page, total: pageCount })}</span>
           <Button size="sm" variant="outline" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount}>{t('accounting.inbox.nextPage', 'Next')}</Button>
         </div>
       )}
-      {isPdf && initialPage === 'last' && <p className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.inbox.qrHint', 'Showing the last page — the Swiss QR-bill usually sits at the bottom.')}</p>}
+      {isPdf && initialPage === 'last' && <p className="mt-1 text-center text-xs text-muted">{t('accounting.inbox.qrHint', 'Showing the last page — the Swiss QR-bill usually sits at the bottom.')}</p>}
     </div>
   );
 };
@@ -100,16 +100,16 @@ const PayModal: React.FC<{ doc: InboundDocument; onClose: () => void; onDone: ()
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       {/* Wider, two-column: preview on the left so the admin can read the
           QR-bill while confirming payment — #1. */}
-      <div className="mt-12 w-full max-w-3xl rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('accounting.incoming.payTitle', 'Mark supplier paid')}</h2>
+      <div className="mt-12 w-full max-w-3xl rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{t('accounting.incoming.payTitle', 'Mark supplier paid')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="order-2 lg:order-1"><DocumentPreview doc={doc} maxHeight="50vh" initialPage="last" /></div>
           <div className="order-1 lg:order-2 space-y-3">
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
-              {t('accounting.incoming.outstanding', 'Outstanding')}: <span className="font-semibold text-neutral-900 dark:text-neutral-100">{doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : '—'}</span>
+            <p className="text-sm text-soft">
+              {t('accounting.incoming.outstanding', 'Outstanding')}: <span className="font-semibold text-heading">{doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : '—'}</span>
             </p>
             <div><label className={labelCls}>{t('accounting.ledger.paidDate', 'Payment date')}</label><LocalizedDateInput value={paidAt} onChange={setPaidAt} /></div>
             <div><label className={labelCls}>{t('accounting.ledger.method', 'Method')}</label>
@@ -120,7 +120,7 @@ const PayModal: React.FC<{ doc: InboundDocument; onClose: () => void; onDone: ()
             <div><label className={labelCls}>{t('accounting.ledger.reference', 'Reference (optional)')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? t('common.saving', 'Saving…') : t('accounting.incoming.confirmPaid', 'Mark paid')}</Button>
         </div>
@@ -135,16 +135,16 @@ const ViewModal: React.FC<{ doc: InboundDocument; onClose: () => void }> = ({ do
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const field = (label: string, value: React.ReactNode) => (
-    <div className="flex justify-between gap-3 py-1 text-sm border-b border-neutral-100 dark:border-neutral-800">
-      <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span className="text-neutral-900 dark:text-neutral-100 text-right">{value ?? '—'}</span>
+    <div className="flex justify-between gap-3 py-1 text-sm border-b border-line-faint">
+      <span className="text-muted">{label}</span>
+      <span className="text-heading text-right">{value ?? '—'}</span>
     </div>
   );
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-10 w-full max-w-4xl rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</h2>
+      <div className="mt-10 w-full max-w-4xl rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-lg font-semibold text-heading">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -164,7 +164,7 @@ const ViewModal: React.FC<{ doc: InboundDocument; onClose: () => void }> = ({ do
             {doc.note && field(t('accounting.inbox.field.note', 'Note'), doc.note)}
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.close', 'Close')}</Button>
         </div>
       </div>
@@ -238,9 +238,9 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-10 w-full max-w-4xl rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('accounting.incoming.triageTitle', 'Categorize incoming invoice')}</h2>
+      <div className="mt-10 w-full max-w-4xl rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-lg font-semibold text-heading">{t('accounting.incoming.triageTitle', 'Categorize incoming invoice')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -256,7 +256,7 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
                   <option value="">{t('accounting.inbox.field.supplierCountryNone', '— unknown —')}</option>
                   {sortedCountryOptions(i18n.language).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
                 </select>
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.inbox.field.supplierCountryHint', 'Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable).')}</p>
+                <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.supplierCountryHint', 'Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable).')}</p>
               </div>
               <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.invoiceDate', 'Invoice date')}</label><LocalizedDateInput value={invoiceDate} onChange={setInvoiceDate} /></div>
               <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.reference', 'Payment reference')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('accounting.inbox.field.referenceHint', 'QR / ESR reference or message') as string} /></div>
@@ -270,7 +270,7 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
               </select>
               {/* Explain the selected disposition — re-bill vs pass-through vs
                   company expense aren't obvious from the labels alone. */}
-              <p className="mt-1 rounded-md bg-neutral-50 dark:bg-neutral-800/60 px-2.5 py-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+              <p className="mt-1 rounded-md bg-neutral-50 dark:bg-neutral-800/60 px-2.5 py-1.5 text-xs text-soft">
                 {t(`accounting.disposition.help.${disposition}`, '')}
               </p>
             </div>
@@ -279,7 +279,7 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
               <div>
                 <label className={labelCls}>{t('accounting.booking.label', 'Book to')}</label>
                 <EventBookingSelect value={eventId} onChange={setEventId} className={selectCls} />
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.booking.inboundHint', 'Which event carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to.')}</p>
+                <p className="mt-1 text-xs text-muted">{t('accounting.booking.inboundHint', 'Which event carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to.')}</p>
               </div>
             )}
 
@@ -293,14 +293,14 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
             )}
 
             {BOOKING_DISPOSITIONS.includes(disposition) && (
-              <div className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
+              <div className="space-y-3 rounded-lg border border-line p-3">
                 <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} {disposition === 'rebill' ? '*' : ''}</label>
                   {/* portalAssignment={false} — same reason as the expenses
                       ledger: this is an `incomingInvoices` flow, not a
                       customer-portal one, and the rebill disposition's
                       required field would otherwise render label-only. */}
                   <CustomerAccountPicker portalAssignment={false} value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
-                  {disposition === 'durchlaufend' && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.inbox.field.passthroughCustomerHint', 'Optional — attach a client to re-bill this passthrough; leave empty to only book it to the event.')}</p>}
+                  {disposition === 'durchlaufend' && <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.passthroughCustomerHint', 'Optional — attach a client to re-bill this passthrough; leave empty to only book it to the event.')}</p>}
                 </div>
                 {/* Markup is a re-bill concept only. A pass-through is invoiced
                     at cost (VAT-neutral), so no markup control here. */}
@@ -318,7 +318,7 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
             )}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3">
           {rebillNeedsAmount && (
             <span className="mr-auto text-xs text-amber-600 dark:text-amber-400">
               {t('accounting.incoming.amountRequired', 'Enter the invoice amount before re-billing (0 is allowed).')}
@@ -392,8 +392,8 @@ export const AccountingInboxPage: React.FC = () => {
 
       <Card className="mb-6"><CardContent className="flex flex-col sm:flex-row items-center gap-3 p-5">
         <div className="flex-1">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('accounting.inbox.captureTitle', 'Capture a supplier invoice')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('accounting.inbox.captureBody', 'Photograph a paper invoice with your device camera, or upload a PDF / image.')}</p>
+          <h2 className="text-base font-semibold text-heading">{t('accounting.inbox.captureTitle', 'Capture a supplier invoice')}</h2>
+          <p className="text-sm text-soft">{t('accounting.inbox.captureBody', 'Photograph a paper invoice with your device camera, or upload a PDF / image.')}</p>
         </div>
         <Button onClick={() => cameraRef.current?.click()} disabled={upload.isPending}><Camera className="w-4 h-4 mr-2" /> {t('accounting.inbox.scanCamera', 'Scan with camera')}</Button>
         <Button variant="outline" onClick={() => uploadRef.current?.click()} disabled={upload.isPending}><Upload className="w-4 h-4 mr-2" /> {t('accounting.inbox.uploadFile', 'Upload file')}</Button>
@@ -405,14 +405,14 @@ export const AccountingInboxPage: React.FC = () => {
           consolidate onto their running draft at categorise time). */}
       {pendingItems.length > 0 && (
         <Card className="mb-6"><CardContent className="p-5">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-1">{t('accounting.incoming.pendingTitle', 'Pending re-bills')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">{t('accounting.incoming.pendingBody', 'Categorized invoices waiting to be re-billed. Bundle a client’s items into one invoice.')}</p>
+          <h2 className="text-base font-semibold text-heading mb-1">{t('accounting.incoming.pendingTitle', 'Pending re-bills')}</h2>
+          <p className="text-sm text-soft mb-3">{t('accounting.incoming.pendingBody', 'Categorized invoices waiting to be re-billed. Bundle a client’s items into one invoice.')}</p>
           <div className="space-y-2">
             {pendingItems.map((p) => (
-              <div key={p.customerAccountId} className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 dark:border-neutral-700 px-4 py-2">
+              <div key={p.customerAccountId} className="flex flex-wrap items-center gap-3 rounded-lg border border-line px-4 py-2">
                 <div className="flex-1 min-w-[12rem]">
-                  <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{customerLabel(p)}</div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <div className="text-sm font-medium text-heading">{customerLabel(p)}</div>
+                  <div className="text-xs text-muted">
                     {t('accounting.incoming.pendingCount', '{{count}} item(s)', { count: p.itemCount })}
                     {' · '}{formatMoneyMinor(p.openAmountMinor, 'CHF')}
                   </div>
@@ -425,14 +425,14 @@ export const AccountingInboxPage: React.FC = () => {
       )}
 
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-8 text-center">
+        <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
           <Inbox className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('accounting.inbox.empty', 'No documents yet — capture one above.')}</p>
+          <p className="text-sm text-soft">{t('accounting.inbox.empty', 'No documents yet — capture one above.')}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {items.map((doc) => (
-            <div key={doc.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-4 py-3">
+            <div key={doc.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-shell px-4 py-3">
               {/* Click routes by state: new → categorize, categorized & unpaid
                   → mark paid, everything else → view. */}
               <button
@@ -450,10 +450,10 @@ export const AccountingInboxPage: React.FC = () => {
                   {doc.supplierPaid
                     ? <span className="inline-block rounded px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">{t('accounting.incoming.paid', 'Paid')}</span>
                     : <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${statusClasses[doc.status] || ''}`}>{t(`accounting.inbox.status.${doc.status}`, doc.status)}</span>}
-                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate hover:underline">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</span>
+                  <span className="text-sm font-medium text-heading truncate hover:underline">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</span>
                   {doc.source === 'camera' && <Camera className="w-3.5 h-3.5 text-neutral-400" />}
                 </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                <div className="text-xs text-muted">
                   {doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : t('accounting.inbox.noAmount', 'amount not entered')}
                   {' · '}{format(doc.createdAt)}
                   {doc.disposition && <>{' · '}{t(`accounting.disposition.${doc.disposition}`, doc.disposition)}</>}

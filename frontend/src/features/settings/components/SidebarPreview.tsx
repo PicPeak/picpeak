@@ -43,10 +43,10 @@ export const SidebarPreview: React.FC<SidebarPreviewProps> = ({ staged }) => {
   return (
     <Card padding="md">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+        <h3 className="text-sm font-semibold text-heading">
           {t('settings.features.preview.title', 'Sidebar preview')}
         </h3>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+        <span className="text-xs text-muted">
           {t('settings.features.preview.note', 'Reflects unsaved changes')}
         </span>
       </div>
@@ -62,7 +62,7 @@ export const SidebarPreview: React.FC<SidebarPreviewProps> = ({ staged }) => {
               // accent token itself washes out on its own tint).
               item.featureDriven
                 ? 'border-accent-soft bg-accent-soft text-on-accent-soft'
-                : 'border-neutral-200 bg-neutral-50 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+                : 'border-line bg-subtle text-body',
             )}
           >
             <item.icon className="w-3.5 h-3.5" />
@@ -70,7 +70,7 @@ export const SidebarPreview: React.FC<SidebarPreviewProps> = ({ staged }) => {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="mt-3 text-xs text-muted">
         {t(
           'settings.features.preview.legend',
           'Accent-tinted items are controlled by toggles above.',

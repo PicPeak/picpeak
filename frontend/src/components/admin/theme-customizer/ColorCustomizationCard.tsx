@@ -33,7 +33,7 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-heading flex items-center gap-2">
           <Palette className="w-5 h-5" />
           {t('branding.colors')}
         </h3>
@@ -63,7 +63,7 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
           </div>
         )}
         {!forcedColorActive && (<>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+        <label className="block text-sm font-medium text-body mb-2">
           {t('branding.colorMode', 'Color Mode')}
         </label>
         <div className="flex gap-2">
@@ -75,7 +75,7 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
               className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                 (localTheme.colorMode || 'light') === mode
                   ? 'border-accent-dark bg-accent-dark text-white'
-                  : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                  : 'border-line-strong text-soft hover:bg-hover-soft'
               }`}
             >
               {mode === 'light' ? t('branding.colorModeLight', 'Light') :
@@ -84,7 +84,7 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
             </button>
           ))}
         </div>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="mt-1 text-sm text-muted">
           {t('branding.colorModeHelp', 'Auto follows the visitor\'s system preference.')}
         </p>
         </>)}
@@ -98,11 +98,11 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
          * Branding admin page, not in event-level theme editors).
          */}
         {onForceColorModeChange && (
-          <div className="mt-5 pt-5 border-t border-neutral-200 dark:border-neutral-700">
-            <h4 className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <div className="mt-5 pt-5 border-t border-line">
+            <h4 className="block text-sm font-medium text-body mb-1">
               {t('branding.forceColorMode', 'Force color mode')}
             </h4>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+            <p className="text-xs text-muted mb-3">
               {t(
                 'branding.forceColorModeHelp',
                 'Lock the entire admin and public site to dark or light. The user-facing dark/light toggle is hidden whenever a lock is active. Per-event themes that try to override the colour mode are also forced to follow.'
@@ -123,7 +123,7 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
                     className={`px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
                       active
                         ? 'border-accent-dark bg-accent-dark text-white'
-                        : 'border-neutral-300 dark:border-neutral-600 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                        : 'border-line-strong text-soft hover:bg-hover-soft'
                     }`}
                   >
                     {label}
@@ -155,10 +155,10 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
       <div className="space-y-6">
         {/* Surfaces */}
         <div>
-          <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <h4 className="text-sm font-semibold text-body uppercase tracking-wide mb-3 flex items-center gap-1.5">
             {t('branding.colorGroupSurfaces', 'Surfaces')}
             <span
-              className="info-tooltip text-neutral-400 dark:text-neutral-500"
+              className="info-tooltip text-faint"
               data-tooltip={t(
                 'branding.colorGroupSurfacesHelp',
                 'The neutral layers behind your content. Background sits furthest back; Surface and Elevated stack on top.'
@@ -209,10 +209,10 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
 
         {/* Text */}
         <div>
-          <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <h4 className="text-sm font-semibold text-body uppercase tracking-wide mb-3 flex items-center gap-1.5">
             {t('branding.colorGroupText', 'Text')}
             <span
-              className="info-tooltip text-neutral-400 dark:text-neutral-500"
+              className="info-tooltip text-faint"
               data-tooltip={t(
                 'branding.colorGroupTextHelp',
                 'Foreground text colours. Primary is for everything readers focus on; Secondary is for supporting copy.'
@@ -251,10 +251,10 @@ export const ColorCustomizationCard: React.FC<ColorCustomizationCardProps> = ({
 
         {/* Accent */}
         <div>
-          <h4 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+          <h4 className="text-sm font-semibold text-body uppercase tracking-wide mb-3 flex items-center gap-1.5">
             {t('branding.colorGroupAccent', 'Accent')}
             <span
-              className="info-tooltip text-neutral-400 dark:text-neutral-500"
+              className="info-tooltip text-faint"
               data-tooltip={t(
                 'branding.colorGroupAccentHelp',
                 'Brand colours that highlight interactive elements. Use a strong colour pair — Accent is for outlines/text, Accent Dark is for filled buttons.'

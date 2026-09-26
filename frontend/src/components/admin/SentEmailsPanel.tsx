@@ -49,10 +49,10 @@ export const SentEmailsPanel: React.FC = () => {
 
   return (
     <Card padding="lg">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+      <h2 className="text-lg font-semibold text-heading mb-1">
         {t('email.sentEmails.title', 'Sent emails')}
       </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t('email.sentEmails.subtitle', 'Delivery status of every queued and sent notification.')}
       </p>
 
@@ -62,7 +62,7 @@ export const SentEmailsPanel: React.FC = () => {
           <input
             type="text"
             placeholder={t('email.sentEmails.searchPlaceholder', 'Search by recipient or type…') as string}
-            className="w-full pl-9 pr-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+            className="w-full pl-9 pr-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
             value={search}
             onChange={(e) => { setSearch(e.target.value); resetTo1(); }}
           />
@@ -86,7 +86,7 @@ export const SentEmailsPanel: React.FC = () => {
               className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                 active
                   ? 'bg-accent-dark text-white border-accent-dark'
-                  : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600'
+                  : 'bg-panel text-body border-line-strong'
               }`}
             >{t(`email.sentEmails.status.${s}`, s)}</button>
           );
@@ -95,14 +95,14 @@ export const SentEmailsPanel: React.FC = () => {
 
       <div className="mt-4">
         {isLoading ? <Loading /> : !data || data.items.length === 0 ? (
-          <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">
+          <p className="text-center text-muted py-8">
             {t('email.sentEmails.empty', 'No emails match these filters.')}
           </p>
         ) : (
-          <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+          <div className="rounded-lg border border-line overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                <thead className="bg-subtle text-body">
                   <tr>
                     <th className="px-3 py-2 text-left">{t('email.sentEmails.col.recipient', 'Recipient')}</th>
                     <th className="px-3 py-2 text-left">{t('email.sentEmails.col.type', 'Type')}</th>
@@ -114,7 +114,7 @@ export const SentEmailsPanel: React.FC = () => {
                 </thead>
                 <tbody>
                   {data.items.map((m) => (
-                    <tr key={m.id} className="border-t border-neutral-200 dark:border-neutral-700 align-top">
+                    <tr key={m.id} className="border-t border-line align-top">
                       <td className="px-3 py-2 break-all">{m.recipientEmail}</td>
                       <td className="px-3 py-2 font-mono text-xs">{m.emailType}</td>
                       <td className="px-3 py-2">
@@ -148,8 +148,8 @@ export const SentEmailsPanel: React.FC = () => {
               </table>
             </div>
             {data.pagination.totalPages > 1 && (
-              <div className="flex justify-between items-center px-3 py-2 border-t border-neutral-200 dark:border-neutral-700 text-sm">
-                <span className="text-neutral-500 dark:text-neutral-400">
+              <div className="flex justify-between items-center px-3 py-2 border-t border-line text-sm">
+                <span className="text-muted">
                   {t('email.sentEmails.pagination', 'Page {{page}} of {{total}} · {{count}} emails', {
                     page: data.pagination.page, total: data.pagination.totalPages, count: data.pagination.total,
                   })}

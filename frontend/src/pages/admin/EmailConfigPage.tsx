@@ -504,19 +504,19 @@ export const EmailConfigPage: React.FC = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('email.title')}</h1>
-        <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('email.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-heading">{t('email.title')}</h1>
+        <p className="text-soft mt-1">{t('email.subtitle')}</p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-neutral-200 dark:border-neutral-700 mb-6">
+      <div className="border-b border-line mb-6">
         <nav className="-mb-px flex gap-6">
           <button
             onClick={() => setActiveTab('smtp')}
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'smtp'
                 ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+                : 'border-transparent text-muted hover:text-body'
             }`}
           >
             {t('email.smtpSettings')}
@@ -526,7 +526,7 @@ export const EmailConfigPage: React.FC = () => {
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'templates'
                 ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+                : 'border-transparent text-muted hover:text-body'
             }`}
           >
             {t('email.emailTemplates')}
@@ -536,7 +536,7 @@ export const EmailConfigPage: React.FC = () => {
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'sent'
                 ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+                : 'border-transparent text-muted hover:text-body'
             }`}
           >
             {t('email.sentEmails.tab', 'Sent emails')}
@@ -547,7 +547,7 @@ export const EmailConfigPage: React.FC = () => {
               className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'received'
                   ? 'border-accent text-accent'
-                  : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+                  : 'border-transparent text-muted hover:text-body'
               }`}
             >
               {t('email.received.tab', 'Received emails')}
@@ -570,7 +570,7 @@ export const EmailConfigPage: React.FC = () => {
               the Business profile — point at it from where the mail is set
               up rather than making the operator hunt for it. */}
           {!signatureUnknown && (
-          <div className="lg:col-span-2 flex items-start gap-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-neutral-600 dark:text-neutral-400">
+          <div className="lg:col-span-2 flex items-start gap-2 rounded-md border border-line bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-soft">
             <Info className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
               {signatureEnabled
@@ -584,11 +584,11 @@ export const EmailConfigPage: React.FC = () => {
           </div>
           )}
           <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.smtpConfiguration')}</h2>
+            <h2 className="text-lg font-semibold text-heading mb-4">{t('email.smtpConfiguration')}</h2>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.smtpHost')} <span className="text-red-500">*</span>
                 </label>
                 <Input
@@ -602,7 +602,7 @@ export const EmailConfigPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {t('email.port')} <span className="text-red-500">*</span>
                   </label>
                   <Input
@@ -614,13 +614,13 @@ export const EmailConfigPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {t('email.security')}
                   </label>
                   <select
                     value={smtpConfig.smtp_secure ? 'ssl' : 'tls'}
                     onChange={(e) => setSmtpConfig(prev => ({ ...prev, smtp_secure: e.target.value === 'ssl' }))}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
                   >
                     <option value="tls">TLS</option>
                     <option value="ssl">SSL</option>
@@ -635,9 +635,9 @@ export const EmailConfigPage: React.FC = () => {
                     type="checkbox"
                     checked={!smtpConfig.tls_reject_unauthorized}
                     onChange={(e) => setSmtpConfig(prev => ({ ...prev, tls_reject_unauthorized: !e.target.checked }))}
-                    className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+                    className="w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
                   />
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  <span className="text-sm font-medium text-body">
                     {t('email.ignoreSslErrors')}
                   </span>
                 </label>
@@ -653,7 +653,7 @@ export const EmailConfigPage: React.FC = () => {
                 )}</div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.username')}
                 </label>
                 <Input
@@ -666,7 +666,7 @@ export const EmailConfigPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.password')}
                 </label>
                 <div className="relative">
@@ -688,7 +688,7 @@ export const EmailConfigPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.fromEmail')} <span className="text-red-500">*</span>
                 </label>
                 <Input
@@ -701,7 +701,7 @@ export const EmailConfigPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.fromName')}
                 </label>
                 <Input
@@ -725,7 +725,7 @@ export const EmailConfigPage: React.FC = () => {
           </Card>
 
           <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.testEmailSection')}</h2>
+            <h2 className="text-lg font-semibold text-heading mb-4">{t('email.testEmailSection')}</h2>
 
             <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg">
               <div className="flex items-start gap-3">
@@ -743,7 +743,7 @@ export const EmailConfigPage: React.FC = () => {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label className="block text-sm font-medium text-body mb-1">
                   {t('email.testEmailAddressLabel')}
                 </label>
                 <Input
@@ -782,8 +782,8 @@ export const EmailConfigPage: React.FC = () => {
           </Card>
 
           <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('email.flushQueue.title')}</h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">{t('email.flushQueue.help')}</p>
+            <h2 className="text-lg font-semibold text-heading mb-2">{t('email.flushQueue.title')}</h2>
+            <p className="text-sm text-soft mb-4">{t('email.flushQueue.help')}</p>
             <Button
               variant="outline"
               onClick={() => flushQueueMutation.mutate()}
@@ -804,7 +804,7 @@ export const EmailConfigPage: React.FC = () => {
             <div className="flex items-center justify-between gap-4 mb-4">
               <div className="flex items-center gap-2">
                 <Palette className="w-5 h-5 text-neutral-500" />
-                <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('email.brandingTitle')}</h2>
+                <h2 className="text-lg font-semibold text-heading">{t('email.brandingTitle')}</h2>
               </div>
               {/* One-click copy from Branding theme so email + site share an
                   identical palette. Just stages the values — admin still has
@@ -818,7 +818,7 @@ export const EmailConfigPage: React.FC = () => {
                 {t('email.syncFromBranding', 'Sync from Branding')}
               </Button>
             </div>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-6">{t('email.brandingDescription')}</p>
+            <p className="text-sm text-muted mb-6">{t('email.brandingDescription')}</p>
 
             {/* 8 email colour pickers. Each row uses the same compact label
                 + info-tooltip pattern as the gallery palette in
@@ -838,9 +838,9 @@ export const EmailConfigPage: React.FC = () => {
                 { label: t('email.buttonTextColor', 'Button text'), help: t('email.buttonTextColorHelp', 'Text colour on filled buttons. Should contrast cleanly against the Primary colour. No Branding equivalent — usually white.'), value: emailButtonTextColor, setter: setEmailButtonTextColor, fallback: '#ffffff' },
               ].map(({ label, help, value, setter, fallback }) => (
                 <div key={label}>
-                  <label className="flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-body mb-2">
                     {label}
-                    <span className="info-tooltip text-neutral-400 dark:text-neutral-500" data-tooltip={help} tabIndex={0}>
+                    <span className="info-tooltip text-faint" data-tooltip={help} tabIndex={0}>
                       <Info className="w-3.5 h-3.5" />
                     </span>
                   </label>
@@ -849,7 +849,7 @@ export const EmailConfigPage: React.FC = () => {
                       type="color"
                       value={value}
                       onChange={(e) => setter(e.target.value)}
-                      className="w-10 h-10 rounded border border-neutral-300 dark:border-neutral-600 cursor-pointer"
+                      className="w-10 h-10 rounded border border-line-strong cursor-pointer"
                     />
                     <Input
                       type="text"
@@ -885,7 +885,7 @@ export const EmailConfigPage: React.FC = () => {
       {activeTab === 'templates' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card padding="sm">
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.templates')}</h3>
+            <h3 className="text-lg font-semibold text-heading mb-4">{t('email.templates')}</h3>
             {/* Templates grouped by category (migration 098). Categories
                 in CATEGORY_ORDER render in sequence; templates that
                 report an unrecognised category fall into 'core' so a
@@ -926,11 +926,11 @@ export const EmailConfigPage: React.FC = () => {
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
                       selectedTemplateKey === template.template_key
                         ? 'tile-selected'
-                        : 'bg-neutral-50 dark:bg-neutral-700 border-2 border-transparent hover:bg-neutral-100 dark:hover:bg-neutral-600'
+                        : 'bg-inset border-2 border-transparent hover:bg-hover'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                      <p className="font-medium text-heading truncate">
                         {templateName}
                       </p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -942,12 +942,12 @@ export const EmailConfigPage: React.FC = () => {
                             {t('email.featureOff', 'Feature off')}
                           </span>
                         )}
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-600 text-neutral-600 dark:text-neutral-300">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-fill text-body">
                           {translationCount}/{SUPPORTED_LANGUAGES.length}
                         </span>
                       </div>
                     </div>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 truncate">
+                    <p className="text-sm text-muted mt-1 truncate">
                       {enTranslation?.subject || ''}
                     </p>
                   </button>
@@ -974,13 +974,13 @@ export const EmailConfigPage: React.FC = () => {
                       ];
                       return (
                         <div key={category}>
-                          <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                          <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                             {t(`email.categories.${category}`, category)}
                           </h4>
                           <div className="space-y-4 pl-1">
                             {visibleSubs.map((sub) => (
                               <div key={sub}>
-                                <h5 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                <h5 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-faint">
                                   {t(`email.subcategories.${sub}`, sub)}
                                 </h5>
                                 <div className="space-y-2">
@@ -994,7 +994,7 @@ export const EmailConfigPage: React.FC = () => {
                     }
                     return (
                       <div key={category}>
-                        <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                        <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                           {t(`email.categories.${category}`, category)}
                         </h4>
                         <div className="space-y-2">
@@ -1011,7 +1011,7 @@ export const EmailConfigPage: React.FC = () => {
           <div className="lg:col-span-2">
             <Card padding="md">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('email.editTemplate')}</h3>
+                <h3 className="text-lg font-semibold text-heading">{t('email.editTemplate')}</h3>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -1034,7 +1034,7 @@ export const EmailConfigPage: React.FC = () => {
               </div>
 
               {/* Language tabs */}
-              <div className="flex flex-wrap gap-1 mb-4 p-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg">
+              <div className="flex flex-wrap gap-1 mb-4 p-1 bg-inset rounded-lg">
                 {SUPPORTED_LANGUAGES.map(lang => {
                   const hasContent = editedTemplate.translations?.[lang.code]?.body_html;
                   return (
@@ -1043,8 +1043,8 @@ export const EmailConfigPage: React.FC = () => {
                       onClick={() => setEditingLang(lang.code)}
                       className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
                         editingLang === lang.code
-                          ? 'bg-white dark:bg-neutral-800 text-accent-dark shadow-sm'
-                          : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+                          ? 'bg-panel text-accent-dark shadow-sm'
+                          : 'text-soft hover:text-body'
                       }`}
                     >
                       <lang.Flag/>
@@ -1066,7 +1066,7 @@ export const EmailConfigPage: React.FC = () => {
                       <button
                         key={lang.code}
                         onClick={() => handleCopyFromLanguage(lang.code)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 text-sm bg-white dark:bg-neutral-800 border border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 text-sm bg-panel border border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                       >
                         <Copy className="w-3.5 h-3.5" />
                         {t('email.copyFrom')} <lang.Flag/> {lang.name}
@@ -1078,19 +1078,19 @@ export const EmailConfigPage: React.FC = () => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {t('email.templateName')}
                   </label>
                   <Input
                     type="text"
                     value={TEMPLATE_DISPLAY_NAMES[selectedTemplateKey] || selectedTemplateKey}
                     disabled
-                    className="bg-neutral-50 dark:bg-neutral-700"
+                    className="bg-inset"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {t('email.subjectLine')} ({SUPPORTED_LANGUAGES.find(l => l.code === editingLang)?.name || editingLang})
                   </label>
                   <Input
@@ -1102,7 +1102,7 @@ export const EmailConfigPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {t('email.emailBody')} ({SUPPORTED_LANGUAGES.find(l => l.code === editingLang)?.name || editingLang})
                   </label>
                   <EmailTemplateEditor

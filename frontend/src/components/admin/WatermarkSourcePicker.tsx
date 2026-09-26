@@ -57,7 +57,7 @@ export const WatermarkSourcePicker: React.FC<WatermarkSourcePickerProps> = ({ va
             className={`w-24 rounded-lg border-2 overflow-hidden transition-all text-center ${
               selected
                 ? 'tile-selected'
-                : 'border-neutral-200 dark:border-neutral-600 hover:border-neutral-300 dark:hover:border-neutral-500'
+                : 'border-line hover:border-line-strong'
             }`}
           >
             <div className="h-14 flex items-center justify-center" style={CHECKER}>
@@ -67,7 +67,7 @@ export const WatermarkSourcePicker: React.FC<WatermarkSourcePickerProps> = ({ va
                 <span className="text-[10px] text-neutral-500">{t('slideshow.watermarkSource.notSet', 'Not set')}</span>
               )}
             </div>
-            <div className="text-xs text-neutral-700 dark:text-neutral-300 py-1 px-1 truncate">{opt.label}</div>
+            <div className="text-xs text-body py-1 px-1 truncate">{opt.label}</div>
           </button>
         );
       })}

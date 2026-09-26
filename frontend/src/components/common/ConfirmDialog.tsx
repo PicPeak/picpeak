@@ -141,17 +141,17 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
               {Icon && <Icon className={`w-6 h-6 flex-shrink-0 mt-0.5 ${iconClass}`} />}
               <div className="flex-1 min-w-0">
                 {options.title && (
-                  <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+                  <h2 className="text-lg font-semibold text-heading mb-1">
                     {options.title}
                   </h2>
                 )}
-                <p className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-line break-words">
+                <p className="text-sm text-body whitespace-pre-line break-words">
                   {options.message}
                 </p>
               </div>
               <button
                 onClick={() => settle(false)}
-                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                className="text-neutral-400 hover:text-body"
                 aria-label={t('common.close', 'Close')}
               >
                 <X className="w-5 h-5" />

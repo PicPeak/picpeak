@@ -127,7 +127,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={inputId} className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+        <label htmlFor={inputId} className="block text-sm font-medium text-body mb-1.5">
           {label}
         </label>
       )}
@@ -171,7 +171,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
           disabled={disabled}
           tabIndex={-1}
           aria-label={label}
-          className="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 disabled:opacity-50"
+          className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted hover:text-body disabled:opacity-50"
         >
           <Calendar className="w-5 h-5" />
         </button>
@@ -204,7 +204,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
         </p>
       )}
       {helperText && !error && (
-        <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+        <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-muted">
           {helperText}
         </p>
       )}

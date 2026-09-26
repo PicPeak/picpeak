@@ -125,9 +125,9 @@ export const UpdateNotificationSettings: React.FC = () => {
     return (
       <Card padding="md">
         <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-neutral-200 dark:bg-neutral-700 rounded w-1/3"></div>
-          <div className="h-10 bg-neutral-200 dark:bg-neutral-700 rounded"></div>
-          <div className="h-10 bg-neutral-200 dark:bg-neutral-700 rounded"></div>
+          <div className="h-6 bg-fill rounded w-1/3"></div>
+          <div className="h-10 bg-fill rounded"></div>
+          <div className="h-10 bg-fill rounded"></div>
         </div>
       </Card>
     );
@@ -135,18 +135,18 @@ export const UpdateNotificationSettings: React.FC = () => {
 
   return (
     <Card padding="md">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
         <Bell className="w-5 h-5" />
         {t('settings.updateNotifications.title', 'Update Notifications')}
       </h2>
 
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t('settings.updateNotifications.description', 'Receive email notifications when new versions of PicPeak are available.')}
       </p>
 
       <div className="space-y-4">
         {/* Enable/Disable Toggle */}
-        <label className="flex items-center gap-3 p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg cursor-pointer">
+        <label className="flex items-center gap-3 p-4 bg-subtle rounded-lg cursor-pointer">
           <input
             type="checkbox"
             checked={localEnabled}
@@ -154,10 +154,10 @@ export const UpdateNotificationSettings: React.FC = () => {
             className="w-4 h-4 text-primary-600 bg-neutral-100 border-neutral-300 rounded focus:ring-primary-500"
           />
           <div>
-            <p className="font-medium text-neutral-900 dark:text-neutral-100">
+            <p className="font-medium text-heading">
               {t('settings.updateNotifications.enableEmails', 'Enable email notifications')}
             </p>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            <p className="text-sm text-soft">
               {t('settings.updateNotifications.enableEmailsDesc', 'Send email to admins when a new version is available')}
             </p>
           </div>
@@ -189,7 +189,7 @@ export const UpdateNotificationSettings: React.FC = () => {
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-line">
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"

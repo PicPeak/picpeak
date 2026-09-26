@@ -53,7 +53,7 @@ function statusBadge(status: string) {
     pending: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
     failed: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
   };
-  return map[status] || 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400';
+  return map[status] || 'bg-fill text-soft';
 }
 
 /**
@@ -138,7 +138,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
   if (!webhook) {
     return (
       <div className="p-6">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="text-sm text-soft">
           {t('settings.webhooks.deliveries.notFound', 'Webhook not found.')}
         </p>
         <Link to="/admin/settings" className="text-accent hover:underline">
@@ -157,16 +157,16 @@ export const WebhookDeliveriesPage: React.FC = () => {
         <div>
           <Link
             to="/admin/settings"
-            className="inline-flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 mb-2"
+            className="inline-flex items-center gap-1 text-sm text-soft hover:text-heading mb-2"
           >
             <ArrowLeft className="w-4 h-4" />
             {t('settings.webhooks.deliveries.back', 'Back to Settings')}
           </Link>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{webhook.name}</h1>
-          <p className="text-sm font-mono text-neutral-500 dark:text-neutral-400 mt-1 break-all">{webhook.url}</p>
+          <h1 className="text-2xl font-bold text-heading">{webhook.name}</h1>
+          <p className="text-sm font-mono text-muted mt-1 break-all">{webhook.url}</p>
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             {webhook.events.map((e) => (
-              <span key={e} className="text-xs px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-mono">
+              <span key={e} className="text-xs px-2 py-0.5 rounded bg-subtle text-soft font-mono">
                 {e}
               </span>
             ))}
@@ -201,7 +201,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
               className={`text-xs px-3 py-1 rounded-full ${
                 filter === s
                   ? 'bg-accent-dark text-white'
-                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200'
+                  : 'bg-subtle text-soft hover:bg-neutral-200'
               }`}
             >
               {t(`settings.webhooks.deliveries.status.${s}`, s)}
@@ -215,7 +215,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
         {deliveriesQuery.isLoading ? (
           <Loading size="md" />
         ) : deliveries.length === 0 ? (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 py-8 text-center">
+          <p className="text-sm text-muted py-8 text-center">
             {t(
               'settings.webhooks.deliveries.empty',
               'No deliveries yet. Create an event or send a test event to see something here.'
@@ -225,7 +225,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
+                <tr className="text-left text-muted border-b border-line">
                   <th className="py-2 pr-3">{t('settings.webhooks.deliveries.colTime', 'Time')}</th>
                   <th className="py-2 pr-3">{t('settings.webhooks.deliveries.colEvent', 'Event')}</th>
                   <th className="py-2 pr-3">{t('settings.webhooks.deliveries.colStatus', 'Status')}</th>
@@ -239,10 +239,10 @@ export const WebhookDeliveriesPage: React.FC = () => {
                 {deliveries.map((d) => (
                   <tr
                     key={d.id}
-                    className="border-b border-neutral-100 dark:border-neutral-800 last:border-0 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
+                    className="border-b border-line-faint last:border-0 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                     onClick={() => setOpenDeliveryId(d.id)}
                   >
-                    <td className="py-2.5 pr-3 text-xs text-neutral-600 dark:text-neutral-400">
+                    <td className="py-2.5 pr-3 text-xs text-soft">
                       {fmtDateTime(d.created_at)}
                     </td>
                     <td className="py-2.5 pr-3 font-mono text-xs">{d.event_type}</td>
@@ -287,9 +287,9 @@ export const WebhookDeliveriesPage: React.FC = () => {
             className="absolute inset-0 bg-black/40"
             onClick={() => setOpenDeliveryId(null)}
           />
-          <div className="relative ml-auto w-full max-w-2xl h-full bg-white dark:bg-neutral-900 shadow-xl overflow-y-auto p-6">
+          <div className="relative ml-auto w-full max-w-2xl h-full bg-shell shadow-xl overflow-y-auto p-6">
             <div className="flex items-start justify-between mb-4">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              <h2 className="text-lg font-semibold text-heading">
                 {t('settings.webhooks.deliveries.detailTitle', 'Delivery #{{id}}', { id: openDeliveryId })}
               </h2>
               <Button size="sm" variant="ghost" onClick={() => setOpenDeliveryId(null)} aria-label={t('common.close', 'Close')}>
@@ -338,7 +338,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
                     <span className="block text-xs text-neutral-500">
                       {t('settings.webhooks.deliveries.responseBody', 'Response body (truncated to 1KB)')}
                     </span>
-                    <pre className="text-xs whitespace-pre-wrap break-words bg-neutral-50 dark:bg-neutral-800 rounded p-2 max-h-40 overflow-y-auto">
+                    <pre className="text-xs whitespace-pre-wrap break-words bg-subtle rounded p-2 max-h-40 overflow-y-auto">
                       {detailQuery.data.response_body}
                     </pre>
                   </div>
@@ -347,7 +347,7 @@ export const WebhookDeliveriesPage: React.FC = () => {
                   <span className="block text-xs text-neutral-500">
                     {t('settings.webhooks.deliveries.payload', 'Payload (signed body)')}
                   </span>
-                  <pre className="text-xs whitespace-pre-wrap break-words bg-neutral-50 dark:bg-neutral-800 rounded p-2 max-h-80 overflow-y-auto">
+                  <pre className="text-xs whitespace-pre-wrap break-words bg-subtle rounded p-2 max-h-80 overflow-y-auto">
                     {JSON.stringify(detailQuery.data.payload, null, 2)}
                   </pre>
                 </div>
@@ -360,23 +360,23 @@ export const WebhookDeliveriesPage: React.FC = () => {
       {/* Test event dialog */}
       {testDialog.isOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40" onClick={() => testDialog.close()}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+          <div className="bg-shell rounded-lg shadow-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-heading mb-3">
               {t('settings.webhooks.deliveries.sendTest', 'Send test event')}
             </h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+            <p className="text-sm text-soft mb-3">
               {t(
                 'settings.webhooks.deliveries.sendTestHelp',
                 'Fires a synthetic delivery to your receiver with a stub payload, no actual side effects.'
               )}
             </p>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.webhooks.deliveries.eventType', 'Event type')}
             </label>
             <select
               value={testEventType}
               onChange={(e) => setTestEventType(e.target.value)}
-              className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 rounded text-sm mb-4"
+              className="w-full px-3 py-2 border border-line-strong dark:bg-neutral-800 rounded text-sm mb-4"
             >
               {WEBHOOK_EVENT_TYPES.map((e) => <option key={e} value={e}>{e}</option>)}
             </select>

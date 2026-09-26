@@ -169,14 +169,14 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
         if (e.target === e.currentTarget && !saveMutation.isPending) onClose();
       }}
     >
-      <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+      <div className="bg-shell rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between gap-4">
+        <div className="px-6 py-4 border-b border-line flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-lg font-semibold text-heading">
               {t('customers.assignedEvents.title', 'Manage assigned galleries')}
             </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+            <p className="text-xs text-muted mt-0.5">
               {t(
                 'customers.assignedEvents.subtitle',
                 'Pick every gallery this customer should be able to access from their dashboard. Removing a gallery here revokes access immediately on the customer\'s next request.',
@@ -187,7 +187,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
             type="button"
             onClick={onClose}
             disabled={saveMutation.isPending}
-            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 flex-shrink-0"
+            className="p-1 rounded hover:bg-hover-soft flex-shrink-0"
             aria-label={t('common.close', 'Close')}
           >
             <X className="w-5 h-5 text-neutral-500" />
@@ -198,12 +198,12 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {/* Selected chips */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
               {t('customers.assignedEvents.currentLabel', 'Assigned galleries')}
               <span className="ml-1.5 normal-case text-neutral-400">({selected.length})</span>
             </label>
             {selected.length === 0 ? (
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 italic">
+              <p className="text-sm text-muted italic">
                 {t('customers.assignedEvents.empty', 'No galleries assigned yet. Search below to add one.')}
               </p>
             ) : (
@@ -211,7 +211,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
                 {selected.map((s) => (
                   <li
                     key={s.id}
-                    className="inline-flex items-center gap-2 pl-2 pr-1 py-1 rounded-full text-sm bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700"
+                    className="inline-flex items-center gap-2 pl-2 pr-1 py-1 rounded-full text-sm bg-subtle text-heading border border-line"
                   >
                     <CalendarIcon className="w-3.5 h-3.5 text-neutral-500" />
                     <span className="truncate max-w-[220px]">{s.eventName}</span>
@@ -220,7 +220,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
                       onClick={() => remove(s.id)}
                       disabled={saveMutation.isPending}
                       aria-label={t('customers.assignedEvents.removeAria', 'Remove {{name}}', { name: s.eventName })}
-                      className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700"
+                      className="p-0.5 rounded-full hover:bg-hover"
                     >
                       <X className="w-3.5 h-3.5 text-neutral-500" />
                     </button>
@@ -232,7 +232,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
 
           {/* Search */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
               {t('customers.assignedEvents.searchLabel', 'Add a gallery')}
             </label>
             <div className="relative">
@@ -244,7 +244,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('customers.assignedEvents.searchPlaceholder', 'Search by event name')}
                 disabled={saveMutation.isPending}
-                className="w-full pl-9 pr-9 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full pl-9 pr-9 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
               {/* Inline clear button — visible only while the query has
                   content. We keep the query through add() now so the
@@ -258,7 +258,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
                   onClick={clearQuery}
                   disabled={saveMutation.isPending}
                   aria-label={t('customers.assignedEvents.clearSearchAria', 'Clear search')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-50"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-hover disabled:opacity-50"
                 >
                   <X className="w-3.5 h-3.5 text-neutral-500" />
                 </button>
@@ -267,17 +267,17 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
 
             {/* Results dropdown — inline (not a popover) since this is
                 already inside a modal, no nested-popover headaches. */}
-            <div className="mt-2 border border-neutral-200 dark:border-neutral-700 rounded-lg overflow-hidden bg-white dark:bg-neutral-800">
+            <div className="mt-2 border border-line rounded-lg overflow-hidden bg-panel">
               {!query.trim() ? (
-                <p className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="px-3 py-3 text-sm text-muted">
                   {t('customers.assignedEvents.searchHint', 'Start typing to find galleries.')}
                 </p>
               ) : isSearching ? (
-                <p className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="px-3 py-3 text-sm text-muted">
                   {t('common.searching', 'Searching…')}
                 </p>
               ) : results.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="px-3 py-3 text-sm text-muted">
                   {t('customers.assignedEvents.noResults', 'No matching galleries.')}
                 </p>
               ) : (
@@ -288,16 +288,16 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
                         type="button"
                         onClick={() => add(ev)}
                         disabled={saveMutation.isPending}
-                        className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-neutral-50 dark:hover:bg-neutral-700"
+                        className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-hover"
                       >
                         <span className="flex items-center gap-2 min-w-0">
                           <CalendarIcon className="w-4 h-4 flex-shrink-0 text-neutral-400" />
-                          <span className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                          <span className="truncate text-sm font-medium text-heading">
                             {ev.event_name}
                           </span>
                         </span>
                         {ev.event_date && (
-                          <span className="text-xs text-neutral-500 dark:text-neutral-400 flex-shrink-0">
+                          <span className="text-xs text-muted flex-shrink-0">
                             {ev.event_date}
                           </span>
                         )}
@@ -311,7 +311,7 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-neutral-200 dark:border-neutral-700 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-line flex items-center justify-end gap-2">
           <Button
             variant="outline"
             onClick={onClose}

@@ -68,7 +68,7 @@ export const ContractsListPage: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('contracts.title', 'Contracts')}</h1>
+            <h1 className="text-2xl font-bold text-heading">{t('contracts.title', 'Contracts')}</h1>
             {/* Beta badge — matches Customers + Quotes + Invoices. */}
             <span
               className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
@@ -77,7 +77,7 @@ export const ContractsListPage: React.FC = () => {
               {t('navigation.betaTag', 'Beta')}
             </span>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             {t('contracts.subtitle', 'Compose contracts from reusable blocks and have customers sign in-browser or upload a wet-signed PDF.')}
           </p>
         </div>
@@ -110,7 +110,7 @@ export const ContractsListPage: React.FC = () => {
             <input
               type="text"
               placeholder={t('contracts.list.searchPlaceholder', 'Search by number, title or customer…') as string}
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full pl-9 pr-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
@@ -125,7 +125,7 @@ export const ContractsListPage: React.FC = () => {
                 className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                   active
                     ? 'bg-accent-dark text-white border-accent-dark'
-                    : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600'
+                    : 'bg-panel text-body border-line-strong'
                 }`}
               >{t(`contracts.status.${s}`, s)}</button>
             );
@@ -136,12 +136,12 @@ export const ContractsListPage: React.FC = () => {
             single-card layout used by Customers / Quotes / Invoices. */}
         <div className="mt-4">
           {isLoading ? <Loading /> : !data || data.contracts.length === 0 ? (
-            <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">{t('contracts.list.empty', 'No contracts yet.')}</p>
+            <p className="text-center text-muted py-8">{t('contracts.list.empty', 'No contracts yet.')}</p>
           ) : (
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+            <div className="rounded-lg border border-line overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                  <thead className="bg-subtle text-body">
                     <tr>
                       <SortableHeader label={t('contracts.list.table.number', 'Number')} columnKey="number" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
                       <SortableHeader label={t('contracts.list.table.customer', 'Customer')} columnKey="customer" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
@@ -153,7 +153,7 @@ export const ContractsListPage: React.FC = () => {
                   <tbody>
                     {data.contracts.map((c) => (
                       <tr key={c.id}
-                        className="border-t border-neutral-200 dark:border-neutral-700 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                        className="border-t border-line cursor-pointer hover:bg-hover-soft"
                         onClick={() => navigate(`/admin/clients/contracts/${c.id}`)}
                       >
                         <td className="px-3 py-2 font-mono text-xs">{c.contractNumber}</td>
@@ -186,8 +186,8 @@ export const ContractsListPage: React.FC = () => {
                 </table>
               </div>
               {totalPages > 1 && (
-                <div className="flex justify-between items-center px-3 py-2 border-t border-neutral-200 dark:border-neutral-700 text-sm">
-                  <span className="text-neutral-500 dark:text-neutral-400">
+                <div className="flex justify-between items-center px-3 py-2 border-t border-line text-sm">
+                  <span className="text-muted">
                     {t('contracts.list.pagination', 'Page {{page}} of {{total}} · {{count}} contracts', {
                       page, total: totalPages, count: data.total,
                     })}

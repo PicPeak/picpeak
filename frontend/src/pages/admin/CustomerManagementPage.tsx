@@ -258,7 +258,7 @@ export const CustomerManagementPage: React.FC = () => {
     const display = c.displayName?.trim()
       || [c.firstName, c.lastName].filter(Boolean).join(' ').trim()
       || c.companyName?.trim();
-    return display || <span className="text-neutral-500 dark:text-neutral-400 italic">{t('customers.unnamed', 'Unnamed')}</span>;
+    return display || <span className="text-muted italic">{t('customers.unnamed', 'Unnamed')}</span>;
   };
 
   // Active / deactivated plus the passive and invitation-pending badges.
@@ -298,7 +298,7 @@ export const CustomerManagementPage: React.FC = () => {
             {t('customers.invitePending.badge', 'Invitation pending')}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+          <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-subtle text-body">
             {t('customers.passive.badge', 'Passive — admin only')}
           </span>
         );
@@ -307,12 +307,12 @@ export const CustomerManagementPage: React.FC = () => {
   );
 
   const renderTabs = () => (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6 border-b border-neutral-200 dark:border-neutral-700 mb-6">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6 border-b border-line mb-6">
       <button
         type="button"
         onClick={() => setActiveTab('customers')}
         className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
-          activeTab === 'customers' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+          activeTab === 'customers' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-heading'
         }`}
       >
         {t('customers.tabs.customers', 'Customers')}
@@ -322,7 +322,7 @@ export const CustomerManagementPage: React.FC = () => {
         type="button"
         onClick={() => setActiveTab('invitations')}
         className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
-          activeTab === 'invitations' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+          activeTab === 'invitations' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-heading'
         }`}
       >
         {t('customers.tabs.invitations', 'Invitations')}
@@ -332,7 +332,7 @@ export const CustomerManagementPage: React.FC = () => {
         type="button"
         onClick={() => setActiveTab('groups')}
         className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
-          activeTab === 'groups' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+          activeTab === 'groups' ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-heading'
         }`}
       >
         {t('customers.tabs.groups', 'Groups')}
@@ -346,7 +346,7 @@ export const CustomerManagementPage: React.FC = () => {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('customers.pageTitle', 'Customers')}</h1>
+            <h1 className="text-2xl font-bold text-heading">{t('customers.pageTitle', 'Customers')}</h1>
             {/* Beta badge — Calendar/Quotes/Bills tabs in the customer
                 surface are placeholders, so flag the whole feature as
                 still evolving. Keeps expectations honest. */}
@@ -357,7 +357,7 @@ export const CustomerManagementPage: React.FC = () => {
               {t('navigation.betaTag', 'Beta')}
             </span>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             {t('customers.pageSubtitle', 'Recurring customer accounts that can log in at /customer/login.')}
           </p>
         </div>
@@ -402,7 +402,7 @@ export const CustomerManagementPage: React.FC = () => {
                   value={statusFilter}
                   onChange={(e) => updateParams({ status: e.target.value === 'all' ? null : e.target.value })}
                   aria-label={t('customers.statusFilter.label', 'Status')}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                  className="rounded-lg border border-line-strong bg-panel px-3 py-2 text-sm text-heading"
                 >
                   <option value="all">{t('customers.statusFilter.all', 'All statuses')}</option>
                   <option value="active">{t('customers.status.active', 'Active')}</option>
@@ -447,14 +447,14 @@ export const CustomerManagementPage: React.FC = () => {
             // "Nobody matches" and "there is nobody yet" are different
             // answers: the first comes with a way back to the whole list.
             hasAnyFilter ? (
-              <div className="flex flex-col items-center gap-3 text-center text-neutral-500 dark:text-neutral-400 py-12">
+              <div className="flex flex-col items-center gap-3 text-center text-muted py-12">
                 <span>{t('customers.emptyFiltered', 'No customers match these filters.')}</span>
                 <Button variant="outline" size="sm" onClick={clearFilters}>
                   {t('customers.clearFilters', 'Clear filters')}
                 </Button>
               </div>
             ) : (
-              <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
+              <div className="text-center text-muted py-12">
                 {t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
               </div>
             )
@@ -462,11 +462,11 @@ export const CustomerManagementPage: React.FC = () => {
             <div>
               {canManageGroups && selectedIds.length > 0 && (
                 <div
-                  className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+                  className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-subtle px-3 py-2 text-sm"
                   role="region"
                   aria-label={t('customers.groups.bulk.barLabel', 'Selected customers')}
                 >
-                  <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                  <span className="font-medium text-heading">
                     {t('customers.groups.bulk.selected', {
                       count: selectedIds.length,
                       defaultValue_one: '{{count}} selected',
@@ -494,7 +494,7 @@ export const CustomerManagementPage: React.FC = () => {
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                    <tr className="text-left text-muted">
                       {/* The email is always under the name. On a phone the row
                           is that cell alone, with the groups and the status
                           under it; below 2xl (at 1440 the card is ~760px beside
@@ -528,7 +528,7 @@ export const CustomerManagementPage: React.FC = () => {
                   </thead>
                   <tbody>
                     {filteredCustomers.map((c) => (
-                      <tr key={c.id} className="border-t border-neutral-200 dark:border-neutral-700">
+                      <tr key={c.id} className="border-t border-line">
                         <td className="px-3 py-3 min-w-[12rem]">
                           <span className="inline-flex items-center gap-2">
                             {canManageGroups && (
@@ -540,7 +540,7 @@ export const CustomerManagementPage: React.FC = () => {
                                 aria-label={t('customers.groups.bulk.selectOne', 'Select {{email}}', { email: c.email })}
                               />
                             )}
-                            <Link to={`/admin/clients/accounts/${c.id}`} className="text-neutral-900 dark:text-neutral-100 hover:underline">
+                            <Link to={`/admin/clients/accounts/${c.id}`} className="text-heading hover:underline">
                               {renderCustomerName(c)}
                             </Link>
                           </span>
@@ -549,11 +549,11 @@ export const CustomerManagementPage: React.FC = () => {
                               row action. It may break only after "@" and ".",
                               never inside a word. Below 2xl the company
                               follows it, where the Company column is hidden. */}
-                          <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">
+                          <span className="mt-0.5 block text-xs text-muted">
                             {breakableEmail(c.email)}
                           </span>
                           {c.companyName && (
-                            <span className="block text-xs text-neutral-500 dark:text-neutral-400 2xl:hidden">{c.companyName}</span>
+                            <span className="block text-xs text-muted 2xl:hidden">{c.companyName}</span>
                           )}
                           {/* Phone only: the groups sit under the name, where the
                               Groups column is hidden. */}
@@ -566,10 +566,10 @@ export const CustomerManagementPage: React.FC = () => {
                               groups and state without scrolling sideways. */}
                           <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
                         </td>
-                        <td className="hidden 2xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                        <td className="hidden 2xl:table-cell px-3 py-3 text-muted">{c.companyName || '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
-                        <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
-                        <td className="hidden 2xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
+                        <td className="hidden sm:table-cell px-3 py-3 text-muted">{c.eventCount ?? 0}</td>
+                        <td className="hidden 2xl:table-cell px-3 py-3 text-muted">{formatDate(c.lastLogin)}</td>
                         <td className="hidden sm:table-cell px-3 py-3">
                           {renderStatus(c)}
                         </td>
@@ -607,14 +607,14 @@ export const CustomerManagementPage: React.FC = () => {
               {t('customers.loadInvitationsError', 'Could not load invitations')}
             </div>
           ) : filteredInvitations.length === 0 ? (
-            <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
+            <div className="text-center text-muted py-12">
               {t('customers.invitations.empty', 'No pending invitations.')}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                  <tr className="text-left text-muted">
                     <th className="px-3 py-2 font-medium">{t('customers.invitations.email', 'Email')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.invitations.invitedBy', 'Invited by')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.invitations.expiresAt', 'Expires')}</th>
@@ -624,16 +624,16 @@ export const CustomerManagementPage: React.FC = () => {
                 </thead>
                 <tbody>
                   {filteredInvitations.map((inv: CustomerInvitationSummary) => (
-                    <tr key={inv.id} className="border-t border-neutral-200 dark:border-neutral-700">
-                      <td className="px-3 py-3 text-neutral-900 dark:text-neutral-100">{inv.email}</td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{inv.invitedBy || '—'}</td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">
+                    <tr key={inv.id} className="border-t border-line">
+                      <td className="px-3 py-3 text-heading">{inv.email}</td>
+                      <td className="px-3 py-3 text-muted">{inv.invitedBy || '—'}</td>
+                      <td className="px-3 py-3 text-muted">
                         <span className="inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
                           {formatDate(inv.expiresAt)}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(inv.createdAt)}</td>
+                      <td className="px-3 py-3 text-muted">{formatDate(inv.createdAt)}</td>
                       <td className="px-3 py-3 text-right">
                         <Button
                           type="button"
@@ -667,7 +667,7 @@ export const CustomerManagementPage: React.FC = () => {
           onClick={() => setCreateMode(null)}
         >
           <div
-            className="w-full max-w-2xl rounded-xl shadow-lg max-h-[90vh] overflow-y-auto bg-white dark:bg-neutral-900"
+            className="w-full max-w-2xl rounded-xl shadow-lg max-h-[90vh] overflow-y-auto bg-shell"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6">
@@ -697,17 +697,17 @@ export const CustomerManagementPage: React.FC = () => {
 
       {confirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md rounded-xl shadow-lg bg-white dark:bg-neutral-900">
+          <div className="w-full max-w-md rounded-xl shadow-lg bg-shell">
             <div className="p-6">
               <div className="flex items-start gap-3 mb-4">
                 <AlertTriangle className="w-5 h-5 mt-0.5 text-amber-500" />
                 <div>
-                  <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  <h2 className="text-lg font-semibold text-heading">
                     {confirm.kind === 'deactivate'
                       ? t('customers.deactivate.title', 'Deactivate customer?')
                       : t('customers.cancelInvitation.title', 'Cancel invitation?')}
                   </h2>
-                  <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+                  <p className="mt-1 text-sm text-muted">
                     {confirm.kind === 'deactivate'
                       ? t('customers.deactivate.body',
                         'They will no longer be able to log in. You can re-invite them later.')
