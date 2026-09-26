@@ -18,8 +18,10 @@ const SRC = path.resolve(__dirname, '../../..');
 const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), 'utf8');
 
 // Headings must set a colour explicitly. `text-theme` / `text-muted-theme` are
-// deliberately NOT accepted — they resolve to the same leaking variables.
-const EXPLICIT_COLOR = /\btext-(neutral|white|amber|blue|red|green|primary|accent)\b|\btext-(neutral|amber|blue|red|green|primary)-\d/;
+// deliberately NOT accepted — they resolve to the same leaking variables. The
+// UI token utilities (text-heading, text-body, ...) read --ui-* tokens that
+// applyTheme() never writes, so they count as explicit (STYLING.md).
+const EXPLICIT_COLOR = /\btext-(neutral|white|amber|blue|red|green|primary|accent|heading|body|soft|muted|faint)\b|\btext-(neutral|amber|blue|red|green|primary)-\d/;
 
 const HEADING_TAG = /<(h[1-4])(\s[^>]*?)?>/gs;
 

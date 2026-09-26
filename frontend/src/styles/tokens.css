@@ -1,0 +1,130 @@
+/*
+ * PicPeak design tokens — the one place to change how the app looks.
+ *
+ * Read frontend/STYLING.md before editing. Two token families live here:
+ *
+ *   1. UI tokens (--ui-*)      The admin chrome and every other developer-owned
+ *                              surface. Light values on :root, dark values under
+ *                              .dark (AdminDarkModeContext toggles that class on
+ *                              <html>). Operators cannot change these.
+ *                              Tailwind exposes them as bg-panel, text-body,
+ *                              border-line, ... (see tailwind.config.js).
+ *
+ *   2. Theme tokens (--color-*) The operator-themed surfaces: public gallery,
+ *                              customer portal, public quote/contract pages.
+ *                              ThemeContext.applyTheme() overwrites them inline
+ *                              on <html> from Branding, so the values below are
+ *                              only the defaults. Admin code must not read them
+ *                              (an operator's gallery palette would leak into
+ *                              the admin — that is how cards once got their
+ *                              themed shadow).
+ *
+ * Scale tokens (radius, shadow, fonts) are shared by both families.
+ */
+
+:root {
+  /* ---- 1. UI tokens: light -------------------------------------------- */
+
+  /* Surfaces, from the page floor upwards */
+  --ui-canvas: #fafafa;        /* page background            (neutral-50)  */
+  --ui-shell: #ffffff;         /* header, sidebar                          */
+  --ui-panel: #ffffff;         /* cards, modals, tables, inputs            */
+  --ui-subtle: #fafafa;        /* quiet boxes on a panel      (neutral-50) */
+  --ui-inset: #f5f5f5;         /* wells, code, sunken rows   (neutral-100) */
+  --ui-fill: #e5e5e5;          /* tracks, thumbs, chips      (neutral-200) */
+  --ui-fill-strong: #d4d4d4;   /* stronger fills             (neutral-300) */
+  --ui-hover: #f5f5f5;         /* row / button hover         (neutral-100) */
+  --ui-hover-soft: #fafafa;    /* hover on a subtle box       (neutral-50) */
+
+  /* Text, from loudest to quietest */
+  --ui-text-heading: #171717;  /* titles, values             (neutral-900) */
+  --ui-text-body: #404040;     /* running text, labels       (neutral-700) */
+  --ui-text-soft: #525252;     /* secondary text             (neutral-600) */
+  --ui-text-muted: #737373;    /* captions, helper text      (neutral-500) */
+  --ui-text-faint: #a3a3a3;    /* icons at rest, placeholders(neutral-400) */
+
+  /* Lines */
+  --ui-line: #e5e5e5;          /* card and table borders     (neutral-200) */
+  --ui-line-strong: #d4d4d4;   /* input borders              (neutral-300) */
+  --ui-line-faint: #f5f5f5;    /* hairlines inside a panel   (neutral-100) */
+
+  /* ---- 2. Theme tokens: defaults ("Classic Grid") --------------------- */
+  /* Names match ThemeConfig in src/types/theme.types.ts. */
+  --color-background: #fafafa;        /* page base */
+  --color-surface: #ffffff;           /* cards, nav, alternating sections */
+  --color-elevated: #f5f5f5;          /* raised panels */
+  --color-surface-border: #e5e5e5;    /* dividers, borders */
+  --color-text: #171717;              /* primary text */
+  --color-muted-text: #737373;        /* secondary text */
+  --color-accent: #22c55e;            /* links, focus rings, hover */
+  --color-accent-dark: #5C8762;       /* primary CTA fill */
+  /* Legacy aliases — kept for any consumer that still reads --color-primary.
+   * Both resolve to the accent-dark token (the previous "primary" CTA color). */
+  --color-primary: #5C8762;
+  --color-primary-light: #7aa583;
+  --color-primary-dark: #4a6f4f;
+  --font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
+  --heading-font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
+  --border-radius: 0.5rem;            /* theme-controlled button radius */
+  --font-size-base: 16px;
+  --shadow-default: 0 4px 6px rgba(0,0,0,0.1);   /* gallery card shadow */
+  /* Tailwind RGB values for primary color (legacy, used by primary-* utilities) */
+  --tw-color-primary: 92 135 98;
+  --radius: 0.5rem;
+
+  /* ---- 3. Scale tokens ------------------------------------------------ */
+  /* Tailwind's rounded-*, shadow-* and font-sans read these. */
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.5rem;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-medium: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-large: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+/*
+ * Dark mode. AdminDarkModeContext (admin) and usePublicDarkMode (public
+ * quote/contract pages, customer portal) toggle `.dark` on <html>. The UI
+ * tokens flip here, so a component written with bg-panel / text-body needs
+ * no dark: variants. The theme tokens flip too; gallery applyTheme() still
+ * wins because it writes inline --color-* styles on <html>.
+ */
+.dark {
+  --ui-canvas: #0a0a0a;        /* neutral-950 */
+  --ui-shell: #171717;         /* neutral-900 */
+  --ui-panel: #262626;         /* neutral-800 */
+  --ui-subtle: #262626;        /* neutral-800 */
+  --ui-inset: #404040;         /* neutral-700 */
+  --ui-fill: #404040;          /* neutral-700 */
+  --ui-fill-strong: #525252;   /* neutral-600 */
+  --ui-hover: #404040;         /* neutral-700 */
+  --ui-hover-soft: #262626;    /* neutral-800 */
+
+  --ui-text-heading: #f5f5f5;  /* neutral-100 */
+  --ui-text-body: #d4d4d4;     /* neutral-300 */
+  --ui-text-soft: #a3a3a3;     /* neutral-400 */
+  --ui-text-muted: #a3a3a3;    /* neutral-400 */
+  --ui-text-faint: #737373;    /* neutral-500 */
+
+  --ui-line: #404040;          /* neutral-700 */
+  --ui-line-strong: #525252;   /* neutral-600 */
+  --ui-line-faint: #262626;    /* neutral-800 */
+
+  --color-background: #0a0a0a;
+  --color-surface: #171717;
+  --color-elevated: #1f1f1f;
+  --color-surface-border: #262626;
+  --color-text: #f5f5f5;
+  --color-muted-text: #a3a3a3;
+  --color-accent: #22c55e;
+  --color-accent-dark: #5C8762;
+}

@@ -209,6 +209,12 @@ CI runs the `@smoke` subset on every pull request, and every spec on both projec
 * Write tests for new components
 * Settings forms save through the shared `SettingsSaveBar` (`frontend/src/components/admin/SettingsSaveBar.tsx`): keep a snapshot of what the server sent, derive `isDirty` by comparing the draft to it, and render the bar as the last child of the page. No per-card Save buttons; instant-save switches stay instant.
 
+### Styling
+
+* Admin code styles through the UI tokens: `bg-panel`, `text-body`, `border-line`, ... (see `frontend/STYLING.md`). No `dark:` neutral pairs — the lint rule refuses them, `npm run codemod:ui-tokens` rewrites them.
+* Never read a theme token (`var(--color-*)`, `bg-surface`, `text-theme`) in admin code; those belong to the operator-themed gallery and portal.
+* A new shade is a new token in `frontend/src/styles/tokens.css`, not a raw palette class in a component.
+
 ## 📦 Project Structure
 
 ```
