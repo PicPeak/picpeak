@@ -32,8 +32,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, ArrowLeft, Save, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
-import { Button, Card, Loading, Input } from '../../../components/common';
+import { Mail, ArrowLeft, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
+import { Card, Loading, Input } from '../../../components/common';
 import { SUPPORTED_LANGUAGES } from '../../../components/common/LanguageSelector';
 import { EmailTemplateEditor } from '../../../components/admin/EmailTemplateEditor';
 import { eventTypesService } from '../../../services/eventTypes.service';
@@ -41,6 +41,8 @@ import { emailService, type EmailTemplateTranslation } from '../../../services/e
 import { settingsService } from '../../../services/settings.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../../hooks';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const TEMPLATE_KEY_DEFAULT = 'event_reminder_default';
@@ -79,12 +81,16 @@ export const ReminderTemplatesPage: React.FC = () => {
   });
   const [enabled, setEnabled] = useState<boolean>(false);
   const [daysBefore, setDaysBefore] = useState<number>(2);
+  // What the server last sent, so the save bar can tell dirty from clean.
+  const [loadedSettings, setLoadedSettings] = useState<{ enabled: boolean; daysBefore: number } | null>(null);
   useEffect(() => {
     if (!settings) return;
     const e = settings.crm_event_reminders_enabled;
-    setEnabled(e === true || e === 'true' || e === 1 || e === '1');
     const d = Number(settings.crm_event_reminders_days_before);
-    setDaysBefore(Number.isFinite(d) ? d : 2);
+    const next = { enabled: e === true || e === 'true' || e === 1 || e === '1', daysBefore: Number.isFinite(d) ? d : 2 };
+    setEnabled(next.enabled);
+    setDaysBefore(next.daysBefore);
+    setLoadedSettings(next);
   }, [settings]);
   const saveSettingsMutation = useMutationWithToast({
     mutationFn: () => settingsService.updateSettings({
@@ -167,6 +173,7 @@ export const ReminderTemplatesPage: React.FC = () => {
     return out;
   };
   const [translations, setTranslations] = useState<Record<string, EmailTemplateTranslation>>(blankAllLangs);
+  const [loadedTranslations, setLoadedTranslations] = useState<Record<string, EmailTemplateTranslation>>(blankAllLangs);
 
   useEffect(() => {
     // Repopulate form from the resolved source:
@@ -188,9 +195,36 @@ export const ReminderTemplatesPage: React.FC = () => {
       }
     }
     setTranslations(next);
+    setLoadedTranslations(next);
     setEditingLang('en');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey, selectedTemplate, defaultTemplate]);
+
+  // ---- Dirty state for the shared save bar ------------------------------
+  // One bar saves whatever is dirty: the global settings, the open template,
+  // or both. Switching templates with unsaved edits asks first.
+  const confirm = useConfirm();
+  const settingsDirty = !!loadedSettings && (enabled !== loadedSettings.enabled || daysBefore !== loadedSettings.daysBefore);
+  const templateDirty = JSON.stringify(translations) !== JSON.stringify(loadedTranslations);
+  const isDirty = settingsDirty || templateDirty;
+  const discardAll = () => {
+    if (loadedSettings) { setEnabled(loadedSettings.enabled); setDaysBefore(loadedSettings.daysBefore); }
+    setTranslations(loadedTranslations);
+  };
+  const selectTemplate = async (key: string) => {
+    if (key === selectedKey) return;
+    if (templateDirty) {
+      const ok = await confirm({
+        title: t('settings.saveBar.leaveTitle', 'Discard unsaved changes?'),
+        message: t('settings.saveBar.leaveMessage', 'You have unsaved changes on this page. Leaving now discards them.'),
+        confirmLabel: t('settings.saveBar.leaveConfirm', 'Discard and leave'),
+        cancelLabel: t('settings.saveBar.leaveCancel', 'Stay'),
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
+    setSelectedKey(key);
+  };
 
   // ---- Save -------------------------------------------------------------
   const saveMutation = useMutationWithToast({
@@ -292,13 +326,6 @@ export const ReminderTemplatesPage: React.FC = () => {
                 <Input id="reminder-days-before" type="number" min={0} max={365}
                   value={daysBefore} onChange={(e) => setDaysBefore(Number(e.target.value))} className="w-24" />
               </div>
-              <Button variant="outline" size="sm"
-                onClick={() => saveSettingsMutation.mutate()}
-                isLoading={saveSettingsMutation.isPending}
-                disabled={saveSettingsMutation.isPending}
-                leftIcon={<Save className="w-4 h-4" />}>
-                {t('reminderTemplates.saveSettings', 'Save global settings')}
-              </Button>
             </div>
           </>
         )}
@@ -329,7 +356,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                   return (
                     <button
                       key={row.key}
-                      onClick={() => setSelectedKey(row.key)}
+                      onClick={() => { void selectTemplate(row.key); }}
                       className={`w-full text-left p-3 rounded-lg transition-colors ${
                         isSelected
                           ? 'tile-selected'
@@ -378,16 +405,6 @@ export const ReminderTemplatesPage: React.FC = () => {
                   <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
                     {sidebarRows.find((r) => r.key === selectedKey)?.label || selectedKey}
                   </h3>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => saveMutation.mutate()}
-                    isLoading={saveMutation.isPending}
-                    disabled={saveMutation.isPending}
-                    leftIcon={<Save className="w-4 h-4" />}
-                  >
-                    {t('reminderTemplates.saveTemplate', 'Save template')}
-                  </Button>
                 </div>
 
                 {/* Language tabs — full SUPPORTED_LANGUAGES row with
@@ -464,6 +481,16 @@ export const ReminderTemplatesPage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveSettingsMutation.isPending || saveMutation.isPending}
+        onSave={() => {
+          if (settingsDirty) saveSettingsMutation.mutate();
+          if (templateDirty) saveMutation.mutate();
+        }}
+        onDiscard={discardAll}
+      />
     </div>
   );
 };

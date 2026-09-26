@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Save, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Input, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { api } from '../../../config/api';
 
 /**
@@ -38,6 +39,9 @@ export const DownloadsTab: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [form, setForm] = useState<DownloadSettings | null>(null);
+  // What the server last sent, in draft shape — dirty is a comparison against it.
+  const [loaded, setLoaded] = useState<DownloadSettings | null>(null);
+  const isDirty = JSON.stringify(form) !== JSON.stringify(loaded);
 
   const { data, isLoading } = useQuery<DownloadSettings>({
     queryKey: ['admin-download-settings'],
@@ -45,7 +49,10 @@ export const DownloadsTab: React.FC = () => {
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) {
+      setForm(data);
+      setLoaded(data);
+    }
   }, [data]);
 
   const save = useMutation({
@@ -59,9 +66,10 @@ export const DownloadsTab: React.FC = () => {
         })),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, payload) => {
       toast.success(t('settings.saved', 'Settings saved'));
       queryClient.invalidateQueries({ queryKey: ['admin-download-settings'] });
+      setLoaded(payload);
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -220,18 +228,14 @@ export const DownloadsTab: React.FC = () => {
             ))}
           </div>
         </div>
-
-        <div className="flex justify-end mt-6">
-          <Button
-            variant="primary"
-            onClick={() => save.mutate(form)}
-            disabled={save.isPending}
-            leftIcon={<Save className="w-4 h-4" />}
-          >
-            {t('common.save', 'Save')}
-          </Button>
-        </div>
       </Card>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={save.isPending}
+        onSave={() => save.mutate(form)}
+        onDiscard={() => { if (loaded) setForm(loaded); }}
+      />
     </div>
   );
 };

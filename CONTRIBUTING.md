@@ -207,6 +207,7 @@ CI runs the `@smoke` subset on every pull request, and every spec on both projec
 * Use TypeScript for type safety
 * Follow the existing folder structure
 * Write tests for new components
+* Settings forms save through the shared `SettingsSaveBar` (`frontend/src/components/admin/SettingsSaveBar.tsx`): keep a snapshot of what the server sent, derive `isDirty` by comparing the draft to it, and render the bar as the last child of the page. No per-card Save buttons; instant-save switches stay instant.
 
 ## 📦 Project Structure
 

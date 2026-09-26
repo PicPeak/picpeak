@@ -11,6 +11,8 @@ import { CMSEditor } from '../../components/admin/CMSEditor';
 import { cmsService } from '../../services/cms.service';
 import type { CMSPage as CMSPageType } from '../../services/cms.service';
 import { settingsService, PublicSiteBranding } from '../../services/settings.service';
+import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
+import { useUnsavedChanges } from '../../contexts/UnsavedChangesContext';
 import { buildResourceUrl } from '../../utils/url';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -31,6 +33,7 @@ export const CMSPage: React.FC = () => {
   const [publicSiteCss, setPublicSiteCss] = useState('');
   const [publicSiteBaseCss, setPublicSiteBaseCss] = useState('');
   const [publicSiteBranding, setPublicSiteBranding] = useState<PublicSiteBranding | undefined>(undefined);
+  const [loadedPublicSite, setLoadedPublicSite] = useState<{ enabled: boolean; html: string; css: string } | null>(null);
 
   // Fetch CMS pages
   const { data: pages, isLoading } = useQuery({
@@ -140,10 +143,31 @@ export const CMSPage: React.FC = () => {
       return;
     }
 
-    setPublicSiteEnabled(Boolean(adminSettings.general_public_site_enabled));
-    setPublicSiteHtml((adminSettings.general_public_site_html as string) || '');
-    setPublicSiteCss((adminSettings.general_public_site_custom_css as string) || '');
+    const next = {
+      enabled: Boolean(adminSettings.general_public_site_enabled),
+      html: (adminSettings.general_public_site_html as string) || '',
+      css: (adminSettings.general_public_site_custom_css as string) || '',
+    };
+    setPublicSiteEnabled(next.enabled);
+    setPublicSiteHtml(next.html);
+    setPublicSiteCss(next.css);
+    setLoadedPublicSite(next);
   }, [adminSettings]);
+
+  // Public-site form for the shared save bar. The page editor below keeps
+  // its autosave; it only registers its unsaved state with the leave guard.
+  const publicSiteDirty = !!loadedPublicSite && (
+    publicSiteEnabled !== loadedPublicSite.enabled
+    || publicSiteHtml !== loadedPublicSite.html
+    || publicSiteCss !== loadedPublicSite.css
+  );
+  const discardPublicSite = () => {
+    if (!loadedPublicSite) return;
+    setPublicSiteEnabled(loadedPublicSite.enabled);
+    setPublicSiteHtml(loadedPublicSite.html);
+    setPublicSiteCss(loadedPublicSite.css);
+  };
+  useUnsavedChanges(hasUnsavedChanges);
 
   // Trigger auto-save when content changes
   useEffect(() => {
@@ -232,19 +256,6 @@ export const CMSPage: React.FC = () => {
       setEditForm(prev => ({ ...prev, logo_url: null }));
     },
   });
-
-  // Warn before leaving with unsaved changes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
 
   const currentPage = pages?.find(p => p.slug === selectedPage);
   const publicSiteSanitizedHtml = useMemo(() => DOMPurify.sanitize(publicSiteHtml || '', {
@@ -460,14 +471,6 @@ export const CMSPage: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <Button
-                    variant="primary"
-                    onClick={() => publicSiteSaveMutation.mutate()}
-                    disabled={publicSiteSaveMutation.isPending}
-                    isLoading={publicSiteSaveMutation.isPending}
-                  >
-                    {publicSiteSaveMutation.isPending ? t('settings.publicSite.saving') : t('settings.publicSite.saveCta')}
-                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => publicSiteResetMutation.mutate()}
@@ -782,6 +785,13 @@ export const CMSPage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      <SettingsSaveBar
+        isDirty={publicSiteDirty}
+        isSaving={publicSiteSaveMutation.isPending}
+        onSave={() => publicSiteSaveMutation.mutate()}
+        onDiscard={discardPublicSite}
+      />
     </div>
   );
 };

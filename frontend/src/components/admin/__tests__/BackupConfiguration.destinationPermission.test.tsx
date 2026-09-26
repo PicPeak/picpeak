@@ -27,6 +27,10 @@ const config = {
   backup_retention_days: 30,
 };
 
+// The save bar's button is disabled while nothing changed, so flip a
+// checkbox that is not under test before saving.
+const touch = () => userEvent.click(screen.getByRole('checkbox', { name: /whatToBackup\.photos/ }));
+
 const renderForm = (canManageDestination?: boolean) => {
   const onSave = vi.fn();
   render(
@@ -42,7 +46,8 @@ describe('BackupConfiguration destination permission', () => {
     expect(screen.getByText(/Only a Super Admin can change where backups are stored/)).toBeInTheDocument();
     expect(screen.getByDisplayValue('/srv/backups')).toBeDisabled();
 
-    await userEvent.click(screen.getByRole('button', { name: /backup.configuration.saveSettings/ }));
+    await touch();
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
     expect(onSave).toHaveBeenCalledTimes(1);
     const saved = onSave.mock.calls[0][0];
@@ -56,7 +61,8 @@ describe('BackupConfiguration destination permission', () => {
     expect(screen.queryByText(/Only a Super Admin can change where backups are stored/)).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('/srv/backups')).toBeEnabled();
 
-    await userEvent.click(screen.getByRole('button', { name: /backup.configuration.saveSettings/ }));
+    await touch();
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
     expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ backup_destination_path: '/srv/backups' }));
   });

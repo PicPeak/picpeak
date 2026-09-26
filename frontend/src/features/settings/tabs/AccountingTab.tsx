@@ -7,8 +7,8 @@ import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Save } from 'lucide-react';
-import { Button, Card, CardContent, Input, Loading } from '../../../components/common';
+import { Card, CardContent, Input, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { DecimalInput } from '../../../components/common/DecimalInput';
 import { accountingService } from '../../../services/accounting.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -19,6 +19,35 @@ import { VatCodesManager } from '../../../components/admin/VatCodesManager';
 import { ChartOfAccountsManager } from '../../../components/admin/ChartOfAccountsManager';
 
 const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+
+/** The fields behind the save bar, as one object for the dirty check and Discard. */
+interface Draft {
+  kmMajor: number;
+  perDiemMajor: number;
+  hourlyMajor: number;
+  dayMajor: number;
+  requireProof: boolean;
+  rebillAttachProof: boolean;
+  rebillProofNameFormat: string;
+  vatRegistered: boolean;
+  reclaimCountries: string[];
+  defaultOutputVatCode: string;
+  vatLabel: string;
+}
+
+const EMPTY_DRAFT: Draft = {
+  kmMajor: NaN,
+  perDiemMajor: NaN,
+  hourlyMajor: NaN,
+  dayMajor: NaN,
+  requireProof: false,
+  rebillAttachProof: false,
+  rebillProofNameFormat: '',
+  vatRegistered: false,
+  reclaimCountries: [],
+  defaultOutputVatCode: '',
+  vatLabel: '',
+};
 const inputCls = 'w-full max-w-xs rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
 
 export const AccountingTab: React.FC = () => {
@@ -42,26 +71,64 @@ export const AccountingTab: React.FC = () => {
   const [reclaimCountries, setReclaimCountries] = useState<string[]>([]);
   const [defaultOutputVatCode, setDefaultOutputVatCode] = useState('');
   const [vatLabel, setVatLabel] = useState('');
+  // What the two queries last sent, in draft shape, for the save bar.
+  const [loaded, setLoaded] = useState<Draft>(EMPTY_DRAFT);
 
   useEffect(() => {
     if (data) {
-      setKmMajor(data.accounting_km_rate_minor / 100);
-      setPerDiemMajor(data.accounting_per_diem_rate_minor / 100);
-      setRequireProof(data.accounting_require_proof);
-      setRebillAttachProof(data.accounting_rebill_attach_proof);
-      setRebillProofNameFormat(data.crm_rebill_proof_filename_format || '');
-      setVatRegistered(data.accounting_vat_registered);
-      setReclaimCountries(data.accounting_vat_reclaim_countries || []);
-      setDefaultOutputVatCode(data.accounting_default_output_vat_code || '');
+      const part = {
+        kmMajor: data.accounting_km_rate_minor / 100,
+        perDiemMajor: data.accounting_per_diem_rate_minor / 100,
+        requireProof: data.accounting_require_proof,
+        rebillAttachProof: data.accounting_rebill_attach_proof,
+        rebillProofNameFormat: data.crm_rebill_proof_filename_format || '',
+        vatRegistered: data.accounting_vat_registered,
+        reclaimCountries: data.accounting_vat_reclaim_countries || [],
+        defaultOutputVatCode: data.accounting_default_output_vat_code || '',
+      };
+      setKmMajor(part.kmMajor);
+      setPerDiemMajor(part.perDiemMajor);
+      setRequireProof(part.requireProof);
+      setRebillAttachProof(part.rebillAttachProof);
+      setRebillProofNameFormat(part.rebillProofNameFormat);
+      setVatRegistered(part.vatRegistered);
+      setReclaimCountries(part.reclaimCountries);
+      setDefaultOutputVatCode(part.defaultOutputVatCode);
+      setLoaded(prev => ({ ...prev, ...part }));
     }
   }, [data]);
   useEffect(() => {
     if (profileSnap?.profile) {
-      setVatLabel(profileSnap.profile.vatLabel || '');
-      setHourlyMajor(profileSnap.profile.defaultHourlyRateMinor != null ? profileSnap.profile.defaultHourlyRateMinor / 100 : NaN);
-      setDayMajor(profileSnap.profile.defaultDayRateMinor != null ? profileSnap.profile.defaultDayRateMinor / 100 : NaN);
+      const part = {
+        vatLabel: profileSnap.profile.vatLabel || '',
+        hourlyMajor: profileSnap.profile.defaultHourlyRateMinor != null ? profileSnap.profile.defaultHourlyRateMinor / 100 : NaN,
+        dayMajor: profileSnap.profile.defaultDayRateMinor != null ? profileSnap.profile.defaultDayRateMinor / 100 : NaN,
+      };
+      setVatLabel(part.vatLabel);
+      setHourlyMajor(part.hourlyMajor);
+      setDayMajor(part.dayMajor);
+      setLoaded(prev => ({ ...prev, ...part }));
     }
   }, [profileSnap]);
+
+  const draft: Draft = {
+    kmMajor, perDiemMajor, hourlyMajor, dayMajor, requireProof, rebillAttachProof,
+    rebillProofNameFormat, vatRegistered, reclaimCountries, defaultOutputVatCode, vatLabel,
+  };
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(loaded);
+  const discard = () => {
+    setKmMajor(loaded.kmMajor);
+    setPerDiemMajor(loaded.perDiemMajor);
+    setHourlyMajor(loaded.hourlyMajor);
+    setDayMajor(loaded.dayMajor);
+    setRequireProof(loaded.requireProof);
+    setRebillAttachProof(loaded.rebillAttachProof);
+    setRebillProofNameFormat(loaded.rebillProofNameFormat);
+    setVatRegistered(loaded.vatRegistered);
+    setReclaimCountries(loaded.reclaimCountries);
+    setDefaultOutputVatCode(loaded.defaultOutputVatCode);
+    setVatLabel(loaded.vatLabel);
+  };
 
   const countries = sortedCountryOptions(i18n.language);
   const currency = profileSnap?.profile?.defaultCurrency || 'CHF';
@@ -195,10 +262,6 @@ export const AccountingTab: React.FC = () => {
         </div>
       </CardContent></Card>
 
-      <div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}><Save className="w-4 h-4 mr-2" /> {save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
-      </div>
-
       {/* VAT codes + rate→code / treatment→code maps — relocated here from the
           Chart-of-accounts page so all VAT config lives in one place. */}
       <VatCodesManager />
@@ -212,6 +275,14 @@ export const AccountingTab: React.FC = () => {
         </h3>
         <ChartOfAccountsManager />
       </div>
+
+      {/* Covers the two cards above only; the managers save on their own. */}
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={save.isPending}
+        onSave={() => save.mutate()}
+        onDiscard={discard}
+      />
     </div>
   );
 };
