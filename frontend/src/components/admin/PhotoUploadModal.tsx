@@ -38,10 +38,10 @@ export const PhotoUploadModal: React.FC<PhotoUploadModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-neutral-800 rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-panel rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh]">
         {/* Fixed Header */}
-        <div className="flex items-center justify-between p-6 border-b border-neutral-200 dark:border-neutral-700">
-          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('upload.uploadMedia', t('events.uploadPhotos'))}</h2>
+        <div className="flex items-center justify-between p-6 border-b border-line">
+          <h2 className="text-xl font-semibold text-heading">{t('upload.uploadMedia', t('events.uploadPhotos'))}</h2>
           <Button
             variant="ghost"
             size="sm"

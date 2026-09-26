@@ -69,7 +69,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           the same string, so repeating it stacked two identical H2s on
           top of each other (QA warning). The subtitle stays. */}
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="text-sm text-soft">
           {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
         </p>
         <Button
@@ -83,7 +83,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </div>
 
       <Card>
-        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.company', 'Company')}</h3>
+        <h3 className="font-semibold text-heading mb-3">{t('businessProfile.section.company', 'Company')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label={t('businessProfile.field.companyName', 'Company name') as string} value={profile.companyName}
             onChange={(e) => setProfile({ ...profile, companyName: e.target.value })} />
@@ -117,7 +117,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </Card>
 
       <Card>
-        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.contact', 'Contact')}</h3>
+        <h3 className="font-semibold text-heading mb-3">{t('businessProfile.section.contact', 'Contact')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label={t('businessProfile.field.phone', 'Phone') as string} value={profile.phone}
             onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
@@ -131,7 +131,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </Card>
 
       <Card>
-        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.defaults', 'Defaults')}</h3>
+        <h3 className="font-semibold text-heading mb-3">{t('businessProfile.section.defaults', 'Defaults')}</h3>
         {/* Pointer so admins who look for the old VAT/hourly-rate fields here
             know where they went. */}
         <p className="mb-3 rounded-md border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
@@ -139,7 +139,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('businessProfile.field.defaultCurrency', 'Default currency')}
             </label>
             {/* Dropdown; the stored value is normalised (e.g. an old free-text
@@ -148,7 +148,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             <select
               value={normalizeCurrency(profile.defaultCurrency)}
               onChange={(e) => setProfile({ ...profile, defaultCurrency: e.target.value })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {currencyOptions(profile.defaultCurrency).map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -161,13 +161,13 @@ export const SettingsBusinessProfilePage: React.FC = () => {
               scheduled-email business-hours snapping. Dropdown of the full
               IANA list; blank = fall back to the server/browser tz. */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('businessProfile.field.timezone', 'Timezone (IANA)')}
             </label>
             <select
               value={profile.timezone || ''}
               onChange={(e) => setProfile({ ...profile, timezone: e.target.value || null })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="">
                 {t('businessProfile.field.timezoneSystemDefault', 'System default')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
@@ -181,9 +181,9 @@ export const SettingsBusinessProfilePage: React.FC = () => {
               Settings → Accounting (so all financial/VAT config lives in one
               place). See the callout above. */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{t('businessProfile.field.defaultQrFormat', 'Default invoice QR')}</label>
+            <label className="block text-sm font-medium text-body mb-1">{t('businessProfile.field.defaultQrFormat', 'Default invoice QR')}</label>
             <select value={profile.defaultQrFormat} onChange={(e) => setProfile({ ...profile, defaultQrFormat: e.target.value as QrFormat })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm">
               <option value="none">{t('businessProfile.qrFormat.none', 'None')}</option>
               <option value="swiss">{t('businessProfile.qrFormat.swiss', 'Swiss QR-bill (CH / LI)')}</option>
               <option value="epc">{t('businessProfile.qrFormat.epc', 'EPC QR (SEPA / EUR)')}</option>
@@ -205,12 +205,12 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             onChange={(e) => setProfile({ ...profile, pdfLogoHeight: Number(e.target.value) })} />
           {/* Folding marks dropdown. */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('businessProfile.field.pdfFoldingMarks', 'Folding marks on PDF page edge')}
             </label>
             <select value={profile.pdfFoldingMarks || 'none'}
               onChange={(e) => setProfile({ ...profile, pdfFoldingMarks: e.target.value as any })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm">
               <option value="none">{t('businessProfile.foldingMarks.none', 'None')}</option>
               <option value="half">{t('businessProfile.foldingMarks.half', 'Half (148.5mm) — for C5 envelopes')}</option>
               <option value="third">{t('businessProfile.foldingMarks.third', 'Thirds (105 + 210mm) — for DL / DIN long envelopes')}</option>
@@ -231,7 +231,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             when the logo itself already contains the brand name
             (very common with wordmark logos). Lifted out of the input
             grid so the toggle switches don't fight the field sizing. */}
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-3">
+        <div className="mt-4 pt-4 border-t border-line space-y-3">
           <PdfToggleRow
             label={t('businessProfile.field.pdfShowLogo', 'Show logo in PDF letterhead') as string}
             description={t('businessProfile.field.pdfShowLogoHelp',
@@ -281,9 +281,9 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       <Card>
         <div className="flex items-center gap-2 mb-1">
           <Clock className="w-5 h-5 text-neutral-500" />
-          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{t('businessProfile.businessHours.title', 'Business hours')}</h3>
+          <h3 className="font-semibold text-heading">{t('businessProfile.businessHours.title', 'Business hours')}</h3>
         </div>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-sm text-soft mb-4">
           {t('businessProfile.businessHours.subtitle',
             'Set opening hours per weekday — add a second block for a lunch break. Interpreted in the timezone above ({{tz}}).',
             { tz: profile.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone })}
@@ -294,7 +294,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           onChange={(next) => setProfile({ ...profile, businessHours: next })}
         />
 
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="mt-4 pt-4 border-t border-line">
           <PdfToggleRow
             label={t('businessProfile.businessHours.floorToggle', 'Hold scheduled emails until business hours') as string}
             description={t('businessProfile.businessHours.floorToggleHelp',
@@ -313,11 +313,11 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       <Card>
         <div className="flex items-center gap-2 mb-1">
           <Mail className="w-5 h-5 text-neutral-500" />
-          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
+          <h3 className="font-semibold text-heading">
             {t('businessProfile.emailSignature.title', 'Email signature')}
           </h3>
         </div>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-sm text-soft mb-4">
           {t('businessProfile.emailSignature.subtitle',
             'Append your company details to the footer of every email this installation sends. Built from the address and contact fields above — nothing is duplicated.')}
         </p>
@@ -331,7 +331,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         />
 
         <div className="mt-4">
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <label className="block text-sm font-medium text-body mb-1">
             {t('businessProfile.emailSignature.extra', 'Legal line (optional)')}
           </label>
           <textarea
@@ -341,16 +341,16 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             onChange={(e) => setProfile({ ...profile, emailSignatureExtra: e.target.value })}
             placeholder={t('businessProfile.emailSignature.extraPlaceholder',
               'Handelsregister Vaduz FL-0002.123.456-7') as string}
-            className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+            className="w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading"
           />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 text-xs text-muted">
             {t('businessProfile.emailSignature.extraHelp',
               'Registration number, disclaimer or any line with no field of its own. Plain text, up to 500 characters.')}
           </p>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-          <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2 uppercase tracking-wide">
+        <div className="mt-4 pt-4 border-t border-line">
+          <p className="text-xs font-medium text-muted mb-2 uppercase tracking-wide">
             {t('businessProfile.emailSignature.previewTitle', 'Footer preview')}
           </p>
           <EmailSignaturePreview profile={profile} />
@@ -393,9 +393,9 @@ interface PdfToggleRowProps {
 const PdfToggleRow: React.FC<PdfToggleRowProps> = ({ label, description, enabled, onChange }) => (
   <label className="flex items-center justify-between gap-4 cursor-pointer">
     <span className="text-sm">
-      <span className="font-medium text-neutral-900 dark:text-neutral-100">{label}</span>
+      <span className="font-medium text-heading">{label}</span>
       {description && (
-        <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{description}</span>
+        <span className="block text-xs text-muted mt-0.5">{description}</span>
       )}
     </span>
     <button
@@ -403,7 +403,7 @@ const PdfToggleRow: React.FC<PdfToggleRowProps> = ({ label, description, enabled
       role="switch"
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 shrink-0 ${enabled ? '' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 shrink-0 ${enabled ? '' : 'bg-fill-strong'}`}
       style={enabled ? { backgroundColor: 'var(--color-accent)' } : undefined}
     >
       <span
@@ -426,7 +426,7 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
 
   if (!profile.emailSignatureEnabled) {
     return (
-      <p className="text-sm text-neutral-500 dark:text-neutral-400 italic">
+      <p className="text-sm text-muted italic">
         {t('businessProfile.emailSignature.previewOff', 'Signature is off — emails show the logo and company name only.')}
       </p>
     );
@@ -459,7 +459,7 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
   }
 
   return (
-    <div data-testid="email-signature-preview" className="rounded-md bg-neutral-50 dark:bg-neutral-800/60 p-3 text-center text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+    <div data-testid="email-signature-preview" className="rounded-md bg-neutral-50 dark:bg-neutral-800/60 p-3 text-center text-xs text-soft space-y-1">
       {profile.companyName && <p>{profile.companyName}</p>}
       {addressLines.length > 0 && <p>{addressLines.join(' \u00b7 ')}</p>}
       {contacts.length > 0 && <p>{contacts.join(' \u00b7 ')}</p>}
@@ -531,16 +531,16 @@ const BusinessHoursEditor: React.FC<{
         return (
           <div
             key={iso}
-            className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 py-2 border-b border-neutral-100 dark:border-neutral-800 last:border-0"
+            className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 py-2 border-b border-line-faint last:border-0"
           >
-            <div className="w-28 shrink-0 pt-2 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <div className="w-28 shrink-0 pt-2 text-sm font-medium text-heading">
               {t(`businessProfile.businessHours.weekday.${iso}`)}
             </div>
 
             <div className="flex-1 space-y-2">
               {!isOpen && (
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                  <span className="text-sm text-muted">
                     {t('businessProfile.businessHours.closed', 'Closed')}
                   </span>
                   <button
@@ -595,7 +595,7 @@ const BusinessHoursEditor: React.FC<{
               <button
                 type="button"
                 onClick={() => copyToAll(iso)}
-                className="shrink-0 inline-flex items-center gap-1 pt-2 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+                className="shrink-0 inline-flex items-center gap-1 pt-2 text-xs text-neutral-500 hover:text-body"
               >
                 <Copy className="w-3.5 h-3.5" />
                 {t('businessProfile.businessHours.copyToAll', 'Copy to all days')}
@@ -657,7 +657,7 @@ const PdfLogoUploader: React.FC<PdfLogoUploaderProps> = ({ profile, setProfile }
 
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+      <label className="block text-sm font-medium text-body mb-1">
         {t('businessProfile.field.pdfLogoUpload', 'PDF letterhead logo (PNG, JPEG, or SVG)')}
       </label>
       <div className="flex items-center gap-3 flex-wrap">
@@ -754,7 +754,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
 
   // Form body reused for both Add and Edit (single source of layout).
   const renderForm = (mode: 'new' | 'edit', onSubmit: () => void, submitting: boolean) => (
-    <div className="mb-4 p-3 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800">
+    <div className="mb-4 p-3 rounded-md border border-line bg-subtle">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Input label={t('businessProfile.bank.label', 'Label') as string} value={draft.label}
           onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
@@ -766,7 +766,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
           onChange={(e) => setDraft({ ...draft, bic: e.target.value })} />
         <Input label={t('businessProfile.bank.currency', 'Currency') as string} value={draft.currency}
           maxLength={3} onChange={(e) => setDraft({ ...draft, currency: e.target.value.toUpperCase() })} />
-        <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200 pt-6">
+        <label className="flex items-center gap-2 text-sm text-body pt-6">
           <input type="checkbox" checked={draft.isDefault}
             onChange={(e) => setDraft({ ...draft, isDefault: e.target.checked })} />
           {t('businessProfile.bank.isDefault', 'Default for this currency')}
@@ -790,7 +790,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{t('businessProfile.section.banks', 'Bank accounts')}</h3>
+        <h3 className="font-semibold text-heading">{t('businessProfile.section.banks', 'Bank accounts')}</h3>
         <Button size="sm" onClick={() => {
           if (openForm === 'new') closeForm();
           else { setDraft(EMPTY_DRAFT); setOpenForm('new'); }
@@ -804,12 +804,12 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
       {accounts.length === 0 ? (
         <p className="text-sm text-neutral-500">{t('businessProfile.noBanks', 'No bank accounts configured yet.')}</p>
       ) : (
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+        <ul className="divide-y divide-line">
           {accounts.map((b) => (
             <React.Fragment key={b.id}>
               <li className="py-2 flex items-center justify-between">
                 <div>
-                  <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100">{b.label || b.iban}
+                  <div className="font-medium text-sm text-heading">{b.label || b.iban}
                     {b.isDefault && <Star className="inline w-4 h-4 ml-1 text-amber-500" />}
                   </div>
                   <div className="text-xs text-neutral-500 font-mono">{b.iban.replace(/(.{4})/g, '$1 ').trim()}{b.currency ? ` · ${b.currency}` : ''}</div>

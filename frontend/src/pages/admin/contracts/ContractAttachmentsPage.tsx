@@ -101,15 +101,15 @@ export const ContractAttachmentsPage: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Link to="/admin/clients/contracts" className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        <Link to="/admin/clients/contracts" className="p-1 rounded hover:bg-hover-soft"
           aria-label={t('contracts.templates.back', 'Back to contracts') as string}>
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <h1 className="text-2xl font-bold flex-1 text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-2xl font-bold flex-1 text-heading">
           {t('contracts.attachments.title', 'Contract attachments')}
         </h1>
       </div>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-3xl">
+      <p className="text-sm text-soft max-w-3xl">
         {t('contracts.attachments.intro', 'PDFs that go out with contracts — terms and conditions, a privacy notice, an appendix. Add them to a template or a single contract, either inside the contract PDF or as a separate file.')}
       </p>
 
@@ -118,7 +118,7 @@ export const ContractAttachmentsPage: React.FC = () => {
           <form onSubmit={upload} className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label htmlFor="attachment-file" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                <label htmlFor="attachment-file" className="block text-sm font-medium text-body mb-1">
                   {t('contracts.attachments.file', 'PDF (up to 20 MB)')}
                 </label>
                 <input
@@ -126,7 +126,7 @@ export const ContractAttachmentsPage: React.FC = () => {
                   ref={fileRef}
                   type="file"
                   accept="application/pdf,.pdf"
-                  className="block w-full text-sm text-neutral-700 dark:text-neutral-300"
+                  className="block w-full text-sm text-body"
                   onChange={(e) => {
                     const picked = e.target.files?.[0] || null;
                     setFile(picked);
@@ -156,25 +156,25 @@ export const ContractAttachmentsPage: React.FC = () => {
       {isLoading ? <Loading /> : (
         <Card padding="md">
           {attachments.length === 0 ? (
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('contracts.attachments.empty', 'No attachments yet.')}</p>
+            <p className="text-sm text-soft">{t('contracts.attachments.empty', 'No attachments yet.')}</p>
           ) : (
-            <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+            <ul className="divide-y divide-line">
               {attachments.map((a) => (
                 <li key={a.id} className={`py-3 flex flex-wrap items-center gap-3 ${a.isActive ? '' : 'opacity-60'}`}>
                   <div className="flex-1 min-w-[200px]">
-                    <p className="font-medium text-neutral-900 dark:text-neutral-100">
+                    <p className="font-medium text-heading">
                       {a.name}
                       {!a.isActive && (
-                        <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200">
+                        <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-fill text-body">
                           {t('contracts.attachments.archived', 'Archived')}
                         </span>
                       )}
                     </p>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="text-xs text-muted">
                       {t('contracts.attachments.pages', '{{count}} pages', { count: a.pages })} · {formatAttachmentSize(a.bytes)} · {formatDateTime(a.createdAt)}
                       {a.description ? ` · ${a.description}` : ''}
                     </p>
-                    <p className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 break-all" title={a.sha256}>
+                    <p className="font-mono text-[11px] text-muted break-all" title={a.sha256}>
                       {a.sha256.slice(0, 16)}…
                     </p>
                   </div>

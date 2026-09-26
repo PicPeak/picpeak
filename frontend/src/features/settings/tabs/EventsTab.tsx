@@ -44,10 +44,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   return (
     <div className="space-y-6">
       <Card padding="md">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
+        <h2 className="text-lg font-semibold text-heading mb-4">
           {t('settings.events.requiredFields', 'Required Fields')}
         </h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-sm text-soft mb-4">
           {t('settings.events.requiredFieldsDescription', 'Configure which contact fields are required when creating new events.')}
         </p>
 
@@ -61,10 +61,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.requireCustomerName', 'Require customer name')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.requireCustomerNameHelp', 'Customer name must be provided for new events')}
                 </p>
               </div>
@@ -80,10 +80,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.requireCustomerEmail', 'Require customer email')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.requireCustomerEmailHelp', 'Customer email must be provided for new events')}
                 </p>
                 {!eventSettings.event_require_customer_email && (
@@ -105,10 +105,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.requireAdminEmail', 'Require admin email')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.requireAdminEmailHelp', 'Admin email must be provided for new events')}
                 </p>
                 {!eventSettings.event_require_admin_email && (
@@ -130,10 +130,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.requireEventDate', 'Require event date')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.requireEventDateHelp', 'Event date must be provided when creating events')}
                 </p>
                 {!eventSettings.event_require_event_date && (
@@ -155,10 +155,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.requireExpiration', 'Require expiration date')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.requireExpirationHelp', 'Galleries must have an expiration date')}
                 </p>
                 {!eventSettings.event_require_expiration && (
@@ -180,10 +180,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.defaultRequirePassword', 'Require password by default')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.defaultRequirePasswordHelp', 'Pre-check "Require password" when creating new events. Disable for quicker creation of public galleries.')}
                 </p>
               </div>
@@ -199,10 +199,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.defaultFeedbackEnabled', 'Enable Guest Feedback by default')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.defaultFeedbackEnabledHelp', 'Pre-check "Guest Feedback" when creating new events. Individual feedback options (likes, ratings, comments) can still be customised per event.')}
                 </p>
               </div>
@@ -215,11 +215,11 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               is in the middle of. Greyed out rather than hidden while the
               master default is off, so the options stay discoverable. */}
           <div
-            className={`ml-7 pl-4 border-l border-neutral-200 dark:border-neutral-700 space-y-3 ${
+            className={`ml-7 pl-4 border-l border-line space-y-3 ${
               eventSettings.event_default_feedback_enabled ? '' : 'opacity-50'
             }`}
           >
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-muted">
               {t(
                 'settings.events.feedbackTypeDefaultsHelp',
                 'Which feedback types new galleries start with. Existing galleries are not affected — each gallery can still be changed individually.'
@@ -235,7 +235,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   onChange={(e) => setEventSettings(prev => ({ ...prev, [key]: e.target.checked }))}
                   className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
                 />
-                <span className="text-sm text-neutral-700 dark:text-neutral-300 flex items-center gap-2">
+                <span className="text-sm text-body flex items-center gap-2">
                   {t(label, fallback)}
                   {key === 'event_default_allow_color_labels' && (
                     <span className="flex items-center gap-1" aria-hidden="true">
@@ -257,7 +257,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
             <div>
               <label
-                className="block text-sm text-neutral-700 dark:text-neutral-300 mb-1"
+                className="block text-sm text-body mb-1"
                 htmlFor="event_default_keybind_mode"
               >
                 {t('settings.events.defaultKeybindMode', 'Default lightbox shortcuts')}
@@ -270,7 +270,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   ...prev,
                   event_default_keybind_mode: e.target.value === 'lightroom' ? 'lightroom' : 'colors',
                 }))}
-                className="w-full max-w-sm px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm"
+                className="w-full max-w-sm px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading text-sm"
               >
                 <option value="colors">
                   {t('settings.events.keybindColors', 'Colors only — 1 green, 2 yellow, 3 red')}
@@ -285,7 +285,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           {/* Download limit default (issue 1560) */}
           <div>
             <label
-              className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1"
+              className="block text-sm font-medium text-body mb-1"
               htmlFor="event_default_download_limit"
             >
               {t('settings.events.defaultDownloadLimit', 'Default download limit')}
@@ -300,9 +300,9 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 ...prev,
                 event_default_download_limit: Math.max(0, parseInt(e.target.value, 10) || 0),
               }))}
-              className="w-32 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm"
+              className="w-32 px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading text-sm"
             />
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted mt-1">
               {t('settings.events.defaultDownloadLimitHelp', 'Pre-filled on new events: how many photos a client can download. 0 = unlimited.')}
             </p>
           </div>
@@ -326,10 +326,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.showGalleryFilterBar', 'Show filter bar in galleries')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.showGalleryFilterBarHelp', 'Display the search-by-filename and sort controls above grid-layout galleries. Disable for a cleaner layout.')}
                 </p>
               </div>
@@ -345,10 +345,10 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('settings.events.enablePhoneField', 'Enable phone number field')}
                 </span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.events.enablePhoneFieldHelp', 'Adds an optional phone number input to the event form. Useful for downstream automations like WhatsApp delivery via n8n. Always optional even when enabled.')}
                 </p>
               </div>

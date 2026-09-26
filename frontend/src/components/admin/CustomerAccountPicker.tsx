@@ -159,10 +159,10 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
     <div ref={containerRef} className="relative">
       {portalAssignment && (
         <>
-          <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">
+          <label className="block text-sm font-medium text-heading mb-1">
             {t('events.customerPicker.label', 'Customer accounts')}
           </label>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">{helpText}</p>
+          <p className="text-xs text-muted mb-2">{helpText}</p>
         </>
       )}
 
@@ -172,18 +172,18 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
           {value.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-subtle text-heading border border-line"
             >
               <span className="font-medium">{c.displayName?.trim() || c.email}</span>
               {c.displayName?.trim() && c.email !== c.displayName && (
-                <span className="text-neutral-500 dark:text-neutral-400">· {c.email}</span>
+                <span className="text-muted">· {c.email}</span>
               )}
               {c.groups && c.groups.length > 0 && <CustomerGroupChipList groups={c.groups} max={2} />}
               {!disabled && (
                 <button
                   type="button"
                   onClick={() => remove(c.id)}
-                  className="ml-1 -mr-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 p-0.5"
+                  className="ml-1 -mr-1 rounded hover:bg-hover p-0.5"
                   aria-label={t('events.customerPicker.removeAria', 'Remove {{name}}', { name: c.email })}
                 >
                   <X className="w-3 h-3" />
@@ -232,14 +232,14 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
       {/* Dropdown */}
       {isOpen && query.trim() !== '' && (
         <div
-          className="absolute left-0 right-0 mt-1 z-20 rounded-lg shadow-lg border max-h-72 overflow-y-auto bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700"
+          className="absolute left-0 right-0 mt-1 z-20 rounded-lg shadow-lg border max-h-72 overflow-y-auto bg-shell border-line"
         >
           {isSearching ? (
-            <div className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="px-3 py-3 text-sm text-muted">
               {t('events.customerPicker.searching', 'Searching…')}
             </div>
           ) : results.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="px-3 py-3 text-sm text-muted">
               {/* The old copy pointed at Clients → Accounts, which is
                   feature-gated and therefore unreachable on an
                   Accounting-only install. Point at the button that is
@@ -255,9 +255,9 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
                   <button
                     type="button"
                     onClick={() => select(r)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-hover flex items-center gap-2"
                   >
-                    <UserPlus className="w-4 h-4 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
+                    <UserPlus className="w-4 h-4 text-muted flex-shrink-0" />
                     <span className="flex-1 truncate">{labelFor(r)}</span>
                     {r.groups && r.groups.length > 0 && (
                       <CustomerGroupChipList groups={r.groups} max={2} expandable={false} />

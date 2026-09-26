@@ -85,13 +85,13 @@ function WfNode({ data }: { data: any }) {
   const label = describeNode(data.nodeType, data.config, data.triggerType);
   const pos = (i: number, n: number) => `${(100 / (n + 1)) * (i + 1)}%`;
   return (
-    <div style={{ borderColor: color }} className="relative rounded-md border-2 bg-white dark:bg-neutral-900 px-3 pt-2 pb-4 min-w-[152px] text-center shadow-sm">
+    <div style={{ borderColor: color }} className="relative rounded-md border-2 bg-shell px-3 pt-2 pb-4 min-w-[152px] text-center shadow-sm">
       {data.nodeType !== 'trigger' && <Handle type="target" position={Position.Top} />}
       <div className="text-[10px] uppercase tracking-wide" style={{ color }}>{data.nodeType}</div>
-      <div className="text-sm text-neutral-900 dark:text-neutral-100">{label}</div>
+      <div className="text-sm text-heading">{label}</div>
       {handles ? handles.map((h, i) => (
         <React.Fragment key={h}>
-          <span className="absolute text-[9px] text-neutral-400 dark:text-neutral-500" style={{ bottom: 3, left: pos(i, handles.length), transform: 'translateX(-50%)' }}>{h}</span>
+          <span className="absolute text-[9px] text-faint" style={{ bottom: 3, left: pos(i, handles.length), transform: 'translateX(-50%)' }}>{h}</span>
           <Handle id={h} type="source" position={Position.Bottom} style={{ left: pos(i, handles.length) }} />
         </React.Fragment>
       )) : <Handle type="source" position={Position.Bottom} />}
@@ -275,28 +275,28 @@ export const WorkflowEditorPage: React.FC = () => {
         </Button>
         <input
           value={name} onChange={(e) => setName(e.target.value)}
-          className="px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+          className="px-2 py-1 rounded border border-line-strong bg-shell text-heading"
           placeholder={t('workflows.editor.namePlaceholder', 'Workflow name') as string}
         />
-        <label className="text-sm text-neutral-600 dark:text-neutral-400">{t('workflows.editor.when', 'When')}</label>
+        <label className="text-sm text-soft">{t('workflows.editor.when', 'When')}</label>
         <select
           value={triggerType} onChange={(e) => setTriggerType(e.target.value)}
-          className="px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm"
+          className="px-2 py-1 rounded border border-line-strong bg-shell text-heading text-sm"
         >
           {TRIGGERS.map((tr) => <option key={tr} value={tr}>{tr}</option>)}
         </select>
         {triggerType === 'event.date_approaching' && (
-          <label className="text-sm text-neutral-600 dark:text-neutral-400 flex items-center gap-1.5">
+          <label className="text-sm text-soft flex items-center gap-1.5">
             {t('workflows.editor.daysBefore', 'days before event')}
             <input
               type="number" min={0} max={365}
               value={triggerConfig.daysBefore ?? 2}
               onChange={(e) => setTriggerConfig((c) => ({ ...c, daysBefore: Number(e.target.value) }))}
-              className="w-16 px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm"
+              className="w-16 px-2 py-1 rounded border border-line-strong bg-shell text-heading text-sm"
             />
           </label>
         )}
-        <label className="text-sm text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+        <label className="text-sm text-body flex items-center gap-1.5">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           {t('workflows.enabled', 'Enabled')}
         </label>
@@ -315,14 +315,14 @@ export const WorkflowEditorPage: React.FC = () => {
         {PALETTE.map((type) => (
           <button
             key={type} type="button" onClick={() => addNode(type)}
-            className="text-xs px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            className="text-xs px-2 py-1 rounded border border-line-strong text-body hover:bg-hover-soft"
           >
             + {type}
           </button>
         ))}
         <button
           type="button" onClick={cleanUp}
-          className="ml-auto inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+          className="ml-auto inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-line-strong text-body hover:bg-hover-soft"
         >
           <Wand2 className="w-3.5 h-3.5" /> {t('workflows.editor.cleanUp', 'Clean up layout')}
         </button>
@@ -331,12 +331,12 @@ export const WorkflowEditorPage: React.FC = () => {
 
       {textMode ? (
         <div className="space-y-2">
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-muted">
             {t('workflows.editor.textHint', 'The whole flow as JSON — copy it to share or hand to an LLM, or paste a flow and load it into the editor. Click “Clean up layout” after importing.')}
           </p>
           <textarea
             value={text} onChange={(e) => setText(e.target.value)} spellCheck={false}
-            className="w-full font-mono text-xs p-2 rounded border border-neutral-300 dark:border-neutral-600 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+            className="w-full font-mono text-xs p-2 rounded border border-line-strong bg-subtle text-heading"
             style={{ height: '62vh' }}
           />
           {textErr && <p className="text-xs text-red-600 dark:text-red-400">{textErr}</p>}
@@ -347,7 +347,7 @@ export const WorkflowEditorPage: React.FC = () => {
         </div>
       ) : (
       <div className="flex gap-3" style={{ height: '70vh' }}>
-        <div className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+        <div className="flex-1 rounded-lg border border-line overflow-hidden">
           <ReactFlow
             colorMode={isDark ? 'dark' : 'light'}
             nodes={nodes} edges={edges} nodeTypes={nodeTypes}
@@ -361,9 +361,9 @@ export const WorkflowEditorPage: React.FC = () => {
         </div>
 
         {selectedNode && (
-          <div className="w-80 rounded-lg border border-neutral-200 dark:border-neutral-700 p-3 space-y-3 bg-white dark:bg-neutral-900 overflow-y-auto">
+          <div className="w-80 rounded-lg border border-line p-3 space-y-3 bg-shell overflow-y-auto">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+              <div className="text-sm font-medium text-heading">
                 {(selectedNode.data as any).nodeType} · {selectedNode.id}
               </div>
               <Button variant="ghost" size="sm" onClick={deleteSelected} aria-label={t('common.delete', 'Delete') as string}>

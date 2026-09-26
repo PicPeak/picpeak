@@ -170,14 +170,14 @@ export const EventFeedbackPage: React.FC = () => {
           {/* Shape selector (#640 #6). Long is the existing per-action shape;
               pivot is per-(photo, guest) for spreadsheet pivot tables. */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-neutral-500 dark:text-neutral-400" htmlFor="feedback-export-shape">
+            <label className="text-xs text-muted" htmlFor="feedback-export-shape">
               {t('feedback.exportShapeLabel', 'Shape')}
             </label>
             <select
               id="feedback-export-shape"
               value={exportShape}
               onChange={(e) => setExportShape(e.target.value as 'long' | 'pivot')}
-              className="text-sm px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800"
+              className="text-sm px-2 py-1.5 rounded border border-line-strong bg-panel"
             >
               <option value="long">{t('feedback.exportShapeLong', 'Per-action (long)')}</option>
               <option value="pivot">{t('feedback.exportShapePivot', 'Per-guest (pivot)')}</option>

@@ -76,14 +76,14 @@ export const DiscountsPanel: React.FC<Props> = ({ promotions, items, currency, o
     : `−${formatMoneyMinor(Number(p.valueMinor || 0), p.currency || currency)}`);
 
   return (
-    <div className="mt-4 rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+    <div className="mt-4 rounded-lg border border-line p-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-heading mb-2">
         <Tag className="w-4 h-4" aria-hidden />
         {t('quotes.promotions.panelTitle', 'Discounts')}
       </div>
       <div className="flex flex-col items-start gap-2">
         {offered.map((p) => (
-          <label key={p.id} className="inline-flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+          <label key={p.id} className="inline-flex items-center gap-2 text-sm text-body">
             <input
               type="checkbox"
               checked={appliedIds.has(p.id)}
@@ -91,11 +91,11 @@ export const DiscountsPanel: React.FC<Props> = ({ promotions, items, currency, o
               className="rounded border-neutral-300"
             />
             <span>{p.name}</span>
-            <span className="text-neutral-500 dark:text-neutral-400 tabular-nums">{valueLabel(p)}</span>
+            <span className="text-muted tabular-nums">{valueLabel(p)}</span>
           </label>
         ))}
       </div>
-      <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="mt-2 text-xs text-muted">
         {t('quotes.promotions.panelHint', 'Percentages apply first, then fixed amounts — never more than the subtotal.')}
       </p>
     </div>

@@ -239,15 +239,15 @@ export const BlockLibraryPage: React.FC = () => {
       <div className="mb-4 flex items-center gap-3 flex-wrap">
         <Link
           to="/admin/clients/contracts"
-          className="inline-flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-400 hover:text-accent-dark"
+          className="inline-flex items-center gap-1 text-sm text-soft hover:text-accent-dark"
         >
           <ArrowLeft className="w-4 h-4" />
           {t('contracts.blocks.back', 'Back to contracts')}
         </Link>
-        <h1 className="text-2xl font-bold flex-1 text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-2xl font-bold flex-1 text-heading">
           {t('contracts.blocks.title', 'Contract block library')}
         </h1>
-        <label className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+        <label className="flex items-center gap-2 text-sm text-muted">
           <input type="checkbox" checked={hideInactive} onChange={(e) => setHideInactive(e.target.checked)} />
           {t('contracts.blocks.hideInactive', 'Hide inactive')}
         </label>
@@ -293,7 +293,7 @@ export const BlockLibraryPage: React.FC = () => {
               section-grouped list of block tiles. */}
           <Card padding="sm" className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              <h3 className="text-lg font-semibold text-heading">
                 {t('contracts.blocks.sidebarHeading', 'Blocks')}
               </h3>
               <Button
@@ -311,7 +311,7 @@ export const BlockLibraryPage: React.FC = () => {
                 if (!items || items.length === 0) return null;
                 return (
                   <div key={sec}>
-                    <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                    <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                       {t(`contracts.sections.${sec}`, sec)}
                     </h4>
                     <div className="space-y-2">
@@ -325,7 +325,7 @@ export const BlockLibraryPage: React.FC = () => {
                             className={`w-full text-left p-3 rounded-lg transition-colors ${
                               isSelected
                                 ? 'tile-selected'
-                                : 'bg-neutral-50 dark:bg-neutral-700 border-2 border-transparent hover:bg-neutral-100 dark:hover:bg-neutral-600'
+                                : 'bg-inset border-2 border-transparent hover:bg-hover'
                             } ${!b.isActive ? 'opacity-50' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-2">
@@ -337,7 +337,7 @@ export const BlockLibraryPage: React.FC = () => {
                                   S13). `min-w-0` lets the name shrink instead
                                   of pushing the badges out of the row. */}
                               <p
-                                className="font-medium text-neutral-900 dark:text-neutral-100 truncate min-w-0"
+                                className="font-medium text-heading truncate min-w-0"
                                 title={b.name}
                               >
                                 {b.name}
@@ -345,20 +345,20 @@ export const BlockLibraryPage: React.FC = () => {
                               <div className="flex items-center gap-1.5 flex-shrink-0">
                                 {b.isSystem && (
                                   <span
-                                    className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-neutral-200 dark:bg-neutral-600 text-neutral-700 dark:text-neutral-300"
+                                    className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-fill text-body"
                                     title={t('contracts.blocks.systemBadge', 'System') as string}
                                   >
                                     {t('contracts.blocks.systemBadge', 'System')}
                                   </span>
                                 )}
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-600 text-neutral-600 dark:text-neutral-300">
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-fill text-body">
                                   {count}/{SUPPORTED_LANGUAGES.length}
                                 </span>
                               </div>
                             </div>
                             {b.description && (
                               <p
-                                className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 truncate"
+                                className="text-sm text-muted mt-1 truncate"
                                 title={b.description}
                               >
                                 {b.description}
@@ -372,7 +372,7 @@ export const BlockLibraryPage: React.FC = () => {
                 );
               })}
               {blocks.length === 0 && (
-                <p className="text-center text-sm text-neutral-500 dark:text-neutral-400 py-6">
+                <p className="text-center text-sm text-muted py-6">
                   {t('contracts.blocks.empty', 'No blocks yet.')}
                 </p>
               )}
@@ -383,21 +383,21 @@ export const BlockLibraryPage: React.FC = () => {
           <div className="lg:col-span-3">
             {selection === null ? (
               <Card padding="md">
-                <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">
+                <p className="text-center text-muted py-8">
                   {t('contracts.blocks.selectPrompt', 'Select a block on the left or create a new one to start editing.')}
                 </p>
               </Card>
             ) : (
               <Card padding="md">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  <h3 className="text-lg font-semibold text-heading">
                     {selection.mode === 'new'
                       ? t('contracts.blocks.dialog.createTitle', 'New block')
                       : t('contracts.blocks.dialog.editTitle', 'Edit block')}
                   </h3>
                   <div className="flex gap-2 items-center flex-wrap">
                     {selection.mode === 'edit' && (
-                      <label className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400 mr-2">
+                      <label className="flex items-center gap-2 text-sm text-muted mr-2">
                         <input
                           type="checkbox"
                           checked={selection.block.isActive}
@@ -436,7 +436,7 @@ export const BlockLibraryPage: React.FC = () => {
                 </div>
 
                 {/* Language tabs — identical pill row to EmailConfigPage. */}
-                <div className="flex flex-wrap gap-1 mb-4 p-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg">
+                <div className="flex flex-wrap gap-1 mb-4 p-1 bg-inset rounded-lg">
                   {SUPPORTED_LANGUAGES.map((lang) => {
                     const filled = !!(bodies[lang.code] || '').trim();
                     return (
@@ -445,8 +445,8 @@ export const BlockLibraryPage: React.FC = () => {
                         onClick={() => setEditingLang(lang.code)}
                         className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
                           editingLang === lang.code
-                            ? 'bg-white dark:bg-neutral-800 text-accent-dark shadow-sm'
-                            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+                            ? 'bg-panel text-accent-dark shadow-sm'
+                            : 'text-soft hover:text-body'
                         }`}
                       >
                         <lang.Flag />
@@ -469,25 +469,25 @@ export const BlockLibraryPage: React.FC = () => {
                       doesn't need to share row space. Section stays
                       locked when editing a system block. */}
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('contracts.blocks.dialog.name', 'Name')}
                     </label>
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+                      className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('contracts.blocks.dialog.section', 'Section')}
                     </label>
                     <select
                       value={section}
                       onChange={(e) => setSection(e.target.value as ContractBlockSection)}
                       disabled={selection.mode === 'edit' && selection.block.isSystem}
-                      className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm disabled:opacity-50"
+                      className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm disabled:opacity-50"
                     >
                       {CONTRACT_SECTIONS.map((s) => (
                         <option key={s} value={s}>{t(`contracts.sections.${s}`, s)}</option>
@@ -496,26 +496,26 @@ export const BlockLibraryPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('contracts.blocks.dialog.description', 'Description (admin hint)')}
                     </label>
                     <input
                       type="text"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+                      className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('contracts.blocks.dialog.body', 'Body')} ({SUPPORTED_LANGUAGES.find((l) => l.code === editingLang)?.name || editingLang})
                     </label>
                     <textarea
                       rows={14}
                       value={currentBody}
                       onChange={(e) => setCurrentBody(e.target.value)}
-                      className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm font-mono"
+                      className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm font-mono"
                     />
                   </div>
 
@@ -549,7 +549,7 @@ export const BlockLibraryPage: React.FC = () => {
                     </div>
                   )}
 
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-muted">
                     {t(
                       'contracts.blocks.dialog.placeholderHint',
                       'You can use {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}}, {{source_quote_number}} as placeholders — substituted when the contract is rendered.',

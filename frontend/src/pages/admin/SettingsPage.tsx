@@ -416,8 +416,8 @@ export const SettingsPage: React.FC = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('settings.title')}</h1>
-        <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('settings.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-heading">{t('settings.title')}</h1>
+        <p className="text-soft mt-1">{t('settings.subtitle')}</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 lg:gap-8">
@@ -430,7 +430,7 @@ export const SettingsPage: React.FC = () => {
             id="settings-section"
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value as TabType)}
-            className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm font-medium text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm font-medium text-heading focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             {visibleGroups.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -452,7 +452,7 @@ export const SettingsPage: React.FC = () => {
           >
             {visibleGroups.map((group) => (
               <div key={group.label}>
-                <h3 className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                <h3 className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
                   {group.label}
                 </h3>
                 <ul className="space-y-0.5">
@@ -468,7 +468,7 @@ export const SettingsPage: React.FC = () => {
                           className={`group w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                             isActive
                               ? 'bg-accent-dark text-white'
-                              : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                              : 'text-body hover:bg-hover-soft'
                           }`}
                         >
                           {/* Active-state icon paints white to sit on the
@@ -479,7 +479,7 @@ export const SettingsPage: React.FC = () => {
                             className={`w-4 h-4 flex-shrink-0 ${
                               isActive
                                 ? 'text-white'
-                                : 'text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200'
+                                : 'text-muted group-hover:text-body'
                             }`}
                           />
                           <span className="truncate">{item.label}</span>
@@ -495,14 +495,14 @@ export const SettingsPage: React.FC = () => {
 
         <div className="min-w-0">
           {showSectionHeading && activeItem && (
-            <div className="mb-4 lg:mb-6 pb-3 border-b border-neutral-200 dark:border-neutral-700">
+            <div className="mb-4 lg:mb-6 pb-3 border-b border-line">
               <div className="flex items-center gap-2">
                 {/* Section heading icon stays neutral so the Settings
                     chrome reads as one consistent palette — no stray
                     accent flecks. The active sidebar pill is the only
                     place that uses the accent fill. */}
-                <activeItem.icon className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-                <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                <activeItem.icon className="w-5 h-5 text-body" />
+                <h2 className="text-lg font-semibold text-heading">
                   {activeItem.label}
                 </h2>
               </div>

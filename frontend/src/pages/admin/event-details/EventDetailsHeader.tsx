@@ -81,8 +81,8 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
 
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{event.event_name}</h1>
-            <div className="flex items-center gap-4 mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+            <h1 className="text-2xl font-bold text-heading">{event.event_name}</h1>
+            <div className="flex items-center gap-4 mt-2 text-sm text-soft">
               {event.event_date && (
                 <span className="flex items-center">
                   <Calendar className="w-4 h-4 mr-1" />
@@ -94,7 +94,7 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                   isGalleryPublic(event.require_password)
                     ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                    : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+                    : 'bg-inset text-body'
                 }`}
               >
                 {isGalleryPublic(event.require_password) ? t('events.publicAccess', 'Public access') : t('events.passwordProtected', 'Password protected')}
@@ -105,7 +105,7 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
                 </span>
               ) : null}
               {event.is_archived ? (
-                <span className="text-neutral-500 dark:text-neutral-400 flex items-center">
+                <span className="text-muted flex items-center">
                   <Archive className="w-4 h-4 mr-1" />
                   {t('events.archived')}
                 </span>

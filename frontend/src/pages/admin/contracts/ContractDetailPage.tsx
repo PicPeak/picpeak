@@ -341,7 +341,7 @@ export const ContractDetailPage: React.FC = () => {
       <div className="mb-4 flex items-center gap-3 flex-wrap">
         <Link
           to="/admin/clients/contracts"
-          className="inline-flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-400 hover:text-accent-dark"
+          className="inline-flex items-center gap-1 text-sm text-soft hover:text-accent-dark"
         >
           <ArrowLeft className="w-4 h-4" />
           {t('contracts.detail.back', 'Back to list')}
@@ -349,9 +349,9 @@ export const ContractDetailPage: React.FC = () => {
         <h1 className="text-2xl font-bold flex items-center gap-2 flex-1">
           <ScrollText className="w-6 h-6" />
           <span className="font-mono text-base">{c.contractNumber}</span>
-          {c.title && <span className="text-base text-neutral-600 dark:text-neutral-400">— {c.title}</span>}
+          {c.title && <span className="text-base text-soft">— {c.title}</span>}
           {c.templateName && (
-            <span className="text-xs font-normal text-neutral-600 dark:text-neutral-400">
+            <span className="text-xs font-normal text-soft">
               {t('contracts.detail.fromTemplate', 'Template: {{name}} · v{{version}}', { name: c.templateName, version: c.templateVersion ?? '' })}
             </span>
           )}
@@ -385,7 +385,7 @@ export const ContractDetailPage: React.FC = () => {
             {t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
           </Button>
         ) : (
-          <span className="self-center text-sm text-neutral-600 dark:text-neutral-400">
+          <span className="self-center text-sm text-soft">
             {t('contracts.detail.waitingForDetails', 'Waiting for the customer to complete their details. The contract is prepared and sent to the other signers once they have.')}
           </span>
         ))}
@@ -554,7 +554,7 @@ export const ContractDetailPage: React.FC = () => {
         <h2 className="font-semibold mb-2">{t('contracts.detail.parties', 'Parties')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
-            <p className="text-xs uppercase text-neutral-500 dark:text-neutral-400 tracking-wide">
+            <p className="text-xs uppercase text-muted tracking-wide">
               {t('contracts.detail.customer', 'Customer')}
             </p>
             <p className="font-medium">
@@ -563,25 +563,25 @@ export const ContractDetailPage: React.FC = () => {
                 || c.customer.displayName
                 || c.customer.email}
             </p>
-            <p className="text-xs text-neutral-600 dark:text-neutral-300">{c.customer.email}</p>
+            <p className="text-xs text-body">{c.customer.email}</p>
           </div>
           <div>
-            <p className="text-xs uppercase text-neutral-500 dark:text-neutral-400 tracking-wide">
+            <p className="text-xs uppercase text-muted tracking-wide">
               {t('contracts.detail.dates', 'Dates')}
             </p>
             <p className="text-xs">
-              <span className="text-neutral-600 dark:text-neutral-300">{t('contracts.detail.issued', 'Issued')}: </span>
+              <span className="text-body">{t('contracts.detail.issued', 'Issued')}: </span>
               {formatDate(c.issueDate)}
             </p>
             {c.validUntil && (
               <p className="text-xs">
-                <span className="text-neutral-600 dark:text-neutral-300">{t('contracts.detail.signBy', 'Sign by')}: </span>
+                <span className="text-body">{t('contracts.detail.signBy', 'Sign by')}: </span>
                 {formatDate(c.validUntil)}
               </p>
             )}
             {c.sentAt && (
               <p className="text-xs">
-                <span className="text-neutral-600 dark:text-neutral-300">{t('contracts.detail.sentAt', 'Sent at')}: </span>
+                <span className="text-body">{t('contracts.detail.sentAt', 'Sent at')}: </span>
                 {formatDateTime(c.sentAt)}
               </p>
             )}
@@ -594,7 +594,7 @@ export const ContractDetailPage: React.FC = () => {
                 surfaces without scrolling. */}
             {sourceQuoteId && (
               <p className="text-xs">
-                <span className="text-neutral-600 dark:text-neutral-300">{t('contracts.detail.fromQuote', 'From quote')}: </span>
+                <span className="text-body">{t('contracts.detail.fromQuote', 'From quote')}: </span>
                 <Link
                   to={`/admin/clients/quotes/${sourceQuoteId}`}
                   className="text-accent-dark hover:underline font-mono"
@@ -605,7 +605,7 @@ export const ContractDetailPage: React.FC = () => {
             )}
             {linkedInvoices && linkedInvoices.length > 0 && (
               <p className="text-xs">
-                <span className="text-neutral-600 dark:text-neutral-300">{t('contracts.detail.linkedInvoice', 'Invoice')}: </span>
+                <span className="text-body">{t('contracts.detail.linkedInvoice', 'Invoice')}: </span>
                 <Link
                   to={`/admin/clients/bills/${linkedInvoices[0].id}`}
                   className="text-accent-dark hover:underline font-mono"
@@ -613,7 +613,7 @@ export const ContractDetailPage: React.FC = () => {
                   {linkedInvoices[0].invoiceNumber}
                 </Link>
                 {linkedInvoices.length > 1 && (
-                  <span className="text-neutral-600 dark:text-neutral-300"> (+{linkedInvoices.length - 1})</span>
+                  <span className="text-body"> (+{linkedInvoices.length - 1})</span>
                 )}
               </p>
             )}
@@ -632,14 +632,14 @@ export const ContractDetailPage: React.FC = () => {
         <Card padding="lg" className="mb-4">
           <h2 className="font-semibold mb-2">{t('contracts.detail.signatures', 'Signatures')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="p-3 rounded border border-neutral-200 dark:border-neutral-700">
-              <p className="text-xs uppercase text-neutral-500 dark:text-neutral-400 tracking-wide">
+            <div className="p-3 rounded border border-line">
+              <p className="text-xs uppercase text-muted tracking-wide">
                 {t('contracts.detail.signedByCustomer', 'Signed by customer')}
               </p>
               {c.signedByCustomerAt ? (
                 <>
                   <p className="font-medium">{c.signedCustomerName}</p>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-300">{formatDateTime(c.signedByCustomerAt)}</p>
+                  <p className="text-xs text-body">{formatDateTime(c.signedByCustomerAt)}</p>
                   {!c.signedCustomerSignaturePath && (
                     <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                       {t('contracts.detail.noSignatureImage',
@@ -648,17 +648,17 @@ export const ContractDetailPage: React.FC = () => {
                   )}
                 </>
               ) : (
-                <p className="text-xs text-neutral-600 dark:text-neutral-300">—</p>
+                <p className="text-xs text-body">—</p>
               )}
             </div>
-            <div className="p-3 rounded border border-neutral-200 dark:border-neutral-700">
-              <p className="text-xs uppercase text-neutral-500 dark:text-neutral-400 tracking-wide">
+            <div className="p-3 rounded border border-line">
+              <p className="text-xs uppercase text-muted tracking-wide">
                 {t('contracts.detail.signedByAdmin', 'Counter-signed')}
               </p>
               {c.signedByAdminAt ? (
                 <>
                   <p className="font-medium">{c.signedAdminName}</p>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-300">{formatDateTime(c.signedByAdminAt)}</p>
+                  <p className="text-xs text-body">{formatDateTime(c.signedByAdminAt)}</p>
                   {!c.signedAdminSignaturePath && (
                     <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                       {t('contracts.detail.noSignatureImage',
@@ -667,7 +667,7 @@ export const ContractDetailPage: React.FC = () => {
                   )}
                 </>
               ) : (
-                <p className="text-xs text-neutral-600 dark:text-neutral-300">—</p>
+                <p className="text-xs text-body">—</p>
               )}
             </div>
           </div>
@@ -717,7 +717,7 @@ export const ContractDetailPage: React.FC = () => {
       {c.convertedEventId && (
         <Card padding="md" className="mb-4">
           <p className="text-sm">
-            <span className="text-neutral-500 dark:text-neutral-400 mr-2">
+            <span className="text-muted mr-2">
               {t('contracts.detail.convertedToEvent', 'Converted to event')}:
             </span>
             <Link to={`/admin/events/${c.convertedEventId}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline">
@@ -754,8 +754,8 @@ export const ContractDetailPage: React.FC = () => {
           <ul className="space-y-1 text-sm">
             {(c.attachments || []).map((a) => (
               <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{a.name}</span>
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                <span className="font-medium text-heading">{a.name}</span>
+                <span className="text-xs text-muted">
                   {a.delivery === 'merged'
                     ? t('contracts.attachments.merged', 'In the contract PDF')
                     : t('contracts.attachments.separate', 'Separate file')}
@@ -900,7 +900,7 @@ export const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractI
           </p>
           <ul className="space-y-2">
             {data.checks.map((c, index) => (
-              <li key={`${c.check}-${index}`} className="border border-neutral-200 dark:border-neutral-700 rounded p-3 space-y-1">
+              <li key={`${c.check}-${index}`} className="border border-line rounded p-3 space-y-1">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-sm font-medium">
                     {t(`contracts.detail.integrity.check.${c.check}`, c.check)}
@@ -946,26 +946,26 @@ const GeneratedDocumentsCard: React.FC<{ contractId: number }> = ({ contractId }
   return (
     <Card padding="lg" className="mt-4">
       <h3 className="text-lg font-semibold mb-1">{t('contracts.detail.documents', 'Generated documents')}</h3>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+      <p className="text-xs text-muted mb-3">
         {t('contracts.detail.documentsHelp', 'Every PDF made for this contract, with its checksum. Re-hash a copy to confirm it matches.')}
       </p>
       {documents.length === 0 ? (
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('contracts.detail.documentsEmpty', 'No PDFs generated yet.')}</p>
+        <p className="text-sm text-soft">{t('contracts.detail.documentsEmpty', 'No PDFs generated yet.')}</p>
       ) : (
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700 text-sm">
+        <ul className="divide-y divide-line text-sm">
           {documents.map((d) => (
             <li key={d.id} className="py-2 flex flex-wrap items-center gap-3">
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              <span className="font-medium text-heading">
                 {t(`contracts.detail.documentKind.${d.kind}`, d.kind)}
               </span>
-              <span className="text-neutral-600 dark:text-neutral-400">{fmtDateTime(d.generatedAt)}</span>
+              <span className="text-soft">{fmtDateTime(d.generatedAt)}</span>
               {d.pages != null && (
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="text-soft">
                   {t('contracts.detail.documentPages', 'Pages: {{count}}', { count: d.pages })}
                 </span>
               )}
-              <span className="text-neutral-600 dark:text-neutral-400">{Math.max(1, Math.round(d.bytes / 1024))} KB</span>
-              <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400 break-all" title={d.sha256}>
+              <span className="text-soft">{Math.max(1, Math.round(d.bytes / 1024))} KB</span>
+              <span className="font-mono text-xs text-muted break-all" title={d.sha256}>
                 {d.sha256.slice(0, 16)}…
               </span>
               {/* What the PDF was actually made of (#1445): which attachments
@@ -974,10 +974,10 @@ const GeneratedDocumentsCard: React.FC<{ contractId: number }> = ({ contractId }
                   bound into nothing else. Recorded at send, but until now
                   unreadable through any API. */}
               {d.manifest?.attachments?.length ? (
-                <ul className="w-full mt-1 pl-4 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+                <ul className="w-full mt-1 pl-4 space-y-1 text-xs text-soft">
                   {d.manifest.attachments.map((a) => (
                     <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">{a.name}</span>
+                      <span className="font-medium text-body">{a.name}</span>
                       <span>
                         {a.delivery === 'merged'
                           ? t('contracts.detail.attachmentMerged', 'merged from page {{page}}', { page: a.firstPage ?? '—' })
@@ -1105,7 +1105,7 @@ const CountersignCard: React.FC<CountersignProps> = ({
       <h2 className="font-semibold mb-2">
         {t('contracts.detail.countersignTitle', 'Counter-sign to make it binding')}
       </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+      <p className="text-sm text-soft mb-3">
         {modeChoice
           ? t('contracts.detail.countersignHelpV2', 'Every customer has signed. Your signature goes into the issuer\'s field on the PDF, and the signing certificate is issued once you sign.')
           : t('contracts.detail.countersignHelp',
@@ -1117,10 +1117,10 @@ const CountersignCard: React.FC<CountersignProps> = ({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('contracts.detail.signedNamePlaceholder', 'Your full name') as string}
-          className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+          className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
         />
         {modeChoice && (
-          <div role="radiogroup" aria-label={t('contracts.detail.countersignModeLabel', 'How do you want to sign?') as string} className="flex gap-4 text-sm text-neutral-800 dark:text-neutral-200">
+          <div role="radiogroup" aria-label={t('contracts.detail.countersignModeLabel', 'How do you want to sign?') as string} className="flex gap-4 text-sm text-body">
             {(['drawn', 'typed'] as const).map((value) => (
               <label key={value} className="inline-flex items-center gap-2">
                 <input
@@ -1138,7 +1138,7 @@ const CountersignCard: React.FC<CountersignProps> = ({
         )}
         {drawn ? (
           <div>
-            <label className="block text-xs text-neutral-600 dark:text-neutral-400 mb-1">
+            <label className="block text-xs text-soft mb-1">
               {t('contracts.detail.countersignSignaturePrompt', 'Draw your signature')}
             </label>
             <SignaturePadField
@@ -1147,7 +1147,7 @@ const CountersignCard: React.FC<CountersignProps> = ({
             />
           </div>
         ) : (
-          <p className="text-xs text-neutral-600 dark:text-neutral-400">
+          <p className="text-xs text-soft">
             {t('contracts.detail.countersignTypedHint', 'Your name, as typed above, is placed in the signature field.')}
           </p>
         )}
@@ -1264,25 +1264,25 @@ const RestampSignaturesCard: React.FC<RestampCardProps> = ({ contract, onSuccess
       <h2 className="font-semibold mb-2">
         {t('contracts.detail.restampTitle', 'Re-stamp missing signatures')}
       </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+      <p className="text-sm text-soft mb-3">
         {t('contracts.detail.restampHelp',
           'One or both signatures didn\'t capture an image. Draw the missing signature(s) here and we\'ll re-render the PDF. The typed names, timestamps, and IPs already on file stay untouched.')}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {missingCustomer && (
           <div>
-            <label className="block text-xs text-neutral-600 dark:text-neutral-400 mb-1">
+            <label className="block text-xs text-soft mb-1">
               {t('contracts.detail.restampCustomer', 'Customer signature')}{' '}
               <span className="font-medium">({contract.signedCustomerName})</span>
             </label>
             <canvas
               ref={customerCanvasRef}
-              className="w-full h-24 bg-white rounded border border-neutral-300 dark:border-neutral-600 touch-none"
+              className="w-full h-24 bg-white rounded border border-line-strong touch-none"
             />
             <button
               type="button"
               onClick={() => customerPadRef.current?.clear()}
-              className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 hover:underline inline-flex items-center gap-1"
+              className="mt-1 text-xs text-soft hover:underline inline-flex items-center gap-1"
             >
               <RotateCcw className="w-3 h-3" />
               {t('contracts.detail.clearSignature', 'Clear')}
@@ -1291,18 +1291,18 @@ const RestampSignaturesCard: React.FC<RestampCardProps> = ({ contract, onSuccess
         )}
         {missingAdmin && (
           <div>
-            <label className="block text-xs text-neutral-600 dark:text-neutral-400 mb-1">
+            <label className="block text-xs text-soft mb-1">
               {t('contracts.detail.restampAdmin', 'Admin signature')}{' '}
               <span className="font-medium">({contract.signedAdminName})</span>
             </label>
             <canvas
               ref={adminCanvasRef}
-              className="w-full h-24 bg-white rounded border border-neutral-300 dark:border-neutral-600 touch-none"
+              className="w-full h-24 bg-white rounded border border-line-strong touch-none"
             />
             <button
               type="button"
               onClick={() => adminPadRef.current?.clear()}
-              className="mt-1 text-xs text-neutral-600 dark:text-neutral-400 hover:underline inline-flex items-center gap-1"
+              className="mt-1 text-xs text-soft hover:underline inline-flex items-center gap-1"
             >
               <RotateCcw className="w-3 h-3" />
               {t('contracts.detail.clearSignature', 'Clear')}

@@ -158,11 +158,11 @@ export const EventRenameDialog: React.FC<EventRenameDialogProps> = ({
             </div>
 
             {renameResult.newShareLink && (
-              <div className="p-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-                <p className="text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-1">
+              <div className="p-3 bg-subtle rounded-lg">
+                <p className="text-sm font-medium text-body mb-1">
                   {t('events.rename.newLink', 'New Gallery Link')}
                 </p>
-                <p className="text-sm text-neutral-900 dark:text-neutral-100 break-all">{renameResult.newShareLink}</p>
+                <p className="text-sm text-heading break-all">{renameResult.newShareLink}</p>
               </div>
             )}
 

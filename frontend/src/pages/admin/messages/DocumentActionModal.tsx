@@ -101,19 +101,19 @@ export const DocumentActionModal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-neutral-900 rounded-xl w-[min(560px,96vw)] max-h-[88vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
-          <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+      <div className="bg-shell rounded-xl w-[min(560px,96vw)] max-h-[88vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-line-faint">
+          <span className="text-sm font-semibold text-heading">
             {t(`messages.doc.${docType}`, cfg.label)}
           </span>
-          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800" aria-label={t('messages.close', 'Close')}>
+          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft" aria-label={t('messages.close', 'Close')}>
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="p-4 flex flex-col gap-4 overflow-y-auto">
           <div>
-            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{t('messages.customer', 'Customer')}</div>
+            <div className="text-sm font-medium text-body mb-1">{t('messages.customer', 'Customer')}</div>
             <CustomerPicker
               value={customer?.id ?? null}
               label={customer?.label || ''}
@@ -124,7 +124,7 @@ export const DocumentActionModal: React.FC<{
             />
             {resolving && <p className="mt-1 text-xs text-neutral-400">{t('messages.resolvingCustomer', 'Matching the sender to a customer…')}</p>}
             {!resolving && !customer && (
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="mt-1 text-xs text-muted">
                 {t('messages.noCustomerMatch', 'No customer matched this sender — search for one or create a new customer above.')}
               </p>
             )}
@@ -149,21 +149,21 @@ export const DocumentActionModal: React.FC<{
                         <button
                           key={d.id}
                           onClick={() => pickExisting(d)}
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-left"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-left"
                         >
                           <FileText className="w-4 h-4 text-neutral-400 flex-none" />
-                          <span className="font-mono text-[13px] text-neutral-800 dark:text-neutral-100">{d.number}</span>
+                          <span className="font-mono text-[13px] text-heading">{d.number}</span>
                           <span className="ml-auto text-[11px] text-neutral-400">{d.status}</span>
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">{t('messages.noExistingDocs', 'No existing documents for this customer yet.')}</p>
+                    <p className="text-sm text-muted">{t('messages.noExistingDocs', 'No existing documents for this customer yet.')}</p>
                   )}
                 </div>
               )}
               {!cfg.hasExisting && (
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                <p className="text-xs text-muted">
                   {t('messages.galleryCreateOnly', 'Galleries are event-based — this opens the event editor, where you can assign the customer.')}
                 </p>
               )}

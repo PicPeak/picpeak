@@ -264,7 +264,7 @@ export const ProjectCockpitPage: React.FC = () => {
 
   return (
     <div>
-      <Link to="/admin/clients/projects" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 mb-3">
+      <Link to="/admin/clients/projects" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-body mb-3">
         <ArrowLeft className="w-4 h-4" />{t('projects.backToList', 'All projects')}
       </Link>
 
@@ -273,7 +273,7 @@ export const ProjectCockpitPage: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="flex-1">
             {editName === null ? (
-              <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{project.name}</h1>
+              <h1 className="text-2xl font-bold text-heading">{project.name}</h1>
             ) : (
               <div className="flex items-center gap-2">
                 <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="max-w-sm" />
@@ -283,7 +283,7 @@ export const ProjectCockpitPage: React.FC = () => {
                 <Button variant="outline" onClick={() => setEditName(null)}><X className="w-4 h-4" /></Button>
               </div>
             )}
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+            <p className="text-sm text-soft mt-1">
               {project.customerEmail || t('projects.noCustomer', 'No single customer')}
               {project.customerGroups && project.customerGroups.length > 0 && (
                 <span className="ml-2 inline-flex align-middle">
@@ -299,14 +299,14 @@ export const ProjectCockpitPage: React.FC = () => {
           <div className="flex items-start gap-4">
             {valueBuckets.length > 0 && (
               <div className="text-right">
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">{t('projects.value.label', 'Project value')}</div>
+                <div className="text-xs text-muted">{t('projects.value.label', 'Project value')}</div>
                 {valueBuckets.map((b) => (
-                  <div key={b.currency} className="text-lg font-bold text-neutral-900 dark:text-neutral-100 tabular-nums">
+                  <div key={b.currency} className="text-lg font-bold text-heading tabular-nums">
                     {formatMoneyMinor(b.totalMinor, b.currency)}
                   </div>
                 ))}
                 {valueBuckets.some((b) => b.paidMinor !== 0) && (
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <div className="text-xs text-muted">
                     {t('projects.value.paid', 'paid')}: {valueBuckets.map((b) => formatMoneyMinor(b.paidMinor, b.currency)).join(' · ')}
                   </div>
                 )}
@@ -321,14 +321,14 @@ export const ProjectCockpitPage: React.FC = () => {
 
       {/* Events in this project + attach control */}
       <Card className="mb-4">
-        <h2 className="text-sm font-semibold mb-3 text-neutral-700 dark:text-neutral-300">{t('projects.events.title', 'Events')}</h2>
+        <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.events.title', 'Events')}</h2>
         {data.events.length === 0 ? (
           <p className="text-sm text-neutral-500 mb-3">{t('projects.events.none', 'No events grouped under this project yet.')}</p>
         ) : (
           <ul className="space-y-1 mb-3">
             {data.events.map((ev) => (
-              <li key={ev.id} className="flex items-center justify-between text-sm rounded-md border border-neutral-100 dark:border-neutral-800 px-3 py-1.5">
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{ev.event_name}</span>
+              <li key={ev.id} className="flex items-center justify-between text-sm rounded-md border border-line-faint px-3 py-1.5">
+                <span className="font-medium text-heading">{ev.event_name}</span>
                 <span className="text-xs text-neutral-500">{ev.event_date ? format(ev.event_date) : '—'}</span>
               </li>
             ))}
@@ -343,17 +343,17 @@ export const ProjectCockpitPage: React.FC = () => {
             className="pl-9"
           />
           {eventSearch.trim().length >= 2 && eventResults?.events && eventResults.events.length > 0 && (
-            <div className="absolute z-10 mt-1 w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg max-h-56 overflow-auto">
+            <div className="absolute z-10 mt-1 w-full rounded-md border border-line bg-panel shadow-lg max-h-56 overflow-auto">
               {eventResults.events
                 .filter((ev: any) => !data.events.some((existing) => existing.id === ev.id))
                 .map((ev: any) => (
                   <button
                     key={ev.id}
                     onClick={() => attachEventMutation.mutate(ev.id)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-neutral-50 dark:hover:bg-neutral-700"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-hover"
                   >
                     <Plus className="w-3 h-3 text-neutral-400" />
-                    <span className="flex-1 truncate text-neutral-900 dark:text-neutral-100">{ev.event_name}</span>
+                    <span className="flex-1 truncate text-heading">{ev.event_name}</span>
                     <span className="text-xs text-neutral-500">{ev.event_date ? format(ev.event_date) : ''}</span>
                   </button>
                 ))}
@@ -365,7 +365,7 @@ export const ProjectCockpitPage: React.FC = () => {
       {/* Milestone timeline */}
       {milestones && milestones.length > 0 && (
         <Card className="mb-4">
-          <h2 className="text-sm font-semibold mb-3 text-neutral-700 dark:text-neutral-300">{t('projects.timeline', 'Milestones')}</h2>
+          <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.timeline', 'Milestones')}</h2>
           <div className="flex flex-wrap gap-3">
             {milestones.map((m, i) => {
               const Icon = KIND_ICON[m.kind] || FileText;
@@ -374,11 +374,11 @@ export const ProjectCockpitPage: React.FC = () => {
                 <div
                   key={`${m.kind}-${i}`}
                   onClick={href ? () => navigate(href) : undefined}
-                  className={`flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-700 px-3 py-2 ${href ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
+                  className={`flex items-center gap-2 rounded-lg border border-line px-3 py-2 ${href ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
                 >
                   <Icon className="w-4 h-4 text-neutral-500" />
                   <div>
-                    <div className="text-xs font-medium text-neutral-900 dark:text-neutral-100">{m.label}</div>
+                    <div className="text-xs font-medium text-heading">{m.label}</div>
                     <div className="text-xs text-neutral-500">{m.date ? format(m.date) : '—'}</div>
                   </div>
                 </div>
@@ -390,7 +390,7 @@ export const ProjectCockpitPage: React.FC = () => {
 
       {/* Dated feed */}
       <Card>
-        <h2 className="text-sm font-semibold mb-3 text-neutral-700 dark:text-neutral-300">{t('projects.feed.title', 'Activity')}</h2>
+        <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.feed.title', 'Activity')}</h2>
         {feed.length === 0 ? (
           <div className="text-center py-8 text-neutral-500">{t('projects.feed.empty', 'Nothing rolled up to this project yet.')}</div>
         ) : (
@@ -409,22 +409,22 @@ export const ProjectCockpitPage: React.FC = () => {
                 <li
                   key={item.key}
                   onClick={onRowClick}
-                  className={`flex items-start gap-3 rounded-lg border border-neutral-100 dark:border-neutral-800 px-3 py-2 ${onRowClick ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
+                  className={`flex items-start gap-3 rounded-lg border border-line-faint px-3 py-2 ${onRowClick ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
                 >
                   <Icon className="w-4 h-4 mt-0.5 text-neutral-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{item.title}</span>
+                      <span className="text-sm font-medium text-heading truncate">{item.title}</span>
                       <span className="text-xs text-neutral-500 flex-shrink-0">
                         {item.date ? `${format(item.date)} ${item.kind === 'email' ? formatTime(item.date) : ''}` : '—'}
                       </span>
                     </div>
-                    {item.subtitle && <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{item.subtitle}</div>}
+                    {item.subtitle && <div className="text-xs text-muted truncate">{item.subtitle}</div>}
                     <div className="flex items-center gap-2 mt-1">
                       {item.status && (
-                        <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">{item.status}</span>
+                        <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-inset text-body">{item.status}</span>
                       )}
-                      {item.amount && <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{item.amount}</span>}
+                      {item.amount && <span className="text-xs font-medium text-body">{item.amount}</span>}
                       {item.kind === 'email' && item.emailId != null && canActOnEmail(item) && (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => openPreview(item.emailId as number)} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline">
@@ -439,13 +439,13 @@ export const ProjectCockpitPage: React.FC = () => {
                             </span>
                           )}
                           {canSendEmail && item.emailStatus === 'sent' && (
-                            <button onClick={() => emailActionMutation.mutate({ action: 'resend', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300 hover:underline">
+                            <button onClick={() => emailActionMutation.mutate({ action: 'resend', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-body hover:underline">
                               <Send className="w-3 h-3" />{t('projects.email.resend', 'Resend')}
                             </button>
                           )}
                           {canSendEmail && item.emailStatus === 'pending' && (
                             <>
-                              <button onClick={() => emailActionMutation.mutate({ action: 'sendNow', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300 hover:underline">
+                              <button onClick={() => emailActionMutation.mutate({ action: 'sendNow', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-body hover:underline">
                                 <Send className="w-3 h-3" />{t('projects.email.sendNow', 'Send now')}
                               </button>
                               <button onClick={() => emailActionMutation.mutate({ action: 'cancel', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-red-600 hover:underline">
@@ -472,9 +472,9 @@ export const ProjectCockpitPage: React.FC = () => {
       {/* Email preview modal */}
       {(preview || previewLoading) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setPreview(null)}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-4 py-3">
-              <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{t('projects.email.previewTitle', 'Email preview')}</h3>
+          <div className="bg-shell rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line px-4 py-3">
+              <h3 className="font-semibold text-heading">{t('projects.email.previewTitle', 'Email preview')}</h3>
               <button onClick={() => setPreview(null)} className="text-neutral-500 hover:text-neutral-700"><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-auto p-4">
@@ -498,7 +498,7 @@ export const ProjectCockpitPage: React.FC = () => {
                     srcDoc={preparePreviewHtml(preview.html)}
                     sandbox=""
                     style={{ colorScheme: 'normal' }}
-                    className="w-full h-[60vh] border border-neutral-200 dark:border-neutral-700 rounded"
+                    className="w-full h-[60vh] border border-line rounded"
                   />
                 </>
               ) : (

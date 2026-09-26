@@ -48,18 +48,18 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
             </h2>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-hover rounded-lg transition-colors"
               disabled={isLoading}
               aria-label={t('common.close', 'Close')}
             >
-              <X className="w-5 h-5 text-neutral-500 dark:text-neutral-400" />
+              <X className="w-5 h-5 text-muted" />
             </button>
           </div>
 
           {isLoading ? (
             <div className="py-8 text-center">
               <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-red-600 dark:text-red-400" />
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">
+              <p className="text-sm text-body">
                 {t('events.bulkDelete.processing', 'Deleting {{count}} events. This may take a few minutes — please don\'t close this window.', { count })}
               </p>
             </div>
@@ -72,10 +72,10 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
                 </p>
               </div>
 
-              <div className="border border-neutral-200 dark:border-neutral-700 rounded-lg max-h-40 overflow-y-auto mb-4">
+              <div className="border border-line rounded-lg max-h-40 overflow-y-auto mb-4">
                 <ul className="p-3 space-y-1">
                   {selectedEvents.map((event) => (
-                    <li key={event.id} className="text-sm text-neutral-700 dark:text-neutral-300">
+                    <li key={event.id} className="text-sm text-body">
                       • {event.event_name} ({event.event_type})
                     </li>
                   ))}

@@ -111,7 +111,7 @@ export const PlaceholderPicker: React.FC<{
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => (open ? close(false) : setOpen(true))}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border border-line-strong text-body hover:bg-hover disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
       >
         <Braces className="w-3.5 h-3.5" aria-hidden="true" />
         {t('contracts.templates.picker.open', 'Insert placeholder')}
@@ -120,7 +120,7 @@ export const PlaceholderPicker: React.FC<{
         <div
           role="dialog"
           aria-label={t('contracts.templates.picker.title', 'Placeholders') as string}
-          className="absolute right-0 z-20 mt-1 w-80 max-w-[90vw] rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-lg p-2"
+          className="absolute right-0 z-20 mt-1 w-80 max-w-[90vw] rounded-md border border-line bg-panel shadow-lg p-2"
           onKeyDown={onKeyDown}
         >
           <input
@@ -134,18 +134,18 @@ export const PlaceholderPicker: React.FC<{
             placeholder={t('contracts.templates.picker.search', 'Search placeholders') as string}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full px-2 py-1 mb-2 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-100"
+            className="w-full px-2 py-1 mb-2 rounded border border-line-strong bg-shell text-sm text-heading"
           />
           <div id={listId} role="listbox" className="max-h-72 overflow-y-auto">
             {ordered.length === 0 && (
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 px-1">{t('contracts.templates.picker.none', 'No placeholder matches.')}</p>
+              <p className="text-sm text-soft px-1">{t('contracts.templates.picker.none', 'No placeholder matches.')}</p>
             )}
             {PLACEHOLDER_CATEGORIES.map((category) => {
               const inCategory = ordered.filter((p) => p.category === category);
               if (!inCategory.length) return null;
               return (
                 <div key={category} role="group" aria-label={t(`contracts.templates.picker.categories.${category}`, CATEGORY_LABELS[category]) as string}>
-                  <p className="text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400 px-1 mt-1">
+                  <p className="text-[10px] uppercase tracking-wide text-muted px-1 mt-1">
                     {t(`contracts.templates.picker.categories.${category}`, CATEGORY_LABELS[category])}
                   </p>
                   {inCategory.map((p) => {
@@ -162,8 +162,8 @@ export const PlaceholderPicker: React.FC<{
                         onClick={() => choose(p)}
                         className={`px-1 py-1 rounded cursor-pointer text-sm ${index === active ? 'bg-primary-50 dark:bg-primary-900/40' : ''}`}
                       >
-                        <span className="block text-neutral-900 dark:text-neutral-100">{p.label[lang]}</span>
-                        <span className="block text-xs text-neutral-600 dark:text-neutral-400">
+                        <span className="block text-heading">{p.label[lang]}</span>
+                        <span className="block text-xs text-soft">
                           <span className="font-mono">{`{{${p.key}}}`}</span>
                           {' · '}
                           {t('contracts.templates.picker.sample', 'e.g. {{value}}', { value: p.sample[lang] })}

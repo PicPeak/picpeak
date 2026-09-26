@@ -17,11 +17,11 @@ import type { ContractConsentDefinition } from '../../../services/contractTempla
 const MAX_CONSENTS = 8;
 const MAX_TEXT = 1000;
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 '
-  + 'bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100';
-const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200 '
-  + 'disabled:opacity-40 hover:bg-neutral-50 dark:hover:bg-neutral-700';
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+  + 'bg-panel text-sm text-heading';
+const labelClass = 'block text-sm font-medium text-body mb-1';
+const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
+  + 'disabled:opacity-40 hover:bg-hover';
 
 /** The next free `declaration_<n>` key. */
 function suggestKey(existing: ContractConsentDefinition[]): string {
@@ -52,10 +52,10 @@ export const TemplateConsentsEditor: React.FC<{
 
   return (
     <Card padding="lg" className="space-y-3">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+      <h2 className="text-lg font-semibold text-heading">
         {t('contracts.templates.consents.title', 'Declarations the signer confirms')}
       </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="text-sm text-soft">
         {t('contracts.templates.consents.help', 'Each one is a separate checkbox on the signing page, never pre-ticked. Required ones must be ticked to sign. The wording is part of what is signed: changing it gives the declaration a new version when the draft is saved, and contracts already sent keep the wording they went out with.')}
       </p>
       {value.length === 0 && (
@@ -67,7 +67,7 @@ export const TemplateConsentsEditor: React.FC<{
         {value.map((consent, index) => {
           const id = `contract-template-consent-${index}`;
           return (
-            <li key={index} className="rounded border border-neutral-200 dark:border-neutral-700 p-3 space-y-2">
+            <li key={index} className="rounded border border-line p-3 space-y-2">
               <div className="flex items-end gap-2 flex-wrap">
                 <div className="flex-1 min-w-[180px]">
                   <label htmlFor={`${id}-key`} className={labelClass}>{t('contracts.templates.consents.key', 'Key')}</label>
@@ -80,7 +80,7 @@ export const TemplateConsentsEditor: React.FC<{
                     onChange={(e) => update(index, { key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') }, `consent:${index}:key`)}
                   />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200 pb-2">
+                <label className="flex items-center gap-2 text-sm text-body pb-2">
                   <input
                     type="checkbox"
                     checked={consent.required}
@@ -90,7 +90,7 @@ export const TemplateConsentsEditor: React.FC<{
                   {t('contracts.templates.consents.required', 'Required to sign')}
                 </label>
                 {consent.version != null && (
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400 pb-2">
+                  <span className="text-xs text-muted pb-2">
                     {t('contracts.templates.consents.version', 'Version {{version}}', { version: consent.version })}
                   </span>
                 )}
@@ -134,7 +134,7 @@ export const TemplateConsentsEditor: React.FC<{
       {!readOnly && value.length < MAX_CONSENTS && (
         <button
           type="button"
-          className="inline-flex items-center gap-1 text-sm px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200"
+          className="inline-flex items-center gap-1 text-sm px-3 py-1.5 rounded-md border border-line-strong text-body"
           onClick={() => onChange([...value, { key: suggestKey(value), required: false, text: {} }])}
         >
           <Plus className="w-4 h-4" />

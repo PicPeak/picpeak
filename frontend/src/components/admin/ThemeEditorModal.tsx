@@ -116,20 +116,20 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-shell rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-line flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-xl font-semibold text-heading">
               {t('events.galleryTheme')}
             </h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-300 mt-1">
+            <p className="text-sm text-body mt-1">
               {t('events.customizingThemeFor', { event: eventName })}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+            className="text-faint hover:text-body transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
@@ -139,7 +139,7 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
         <div className="flex-1 overflow-y-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 h-full">
             {/* Left side - Theme Customizer */}
-            <div className="p-6 overflow-y-auto border-r border-neutral-200 dark:border-neutral-700">
+            <div className="p-6 overflow-y-auto border-r border-line">
               <ThemeCustomizerEnhanced
                 value={theme}
                 onChange={handleThemeChange}
@@ -154,11 +154,11 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
             </div>
             
             {/* Right side - Gallery Preview */}
-            <div className="p-6 bg-neutral-50 dark:bg-neutral-800 overflow-y-auto">
+            <div className="p-6 bg-subtle overflow-y-auto">
               <div className="space-y-4">
                 {/* Grid Style Selector */}
                 <div>
-                  <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-200 mb-3">
+                  <h3 className="text-sm font-medium text-body mb-3">
                     {t('branding.previewLayout')}
                   </h3>
                   <div className="grid grid-cols-3 gap-2">
@@ -169,11 +169,11 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                         className={`relative p-3 rounded-lg border-2 transition-all ${
                           (previewLayout || theme.galleryLayout || 'grid') === layout
                             ? 'tile-selected'
-                            : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 bg-white dark:bg-neutral-900'
+                            : 'border-line hover:border-line-strong bg-shell'
                         }`}
                       >
                         <div className="flex flex-col items-center gap-1">
-                          <div className="text-neutral-700 dark:text-neutral-200">
+                          <div className="text-body">
                             {layoutIcons[layout]}
                           </div>
                           <span className="text-xs capitalize">

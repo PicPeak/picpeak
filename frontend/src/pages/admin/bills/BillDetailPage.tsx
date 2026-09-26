@@ -81,8 +81,8 @@ export const BillDetailPage: React.FC = () => {
       rows.push(
         <tr
           key={`row-${li.id ?? li.position}`}
-          className={`border-b border-neutral-100 dark:border-neutral-800 ${
-            isSub ? 'text-neutral-500 dark:text-neutral-400' : ''
+          className={`border-b border-line-faint ${
+            isSub ? 'text-muted' : ''
           }`}
         >
           <td className="py-2">{isDiscount ? '' : isSub ? `${topCount}.${subCount}` : topCount}</td>
@@ -104,11 +104,11 @@ export const BillDetailPage: React.FC = () => {
       );
       if (li.detailsText && String(li.detailsText).trim().length > 0) {
         rows.push(
-          <tr key={`details-${li.id ?? li.position}`} className="border-b border-neutral-100 dark:border-neutral-800">
+          <tr key={`details-${li.id ?? li.position}`} className="border-b border-line-faint">
             <td className="py-1"></td>
             <td className="py-1"></td>
             <td
-              className={`py-1 text-xs italic text-neutral-500 dark:text-neutral-400 whitespace-pre-line ${isSub ? 'pl-10' : 'pl-4'}`}
+              className={`py-1 text-xs italic text-muted whitespace-pre-line ${isSub ? 'pl-10' : 'pl-4'}`}
               colSpan={3}
             >
               {li.detailsText}
@@ -295,7 +295,7 @@ export const BillDetailPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <button onClick={() => navigate('/admin/clients/bills')}
-            className="text-sm text-neutral-600 dark:text-neutral-400 hover:underline mb-1 inline-flex items-center gap-1">
+            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
             <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
           </button>
           <h2 className="text-xl font-bold">{inv.invoiceNumber}
@@ -314,7 +314,7 @@ export const BillDetailPage: React.FC = () => {
               {isDraftInvoice(inv) ? t('bills.status.draft', 'Draft') : t(`bills.status.${inv.status}`, inv.status)}
             </span>
           </h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {inv.customer.companyName || inv.customer.displayName || inv.customer.email}
           </p>
         </div>
@@ -438,24 +438,24 @@ export const BillDetailPage: React.FC = () => {
       <Card>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           {inv.eventName && (
-            <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.eventName', 'Event')}</div>
+            <div><div className="text-body">{t('bills.field.eventName', 'Event')}</div>
               <div>
                 {inv.eventId ? (
-                  <Link to={`/admin/events/${inv.eventId}`} className="text-neutral-900 dark:text-neutral-100 hover:underline">{inv.eventName}</Link>
+                  <Link to={`/admin/events/${inv.eventId}`} className="text-heading hover:underline">{inv.eventName}</Link>
                 ) : inv.eventName}
                 {inv.eventDate ? ` · ${fmtDate(inv.eventDate)}` : ''}
               </div>
             </div>
           )}
-          <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.issueDate', 'Issued')}</div><div>{fmtDate(inv.issueDate)}</div></div>
-          <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.dueDate', 'Due')}</div><div>{fmtDate(inv.dueDate)}</div></div>
-          {inv.scheduledSendAt && <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.scheduledSendAt', 'Scheduled send')}</div><div>{fmtDate(inv.scheduledSendAt)}</div></div>}
-          {inv.installmentTotal > 1 && <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.installment', 'Installment')}</div><div>{inv.installmentIndex + 1}/{inv.installmentTotal}</div></div>}
-          <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.total', 'Total')}</div><div>{formatMoney(Number(inv.totalAmountMinor || 0) / 100, inv.currency)}</div></div>
-          <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.paid', 'Paid')}</div><div>{formatMoney(Number(inv.paidAmountMinor || 0) / 100, inv.currency)}</div></div>
-          <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.outstanding', 'Outstanding')}</div>
+          <div><div className="text-body">{t('bills.field.issueDate', 'Issued')}</div><div>{fmtDate(inv.issueDate)}</div></div>
+          <div><div className="text-body">{t('bills.field.dueDate', 'Due')}</div><div>{fmtDate(inv.dueDate)}</div></div>
+          {inv.scheduledSendAt && <div><div className="text-body">{t('bills.field.scheduledSendAt', 'Scheduled send')}</div><div>{fmtDate(inv.scheduledSendAt)}</div></div>}
+          {inv.installmentTotal > 1 && <div><div className="text-body">{t('bills.field.installment', 'Installment')}</div><div>{inv.installmentIndex + 1}/{inv.installmentTotal}</div></div>}
+          <div><div className="text-body">{t('bills.field.total', 'Total')}</div><div>{formatMoney(Number(inv.totalAmountMinor || 0) / 100, inv.currency)}</div></div>
+          <div><div className="text-body">{t('bills.field.paid', 'Paid')}</div><div>{formatMoney(Number(inv.paidAmountMinor || 0) / 100, inv.currency)}</div></div>
+          <div><div className="text-body">{t('bills.field.outstanding', 'Outstanding')}</div>
             <div className={outstanding > 0 ? 'text-red-700 font-medium' : ''}>{formatMoney(outstanding, inv.currency)}</div></div>
-          {inv.lateFeeAmountMinor > 0 && <div><div className="text-neutral-600 dark:text-neutral-300">{t('bills.field.lateFee', 'Late fee')}</div><div className="text-amber-700">{formatMoney(Number(inv.lateFeeAmountMinor) / 100, inv.currency)}</div></div>}
+          {inv.lateFeeAmountMinor > 0 && <div><div className="text-body">{t('bills.field.lateFee', 'Late fee')}</div><div className="text-amber-700">{formatMoney(Number(inv.lateFeeAmountMinor) / 100, inv.currency)}</div></div>}
           {/* Source-quote / source-contract cross-links moved out of
               the top stats grid into the unified Linked-documents card
               above, mirroring the quote + contract detail pages. The
@@ -467,7 +467,7 @@ export const BillDetailPage: React.FC = () => {
       <Card>
         <h3 className="font-semibold mb-3">{t('bills.section.lineItems', 'Line items')}</h3>
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-neutral-200 dark:border-neutral-700">
+          <thead><tr className="border-b border-line">
             <th className="text-left py-2">#</th>
             <th className="text-left py-2">{t('crm.lineItems.quantity', 'Qty')}</th>
             <th className="text-left py-2">{t('crm.lineItems.description', 'Description')}</th>
@@ -484,7 +484,7 @@ export const BillDetailPage: React.FC = () => {
           <p className="text-sm text-neutral-500">{t('bills.noPayments', 'No payments recorded yet.')}</p>
         ) : (
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-neutral-200 dark:border-neutral-700">
+            <thead><tr className="border-b border-line">
               {/* Per-cell horizontal padding so the right-aligned
                   Amount column and the left-aligned Method column
                   have visible breathing room. Without padding the
@@ -497,7 +497,7 @@ export const BillDetailPage: React.FC = () => {
             </tr></thead>
             <tbody>
               {data.payments.map((p) => (
-                <tr key={p.id} className="border-b border-neutral-100 dark:border-neutral-800">
+                <tr key={p.id} className="border-b border-line-faint">
                   <td className="py-2 pr-4 whitespace-nowrap">{fmtDate(p.paidAt)}</td>
                   <td className="py-2 px-4 text-right tabular-nums whitespace-nowrap">{formatMoney(Number(p.amountMinor) / 100, inv.currency)}</td>
                   <td className="py-2 pl-4 pr-4 whitespace-nowrap">{p.paymentMethod || '—'}</td>
@@ -512,14 +512,14 @@ export const BillDetailPage: React.FC = () => {
 
       {sendDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !sending && setSendDialogOpen(false)}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl w-full max-w-lg mx-4 p-5"
+          <div className="bg-shell rounded-lg shadow-xl w-full max-w-lg mx-4 p-5"
             onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold mb-1 text-lg text-neutral-900 dark:text-neutral-100">{t('bills.send.title', 'Send invoice')}</h3>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+            <h3 className="font-semibold mb-1 text-lg text-heading">{t('bills.send.title', 'Send invoice')}</h3>
+            <p className="text-sm text-soft mb-3">
               {t('bills.send.proofIntro', 'This invoice re-bills captured supplier invoices. Choose which supplier proofs to attach to the email — the invoice PDF is always attached.')}
             </p>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted">
                 {t('bills.send.proofsLabel', 'Supplier proofs')}
               </span>
               <div className="flex gap-3 text-xs">
@@ -533,12 +533,12 @@ export const BillDetailPage: React.FC = () => {
                 </button>
               </div>
             </div>
-            <ul className="max-h-64 overflow-y-auto divide-y divide-neutral-200 dark:divide-neutral-700 border border-neutral-200 dark:border-neutral-700 rounded-md">
+            <ul className="max-h-64 overflow-y-auto divide-y divide-line border border-line rounded-md">
               {sendProofs.map((p) => (
                 <li key={p.id} className="flex items-center gap-3 px-3 py-2">
                   <input
                     type="checkbox"
-                    className="rounded border-neutral-300 dark:border-neutral-600"
+                    className="rounded border-line-strong"
                     disabled={!p.hasProof}
                     checked={selectedProofIds.has(p.id)}
                     onChange={(e) => setSelectedProofIds((prev) => {
@@ -548,19 +548,19 @@ export const BillDetailPage: React.FC = () => {
                     })}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-neutral-900 dark:text-neutral-100 truncate">
+                    <div className="text-sm text-heading truncate">
                       {p.supplierName || t('bills.send.unknownSupplier', 'Supplier')}
-                      <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="ml-2 text-xs text-muted">
                         {p.mode === 'passthrough' ? t('bills.send.modePassthrough', 'passthrough') : t('bills.send.modeRebill', 're-bill')}
                       </span>
                     </div>
                     {p.hasProof ? (
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">{p.filename || 'proof.pdf'}</div>
+                      <div className="text-xs text-muted truncate">{p.filename || 'proof.pdf'}</div>
                     ) : (
                       <div className="text-xs text-amber-600 dark:text-amber-400">{t('bills.send.noProofFile', 'No stored proof file')}</div>
                     )}
                   </div>
-                  <span className="text-sm tabular-nums text-neutral-700 dark:text-neutral-300">{formatMoneyMinor(p.amountMinor, p.currency || inv.currency)}</span>
+                  <span className="text-sm tabular-nums text-body">{formatMoneyMinor(p.amountMinor, p.currency || inv.currency)}</span>
                 </li>
               ))}
             </ul>
@@ -579,7 +579,7 @@ export const BillDetailPage: React.FC = () => {
 
       {payDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPayDialogOpen(false)}>
-          <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl w-full max-w-md mx-4 p-5"
+          <div className="bg-shell rounded-lg shadow-xl w-full max-w-md mx-4 p-5"
             onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold mb-3 text-lg">{t('bills.markPaid', 'Mark paid')}</h3>
             <div className="space-y-3">
@@ -634,7 +634,7 @@ export const BillDetailPage: React.FC = () => {
                   id="pay-method"
                   value={payMethod}
                   onChange={(e) => setPayMethod(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                  className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
                 >
                   <option value="">{t('bills.payment.methodPlaceholder', 'Select method…')}</option>
                   <option value="bank_transfer">{t('bills.payment.methods.bankTransfer', 'Bank transfer')}</option>
@@ -648,7 +648,7 @@ export const BillDetailPage: React.FC = () => {
                 onChange={(e) => setPayReference(e.target.value)} />
               <div>
                 <label className="block text-sm font-medium mb-1">{t('bills.payment.notes', 'Notes')}</label>
-                <textarea rows={3} className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm"
+                <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm"
                   value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
               </div>
               <div className="flex justify-end gap-2 pt-2">

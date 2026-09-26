@@ -51,10 +51,10 @@ interface ToggleProps {
 const Toggle: React.FC<ToggleProps> = ({ enabled, onChange, label, hint, icon: Icon }) => (
   <label className="flex items-start justify-between gap-4 py-3 cursor-pointer">
     <div className="flex items-start gap-3 min-w-0">
-      <Icon className="w-5 h-5 mt-0.5 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
+      <Icon className="w-5 h-5 mt-0.5 text-muted flex-shrink-0" />
       <div className="min-w-0">
-        <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{label}</div>
-        {hint && <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{hint}</p>}
+        <div className="text-sm font-medium text-heading">{label}</div>
+        {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
       </div>
     </div>
     <button
@@ -62,7 +62,7 @@ const Toggle: React.FC<ToggleProps> = ({ enabled, onChange, label, hint, icon: I
       role="switch"
       aria-checked={enabled}
       onClick={onChange}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${enabled ? '' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${enabled ? '' : 'bg-fill-strong'}`}
       style={enabled ? { backgroundColor: 'var(--color-accent, #5C8762)' } : undefined}
     >
       <span
@@ -120,10 +120,10 @@ export const CustomerDashboardBrandingCard: React.FC = () => {
           <UserCog className="w-5 h-5" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-lg font-semibold text-heading">
             {t('settings.customerSurface.brandingTitle', 'Customer dashboard header')}
           </h2>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
+          <p className="text-sm text-muted mt-0.5">
             {t(
               'settings.customerSurface.brandingHint',
               'Controls what shows in the header of /customer/dashboard. Public galleries and admin surfaces are not affected.',
@@ -132,7 +132,7 @@ export const CustomerDashboardBrandingCard: React.FC = () => {
         </div>
       </div>
 
-      <div className="divide-y divide-neutral-200 dark:divide-neutral-700">
+      <div className="divide-y divide-line">
         <Toggle
           enabled={form.customer_show_logo}
           onChange={() => toggle('customer_show_logo')}
@@ -149,7 +149,7 @@ export const CustomerDashboardBrandingCard: React.FC = () => {
         />
       </div>
 
-      <div className="flex justify-end mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+      <div className="flex justify-end mt-4 pt-4 border-t border-line">
         <Button
           variant="primary"
           leftIcon={<Save className="w-4 h-4" />}

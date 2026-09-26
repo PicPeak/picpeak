@@ -30,16 +30,16 @@ export const BulkArchiveModal: React.FC<BulkArchiveModalProps> = ({
       <Card className="w-full max-w-md">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-xl font-semibold text-heading">
               {t('events.bulkArchive.title', 'Confirm Bulk Archive')}
             </h2>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-hover rounded-lg transition-colors"
               disabled={isLoading}
               aria-label={t('common.close', 'Close')}
             >
-              <X className="w-5 h-5 text-neutral-500 dark:text-neutral-400" />
+              <X className="w-5 h-5 text-muted" />
             </button>
           </div>
 

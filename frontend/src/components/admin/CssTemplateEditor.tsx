@@ -96,7 +96,7 @@ export const CssTemplateEditor: React.FC = () => {
             stacked directly under it (QA warning). */}
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-neutral-200 dark:border-neutral-700 mb-6">
+        <div className="flex border-b border-line mb-6">
           {[1, 2, 3].map(slot => {
             const template = localTemplates.find(t => t.slot_number === slot);
             return (
@@ -106,7 +106,7 @@ export const CssTemplateEditor: React.FC = () => {
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeSlot === slot
                     ? 'border-accent text-accent'
-                    : 'border-transparent text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:border-neutral-300 dark:hover:border-neutral-600'
+                    : 'border-transparent text-soft hover:text-heading hover:border-line-strong'
                 }`}
               >
                 {t('cssTemplates.template', 'Template')} {slot}
@@ -135,7 +135,7 @@ export const CssTemplateEditor: React.FC = () => {
                 value={activeTemplate.name}
                 onChange={(e) => updateLocalTemplate({ name: e.target.value })}
                 maxLength={50}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
               />
             </div>
 
@@ -148,11 +148,11 @@ export const CssTemplateEditor: React.FC = () => {
                   onChange={(e) => updateLocalTemplate({ is_enabled: e.target.checked })}
                   className="rounded border-neutral-300 text-accent focus:ring-primary-500"
                 />
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                <span className="text-sm font-medium text-body">
                   {t('cssTemplates.enableTemplate', 'Enable this template')}
                 </span>
               </label>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 ml-6">
+              <p className="text-xs text-muted mt-1 ml-6">
                 {t('cssTemplates.enableHint', 'Enabled templates can be selected when creating events')}
               </p>
             </div>
@@ -174,7 +174,7 @@ export const CssTemplateEditor: React.FC = () => {
                   {(activeTemplate.css_content?.length || 0).toLocaleString()} / 102,400 {t('common.characters', 'characters')}
                 </div>
               </div>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+              <p className="text-xs text-muted mt-2">
                 {t('cssTemplates.cssHint', 'Use .gallery-page to scope styles to the gallery. Available variables: --gallery-bg, --gallery-text, --gallery-accent')}
               </p>
             </div>
@@ -189,7 +189,7 @@ export const CssTemplateEditor: React.FC = () => {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center justify-between pt-4 border-t border-neutral-100 dark:border-neutral-700">
+            <div className="flex items-center justify-between pt-4 border-t border-line">
               <div className="flex items-center gap-3">
                 {activeSlot === 1 && activeTemplate.is_default && (
                   <Button
@@ -224,7 +224,7 @@ export const CssTemplateEditor: React.FC = () => {
 
             {/* Last Updated */}
             {activeTemplate.updated_at && (
-              <p className="text-xs text-neutral-400 dark:text-neutral-500 text-right">
+              <p className="text-xs text-faint text-right">
                 {t('cssTemplates.lastUpdated', 'Last updated')}: {fmtDateTime(activeTemplate.updated_at)}
               </p>
             )}

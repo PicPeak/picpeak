@@ -59,21 +59,21 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
       <Card className="w-full max-w-lg">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-xl font-semibold text-heading">
               {t('contracts.paperUpload.title', 'Upload a signed contract')}
             </h2>
             <button
               type="button"
               onClick={close}
               disabled={isUploading}
-              className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-hover rounded-lg transition-colors"
               aria-label={t('common.close', 'Close') as string}
             >
-              <X className="w-5 h-5 text-neutral-500 dark:text-neutral-400" />
+              <X className="w-5 h-5 text-muted" />
             </button>
           </div>
 
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          <p className="text-sm text-soft mb-4">
             {t('contracts.paperUpload.intro',
               'The uploaded PDF becomes the authoritative signed contract. It is sent to both parties and every signing link stops working.')}
           </p>
@@ -104,7 +104,7 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
               <ul className="mt-3 space-y-2">
                 {signers.map((signer) => (
                   <li key={signer.id}>
-                    <label className="flex items-start gap-2 text-sm text-neutral-900 dark:text-neutral-100">
+                    <label className="flex items-start gap-2 text-sm text-heading">
                       <input
                         type="checkbox"
                         className="mt-1"
@@ -124,7 +124,7 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
 
           {!refused && (
             <>
-              <label htmlFor="paper-signature-file" className="block text-sm font-medium mb-1 text-neutral-900 dark:text-neutral-100">
+              <label htmlFor="paper-signature-file" className="block text-sm font-medium mb-1 text-heading">
                 {t('contracts.paperUpload.fileLabel', 'The signed PDF')}
               </label>
               <input
@@ -133,7 +133,7 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
                 accept="application/pdf"
                 disabled={isUploading}
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="text-sm text-neutral-700 dark:text-neutral-300"
+                className="text-sm text-body"
               />
             </>
           )}

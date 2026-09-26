@@ -124,7 +124,7 @@ export const WhatsAppTab: React.FC = () => {
           SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the same
           `settings.whatsapp.title` key, so repeating it stacked two
           identical H2s on top of each other (QA warning). */}
-      <p className="text-neutral-600 dark:text-neutral-400">
+      <p className="text-soft">
         {t(
           'settings.whatsapp.subtitle',
           'Configure Meta Business credentials to deliver the gallery-ready notification via WhatsApp alongside email.',
@@ -134,7 +134,7 @@ export const WhatsAppTab: React.FC = () => {
       <Card>
         <CardContent className="p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.phoneNumberId', 'Phone Number ID')}
             </label>
             <Input
@@ -142,7 +142,7 @@ export const WhatsAppTab: React.FC = () => {
               onChange={(e) => setPhoneNumberId(e.target.value)}
               placeholder="123456789012345"
             />
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-xs text-muted">
               {t(
                 'settings.whatsapp.phoneNumberIdHint',
                 'From Meta Business → WhatsApp → API Setup. The numeric ID Meta assigns to the phone you registered.',
@@ -151,7 +151,7 @@ export const WhatsAppTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.wabaId', 'WABA ID')}
             </label>
             <Input
@@ -159,7 +159,7 @@ export const WhatsAppTab: React.FC = () => {
               onChange={(e) => setWabaId(e.target.value)}
               placeholder="123456789012345"
             />
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-xs text-muted">
               {t(
                 'settings.whatsapp.wabaIdHint',
                 'WhatsApp Business Account ID. Reference only (the API call uses the Phone Number ID); helpful for auditing.',
@@ -168,7 +168,7 @@ export const WhatsAppTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.accessToken', 'Access token')}
             </label>
             <Input
@@ -187,7 +187,7 @@ export const WhatsAppTab: React.FC = () => {
                 </button>
               }
             />
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-xs text-muted">
               {t(
                 'settings.whatsapp.accessTokenHint',
                 'Stored masked as "********" on GET. Leave the masked value to keep the existing token; type a new one to replace it.',
@@ -196,7 +196,7 @@ export const WhatsAppTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.templateName', 'Template name')}
             </label>
             <Input
@@ -204,7 +204,7 @@ export const WhatsAppTab: React.FC = () => {
               onChange={(e) => setTemplateName(e.target.value)}
               placeholder="gallery_ready"
             />
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-xs text-muted">
               {t(
                 'settings.whatsapp.templateNameHint',
                 'Name of the Meta-approved message template. The default `gallery_ready` expects 5 body parameters: customer name, event name, gallery link, password line, expiry date. Approve the template in Meta Business Manager before enabling.',
@@ -213,7 +213,7 @@ export const WhatsAppTab: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.templateLanguage', 'Template language')}
             </label>
             <Input
@@ -221,7 +221,7 @@ export const WhatsAppTab: React.FC = () => {
               onChange={(e) => setTemplateLanguage(e.target.value)}
               placeholder={t('settings.whatsapp.templateLanguagePlaceholder', 'e.g. en_US, de_DE, ar, pt_BR') as string}
             />
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1 text-xs text-muted">
               {t(
                 'settings.whatsapp.templateLanguageHint',
                 'Meta template language code, exactly as you registered it in Meta Business Manager (`ar`, `en_US`, `de_DE`, `pt_BR`, etc.). Leave empty to fall back to the system default language. Meta returns "template not found in language" if this doesn\'t match a registered template.',
@@ -235,23 +235,23 @@ export const WhatsAppTab: React.FC = () => {
               rejected with a parameter-count mismatch. This control lets the
               admin pick which slots to send and in what positional order. */}
           <div>
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('settings.whatsapp.templateParams', 'Template parameters')}
             </label>
-            <p className="mb-2 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mb-2 text-xs text-muted">
               {t(
                 'settings.whatsapp.templateParamsHint',
                 'Pick which built-in values are sent as positional template parameters (slot 1, slot 2, …), and arrange them so they match the order in your Meta-registered template body. Unchecked slots are not sent at all. Default matches the built-in `gallery_ready` 5-parameter shape.',
               )}
             </p>
-            <ul className="rounded-lg border border-neutral-200 dark:border-neutral-700 divide-y divide-neutral-200 dark:divide-neutral-700">
+            <ul className="rounded-lg border border-line divide-y divide-line">
               {WHATSAPP_TEMPLATE_PARAMS.map((slot) => {
                 const idx = templateParams.indexOf(slot);
                 const included = idx >= 0;
                 return (
                   <li
                     key={slot}
-                    className="flex items-center gap-3 p-3 bg-white dark:bg-neutral-900"
+                    className="flex items-center gap-3 p-3 bg-shell"
                   >
                     <input
                       type="checkbox"
@@ -260,8 +260,8 @@ export const WhatsAppTab: React.FC = () => {
                       className="rounded border-neutral-300"
                       aria-label={t(`settings.whatsapp.params.${slot}`, slot) as string}
                     />
-                    <span className="flex-1 text-sm text-neutral-800 dark:text-neutral-200">
-                      <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400 mr-2">
+                    <span className="flex-1 text-sm text-body">
+                      <span className="font-mono text-xs text-muted mr-2">
                         {included ? `{{${idx + 1}}}` : '—'}
                       </span>
                       {t(`settings.whatsapp.params.${slot}`, slot)}
@@ -292,7 +292,7 @@ export const WhatsAppTab: React.FC = () => {
                 );
               })}
             </ul>
-            <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-2 text-xs text-muted">
               {templateParams.length === 0
                 ? t(
                   'settings.whatsapp.templateParamsEmpty',
@@ -304,7 +304,7 @@ export const WhatsAppTab: React.FC = () => {
             </p>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+          <label className="flex items-center gap-2 text-sm text-body">
             <input
               type="checkbox"
               checked={enabled}
@@ -328,10 +328,10 @@ export const WhatsAppTab: React.FC = () => {
           not a sub-step of saving. */}
       <Card>
         <CardContent className="p-5 space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
             {t('settings.whatsapp.testHeading', 'Send a test message')}
           </h3>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-muted">
             {t(
               'settings.whatsapp.testHelp',
               'Sends a static template message to the phone number below to verify Meta credentials + template approval. Includes country code (e.g. +49…).',

@@ -16,8 +16,8 @@ import { Button, Card, Input, Loading } from '../common';
 import { emailService, type IncomingMailConfig, type ImapFolder } from '../../services/email.service';
 import { useMutationWithToast, useModal } from '../../hooks';
 
-const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
+const labelCls = 'block text-sm font-medium text-body mb-1';
+const selectCls = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
 
 export const IncomingMailConfigCard: React.FC = () => {
   const { t } = useTranslation();
@@ -100,8 +100,8 @@ export const IncomingMailConfigCard: React.FC = () => {
 
   return (
     <Card padding="md" className="mt-6">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">{t('email.incoming.title', 'Incoming mail (IMAP)')}</h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">{t('email.incoming.subtitle', 'A dedicated mailbox polled every minute; attachments land in Accounting → Incoming invoices.')}</p>
+      <h2 className="text-lg font-semibold text-heading mb-1">{t('email.incoming.title', 'Incoming mail (IMAP)')}</h2>
+      <p className="text-sm text-soft mb-4">{t('email.incoming.subtitle', 'A dedicated mailbox polled every minute; attachments land in Accounting → Incoming invoices.')}</p>
 
       <div className="space-y-4">
         <div>
@@ -180,7 +180,7 @@ export const IncomingMailConfigCard: React.FC = () => {
               {t('email.incoming.detectFolders', 'Detect')}
             </Button>
           </div>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('email.incoming.folderHint', 'Enter host, username and password, then Detect to list the mailbox folders.')}</p>
+          <p className="mt-1 text-xs text-muted">{t('email.incoming.folderHint', 'Enter host, username and password, then Detect to list the mailbox folders.')}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">

@@ -18,8 +18,8 @@ import { sortedCountryOptions } from '../../../constants/countries';
 import { VatCodesManager } from '../../../components/admin/VatCodesManager';
 import { ChartOfAccountsManager } from '../../../components/admin/ChartOfAccountsManager';
 
-const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const inputCls = 'w-full max-w-xs rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+const labelCls = 'block text-sm font-medium text-body mb-1';
+const inputCls = 'w-full max-w-xs rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 
 export const AccountingTab: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -103,44 +103,44 @@ export const AccountingTab: React.FC = () => {
           SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the same
           `settings.accounting.title` key, so repeating it stacked two
           identical H2s on top of each other (QA warning). */}
-      <p className="text-neutral-600 dark:text-neutral-400">{t('settings.accounting.subtitle', 'Default rates for internal expenses and the proof requirement.')}</p>
+      <p className="text-soft">{t('settings.accounting.subtitle', 'Default rates for internal expenses and the proof requirement.')}</p>
 
       <Card><CardContent className="p-5 space-y-4">
         <div>
           <label className={labelCls}>{t('settings.accounting.kmRate', 'Mileage rate (CHF / km)')}</label>
           <DecimalInput value={kmMajor} onChange={setKmMajor} fractionDigits={2} className={inputCls} />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.kmRateHint', 'Default applied to mileage expenses; overridable per entry.')}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.kmRateHint', 'Default applied to mileage expenses; overridable per entry.')}</p>
         </div>
         <div>
           <label className={labelCls}>{t('settings.accounting.perDiemRate', 'Daily allowance (CHF / day)')}</label>
           <DecimalInput value={perDiemMajor} onChange={setPerDiemMajor} fractionDigits={2} className={inputCls} />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.perDiemRateHint', 'A flat daily allowance booked as an expense (not a client billing rate); overridable per entry.')}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.perDiemRateHint', 'A flat daily allowance booked as an expense (not a client billing rate); overridable per entry.')}</p>
         </div>
         <div>
           <label className={labelCls}>{t('settings.accounting.profileFields.hourlyRate', 'Default hourly rate')}</label>
           <DecimalInput value={hourlyMajor} onChange={setHourlyMajor} fractionDigits={2} className={inputCls} placeholder={t('settings.accounting.profileFields.hourlyRatePlaceholder', 'e.g. 120.00') as string} />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.profileFields.hourlyRateHint', 'Billing fallback used when a customer has no own rate (hours logging and quote lines priced per hour). In {{currency}}, major units. Leave blank to require a per-customer or per-entry rate.', { currency })}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.profileFields.hourlyRateHint', 'Billing fallback used when a customer has no own rate (hours logging and quote lines priced per hour). In {{currency}}, major units. Leave blank to require a per-customer or per-entry rate.', { currency })}</p>
         </div>
         <div>
           <label className={labelCls}>{t('settings.accounting.profileFields.dayRate', 'Default day rate')}</label>
           <DecimalInput value={dayMajor} onChange={setDayMajor} fractionDigits={2} className={inputCls} placeholder={t('settings.accounting.profileFields.dayRatePlaceholder', 'e.g. 1200.00') as string} />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.profileFields.dayRateHint', 'Used by per-day quote lines when a customer has no own day rate. In {{currency}}, major units.', { currency })}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.profileFields.dayRateHint', 'Used by per-day quote lines when a customer has no own day rate. In {{currency}}, major units.', { currency })}</p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+        <label className="flex items-center gap-2 text-sm text-body">
           <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="rounded border-neutral-300" />
           {t('settings.accounting.requireProof', 'Require a proof file on every expense')}
         </label>
         {flags.incomingInvoices && (
           <div>
-            <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+            <label className="flex items-start gap-2 text-sm text-body">
               <input type="checkbox" checked={rebillAttachProof} onChange={(e) => setRebillAttachProof(e.target.checked)} className="mt-0.5 rounded border-neutral-300" />
               <span>{t('settings.accounting.rebillAttachProof', 'Attach the supplier proof to re-billed invoices by default')}</span>
             </label>
-            <p className="mt-1 ml-6 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.rebillAttachProofHint', 'When a captured supplier invoice is re-billed or passed through, attach its stored PDF to the client-invoice email as a separate proof. This is the default — a per-customer override and a per-file choice in the Send dialog can change it each time.')}</p>
+            <p className="mt-1 ml-6 text-xs text-muted">{t('settings.accounting.rebillAttachProofHint', 'When a captured supplier invoice is re-billed or passed through, attach its stored PDF to the client-invoice email as a separate proof. This is the default — a per-customer override and a per-file choice in the Send dialog can change it each time.')}</p>
             <div className="mt-3 ml-6">
               <label className={labelCls}>{t('settings.accounting.rebillProofNameFormat', 'Proof filename format')}</label>
               <Input value={rebillProofNameFormat} onChange={(e) => setRebillProofNameFormat(e.target.value)} placeholder="Beleg-{INVOICE}" className="max-w-xs" />
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.rebillProofNameFormatHint', 'Filename for the attached proof PDF. Tokens: {INVOICE}, {SUPPLIER}, {YEAR}, {MONTH}, {SEQ} (or {SEQ:03d}). Leave blank for the default “Beleg-{INVOICE}”. When several proofs ride one invoice, an index is appended automatically. Keep a prefix like “Beleg-” so the proof isn’t named identically to the invoice PDF.')}</p>
+              <p className="mt-1 text-xs text-muted">{t('settings.accounting.rebillProofNameFormatHint', 'Filename for the attached proof PDF. Tokens: {INVOICE}, {SUPPLIER}, {YEAR}, {MONTH}, {SEQ} (or {SEQ:03d}). Leave blank for the default “Beleg-{INVOICE}”. When several proofs ride one invoice, an index is appended automatically. Keep a prefix like “Beleg-” so the proof isn’t named identically to the invoice PDF.')}</p>
             </div>
           </div>
         )}
@@ -151,14 +151,14 @@ export const AccountingTab: React.FC = () => {
           and which countries' input VAT is deductible (cost tax-treatment +
           the tax report's VAT-payable). */}
       <Card><CardContent className="p-5 space-y-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
           {t('settings.accounting.vat.title', 'VAT')}
         </h3>
-        <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+        <label className="flex items-start gap-2 text-sm text-body">
           <input type="checkbox" checked={vatRegistered} onChange={(e) => setVatRegistered(e.target.checked)} className="mt-0.5 rounded border-neutral-300" />
           <span>
             {t('settings.accounting.vat.registered', 'VAT-registered (charge output VAT + reclaim input VAT)')}
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="block text-xs text-muted">
               {t('settings.accounting.vat.registeredHint', 'Off = small business / under threshold: no VAT charged, input VAT is a cost (not reclaimable). Invoices and quotes without VAT then show no VAT line; the VAT note from the CRM settings stands in its place.')}
             </span>
           </span>
@@ -170,13 +170,13 @@ export const AccountingTab: React.FC = () => {
             size={6}
             value={reclaimCountries}
             onChange={(e) => setReclaimCountries(Array.from(e.target.selectedOptions, (o) => o.value))}
-            className="w-full max-w-xs rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm"
+            className="w-full max-w-xs rounded-md border border-line-strong bg-panel px-3 py-2 text-sm"
           >
             {countries.map((c) => (
               <option key={c.code} value={c.code}>{c.label}</option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 text-xs text-muted">
             {t('settings.accounting.vat.reclaimCountriesHint', 'Typically your domestic country (CH / LI). Costs from other countries are treated as non-reclaimable foreign VAT. Cmd/Ctrl-click to multi-select.')}
           </p>
         </div>
@@ -186,12 +186,12 @@ export const AccountingTab: React.FC = () => {
             <option value="">{t('settings.accounting.vat.defaultOutputCodeNone', '— none (start at 0%) —')}</option>
             {outputVatCodes.map((c) => <option key={c.id} value={c.code}>{c.name} ({Number(c.rate).toFixed(1)}%)</option>)}
           </select>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.vat.defaultOutputCodeHint', 'New invoices and quotes start with this VAT code selected. Existing documents are unaffected.')}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.vat.defaultOutputCodeHint', 'New invoices and quotes start with this VAT code selected. Existing documents are unaffected.')}</p>
         </div>
         <div>
           <label className={labelCls}>{t('settings.accounting.profileFields.vatLabel', 'VAT label (e.g. MwSt., VAT)')}</label>
           <Input value={vatLabel} onChange={(e) => setVatLabel(e.target.value)} className={inputCls} />
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.profileFields.vatLabelHint', 'Printed as the VAT-line label on invoice / quote PDFs. Leave blank to use the document language default.')}</p>
+          <p className="mt-1 text-xs text-muted">{t('settings.accounting.profileFields.vatLabelHint', 'Printed as the VAT-line label on invoice / quote PDFs. Leave blank to use the document language default.')}</p>
         </div>
       </CardContent></Card>
 
@@ -207,7 +207,7 @@ export const AccountingTab: React.FC = () => {
           moved off the /admin/accounting section so all accounting config is
           here; the section keeps only the operational pages. */}
       <div className="pt-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
           {t('ledger.accounts.title', 'Chart of accounts')}
         </h3>
         <ChartOfAccountsManager />

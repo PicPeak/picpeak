@@ -71,7 +71,7 @@ export const DownloadsTab: React.FC = () => {
 
   // Matches SlideshowStyleFields' input styling — the explicit text colour
   // matters, without it the select renders muted and looks disabled.
-  const selectClass = 'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
+  const selectClass = 'w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm';
 
   if (isLoading || !form) return <Loading />;
 
@@ -111,12 +111,12 @@ export const DownloadsTab: React.FC = () => {
             heading (icon + label + divider) for every tab that isn't in
             SettingsPage's TABS_WITH_OWN_HEADER, and repeating it stacked
             two identical H2s on top of each other (QA warning). */}
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-5">
+        <p className="text-sm text-soft mb-5">
           {t('settings.downloads.intro',
             'The standard size is what every gallery hands out by default. Individual galleries can override this.')}
         </p>
 
-        <label className="block text-sm font-medium mb-1 text-neutral-800 dark:text-neutral-200">
+        <label className="block text-sm font-medium mb-1 text-body">
           {t('settings.downloads.standard', 'Standard resolution')}
         </label>
         <select
@@ -140,10 +140,10 @@ export const DownloadsTab: React.FC = () => {
             onChange={(e) => setForm({ ...form, picker_enabled: e.target.checked })}
           />
           <span>
-            <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <span className="block text-sm font-medium text-heading">
               {t('settings.downloads.picker', 'Let guests choose a download size')}
             </span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="block text-xs text-muted">
               {t('settings.downloads.pickerHint',
                 'Adds a size picker to bulk downloads. Custom sizes are prepared on demand and are never larger than the standard.')}
             </span>
@@ -159,26 +159,26 @@ export const DownloadsTab: React.FC = () => {
             onChange={(e) => setForm({ ...form, allow_original: e.target.checked })}
           />
           <span>
-            <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <span className="block text-sm font-medium text-heading">
               {t('settings.downloads.allowOriginal', 'Offer "Original" in the picker')}
             </span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="block text-xs text-muted">
               {t('settings.downloads.allowOriginalHint',
                 'Off by default: lowering the standard size normally means full-resolution files should not be handed out.')}
             </span>
           </span>
         </label>
 
-        <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4">
+        <div className="border-t border-line pt-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <h3 className="text-sm font-medium text-heading">
               {t('settings.downloads.presets', 'Available sizes')}
             </h3>
             <Button variant="outline" size="sm" onClick={addPreset} leftIcon={<Plus className="w-4 h-4" />}>
               {t('common.add', 'Add')}
             </Button>
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+          <p className="text-xs text-muted mb-3">
             {t('settings.downloads.presetsHint',
               'Sizes are an upper bound — the aspect ratio is kept and photos are never enlarged.')}
           </p>

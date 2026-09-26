@@ -91,7 +91,7 @@ export const HoursLoggingPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
+            <h1 className="text-2xl font-bold text-heading">
               {t('hoursLogging.title', 'Hours logging')}
             </h1>
             {/* Beta badge — matches Customers + Quotes + Contracts +
@@ -104,7 +104,7 @@ export const HoursLoggingPage: React.FC = () => {
               {t('navigation.betaTag', 'Beta')}
             </span>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted mt-1">
             {t('hoursLogging.subtitle',
               'Pick a customer and log billable time blocks. Entries flow into the next monthly bill or are billed on demand for per-event customers.')}
           </p>
@@ -112,7 +112,7 @@ export const HoursLoggingPage: React.FC = () => {
       </div>
 
       <Card padding="lg">
-        <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+        <label className="block text-sm font-medium text-heading mb-2">
           {t('hoursLogging.pickCustomer', 'Customer')}
         </label>
         <CustomerPicker
@@ -158,27 +158,27 @@ export const HoursLoggingPage: React.FC = () => {
       {!selectedId && (
         <Card padding="lg">
           <div className="flex items-center gap-2 mb-1">
-            <Clock className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
-            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            <Clock className="w-4 h-4 text-muted" />
+            <h2 className="text-base font-semibold text-heading">
               {t('hoursLogging.openHours.title', 'Open hours across all customers')}
             </h2>
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
+          <p className="text-sm text-muted mb-4">
             {t('hoursLogging.openHours.subtitle',
               'Unbilled time blocks waiting to be billed. Pick a customer above, or click a row to drill in.')}
           </p>
 
           {summaryLoading ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 py-6 text-center">
+            <p className="text-sm text-muted py-6 text-center">
               {t('common.loading', 'Loading…')}
             </p>
           ) : summary.length === 0 ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 py-6 text-center">
+            <p className="text-sm text-muted py-6 text-center">
               {t('hoursLogging.openHours.empty',
                 'No unbilled hours right now — everything is billed or no time has been logged yet.')}
             </p>
           ) : (
-            <div className="divide-y divide-neutral-200 dark:divide-neutral-700">
+            <div className="divide-y divide-line">
               {summary.map((r) => (
                 <button
                   key={r.customerAccountId}
@@ -188,14 +188,14 @@ export const HoursLoggingPage: React.FC = () => {
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-neutral-900 dark:text-neutral-100 truncate">{summaryLabel(r)}</span>
+                      <span className="font-medium text-heading truncate">{summaryLabel(r)}</span>
                       {r.isPassive && (
-                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-inset text-body">
                           {t('hoursLogging.openHours.passive', 'Passive')}
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    <div className="text-xs text-muted mt-0.5">
                       {t('hoursLogging.openHours.entryLine', {
                         count: r.entryCount,
                         hours: (r.totalMinutes / 60).toFixed(2),
@@ -206,7 +206,7 @@ export const HoursLoggingPage: React.FC = () => {
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="text-right">
                       {r.rateResolvable ? (
-                        <div className="font-semibold text-neutral-900 dark:text-neutral-100 tabular-nums">
+                        <div className="font-semibold text-heading tabular-nums">
                           {formatMoneyMinor(r.openAmountMinor, currency)}
                         </div>
                       ) : (
@@ -216,7 +216,7 @@ export const HoursLoggingPage: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <ChevronRight className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                    <ChevronRight className="w-4 h-4 text-muted" />
                   </div>
                 </button>
               ))}

@@ -68,11 +68,11 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"
       aria-labelledby="template-picker-title">
-      <div className="w-full max-w-lg rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
+      <div className="w-full max-w-lg rounded-lg bg-shell text-heading shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
           <h2 id="template-picker-title" className="text-lg font-semibold">{t('quotes.new', 'New quote')}</h2>
           <button type="button" onClick={onClose} aria-label={t('common.close', 'Close') as string}
-            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800">
+            className="p-1 rounded hover:bg-hover-soft">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -85,7 +85,7 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
               id="template-picker-template"
               value={templateId ?? ''}
               onChange={(e) => setTemplateId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
             >
               <option value="">{t('quotes.templates.blankQuote', 'Blank quote')}</option>
               {templates.map((tpl) => (
@@ -93,12 +93,12 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
               ))}
             </select>
             {!isLoading && templates.length === 0 && (
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="mt-1 text-xs text-muted">
                 {t('quotes.templates.noneYet', 'No published templates yet — create one under Catalogue & templates.')}
               </p>
             )}
             {selected?.description && (
-              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{selected.description}</p>
+              <p className="mt-1 text-xs text-muted">{selected.description}</p>
             )}
           </div>
 
@@ -121,15 +121,15 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
                 <label htmlFor="template-picker-hours" className="block text-sm font-medium mb-1">{t('quotes.field.hours', 'Hours')}</label>
                 <DecimalInput id="template-picker-hours" value={hours} onChange={setHours} fractionDigits={2}
                   placeholder={selected.draft.hours != null ? String(selected.draft.hours) : ''}
-                  className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm" />
-                <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm" />
+                <p className="mt-1 text-xs text-muted">
                   {t('quotes.templates.hoursHint', 'Leave blank to use the template\'s hours.')}
                 </p>
               </div>
             </>
           )}
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           {selected ? (
             <PermissionGate permission="quotes.manage">

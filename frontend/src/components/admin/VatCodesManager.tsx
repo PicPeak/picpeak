@@ -17,8 +17,8 @@ import {
 } from '../../services/ledger.service';
 import { useMutationWithToast } from '../../hooks';
 
-const labelCls = 'block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+const labelCls = 'block text-xs font-medium text-body mb-1';
+const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 const TAX_TREATMENTS = ['domestic', 'reverse_charge_service', 'foreign_vat_non_reclaimable', 'import_goods'];
 
 // Mirror backend ledgerService.rateKey so the map keys we write match the
@@ -50,9 +50,9 @@ const VatModal: React.FC<{ vat?: VatCode; accounts: LedgerAccount[]; onClose: ()
   });
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4">
-      <div className="mt-20 w-full max-w-sm rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{isEdit ? t('ledger.vat.editTitle', 'Edit VAT code') : t('ledger.vat.addTitle', 'Add VAT code')}</h2>
+      <div className="mt-20 w-full max-w-sm rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{isEdit ? t('ledger.vat.editTitle', 'Edit VAT code') : t('ledger.vat.addTitle', 'Add VAT code')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -74,7 +74,7 @@ const VatModal: React.FC<{ vat?: VatCode; accounts: LedgerAccount[]; onClose: ()
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || !code || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
         </div>
@@ -150,12 +150,12 @@ export const VatCodesManager: React.FC = () => {
       {/* VAT codes table */}
       <Card><CardContent className="p-5">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('ledger.vatCodes.title', 'VAT codes')}</h2>
+          <h2 className="text-base font-semibold text-heading">{t('ledger.vatCodes.title', 'VAT codes')}</h2>
           <Button size="sm" onClick={() => setVatModal({})}><Plus className="w-4 h-4 mr-1" /> {t('ledger.vat.addTitle', 'Add VAT code')}</Button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
+            <thead className="text-left text-muted border-b border-line">
               <tr>
                 <th className="py-1.5 pr-3 font-medium">{t('ledger.vat.code', 'Code')}</th>
                 <th className="py-1.5 pr-3 font-medium">{t('ledger.vat.name', 'Name')}</th>
@@ -164,16 +164,16 @@ export const VatCodesManager: React.FC = () => {
                 <th className="py-1.5 pr-3 font-medium text-right">{t('common.actions', 'Actions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+            <tbody className="divide-y divide-line-faint">
               {(vatCodes ?? []).map((v) => (
                 <tr key={v.id} className={v.active ? '' : 'opacity-50'}>
-                  <td className="py-1.5 pr-3 font-medium text-neutral-900 dark:text-neutral-100">{v.code}</td>
-                  <td className="py-1.5 pr-3 text-neutral-800 dark:text-neutral-200">{v.name}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums text-neutral-700 dark:text-neutral-300">{Number(v.rate).toFixed(1)}</td>
-                  <td className="py-1.5 pr-3 text-neutral-500 dark:text-neutral-400">{t(`ledger.vatDirection.${v.direction}`, v.direction)}</td>
+                  <td className="py-1.5 pr-3 font-medium text-heading">{v.code}</td>
+                  <td className="py-1.5 pr-3 text-body">{v.name}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums text-body">{Number(v.rate).toFixed(1)}</td>
+                  <td className="py-1.5 pr-3 text-muted">{t(`ledger.vatDirection.${v.direction}`, v.direction)}</td>
                   <td className="py-1.5 pr-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => setVatModal({ vat: v })} className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => setVatModal({ vat: v })} className="p-1 text-neutral-500 hover:text-body"><Pencil className="w-4 h-4" /></button>
                       <button onClick={() => { if (window.confirm(t('ledger.vat.confirmDelete', 'Delete this VAT code?') as string)) delVat.mutate(v.id); }} className="p-1 text-neutral-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
@@ -186,9 +186,9 @@ export const VatCodesManager: React.FC = () => {
 
       {/* Rate→code + treatment→code maps */}
       <Card><CardContent className="p-5">
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('ledger.outputVatMap.title', 'VAT code by revenue rate')}</h3>
+        <h3 className="text-sm font-semibold text-heading mb-2">{t('ledger.outputVatMap.title', 'VAT code by revenue rate')}</h3>
         {outputRates.length === 0 ? (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('ledger.outputVatMap.empty', 'Add output VAT codes above to configure a code per revenue rate.')}</p>
+          <p className="text-xs text-muted">{t('ledger.outputVatMap.empty', 'Add output VAT codes above to configure a code per revenue rate.')}</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {outputRates.map((rate) => (
@@ -203,7 +203,7 @@ export const VatCodesManager: React.FC = () => {
           </div>
         )}
 
-        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mt-5 mb-2">{t('ledger.vatMap.title', 'VAT code by tax treatment (costs)')}</h3>
+        <h3 className="text-sm font-semibold text-heading mt-5 mb-2">{t('ledger.vatMap.title', 'VAT code by tax treatment (costs)')}</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {TAX_TREATMENTS.map((tt) => (
             <div key={tt}>

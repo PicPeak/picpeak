@@ -42,10 +42,10 @@ const MenuButton: React.FC<{
     onMouseDown={event => event.preventDefault()}
     onClick={onClick}
     disabled={disabled}
-    className={`p-1.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-600 transition-colors ${
+    className={`p-1.5 rounded hover:bg-hover transition-colors ${
       active
         ? 'bg-accent-dark/15 text-accent-dark'
-        : 'text-neutral-700 dark:text-neutral-300'
+        : 'text-body'
     } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     title={title}
     type="button"
@@ -165,9 +165,9 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
 
 
   return (
-    <div className="border border-neutral-300 dark:border-neutral-600 rounded-lg overflow-hidden">
+    <div className="border border-line-strong rounded-lg overflow-hidden">
       {/* Toolbar */}
-      <div className="border-b border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800">
+      <div className="border-b border-line bg-subtle">
         <div className="flex items-center justify-between p-2">
           {/* Formatting buttons */}
           <div className="flex items-center gap-0.5 flex-wrap">
@@ -189,7 +189,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   <Heading3 className="w-4 h-4" />
                 </MenuButton>
 
-                <div className="w-px h-5 bg-neutral-300 dark:bg-neutral-600 mx-1" />
+                <div className="w-px h-5 bg-fill-strong mx-1" />
 
                 <MenuButton
                   onClick={() => editor.chain().focus().toggleBold().run()}
@@ -207,7 +207,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   <Italic className="w-4 h-4" />
                 </MenuButton>
 
-                <div className="w-px h-5 bg-neutral-300 dark:bg-neutral-600 mx-1" />
+                <div className="w-px h-5 bg-fill-strong mx-1" />
 
                 <MenuButton
                   onClick={() => editor.chain().focus().toggleBulletList().run()}
@@ -233,7 +233,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   <Quote className="w-4 h-4" />
                 </MenuButton>
 
-                <div className="w-px h-5 bg-neutral-300 dark:bg-neutral-600 mx-1" />
+                <div className="w-px h-5 bg-fill-strong mx-1" />
 
                 <MenuButton
                   onClick={() => setShowLinkDialog(true)}
@@ -250,7 +250,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   <Minus className="w-4 h-4" />
                 </MenuButton>
 
-                <div className="w-px h-5 bg-neutral-300 dark:bg-neutral-600 mx-1" />
+                <div className="w-px h-5 bg-fill-strong mx-1" />
 
                 <MenuButton
                   onClick={() => editor.chain().focus().setTextAlign('left').run()}
@@ -276,7 +276,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   <AlignRight className="w-4 h-4" />
                 </MenuButton>
 
-                <div className="w-px h-5 bg-neutral-300 dark:bg-neutral-600 mx-1" />
+                <div className="w-px h-5 bg-fill-strong mx-1" />
 
                 <MenuButton
                   onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
@@ -313,7 +313,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
                     showVariables
                       ? 'bg-accent-dark/15 text-accent-dark'
-                      : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                      : 'bg-inset text-body hover:bg-hover'
                   }`}
                   type="button"
                 >
@@ -322,12 +322,12 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                 </button>
 
                 {showVariables && (
-                  <div className="absolute right-0 top-full mt-1 z-10 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-600 rounded-lg shadow-lg py-1 min-w-[200px] max-h-[240px] overflow-auto">
+                  <div className="absolute right-0 top-full mt-1 z-10 bg-panel border border-line rounded-lg shadow-lg py-1 min-w-[200px] max-h-[240px] overflow-auto">
                     {variables.map(variable => (
                       <button
                         key={variable}
                         onClick={() => insertVariable(variable)}
-                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors"
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-hover transition-colors"
                         type="button"
                       >
                         <code className="text-accent">{`{{${variable}}}`}</code>
@@ -343,7 +343,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
               className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
                 isSourceMode
                   ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                  : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                  : 'bg-inset text-body hover:bg-hover'
               }`}
               type="button"
             >
@@ -363,7 +363,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
             onChange={(e) => setLinkUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addLink()}
             placeholder={t('email.editor.enterUrl')}
-            className="flex-1 px-3 py-1 text-sm border border-accent-dark/30 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:ring-2 focus:ring-primary-500"
+            className="flex-1 px-3 py-1 text-sm border border-accent-dark/30 bg-panel text-heading rounded-md focus:ring-2 focus:ring-primary-500"
             autoFocus
           />
           <button
@@ -375,7 +375,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
           </button>
           <button
             onClick={() => { setShowLinkDialog(false); setLinkUrl(''); }}
-            className="px-3 py-1 text-sm bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-md hover:bg-neutral-300 dark:hover:bg-neutral-600"
+            className="px-3 py-1 text-sm bg-fill text-body rounded-md hover:bg-neutral-300 dark:hover:bg-neutral-600"
             type="button"
           >
             {t('email.editor.cancel')}
@@ -390,13 +390,13 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
           value={sourceContent}
           onChange={(e) => handleSourceChange(e.target.value)}
           rows={15}
-          className="w-full px-3 py-2 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-mono text-sm focus:outline-none resize-y"
+          className="w-full px-3 py-2 bg-shell text-heading font-mono text-sm focus:outline-none resize-y"
           spellCheck={false}
         />
       ) : (
         <EditorContent
           editor={editor}
-          className="min-h-[300px] p-4 prose prose-neutral dark:prose-invert max-w-none bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-none [&_.ProseMirror]:min-h-[300px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-neutral-900 [&_.ProseMirror]:dark:text-neutral-100 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-400 [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+          className="min-h-[300px] p-4 prose prose-neutral dark:prose-invert max-w-none bg-shell text-heading focus:outline-none [&_.ProseMirror]:min-h-[300px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-neutral-900 [&_.ProseMirror]:dark:text-neutral-100 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-400 [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
         />
       )}
     </div>

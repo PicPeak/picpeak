@@ -387,8 +387,8 @@ export const BrandingPage: React.FC = () => {
         {/* Page Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('branding.title')}</h1>
-            <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('branding.subtitle')}</p>
+            <h1 className="text-2xl font-bold text-heading">{t('branding.title')}</h1>
+            <p className="text-soft mt-1">{t('branding.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -410,7 +410,7 @@ export const BrandingPage: React.FC = () => {
 
         {/* Company Branding */}
         <Card padding="md" className="mb-6">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.companyInfo')}</h2>
+          <h2 className="text-lg font-semibold text-heading mb-4">{t('branding.companyInfo')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Input
               label={t('branding.companyName')}
@@ -435,13 +435,13 @@ export const BrandingPage: React.FC = () => {
               helperText={t('branding.supportEmailHelp')}
             />
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.footerText')}
               </label>
               <textarea
                 value={brandingSettings.footer_text}
                 onChange={(e) => handleBrandingChange('footer_text', e.target.value)}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                 rows={2}
                 placeholder={`© ${new Date().getFullYear()} Your Company. All rights reserved.`}
               />
@@ -450,11 +450,11 @@ export const BrandingPage: React.FC = () => {
 
           {/* Social media links (#441) — appear as icons in the gallery
               footer above the legal-links row. Empty = hidden. */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-sm font-semibold text-heading mb-3">
               {t('branding.socialMedia.title', 'Social Media')}
             </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               {t('branding.socialMedia.help', 'Add URLs to render social-media icons in the gallery footer. Leave a field empty to hide that icon.')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -500,23 +500,23 @@ export const BrandingPage: React.FC = () => {
           {/* Promotional banner (#440) — markdown content rendered above
               or below the gallery footer. Per-event override is set on
               the Edit Event form; this is the global default. */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-sm font-semibold text-heading mb-3">
               {t('branding.promo.title', 'Gallery Promotional Banner')}
             </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               {t('branding.promo.help', 'Markdown shown above or below the gallery footer (e.g. seasonal offer, print discount). Per-event overrides take priority.')}
             </p>
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-body mb-2">
                     {t('branding.promo.position', 'Position')}
                   </label>
                   <select
                     value={brandingSettings.promo_position || 'above_footer'}
                     onChange={(e) => handleBrandingChange('promo_position', e.target.value as 'above_footer' | 'below_footer')}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="above_footer">{t('branding.promo.aboveFooter', 'Above footer')}</option>
                     <option value="below_footer">{t('branding.promo.belowFooter', 'Below footer')}</option>
@@ -525,13 +525,13 @@ export const BrandingPage: React.FC = () => {
                 {/* Horizontal alignment (#482). Defaults to center
                     so the banner aligns with the gallery footer. */}
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-body mb-2">
                     {t('branding.promo.alignment', 'Alignment')}
                   </label>
                   <select
                     value={brandingSettings.promo_alignment || 'center'}
                     onChange={(e) => handleBrandingChange('promo_alignment', e.target.value as 'left' | 'center' | 'right')}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                   >
                     <option value="left">{t('branding.promo.alignLeft', 'Left')}</option>
                     <option value="center">{t('branding.promo.alignCenter', 'Center (default — matches footer)')}</option>
@@ -540,23 +540,23 @@ export const BrandingPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.promo.content', 'Content (markdown)')}
                 </label>
                 <textarea
                   value={brandingSettings.promo_markdown || ''}
                   onChange={(e) => handleBrandingChange('promo_markdown', e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
                   rows={5}
                   placeholder={t('branding.promo.placeholder', '**Spring offer**: 20% off prints with code SPRING — see the [print shop](https://example.com).')}
                 />
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('branding.promo.markdownHelp', 'Bold, italic, links, lists, and headings supported. HTML is stripped.')}
                 </p>
               </div>
               {brandingSettings.promo_markdown && brandingSettings.promo_markdown.trim() && (
-                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 bg-neutral-50 dark:bg-neutral-800/40">
-                  <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+                <div className="rounded-lg border border-line p-4 bg-neutral-50 dark:bg-neutral-800/40">
+                  <div className="text-xs uppercase tracking-wider text-muted mb-2">
                     {t('branding.promo.preview', 'Preview')}
                   </div>
                   {/* Preview mirrors the live gallery render — same
@@ -564,7 +564,7 @@ export const BrandingPage: React.FC = () => {
                       will see (#482). */}
                   <MarkdownContent
                     source={brandingSettings.promo_markdown}
-                    className={`text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
+                    className={`text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
                       brandingSettings.promo_alignment === 'left' ? 'text-left'
                         : brandingSettings.promo_alignment === 'right' ? 'text-right'
                         : 'text-center'
@@ -580,48 +580,48 @@ export const BrandingPage: React.FC = () => {
               banner above, which stays by the footer for marketing copy.
               Per-event override lives on the Edit Event form; this is the
               global default that applies to every gallery. */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-sm font-semibold text-heading mb-3">
               {t('branding.infoBanner.title', 'Gallery Info Banner')}
             </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               {t('branding.infoBanner.description', 'A short note shown at the top of every gallery, above the photos — useful for usage hints. Leave empty to hide it. Individual events can override or switch it off.')}
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.infoBanner.content', 'Content (markdown)')}
                 </label>
                 <textarea
                   value={brandingSettings.info_markdown || ''}
                   onChange={(e) => handleBrandingChange('info_markdown', e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
                   rows={3}
                   placeholder={t('branding.infoBanner.placeholder', 'Use the menu button in the top-left corner to filter the photos.')}
                 />
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('branding.infoBanner.markdownHelp', 'Bold, italic, links, lists, and headings supported. HTML is stripped.')}
                 </p>
               </div>
               {brandingSettings.info_markdown && brandingSettings.info_markdown.trim() && (
-                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 bg-neutral-50 dark:bg-neutral-800/40">
-                  <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+                <div className="rounded-lg border border-line p-4 bg-neutral-50 dark:bg-neutral-800/40">
+                  <div className="text-xs uppercase tracking-wider text-muted mb-2">
                     {t('branding.infoBanner.preview', 'Preview')}
                   </div>
                   {/* Mirrors the live gallery render — centred, same prose
                       classes — so the admin sees what guests will see. */}
                   <MarkdownContent
                     source={brandingSettings.info_markdown}
-                    className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
+                    className="text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
                   />
                 </div>
               )}
             </div>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="mt-6 pt-6 border-t border-line">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('branding.favicon')}
               </label>
               <div className="space-y-2">
@@ -632,7 +632,7 @@ export const BrandingPage: React.FC = () => {
                       alt="Current favicon" 
                       className="w-8 h-8"
                     />
-                    <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('branding.currentFavicon')}</span>
+                    <span className="text-sm text-soft">{t('branding.currentFavicon')}</span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -658,20 +658,20 @@ export const BrandingPage: React.FC = () => {
                   >
                     {t('branding.uploadFavicon')}
                   </Button>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">{t('branding.faviconHelp')}</p>
+                  <p className="text-xs text-soft mt-1">{t('branding.faviconHelp')}</p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Logo Customization Settings */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.logoCustomization', 'Logo Customization')}</h3>
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-md font-semibold text-heading mb-4">{t('branding.logoCustomization', 'Logo Customization')}</h3>
 
             <div className="space-y-4">
               {/* Logo Upload */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.logo', 'Logo')}
                 </label>
                 <div className="flex items-center gap-4">
@@ -680,7 +680,7 @@ export const BrandingPage: React.FC = () => {
                       <img 
                         src={brandingSettings.logo_url.startsWith('http') ? brandingSettings.logo_url : buildResourceUrl(brandingSettings.logo_url)} 
                         alt="Logo"
-                        className="h-16 object-contain bg-neutral-100 dark:bg-neutral-700 rounded p-2"
+                        className="h-16 object-contain bg-inset rounded p-2"
                       />
                       <button
                         type="button"
@@ -709,13 +709,13 @@ export const BrandingPage: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-soft mt-1">
                   {t('branding.logoHelp', 'PNG, JPG or SVG format, recommended width: 200px')}
                 </p>
               </div>
               {/* Dark-mode logo */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.logoDark', 'Dark-mode logo')}
                 </label>
                 <div className="flex items-center gap-4">
@@ -753,19 +753,19 @@ export const BrandingPage: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                <p className="text-xs text-soft mt-1">
                   {t('branding.logoDarkHelp', 'Optional. Shown on dark themes / dark mode; falls back to the main logo when unset.')}
                 </p>
               </div>
               {/* Logo Size */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.logoSize', 'Logo Size')}
                 </label>
                 <select
                   value={brandingSettings.logo_size || 'medium'}
                   onChange={(e) => handleBrandingChange('logo_size', e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="small">{t('branding.logoSizeSmall', 'Small (32px)')}</option>
                   <option value="medium">{t('branding.logoSizeMedium', 'Medium (48px)')}</option>
@@ -778,7 +778,7 @@ export const BrandingPage: React.FC = () => {
               {/* Custom Height (only shown when size is custom) */}
               {brandingSettings.logo_size === 'custom' && (
                 <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-body mb-2">
                     {t('branding.logoMaxHeight', 'Maximum Height (pixels)')}
                   </label>
                   <input
@@ -787,9 +787,9 @@ export const BrandingPage: React.FC = () => {
                     max="200"
                     value={brandingSettings.logo_max_height || 48}
                     onChange={(e) => handleBrandingChange('logo_max_height', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                   />
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                  <p className="text-xs text-soft mt-1">
                     {t('branding.logoMaxHeightHelp', 'Set a custom maximum height for the logo (20-200 pixels)')}
                   </p>
                 </div>
@@ -803,7 +803,7 @@ export const BrandingPage: React.FC = () => {
                     the sidebar is collapsed). The gallery falls back
                     to 'left' for its own rendering. */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.logoPosition', 'Logo Position in Header')}
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -815,7 +815,7 @@ export const BrandingPage: React.FC = () => {
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                         brandingSettings.logo_position === position
                           ? 'bg-accent-dark text-white'
-                          : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                          : 'bg-inset text-body hover:bg-hover'
                       }`}
                     >
                       {t(`branding.position${position.charAt(0).toUpperCase() + position.slice(1)}`, position.charAt(0).toUpperCase() + position.slice(1))}
@@ -823,7 +823,7 @@ export const BrandingPage: React.FC = () => {
                   ))}
                 </div>
                 {brandingSettings.logo_position === 'sidepanel' && (
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2">
+                  <p className="text-xs text-soft mt-2">
                     {t('branding.positionSidepanelHelp',
                       'The logo appears in the admin sidebar instead of the header. When the sidebar is collapsed, the favicon is shown.')}
                   </p>
@@ -832,13 +832,13 @@ export const BrandingPage: React.FC = () => {
 
               {/* Display Mode */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.logoDisplayMode', 'Display Mode')}
                 </label>
                 <select
                   value={brandingSettings.logo_display_mode || 'logo_and_text'}
                   onChange={(e) => handleBrandingChange('logo_display_mode', e.target.value)}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="logo_only">{t('branding.logoOnly', 'Logo Only')}</option>
                   <option value="text_only">{t('branding.textOnly', 'Company Name Only')}</option>
@@ -853,13 +853,13 @@ export const BrandingPage: React.FC = () => {
                     type="checkbox"
                     checked={brandingSettings.logo_display_header !== false}
                     onChange={(e) => handleBrandingChange('logo_display_header', e.target.checked)}
-                    className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                    className="rounded border-line-strong text-accent focus:ring-primary-500"
                   />
                   <div>
-                    <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    <span className="text-sm font-medium text-heading">
                       {t('branding.showLogoInHeader', 'Show logo in gallery header')}
                     </span>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    <p className="text-xs text-soft">
                       {t('branding.showLogoInHeaderHelp', 'Display the logo in the main header bar')}
                     </p>
                   </div>
@@ -870,13 +870,13 @@ export const BrandingPage: React.FC = () => {
                     type="checkbox"
                     checked={brandingSettings.logo_display_hero !== false}
                     onChange={(e) => handleBrandingChange('logo_display_hero', e.target.checked)}
-                    className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                    className="rounded border-line-strong text-accent focus:ring-primary-500"
                   />
                   <div>
-                    <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    <span className="text-sm font-medium text-heading">
                       {t('branding.showLogoInHero', 'Show logo in hero section')}
                     </span>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    <p className="text-xs text-soft">
                       {t('branding.showLogoInHeroHelp', 'Display the logo in hero sections (for non-grid layouts)')}
                     </p>
                   </div>
@@ -888,11 +888,11 @@ export const BrandingPage: React.FC = () => {
           {/* Login-page-only logo controls (#354 follow-up). These do
              NOT affect gallery/admin headers — those keep their own
              logo_size knob above. */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-md font-semibold text-heading mb-1">
               {t('branding.loginLogo.title', 'Login pages logo')}
             </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+            <p className="text-xs text-muted mb-4">
               {t('branding.loginLogo.subtitle', 'Controls only /admin/login and /customer/login. Gallery and admin chrome use the logo settings above.')}
             </p>
 
@@ -903,13 +903,13 @@ export const BrandingPage: React.FC = () => {
                   type="checkbox"
                   checked={brandingSettings.login_logo_frame_enabled !== false}
                   onChange={(e) => handleBrandingChange('login_logo_frame_enabled', e.target.checked)}
-                  className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                  className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
                 />
                 <div>
-                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  <span className="text-sm font-medium text-heading">
                     {t('branding.loginLogo.frame', 'Show tinted frame behind the logo')}
                   </span>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  <p className="text-xs text-soft">
                     {t(
                       'branding.loginLogo.frameHelp',
                       'When off, the logo sits directly on the page background. Useful for logos that already include their own backdrop.',
@@ -920,13 +920,13 @@ export const BrandingPage: React.FC = () => {
 
               {/* Size selector */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.loginLogo.size', 'Logo size on login pages')}
                 </label>
                 <select
                   value={brandingSettings.login_logo_size || 'medium'}
                   onChange={(e) => handleBrandingChange('login_logo_size', e.target.value as 'small' | 'medium' | 'large' | 'xlarge')}
-                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="small">{t('branding.loginLogo.sizeSmall', 'Small')}</option>
                   <option value="medium">{t('branding.loginLogo.sizeMedium', 'Medium (default)')}</option>
@@ -938,49 +938,49 @@ export const BrandingPage: React.FC = () => {
           </div>
 
           {/* White Label Settings */}
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
-            <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.whiteLabel', 'White Label')}</h3>
+          <div className="mt-6 pt-6 border-t border-line">
+            <h3 className="text-md font-semibold text-heading mb-4">{t('branding.whiteLabel', 'White Label')}</h3>
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={brandingSettings.hide_powered_by === true}
                 onChange={(e) => handleBrandingChange('hide_powered_by', e.target.checked)}
-                className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                <span className="text-sm font-medium text-heading">
                   {t('branding.hidePoweredBy', 'Hide "Powered by PicPeak" branding')}
                 </span>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                <p className="text-xs text-soft">
                   {t('branding.hidePoweredByHelp', 'Remove the PicPeak attribution from gallery footers for a fully white-labeled experience')}
                 </p>
               </div>
             </label>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="mt-6 pt-6 border-t border-line">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={brandingSettings.watermark_enabled}
                 onChange={(e) => handleBrandingChange('watermark_enabled', e.target.checked)}
-                className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-primary-500"
               />
               <div>
-                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{t('branding.enableWatermarks')}</span>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('branding.watermarkHelp')}</p>
+                <span className="text-sm font-medium text-heading">{t('branding.enableWatermarks')}</span>
+                <p className="text-xs text-soft">{t('branding.watermarkHelp')}</p>
               </div>
             </label>
           </div>
 
           {/* Watermark Settings */}
           {brandingSettings.watermark_enabled && (
-            <div className="mt-6 space-y-6 border-t border-neutral-200 dark:border-neutral-700 pt-6">
-              <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100">{t('branding.watermarkSettings')}</h3>
+            <div className="mt-6 space-y-6 border-t border-line pt-6">
+              <h3 className="text-md font-semibold text-heading">{t('branding.watermarkSettings')}</h3>
 
               {/* Watermark Logo Upload */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.watermarkLogo')}
                 </label>
                 <div className="space-y-2">
@@ -989,9 +989,9 @@ export const BrandingPage: React.FC = () => {
                       <img 
                         src={brandingSettings.watermark_logo_url.startsWith('http') ? brandingSettings.watermark_logo_url : buildResourceUrl(brandingSettings.watermark_logo_url)} 
                         alt="Current watermark" 
-                        className="h-16 w-auto object-contain bg-neutral-100 dark:bg-neutral-700 p-2 rounded"
+                        className="h-16 w-auto object-contain bg-inset p-2 rounded"
                       />
-                      <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('branding.currentWatermark')}</span>
+                      <span className="text-sm text-soft">{t('branding.currentWatermark')}</span>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1019,14 +1019,14 @@ export const BrandingPage: React.FC = () => {
                         {t('branding.uploadWatermarkLogo')}
                       </Button>
                     </label>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">{t('branding.watermarkHelp')}</p>
+                    <p className="text-xs text-soft mt-1">{t('branding.watermarkHelp')}</p>
                   </div>
                 </div>
               </div>
 
               {/* Position Selector */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.watermarkPosition')}
                 </label>
                 <div className="grid grid-cols-3 gap-2 max-w-xs">
@@ -1044,7 +1044,7 @@ export const BrandingPage: React.FC = () => {
                       className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
                         brandingSettings.watermark_position === position.value
                           ? 'bg-accent-dark text-white border-accent-dark'
-                          : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600 hover:bg-neutral-50 dark:hover:bg-neutral-700'
+                          : 'bg-panel text-body border-line-strong hover:bg-hover'
                       }`}
                     >
                       {position.label}
@@ -1055,7 +1055,7 @@ export const BrandingPage: React.FC = () => {
 
               {/* Opacity Slider */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.watermarkOpacity')}: {brandingSettings.watermark_opacity || 50}%
                 </label>
                 <input
@@ -1075,7 +1075,7 @@ export const BrandingPage: React.FC = () => {
                     outline: 'none'
                   }}
                 />
-                <div className="flex justify-between text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <div className="flex justify-between text-xs text-muted mt-1">
                   <span>10%</span>
                   <span>50%</span>
                   <span>100%</span>
@@ -1084,7 +1084,7 @@ export const BrandingPage: React.FC = () => {
 
               {/* Size Slider */}
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('branding.watermarkSize')}: {brandingSettings.watermark_size || 15}%
                 </label>
                 <input
@@ -1104,7 +1104,7 @@ export const BrandingPage: React.FC = () => {
                     outline: 'none'
                   }}
                 />
-                <div className="flex justify-between text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                <div className="flex justify-between text-xs text-muted mt-1">
                   <span>5%</span>
                   <span>15%</span>
                   <span>30%</span>
@@ -1124,7 +1124,7 @@ export const BrandingPage: React.FC = () => {
 
         {/* Theme Customization */}
         <div className="mb-6">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
             <Palette className="w-5 h-5" />
             {t('branding.galleryTheme')}
           </h2>
@@ -1134,9 +1134,9 @@ export const BrandingPage: React.FC = () => {
                 type="checkbox"
                 checked={isPreviewMode}
                 onChange={(e) => setIsPreviewMode(e.target.checked)}
-                className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-primary-500"
               />
-              <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('branding.applyLivePreview')}</span>
+              <span className="text-sm text-body">{t('branding.applyLivePreview')}</span>
             </label>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1169,7 +1169,7 @@ export const BrandingPage: React.FC = () => {
             {/* Right side - Gallery Preview */}
             <div className="lg:sticky lg:top-4 lg:h-fit">
               <Card className="p-4">
-                <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
+                <h3 className="text-sm font-medium text-body mb-3">
                   {t('branding.livePreview')}
                 </h3>
                 <GalleryPreview

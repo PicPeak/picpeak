@@ -23,7 +23,7 @@ export const EventBookingSelect: React.FC<Props> = ({ value, onChange, className
   });
   const events = data?.events ?? [];
   const cls = className
-    || 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+    || 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 
   return (
     <select className={cls} value={value == null ? '' : String(value)}

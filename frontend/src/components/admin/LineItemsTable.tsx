@@ -479,9 +479,9 @@ export const LineItemsTable: React.FC<Props> = ({
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+      <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+          <thead className="bg-subtle text-body">
             <tr>
               <th className="px-2 py-2 text-left w-14">{t('crm.lineItems.position', 'Pos.')}</th>
               <th className="px-2 py-2 text-left w-20">{t('crm.lineItems.quantity', 'Anzahl')}</th>
@@ -508,8 +508,8 @@ export const LineItemsTable: React.FC<Props> = ({
               const parentAutoTotaled = !sub && hasPricedChildren(li.position);
               const priceFromChain = isQuote && isRatePriced(li) && usesRateChain(li);
               const qtyBound = isQuote && !!li.boundTo;
-              const disabledInputClass = 'bg-neutral-100 dark:bg-neutral-700 text-neutral-400 dark:text-neutral-500 cursor-not-allowed';
-              const enabledInputClass = 'bg-white dark:bg-neutral-800';
+              const disabledInputClass = 'bg-inset text-faint cursor-not-allowed';
+              const enabledInputClass = 'bg-panel';
               const qtyDisabled = parentAutoTotaled || qtyBound;
               const priceDisabled = parentAutoTotaled || priceFromChain;
               // A not-booked add-on is shown dimmed — all of it except its Book
@@ -519,17 +519,17 @@ export const LineItemsTable: React.FC<Props> = ({
               if (discountRow) {
                 const hasComment = !!li.detailsText && li.detailsText.trim().length > 0;
                 return (
-                  <tr key={li.position} className="border-t border-neutral-200 dark:border-neutral-700 bg-emerald-50/50 dark:bg-emerald-900/10">
-                    <td className="px-2 py-2 align-top text-neutral-600 dark:text-neutral-400">
+                  <tr key={li.position} className="border-t border-line bg-emerald-50/50 dark:bg-emerald-900/10">
+                    <td className="px-2 py-2 align-top text-soft">
                       <div className="flex items-center gap-1">
-                        <Tag className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400" aria-hidden />
+                        <Tag className="w-3.5 h-3.5 text-muted" aria-hidden />
                         <span>{displayNumbers[idx]}</span>
                       </div>
                     </td>
                     <td className="px-2 py-2 align-top"></td>
-                    <td className="px-2 py-2 align-top text-neutral-800 dark:text-neutral-200">
+                    <td className="px-2 py-2 align-top text-body">
                       <div className="font-medium">{li.description || li.promotionSnapshot?.name}</div>
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      <div className="text-xs text-muted">
                         {li.promotionSnapshot?.type === 'percent'
                           ? t('crm.lineItems.discountPercentHint', '{{percent}} % of the subtotal', { percent: li.promotionSnapshot.percent })
                           : t('crm.lineItems.discountLine', 'Discount')}
@@ -541,18 +541,18 @@ export const LineItemsTable: React.FC<Props> = ({
                           rows={2}
                           maxLength={2000}
                           aria-label={t('crm.lineItems.detailsFilled', 'Details') as string}
-                          className="mt-2 w-full rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1 text-xs italic"
+                          className="mt-2 w-full rounded border border-line-strong bg-panel px-2 py-1 text-xs italic"
                           value={li.detailsText || ''}
                           onChange={(e) => setItem(idx, { detailsText: e.target.value })}
                           placeholder={t('crm.lineItems.detailsPlaceholder', 'Optional notes — fine print, package inclusions, conditions…') as string}
                         />
                       ) : hasComment && (
-                        <div className="mt-1 text-xs italic text-neutral-600 dark:text-neutral-300 whitespace-pre-line">{li.detailsText}</div>
+                        <div className="mt-1 text-xs italic text-body whitespace-pre-line">{li.detailsText}</div>
                       )}
                       <button
                         type="button"
                         onClick={() => toggleDetails(li.position)}
-                        className="mt-1 inline-flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300"
+                        className="mt-1 inline-flex items-center gap-1 text-xs text-muted hover:text-body"
                       >
                         {open
                           ? <ChevronDown className="w-3.5 h-3.5" aria-hidden />
@@ -583,10 +583,10 @@ export const LineItemsTable: React.FC<Props> = ({
 
               return (
                 <React.Fragment key={li.position}>
-                  <tr className={`border-t border-neutral-200 dark:border-neutral-700 ${
+                  <tr className={`border-t border-line ${
                     sub ? 'bg-neutral-50/60 dark:bg-neutral-900/40' : ''
                   }`}>
-                    <td className={`px-2 py-2 text-neutral-600 dark:text-neutral-400 align-top ${dim}`}>
+                    <td className={`px-2 py-2 text-soft align-top ${dim}`}>
                       <div className="flex items-center gap-1">
                         {sub && <CornerDownRight className="w-3.5 h-3.5 text-neutral-400" aria-hidden />}
                         <span>{displayNumbers[idx]}</span>
@@ -594,7 +594,7 @@ export const LineItemsTable: React.FC<Props> = ({
                     </td>
                     <td className={`px-2 py-2 align-top ${dim}`}>
                       <DecimalInput
-                        className={`w-20 rounded border border-neutral-300 dark:border-neutral-600 px-2 py-1 text-sm ${qtyDisabled ? disabledInputClass : enabledInputClass}`}
+                        className={`w-20 rounded border border-line-strong px-2 py-1 text-sm ${qtyDisabled ? disabledInputClass : enabledInputClass}`}
                         value={effectiveQuantity(li)}
                         onChange={(n) => setItem(idx, { quantity: Number.isFinite(n) ? n : 0 })}
                         disabled={qtyDisabled}
@@ -606,7 +606,7 @@ export const LineItemsTable: React.FC<Props> = ({
                             : undefined}
                       />
                       {li.unit && (
-                        <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        <div className="mt-1 text-xs text-muted">
                           {t(`crm.lineItems.unitOption.${li.unit}`, li.unit)}
                         </div>
                       )}
@@ -614,13 +614,13 @@ export const LineItemsTable: React.FC<Props> = ({
                     <td className={`px-2 py-2 align-top ${sub ? 'pl-6' : ''}`}>
                       <textarea
                         rows={2}
-                        className={`w-full rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1 text-sm ${dim}`}
+                        className={`w-full rounded border border-line-strong bg-panel px-2 py-1 text-sm ${dim}`}
                         value={li.description}
                         onChange={(e) => setItem(idx, { description: e.target.value })}
                         placeholder={t('crm.lineItems.descriptionPlaceholder', 'Description (multi-line OK)') as string}
                       />
                       {/* Migration 220 — unit, rate and add-on controls. */}
-                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-soft">
                         <label className={`inline-flex items-center gap-1 ${dim}`}>
                           <span>{t('crm.lineItems.unitLabel', 'Unit')}</span>
                           <select
@@ -636,7 +636,7 @@ export const LineItemsTable: React.FC<Props> = ({
                                 ...(rateUnit && isRatePriced(li) ? { priceMode: unit as PriceMode } : {}),
                               });
                             }}
-                            className="rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-1 py-0.5"
+                            className="rounded border border-line-strong bg-panel px-1 py-0.5"
                           >
                             <option value="">{t('crm.lineItems.unitNone', '—')}</option>
                             {UNITS.map((u) => (
@@ -671,7 +671,7 @@ export const LineItemsTable: React.FC<Props> = ({
                           </label>
                         )}
                         {isQuote && isRatePriced(li) && rateBadge(li) && (
-                          <span className={`rounded bg-neutral-100 dark:bg-neutral-700 px-1.5 py-0.5 text-[11px] ${dim}`}>{rateBadge(li)}</span>
+                          <span className={`rounded bg-inset px-1.5 py-0.5 text-[11px] ${dim}`}>{rateBadge(li)}</span>
                         )}
                         {isQuote && !sub && (
                           <label className={`inline-flex items-center gap-1 ${dim}`}>
@@ -687,7 +687,7 @@ export const LineItemsTable: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => toggleDetails(li.position)}
-                        className={`mt-1 inline-flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 ${dim}`}
+                        className={`mt-1 inline-flex items-center gap-1 text-xs text-muted hover:text-body ${dim}`}
                       >
                         {open
                           ? <ChevronDown className="w-3.5 h-3.5" aria-hidden />
@@ -702,7 +702,7 @@ export const LineItemsTable: React.FC<Props> = ({
                         <textarea
                           rows={2}
                           maxLength={2000}
-                          className={`mt-2 w-full rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 py-1 text-xs italic ${dim}`}
+                          className={`mt-2 w-full rounded border border-line-strong bg-panel px-2 py-1 text-xs italic ${dim}`}
                           value={li.detailsText || ''}
                           onChange={(e) => setItem(idx, { detailsText: e.target.value })}
                           placeholder={t('crm.lineItems.detailsPlaceholder', 'Optional notes — fine print, package inclusions, conditions…') as string}
@@ -714,7 +714,7 @@ export const LineItemsTable: React.FC<Props> = ({
                           accepting. */}
                       {isQuote && !sub && li.isOptional && (
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                          <span className={`italic text-neutral-500 dark:text-neutral-400 ${dim}`}>
+                          <span className={`italic text-muted ${dim}`}>
                             <AddOnBookingState booked={li.selected !== false} />
                           </span>
                           <AddOnBookButton
@@ -726,7 +726,7 @@ export const LineItemsTable: React.FC<Props> = ({
                     </td>
                     <td className={`px-2 py-2 align-top ${dim}`}>
                       <DecimalInput
-                        className={`w-24 rounded border border-neutral-300 dark:border-neutral-600 px-2 py-1 text-sm text-right ${priceDisabled ? disabledInputClass : enabledInputClass}`}
+                        className={`w-24 rounded border border-line-strong px-2 py-1 text-sm text-right ${priceDisabled ? disabledInputClass : enabledInputClass}`}
                         value={li.unitPrice}
                         fractionDigits={2}
                         onChange={(n) => setItem(idx, { unitPrice: Number.isFinite(n) ? n : 0 })}
@@ -739,7 +739,7 @@ export const LineItemsTable: React.FC<Props> = ({
                     {showDiscount && (
                       <td className={`px-2 py-2 align-top ${dim}`}>
                         <DecimalInput
-                          className={`w-20 rounded border border-neutral-300 dark:border-neutral-600 px-2 py-1 text-sm text-right ${parentAutoTotaled ? disabledInputClass : enabledInputClass}`}
+                          className={`w-20 rounded border border-line-strong px-2 py-1 text-sm text-right ${parentAutoTotaled ? disabledInputClass : enabledInputClass}`}
                           value={li.discountPercent}
                           onChange={(n) => {
                             // Clamp to 0..100 — match the original input's min/max.
@@ -753,7 +753,7 @@ export const LineItemsTable: React.FC<Props> = ({
                     )}
                     <td className={`px-2 py-2 text-right tabular-nums align-top ${dim} ${
                       sub
-                        ? 'text-neutral-500 dark:text-neutral-400 italic'
+                        ? 'text-muted italic'
                         : 'font-medium'
                     }`}>
                       {sub
@@ -762,7 +762,7 @@ export const LineItemsTable: React.FC<Props> = ({
                           : ''
                         : formatMoney(lineTotal(li), currency)}
                       {parentAutoTotaled && (
-                        <div className="text-[10px] font-normal text-neutral-500 dark:text-neutral-400 italic mt-0.5">
+                        <div className="text-[10px] font-normal text-muted italic mt-0.5">
                           {t('crm.lineItems.autoTotaledNote', '= Σ Unterpositionen') as string}
                         </div>
                       )}
@@ -770,23 +770,23 @@ export const LineItemsTable: React.FC<Props> = ({
                     <td className={`px-2 py-2 align-top ${dim}`}>
                       <div className="flex items-center gap-1 justify-end flex-wrap">
                         <button type="button" onClick={() => move(idx, -1)} aria-label="Move up"
-                          className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-30">
+                          className="p-1 rounded hover:bg-hover disabled:opacity-30">
                           <ArrowUp className="w-4 h-4" />
                         </button>
                         <button type="button" onClick={() => move(idx, 1)} aria-label="Move down"
-                          className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 disabled:opacity-30">
+                          className="p-1 rounded hover:bg-hover disabled:opacity-30">
                           <ArrowDown className="w-4 h-4" />
                         </button>
                         {!sub && (
                           <button type="button" onClick={() => addSubItem(idx)} aria-label="Add sub-item"
-                            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                            className="p-1 rounded hover:bg-hover"
                             title={t('crm.lineItems.addSubItem', 'Add sub-item') as string}>
                             <CornerDownRight className="w-4 h-4" />
                           </button>
                         )}
                         {onSaveAsPreset && !sub && (
                           <button type="button" onClick={() => onSaveAsPreset(li)} aria-label="Save as preset"
-                            className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                            className="p-1 rounded hover:bg-hover"
                             title={t('crm.lineItems.saveAsPreset', 'Save as preset') as string}>
                             <SaveIcon className="w-4 h-4" />
                           </button>
@@ -802,7 +802,7 @@ export const LineItemsTable: React.FC<Props> = ({
               );
             })}
             {items.length === 0 && (
-              <tr><td colSpan={colCount} className="px-2 py-6 text-center text-neutral-500 dark:text-neutral-400">
+              <tr><td colSpan={colCount} className="px-2 py-6 text-center text-muted">
                 {t('crm.lineItems.empty', 'No line items yet — add one to get started.')}
               </td></tr>
             )}
@@ -817,7 +817,7 @@ export const LineItemsTable: React.FC<Props> = ({
         {presets.length > 0 && (
           <select
             aria-label={t('crm.lineItems.addFromPreset', 'Add from preset…') as string}
-            className="text-sm rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-1.5"
+            className="text-sm rounded-md border border-line-strong bg-panel px-3 py-1.5"
             onChange={(e) => {
               const id = parseInt(e.target.value, 10);
               const preset = presets.find((p) => p.id === id);
@@ -835,7 +835,7 @@ export const LineItemsTable: React.FC<Props> = ({
         {isQuote && packages.length > 0 && (
           <select
             aria-label={t('crm.lineItems.insertPackage', 'Insert package…') as string}
-            className="text-sm rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-1.5"
+            className="text-sm rounded-md border border-line-strong bg-panel px-3 py-1.5"
             onChange={(e) => {
               const id = parseInt(e.target.value, 10);
               const pkg = packages.find((p) => p.id === id);
@@ -852,14 +852,14 @@ export const LineItemsTable: React.FC<Props> = ({
         )}
       </div>
 
-      <div className="flex flex-col items-end gap-1 text-sm pt-2 border-t border-neutral-200 dark:border-neutral-700">
-        <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('crm.lineItems.subtotal', 'Subtotal')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(subtotal, currency)}</span></div>
-        <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('crm.lineItems.vat', 'VAT')} ({(vatRate * 100).toFixed(1)}%):</span><span className="tabular-nums w-28 text-right">{formatMoney(vatAmount, currency)}</span></div>
+      <div className="flex flex-col items-end gap-1 text-sm pt-2 border-t border-line">
+        <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.subtotal', 'Subtotal')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(subtotal, currency)}</span></div>
+        <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.vat', 'VAT')} ({(vatRate * 100).toFixed(1)}%):</span><span className="tabular-nums w-28 text-right">{formatMoney(vatAmount, currency)}</span></div>
         {!!shippingAmount && (
-          <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('crm.lineItems.shipping', 'Shipping')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(shippingAmount, currency)}</span></div>
+          <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.shipping', 'Shipping')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(shippingAmount, currency)}</span></div>
         )}
         {roundingAdjustment !== 0 && (
-          <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('crm.lineItems.rounding', 'Rounding')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(roundingAdjustment, currency)}</span></div>
+          <div className="flex gap-6"><span className="text-soft">{t('crm.lineItems.rounding', 'Rounding')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(roundingAdjustment, currency)}</span></div>
         )}
         <div className="flex gap-6 font-semibold text-base"><span>{t('crm.lineItems.total', 'Total')}:</span><span className="tabular-nums w-28 text-right">{formatMoney(total, currency)}</span></div>
       </div>

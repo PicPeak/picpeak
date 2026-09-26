@@ -18,7 +18,7 @@ const getRoleBadgeColor = (roleName: string): string => {
     case 'editor':
       return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
     default:
-      return 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-600';
+      return 'bg-inset text-body border-line';
   }
 };
 
@@ -93,7 +93,7 @@ export const RoleManagementTab: React.FC = () => {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        <p className="text-sm text-soft">
           {t('roleEditor.subtitle', 'Define what each role can do. Start from a preset by cloning it, then trim or extend the permissions.')}
         </p>
         <Button
@@ -118,20 +118,20 @@ export const RoleManagementTab: React.FC = () => {
                       {role.displayName}
                     </span>
                     {role.isSystem && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-faint">
                         <Lock className="w-3 h-3" />
                         {t('roleEditor.systemRole', 'System')}
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 text-xs font-mono text-neutral-400 dark:text-neutral-500">{role.name}</p>
+                  <p className="mt-1 text-xs font-mono text-faint">{role.name}</p>
                   {role.description && (
-                    <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400 line-clamp-2">{role.description}</p>
+                    <p className="mt-1 text-sm text-soft line-clamp-2">{role.description}</p>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-4 mt-3 text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="flex items-center gap-4 mt-3 text-xs text-muted">
                 <span>{t('roleEditor.permCount', '{{count}} permissions', { count: role.permissions.length })}</span>
                 <span className="flex items-center gap-1">
                   <UsersIcon className="w-3.5 h-3.5" />
@@ -139,7 +139,7 @@ export const RoleManagementTab: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-700">
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-line">
                 <Button
                   variant="outline"
                   size="sm"
@@ -194,10 +194,10 @@ export const RoleManagementTab: React.FC = () => {
                   <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  <h2 className="text-lg font-semibold text-heading">
                     {t('roleEditor.confirmDelete.title', 'Delete role?')}
                   </h2>
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+                  <p className="text-sm text-soft mt-1">
                     {deleteTarget.userCount > 0
                       ? t('roleEditor.confirmDelete.hasUsers', 'Reassign the {{count}} user(s) holding "{{name}}" before deleting it.', { count: deleteTarget.userCount, name: deleteTarget.displayName })
                       : t('roleEditor.confirmDelete.message', 'Permanently delete the "{{name}}" role? This cannot be undone.', { name: deleteTarget.displayName })}

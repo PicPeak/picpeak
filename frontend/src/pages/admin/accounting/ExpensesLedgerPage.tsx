@@ -27,8 +27,8 @@ import {
 const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'paypal', 'card', 'other'];
 
 const KINDS: ExpenseKind[] = ['amount', 'mileage', 'per_diem'];
-const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+const labelCls = 'block text-sm font-medium text-body mb-1';
+const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 const kindIcon: Record<ExpenseKind, React.ReactNode> = {
   amount: <Coins className="w-3.5 h-3.5" />, mileage: <Car className="w-3.5 h-3.5" />, per_diem: <CalendarDays className="w-3.5 h-3.5" />,
 };
@@ -83,9 +83,9 @@ const ExpenseFormModal: React.FC<{ categories: ExpenseCategory[]; expense?: Expe
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-12 w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{isEdit ? t('accounting.ledger.editTitle', 'Edit expense') : t('accounting.ledger.addTitle', 'Add expense')}</h2>
+      <div className="mt-12 w-full max-w-md rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{isEdit ? t('accounting.ledger.editTitle', 'Edit expense') : t('accounting.ledger.addTitle', 'Add expense')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -107,7 +107,7 @@ const ExpenseFormModal: React.FC<{ categories: ExpenseCategory[]; expense?: Expe
             </div>
           )}
 
-          {computedMinor != null && <p className="text-sm text-neutral-700 dark:text-neutral-300">{t('accounting.expense.computed', 'Amount')}: <span className="font-semibold">{formatMoneyMinor(computedMinor, 'CHF')}</span></p>}
+          {computedMinor != null && <p className="text-sm text-body">{t('accounting.expense.computed', 'Amount')}: <span className="font-semibold">{formatMoneyMinor(computedMinor, 'CHF')}</span></p>}
 
           <div><label className={labelCls}>{t('accounting.expense.who', 'Paid by / vendor')}</label><Input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder={t('accounting.expense.whoHint', 'e.g. coworker name or shop')} /></div>
           <div><label className={labelCls}>{t('accounting.ledger.description', 'Description')}</label><Input value={description} onChange={(e) => setDescription(e.target.value)} /></div>
@@ -125,12 +125,12 @@ const ExpenseFormModal: React.FC<{ categories: ExpenseCategory[]; expense?: Expe
 
           <div>
             <label className={labelCls}>{t('accounting.expense.proof', 'Proof')}{requireProof ? ' *' : ''}</label>
-            {isEdit && expense!.hasProof && !file && <p className="mb-1 text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.expense.proofExisting', 'A proof file is already attached — upload a new one to replace it.')}</p>}
+            {isEdit && expense!.hasProof && !file && <p className="mb-1 text-xs text-muted">{t('accounting.expense.proofExisting', 'A proof file is already attached — upload a new one to replace it.')}</p>}
             <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="text-sm" />
             {requireProof && !file && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{t('accounting.expense.proofRequired', 'A proof file is required.')}</p>}
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || incomplete}>{save.isPending ? t('common.saving', 'Saving…') : (isEdit ? t('common.save', 'Save') : t('accounting.ledger.addExpense', 'Add expense'))}</Button>
         </div>
@@ -153,14 +153,14 @@ const ExpensePaidModal: React.FC<{ expense: Expense; onClose: () => void; onDone
   });
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4">
-      <div className="mt-16 w-full max-w-sm rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('accounting.ledger.payTitle', 'Mark expense paid')}</h2>
+      <div className="mt-16 w-full max-w-sm rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{t('accounting.ledger.payTitle', 'Mark expense paid')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            {t('accounting.expense.computed', 'Amount')}: <span className="font-semibold text-neutral-900 dark:text-neutral-100">{expense.chfAmountMinor != null ? formatMoneyMinor(expense.chfAmountMinor, 'CHF') : '—'}</span>
+          <p className="text-sm text-soft">
+            {t('accounting.expense.computed', 'Amount')}: <span className="font-semibold text-heading">{expense.chfAmountMinor != null ? formatMoneyMinor(expense.chfAmountMinor, 'CHF') : '—'}</span>
           </p>
           <div><label className={labelCls}>{t('accounting.ledger.paidDate', 'Payment date')}</label><LocalizedDateInput value={paidAt} onChange={setPaidAt} /></div>
           <div><label className={labelCls}>{t('accounting.ledger.method', 'Method')}</label>
@@ -170,7 +170,7 @@ const ExpensePaidModal: React.FC<{ expense: Expense; onClose: () => void; onDone
           </div>
           <div><label className={labelCls}>{t('accounting.ledger.reference', 'Reference (optional)')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? t('common.saving', 'Saving…') : t('accounting.ledger.confirmPaid', 'Mark paid')}</Button>
         </div>
@@ -198,16 +198,16 @@ const InvoiceExpenseModal: React.FC<{ expense: Expense; onClose: () => void; onD
   });
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-16 w-full max-w-md rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('accounting.ledger.invoiceTitle', 'Add to client invoice')}</h2>
+      <div className="mt-16 w-full max-w-md rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{t('accounting.ledger.invoiceTitle', 'Add to client invoice')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            {t('accounting.expense.computed', 'Amount')}: <span className="font-semibold text-neutral-900 dark:text-neutral-100">{expense.chfAmountMinor != null ? formatMoneyMinor(expense.chfAmountMinor, 'CHF') : '—'}</span>
+          <p className="text-sm text-soft">
+            {t('accounting.expense.computed', 'Amount')}: <span className="font-semibold text-heading">{expense.chfAmountMinor != null ? formatMoneyMinor(expense.chfAmountMinor, 'CHF') : '—'}</span>
           </p>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.ledger.invoiceHint', 'This creates a billable line on the client’s next scheduled invoice and locks the expense from further edits.')}</p>
+          <p className="text-xs text-muted">{t('accounting.ledger.invoiceHint', 'This creates a billable line on the client’s next scheduled invoice and locks the expense from further edits.')}</p>
           <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} *</label>
             {/* portalAssignment={false}: re-billing an expense is an Accounting
                 flow gated by `expenses`, not by the customer portal — without
@@ -224,7 +224,7 @@ const InvoiceExpenseModal: React.FC<{ expense: Expense; onClose: () => void; onD
           </div>
           {markupType !== 'none' && <DecimalInput value={markupValue} onChange={setMarkupValue} fractionDigits={2} className={selectCls} placeholder={markupType === 'percent' ? '%' : 'CHF'} />}
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || !customer[0]}>{save.isPending ? t('common.saving', 'Saving…') : t('accounting.ledger.addToInvoice', 'Add to invoice')}</Button>
         </div>
@@ -274,17 +274,17 @@ export const ExpensesLedgerPage: React.FC = () => {
       </div>
 
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <Card><CardContent className="p-8 text-center text-sm text-neutral-600 dark:text-neutral-400">{t('accounting.ledger.empty', 'No expenses yet — add one above.')}</CardContent></Card>
+        <Card><CardContent className="p-8 text-center text-sm text-soft">{t('accounting.ledger.empty', 'No expenses yet — add one above.')}</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {items.map((ex: Expense) => {
             const cat = ex.categoryId ? catById.get(ex.categoryId) : null;
             return (
-              <div key={ex.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-4 py-3">
-                <span className="inline-flex items-center gap-1 rounded bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:text-neutral-300">{kindIcon[ex.kind]} {t(`accounting.expenseKind.${ex.kind}`, ex.kind)}</span>
+              <div key={ex.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-shell px-4 py-3">
+                <span className="inline-flex items-center gap-1 rounded bg-subtle px-2 py-0.5 text-xs font-medium text-body">{kindIcon[ex.kind]} {t(`accounting.expenseKind.${ex.kind}`, ex.kind)}</span>
                 <div className="flex-1 min-w-[10rem]">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">{ex.description || ex.supplierName || t('accounting.ledger.untitled', 'Expense')}</span>
+                    <span className="text-sm font-medium text-heading truncate">{ex.description || ex.supplierName || t('accounting.ledger.untitled', 'Expense')}</span>
                     {/* invoiced = on a real client invoice → locked (#2/#3). */}
                     {ex.invoiced && (
                       ex.billedInvoiceId ? (
@@ -296,7 +296,7 @@ export const ExpensesLedgerPage: React.FC = () => {
                       )
                     )}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <div className="text-xs text-muted">
                     {ex.eventId != null ? `${t('accounting.booking.event', 'Event')} #${ex.eventId}` : t('accounting.booking.company', 'Company')}
                     {cat && <>{' · '}{categoryLabel(cat, t)}</>}
                     {' · '}{format(ex.createdAt)}
@@ -311,7 +311,7 @@ export const ExpensesLedgerPage: React.FC = () => {
 
                 {/* Edit + add-to-invoice only until invoiced (#3). */}
                 {ex.invoiced ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-neutral-400 dark:text-neutral-500" title={t('accounting.ledger.lockedHint', 'Locked — this expense is on a client invoice.') as string}><Lock className="w-3.5 h-3.5" /> {t('accounting.ledger.locked', 'Locked')}</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-faint" title={t('accounting.ledger.lockedHint', 'Locked — this expense is on a client invoice.') as string}><Lock className="w-3.5 h-3.5" /> {t('accounting.ledger.locked', 'Locked')}</span>
                 ) : (
                   <>
                     <Button size="sm" variant="ghost" onClick={() => setEditExpense(ex)}><Pencil className="w-3.5 h-3.5 mr-1" /> {t('common.edit', 'Edit')}</Button>
@@ -319,7 +319,7 @@ export const ExpensesLedgerPage: React.FC = () => {
                   </>
                 )}
 
-                <div className="text-sm font-medium tabular-nums text-neutral-900 dark:text-neutral-100">{ex.chfAmountMinor != null ? formatMoneyMinor(ex.chfAmountMinor, 'CHF') : '—'}</div>
+                <div className="text-sm font-medium tabular-nums text-heading">{ex.chfAmountMinor != null ? formatMoneyMinor(ex.chfAmountMinor, 'CHF') : '—'}</div>
               </div>
             );
           })}

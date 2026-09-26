@@ -93,16 +93,16 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
         {!hasPending ? (
           <div className="text-center py-8">
             <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-            <p className="text-neutral-600 dark:text-neutral-300">{t('feedback.noPendingComments', 'No comments pending moderation')}</p>
+            <p className="text-body">{t('feedback.noPendingComments', 'No comments pending moderation')}</p>
           </div>
         ) : (
           <div className="space-y-3">
             {pendingComments.slice(0, showAllModal.isOpen ? undefined : maxItems).map((item) => (
-              <div key={item.id} className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800">
+              <div key={item.id} className="border border-line rounded-lg p-4 hover:bg-hover-soft">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0">
-                    <div className="w-10 h-10 bg-neutral-100 dark:bg-neutral-800 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-neutral-600 dark:text-neutral-300" />
+                    <div className="w-10 h-10 bg-subtle rounded-full flex items-center justify-center">
+                      <User className="w-5 h-5 text-body" />
                     </div>
                   </div>
 
@@ -110,11 +110,11 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 text-sm">
-                          <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                          <span className="font-medium text-heading">
                             {item.guest_name || t('feedback.anonymous', 'Anonymous')}
                           </span>
-                          <span className="text-neutral-500 dark:text-neutral-400">•</span>
-                          <span className="text-neutral-500 dark:text-neutral-400">
+                          <span className="text-muted">•</span>
+                          <span className="text-muted">
                             {formatDateTime(item.created_at)}
                           </span>
                         </div>

@@ -44,7 +44,7 @@ interface SectionProps {
 
 const Section: React.FC<SectionProps> = ({ title, children }) => (
   <section className="mt-6 first:mt-0">
-    <h3 className="px-1 mb-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+    <h3 className="px-1 mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
       {title}
     </h3>
     <ul className="space-y-3">{children}</ul>
@@ -95,16 +95,16 @@ export const FeaturesTab: React.FC = () => {
     <div className="space-y-6">
       <Card padding="md">
         {/* Header */}
-        <div className="mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="mb-6 pb-4 border-b border-line">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-accent-soft text-on-accent-soft flex items-center justify-center">
               <ToggleRight className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+              <h2 className="text-lg font-semibold text-heading">
                 {t('settings.features.title', 'Features')}
               </h2>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5 max-w-2xl">
+              <p className="text-sm text-soft mt-0.5 max-w-2xl">
                 {t(
                   'settings.features.intro',
                   'Turn product surfaces on or off. Enabled features appear in the left navigation and become available to your team. Some features are still in beta — flip them on to try them, off to hide them.',

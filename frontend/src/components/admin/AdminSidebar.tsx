@@ -201,7 +201,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
       // leave a visible step in the horizontal divider where the
       // sidebar meets the main column. Shadow uses the same neutral
       // border colors so it looks identical to the previous border.
-      className={`fixed inset-y-0 left-0 z-50 ${widthClasses} bg-white dark:bg-neutral-900 shadow-[1px_0_0_0_theme(colors.neutral.200)] dark:shadow-[1px_0_0_0_theme(colors.neutral.700)] transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
+      className={`fixed inset-y-0 left-0 z-50 ${widthClasses} bg-shell shadow-[1px_0_0_0_theme(colors.neutral.200)] dark:shadow-[1px_0_0_0_theme(colors.neutral.700)] transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
@@ -212,7 +212,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             it sits in admins' muscle-memory zone for chrome controls.
             When collapsed on desktop the title hides and the row
             becomes an empty spacer (no rail-width fight). */}
-        <div className={`flex items-center h-16 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 ${
+        <div className={`flex items-center h-16 border-b border-line flex-shrink-0 ${
           collapsed ? 'lg:justify-center lg:px-2 px-6 justify-between' : 'justify-between px-6'
         }`}>
           <div className="flex items-center gap-2 min-w-0">
@@ -235,7 +235,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                     next to the logo so the brand row doesn't feel
                     empty there. */}
                 {collapsed && (
-                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100 lg:hidden truncate">
+                  <span className="text-xl font-bold text-heading lg:hidden truncate">
                     {brandAlt}
                   </span>
                 )}
@@ -243,12 +243,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             ) : (
               <>
                 {showLabels && (
-                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('admin.title')}</span>
+                  <span className="text-xl font-bold text-heading">{t('admin.title')}</span>
                 )}
                 {/* When collapsed on desktop the title is hidden; on mobile we
                     always show it because the rail-narrow style only applies at lg+ */}
                 {collapsed && (
-                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100 lg:hidden">{t('admin.title')}</span>
+                  <span className="text-xl font-bold text-heading lg:hidden">{t('admin.title')}</span>
                 )}
               </>
             )}
@@ -282,7 +282,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 } ${
                   isActive
                     ? 'bg-accent-dark text-white'
-                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'
+                    : 'text-body hover:bg-hover-soft hover:text-heading'
                 }`}
               >
                 {/* Selected item: solid accent-dark fill with white text/icon
@@ -308,13 +308,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             rail can always be re-expanded. Hidden on mobile (the X
             in the brand row already closes the sheet there). */}
         {onToggleCollapse && (
-          <div className={`hidden lg:flex flex-shrink-0 border-t border-neutral-200 dark:border-neutral-700 py-2 ${
+          <div className={`hidden lg:flex flex-shrink-0 border-t border-line py-2 ${
             collapsed ? 'justify-center px-2' : 'justify-end px-4'
           }`}>
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-md text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-md text-neutral-500 hover:text-heading hover:bg-hover-soft transition-colors"
               aria-label={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
               title={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
             >
@@ -353,7 +353,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
               href={repoUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mx-4 mb-3 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+              className="mx-4 mb-3 flex items-center gap-2 text-xs text-muted hover:text-body transition-colors"
               title={t('admin.viewOnGithub', 'View PicPeak on GitHub')}
             >
               <Github className="w-3.5 h-3.5" />
@@ -387,15 +387,15 @@ const StorageInfo: React.FC = () => {
   const progressBarClass = isOverSoftLimit ? 'bg-red-600' : 'bg-accent-dark';
   const containerClass = isOverSoftLimit
     ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800'
-    : 'bg-neutral-100 dark:bg-neutral-800';
+    : 'bg-subtle';
   const softLimitDisplay = settingsService.formatBytes(limitInUse);
 
   return (
-    <div className="p-4 border-t border-neutral-200 dark:border-neutral-700">
+    <div className="p-4 border-t border-line">
       <div className={`${containerClass} rounded-lg p-3 transition-colors duration-300`}>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-neutral-700 dark:text-neutral-300">{t('admin.storageUsed')}</span>
-          <span className="font-medium text-neutral-900 dark:text-neutral-100">
+          <span className="text-body">{t('admin.storageUsed')}</span>
+          <span className="font-medium text-heading">
             {/* The `+` marks a floor: part of the storage root was unreadable,
                 so the real figure — and the percentage below — is higher than
                 this. Without it an EACCES subtree reads as "safely under the
@@ -403,13 +403,13 @@ const StorageInfo: React.FC = () => {
             {settingsService.formatBytes(storageInfo.total_used)}{storageInfo.storage_partial ? '+' : ''}
           </span>
         </div>
-        <div className="mt-2 w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
+        <div className="mt-2 w-full bg-fill rounded-full h-2">
           <div
             className={`${progressBarClass} h-2 rounded-full transition-all duration-300`}
             style={{ width: `${Math.min(usagePercent, 100)}%` }}
           />
         </div>
-        <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-xs text-soft mt-1">
           {t('admin.storagePercent', { percent: usagePercent, limit: softLimitDisplay })}
         </p>
       </div>

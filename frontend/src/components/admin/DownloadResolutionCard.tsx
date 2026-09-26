@@ -105,24 +105,24 @@ export const DownloadResolutionCard: React.FC<DownloadResolutionCardProps> = ({ 
   // Same input styling as the other admin cards (SlideshowStyleFields) —
   // notably the explicit text colour, without which the select renders
   // muted and reads as disabled.
-  const selectClass = 'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
+  const selectClass = 'w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm';
 
   return (
     <Card>
       <div className="flex items-center gap-2 mb-1">
         <Download className="w-5 h-5 text-neutral-500" />
-        <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+        <h3 className="text-base font-semibold text-heading">
           {t('settings.downloads.eventTitle', 'Download resolution')}
         </h3>
       </div>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t('settings.downloads.eventIntro',
           'Override the site-wide download settings for this gallery only. "Inherit" follows Settings → Download resolutions.')}
       </p>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1 text-neutral-800 dark:text-neutral-200">
+          <label className="block text-sm font-medium mb-1 text-body">
             {t('settings.downloads.standard', 'Standard resolution')}
           </label>
           <select className={selectClass} value={standard} onChange={(e) => setStandard(e.target.value)}>
@@ -137,7 +137,7 @@ export const DownloadResolutionCard: React.FC<DownloadResolutionCardProps> = ({ 
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1 text-neutral-800 dark:text-neutral-200">
+          <label className="block text-sm font-medium mb-1 text-body">
             {t('settings.downloads.picker', 'Let guests choose a download size')}
           </label>
           <select className={selectClass} value={picker} onChange={(e) => setPicker(e.target.value)}>
@@ -152,7 +152,7 @@ export const DownloadResolutionCard: React.FC<DownloadResolutionCardProps> = ({ 
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1 text-neutral-800 dark:text-neutral-200">
+          <label className="block text-sm font-medium mb-1 text-body">
             {t('settings.downloads.allowOriginal', 'Offer "Original" in the picker')}
           </label>
           <select
@@ -172,7 +172,7 @@ export const DownloadResolutionCard: React.FC<DownloadResolutionCardProps> = ({ 
       </div>
 
       {/* What the gallery actually does right now, after the cascade. */}
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-4">
+      <p className="text-xs text-muted mt-4">
         {t('settings.downloads.effective', 'Currently hands out: {{standard}}', {
           standard: data.effective.standard === ORIGINAL
             ? t('settings.downloads.original', 'Original (full size)')

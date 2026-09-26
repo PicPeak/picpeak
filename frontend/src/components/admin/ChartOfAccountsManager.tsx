@@ -24,8 +24,8 @@ import { categoryLabel } from '../../services/accounting.service';
 import { useMutationWithToast } from '../../hooks';
 
 const ACCOUNT_TYPES: AccountType[] = ['asset', 'liability', 'equity', 'revenue', 'expense'];
-const labelCls = 'block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
+const labelCls = 'block text-xs font-medium text-body mb-1';
+const selectCls = 'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm';
 // Narrowed to the `ledger_account_*` keys so `patch[k] = settings[k]` below
 // typechecks: they all share the value type `string | undefined`, whereas
 // `keyof LedgerSettings` also spans the Record-valued VAT maps.
@@ -51,9 +51,9 @@ const AccountModal: React.FC<{ account?: LedgerAccount; onClose: () => void; onD
   });
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4">
-      <div className="mt-20 w-full max-w-sm rounded-xl bg-white dark:bg-neutral-900 shadow-xl">
-        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-700 px-5 py-3">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{isEdit ? t('ledger.account.editTitle', 'Edit account') : t('ledger.account.addTitle', 'Add account')}</h2>
+      <div className="mt-20 w-full max-w-sm rounded-xl bg-shell shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-base font-semibold text-heading">{isEdit ? t('ledger.account.editTitle', 'Edit account') : t('ledger.account.addTitle', 'Add account')}</h2>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -65,7 +65,7 @@ const AccountModal: React.FC<{ account?: LedgerAccount; onClose: () => void; onD
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-200 dark:border-neutral-700 px-5 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || !number || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
         </div>
@@ -121,7 +121,7 @@ export const ChartOfAccountsManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <p className="flex items-start gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+      <p className="flex items-start gap-2 text-xs text-muted">
         <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <span>{t('ledger.intro', 'Used only to produce the Treuhänder export — picpeak does not keep double-entry books. The seeded chart + VAT codes follow the Swiss/LI KMU-Kontenrahmen; adjust them to match your Treuhänder’s setup.')}</span>
       </p>
@@ -129,7 +129,7 @@ export const ChartOfAccountsManager: React.FC = () => {
       {/* Default + system accounts */}
       <Card>
         <CardContent className="p-5">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('ledger.defaults.title', 'Default & system accounts')}</h2>
+          <h2 className="text-base font-semibold text-heading mb-3">{t('ledger.defaults.title', 'Default & system accounts')}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {SETTING_ACCOUNT_KEYS.map((key) => (
               <div key={key}>
@@ -151,11 +151,11 @@ export const ChartOfAccountsManager: React.FC = () => {
       {/* Category → account */}
       <Card>
         <CardContent className="p-5">
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('ledger.categoryMap.title', 'Expense category → account')}</h2>
+          <h2 className="text-base font-semibold text-heading mb-3">{t('ledger.categoryMap.title', 'Expense category → account')}</h2>
           <div className="space-y-2">
             {(mappings?.categories ?? []).map((c) => (
               <div key={c.id} className="flex items-center gap-3">
-                <span className="flex-1 text-sm text-neutral-800 dark:text-neutral-200">{categoryLabel(c as any, t)}</span>
+                <span className="flex-1 text-sm text-body">{categoryLabel(c as any, t)}</span>
                 <select value={c.ledger_account_id ?? ''} onChange={(e) => setCat.mutate({ id: c.id, accId: e.target.value ? Number(e.target.value) : null })} className={selectCls} style={{ maxWidth: 320 }}>
                   <option value="">{t('ledger.defaults.none', '— none —')}</option>
                   {accountOptions.filter((a) => a.type === 'expense').map((a) => <option key={a.id} value={a.id}>{a.number} · {a.name}</option>)}
@@ -170,12 +170,12 @@ export const ChartOfAccountsManager: React.FC = () => {
       <Card>
         <CardContent className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('ledger.accounts.title', 'Chart of accounts')}</h2>
+            <h2 className="text-base font-semibold text-heading">{t('ledger.accounts.title', 'Chart of accounts')}</h2>
             <Button size="sm" onClick={() => setAccountModal({})}><Plus className="w-4 h-4 mr-1" /> {t('ledger.account.addTitle', 'Add account')}</Button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="text-left text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
+              <thead className="text-left text-muted border-b border-line">
                 <tr>
                   <th className="py-1.5 pr-3 font-medium">{t('ledger.account.number', 'No.')}</th>
                   <th className="py-1.5 pr-3 font-medium">{t('ledger.account.name', 'Name')}</th>
@@ -183,15 +183,15 @@ export const ChartOfAccountsManager: React.FC = () => {
                   <th className="py-1.5 pr-3 font-medium text-right">{t('common.actions', 'Actions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              <tbody className="divide-y divide-line-faint">
                 {(accounts ?? []).map((a) => (
                   <tr key={a.id} className={a.active ? '' : 'opacity-50'}>
-                    <td className="py-1.5 pr-3 tabular-nums font-medium text-neutral-900 dark:text-neutral-100">{a.number}</td>
-                    <td className="py-1.5 pr-3 text-neutral-800 dark:text-neutral-200">{a.name}</td>
-                    <td className="py-1.5 pr-3 text-neutral-500 dark:text-neutral-400">{t(`ledger.accountType.${a.type}`, a.type)}</td>
+                    <td className="py-1.5 pr-3 tabular-nums font-medium text-heading">{a.number}</td>
+                    <td className="py-1.5 pr-3 text-body">{a.name}</td>
+                    <td className="py-1.5 pr-3 text-muted">{t(`ledger.accountType.${a.type}`, a.type)}</td>
                     <td className="py-1.5 pr-3">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setAccountModal({ account: a })} className="p-1 text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"><Pencil className="w-4 h-4" /></button>
+                        <button onClick={() => setAccountModal({ account: a })} className="p-1 text-neutral-500 hover:text-body"><Pencil className="w-4 h-4" /></button>
                         <button onClick={() => { if (window.confirm(t('ledger.account.confirmDelete', 'Delete this account?') as string)) delAccount.mutate(a.id); }} className="p-1 text-neutral-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
