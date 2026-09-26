@@ -23,7 +23,8 @@ interface SettingsSaveBarProps {
  * The one save control for settings forms (discussion 1541, point 3).
  *
  * Sticks to the bottom of the admin content so it sits in the same place
- * on every tab; Save and Discard are disabled while the draft equals the
+ * on every tab, at the height of the sidebar's collapse row (py-2 around
+ * h-9 buttons) so the two bottom edges line up; Save and Discard are disabled while the draft equals the
  * server state, and the "unsaved changes" hint appears as soon as it does
  * not. Rendering it also registers the form with UnsavedChangesProvider, so
  * closing the tab or navigating away asks first. Instant-save toggles (a
@@ -44,7 +45,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
   return (
     <div
       data-testid="settings-save-bar"
-      className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 mt-8 px-4 sm:px-6 lg:px-8 py-3 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-700"
+      className="sticky bottom-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8 mt-8 px-4 sm:px-6 lg:px-8 py-2 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-700"
     >
       <div className="flex flex-wrap items-center justify-end gap-2">
         {isDirty && (
@@ -57,11 +58,12 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
           </span>
         )}
         {extra}
-        <Button variant="outline" disabled={!isDirty || isSaving} onClick={onDiscard}>
+        <Button variant="outline" size="sm" disabled={!isDirty || isSaving} onClick={onDiscard}>
           {t('common.discard', 'Discard')}
         </Button>
         <Button
           variant="primary"
+          size="sm"
           disabled={!isDirty || isSaving || !canSave}
           isLoading={isSaving}
           onClick={onSave}
