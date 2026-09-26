@@ -528,33 +528,36 @@
     @apply bg-neutral-800;
   }
 
-  /* Table styles for admin dark mode */
-  .dark table {
+  /* Table and select defaults for admin dark mode. `:where()` keeps them at
+     single-class specificity so a token utility on the element (bg-subtle,
+     text-muted, ...) wins, as the old dark: variants did; a bare element with
+     no colour class still gets these. */
+  .dark :where(table) {
     @apply bg-neutral-800;
   }
 
-  .dark thead {
+  .dark :where(thead) {
     @apply bg-neutral-900/50;
   }
 
-  .dark th {
+  .dark :where(th) {
     @apply text-neutral-300 border-neutral-700;
   }
 
-  .dark td {
+  .dark :where(td) {
     @apply text-neutral-200 border-neutral-700;
   }
 
-  .dark tbody tr {
+  .dark :where(tbody tr) {
     @apply border-neutral-700;
   }
 
-  .dark tbody tr:hover {
+  .dark :where(tbody tr):hover {
     @apply bg-neutral-700/50;
   }
 
   /* Select/dropdown for admin dark mode */
-  .dark select {
+  .dark :where(select) {
     @apply bg-neutral-800 border-neutral-700 text-neutral-100;
   }
 
