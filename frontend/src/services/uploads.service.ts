@@ -27,7 +27,10 @@ export const uploadsService = {
    * poll this every 1.5s while any photo is still pending/processing.
    */
   async getStatus(uploadId: string): Promise<UploadStatusSnapshot> {
-    const response = await api.get<UploadStatusSnapshot>(`/admin/uploads/${uploadId}/status`);
+    // adminPhotos is mounted at /api/admin/photos (server.js); the bare
+    // /admin/uploads/... path used since the async-processing PR was never
+    // routed, so the tracker 404'd and never saw processing finish.
+    const response = await api.get<UploadStatusSnapshot>(`/admin/photos/uploads/${uploadId}/status`);
     return response.data;
   },
 
@@ -36,8 +39,10 @@ export const uploadsService = {
    * background worker picks it up again.
    */
   async retryPhoto(photoId: number): Promise<{ id: number; status: PhotoProcessingStatus }> {
+    // Same mount as getStatus: the router's /photos/:photoId/retry sits under
+    // /api/admin/photos, so the path carries "photos" twice.
     const response = await api.post<{ id: number; status: PhotoProcessingStatus }>(
-      `/admin/photos/${photoId}/retry`
+      `/admin/photos/photos/${photoId}/retry`
     );
     return response.data;
   },
@@ -52,6 +57,6 @@ export const uploadsService = {
     // EventSource doesn't send our auth headers, so we have to rely on
     // the cookie-based admin session. (PicPeak's auth middleware reads
     // cookies before falling back to Authorization headers.)
-    return `${api.defaults.baseURL || ''}/admin/uploads/${uploadId}/stream`;
+    return `${api.defaults.baseURL || ''}/admin/photos/uploads/${uploadId}/stream`;
   },
 };
