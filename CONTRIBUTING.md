@@ -208,6 +208,12 @@ CI runs the `@smoke` subset on every pull request, and every spec on both projec
 * Follow the existing folder structure
 * Write tests for new components
 
+### Styling
+
+* Admin code styles through the UI tokens: `bg-panel`, `text-body`, `border-line`, ... (see `frontend/STYLING.md`). No `dark:` neutral pairs — the lint rule refuses them, `npm run codemod:ui-tokens` rewrites them.
+* Never read a theme token (`var(--color-*)`, `bg-surface`, `text-theme`) in admin code; those belong to the operator-themed gallery and portal.
+* A new shade is a new token in `frontend/src/styles/tokens.css`, not a raw palette class in a component.
+
 ## 📦 Project Structure
 
 ```

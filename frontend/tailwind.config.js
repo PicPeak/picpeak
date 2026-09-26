@@ -13,6 +13,23 @@ export default {
         // :root.dark { } block in index.css (admin dark mode). Use these in
         // place of bg-white / text-neutral-900 / border-neutral-200 so that
         // every component flips with dark/light mode automatically.
+        // UI tokens (src/styles/tokens.css) — the admin palette. Light on :root,
+        // dark under .dark, so these need no dark: variants. STYLING.md has the
+        // table; scripts/codemod-ui-tokens.mjs rewrites raw pairs to them.
+        canvas: 'var(--ui-canvas)',
+        shell: 'var(--ui-shell)',
+        panel: 'var(--ui-panel)',
+        subtle: 'var(--ui-subtle)',
+        inset: 'var(--ui-inset)',
+        fill: { DEFAULT: 'var(--ui-fill)', strong: 'var(--ui-fill-strong)' },
+        hover: { DEFAULT: 'var(--ui-hover)', soft: 'var(--ui-hover-soft)' },
+        heading: 'var(--ui-text-heading)',
+        body: 'var(--ui-text-body)',
+        soft: 'var(--ui-text-soft)',
+        muted: 'var(--ui-text-muted)',
+        faint: 'var(--ui-text-faint)',
+        line: { DEFAULT: 'var(--ui-line)', strong: 'var(--ui-line-strong)', faint: 'var(--ui-line-faint)' },
+        // Theme tokens — operator-themed surfaces (gallery, portal, public pages).
         background: 'var(--color-background)',
         surface: 'var(--color-surface)',
         elevated: 'var(--color-elevated)',
@@ -86,14 +103,25 @@ export default {
         '18': '4.5rem',
         '88': '22rem',
       },
+      // Scale tokens: rounded-* and shadow-* read src/styles/tokens.css, so a
+      // change there moves every corner and shadow at once.
       borderRadius: {
-        'xl': '1rem',
-        '2xl': '1.25rem',
+        'sm': 'var(--radius-sm)',
+        'md': 'var(--radius-md)',
+        'lg': 'var(--radius-lg)',
+        'xl': 'var(--radius-xl)',
+        '2xl': 'var(--radius-2xl)',
+        '3xl': 'var(--radius-3xl)',
       },
       boxShadow: {
-        'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
-        'medium': '0 4px 16px rgba(0, 0, 0, 0.08)',
-        'large': '0 8px 32px rgba(0, 0, 0, 0.12)',
+        'sm': 'var(--shadow-sm)',
+        'md': 'var(--shadow-md)',
+        'lg': 'var(--shadow-lg)',
+        'xl': 'var(--shadow-xl)',
+        '2xl': 'var(--shadow-2xl)',
+        'soft': 'var(--shadow-soft)',
+        'medium': 'var(--shadow-medium)',
+        'large': 'var(--shadow-large)',
       },
     },
   },
