@@ -287,6 +287,12 @@ export function useSettingsState() {
     email: ''
   });
   const [accountErrors, setAccountErrors] = useState<Record<string, string>>({});
+  const accountDirty = !!adminProfile && (accountForm.username !== (adminProfile.username || '') || accountForm.email !== (adminProfile.email || ''));
+  const discardAccount = () => {
+    if (!adminProfile) return;
+    setAccountForm({ username: adminProfile.username || '', email: adminProfile.email || '' });
+    setAccountErrors({});
+  };
 
   // Storage state
   const [softLimitGb, setSoftLimitGb] = useState<number | ''>('');
@@ -655,8 +661,8 @@ export function useSettingsState() {
     }
   };
 
-  const handleAccountSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleAccountSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
 
     if (updateAdminProfileMutation.isPending) return;
 
@@ -746,6 +752,7 @@ export function useSettingsState() {
   return {
     generalDirty, securityDirty, analyticsDirty, eventDirty, seoDirty,
     discardGeneral, discardSecurity, discardAnalytics, discardEvent, discardSeo,
+    accountDirty, discardAccount,
     // Loading states
     isLoading,
     adminProfileLoading,

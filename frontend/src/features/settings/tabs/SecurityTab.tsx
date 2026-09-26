@@ -303,19 +303,19 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             </div>
           </div>
         </div>
-
-        <SettingsSaveBar
-
-          isDirty={isDirty}
-
-          isSaving={saveSecurityMutation.isPending}
-
-          onSave={() => saveSecurityMutation.mutate()}
-
-          onDiscard={onDiscard}
-
-        />
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveSecurityMutation.isPending}
+
+        onSave={() => saveSecurityMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };
