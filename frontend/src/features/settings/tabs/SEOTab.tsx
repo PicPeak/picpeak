@@ -335,19 +335,19 @@ export const SEOTab: React.FC<SEOTabProps> = ({
             )}
           </div>
         </div>
-
-        <SettingsSaveBar
-
-          isDirty={isDirty}
-
-          isSaving={saveSeoMutation.isPending}
-
-          onSave={() => saveSeoMutation.mutate()}
-
-          onDiscard={onDiscard}
-
-        />
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveSeoMutation.isPending}
+
+        onSave={() => saveSeoMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };

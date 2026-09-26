@@ -360,18 +360,6 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </label>
           </div>
         </div>
-
-        <SettingsSaveBar
-
-          isDirty={isDirty}
-
-          isSaving={saveEventSettingsMutation.isPending}
-
-          onSave={() => saveEventSettingsMutation.mutate()}
-
-          onDiscard={onDiscard}
-
-        />
       </Card>
 
       <Card padding="md">
@@ -385,6 +373,18 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           </div>
         </div>
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveEventSettingsMutation.isPending}
+
+        onSave={() => saveEventSettingsMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };

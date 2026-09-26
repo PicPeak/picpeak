@@ -309,18 +309,6 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
           </div>
         )}
-
-        <SettingsSaveBar
-
-          isDirty={isDirty}
-
-          isSaving={saveAnalyticsMutation.isPending}
-
-          onSave={() => saveAnalyticsMutation.mutate()}
-
-          onDiscard={onDiscard}
-
-        />
       </Card>
 
       {/* Backend Analytics Info */}
@@ -346,6 +334,18 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           </div>
         </div>
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveAnalyticsMutation.isPending}
+
+        onSave={() => saveAnalyticsMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };

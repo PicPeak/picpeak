@@ -127,6 +127,7 @@ export const SettingsPage: React.FC = () => {
     saveSeoMutation,
     generalDirty, securityDirty, analyticsDirty, eventDirty, seoDirty,
     discardGeneral, discardSecurity, discardAnalytics, discardEvent, discardSeo,
+    accountDirty, discardAccount,
   } = useSettingsState();
 
   // If the active tab refers to an item that's now hidden (e.g. admin
@@ -204,6 +205,8 @@ export const SettingsPage: React.FC = () => {
               saveGeneralMutation={saveGeneralMutation}
               isDirty={generalDirty}
               onDiscard={discardGeneral}
+              accountDirty={accountDirty}
+              onDiscardAccount={discardAccount}
               accountForm={accountForm}
               accountErrors={accountErrors}
               handleAccountChange={handleAccountChange}
