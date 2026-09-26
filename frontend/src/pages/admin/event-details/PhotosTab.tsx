@@ -65,21 +65,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   return (
     <div>
       {/* Photo Upload Modal */}
+      {/* Picker only — the upload itself runs in UploadSessionProvider, which
+          refreshes this event's queries as photos land and reports the outcome
+          in the bar under the header. */}
       <PhotoUploadModal
         isOpen={showPhotoUpload}
         onClose={() => setShowPhotoUpload(false)}
         eventId={parseInt(id!)}
-        onUploadComplete={() => {
-          // Refresh-only. PhotoUpload fires this as bytes land AND again when
-          // processing finishes — including runs where every file was rejected
-          // — so a success toast here claimed "Upload completed successfully"
-          // over the top of the rejection warning (QA P4-B.05 / 7.05). The
-          // outcome toast belongs to PhotoUpload, which knows the counts.
-          queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-          queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
-          queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
-          refetchPhotos();
-        }}
       />
 
       {/* Photo Filters */}

@@ -1,7 +1,8 @@
 /**
- * The upload modal must keep itself open when an upload partially fails, so
- * the failure report stays visible; a clean upload still auto-closes. We stub
- * PhotoUpload with buttons that fire its onUploadSettled callback both ways.
+ * The upload modal is only the picker: it closes the moment the files are
+ * handed to the upload session (discussion 1541 — users were held in a modal
+ * that did nothing until processing finished). Progress and the failure
+ * report live in UploadProgressBar, covered in UploadProgressBar.test.tsx.
  */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -17,32 +18,25 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-// Stub PhotoUpload: expose buttons that settle clean vs. with failures.
+// Stub PhotoUpload: a button that reports the upload as started.
 vi.mock('../PhotoUpload', () => ({
-  PhotoUpload: ({ onUploadSettled }: any) => (
-    <div>
-      <button onClick={() => onUploadSettled?.({ hasFailures: false })}>settle-clean</button>
-      <button onClick={() => onUploadSettled?.({ hasFailures: true })}>settle-failed</button>
-    </div>
+  PhotoUpload: ({ onUploadStarted }: any) => (
+    <button onClick={() => onUploadStarted?.()}>start-upload</button>
   ),
 }));
 
-describe('PhotoUploadModal auto-close behaviour', () => {
-  it('closes after a clean upload', async () => {
+describe('PhotoUploadModal', () => {
+  it('closes as soon as the upload starts', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<PhotoUploadModal isOpen eventId={1} onClose={onClose} />);
 
-    await user.click(screen.getByText('settle-clean'));
+    await user.click(screen.getByText('start-upload'));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('stays open when some files failed', async () => {
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-    render(<PhotoUploadModal isOpen eventId={1} onClose={onClose} />);
-
-    await user.click(screen.getByText('settle-failed'));
-    expect(onClose).not.toHaveBeenCalled();
+  it('renders nothing while closed', () => {
+    render(<PhotoUploadModal isOpen={false} eventId={1} onClose={vi.fn()} />);
+    expect(screen.queryByText('start-upload')).not.toBeInTheDocument();
   });
 });

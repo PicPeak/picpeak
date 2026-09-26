@@ -5,24 +5,22 @@
  * uploading a `.txt` renamed to `.jpg` (magic-byte rejection) both produced a
  * generic "Upload completed successfully" toast *alongside* the rejection
  * toast, with 0 of N files in the gallery. The success toast came from the
- * host's `onUploadComplete` handler, which PhotoUpload fires purely as a
- * "refresh the grid" signal — including on runs where nothing landed.
+ * host's refresh handler, which the uploader fired purely as a "refresh the
+ * grid" signal — including on runs where nothing landed. The refresh is now a
+ * query invalidation inside UploadSessionProvider and the outcome toast is
+ * decided there, where the counts are known.
  *
  * These pin the outcome contract:
  *   - nothing landed  -> no success toast (and the refresh still fires)
  *   - some landed     -> an accurate partial message, not "complete!"
  *   - all landed      -> success
- * plus the host-side rule that the refresh callback never announces success.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import fs from 'fs';
-import path from 'path';
-import type { ReactElement } from 'react';
 
 import { PhotoUpload } from '../PhotoUpload';
+import { renderWithUploadSession as renderWithClient } from './uploadTestUtils';
 
 // Interpolating t() — the partial message is only meaningful with its numbers
 // substituted, so the mock has to do what i18next would.
@@ -73,10 +71,6 @@ vi.mock('../../../services/settings.service', () => ({
   settingsService: { getAllSettings: vi.fn().mockResolvedValue({}) },
 }));
 
-const renderWithClient = (ui: ReactElement) => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-};
 
 const makeFile = (name: string) =>
   new File([new Uint8Array([1, 2, 3])], name, { type: 'image/png' });
@@ -99,19 +93,16 @@ describe('PhotoUpload completion toast', () => {
     postMock.mockRejectedValue({
       response: { data: { error: 'Photo cap exceeded. This event allows a maximum of 3 photos.' } },
     });
-    const onUploadComplete = vi.fn();
     const user = userEvent.setup();
-    const { container } = renderWithClient(
-      <PhotoUpload eventId={1} onUploadComplete={onUploadComplete} />
-    );
+    const { container, queryClient } = renderWithClient(<PhotoUpload eventId={1} />);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
 
     await uploadFiles(container, user, ['a.png', 'b.png']);
-
     await screen.findByTestId('upload-failure-report');
     expect(toastMock.success).not.toHaveBeenCalled();
     // The grid refresh still has to happen — it is a refresh signal, which is
-    // exactly why the host must not hang a success toast off it.
-    expect(onUploadComplete).toHaveBeenCalled();
+    // exactly why nobody may hang a success toast off it.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin-event-photos', '1'] });
   });
 
   it('stays silent on success when every file was rejected per-file', async () => {
@@ -170,20 +161,5 @@ describe('PhotoUpload completion toast', () => {
 
     await waitFor(() => expect(toastMock.success).toHaveBeenCalled());
     expect(toastMock.warning).not.toHaveBeenCalled();
-  });
-});
-
-describe('host refresh callback', () => {
-  it('does not announce success from the Photos tab refresh handler', () => {
-    const source = fs.readFileSync(
-      path.join(__dirname, '..', '..', '..', 'pages', 'admin', 'event-details', 'PhotosTab.tsx'),
-      'utf8'
-    );
-    const handler = source.slice(
-      source.indexOf('onUploadComplete={'),
-      source.indexOf('{/* Photo Filters */}')
-    );
-    expect(handler).toContain('refetchPhotos()');
-    expect(handler).not.toContain('toast.success');
   });
 });

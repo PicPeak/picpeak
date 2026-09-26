@@ -3,6 +3,8 @@ import { Outlet, Navigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../contexts';
 import { FeatureFlagsProvider } from '../../contexts/FeatureFlagsContext';
+import { UploadSessionProvider } from '../../contexts/UploadSessionContext';
+import { UploadProgressBar } from './UploadProgressBar';
 import { useSessionTimeout } from '../../hooks/useSessionTimeout';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
@@ -53,13 +55,18 @@ export const AdminLayout: React.FC = () => {
   // /api/admin/feature-flags has a session cookie attached.
   return (
     <FeatureFlagsProvider>
-      <AdminLayoutInner
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
-        sidebarCollapsed={sidebarCollapsed}
-        setSidebarCollapsed={setSidebarCollapsed}
-        mustChangePassword={mustChangePassword}
-      />
+      {/* Photo uploads run here, above the page, so the upload modal can close
+          as soon as an upload starts and the bar survives navigating within
+          the admin. */}
+      <UploadSessionProvider>
+        <AdminLayoutInner
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
+          mustChangePassword={mustChangePassword}
+        />
+      </UploadSessionProvider>
     </FeatureFlagsProvider>
   );
 };
@@ -122,6 +129,9 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
 
         {/* Maintenance mode banner */}
         <MaintenanceBanner />
+
+        {/* Live upload progress, sticky under the header */}
+        <UploadProgressBar />
 
         {/* One-time migration banner — flip the constant in MigrationBanner.tsx
             (or remove this mount) after operators have had time to update their

@@ -28,6 +28,7 @@ export { ThemeEditorModal } from './ThemeEditorModal';
 export { HeroPhotoSelector } from './HeroPhotoSelector';
 export { FocalPointPicker } from './FocalPointPicker';
 export { PhotoUploadModal } from './PhotoUploadModal';
+export { UploadProgressBar } from './UploadProgressBar';
 export { GalleryPreview } from './GalleryPreview';
 export { BackupDashboard } from './BackupDashboard';
 export { BackupConfiguration } from './BackupConfiguration';

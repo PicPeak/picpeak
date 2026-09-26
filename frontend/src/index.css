@@ -230,9 +230,11 @@
    * migration safety (visible border lightness change otherwise); the
    * .dark .card override below handles admin dark mode. Gallery uses
    * .card-themed which binds to the 8-token palette. */
+  /* Border only: the drop shadow doubled up with the border on every admin
+     card (discussion 1541). The gallery's .card-themed below keeps the
+     operator-configurable --shadow-default. */
   .card {
     @apply rounded-xl border bg-white border-neutral-200;
-    box-shadow: var(--shadow-default);
   }
 
   .card-hover {
