@@ -50,7 +50,13 @@ const renderForm = (config: Record<string, unknown> = s3Config, privateEndpointO
 };
 
 const testButton = () => screen.getByRole('button', { name: /backup.actions.testConnection/ });
-const saveButton = () => screen.getByRole('button', { name: /backup.configuration.saveSettings/ });
+// The save bar's button is disabled while nothing changed, so flip a
+// checkbox that is not under test before saving.
+const touch = () => userEvent.click(screen.getByRole('checkbox', { name: /whatToBackup\.photos/ }));
+const save = async () => {
+  await touch();
+  await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+};
 
 describe('BackupConfiguration connection test', () => {
   beforeEach(() => {
@@ -103,7 +109,7 @@ describe('BackupConfiguration connection test', () => {
       private_endpoint_approval: 'http://rustfs.lan:9000',
     }));
 
-    await userEvent.click(saveButton());
+    await save();
     expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({
       backup_s3_private_endpoint_approval: 'http://rustfs.lan:9000',
     }));
@@ -120,7 +126,7 @@ describe('BackupConfiguration connection test', () => {
   it('does not echo a stored approval back unless it is approved again', async () => {
     const onSave = renderForm({ ...s3Config, backup_s3_private_endpoint_approval: 'http://rustfs.lan:9000' });
 
-    await userEvent.click(saveButton());
+    await save();
 
     expect(onSave.mock.calls[0][0]).not.toHaveProperty('backup_s3_private_endpoint_approval');
   });

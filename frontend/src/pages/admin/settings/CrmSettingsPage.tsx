@@ -10,8 +10,9 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Save as SaveIcon, Workflow as WorkflowIcon } from 'lucide-react';
-import { Button, Card, Loading, Input } from '../../../components/common';
+import { Workflow as WorkflowIcon } from 'lucide-react';
+import { Card, Loading, Input } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { settingsService } from '../../../services/settings.service';
 import { quotesService } from '../../../services/quotes.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -155,7 +156,10 @@ export const CrmSettingsPage: React.FC = () => {
   });
 
   const [values, setValues] = useState<Record<string, any>>({});
-  useEffect(() => { if (data) setValues(data); }, [data]);
+  // What the server last sent, in draft shape — dirty is a comparison against it.
+  const [loaded, setLoaded] = useState<Record<string, any>>({});
+  useEffect(() => { if (data) { setValues(data); setLoaded(data); } }, [data]);
+  const isDirty = JSON.stringify(values) !== JSON.stringify(loaded);
 
   const saveAll = useMutationWithToast({
     mutationFn: async () => {
@@ -170,6 +174,7 @@ export const CrmSettingsPage: React.FC = () => {
     successMessage: t('crmSettings.savedToast', 'CRM settings saved.'),
     invalidateKeys: [['settings', 'crm']],
     errorMessage: 'Save failed',
+    onSuccess: () => setLoaded(values),
   });
 
   if (isLoading) return <Loading />;
@@ -216,14 +221,9 @@ export const CrmSettingsPage: React.FC = () => {
           SettingsPage's TABS_WITH_OWN_HEADER, so a page title repeated
           the nav label the admin just clicked (QA warning). The subtitle
           stays. */}
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          {subtitle}
-        </p>
-        <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending || !anySection}>
-          <SaveIcon className="w-4 h-4 mr-1" />{t('common.save', 'Save')}
-        </Button>
-      </div>
+      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        {subtitle}
+      </p>
 
       {!anySection && (
         <Card>
@@ -663,6 +663,14 @@ export const CrmSettingsPage: React.FC = () => {
         {checkboxDefaultOn('crm_overview_show_invoices', 'Invoices pipeline (per-status)')}
       </Card>
       )}
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveAll.isPending}
+        canSave={anySection}
+        onSave={() => saveAll.mutate()}
+        onDiscard={() => setValues(loaded)}
+      />
     </div>
   );
 };

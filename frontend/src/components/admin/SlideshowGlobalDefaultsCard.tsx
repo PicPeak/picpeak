@@ -10,8 +10,9 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { MonitorPlay, Save } from 'lucide-react';
-import { Button, Card } from '../common';
+import { MonitorPlay } from 'lucide-react';
+import { Card } from '../common';
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { settingsService } from '../../services/settings.service';
 import {
   SLIDESHOW_WATERMARK_POSITIONS,
@@ -51,13 +52,16 @@ const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral
 export const SlideshowGlobalDefaultsCard: React.FC = () => {
   const { t } = useTranslation();
   const [val, setVal] = useState<SlideshowGlobalDefaults>(DEFAULTS);
+  // What the server last sent, in draft shape — there is no query cache here,
+  // so the card keeps its own snapshot for the save bar's dirty state.
+  const [loaded, setLoaded] = useState<SlideshowGlobalDefaults>(DEFAULTS);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     settingsService.getSettingsByType('slideshow').then((s) => {
       if (cancelled || !s) return;
-      setVal({
+      const next: SlideshowGlobalDefaults = {
         slideshow_fit: s.slideshow_fit ?? DEFAULTS.slideshow_fit,
         slideshow_interval_ms: s.slideshow_interval_ms ?? DEFAULTS.slideshow_interval_ms,
         slideshow_transition: s.slideshow_transition ?? DEFAULTS.slideshow_transition,
@@ -73,7 +77,9 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         slideshow_qr_position: s.slideshow_qr_position ?? DEFAULTS.slideshow_qr_position,
         slideshow_qr_opacity: s.slideshow_qr_opacity ?? DEFAULTS.slideshow_qr_opacity,
         slideshow_qr_size: s.slideshow_qr_size ?? DEFAULTS.slideshow_qr_size,
-      });
+      };
+      setVal(next);
+      setLoaded(next);
     }).catch(() => { /* keep defaults */ });
     return () => { cancelled = true; };
   }, []);
@@ -82,6 +88,7 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
     setSaving(true);
     try {
       await settingsService.updateSlideshowDefaults(val);
+      setLoaded(val);
       toast.success(t('slideshow.defaultsSaved', 'Slideshow defaults saved'));
     } catch {
       toast.error(t('common.error', 'Something went wrong'));
@@ -89,6 +96,8 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
       setSaving(false);
     }
   };
+
+  const isDirty = JSON.stringify(val) !== JSON.stringify(loaded);
 
   return (
     <Card padding="md" className="mb-6">
@@ -326,11 +335,14 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
           </div>
         )}
         </div>
-
-        <Button variant="outline" size="md" leftIcon={<Save className="w-4 h-4" />} onClick={save} isLoading={saving}>
-          {t('common.save', 'Save')}
-        </Button>
       </div>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saving}
+        onSave={() => { void save(); }}
+        onDiscard={() => setVal(loaded)}
+      />
     </Card>
   );
 };

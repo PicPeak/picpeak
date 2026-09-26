@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Save,
   Server,
   Cloud,
   HardDrive,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input } from '../common';
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
@@ -107,6 +107,34 @@ const isRestrictedBackupSetting = (key: string) =>
 const SSH_KEY_PATH = /^\/[a-zA-Z0-9._/@:-]+$/;
 const isMaskedSshKey = (value: string) => value === '••••••••';
 
+const INITIAL_FORM: BackupFormData = {
+  backup_enabled: false,
+  backup_destination_type: 'local',
+  backup_destination_path: '',
+  backup_rsync_host: '',
+  backup_rsync_user: '',
+  backup_rsync_path: '',
+  backup_rsync_ssh_key: '',
+  backup_s3_endpoint: '',
+  backup_s3_bucket: '',
+  backup_s3_access_key: '',
+  backup_s3_secret_key: '',
+  backup_s3_region: '',
+  backup_schedule: 'daily',
+  backup_schedule_cron: '0 3 * * *',
+  backup_retention_days: 30,
+  backup_include_database: true,
+  backup_include_photos: true,
+  backup_include_archives: true,
+  // Matches the backend never-saved fallback (include everything) so the
+  // form does not show "off" while thumbnails are in fact being backed up.
+  backup_include_thumbnails: true,
+  backup_include_temp: false,
+  backup_compression: true,
+  backup_encryption: false,
+  backup_encryption_passphrase: ''
+};
+
 export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   config,
   onSave,
@@ -148,33 +176,10 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     { value: 'custom', label: t('backup.configuration.schedule.options.custom') }
   ];
 
-  const [formData, setFormData] = useState<BackupFormData>({
-    backup_enabled: false,
-    backup_destination_type: 'local',
-    backup_destination_path: '',
-    backup_rsync_host: '',
-    backup_rsync_user: '',
-    backup_rsync_path: '',
-    backup_rsync_ssh_key: '',
-    backup_s3_endpoint: '',
-    backup_s3_bucket: '',
-    backup_s3_access_key: '',
-    backup_s3_secret_key: '',
-    backup_s3_region: '',
-    backup_schedule: 'daily',
-    backup_schedule_cron: '0 3 * * *',
-    backup_retention_days: 30,
-    backup_include_database: true,
-    backup_include_photos: true,
-    backup_include_archives: true,
-    // Matches the backend never-saved fallback (include everything) so the
-    // form does not show "off" while thumbnails are in fact being backed up.
-    backup_include_thumbnails: true,
-    backup_include_temp: false,
-    backup_compression: true,
-    backup_encryption: false,
-    backup_encryption_passphrase: ''
-  });
+  const [formData, setFormData] = useState<BackupFormData>(INITIAL_FORM);
+  // The config as the form last received it, for the save bar's dirty state.
+  const [loaded, setLoaded] = useState<BackupFormData>(INITIAL_FORM);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [showSecrets, setShowSecrets] = useState({
     s3_secret_key: false
@@ -201,6 +206,11 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   useEffect(() => {
     if (config) {
       setFormData(prev => ({
+        ...prev,
+        ...config,
+        ...scheduleFromConfig(config)
+      }));
+      setLoaded(prev => ({
         ...prev,
         ...config,
         ...scheduleFromConfig(config)
@@ -294,6 +304,14 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     }
   };
 
+  // A ticked approval is a change to save too: the endpoint itself may already
+  // be stored, in which case the draft alone reads clean.
+  const isDirty = approvedOrigin !== null || JSON.stringify(formData) !== JSON.stringify(loaded);
+  const discard = () => {
+    setFormData(loaded);
+    setApprovePrivate(false);
+  };
+
   const testConnection = async () => {
     setTestingConnection(true);
     try {
@@ -318,7 +336,8 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <div>
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
       {/* Enable/Disable Toggle */}
       <Card className="p-6">
         <div className="flex items-center justify-between">
@@ -738,26 +757,17 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
           </label>
         </div>
       </Card>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button
-          type="submit"
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {t('backup.configuration.savingSettings')}
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" />
-              {t('backup.configuration.saveSettings')}
-            </>
-          )}
-        </Button>
-      </div>
     </form>
+
+      {/* Outside the form: the bar's buttons would submit it natively. Save
+          goes through requestSubmit so Enter and the bar run the same
+          handleSubmit, native required-field checks included. */}
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={isSaving}
+        onSave={() => formRef.current?.requestSubmit()}
+        onDiscard={discard}
+      />
+    </div>
   );
 };

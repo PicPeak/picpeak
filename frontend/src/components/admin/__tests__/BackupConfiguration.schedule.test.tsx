@@ -30,7 +30,13 @@ const renderForm = (config: Record<string, unknown>) => {
 };
 
 const scheduleSelect = () => screen.getByDisplayValue(/backup.configuration.schedule.options/) as HTMLSelectElement;
-const save = () => userEvent.click(screen.getByRole('button', { name: /backup.configuration.saveSettings/ }));
+// The save bar's button is disabled while nothing changed, so flip a
+// checkbox that is not under test before saving.
+const touch = () => userEvent.click(screen.getByRole('checkbox', { name: /whatToBackup\.photos/ }));
+const save = async () => {
+  await touch();
+  await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+};
 
 describe('BackupConfiguration schedule', () => {
   it('shows a cron stored in backup_schedule as Custom, and saves the same schedule', async () => {

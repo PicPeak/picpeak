@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Image, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
+import { Image, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -47,7 +48,9 @@ export const ThumbnailsTab: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<ThumbnailSettings>(defaultSettings);
-  const [isDirty, setIsDirty] = useState(false);
+  // What the server last sent, in draft shape — dirty is a comparison against it.
+  const [loaded, setLoaded] = useState<ThumbnailSettings>(defaultSettings);
+  const isDirty = JSON.stringify(settings) !== JSON.stringify(loaded);
   // These settings shape every gallery's renditions, and the regenerate
   // buttons rebuild the whole library: both need settings.edit on the server.
   const canEdit = usePermission('settings.edit');
@@ -68,14 +71,16 @@ export const ThumbnailsTab: React.FC = () => {
   useEffect(() => {
     if (fetchedData?.settings) {
       const s = fetchedData.settings;
-      setSettings({
+      const next: ThumbnailSettings = {
         width: parseInt(s.thumbnail_width?.value) || defaultSettings.width,
         height: parseInt(s.thumbnail_height?.value) || defaultSettings.height,
         quality: parseInt(s.thumbnail_quality?.value) || defaultSettings.quality,
         fit: s.thumbnail_fit?.value || defaultSettings.fit,
         format: s.thumbnail_format?.value || defaultSettings.format,
         lightbox_preview_enabled: parseLightboxFlag(s.lightbox_preview_enabled?.value),
-      });
+      };
+      setSettings(next);
+      setLoaded(next);
     }
   }, [fetchedData]);
 
@@ -84,10 +89,10 @@ export const ThumbnailsTab: React.FC = () => {
       const response = await api.put('/admin/thumbnails/settings', newSettings);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, saved) => {
       queryClient.invalidateQueries({ queryKey: ['thumbnail-settings'] });
       toast.success(t('settings.thumbnails.saveSuccess', 'Thumbnail settings saved'));
-      setIsDirty(false);
+      setLoaded(saved);
     },
     onError: () => {
       toast.error(t('settings.thumbnails.saveError', 'Failed to save thumbnail settings'));
@@ -129,7 +134,6 @@ export const ThumbnailsTab: React.FC = () => {
     value: ThumbnailSettings[K]
   ) => {
     setSettings(prev => ({ ...prev, [key]: value }));
-    setIsDirty(true);
   };
 
   const handleSave = () => {
@@ -137,18 +141,7 @@ export const ThumbnailsTab: React.FC = () => {
   };
 
   const handleReset = () => {
-    if (fetchedData?.settings) {
-      const s = fetchedData.settings;
-      setSettings({
-        width: parseInt(s.thumbnail_width?.value) || defaultSettings.width,
-        height: parseInt(s.thumbnail_height?.value) || defaultSettings.height,
-        quality: parseInt(s.thumbnail_quality?.value) || defaultSettings.quality,
-        fit: s.thumbnail_fit?.value || defaultSettings.fit,
-        format: s.thumbnail_format?.value || defaultSettings.format,
-        lightbox_preview_enabled: parseLightboxFlag(s.lightbox_preview_enabled?.value),
-      });
-      setIsDirty(false);
-    }
+    setSettings(loaded);
   };
 
   if (isLoading) {
@@ -365,29 +358,14 @@ export const ThumbnailsTab: React.FC = () => {
         </div>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex gap-3">
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          isLoading={saveMutation.isPending}
-          leftIcon={<Save className="w-5 h-5" />}
-          disabled={!isDirty}
-        >
-          {t('common.saveChanges', 'Save Changes')}
-        </Button>
-
-        {isDirty && (
-          <Button
-            variant="outline"
-            onClick={handleReset}
-            leftIcon={<RefreshCw className="w-5 h-5" />}
-          >
-            {t('common.resetChanges', 'Reset Changes')}
-          </Button>
-        )}
-      </div>
       </fieldset>
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveMutation.isPending}
+        canSave={canEdit}
+        onSave={handleSave}
+        onDiscard={handleReset}
+      />
     </div>
   );
 };

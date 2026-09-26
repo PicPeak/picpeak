@@ -5,7 +5,7 @@
  * Loads via businessProfileService.get(); each section persists via the
  * matching service method.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, Star, Pencil, Save, Clock, Copy, Mail } from 'lucide-react';
@@ -18,6 +18,7 @@ import {
   type QrFormat,
 } from '../../../services/businessProfile.service';
 import { Button, Card, Loading, Input, CountrySelect, TimeField } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { toast } from 'react-toastify';
 import { currencyOptions, normalizeCurrency } from '../../../constants/currencies';
 import { useMutationWithToast } from '../../../hooks';
@@ -41,7 +42,19 @@ export const SettingsBusinessProfilePage: React.FC = () => {
   });
 
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
-  useEffect(() => { if (data?.profile) setProfile(data.profile); }, [data]);
+  // What the server last sent, for the save bar's dirty state and Discard.
+  const [loaded, setLoaded] = useState<BusinessProfile | null>(null);
+  const isDirty = profile !== null && JSON.stringify(profile) !== JSON.stringify(loaded);
+  const dirtyRef = useRef(isDirty);
+  dirtyRef.current = isDirty;
+  useEffect(() => {
+    const next = data?.profile;
+    if (!next) return;
+    setLoaded(next);
+    // A refetch while the draft is dirty (the PDF logo upload invalidates the
+    // query) must not wipe the edits; only the new logo path is taken.
+    setProfile((prev) => (prev && dirtyRef.current ? { ...prev, logoPath: next.logoPath } : next));
+  }, [data]);
 
   const saveProfile = useMutationWithToast({
     // vatLabel + defaultHourlyRateMinor now live on Settings → Accounting, and
@@ -57,6 +70,8 @@ export const SettingsBusinessProfilePage: React.FC = () => {
     successMessage: t('businessProfile.savedToast', 'Business profile saved.'),
     invalidateKeys: [['business-profile']],
     errorMessage: 'Save failed',
+    // The draft is now the server state, so the refetch above re-seeds it.
+    onSuccess: () => setLoaded(profile),
   });
 
   if (isLoading || !profile) return <Loading />;
@@ -68,19 +83,9 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           SettingsPage's TABS_WITH_OWN_HEADER, and its label resolves to
           the same string, so repeating it stacked two identical H2s on
           top of each other (QA warning). The subtitle stays. */}
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
-        </p>
-        <Button
-          onClick={() => saveProfile.mutate()}
-          disabled={saveProfile.isPending}
-          isLoading={saveProfile.isPending}
-          leftIcon={<Save className="w-4 h-4" />}
-        >
-          {t('common.save', 'Save')}
-        </Button>
-      </div>
+      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
+      </p>
 
       <Card>
         <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.company', 'Company')}</h3>
@@ -374,6 +379,14 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </div>
 
       <BankAccountsSection accounts={data?.bankAccounts ?? []} />
+
+      {/* Saves the profile fields above; bank accounts save on their own. */}
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveProfile.isPending}
+        onSave={() => saveProfile.mutate()}
+        onDiscard={() => { if (loaded) setProfile(loaded); }}
+      />
     </div>
   );
 };

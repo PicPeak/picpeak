@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Save, RotateCcw, AlertTriangle, Check } from 'lucide-react';
+import { RotateCcw, AlertTriangle, Check } from 'lucide-react';
 import { Button, Card, Loading } from '../common';
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { cssTemplatesService, CssTemplate } from '../../services/cssTemplates.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -14,7 +15,6 @@ export const CssTemplateEditor: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeSlot, setActiveSlot] = useState(1);
   const [localTemplates, setLocalTemplates] = useState<CssTemplate[]>([]);
-  const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch templates
   const { data: templates, isLoading } = useQuery({
@@ -26,7 +26,6 @@ export const CssTemplateEditor: React.FC = () => {
   useEffect(() => {
     if (templates) {
       setLocalTemplates(templates);
-      setHasChanges(false);
     }
   }, [templates]);
 
@@ -44,7 +43,6 @@ export const CssTemplateEditor: React.FC = () => {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['css-templates'] });
-      setHasChanges(false);
 
       if (result.warnings.length > 0) {
         toast.warning(t('cssTemplates.sanitizationWarning', 'Some CSS patterns were blocked for security'));
@@ -66,6 +64,10 @@ export const CssTemplateEditor: React.FC = () => {
   });
 
   const activeTemplate = localTemplates.find(t => t.slot_number === activeSlot);
+  // Dirty per slot: the local copy against what the server sent. Save writes
+  // the active slot only, so the bar follows that slot.
+  const savedTemplate = templates?.find(t => t.slot_number === activeSlot);
+  const isDirty = JSON.stringify(activeTemplate) !== JSON.stringify(savedTemplate);
 
   const updateLocalTemplate = (updates: Partial<CssTemplate>) => {
     setLocalTemplates(prev =>
@@ -73,7 +75,13 @@ export const CssTemplateEditor: React.FC = () => {
         t.slot_number === activeSlot ? { ...t, ...updates } : t
       )
     );
-    setHasChanges(true);
+  };
+
+  const discardActive = () => {
+    if (!savedTemplate) return;
+    setLocalTemplates(prev =>
+      prev.map(t => (t.slot_number === activeSlot ? savedTemplate : t))
+    );
   };
 
   const handleReset = () => {
@@ -188,39 +196,20 @@ export const CssTemplateEditor: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center justify-between pt-4 border-t border-neutral-100 dark:border-neutral-700">
-              <div className="flex items-center gap-3">
-                {activeSlot === 1 && activeTemplate.is_default && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleReset}
-                    disabled={resetMutation.isPending}
-                    leftIcon={<RotateCcw className="w-4 h-4" />}
-                  >
-                    {t('cssTemplates.resetToDefault', 'Reset to Default')}
-                  </Button>
-                )}
-              </div>
-
-              <div className="flex items-center gap-3">
-                {hasChanges && (
-                  <span className="text-sm text-amber-600">
-                    {t('cssTemplates.unsavedChanges', 'Unsaved changes')}
-                  </span>
-                )}
+            {/* Reset to default — Save lives in the bar below */}
+            {activeSlot === 1 && activeTemplate.is_default && (
+              <div className="flex items-center pt-4 border-t border-neutral-100 dark:border-neutral-700">
                 <Button
-                  variant="primary"
-                  onClick={() => saveMutation.mutate()}
-                  disabled={saveMutation.isPending || !hasChanges}
-                  isLoading={saveMutation.isPending}
-                  leftIcon={<Save className="w-4 h-4" />}
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReset}
+                  disabled={resetMutation.isPending}
+                  leftIcon={<RotateCcw className="w-4 h-4" />}
                 >
-                  {t('cssTemplates.saveTemplate', 'Save Template')}
+                  {t('cssTemplates.resetToDefault', 'Reset to Default')}
                 </Button>
               </div>
-            </div>
+            )}
 
             {/* Last Updated */}
             {activeTemplate.updated_at && (
@@ -231,6 +220,13 @@ export const CssTemplateEditor: React.FC = () => {
           </div>
         )}
       </div>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveMutation.isPending}
+        onSave={() => saveMutation.mutate()}
+        onDiscard={discardActive}
+      />
     </Card>
   );
 };

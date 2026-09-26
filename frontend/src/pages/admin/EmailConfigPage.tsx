@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Mail,
-  Save,
   Send,
   Server,
   Lock,
@@ -26,6 +25,8 @@ import { Palette, RefreshCw, Info } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useModal, useMutationWithToast } from '../../hooks';
+import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
+import { useConfirm } from '../../components/common/ConfirmDialog';
 import { emailService, type EmailConfig, type EmailTemplate, type EmailTemplateTranslation } from '../../services/email.service';
 import { settingsService } from '../../services/settings.service';
 import { businessProfileService } from '../../services/businessProfile.service';
@@ -252,17 +253,38 @@ export const EmailConfigPage: React.FC = () => {
     queryFn: () => settingsService.getAllSettings(),
   });
 
+  // Server snapshots for the shared save bar: the bar is dirty when a draft
+  // differs from these, and Discard puts the draft back.
+  const colorsDraft = {
+    primary: emailPrimaryColor, secondary: emailSecondaryColor, bodyBg: emailBodyBgColor,
+    containerBg: emailContainerBgColor, listBg: emailListBgColor, bodyText: emailBodyTextColor,
+    mutedText: emailMutedTextColor, buttonText: emailButtonTextColor,
+  };
+  const [loadedColors, setLoadedColors] = useState<typeof colorsDraft | null>(null);
+  const applyColors = (c: typeof colorsDraft) => {
+    setEmailPrimaryColor(c.primary); setEmailSecondaryColor(c.secondary); setEmailBodyBgColor(c.bodyBg);
+    setEmailContainerBgColor(c.containerBg); setEmailListBgColor(c.listBg); setEmailBodyTextColor(c.bodyText);
+    setEmailMutedTextColor(c.mutedText); setEmailButtonTextColor(c.buttonText);
+  };
+  const [loadedSmtp, setLoadedSmtp] = useState<EmailConfig | null>(null);
+  const [loadedTemplate, setLoadedTemplate] = useState<Partial<EmailTemplate>>({});
+
   React.useEffect(() => {
     if (allSettings) {
-      if (allSettings.email_primary_color) setEmailPrimaryColor(allSettings.email_primary_color);
-      if (allSettings.email_secondary_color) setEmailSecondaryColor(allSettings.email_secondary_color);
-      if (allSettings.email_body_bg_color) setEmailBodyBgColor(allSettings.email_body_bg_color);
-      if (allSettings.email_container_bg_color) setEmailContainerBgColor(allSettings.email_container_bg_color);
-      if (allSettings.email_list_bg_color) setEmailListBgColor(allSettings.email_list_bg_color);
-      if (allSettings.email_body_text_color) setEmailBodyTextColor(allSettings.email_body_text_color);
-      if (allSettings.email_muted_text_color) setEmailMutedTextColor(allSettings.email_muted_text_color);
-      if (allSettings.email_button_text_color) setEmailButtonTextColor(allSettings.email_button_text_color);
+      const next = {
+        primary: allSettings.email_primary_color || '#5C8762',
+        secondary: allSettings.email_secondary_color || '#f9f9f9',
+        bodyBg: allSettings.email_body_bg_color || '#f5f5f5',
+        containerBg: allSettings.email_container_bg_color || '#ffffff',
+        listBg: allSettings.email_list_bg_color || '#f9f9f9',
+        bodyText: allSettings.email_body_text_color || '#333333',
+        mutedText: allSettings.email_muted_text_color || '#666666',
+        buttonText: allSettings.email_button_text_color || '#ffffff',
+      };
+      applyColors(next);
+      setLoadedColors(next);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSettings]);
 
   // Fetch email templates
@@ -284,6 +306,7 @@ export const EmailConfigPage: React.FC = () => {
       try {
         const config = await emailService.getConfig();
         setSmtpConfig(config);
+        setLoadedSmtp(config);
       } catch (error) {
         // Config might not exist yet
       }
@@ -294,6 +317,7 @@ export const EmailConfigPage: React.FC = () => {
   React.useEffect(() => {
     if (selectedTemplate) {
       setEditedTemplate(selectedTemplate);
+      setLoadedTemplate(selectedTemplate);
     }
   }, [selectedTemplate]);
 
@@ -351,7 +375,8 @@ export const EmailConfigPage: React.FC = () => {
   });
 
   const handleSaveEmailColors = () => {
-    saveEmailColorsMutation.mutate({
+    const snapshot = colorsDraft;
+    void saveEmailColorsMutation.mutateAsync({
       email_primary_color: emailPrimaryColor,
       email_secondary_color: emailSecondaryColor,
       email_body_bg_color: emailBodyBgColor,
@@ -360,7 +385,7 @@ export const EmailConfigPage: React.FC = () => {
       email_body_text_color: emailBodyTextColor,
       email_muted_text_color: emailMutedTextColor,
       email_button_text_color: emailButtonTextColor,
-    });
+    }).then(() => setLoadedColors(snapshot)).catch(() => {});
   };
 
   /**
@@ -401,6 +426,41 @@ export const EmailConfigPage: React.FC = () => {
     toast.info(t('email.syncedFromBranding', 'Email colours synced from Branding. Click Save to apply.'));
   };
 
+  // ---- Shared save bar: one bar per sub-tab saves whatever is dirty ----
+  const confirm = useConfirm();
+  const smtpDirty = !!loadedSmtp && JSON.stringify(smtpConfig) !== JSON.stringify(loadedSmtp);
+  const colorsDirty = !!loadedColors && JSON.stringify(colorsDraft) !== JSON.stringify(loadedColors);
+  const templateDirty = JSON.stringify(editedTemplate.translations ?? null) !== JSON.stringify(loadedTemplate.translations ?? null);
+  const isDirty = activeTab === 'smtp' ? (smtpDirty || colorsDirty) : activeTab === 'templates' ? templateDirty : false;
+  const discardActive = () => {
+    if (activeTab === 'smtp') {
+      if (loadedSmtp) setSmtpConfig(loadedSmtp);
+      if (loadedColors) applyColors(loadedColors);
+    } else if (activeTab === 'templates') {
+      setEditedTemplate(loadedTemplate);
+    }
+  };
+  const confirmDiscard = () => confirm({
+    title: t('settings.saveBar.leaveTitle', 'Discard unsaved changes?'),
+    message: t('settings.saveBar.leaveMessage', 'You have unsaved changes on this page. Leaving now discards them.'),
+    confirmLabel: t('settings.saveBar.leaveConfirm', 'Discard and leave'),
+    cancelLabel: t('settings.saveBar.leaveCancel', 'Stay'),
+    variant: 'warning',
+  });
+  const switchTab = async (tab: typeof activeTab) => {
+    if (tab === activeTab) return;
+    if (isDirty && !(await confirmDiscard())) return;
+    if (isDirty) discardActive();
+    setActiveTab(tab);
+  };
+  const pickTemplate = async (template: EmailTemplate) => {
+    if (template.template_key === selectedTemplateKey) return;
+    if (templateDirty && !(await confirmDiscard())) return;
+    setSelectedTemplateKey(template.template_key);
+    setEditedTemplate(template);
+    setLoadedTemplate(template);
+  };
+
   const handleSaveSmtp = () => {
     // Validate SMTP config
     if (!smtpConfig.smtp_host || !smtpConfig.smtp_port || !smtpConfig.from_email) {
@@ -408,7 +468,7 @@ export const EmailConfigPage: React.FC = () => {
       return;
     }
 
-    saveConfigMutation.mutate(smtpConfig);
+    void saveConfigMutation.mutateAsync(smtpConfig).then(() => setLoadedSmtp(smtpConfig)).catch(() => {});
   };
 
   const handleTestEmail = () => {
@@ -455,10 +515,11 @@ export const EmailConfigPage: React.FC = () => {
 
   const handleSaveTemplate = () => {
     if (selectedTemplateKey && editedTemplate.translations) {
-      saveTemplateMutation.mutate({
+      const snapshot = editedTemplate;
+      void saveTemplateMutation.mutateAsync({
         key: selectedTemplateKey,
         translations: editedTemplate.translations,
-      });
+      }).then(() => setLoadedTemplate(snapshot)).catch(() => {});
     }
   };
 
@@ -514,7 +575,7 @@ export const EmailConfigPage: React.FC = () => {
       <div className="border-b border-neutral-200 dark:border-neutral-700 mb-6">
         <nav className="-mb-px flex gap-6">
           <button
-            onClick={() => setActiveTab('smtp')}
+            onClick={() => { void switchTab('smtp'); }}
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'smtp'
                 ? 'border-accent text-accent'
@@ -524,7 +585,7 @@ export const EmailConfigPage: React.FC = () => {
             {t('email.smtpSettings')}
           </button>
           <button
-            onClick={() => setActiveTab('templates')}
+            onClick={() => { void switchTab('templates'); }}
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'templates'
                 ? 'border-accent text-accent'
@@ -534,7 +595,7 @@ export const EmailConfigPage: React.FC = () => {
             {t('email.emailTemplates')}
           </button>
           <button
-            onClick={() => setActiveTab('sent')}
+            onClick={() => { void switchTab('sent'); }}
             className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'sent'
                 ? 'border-accent text-accent'
@@ -545,7 +606,7 @@ export const EmailConfigPage: React.FC = () => {
           </button>
           {featureFlags.incomingMail && (
             <button
-              onClick={() => setActiveTab('received')}
+              onClick={() => { void switchTab('received'); }}
               className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                 activeTab === 'received'
                   ? 'border-accent text-accent'
@@ -714,15 +775,6 @@ export const EmailConfigPage: React.FC = () => {
                 />
               </div>
 
-              <Button
-                variant="primary"
-                onClick={handleSaveSmtp}
-                isLoading={saveConfigMutation.isPending}
-                leftIcon={<Save className="w-5 h-5" />}
-                className="w-full"
-              >
-                {t('email.saveSmtpSettings')}
-              </Button>
             </div>
           </Card>
 
@@ -865,16 +917,6 @@ export const EmailConfigPage: React.FC = () => {
               ))}
             </div>
 
-            <div className="mt-6">
-              <Button
-                variant="primary"
-                onClick={handleSaveEmailColors}
-                isLoading={saveEmailColorsMutation.isPending}
-                leftIcon={<Save className="w-5 h-5" />}
-              >
-                {t('email.saveEmailColors')}
-              </Button>
-            </div>
           </Card>
         </div>
       )}
@@ -921,10 +963,7 @@ export const EmailConfigPage: React.FC = () => {
                 return (
                   <button
                     key={template.template_key}
-                    onClick={() => {
-                      setSelectedTemplateKey(template.template_key);
-                      setEditedTemplate(template);
-                    }}
+                    onClick={() => { void pickTemplate(template); }}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
                       selectedTemplateKey === template.template_key
                         ? 'tile-selected'
@@ -1023,15 +1062,6 @@ export const EmailConfigPage: React.FC = () => {
                   >
                     {t('email.preview')}
                   </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSaveTemplate}
-                    isLoading={saveTemplateMutation.isPending}
-                    leftIcon={<Save className="w-4 h-4" />}
-                  >
-                    {t('email.save')}
-                  </Button>
                 </div>
               </div>
 
@@ -1117,6 +1147,22 @@ export const EmailConfigPage: React.FC = () => {
             </Card>
           </div>
         </div>
+      )}
+
+      {(activeTab === 'smtp' || activeTab === 'templates') && (
+        <SettingsSaveBar
+          isDirty={isDirty}
+          isSaving={saveConfigMutation.isPending || saveEmailColorsMutation.isPending || saveTemplateMutation.isPending}
+          onSave={() => {
+            if (activeTab === 'smtp') {
+              if (smtpDirty) handleSaveSmtp();
+              if (colorsDirty) handleSaveEmailColors();
+            } else {
+              handleSaveTemplate();
+            }
+          }}
+          onDiscard={discardActive}
+        />
       )}
 
       {/* Email Preview Modal */}

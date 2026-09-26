@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Save, PlugZap, Copy, Check, UserCog, ShieldAlert, Plus, Trash2 } from 'lucide-react';
+import { PlugZap, Copy, Check, UserCog, ShieldAlert, Plus, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
 
 import { Button, Card, Input, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { ssoService, SsoSettings, UpdateSsoSettings } from '../../../services/sso.service';
 
 interface MappingRow {
@@ -37,14 +38,22 @@ export const SsoTab: React.FC = () => {
   const [mappingRows, setMappingRows] = useState<MappingRow[] | null>(null);
   const [newSecret, setNewSecret] = useState('');
   const [copied, setCopied] = useState(false);
+  // What the server last sent, in draft shape — dirty is a comparison against
+  // it. A typed secret is a change too (the server never sends one back).
+  const [loaded, setLoaded] = useState<{ form: SsoSettings; mappingRows: MappingRow[] } | null>(null);
+  const isDirty = loaded !== null && (
+    newSecret !== ''
+    || JSON.stringify({ form, mappingRows }) !== JSON.stringify(loaded)
+  );
 
   const { isLoading } = useQuery({
     queryKey: ['admin-sso-settings'],
     queryFn: async () => {
       const settings = await ssoService.getSettings();
+      const rows = Object.entries(settings.oidc_role_mappings || {}).map(([idpRole, role]) => ({ idpRole, role }));
       setForm((prev) => prev ?? settings);
-      setMappingRows((prev) => prev
-        ?? Object.entries(settings.oidc_role_mappings || {}).map(([idpRole, role]) => ({ idpRole, role })));
+      setMappingRows((prev) => prev ?? rows);
+      setLoaded((prev) => prev ?? { form: settings, mappingRows: rows });
       return settings;
     },
   });
@@ -56,6 +65,7 @@ export const SsoTab: React.FC = () => {
       setNewSecret('');
       setForm(null); // re-init from the fresh GET (secret_set flag updates)
       setMappingRows(null);
+      setLoaded(null);
       queryClient.invalidateQueries({ queryKey: ['admin-sso-settings'] });
       queryClient.invalidateQueries({ queryKey: ['public-settings'] });
     },
@@ -78,7 +88,7 @@ export const SsoTab: React.FC = () => {
     },
   });
 
-  if (isLoading || !form || !mappingRows) {
+  if (isLoading || !form || !mappingRows || !loaded) {
     return <Loading />;
   }
 
@@ -111,6 +121,12 @@ export const SsoTab: React.FC = () => {
     };
     if (newSecret.trim()) payload.oidc_client_secret = newSecret.trim();
     saveMutation.mutate(payload);
+  };
+
+  const handleDiscard = () => {
+    setForm(loaded.form);
+    setMappingRows(loaded.mappingRows);
+    setNewSecret('');
   };
 
   const copyRedirectUri = async () => {
@@ -255,24 +271,6 @@ export const SsoTab: React.FC = () => {
             </span>
           </label>
 
-          <div className="flex items-center gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-            <Button
-              variant="primary"
-              leftIcon={<Save className="w-4 h-4" />}
-              onClick={handleSave}
-              isLoading={saveMutation.isPending}
-            >
-              {t('common.save', 'Save')}
-            </Button>
-            <Button
-              variant="outline"
-              leftIcon={<PlugZap className="w-4 h-4" />}
-              onClick={() => testMutation.mutate()}
-              isLoading={testMutation.isPending}
-            >
-              {t('settings.sso.test', 'Test connection')}
-            </Button>
-          </div>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
             {t('settings.sso.testHint', 'Test runs OIDC discovery against the saved configuration — save first.')}
           </p>
@@ -455,6 +453,23 @@ export const SsoTab: React.FC = () => {
           )}
         </div>
       </Card>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveMutation.isPending}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+        extra={(
+          <Button
+            variant="outline"
+            leftIcon={<PlugZap className="w-4 h-4" />}
+            onClick={() => testMutation.mutate()}
+            isLoading={testMutation.isPending}
+          >
+            {t('settings.sso.test', 'Test connection')}
+          </Button>
+        )}
+      />
     </div>
   );
 };
