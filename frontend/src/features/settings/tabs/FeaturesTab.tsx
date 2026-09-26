@@ -1,8 +1,6 @@
 import React from 'react';
 import {
   ToggleRight,
-  Save,
-  AlertCircle,
   Images,
   BellRing,
   MessageSquare,
@@ -30,7 +28,8 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Button, Card } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { Card } from '../../../components/common';
 import { api } from '../../../config/api';
 import { FeatureCard } from '../components/FeatureCard';
 import { SidebarPreview } from '../components/SidebarPreview';
@@ -568,27 +567,7 @@ export const FeaturesTab: React.FC = () => {
 
       <SidebarPreview staged={staged} />
 
-      {/* Save bar */}
-      <div className="flex items-center justify-end gap-2 pt-2">
-        {isDirty && (
-          <span className="mr-auto text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-            <AlertCircle className="w-3.5 h-3.5" />
-            {t('settings.features.unsavedChanges', 'You have unsaved changes')}
-          </span>
-        )}
-        <Button variant="outline" disabled={!isDirty || isSaving} onClick={reset}>
-          {t('common.discard', 'Discard')}
-        </Button>
-        <Button
-          variant="primary"
-          disabled={!isDirty || isSaving}
-          isLoading={isSaving}
-          onClick={() => { void save(); }}
-          leftIcon={<Save className="w-4 h-4" />}
-        >
-          {t('common.saveChanges', 'Save changes')}
-        </Button>
-      </div>
+      <SettingsSaveBar isDirty={isDirty} isSaving={isSaving} onSave={() => { void save(); }} onDiscard={reset} />
     </div>
   );
 };

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Save, Key, AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { Button, Card, Input } from '../../../components/common';
+import { Key, AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { SecuritySettings, RateLimitSettings } from '../hooks/useSettingsState';
 
 interface SecurityTabProps {
@@ -13,6 +14,8 @@ interface SecurityTabProps {
     mutate: () => void;
     isPending: boolean;
   };
+  isDirty: boolean;
+  onDiscard: () => void;
 }
 
 export const SecurityTab: React.FC<SecurityTabProps> = ({
@@ -21,6 +24,8 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
   rateLimitSettings,
   setRateLimitSettings,
   saveSecurityMutation,
+  isDirty,
+  onDiscard,
 }) => {
   const { t } = useTranslation();
   const setRateLimit = <K extends keyof RateLimitSettings>(key: K, value: RateLimitSettings[K]) =>
@@ -299,16 +304,17 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
           </div>
         </div>
 
-        <div className="mt-6">
-          <Button
-            variant="primary"
-            onClick={() => saveSecurityMutation.mutate()}
-            isLoading={saveSecurityMutation.isPending}
-            leftIcon={<Save className="w-5 h-5" />}
-          >
-            {t('settings.security.saveSecuritySettings')}
-          </Button>
-        </div>
+        <SettingsSaveBar
+
+          isDirty={isDirty}
+
+          isSaving={saveSecurityMutation.isPending}
+
+          onSave={() => saveSecurityMutation.mutate()}
+
+          onDiscard={onDiscard}
+
+        />
       </Card>
     </div>
   );

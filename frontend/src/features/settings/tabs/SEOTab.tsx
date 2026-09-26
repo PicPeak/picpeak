@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Save, Globe, Bot, X, Plus, Eye, Shield } from 'lucide-react';
+import { Globe, Bot, X, Plus, Eye, Shield } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { SeoSettings } from '../hooks/useSettingsState';
 
 interface SEOTabProps {
@@ -11,12 +12,16 @@ interface SEOTabProps {
     mutate: () => void;
     isPending: boolean;
   };
+  isDirty: boolean;
+  onDiscard: () => void;
 }
 
 export const SEOTab: React.FC<SEOTabProps> = ({
   seoSettings,
   setSeoSettings,
   saveSeoMutation,
+  isDirty,
+  onDiscard,
 }) => {
   const { t } = useTranslation();
   const [newAgent, setNewAgent] = useState('');
@@ -331,16 +336,17 @@ export const SEOTab: React.FC<SEOTabProps> = ({
           </div>
         </div>
 
-        <div className="mt-6">
-          <Button
-            variant="primary"
-            onClick={() => saveSeoMutation.mutate()}
-            isLoading={saveSeoMutation.isPending}
-            leftIcon={<Save className="w-5 h-5" />}
-          >
-            {t('settings.seo.saveSettings', 'Save SEO Settings')}
-          </Button>
-        </div>
+        <SettingsSaveBar
+
+          isDirty={isDirty}
+
+          isSaving={saveSeoMutation.isPending}
+
+          onSave={() => saveSeoMutation.mutate()}
+
+          onDiscard={onDiscard}
+
+        />
       </Card>
     </div>
   );
