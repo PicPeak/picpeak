@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -179,6 +180,15 @@ export const adminNavigation: NavItem[] = [
 
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, collapsed = false, onToggleCollapse }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { confirmLeave, isAnyDirty } = useLeaveGuard();
+  // A settings form with unsaved edits gets to say no before the sidebar
+  // navigates away from it (UnsavedChangesProvider).
+  const guardedClick = (e: React.MouseEvent, href: string, replace: boolean | undefined, after: () => void) => {
+    if (!isAnyDirty) { after(); return; }
+    e.preventDefault();
+    void confirmLeave().then((ok) => { if (ok) { after(); navigate(href, { replace: !!replace }); } });
+  };
   const { t } = useTranslation();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { flags } = useFeatureFlags();
@@ -443,7 +453,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                             key={item.key}
                             to={item.href}
                             replace={item.replace}
-                            onClick={() => onClose()}
+                            onClick={(e) => guardedClick(e, item.href, item.replace, () => onClose())}
                             title={collapsed ? item.label : undefined}
                             aria-current={isActive ? 'page' : undefined}
                             className={itemClass(isActive)}
@@ -469,13 +479,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                   <NavLink
                     key={item.nameKey}
                     to={item.href}
-                    onClick={() => {
+                    onClick={(e) => guardedClick(e, item.href, false, () => {
                       // Clicking the current section's entry while peeking
                       // at the main menu hands the sidebar back to section
                       // mode even if the URL doesn't change.
                       if (item.href === activeSection?.path) setPeekMain(false);
                       onClose();
-                    }}
+                    })}
                     title={collapsed ? label : undefined}
                     className={itemClass(isActive)}
                   >

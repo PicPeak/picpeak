@@ -1,7 +1,8 @@
 import React from 'react';
-import { Save, Globe, Key, Activity, AlertCircle, Code, ShieldCheck } from 'lucide-react';
-import { Button, Card, Input } from '../../../components/common';
+import { Globe, Key, Activity, AlertCircle, Code, ShieldCheck } from 'lucide-react';
+import { Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { AnalyticsSettings, TrackerProvider } from '../hooks/useSettingsState';
 
 interface AnalyticsTabProps {
@@ -11,6 +12,8 @@ interface AnalyticsTabProps {
     mutate: () => void;
     isPending: boolean;
   };
+  isDirty: boolean;
+  onDiscard: () => void;
 }
 
 const PROVIDER_OPTIONS: TrackerProvider[] = ['none', 'umami', 'rybbit', 'custom'];
@@ -80,6 +83,8 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   analyticsSettings,
   setAnalyticsSettings,
   saveAnalyticsMutation,
+  isDirty,
+  onDiscard,
 }) => {
   const { t } = useTranslation();
 
@@ -304,17 +309,6 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
             </div>
           </div>
         )}
-
-        <div className="mt-6">
-          <Button
-            variant="primary"
-            onClick={() => saveAnalyticsMutation.mutate()}
-            isLoading={saveAnalyticsMutation.isPending}
-            leftIcon={<Save className="w-5 h-5" />}
-          >
-            {t('settings.analytics.saveAnalyticsSettings')}
-          </Button>
-        </div>
       </Card>
 
       {/* Backend Analytics Info */}
@@ -340,6 +334,18 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           </div>
         </div>
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveAnalyticsMutation.isPending}
+
+        onSave={() => saveAnalyticsMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Eye, Palette, Upload } from 'lucide-react';
+import { Eye, Palette, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
@@ -17,6 +17,40 @@ import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
+
+const INITIAL_BRANDING: BrandingSettings = {
+  company_name: '',
+  company_tagline: '',
+  footer_text: '',
+  support_email: '',
+  watermark_enabled: false,
+  watermark_position: 'bottom-right',
+  watermark_opacity: 50,
+  watermark_size: 15,
+  watermark_logo_url: '',
+  favicon_url: '',
+  logo_url: '',
+  logo_size: 'medium',
+  logo_max_height: 48,
+  logo_position: 'left',
+  logo_display_header: true,
+  logo_display_hero: true,
+  logo_display_mode: 'logo_and_text',
+  hide_powered_by: false,
+  force_color_mode: null,
+  login_logo_frame_enabled: true,
+  login_logo_size: 'medium',
+  facebook_url: '',
+  instagram_url: '',
+  whatsapp_url: '',
+  twitter_url: '',
+  youtube_url: '',
+  promo_markdown: '',
+  promo_position: 'above_footer',
+  promo_alignment: 'center',
+  info_markdown: '',
+};
 
 export const BrandingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -24,41 +58,16 @@ export const BrandingPage: React.FC = () => {
   // Used to gate the PDF typography card — when no PDF-producing
   // feature is enabled the setting has no surface to apply to.
   const { flags } = useFeatureFlags();
-  const [brandingSettings, setBrandingSettings] = useState<BrandingSettings>({
-    company_name: '',
-    company_tagline: '',
-    footer_text: '',
-    support_email: '',
-    watermark_enabled: false,
-    watermark_position: 'bottom-right',
-    watermark_opacity: 50,
-    watermark_size: 15,
-    watermark_logo_url: '',
-    favicon_url: '',
-    logo_url: '',
-    logo_size: 'medium',
-    logo_max_height: 48,
-    logo_position: 'left',
-    logo_display_header: true,
-    logo_display_hero: true,
-    logo_display_mode: 'logo_and_text',
-    hide_powered_by: false,
-    force_color_mode: null,
-    login_logo_frame_enabled: true,
-    login_logo_size: 'medium',
-    facebook_url: '',
-    instagram_url: '',
-    whatsapp_url: '',
-    twitter_url: '',
-    youtube_url: '',
-    promo_markdown: '',
-    promo_position: 'above_footer',
-    promo_alignment: 'center',
-    info_markdown: '',
-  });
+  const [brandingSettings, setBrandingSettings] = useState<BrandingSettings>(INITIAL_BRANDING);
 
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
   const [currentThemeName, setCurrentThemeName] = useState('default');
+  // What the server last sent for everything handleSave writes, so the save
+  // bar can tell dirty from clean and Discard can put the draft back.
+  const [loadedBranding, setLoadedBranding] = useState<BrandingSettings>(INITIAL_BRANDING);
+  const [loadedTheme, setLoadedTheme] = useState<ThemeConfig>(theme);
+  const [loadedThemeName, setLoadedThemeName] = useState('default');
+  const [loadedPdfFontFamily, setLoadedPdfFontFamily] = useState<string | null>(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   // PDF body font selection (migration 121). Lives on this page so the
   // top-level Save button can persist it together with branding +
@@ -118,6 +127,7 @@ export const BrandingPage: React.FC = () => {
       const formatted = settingsService.formatBrandingSettings(settings);
       // Include logo_url from branding settings
       setBrandingSettings(prev => ({ ...prev, ...formatted }));
+      setLoadedBranding(prev => ({ ...prev, ...formatted }));
     }
   }, [settings]);
 
@@ -125,6 +135,7 @@ export const BrandingPage: React.FC = () => {
   useEffect(() => {
     if (businessProfileSnapshot?.profile) {
       setPdfFontFamily(businessProfileSnapshot.profile.pdfFontFamily || null);
+      setLoadedPdfFontFamily(businessProfileSnapshot.profile.pdfFontFamily || null);
     }
   }, [businessProfileSnapshot?.profile?.pdfFontFamily]);
 
@@ -136,11 +147,13 @@ export const BrandingPage: React.FC = () => {
       if (formatted && Object.keys(formatted).length > 0) {
         // Use the theme's logo URL as stored in the theme config
         setCurrentTheme(formatted);
+        setLoadedTheme(formatted);
         setTheme(formatted);
 
         // Only sync logo URL from theme if it exists there (logo is stored in branding settings)
         if (formatted.logoUrl) {
           setBrandingSettings(prev => ({ ...prev, logo_url: formatted.logoUrl }));
+          setLoadedBranding(prev => ({ ...prev, logo_url: formatted.logoUrl }));
         }
 
         // Try to identify which preset this matches. Compare only on the
@@ -154,6 +167,7 @@ export const BrandingPage: React.FC = () => {
           );
           if (matches) {
             setCurrentThemeName(key);
+            setLoadedThemeName(key);
             break;
           }
         }
@@ -177,6 +191,8 @@ export const BrandingPage: React.FC = () => {
   const handleForceColorModeChange = (value: 'dark' | 'light' | null) => {
     const next = { ...brandingSettings, force_color_mode: value };
     setBrandingSettings(next);
+    // Instant-save: not a pending change for the save bar.
+    setLoadedBranding(prev => ({ ...prev, force_color_mode: value }));
     brandingMutation.mutate(next);
   };
 
@@ -355,8 +371,27 @@ export const BrandingPage: React.FC = () => {
 
       // Update local state to reflect saved values
       setBrandingSettings(updatedBrandingSettings);
+      setLoadedBranding(updatedBrandingSettings);
+      setLoadedTheme(currentTheme);
+      setLoadedThemeName(currentThemeName);
+      setLoadedPdfFontFamily(pdfFontFamily);
     } catch (error) {
       console.error('Failed to save settings:', error);
+    }
+  };
+
+  // Everything handleSave writes. Upload handlers only change the URL in the
+  // draft, so a new favicon, logo or watermark counts as dirty until saved.
+  const isDirty = JSON.stringify([brandingSettings, currentTheme, currentThemeName, pdfFontFamily])
+    !== JSON.stringify([loadedBranding, loadedTheme, loadedThemeName, loadedPdfFontFamily]);
+
+  const handleDiscard = () => {
+    setBrandingSettings(loadedBranding);
+    setCurrentTheme(loadedTheme);
+    setCurrentThemeName(loadedThemeName);
+    setPdfFontFamily(loadedPdfFontFamily);
+    if (isPreviewMode) {
+      setTheme(loadedTheme);
     }
   };
 
@@ -398,13 +433,6 @@ export const BrandingPage: React.FC = () => {
                 onClick={handlePreview}
               >
                 {t('branding.preview')}
-              </Button>
-              <Button
-                variant="primary"
-                leftIcon={<Save className="w-4 h-4" />}
-                onClick={handleSave}
-              >
-                {t('branding.saveChanges')}
               </Button>
             </>
           )}
@@ -1199,6 +1227,13 @@ export const BrandingPage: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        <SettingsSaveBar
+          isDirty={isDirty}
+          isSaving={brandingMutation.isPending || themeMutation.isPending}
+          onSave={() => { void handleSave(); }}
+          onDiscard={handleDiscard}
+        />
       </div>
     </ErrorBoundary>
   );

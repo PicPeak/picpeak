@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Save, Send, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react';
+import { Send, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button, Card, CardContent, Input, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import {
   whatsappService,
   WHATSAPP_TEMPLATE_PARAMS,
@@ -23,6 +24,16 @@ import {
  * provides — useful to verify the credentials + template approval state
  * without waiting for a real event-published trigger.
  */
+interface WhatsAppDraft {
+  phoneNumberId: string;
+  wabaId: string;
+  accessToken: string;
+  templateName: string;
+  templateLanguage: string;
+  templateParams: WhatsAppTemplateParam[];
+  enabled: boolean;
+}
+
 export const WhatsAppTab: React.FC = () => {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -43,23 +54,44 @@ export const WhatsAppTab: React.FC = () => {
   const [showToken, setShowToken] = useState(false);
   const [testPhone, setTestPhone] = useState('');
 
+  // The form fields as one object, and what the server last sent in the same
+  // shape. Dirty is a comparison of the two — the masked token ('********')
+  // is seeded into both, so an untouched mask reads as clean.
+  const draft: WhatsAppDraft = {
+    phoneNumberId, wabaId, accessToken, templateName, templateLanguage, templateParams, enabled,
+  };
+  const [loaded, setLoaded] = useState<WhatsAppDraft | null>(null);
+  const isDirty = loaded !== null && JSON.stringify(draft) !== JSON.stringify(loaded);
+
+  const applyDraft = (d: WhatsAppDraft) => {
+    setPhoneNumberId(d.phoneNumberId);
+    setWabaId(d.wabaId);
+    setAccessToken(d.accessToken);
+    setTemplateName(d.templateName);
+    setTemplateLanguage(d.templateLanguage);
+    setTemplateParams(d.templateParams);
+    setEnabled(d.enabled);
+  };
+
   useEffect(() => {
     if (data) {
-      setPhoneNumberId(data.phone_number_id || '');
-      setWabaId(data.waba_id || '');
-      // Server returns '********' when a token is stored, '' when none is.
-      // Leave it visible-as-masked so the admin sees that a token exists.
-      setAccessToken(data.access_token || '');
-      setTemplateName(data.template_name || 'gallery_ready');
-      setTemplateLanguage(data.template_language || '');
-      // The server always returns a non-empty sanitized array (default 5-slot
-      // shape when the column is empty), so we can take it directly.
-      setTemplateParams(
-        data.template_params && data.template_params.length > 0
+      const next: WhatsAppDraft = {
+        phoneNumberId: data.phone_number_id || '',
+        wabaId: data.waba_id || '',
+        // Server returns '********' when a token is stored, '' when none is.
+        // Leave it visible-as-masked so the admin sees that a token exists.
+        accessToken: data.access_token || '',
+        templateName: data.template_name || 'gallery_ready',
+        templateLanguage: data.template_language || '',
+        // The server always returns a non-empty sanitized array (default 5-slot
+        // shape when the column is empty), so we can take it directly.
+        templateParams: data.template_params && data.template_params.length > 0
           ? data.template_params
           : [...WHATSAPP_TEMPLATE_PARAMS],
-      );
-      setEnabled(Boolean(data.enabled));
+        enabled: Boolean(data.enabled),
+      };
+      applyDraft(next);
+      setLoaded(next);
     }
   }, [data]);
 
@@ -94,6 +126,9 @@ export const WhatsAppTab: React.FC = () => {
     }),
     onSuccess: () => {
       toast.success(t('settings.whatsapp.savedToast', 'WhatsApp settings saved.'));
+      // The refetch re-seeds both (token comes back masked); until then the
+      // saved draft is the server state.
+      setLoaded(draft);
       qc.invalidateQueries({ queryKey: ['whatsapp-config'] });
     },
     onError: (e: any) => {
@@ -313,14 +348,6 @@ export const WhatsAppTab: React.FC = () => {
             />
             {t('settings.whatsapp.enabled', 'Send WhatsApp notifications')}
           </label>
-
-          <Button
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-            leftIcon={<Save className="w-4 h-4" />}
-          >
-            {save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}
-          </Button>
         </CardContent>
       </Card>
 
@@ -357,6 +384,13 @@ export const WhatsAppTab: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={save.isPending}
+        onSave={() => save.mutate()}
+        onDiscard={() => { if (loaded) applyDraft(loaded); }}
+      />
     </div>
   );
 };

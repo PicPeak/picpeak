@@ -34,7 +34,13 @@ const renderForm = (sshKey: string) => {
   render(<BackupConfiguration config={{ ...rsync, backup_rsync_ssh_key: sshKey }} onSave={onSave} isSaving={false} />);
   return onSave;
 };
-const save = () => userEvent.click(screen.getByRole('button', { name: /backup.configuration.saveSettings/ }));
+// The save bar's button is disabled while nothing changed, so flip a
+// checkbox that is not under test before saving.
+const touch = () => userEvent.click(screen.getByRole('checkbox', { name: /whatToBackup\.photos/ }));
+const save = async () => {
+  await touch();
+  await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+};
 const keyInput = () => screen.getByPlaceholderText('backup.configuration.fields.rsyncSshKeyPlaceholder');
 
 describe('BackupConfiguration rsync SSH key', () => {

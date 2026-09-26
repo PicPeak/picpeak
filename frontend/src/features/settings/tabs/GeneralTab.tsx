@@ -1,7 +1,8 @@
 import React from 'react';
-import { Save, Globe, Mail, User } from 'lucide-react';
-import { Button, Card, Input, Loading } from '../../../components/common';
+import { Globe, Mail, User } from 'lucide-react';
+import { Card, Input, Loading } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { GeneralSettings } from '../hooks/useSettingsState';
 import { MAX_FILES_PER_UPLOAD_LIMIT } from '../hooks/useSettingsState';
 import { SUPPORTED_LANGUAGES } from "../../../components/common/LanguageSelector.tsx";
@@ -15,10 +16,14 @@ interface GeneralTabProps {
     mutate: () => void;
     isPending: boolean;
   };
+  isDirty: boolean;
+  onDiscard: () => void;
+  accountDirty: boolean;
+  onDiscardAccount: () => void;
   accountForm: { username: string; email: string };
   accountErrors: Record<string, string>;
   handleAccountChange: (field: 'username' | 'email') => (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handleAccountSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  handleAccountSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
   updateAdminProfileMutation: { isPending: boolean };
   adminProfileLoading: boolean;
 }
@@ -27,6 +32,10 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
   generalSettings,
   setGeneralSettings,
   saveGeneralMutation,
+  isDirty,
+  onDiscard,
+  accountDirty,
+  onDiscardAccount,
   accountForm,
   accountErrors,
   handleAccountChange,
@@ -103,14 +112,6 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             </div>
 
             <div className="pt-2">
-              <Button
-                type="submit"
-                variant="primary"
-                leftIcon={<Save className="w-5 h-5" />}
-                isLoading={updateAdminProfileMutation.isPending}
-              >
-                {t('settings.general.accountSaveButton')}
-              </Button>
             </div>
           </form>
         )}
@@ -390,19 +391,31 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             </p>
           </div>
         </div>
-
-        <div className="mt-6">
-          <Button
-            variant="primary"
-            onClick={() => saveGeneralMutation.mutate()}
-            isLoading={saveGeneralMutation.isPending}
-            disabled={!!siteUrlError}
-            leftIcon={<Save className="w-5 h-5" />}
-          >
-            {t('settings.general.saveGeneralSettings')}
-          </Button>
-        </div>
       </Card>
+
+      {/* One bar for both forms on this tab: the admin account (its own
+
+          mutation and validation) and the general settings. */}
+
+      <SettingsSaveBar
+
+        isDirty={isDirty || accountDirty}
+
+        isSaving={saveGeneralMutation.isPending || updateAdminProfileMutation.isPending}
+
+        canSave={!siteUrlError}
+
+        onSave={() => {
+
+          if (accountDirty) handleAccountSubmit();
+
+          if (isDirty) saveGeneralMutation.mutate();
+
+        }}
+
+        onDiscard={() => { onDiscard(); onDiscardAccount(); }}
+
+      />
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Outlet, Navigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../contexts';
 import { FeatureFlagsProvider } from '../../contexts/FeatureFlagsContext';
+import { UnsavedChangesProvider } from '../../contexts/UnsavedChangesContext';
 import { useSessionTimeout } from '../../hooks/useSessionTimeout';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
@@ -52,6 +53,9 @@ export const AdminLayout: React.FC = () => {
   // /api/admin/feature-flags has a session cookie attached.
   return (
     <FeatureFlagsProvider>
+      {/* Settings forms register their dirty state here; the sidebar and
+          header ask before navigating away from unsaved edits. */}
+      <UnsavedChangesProvider>
       <AdminLayoutInner
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
@@ -59,6 +63,7 @@ export const AdminLayout: React.FC = () => {
         setSidebarCollapsed={setSidebarCollapsed}
         mustChangePassword={mustChangePassword}
       />
+      </UnsavedChangesProvider>
     </FeatureFlagsProvider>
   );
 };

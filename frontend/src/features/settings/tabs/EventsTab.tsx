@@ -1,7 +1,8 @@
 import React from 'react';
-import { Save, AlertCircle } from 'lucide-react';
-import { Button, Card } from '../../../components/common';
+import { AlertCircle } from 'lucide-react';
+import { Card } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { EventSettings } from '../hooks/useSettingsState';
 import { COLOR_LABEL_SWATCHES, COLOR_LABELS } from '../../../services/feedback.service';
 import { UploaderNameSettings } from '../../../components/admin/UploaderNameSettings';
@@ -13,6 +14,8 @@ interface EventsTabProps {
     mutate: () => void;
     isPending: boolean;
   };
+  isDirty: boolean;
+  onDiscard: () => void;
 }
 
 /**
@@ -38,6 +41,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
   eventSettings,
   setEventSettings,
   saveEventSettingsMutation,
+  isDirty,
+  onDiscard,
 }) => {
   const { t } = useTranslation();
 
@@ -355,17 +360,6 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             </label>
           </div>
         </div>
-
-        <div className="mt-6">
-          <Button
-            variant="primary"
-            onClick={() => saveEventSettingsMutation.mutate()}
-            isLoading={saveEventSettingsMutation.isPending}
-            leftIcon={<Save className="w-5 h-5" />}
-          >
-            {t('settings.events.saveSettings', 'Save Event Settings')}
-          </Button>
-        </div>
       </Card>
 
       <Card padding="md">
@@ -379,6 +373,18 @@ export const EventsTab: React.FC<EventsTabProps> = ({
           </div>
         </div>
       </Card>
+
+      <SettingsSaveBar
+
+        isDirty={isDirty}
+
+        isSaving={saveEventSettingsMutation.isPending}
+
+        onSave={() => saveEventSettingsMutation.mutate()}
+
+        onDiscard={onDiscard}
+
+      />
     </div>
   );
 };

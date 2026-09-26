@@ -13,6 +13,7 @@ const NOTIFICATION_ICONS: Record<string, React.ComponentType<{ className?: strin
   Tag, ToggleRight, Trash2, User, UserCog, Webhook,
 };
 import { useTranslation } from 'react-i18next';
+import { useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -33,6 +34,7 @@ interface AdminHeaderProps {
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
+  const { confirmLeave } = useLeaveGuard();
   const { user, logout } = useAdminAuth();
   const { isDark, toggle: toggleDarkMode, forcedMode } = useAdminDarkMode();
   const { t, i18n } = useTranslation();
@@ -454,7 +456,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                   <button
                     onClick={() => {
                       closeUserMenu();
-                      navigate('/admin/settings');
+                      void confirmLeave().then((ok) => { if (ok) navigate('/admin/settings'); });
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700 flex items-center gap-3"
                   >
