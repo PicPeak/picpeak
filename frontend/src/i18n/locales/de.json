@@ -3342,6 +3342,13 @@
       "running": "Urheber werden gelesen...",
       "noneToRead": "Keine Fotos mehr zu lesen",
       "button": "Urheber aus EXIF lesen"
+    },
+    "saveBar": {
+      "unsaved": "Du hast ungespeicherte Änderungen",
+      "leaveTitle": "Ungespeicherte Änderungen verwerfen?",
+      "leaveMessage": "Auf dieser Seite gibt es ungespeicherte Änderungen. Wenn du jetzt gehst, gehen sie verloren.",
+      "leaveConfirm": "Verwerfen und verlassen",
+      "leaveCancel": "Hier bleiben"
     }
   },
   "branding": {

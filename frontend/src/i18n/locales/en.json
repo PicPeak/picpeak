@@ -2815,6 +2815,13 @@
       "running": "Reading credits...",
       "noneToRead": "No photos left to read",
       "button": "Read Credits from EXIF"
+    },
+    "saveBar": {
+      "unsaved": "You have unsaved changes",
+      "leaveTitle": "Discard unsaved changes?",
+      "leaveMessage": "You have unsaved changes on this page. Leaving now discards them.",
+      "leaveConfirm": "Discard and leave",
+      "leaveCancel": "Stay"
     }
   },
   "analytics": {
