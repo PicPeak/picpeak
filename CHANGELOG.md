@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.7](https://github.com/PicPeak/picpeak/compare/v3.133.6...v3.133.7) (2026-09-27)
+
+
+### Bug Fixes
+
+* **events:** move the objects through the storage backend when an event is renamed ([#1698](https://github.com/PicPeak/picpeak/issues/1698)) ([e1f6f7e](https://github.com/PicPeak/picpeak/commit/e1f6f7e1055d1d10686ea6acb056e4ddeefadb93))
+* **gallery:** fetch the hero ahead of Mosaic's tiles, and lazy-load Mosaic ([#1699](https://github.com/PicPeak/picpeak/issues/1699)) ([ae584e9](https://github.com/PicPeak/picpeak/commit/ae584e9c6bea05a1e20e036f29c8c7d8ce64b839))
+
 ## [3.133.6](https://github.com/PicPeak/picpeak/compare/v3.133.5...v3.133.6) (2026-09-25)
 
 
