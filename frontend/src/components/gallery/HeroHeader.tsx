@@ -47,10 +47,20 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const { theme } = useTheme();
-  const [heroPhoto, setHeroPhoto] = useState<Photo | null>(null);
-  const [hasInitialized, setHasInitialized] = useState(false);
-
   const gallerySettings = theme.gallerySettings || {};
+
+  // Selected on the first render, not in an effect (#1695). The hero used to
+  // start as null and be chosen one commit later, by which time a layout that
+  // mounts every tile at once had already put its thumbnails into the fetch
+  // queue ahead of it — on a 266-photo Mosaic the hero was the last image to
+  // arrive, ~35s in. The effects below still handle later prop changes.
+  const [heroPhoto, setHeroPhoto] = useState<Photo | null>(() => {
+    if (heroPhotoOverride) return heroPhotoOverride;
+    const heroId = gallerySettings.heroImageId;
+    const adminSelected = heroId ? photos.find(p => p.id === heroId) : undefined;
+    return adminSelected ?? photos[0] ?? null;
+  });
+  const [hasInitialized, setHasInitialized] = useState(heroPhoto !== null);
   const overlayOpacity = gallerySettings.heroOverlayOpacity || 0.3;
 
   // Helper function to get logo size classes
@@ -138,6 +148,10 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           style={{ objectPosition: heroImageAnchor }}
           isGallery={true}
           slug={slug}
+          // Ahead of the tiles in the shared fetch queue: this is the
+          // first thing the guest sees, and the queue is what the tiles
+          // wait in (#1695).
+          queuePriority="high"
         />
 
         {/* Overlay */}
