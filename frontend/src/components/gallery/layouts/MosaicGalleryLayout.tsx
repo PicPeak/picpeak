@@ -77,6 +77,20 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
           breakInside: 'avoid',
           aspectRatio: aspectRatio.toString()
         }}
+        /*
+         * Lazy, with Grid's bands (#1695). `loading: 'lazy'` on the <img>
+         * below defers nothing here: AuthenticatedImage fetches in an effect
+         * the moment it mounts, so without `lazy` every tile of a 266-photo
+         * gallery entered the fetch queue on first render, ahead of the hero.
+         *
+         * Mosaic can release like Grid: the explicit `aspectRatio` above holds
+         * the tile's box whether or not the image is mounted, so unmounting a
+         * far-off tile shifts nothing. Same values as Grid, for the same
+         * reasons — see the comments there.
+         */
+        lazy
+        inViewRootMargin="100% 0px"
+        releaseRootMargin="300% 0px"
         imageProps={{
           src: photo.thumbnail_url || photo.url,
           alt: photo.filename,
