@@ -18,6 +18,8 @@ import {
   StoryScrollToTop
 } from './story';
 import { PhotoLightbox } from '../PhotoLightbox';
+import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
+import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
 import { DownloadQuotaNotice } from '../DownloadQuotaNotice';
 import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
@@ -25,6 +27,9 @@ import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/d
 import './GalleryStoryLayout.css';
 
 const EMPTY_SELECTION: Set<number> = new Set();
+
+type LikeIdentity = { guest_name?: string; guest_email?: string };
+type PendingLikes = { ids: number[]; unlike: boolean; bulk: boolean };
 
 interface PhotosByCategory {
   [categoryName: string]: Photo[];
@@ -158,25 +163,84 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const totalPhotos = photos.length || eventPhotoCount || 0;
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
-  const handleToggleFavorite = useCallback(async (photoId: number) => {
-    const newFavorites = new Set(favorites);
-    if (newFavorites.has(photoId)) newFavorites.delete(photoId);
-    else newFavorites.add(photoId);
-    setFavorites(newFavorites);
+  // Likes need an identity the server accepts (issue 1716, Codex review):
+  // guest identity mode asks the context, which prompts on first use; simple
+  // mode with require_name_email asks once through the modal and remembers
+  // for the session, the way the Premium layout does. Shared by the card
+  // heart and Favourite selected.
+  const guestIdentity = useGuestIdentityOptional();
+  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
+  const [showIdentityModal, setShowIdentityModal] = useState(false);
+  const [pendingLikes, setPendingLikes] = useState<PendingLikes | null>(null);
 
-    // The server /feedback like endpoint is a toggle (#590) — fire on
-    // every click, not only when adding. The previous code skipped the
-    // submit on unlike, so the UI removed the heart but the server
-    // still had the like row.
-    try {
-      await feedbackService.submitFeedback(slug, String(photoId), {
-        feedback_type: 'like',
+  // The server /feedback like endpoint is a toggle (#590), so every id in a
+  // batch changes in the same direction and only ids that need to change are
+  // sent. A single card flips optimistically and flips back on failure; a
+  // bulk batch applies what succeeded and reports the rest.
+  const runLikeBatch = useCallback(async (ids: number[], unlike: boolean, identity: LikeIdentity, bulk: boolean) => {
+    const apply = (target: number[], remove: boolean) => setFavorites((previous) => {
+      const next = new Set(previous);
+      target.forEach((id) => (remove ? next.delete(id) : next.add(id)));
+      return next;
+    });
+    if (!bulk) apply(ids, unlike);
+    const done: number[] = [];
+    for (let i = 0; i < ids.length; i += 5) {
+      const batch = ids.slice(i, i + 5);
+      const results = await Promise.allSettled(
+        batch.map((id) => feedbackService.submitFeedback(slug, String(id), { feedback_type: 'like', ...identity }))
+      );
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') done.push(batch[index]);
       });
-      onFeedbackChange?.();
-    } catch (err) {
-      console.warn('Like submit failed', err);
     }
-  }, [favorites, slug, onFeedbackChange]);
+    const failed = ids.filter((id) => !done.includes(id));
+    if (bulk) apply(done, unlike);
+    else if (failed.length > 0) apply(failed, !unlike);
+    if (done.length > 0) {
+      if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
+      onFeedbackChange?.();
+    }
+    if (failed.length > 0) {
+      if (bulk) toast.error(t('gallery.favoriteSelectedError'));
+      else console.warn('Like submit failed');
+    }
+  }, [slug, t, onFeedbackChange]);
+
+  const likeWithIdentity = useCallback(async (ids: number[], unlike: boolean, bulk: boolean) => {
+    if (guestIdentity?.identityMode === 'guest') {
+      try {
+        await guestIdentity.ensureIdentity();
+      } catch {
+        return;
+      }
+      await runLikeBatch(ids, unlike, {}, bulk);
+      return;
+    }
+    if (feedbackOptions?.requireNameEmail && !savedIdentity) {
+      setPendingLikes({ ids, unlike, bulk });
+      setShowIdentityModal(true);
+      return;
+    }
+    await runLikeBatch(
+      ids,
+      unlike,
+      savedIdentity ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email } : {},
+      bulk
+    );
+  }, [guestIdentity, feedbackOptions, savedIdentity, runLikeBatch]);
+
+  const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
+    setSavedIdentity({ name, email });
+    setShowIdentityModal(false);
+    const pending = pendingLikes;
+    setPendingLikes(null);
+    if (pending) await runLikeBatch(pending.ids, pending.unlike, { guest_name: name, guest_email: email }, pending.bulk);
+  }, [pendingLikes, runLikeBatch]);
+
+  const handleToggleFavorite = useCallback((photoId: number) => {
+    void likeWithIdentity([photoId], favorites.has(photoId), false);
+  }, [favorites, likeWithIdentity]);
 
   const handleOpenLightbox = useCallback((photo: Photo) => {
     const index = photos.findIndex(p => p.id === photo.id);
@@ -233,30 +297,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     const ids = selectionUnlikes ? selectedPhotoList.map((photo) => photo.id) : selectionToLike;
     if (ids.length === 0 || favoritingSelection) return;
     setFavoritingSelection(true);
-    // The server like endpoint is a per-photo toggle (#590): only photos that
-    // need to change are sent, in small batches.
-    const done: number[] = [];
-    for (let i = 0; i < ids.length; i += 5) {
-      const batch = ids.slice(i, i + 5);
-      const results = await Promise.allSettled(
-        batch.map((id) => feedbackService.submitFeedback(slug, String(id), { feedback_type: 'like' }))
-      );
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled') done.push(batch[index]);
-      });
+    try {
+      await likeWithIdentity(ids, selectionUnlikes, true);
+    } finally {
+      setFavoritingSelection(false);
     }
-    setFavorites((previous) => {
-      const next = new Set(previous);
-      done.forEach((id) => (selectionUnlikes ? next.delete(id) : next.add(id)));
-      return next;
-    });
-    setFavoritingSelection(false);
-    if (done.length > 0) {
-      toast.success(t(selectionUnlikes ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
-      onFeedbackChange?.();
-    }
-    if (done.length < ids.length) toast.error(t('gallery.favoriteSelectedError'));
-  }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, slug, t, onFeedbackChange]);
+  }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, likeWithIdentity]);
 
   const handleDownloadAll = useCallback(async () => {
     // Whole-gallery path when available: posting ids would hit the server's
@@ -546,6 +592,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           onSelectPerson={onSelectPerson}
         />
       )}
+
+      <FeedbackIdentityModal
+        isOpen={showIdentityModal}
+        onClose={() => { setShowIdentityModal(false); setPendingLikes(null); }}
+        onSubmit={handleIdentitySubmit}
+        feedbackType="like"
+      />
     </div>
   );
 };

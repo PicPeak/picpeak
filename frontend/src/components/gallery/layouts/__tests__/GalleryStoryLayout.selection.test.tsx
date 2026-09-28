@@ -19,7 +19,9 @@ const mocks = vi.hoisted(() => ({
   submitFeedback: vi.fn().mockResolvedValue({}),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  ensureIdentity: vi.fn().mockResolvedValue({}),
 }));
+const identity = vi.hoisted(() => ({ mode: 'simple' as 'simple' | 'guest' }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -54,6 +56,14 @@ vi.mock('../../../common', () => ({
   PoweredBy: () => null,
 }));
 vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
+vi.mock('../../FeedbackIdentityModal', () => ({
+  FeedbackIdentityModal: ({ isOpen, onSubmit }: { isOpen: boolean; onSubmit: (n: string, e: string) => void }) =>
+    isOpen ? <button data-testid="identity-modal" onClick={() => onSubmit('Ann', 'ann@example.com')}>submit</button> : null,
+}));
+vi.mock('../../../../contexts/GuestIdentityContext', () => ({
+  useGuestIdentityOptional: () =>
+    identity.mode === 'guest' ? { identityMode: 'guest', ensureIdentity: mocks.ensureIdentity } : null,
+}));
 vi.mock('../../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
 vi.mock('../../../../contexts/DownloadQuotaContext', () => ({
   useDownloadQuota: () => ({ allows: () => quota.allows, remaining: quota.remaining }),
@@ -122,9 +132,11 @@ const cardLink = (container: HTMLElement, id: number) =>
 beforeEach(() => {
   quota.allows = true;
   quota.remaining = 10;
+  identity.mode = 'simple';
   mocks.submitFeedback.mockClear();
   mocks.toastSuccess.mockClear();
   mocks.toastError.mockClear();
+  mocks.ensureIdentity.mockClear().mockResolvedValue({});
 });
 
 describe('GalleryStoryLayout selection mode (issue 1716)', () => {
@@ -339,6 +351,58 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith('gallery.favoriteSelectedError'));
     expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded');
     expect(h.onFeedbackChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for name and email once when the event requires them, then sends them with every like', async () => {
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        isSelectionMode
+        selectedPhotos={new Set([2, 3])}
+        feedbackOptions={{ allowLikes: true, requireNameEmail: true }}
+      />
+    );
+    fireEvent.click(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected'));
+    expect(screen.getByTestId('identity-modal')).toBeInTheDocument();
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('identity-modal'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded'));
+    expect(mocks.submitFeedback).toHaveBeenCalledTimes(2);
+    expect(mocks.submitFeedback).toHaveBeenCalledWith('x', '2', {
+      feedback_type: 'like', guest_name: 'Ann', guest_email: 'ann@example.com',
+    });
+    expect(screen.queryByTestId('identity-modal')).toBeNull();
+
+    // Remembered for the session: the card heart no longer asks.
+    const heart = cardLink(container, 1).closest('.story-photo-card')?.querySelector('.story-photo-card-btn') as HTMLElement;
+    fireEvent.click(heart);
+    expect(screen.queryByTestId('identity-modal')).toBeNull();
+    await waitFor(() => expect(mocks.submitFeedback).toHaveBeenCalledTimes(3));
+    expect(mocks.submitFeedback).toHaveBeenLastCalledWith('x', '1', {
+      feedback_type: 'like', guest_name: 'Ann', guest_email: 'ann@example.com',
+    });
+  });
+
+  it('in guest identity mode resolves the guest first and sends nothing when that is declined', async () => {
+    identity.mode = 'guest';
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout {...baseProps} {...h} isSelectionMode selectedPhotos={new Set([2, 3])} />
+    );
+    fireEvent.click(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded'));
+    expect(mocks.ensureIdentity).toHaveBeenCalledTimes(1);
+    expect(mocks.submitFeedback).toHaveBeenCalledTimes(2);
+
+    mocks.submitFeedback.mockClear();
+    mocks.ensureIdentity.mockRejectedValueOnce(new Error('declined'));
+    const heart = cardLink(container, 1).closest('.story-photo-card')?.querySelector('.story-photo-card-btn') as HTMLElement;
+    fireEvent.click(heart);
+    await waitFor(() => expect(mocks.ensureIdentity).toHaveBeenCalledTimes(2));
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
   });
 
   it('hides favourite selected when feedback is disabled', () => {
