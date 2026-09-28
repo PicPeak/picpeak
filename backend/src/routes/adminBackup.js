@@ -13,6 +13,7 @@ const path = require('path');
 const crypto = require('crypto');
 const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
+const { getStoragePath } = require('../config/storage');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -462,6 +463,178 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
     res.json(run);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to get backup run details');
+  }
+});
+
+// Delete one backup run (issue 1711). The History table's trash action called
+// this route while only GET /runs/:id existed, so every click was a 404.
+//
+// What "the stored artifact" is depends on the destination, and only the
+// metadata recorded on the run at backup time decides where to look, never
+// anything in the request:
+//   s3     every object under the run's own prefix, derived from the recorded
+//          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>), and
+//          only when that prefix sits under the configured bucket and base
+//          prefix.
+//   local  the manifest file, when it resolves inside the manifest directory.
+//          The mirrored tree under backup_destination_path is shared by every
+//          incremental run, so it is left alone: removing this run's files
+//          would take the only copy of anything a later run skipped as
+//          unchanged.
+//   rsync  the local manifest as above; nothing on the remote mirror.
+// The record goes only after the artifact step succeeded or found nothing to
+// do, so the UI never reports a deletion that left storage behind.
+const backupDeleteError = (res, status, code, message) => res.status(status).json({ error: message, code });
+
+class ArtifactOutOfScopeError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'ARTIFACT_OUT_OF_SCOPE';
+  }
+}
+
+const insideRoot = (candidate, root) => {
+  const resolvedRoot = path.resolve(root);
+  return candidate === resolvedRoot || candidate.startsWith(resolvedRoot + path.sep);
+};
+
+async function deleteLocalBackupManifest(config, manifestPath) {
+  const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
+  const manifestDir = config.backup_manifest_path || path.join(destinationRoot, 'manifests');
+  const resolved = path.resolve(manifestPath);
+  if (!insideRoot(resolved, manifestDir)) {
+    throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
+  }
+  try {
+    await fs.unlink(resolved);
+    return { kind: 'manifest', status: 'deleted', removed: 1 };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { kind: 'manifest', status: 'missing', removed: 0 };
+    throw error;
+  }
+}
+
+async function deleteS3BackupRun(config, manifestPath) {
+  const match = manifestPath.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  if (!match) throw new ArtifactOutOfScopeError('The recorded manifest location is not a usable S3 reference');
+  const [, bucket, key] = match;
+  if (config.backup_destination_type !== 's3' || !config.backup_s3_bucket || bucket !== config.backup_s3_bucket) {
+    throw new ArtifactOutOfScopeError('This backup is stored in a bucket that is not the configured backup destination');
+  }
+  const basePrefix = (config.backup_s3_prefix || 'backups').replace(/^\/+|\/+$/g, '');
+  const manifestsAt = key.lastIndexOf('/manifests/');
+  const runPrefix = manifestsAt > 0 ? key.slice(0, manifestsAt) : '';
+  const runSegment = runPrefix.split('/').pop() || '';
+  if (!runPrefix.startsWith(`${basePrefix}/`) || !/^backup-\d+$/.test(runSegment) || runPrefix.includes('..')) {
+    throw new ArtifactOutOfScopeError('The recorded manifest location is outside the configured backup prefix');
+  }
+
+  const s3Adapter = new S3StorageAdapter({
+    endpoint: config.backup_s3_endpoint,
+    bucket: config.backup_s3_bucket,
+    accessKeyId: config.backup_s3_access_key,
+    secretAccessKey: config.backup_s3_secret_key,
+    region: config.backup_s3_region || 'us-east-1',
+    forcePathStyle: config.backup_s3_force_path_style || false,
+    sslEnabled: backupS3Ssl(config),
+    ...backupS3Access(config)
+  });
+
+  const listPrefix = `${runPrefix}/`;
+  const keys = [];
+  let continuationToken;
+  do {
+    const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
+    for (const object of page.Contents || page.objects || []) {
+      const objectKey = object.Key || object.key;
+      // The listing is prefix-scoped already; refuse anything that is not.
+      if (objectKey && objectKey.startsWith(listPrefix)) keys.push(objectKey);
+    }
+    continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  if (keys.length === 0) return { kind: 's3-prefix', status: 'missing', removed: 0 };
+  const result = await s3Adapter.deleteMany(keys);
+  const removed = result.Deleted ? result.Deleted.length : 0;
+  const errors = result.Errors || [];
+  if (errors.length > 0) {
+    const error = new Error(`${errors.length} of ${keys.length} objects could not be deleted`);
+    error.code = 'ARTIFACT_DELETE_FAILED';
+    error.removed = removed;
+    throw error;
+  }
+  return { kind: 's3-prefix', status: 'deleted', removed };
+}
+
+router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async (req, res) => {
+  const rawId = String(req.params.id || '').trim();
+  const id = /^\d+$/.test(rawId) ? Number.parseInt(rawId, 10) : NaN;
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    return backupDeleteError(res, 404, 'BACKUP_NOT_FOUND', 'Backup run not found');
+  }
+
+  const audit = async (activityType, metadata) => {
+    try {
+      await db('activity_logs').insert({
+        activity_type: activityType,
+        actor_type: 'admin',
+        actor_id: req.admin?.id ?? null,
+        actor_name: req.admin?.username ?? null,
+        metadata: JSON.stringify(metadata)
+      });
+    } catch (error) {
+      logger.warn('backup run delete: audit entry failed', { error: error.message });
+    }
+  };
+
+  try {
+    const run = await db('backup_runs').where('id', id).first();
+    if (!run) {
+      return backupDeleteError(res, 404, 'BACKUP_NOT_FOUND', 'Backup run not found');
+    }
+    if (run.status === 'running') {
+      return backupDeleteError(res, 409, 'BACKUP_RUNNING', 'A running backup cannot be deleted');
+    }
+
+    const config = await getBackupConfig();
+    const manifestPath = typeof run.manifest_path === 'string' ? run.manifest_path.trim() : '';
+    const destination = manifestPath.startsWith('s3://')
+      ? 's3'
+      : (config.backup_destination_type || 'local');
+
+    let artifact = { kind: 'none', status: 'none', removed: 0 };
+    try {
+      if (manifestPath.startsWith('s3://')) {
+        artifact = await deleteS3BackupRun(config, manifestPath);
+      } else if (manifestPath) {
+        artifact = await deleteLocalBackupManifest(config, manifestPath);
+      }
+    } catch (error) {
+      const code = error.code === 'ARTIFACT_OUT_OF_SCOPE' ? 'ARTIFACT_OUT_OF_SCOPE' : 'ARTIFACT_DELETE_FAILED';
+      logger.error('backup run delete: artifact step failed', {
+        backup_run_id: id, destination, code, error: error.message
+      });
+      await audit('backup_run_delete_failed', {
+        backup_run_id: id, destination, code, removed: error.removed || 0
+      });
+      if (code === 'ARTIFACT_OUT_OF_SCOPE') {
+        return backupDeleteError(res, 409, code, `${error.message}; the record was kept`);
+      }
+      return backupDeleteError(res, 500, code, 'The stored backup files could not be removed; the record was kept');
+    }
+
+    await db.transaction(async (trx) => {
+      await trx('backup_manifest').where('backup_run_id', id).del();
+      await trx('backup_runs').where('parent_backup_id', id).update({ parent_backup_id: null });
+      await trx('backup_runs').where('id', id).del();
+    });
+
+    await audit('backup_run_deleted', {
+      backup_run_id: id, destination, artifact: artifact.status, removed: artifact.removed
+    });
+    res.json({ success: true, id, destination, artifact });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to delete backup run');
   }
 });
 

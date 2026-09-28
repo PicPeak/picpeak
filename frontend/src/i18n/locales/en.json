@@ -3386,6 +3386,8 @@
     "close": "Close",
     "noNotificationsMessage": "No notifications",
     "notificationMessages": {
+      "backupRunDeleted": "Backup run {{backup_run_id}} was deleted ({{destination}}, files: {{artifact}})",
+      "backupRunDeleteFailed": "Deleting backup run {{backup_run_id}} failed ({{code}})",
       "eventCreated": "New event \"{{eventName}}\" was created",
       "eventArchived": "Event \"{{eventName}}\" was archived",
       "eventUpdated": "Event \"{{eventName}}\" was updated",
@@ -4776,6 +4778,17 @@
         "showing": "Showing {{from}}-{{to}} of {{total}} backups",
         "previous": "Previous",
         "next": "Next"
+      },
+      "deleteConfirm": "Delete the backup from {{date}}? Its record and its stored backup files are removed. This cannot be undone.",
+      "deleteSuccess": "Backup deleted",
+      "deleteSuccessArtifactMissing": "Backup record deleted; its stored files were already gone",
+      "deleteError": "Failed to delete backup",
+      "deleteErrors": {
+        "BACKUP_NOT_FOUND": "This backup no longer exists",
+        "BACKUP_RUNNING": "A running backup cannot be deleted",
+        "ARTIFACT_OUT_OF_SCOPE": "This backup's files are outside the configured backup destination, so nothing was deleted",
+        "ARTIFACT_DELETE_FAILED": "The stored backup files could not be removed, so the record was kept",
+        "FORBIDDEN": "You do not have permission to delete backups"
       }
     },
     "restore": {

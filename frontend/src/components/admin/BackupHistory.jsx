@@ -40,6 +40,10 @@ const statusIcons = {
   partial: { icon: AlertCircle, color: 'text-amber-500' }
 };
 
+// Codes DELETE /admin/backup/runs/:id answers with (issue 1711); each has a
+// translated message under backup.history.deleteErrors.
+const DELETE_ERROR_CODES = ['BACKUP_NOT_FOUND', 'BACKUP_RUNNING', 'ARTIFACT_OUT_OF_SCOPE', 'ARTIFACT_DELETE_FAILED', 'FORBIDDEN'];
+
 const formatBytes = (bytes) => {
   if (!bytes) return '0 B';
   const k = 1024;
@@ -76,15 +80,28 @@ export const BackupHistory = () => {
     }
   });
 
-  // Delete backup mutation
+  // Delete backup mutation (issue 1711). The route removes the run's own
+  // stored artifact before the record, and answers with a stable code when
+  // it could not; the history query is invalidated only on success, which
+  // useMutationWithToast already guarantees.
   const deleteMutation = useMutationWithToast({
     mutationFn: async (backupId) => {
       const response = await api.delete(`/admin/backup/runs/${backupId}`);
       return response.data;
     },
-    successMessage: 'Backup deleted successfully',
+    successMessage: (data) => (
+      data?.artifact?.status === 'missing'
+        ? t('backup.history.deleteSuccessArtifactMissing')
+        : t('backup.history.deleteSuccess')
+    ),
     invalidateKeys: [['backup-history']],
-    errorMessage: 'Failed to delete backup'
+    errorMessage: (error) => {
+      const code = error?.response?.data?.code;
+      if (code && DELETE_ERROR_CODES.includes(code)) {
+        return t(`backup.history.deleteErrors.${code}`);
+      }
+      return error?.response?.data?.error || t('backup.history.deleteError');
+    }
   });
 
   const toggleRowExpansion = (id) => {
@@ -98,7 +115,7 @@ export const BackupHistory = () => {
   };
 
   const handleDelete = (backup) => {
-    if (window.confirm(`Are you sure you want to delete this backup from ${format(new Date(backup.created_at))}?`)) {
+    if (window.confirm(t('backup.history.deleteConfirm', { date: format(new Date(backup.created_at)) }))) {
       deleteMutation.mutate(backup.id);
     }
   };
@@ -255,7 +272,8 @@ export const BackupHistory = () => {
                               onClick={() => handleDelete(backup)}
                               className="text-neutral-400 hover:text-red-600"
                               title={t('backup.actions.delete')}
-                              disabled={deleteMutation.isLoading}
+                              disabled={deleteMutation.isPending}
+                              aria-label={t('backup.actions.delete')}
                             >
                               <Trash2 size={20} />
                             </button>
