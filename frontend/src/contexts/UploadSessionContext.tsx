@@ -90,6 +90,11 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   // in the request). Neither goes through the worker, so the processing
   // aggregate never sees them; the outcome adds them back.
   const syncSucceededRef = useRef(0);
+  // The transfer loop has returned: every POST has its response. Until then
+  // the aggregate only covers the upload ids received so far, and a fast
+  // worker can finish those while a later batch is still in flight — the
+  // completion effect must not take that for the whole session.
+  const [transferSettled, setTransferSettled] = useState(false);
 
   const isUploading = session !== null && session.phase.kind !== 'done';
 
@@ -161,6 +166,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
 
     transferFailuresRef.current = [];
     syncSucceededRef.current = 0;
+    setTransferSettled(false);
     setUploadIds([]);
     setSession({
       eventId,
@@ -286,6 +292,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
         // files failed.
         transferFailuresRef.current = collected;
         syncSucceededRef.current = largeSucceeded + totalReplaced;
+        setTransferSettled(true);
         patch({ failures: collected });
         if (collected.length > 0) {
           toast.warning(
@@ -330,6 +337,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   // this upload, close the session and surface the result.
   useEffect(() => {
     if (!session || session.phase.kind === 'done') return;
+    if (!transferSettled) return;
     if (uploadIds.length === 0) return;
     if (!processingAggregate.isComplete) return;
 
@@ -374,7 +382,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     // .failed — the rest of the deps either don't move during this
     // effect's lifetime or are stable callbacks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processingAggregate.isComplete, processingAggregate.failed, session?.phase.kind, uploadIds.length]);
+  }, [processingAggregate.isComplete, processingAggregate.failed, session?.phase.kind, uploadIds.length, transferSettled]);
 
   // Live processing counters for the bar while the worker runs.
   useEffect(() => {
