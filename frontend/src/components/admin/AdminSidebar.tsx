@@ -185,7 +185,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   // A settings form with unsaved edits gets to say no before the sidebar
   // navigates away from it (UnsavedChangesProvider).
   const guardedClick = (e: React.MouseEvent, href: string, replace: boolean | undefined, after: () => void) => {
-    if (!isAnyDirty) { after(); return; }
+    // A modified click (Cmd/Ctrl, Shift, middle button) opens another tab
+    // and leaves this form where it is, so there is nothing to guard.
+    const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+    if (!isAnyDirty || modified) { after(); return; }
     e.preventDefault();
     void confirmLeave().then((ok) => { if (ok) { after(); navigate(href, { replace: !!replace }); } });
   };

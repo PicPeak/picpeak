@@ -58,21 +58,24 @@ export const UpdateNotificationSettings: React.FC<UpdateNotificationSettingsProp
 
   const [localEnabled, setLocalEnabled] = React.useState<boolean>(false);
   const [localRecipients, setLocalRecipients] = React.useState<string>('');
-  // Dirty is a comparison against the server copy, so an edit back to the
-  // stored value reads clean and a save (setQueryData) clears it by itself.
-  const isDirty = !!settings && (localEnabled !== settings.enabled || localRecipients !== (settings.recipients || ''));
+  // What the form was last seeded from. Dirty is the draft against THAT,
+  // not against whatever the query holds now: a refetch that brings a
+  // change made elsewhere must not read as edits of ours (it would block
+  // the reseed below, and a combined save would then write our stale
+  // copy over the newer one).
+  const [loaded, setLoaded] = React.useState<UpdateNotificationSettingsData | null>(null);
+  const isDirty = !!loaded && (localEnabled !== loaded.enabled || localRecipients !== (loaded.recipients || ''));
 
-  // Seed local state from the first response unconditionally: before it,
-  // the initial false/'' already differs from stored settings, so gating
-  // the seed on !isDirty would skip it and the form would show — and a
-  // combined save would persist — the defaults. Later refetches only
-  // overwrite a draft that has no edits.
-  const seededRef = React.useRef(false);
   React.useEffect(() => {
-    if (settings && (!seededRef.current || !isDirty)) {
+    if (!settings) return;
+    const draftMatchesServer = localEnabled === settings.enabled && localRecipients === (settings.recipients || '');
+    // Seed on the first response, after a save (the draft already equals
+    // the new server copy) and on a refetch with no edits pending. A draft
+    // with edits is kept, dirty, until saved or discarded.
+    if (!loaded || !isDirty || draftMatchesServer) {
       setLocalEnabled(settings.enabled);
       setLocalRecipients(settings.recipients || '');
-      seededRef.current = true;
+      setLoaded(settings);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
@@ -128,6 +131,7 @@ export const UpdateNotificationSettings: React.FC<UpdateNotificationSettingsProp
     if (!settings) return;
     setLocalEnabled(settings.enabled);
     setLocalRecipients(settings.recipients || '');
+    setLoaded(settings);
   };
   const onFormStateRef = React.useRef(onFormState);
   onFormStateRef.current = onFormState;

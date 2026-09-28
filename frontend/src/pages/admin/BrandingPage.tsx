@@ -249,6 +249,10 @@ export const BrandingPage: React.FC = () => {
       try {
         const faviconUrl = await settingsService.uploadFavicon(file);
         setBrandingSettings(prev => ({ ...prev, favicon_url: faviconUrl }));
+        // The upload endpoint stores the URL and deletes the old file, so
+        // the snapshot moves with it: Discard must not put back a URL that
+        // no longer resolves, and a later save must not re-persist it.
+        setLoadedBranding(prev => ({ ...prev, favicon_url: faviconUrl }));
         toast.success(t('toast.uploadSuccess'));
       } catch (error) {
         console.error('Failed to upload favicon:', error);
@@ -263,6 +267,10 @@ export const BrandingPage: React.FC = () => {
       try {
         const logoUrl = await settingsService.uploadLogo(file);
         setBrandingSettings(prev => ({ ...prev, logo_url: logoUrl }));
+        // Stored by the upload endpoint (old file deleted) — see the favicon
+        // handler; the theme snapshot carries the logo too.
+        setLoadedBranding(prev => ({ ...prev, logo_url: logoUrl }));
+        setLoadedTheme(prev => ({ ...prev, logoUrl }));
         setCurrentTheme(prev => {
           const updated = { ...prev, logoUrl };
           if (isPreviewMode) {
@@ -336,6 +344,8 @@ export const BrandingPage: React.FC = () => {
       try {
         const watermarkLogoUrl = await settingsService.uploadWatermarkLogo(file);
         setBrandingSettings(prev => ({ ...prev, watermark_logo_url: watermarkLogoUrl }));
+        // Stored by the upload endpoint (old file deleted) — see the favicon handler.
+        setLoadedBranding(prev => ({ ...prev, watermark_logo_url: watermarkLogoUrl }));
         toast.success(t('toast.uploadSuccess'));
       } catch (error) {
         console.error('Failed to upload watermark logo:', error);
@@ -385,8 +395,9 @@ export const BrandingPage: React.FC = () => {
     }
   };
 
-  // Everything handleSave writes. Upload handlers only change the URL in the
-  // draft, so a new favicon, logo or watermark counts as dirty until saved.
+  // Everything handleSave writes. The upload endpoints store their URL on
+  // the spot, so the upload handlers move the snapshot along with the draft
+  // and an upload alone does not read as dirty.
   const isDirty = JSON.stringify([brandingSettings, currentTheme, currentThemeName, pdfFontFamily])
     !== JSON.stringify([loadedBranding, loadedTheme, loadedThemeName, loadedPdfFontFamily]);
 
