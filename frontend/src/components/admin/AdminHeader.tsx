@@ -26,6 +26,7 @@ import { LanguageSelector, SUPPORTED_LANGUAGES } from '../common';
 import { notificationsService } from '../../services/notifications.service';
 import { toast } from 'react-toastify';
 import { buildResourceUrl } from '../../utils/url';
+import { useHasVisibleSettings } from '../../features/settings/settingsNav';
 
 interface AdminHeaderProps {
   onMenuClick: () => void;
@@ -33,6 +34,8 @@ interface AdminHeaderProps {
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
   const navigate = useNavigate();
+  // Same gate as the sidebar's Settings entry: any visible tab, not settings.view.
+  const hasVisibleSettings = useHasVisibleSettings();
   const { user, logout } = useAdminAuth();
   const { isDark, toggle: toggleDarkMode, forcedMode } = useAdminDarkMode();
   const { t, i18n } = useTranslation();
@@ -451,6 +454,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                       </div>
                     )}
                   </div>
+                  {hasVisibleSettings && (
                   <button
                     onClick={() => {
                       closeUserMenu();
@@ -461,6 +465,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                     <Settings className="w-4 h-4" />
                     {t('navigation.settings')}
                   </button>
+                  )}
                   <button
                     onClick={() => {
                       closeUserMenu();

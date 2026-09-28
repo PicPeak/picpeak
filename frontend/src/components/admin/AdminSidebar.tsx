@@ -208,7 +208,12 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   const showLogoBrand = logoInSidebar && !!sidebarBrandImageUrl;
   const brandAlt = publicSettings?.branding_company_name?.trim() || t('admin.title');
 
+  const settingsGroups = useSettingsNavGroups();
   const filteredNavigation = adminNavigation.filter((item) => {
+    // Settings follows the tabs this role can see, not `settings.view`
+    // alone: a tab accepts narrower permissions, and the section is the
+    // only way to those tabs once it takes the menu over.
+    if (item.href === SETTINGS_PATH) return settingsGroups.length > 0;
     if (item.permission && !hasPermission(item.permission as string)) return false;
     if (item.permissionAny?.length
       && !item.permissionAny.some((p) => hasPermission(p))) return false;
@@ -233,7 +238,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   const [peekMain, setPeekMain] = useState(false);
   useEffect(() => { setPeekMain(false); }, [location.key]);
 
-  const settingsGroups = useSettingsNavGroups();
   const clientsItems = useClientsNavItems();
   const accountingItems = useAccountingNavItems();
   const urlTab = new URLSearchParams(location.search).get('tab');

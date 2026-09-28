@@ -269,3 +269,14 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
     }))
     .filter((g) => g.items.length > 0);
 }
+
+/**
+ * Whether this role can see any Settings tab at all. The sidebar entry and
+ * the header's Settings item follow this rather than `settings.view`: the
+ * tabs accept narrower permissions (branding.view, cms.edit, …), so a role
+ * with one of those needs the way in, and a role with none must not land
+ * on a Settings page with nothing to show.
+ */
+export function useHasVisibleSettings(): boolean {
+  return useSettingsNavGroups().length > 0;
+}
