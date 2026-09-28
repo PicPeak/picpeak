@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -438,8 +438,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                     <div className="space-y-0.5">
                       {group.items.map((item) => {
                         const isActive = item.active;
+                        // Link, not NavLink: NavLink decides "active" from the
+                        // pathname alone, and every Settings item shares one
+                        // pathname with a different ?tab=, so it would mark
+                        // all of them aria-current="page". Active state is
+                        // computed here and set explicitly.
                         return (
-                          <NavLink
+                          <Link
                             key={item.key}
                             to={item.href}
                             replace={item.replace}
@@ -450,7 +455,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                           >
                             <item.icon className={iconClass(isActive)} />
                             <span className={`truncate ${collapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
-                          </NavLink>
+                          </Link>
                         );
                       })}
                     </div>

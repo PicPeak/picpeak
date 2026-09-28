@@ -82,6 +82,14 @@ export const SettingsPage: React.FC = () => {
     const urlTab = searchParams.get('tab');
     if (isValidTab(urlTab) && urlTab !== activeTab) {
       setActiveTab(urlTab);
+    } else if (!urlTab) {
+      // A navigation to the bare /admin/settings while the page is mounted
+      // (the sidebar's Settings entry after "Back to menu", the header
+      // link) keeps the open tab; put it back in the URL so the sidebar,
+      // which reads only the URL, highlights the tab that is showing.
+      const next = new URLSearchParams(searchParams);
+      next.set('tab', activeTab);
+      setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
