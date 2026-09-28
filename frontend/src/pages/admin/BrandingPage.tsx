@@ -266,12 +266,20 @@ export const BrandingPage: React.FC = () => {
     if (file) {
       try {
         const logoUrl = await settingsService.uploadLogo(file);
+        // The upload endpoint stores branding_logo_url and deletes the old
+        // file. The logo also lives in theme_config.logoUrl, which is what
+        // the page reads back on load, so that copy is stored here as well —
+        // on the SAVED theme, not the draft, so other unsaved theme edits are
+        // neither persisted nor lost. Both snapshots then move with the
+        // draft: an upload alone is not a pending change, and Discard cannot
+        // put a deleted file's URL back.
+        if (themeSettings) {
+          const storedTheme: ThemeConfig = { ...loadedTheme, logoUrl };
+          await settingsService.updateTheme(storedTheme);
+        }
         setBrandingSettings(prev => ({ ...prev, logo_url: logoUrl }));
-        // Stored by the upload endpoint (old file deleted) — see the favicon
-        // handler. Only branding_logo_url, though: theme_config.logoUrl is
-        // written by Save (themeMutation) and is what the page reads back on
-        // load, so the theme half stays dirty until then.
         setLoadedBranding(prev => ({ ...prev, logo_url: logoUrl }));
+        setLoadedTheme(prev => ({ ...prev, logoUrl }));
         setCurrentTheme(prev => {
           const updated = { ...prev, logoUrl };
           if (isPreviewMode) {

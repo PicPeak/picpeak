@@ -44,7 +44,17 @@ export const SettingsBusinessProfilePage: React.FC = () => {
   const [profile, setProfile] = useState<BusinessProfile | null>(null);
   // What the server last sent, for the save bar's dirty state and Discard.
   const [loaded, setLoaded] = useState<BusinessProfile | null>(null);
-  const isDirty = profile !== null && JSON.stringify(profile) !== JSON.stringify(loaded);
+  // Editable fields only. The server stamps updatedAt on every write, the
+  // PDF logo upload included, and the refetch below keeps the draft's old
+  // stamp while installing the new one in `loaded` — comparing it would
+  // leave an upload with no other edits dirty for good.
+  const editable = (p: BusinessProfile | null) => {
+    if (!p) return null;
+    const { updatedAt: _u, createdAt: _c, ...rest } = p;
+    void _u; void _c;
+    return rest;
+  };
+  const isDirty = profile !== null && JSON.stringify(editable(profile)) !== JSON.stringify(editable(loaded));
   const dirtyRef = useRef(isDirty);
   dirtyRef.current = isDirty;
   useEffect(() => {
