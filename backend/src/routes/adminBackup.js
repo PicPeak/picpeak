@@ -496,16 +496,15 @@ class ArtifactOutOfScopeError extends Error {
   }
 }
 
-const insideRoot = (candidate, root) => {
-  const resolvedRoot = path.resolve(root);
-  return candidate === resolvedRoot || candidate.startsWith(resolvedRoot + path.sep);
-};
-
 async function deleteLocalBackupManifest(config, manifestPath) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   const manifestDir = config.backup_manifest_path || path.join(destinationRoot, 'manifests');
   const resolved = path.resolve(manifestPath);
-  if (!insideRoot(resolved, manifestDir)) {
+  // The writer stores path.join(manifestDir, basename), so a genuine manifest
+  // sits directly in the manifest directory. Requiring exactly that, rather
+  // than "somewhere below it", also rules out a symlinked subdirectory that
+  // points outside, which a prefix check would follow.
+  if (path.dirname(resolved) !== path.resolve(manifestDir)) {
     throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
   }
   try {
@@ -631,15 +630,23 @@ router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async 
       return backupDeleteError(res, 500, code, 'The stored backup files could not be removed; the record was kept');
     }
 
+    // The success audit commits with the deletion, so a deleted run is never
+    // without its audit row; a failed audit rolls the record back.
     await db.transaction(async (trx) => {
       await trx('backup_manifest').where('backup_run_id', id).del();
       await trx('backup_runs').where('parent_backup_id', id).update({ parent_backup_id: null });
       await trx('backup_runs').where('id', id).del();
+      await trx('activity_logs').insert({
+        activity_type: 'backup_run_deleted',
+        actor_type: 'admin',
+        actor_id: req.admin?.id ?? null,
+        actor_name: req.admin?.username ?? null,
+        metadata: JSON.stringify({
+          backup_run_id: id, destination, artifact: artifact.status, removed: artifact.removed
+        })
+      });
     });
 
-    await audit('backup_run_deleted', {
-      backup_run_id: id, destination, artifact: artifact.status, removed: artifact.removed
-    });
     res.json({ success: true, id, destination, artifact });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to delete backup run');

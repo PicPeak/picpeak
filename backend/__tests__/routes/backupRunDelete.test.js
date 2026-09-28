@@ -241,6 +241,25 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(await runExists(id)).toBe(true);
     });
 
+    it('refuses a manifest reached through a symlinked subdirectory that points outside', async () => {
+      const manifestDir = path.join(storagePath, 'backups', 'manifests');
+      const outsideDir = path.join(storagePath, 'events', 'active');
+      fs.mkdirSync(manifestDir, { recursive: true });
+      fs.mkdirSync(outsideDir, { recursive: true });
+      const victim = path.join(outsideDir, 'victim.json');
+      fs.writeFileSync(victim, 'keep me');
+      const link = path.join(manifestDir, 'link');
+      fs.rmSync(link, { force: true });
+      fs.symlinkSync(outsideDir, link, 'dir');
+      const id = await insertRun({ manifest_path: path.join(link, 'victim.json') });
+
+      const res = await del(id);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ARTIFACT_OUT_OF_SCOPE');
+      expect(fs.existsSync(victim)).toBe(true);
+      expect(await runExists(id)).toBe(true);
+    });
+
     it('honours a custom backup_manifest_path', async () => {
       const manifestDir = path.join(storagePath, 'custom-manifests');
       const manifest = path.join(manifestDir, 'backup-manifest-custom.json');
