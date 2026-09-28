@@ -273,13 +273,23 @@ export const BrandingPage: React.FC = () => {
         // neither persisted nor lost. Both snapshots then move with the
         // draft: an upload alone is not a pending change, and Discard cannot
         // put a deleted file's URL back.
-        if (themeSettings) {
-          const storedTheme: ThemeConfig = { ...loadedTheme, logoUrl };
-          await settingsService.updateTheme(storedTheme);
-        }
+        // The upload is done whatever happens next, so the branding half
+        // moves first; if storing the theme copy fails, the theme half stays
+        // dirty and Save writes it — the deleted file's URL is never the one
+        // a later Save or reload would pick up.
         setBrandingSettings(prev => ({ ...prev, logo_url: logoUrl }));
         setLoadedBranding(prev => ({ ...prev, logo_url: logoUrl }));
-        setLoadedTheme(prev => ({ ...prev, logoUrl }));
+        let themeStored = false;
+        if (themeSettings) {
+          try {
+            const storedTheme: ThemeConfig = { ...loadedTheme, logoUrl };
+            await settingsService.updateTheme(storedTheme);
+            themeStored = true;
+          } catch (themeError) {
+            console.error('Failed to store the logo in the theme:', themeError);
+          }
+        }
+        if (themeStored) setLoadedTheme(prev => ({ ...prev, logoUrl }));
         setCurrentTheme(prev => {
           const updated = { ...prev, logoUrl };
           if (isPreviewMode) {
