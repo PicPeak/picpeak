@@ -21,7 +21,10 @@ const read = (rel: string) => fs.readFileSync(path.join(SRC, rel), 'utf8');
 // deliberately NOT accepted — they resolve to the same leaking variables. The
 // UI token utilities (text-heading, text-body, ...) read --ui-* tokens that
 // applyTheme() never writes, so they count as explicit (STYLING.md).
-const EXPLICIT_COLOR = /\btext-(neutral|white|amber|blue|red|green|primary|accent|heading|body|soft|muted|faint)\b|\btext-(neutral|amber|blue|red|green|primary)-\d/;
+// `(?![\w-])` rather than `\b` after the name: `\b` matches before a hyphen,
+// so `text-muted` would have accepted `text-muted-theme`, the themed utility
+// this guard exists to reject.
+const EXPLICIT_COLOR = /\btext-(neutral|white|amber|blue|red|green|primary|accent|heading|body|soft|muted|faint)(?![\w-])|\btext-(neutral|amber|blue|red|green|primary)-\d/;
 
 const HEADING_TAG = /<(h[1-4])(\s[^>]*?)?>/gs;
 
