@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.148.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.147.0-beta.0...v3.148.0-beta.0) (2026-09-28)
+
+
+### Features
+
+* **styling:** UI tokens as the single source, STYLING.md, lint rule and codemod ([#1692](https://github.com/PicPeak/picpeak/issues/1692)) ([f7fe33f](https://github.com/PicPeak/picpeak/commit/f7fe33f4acecf802db1de41446eacd06d79b2086))
+
 ## [3.147.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.146.0-beta.0...v3.147.0-beta.0) (2026-09-28)
 
 
