@@ -378,6 +378,14 @@
   transform: scale(1.05);
 }
 
+/* Issue 1709: a natural-grid box that could not take the photo's ratio
+   (justified-layout clamped the row) shows the whole photo on the card
+   background instead of cropping. Same specificity as the cover rule above
+   plus the modifier, so it wins. */
+.story-photo-card.story-photo-card--contain img {
+  object-fit: contain;
+}
+
 .story-photo-card-overlay {
   position: absolute;
   inset: 0;

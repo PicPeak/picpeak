@@ -7,6 +7,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { GalleryStoryLayout } from '../GalleryStoryLayout';
 import type { Photo } from '../../../../types';
@@ -176,18 +178,25 @@ describe('GalleryStoryLayout natural grid (issue 1709)', () => {
     // justified-layout clamps the row to half the target height, so the box is
     // wider than 3:1 ...
     expect(box.width / box.height).toBeLessThan(3);
-    // ... and the card must not crop to it.
-    const img = container.querySelector('.story-gallery-justified-box img') as HTMLImageElement;
-    expect(img.className).toContain('object-contain');
-    expect(img.className).not.toContain('object-cover');
+    // ... and the card must not crop to it. The stylesheet's own
+    // `.story-photo-card img { object-fit: cover }` outranks a utility class
+    // on the image, so the fit rides on the card as a modifier whose rule has
+    // higher specificity.
+    const card = container.querySelector('.story-gallery-justified-box .story-photo-card') as HTMLElement;
+    expect(card.classList.contains('story-photo-card--contain')).toBe(true);
+    const css = readFileSync(
+      resolve(process.cwd(), 'src/components/gallery/layouts/GalleryStoryLayout.css'),
+      'utf8'
+    ).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).toMatch(/\.story-photo-card\.story-photo-card--contain img\s*\{[^}]*object-fit:\s*contain/);
     containerWidth = 1200;
   });
 
   it('keeps cover on boxes that took the photo ratio', () => {
     const { container } = render(<GalleryStoryLayout {...props} storyGridMode="natural" />);
-    const imgs = Array.from(container.querySelectorAll<HTMLImageElement>('.story-gallery-justified-box img'));
-    expect(imgs).toHaveLength(6);
-    for (const img of imgs) expect(img.className).toContain('object-cover');
+    const cards = Array.from(container.querySelectorAll<HTMLElement>('.story-gallery-justified-box .story-photo-card'));
+    expect(cards).toHaveLength(6);
+    for (const card of cards) expect(card.classList.contains('story-photo-card--contain')).toBe(false);
   });
 
   it('keeps favourites, lightbox links and lazy placeholders on every card', () => {

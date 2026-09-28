@@ -62,7 +62,9 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-50px' }}
       transition={{ delay: Math.min(index * 0.05, 0.3) }}
-      className={`story-photo-card group ${featured ? 'story-gallery-grid-featured' : ''}`}
+      // The fit rides on the card, not the img: `.story-photo-card img` in the
+      // stylesheet outranks a Tailwind utility on the image itself.
+      className={`story-photo-card group ${featured ? 'story-gallery-grid-featured' : ''}${fit === 'contain' ? ' story-photo-card--contain' : ''}`}
     >
       <a
         href={photo.url}
@@ -101,7 +103,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           src={lightboxImageUrl(photo)}
           alt={photo.filename}
           onLoad={() => setIsLoaded(true)}
-          className={`w-full h-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} transition-all duration-700 ease-out will-change-transform ${
+          className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${
             !isLoaded ? 'opacity-0 scale-110' : 'opacity-100 scale-100'
           }`}
           isGallery={true}
