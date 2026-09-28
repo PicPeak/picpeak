@@ -18,6 +18,9 @@ interface StoryCarouselProps {
   useEnhancedProtection?: boolean;
   /** Issue 1709: size each slide from the photo's aspect ratio instead of a fixed box. */
   naturalAspect?: boolean;
+  isSelectionMode?: boolean;
+  selectedPhotos?: Set<number>;
+  onPhotoSelect?: (id: number) => void;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -30,6 +33,9 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   allowDownloads = true,
   useEnhancedProtection = false,
   naturalAspect = false,
+  isSelectionMode = false,
+  selectedPhotos,
+  onPhotoSelect,
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -59,6 +65,9 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 galleryId={id}
                 allowDownloads={allowDownloads}
                 useEnhancedProtection={useEnhancedProtection}
+                isSelectionMode={isSelectionMode}
+                isSelected={selectedPhotos?.has(photo.id) ?? false}
+                onSelect={onPhotoSelect}
               />
             </div>
           </SwiperSlide>

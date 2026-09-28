@@ -20,6 +20,16 @@ export interface BaseGalleryLayoutProps {
   onPhotoSelect?: (photoId: number) => void;
   onSelectAll?: () => void;
   onDeselectAll?: () => void;
+  /**
+   * Issue 1716: full-page layouts render their own selection chrome, so the
+   * container hands them its mode toggle, an additive "select these ids"
+   * (one state write, unlike calling onPhotoSelect in a loop, where every
+   * call would read the same stale set) and its selection download, which
+   * already routes through the resolution picker and the download limit.
+   */
+  onToggleSelectionMode?: () => void;
+  onSelectMany?: (photoIds: number[]) => void;
+  onDownloadSelected?: () => void | Promise<void>;
   eventName?: string;
   eventLogo?: string | null;
   eventDate?: string | null;

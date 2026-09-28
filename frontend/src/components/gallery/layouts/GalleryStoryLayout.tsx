@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, Heart, LogOut, Download } from 'lucide-react';
+import { Search, Heart, LogOut, Download, CheckSquare, X, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -23,6 +23,8 @@ import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../../utils/downloadLimit';
 
 import './GalleryStoryLayout.css';
+
+const EMPTY_SELECTION: Set<number> = new Set();
 
 interface PhotosByCategory {
   [categoryName: string]: Photo[];
@@ -50,9 +52,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   onOpenPhotoWithFeedback: _onOpenPhotoWithFeedback,
   onFeedbackChange,
   onDownload: _onDownload,
-  selectedPhotos: _selectedPhotos,
-  isSelectionMode: _isSelectionMode,
-  onPhotoSelect: _onPhotoSelect,
+  selectedPhotos,
+  isSelectionMode = false,
+  onPhotoSelect,
+  onSelectMany,
+  onDeselectAll,
+  onToggleSelectionMode,
+  onDownloadSelected,
   eventName,
   eventDate,
   allowDownloads = true,
@@ -78,9 +84,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   void _onPhotoClick;
   void _onOpenPhotoWithFeedback;
   void _onDownload;
-  void _selectedPhotos;
-  void _isSelectionMode;
-  void _onPhotoSelect;
   const { t } = useTranslation();
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,6 +184,68 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
   const downloadQuota = useDownloadQuota();
 
+  // Selection mode (issue 1716). The container owns the mode and the set;
+  // this layout only renders the controls and asks for changes.
+  const selected = selectedPhotos ?? EMPTY_SELECTION;
+  const visiblePhotos = useMemo(() => scenes.flatMap((scene) => scene.photos), [scenes]);
+  const selectedPhotoList = useMemo(
+    () => photos.filter((photo) => selected.has(photo.id)),
+    [photos, selected]
+  );
+  const canSelect = Boolean(onToggleSelectionMode && onPhotoSelect && photos.length > 1);
+  const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
+
+  const handleToggleSelectionMode = useCallback(() => {
+    // Leaving selection mode clears the selection, so a later session does
+    // not start with invisible ticks.
+    if (isSelectionMode) onDeselectAll?.();
+    onToggleSelectionMode?.();
+  }, [isSelectionMode, onDeselectAll, onToggleSelectionMode]);
+
+  const handleSelectAllVisible = useCallback(() => {
+    if (allVisibleSelected) onDeselectAll?.();
+    else onSelectMany?.(visiblePhotos.map((photo) => photo.id));
+  }, [allVisibleSelected, onDeselectAll, onSelectMany, visiblePhotos]);
+
+  const [favoritingSelection, setFavoritingSelection] = useState(false);
+  // Likes not yet set on the selection are added; a selection that is already
+  // liked throughout is unliked instead, so the same control never un-likes
+  // half a selection by accident.
+  const selectionToLike = useMemo(
+    () => selectedPhotoList.filter((photo) => !favorites.has(photo.id)).map((photo) => photo.id),
+    [selectedPhotoList, favorites]
+  );
+  const selectionUnlikes = selectedPhotoList.length > 0 && selectionToLike.length === 0;
+
+  const handleFavoriteSelected = useCallback(async () => {
+    const ids = selectionUnlikes ? selectedPhotoList.map((photo) => photo.id) : selectionToLike;
+    if (ids.length === 0 || favoritingSelection) return;
+    setFavoritingSelection(true);
+    // The server like endpoint is a per-photo toggle (#590): only photos that
+    // need to change are sent, in small batches.
+    const done: number[] = [];
+    for (let i = 0; i < ids.length; i += 5) {
+      const batch = ids.slice(i, i + 5);
+      const results = await Promise.allSettled(
+        batch.map((id) => feedbackService.submitFeedback(slug, String(id), { feedback_type: 'like' }))
+      );
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') done.push(batch[index]);
+      });
+    }
+    setFavorites((previous) => {
+      const next = new Set(previous);
+      done.forEach((id) => (selectionUnlikes ? next.delete(id) : next.add(id)));
+      return next;
+    });
+    setFavoritingSelection(false);
+    if (done.length > 0) {
+      toast.success(t(selectionUnlikes ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
+      onFeedbackChange?.();
+    }
+    if (done.length < ids.length) toast.error(t('gallery.favoriteSelectedError'));
+  }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, slug, t, onFeedbackChange]);
+
   const handleDownloadAll = useCallback(async () => {
     // Whole-gallery path when available: posting ids would hit the server's
     // 500-id cap and silently truncate a large gallery (#1160).
@@ -251,6 +316,19 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           {/* Issue 1710: the footer button was the only Download All in the
               layout, unreachable without scrolling through every scene. Same
               handler, same resolution / quota / whole-gallery flow. */}
+          {canSelect && (
+            <button
+              type="button"
+              className={`story-nav-btn${isSelectionMode ? ' active' : ''}`}
+              onClick={handleToggleSelectionMode}
+              aria-pressed={isSelectionMode}
+              aria-label={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : t('gallery.selectPhotos', 'Select Photos')}
+              title={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : t('gallery.selectPhotos', 'Select Photos')}
+              data-testid="story-nav-select"
+            >
+              <CheckSquare size={20} />
+            </button>
+          )}
           {canDownloadAll && (
             <button
               type="button"
@@ -284,6 +362,56 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           )}
         </div>
       </nav>
+
+      {/* Selection bar (issue 1716): count, select all, and the bulk actions
+          on the selection. Download goes through the container's handler so
+          the resolution picker and the download limit apply exactly as they
+          do on every other layout. */}
+      {isSelectionMode && canSelect && (
+        <div className="story-selection-bar" role="region" aria-label={t('gallery.selectPhotos', 'Select Photos')}>
+          <span className="story-selection-count" aria-live="polite">
+            {t('gallery.photosSelected', { count: selected.size })}
+          </span>
+          <div className="story-selection-actions">
+            <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
+              {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
+            </button>
+            {feedbackEnabled && selected.size > 0 && (
+              <button
+                type="button"
+                className="story-selection-btn"
+                onClick={handleFavoriteSelected}
+                disabled={favoritingSelection}
+                data-testid="story-favorite-selected"
+              >
+                <Heart size={14} fill={selectionUnlikes ? 'currentColor' : 'none'} />
+                {t(selectionUnlikes ? 'gallery.unfavoriteSelected' : 'gallery.favoriteSelected', { count: selected.size })}
+              </button>
+            )}
+            {allowDownloads && onDownloadSelected && selected.size > 0 && (
+              <button
+                type="button"
+                className="story-selection-btn story-selection-btn--primary"
+                onClick={() => { void onDownloadSelected(); }}
+                disabled={!downloadQuota.allows(selectedPhotoList)}
+                data-testid="story-download-selected"
+              >
+                <Package size={14} />
+                {t('gallery.downloadSelected', { count: selected.size })}
+              </button>
+            )}
+            <button
+              type="button"
+              className="story-selection-btn"
+              onClick={handleToggleSelectionMode}
+              aria-label={t('gallery.cancelSelection', 'Cancel Selection')}
+            >
+              <X size={14} />
+              {t('common.cancel', 'Cancel')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hero */}
       <StoryHero
@@ -319,6 +447,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   allowDownloads={allowDownloads}
                   useEnhancedProtection={useEnhancedProtection}
                   naturalAspect={naturalGrid}
+                  isSelectionMode={isSelectionMode}
+                  selectedPhotos={selected}
+                  onPhotoSelect={onPhotoSelect}
                 />
               ) : naturalGrid ? (
                 <StoryJustifiedGrid
@@ -330,6 +461,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   slug={slug}
                   allowDownloads={allowDownloads}
                   useEnhancedProtection={useEnhancedProtection}
+                  isSelectionMode={isSelectionMode}
+                  selectedPhotos={selected}
+                  onPhotoSelect={onPhotoSelect}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -347,6 +481,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       useEnhancedProtection={useEnhancedProtection}
                       // Mark first photo in each grid as featured
                       featured={index === 0 && scene.photos.length > 4}
+                      isSelectionMode={isSelectionMode}
+                      isSelected={selected.has(photo.id)}
+                      onSelect={onPhotoSelect}
                     />
                   ))}
                 </div>

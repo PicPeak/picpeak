@@ -140,6 +140,83 @@
   border-radius: 9999px;
 }
 
+.story-nav-btn.active {
+  color: var(--story-primary);
+}
+
+/* Selection bar (issue 1716): sits under the fixed nav while selecting. */
+.story-selection-bar {
+  position: fixed;
+  top: 3.75rem;
+  left: 0;
+  right: 0;
+  z-index: 49;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 1.5rem;
+  background-color: rgba(13, 13, 13, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.story-selection-count {
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+  color: var(--story-foreground);
+}
+
+.story-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.story-selection-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.03em;
+  color: var(--story-foreground);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.story-selection-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.story-selection-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.story-selection-btn--primary {
+  background: var(--story-primary);
+  border-color: var(--story-primary);
+  color: var(--story-primary-foreground);
+  font-weight: 500;
+}
+
+.story-selection-btn--primary:hover:not(:disabled) {
+  background: white;
+  border-color: white;
+}
+
+.story-selection-btn:focus-visible {
+  outline: 2px solid var(--story-primary);
+  outline-offset: 2px;
+}
+
 .story-nav-favorites-count {
   position: absolute;
   top: -0.25rem;
@@ -396,6 +473,66 @@
   background-color: transparent;
   transition: background-color 0.3s ease;
   pointer-events: none;
+}
+
+/* Selection (issue 1716). The checkbox follows the Premium layout's: hidden
+   until hover, always shown while selecting or once selected. */
+.story-photo-card-check {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 10;
+  display: flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background-color: rgba(0, 0, 0, 0.35);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
+}
+
+.story-photo-card:hover .story-photo-card-check,
+.story-photo-card-check.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.story-photo-card-check:hover {
+  transform: scale(1.1);
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
+.story-photo-card-check.selected {
+  background-color: var(--story-primary);
+  border-color: var(--story-primary);
+  color: var(--story-primary-foreground);
+}
+
+.story-photo-card-check:focus-visible {
+  outline: 2px solid var(--story-primary);
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+.story-photo-card.selected {
+  outline: 3px solid var(--story-primary);
+  outline-offset: -3px;
+}
+
+.story-photo-card.selected img {
+  transform: scale(0.94);
+}
+
+.story-photo-card--selecting .story-photo-card-actions {
+  display: none;
 }
 
 .story-photo-card:hover .story-photo-card-overlay {

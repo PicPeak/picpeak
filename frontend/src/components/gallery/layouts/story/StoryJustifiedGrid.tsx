@@ -12,6 +12,9 @@ interface StoryJustifiedGridProps {
   slug: string;
   allowDownloads?: boolean;
   useEnhancedProtection?: boolean;
+  isSelectionMode?: boolean;
+  selectedPhotos?: Set<number>;
+  onPhotoSelect?: (id: number) => void;
 }
 
 /**
@@ -40,6 +43,9 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   slug,
   allowDownloads = true,
   useEnhancedProtection = false,
+  isSelectionMode = false,
+  selectedPhotos,
+  onPhotoSelect,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -112,6 +118,9 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               allowDownloads={allowDownloads}
               useEnhancedProtection={useEnhancedProtection}
               fit={clamped ? 'contain' : 'cover'}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedPhotos?.has(photo.id) ?? false}
+              onSelect={onPhotoSelect}
             />
           </div>
         );

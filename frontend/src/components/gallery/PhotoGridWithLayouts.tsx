@@ -223,6 +223,16 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     setSelectedPhotos(new Set(photos.map(p => p.id)));
   };
 
+  // Issue 1716: a layout's own "select all" over the photos it currently
+  // shows (a search may hide some), in one write.
+  const selectMany = (photoIds: number[]) => {
+    if (!isSelectionMode) {
+      if (parentToggleSelectionMode) parentToggleSelectionMode();
+      else setLocalSelectionMode(true);
+    }
+    setSelectedPhotos(new Set([...selectedPhotos, ...photoIds]));
+  };
+
   const deselectAll = () => {
     setSelectedPhotos(new Set());
   };
@@ -314,6 +324,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onPhotoSelect: handlePhotoSelect,
     onSelectAll: selectAll,
     onDeselectAll: deselectAll,
+    // Issue 1716: the Story layout renders its own selection controls and
+    // must drive the same mode, selection and download path as this toolbar.
+    onToggleSelectionMode: toggleSelectionMode,
+    onSelectMany: selectMany,
+    onDownloadSelected: handleDownloadSelected,
     eventName,
     eventLogo,
     eventDate,
