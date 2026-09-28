@@ -405,7 +405,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       <StoryScrollToTop />
 
       {/* Navigation Overlay */}
-      <nav className={`story-nav ${scrolled ? 'scrolled' : ''}`}>
+      <nav className={`story-nav ${scrolled ? 'scrolled' : ''}${isSelectionMode && selectionAvailable ? ' story-nav--selecting' : ''}`}>
         <span className="story-nav-logo">
           {eventName ? eventName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() : 'GALLERY'}
         </span>
@@ -468,57 +468,65 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             </button>
           )}
         </div>
-      </nav>
 
-      {/* Selection bar (issue 1716): count, select all, and the bulk actions
-          on the selection. Download goes through the container's handler so
-          the resolution picker and the download limit apply exactly as they
-          do on every other layout. */}
-      {isSelectionMode && selectionAvailable && (
-        <div className="story-selection-bar" role="region" aria-label={t('gallery.selectPhotos', 'Select Photos')}>
-          <span className="story-selection-count" aria-live="polite">
-            {t('gallery.photosSelected', { count: selected.size })}
-          </span>
-          <div className="story-selection-actions">
-            <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
-              {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
-            </button>
-            {bulkLikesAllowed && selected.size > 0 && (
+        {/* Selection bar (issue 1716): a second row of the fixed nav, so it can
+            never sit under it. Count, select all, and the bulk actions on the
+            selection; download goes through the container's handler so the
+            resolution picker and the download limit apply exactly as they do
+            on every other layout. */}
+        {isSelectionMode && selectionAvailable && (
+          <div className="story-selection-bar" role="region" aria-label={t('gallery.selectPhotos', 'Select Photos')}>
+            <span className="story-selection-count" aria-live="polite">
+              {t('gallery.photosSelected', { count: selected.size })}
+            </span>
+            <div className="story-selection-actions">
+              <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
+                {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
+              </button>
+              {bulkLikesAllowed && selected.size > 0 && (
+                <button
+                  type="button"
+                  className="story-selection-btn"
+                  onClick={handleFavoriteSelected}
+                  disabled={favoritingSelection || awaitingRefresh}
+                  aria-label={t(selectionUnlikes ? 'gallery.unfavoriteSelected' : 'gallery.favoriteSelected', { count: selected.size })}
+                  data-testid="story-favorite-selected"
+                >
+                  <Heart size={14} fill={selectionUnlikes ? 'currentColor' : 'none'} />
+                  {/* Full label from sm up; count only on a phone, where three
+                      rows of pills would otherwise eat a quarter of the screen. */}
+                  <span className="hidden sm:inline">
+                    {t(selectionUnlikes ? 'gallery.unfavoriteSelected' : 'gallery.favoriteSelected', { count: selected.size })}
+                  </span>
+                  <span className="sm:hidden" aria-hidden="true">({selected.size})</span>
+                </button>
+              )}
+              {allowDownloads && onDownloadSelected && selected.size > 0 && (
+                <button
+                  type="button"
+                  className="story-selection-btn story-selection-btn--primary"
+                  onClick={() => { void onDownloadSelected(); }}
+                  disabled={!downloadQuota.allows(selectedPhotoList)}
+                  data-testid="story-download-selected"
+                >
+                  <Package size={14} />
+                  <span className="hidden sm:inline">{t('gallery.downloadSelected', { count: selected.size })}</span>
+                  <span className="sm:hidden">{t('common.download', 'Download')} ({selected.size})</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="story-selection-btn"
-                onClick={handleFavoriteSelected}
-                disabled={favoritingSelection || awaitingRefresh}
-                data-testid="story-favorite-selected"
+                onClick={handleToggleSelectionMode}
+                aria-label={t('gallery.cancelSelection', 'Cancel Selection')}
               >
-                <Heart size={14} fill={selectionUnlikes ? 'currentColor' : 'none'} />
-                {t(selectionUnlikes ? 'gallery.unfavoriteSelected' : 'gallery.favoriteSelected', { count: selected.size })}
+                <X size={14} />
+                <span className="hidden sm:inline">{t('common.cancel', 'Cancel')}</span>
               </button>
-            )}
-            {allowDownloads && onDownloadSelected && selected.size > 0 && (
-              <button
-                type="button"
-                className="story-selection-btn story-selection-btn--primary"
-                onClick={() => { void onDownloadSelected(); }}
-                disabled={!downloadQuota.allows(selectedPhotoList)}
-                data-testid="story-download-selected"
-              >
-                <Package size={14} />
-                {t('gallery.downloadSelected', { count: selected.size })}
-              </button>
-            )}
-            <button
-              type="button"
-              className="story-selection-btn"
-              onClick={handleToggleSelectionMode}
-              aria-label={t('gallery.cancelSelection', 'Cancel Selection')}
-            >
-              <X size={14} />
-              {t('common.cancel', 'Cancel')}
-            </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </nav>
 
       {/* Hero */}
       <StoryHero

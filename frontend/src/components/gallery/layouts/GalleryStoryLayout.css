@@ -57,13 +57,15 @@
   right: 0;
   z-index: 50;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
   transition: all 0.3s ease;
 }
 
-.story-nav.scrolled {
+.story-nav.scrolled,
+.story-nav--selecting {
   background-color: rgba(13, 13, 13, 0.8);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -144,23 +146,20 @@
   color: var(--story-primary);
 }
 
-/* Selection bar (issue 1716): sits under the fixed nav while selecting. */
+/* Selection bar (issue 1716): the fixed nav's second row while selecting.
+   It lives inside the nav rather than at a fixed offset below it, so the
+   nav's height (which changes with the search field and wrapping) can never
+   cover it. */
 .story-selection-bar {
-  position: fixed;
-  top: 3.75rem;
-  left: 0;
-  right: 0;
-  z-index: 49;
+  flex-basis: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  padding: 0.5rem 1.5rem;
-  background-color: rgba(13, 13, 13, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .story-selection-count {
