@@ -313,6 +313,26 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect((await lastAudit()).metadata).not.toContain('secret');
     });
 
+    it.each([
+      ['/backups', '/backups'],
+      ['archive/picpeak/', 'archive/picpeak'],
+      ['/nested//custom', '/nested/custom'],
+    ])('accepts runs written under a configured prefix of %s the way performS3Backup joins it', async (configured, stored) => {
+      await s3Settings({ backup_s3_prefix: configured });
+      const prefix = `${stored}/2026/09/01/backup-1756692000000`;
+      const id = await insertRun({ manifest_path: `s3://picpeak-backups/${prefix}/manifests/m.json` });
+      mockS3.list
+        .mockResolvedValueOnce({ Contents: [{ Key: `${prefix}/manifests/m.json` }], IsTruncated: false })
+        .mockResolvedValueOnce({ Contents: [], IsTruncated: false });
+      mockS3.deleteMany.mockImplementation(async (keys) => ({ Deleted: keys.map((Key) => ({ Key })), Errors: [] }));
+
+      const res = await del(id);
+      expect(res.status).toBe(200);
+      expect(mockS3.list).toHaveBeenNthCalledWith(1, `${prefix}/manifests/`, { maxKeys: 1000, continuationToken: undefined });
+      expect(mockS3.deleteMany).toHaveBeenCalledWith([`${prefix}/manifests/m.json`]);
+      expect(await runExists(id)).toBe(false);
+    });
+
     it('refuses a manifest recorded in a bucket other than the configured one', async () => {
       await s3Settings();
       const id = await insertRun({ manifest_path: `s3://someone-elses-bucket/${runPrefix}/manifests/m.json` });

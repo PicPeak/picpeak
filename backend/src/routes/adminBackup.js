@@ -524,11 +524,14 @@ async function deleteS3BackupRun(config, manifestPath) {
   if (config.backup_destination_type !== 's3' || !config.backup_s3_bucket || bucket !== config.backup_s3_bucket) {
     throw new ArtifactOutOfScopeError('This backup is stored in a bucket that is not the configured backup destination');
   }
-  const basePrefix = (config.backup_s3_prefix || 'backups').replace(/^\/+|\/+$/g, '');
+  // The same normalisation performS3Backup applies when it builds the key
+  // (path.posix.join keeps a leading slash and collapses doubled ones), so a
+  // prefix configured as "/backups" or "archive/picpeak/" matches its own runs.
+  const baseWithSlash = path.posix.join(config.backup_s3_prefix ? String(config.backup_s3_prefix) : 'backups', '/');
   const manifestsAt = key.lastIndexOf('/manifests/');
   const runPrefix = manifestsAt > 0 ? key.slice(0, manifestsAt) : '';
   const runSegment = runPrefix.split('/').pop() || '';
-  if (!runPrefix.startsWith(`${basePrefix}/`) || !/^backup-\d+$/.test(runSegment) || runPrefix.includes('..')) {
+  if (baseWithSlash === '/' || !runPrefix.startsWith(baseWithSlash) || !/^backup-\d+$/.test(runSegment) || runPrefix.includes('..')) {
     throw new ArtifactOutOfScopeError('The recorded manifest location is outside the configured backup prefix');
   }
 
