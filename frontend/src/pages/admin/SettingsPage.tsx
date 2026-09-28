@@ -160,7 +160,11 @@ export const SettingsPage: React.FC = () => {
   // tab that is both permitted and not feature-flag-gated-off. Sits above the
   // isLoading early return to keep hook ordering stable.
   useEffect(() => {
-    if (flagsLoading) return;
+    // Both contexts have to be in: permissions arriving after the flags
+    // would otherwise have found every tab forbidden, snapped nowhere, and
+    // never run again — leaving a deep-linked tab the role cannot see open
+    // with nothing highlighted in the sidebar.
+    if (flagsLoading || permissionsLoading) return;
     if (hasAnyPermission(TAB_PERMISSIONS[activeTab] ?? ['settings.view'])) return;
     const flagOff = settingsTabGatedOff(flags);
     const firstVisible = ALL_SETTINGS_TABS.find(
@@ -168,7 +172,7 @@ export const SettingsPage: React.FC = () => {
     );
     if (firstVisible && firstVisible !== activeTab) setActiveTab(firstVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flagsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow]);
+  }, [flagsLoading, permissionsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.documents, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow]);
 
   // Wait for the permissions context too: on a fresh/hard mount it starts out
   // empty, which filters every nav group down to nothing and left `activeItem`
