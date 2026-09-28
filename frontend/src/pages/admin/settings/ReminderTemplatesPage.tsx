@@ -484,10 +484,14 @@ export const ReminderTemplatesPage: React.FC = () => {
 
       <SettingsSaveBar
         isDirty={isDirty}
+        // An event type on the default template is seeded from it, so the
+        // draft reads clean — but saving it is how the dedicated copy is
+        // created, as the page says above the fields.
+        saveClean={isNewPerType}
         isSaving={saveSettingsMutation.isPending || saveMutation.isPending}
         onSave={() => {
           if (settingsDirty) saveSettingsMutation.mutate();
-          if (templateDirty) saveMutation.mutate();
+          if (templateDirty || isNewPerType) saveMutation.mutate();
         }}
         onDiscard={discardAll}
       />

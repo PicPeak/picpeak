@@ -51,6 +51,22 @@ describe('SettingsSaveBar', () => {
     expect(screen.queryByText(/unsaved changes/i)).not.toBeInTheDocument();
   });
 
+  it('saveClean offers Save on a clean draft, and nothing else', () => {
+    // A fallback reminder template is seeded from the default, so the draft
+    // reads clean; saving it is what creates the dedicated copy. Discard and
+    // the hint still follow isDirty, so nothing claims there are edits.
+    renderBar(
+      <>
+        <SettingsSaveBar isDirty={false} saveClean onSave={vi.fn()} onDiscard={vi.fn()} />
+        <LeaveButton onResult={vi.fn()} />
+      </>
+    );
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /discard/i })).toBeDisabled();
+    expect(screen.queryByText(/unsaved changes/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^leave/ })).toHaveTextContent('(clean)');
+  });
+
   it('enables Save and Discard and shows the hint when dirty', async () => {
     const onSave = vi.fn();
     const onDiscard = vi.fn();

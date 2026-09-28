@@ -13,6 +13,13 @@ interface SettingsSaveBarProps {
   onDiscard: () => void;
   /** Extra gate for Save, e.g. a validation error in the form. Default true. */
   canSave?: boolean;
+  /**
+   * Offer Save with a clean draft as well, when saving does something the
+   * comparison cannot see: a fallback template saved unchanged becomes the
+   * event type's own copy. The hint, Discard and the leave guard still
+   * follow `isDirty`.
+   */
+  saveClean?: boolean;
   /** Override the default "Save changes" label. */
   saveLabel?: string;
   /** Optional element on the left, e.g. a "test connection" button. */
@@ -36,6 +43,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
   onSave,
   onDiscard,
   canSave = true,
+  saveClean = false,
   saveLabel,
   extra,
 }) => {
@@ -64,7 +72,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
         <Button
           variant="primary"
           size="sm"
-          disabled={!isDirty || isSaving || !canSave}
+          disabled={(!isDirty && !saveClean) || isSaving || !canSave}
           isLoading={isSaving}
           onClick={onSave}
           leftIcon={<Save className="w-4 h-4" />}

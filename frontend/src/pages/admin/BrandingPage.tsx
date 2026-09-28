@@ -189,11 +189,16 @@ export const BrandingPage: React.FC = () => {
    * waiting for its 30-second poll.
    */
   const handleForceColorModeChange = (value: 'dark' | 'light' | null) => {
+    const previous = loadedBranding.force_color_mode;
     const next = { ...brandingSettings, force_color_mode: value };
     setBrandingSettings(next);
-    // Instant-save: not a pending change for the save bar.
+    // Instant-save: not a pending change for the save bar. If the request
+    // fails the snapshot goes back to what the server still holds, so the
+    // draft reads dirty and Save offers the retry.
     setLoadedBranding(prev => ({ ...prev, force_color_mode: value }));
-    brandingMutation.mutate(next);
+    brandingMutation.mutate(next, {
+      onError: () => setLoadedBranding(prev => ({ ...prev, force_color_mode: previous })),
+    });
   };
 
   const handleThemeChange = (newTheme: ThemeConfig) => {

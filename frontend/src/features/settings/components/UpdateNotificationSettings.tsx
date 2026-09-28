@@ -62,11 +62,17 @@ export const UpdateNotificationSettings: React.FC<UpdateNotificationSettingsProp
   // stored value reads clean and a save (setQueryData) clears it by itself.
   const isDirty = !!settings && (localEnabled !== settings.enabled || localRecipients !== (settings.recipients || ''));
 
-  // Sync local state when data is loaded
+  // Seed local state from the first response unconditionally: before it,
+  // the initial false/'' already differs from stored settings, so gating
+  // the seed on !isDirty would skip it and the form would show — and a
+  // combined save would persist — the defaults. Later refetches only
+  // overwrite a draft that has no edits.
+  const seededRef = React.useRef(false);
   React.useEffect(() => {
-    if (settings && !isDirty) {
+    if (settings && (!seededRef.current || !isDirty)) {
       setLocalEnabled(settings.enabled);
       setLocalRecipients(settings.recipients || '');
+      seededRef.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
