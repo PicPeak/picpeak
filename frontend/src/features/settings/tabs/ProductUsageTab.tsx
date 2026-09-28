@@ -124,7 +124,7 @@ export default function ProductUsageTab() {
     <div className="space-y-6 text-theme">
       <p>{t('productUsage.purpose')}</p>
       <Card padding="md" className="space-y-4">
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        <h3 className="text-lg font-semibold text-heading">
           {t(`productUsage.states.${data.status}`)}
         </h3>
         <p>{t(`productUsage.stateDetails.${data.status}`)}</p>
@@ -178,7 +178,7 @@ export default function ProductUsageTab() {
           // A paced install is waiting, not broken. Without this the tab shows
           // a delivery error and an idle Retry button, and nothing says the
           // sender is going to try again on its own.
-          <p role="status" className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p role="status" className="text-sm text-soft">
             {t('productUsage.retryScheduled', {
               time: new Date(data.retry_after).toLocaleTimeString()
             })}
@@ -235,7 +235,7 @@ export default function ProductUsageTab() {
           // activation_pending/deletion_pending with their own packet still
           // in flight). Which controls it names depends on whether the
           // v5-upgrade section is actually on screen.
-          <p role="status" className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p role="status" className="text-sm text-soft">
             {t(data.consent_update_available ? 'productUsage.pendingBlocksActions' : 'productUsage.pendingBlocksPortal')}
           </p>
         )}
@@ -347,7 +347,7 @@ export default function ProductUsageTab() {
                 data.privacy_receipts.last_deletion ||
                   data.privacy_receipts.last_abandonment
               ) && (
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                <p className="text-sm text-soft">
                   {t('productUsage.auditPreviousParticipation')}
                 </p>
               )}
@@ -367,7 +367,7 @@ export default function ProductUsageTab() {
       {active && (
         <>
           <Card padding="md" className="space-y-4">
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h3 className="text-lg font-semibold text-heading">
               {t('productUsage.inspect')}
             </h3>
             {/* `.btn` sets whitespace-nowrap, and these labels are long
@@ -449,7 +449,7 @@ export default function ProductUsageTab() {
               });
             }}
           >
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h3 className="text-lg font-semibold text-heading">
               {t('productUsage.feedbackTitle')}
             </h3>
             <p>{t('productUsage.feedbackDisclosure')}</p>

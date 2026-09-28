@@ -77,19 +77,19 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-2xl w-full">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-xl font-semibold text-heading">
             {t(titleKey, titleDefault)}
           </h2>
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            className="text-neutral-400 hover:text-body"
             aria-label={t('common.close', 'Close')}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+        <p className="text-sm text-soft mb-3">
           {t(helpKey, helpDefault)}
         </p>
 
@@ -97,11 +97,11 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
           readOnly
           value={content}
           onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-          className="w-full h-64 p-3 rounded-md border border-neutral-300 dark:border-neutral-600 bg-neutral-50 dark:bg-neutral-900 text-sm font-mono text-neutral-900 dark:text-neutral-100 mb-4"
+          className="w-full h-64 p-3 rounded-md border border-line-strong bg-shell text-sm font-mono text-heading mb-4"
         />
 
         <div className="flex gap-2 justify-between items-center">
-          <span className="text-xs text-neutral-500 dark:text-neutral-400 font-mono truncate">
+          <span className="text-xs text-muted font-mono truncate">
             {filename}
           </span>
           <div className="flex gap-2">

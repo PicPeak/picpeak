@@ -628,7 +628,7 @@ export const CreateEventPage: React.FC = () => {
           >
             {t('common.back')}
           </Button>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('events.create')}</h1>
+          <h1 className="text-2xl font-bold text-heading">{t('events.create')}</h1>
         </div>
       </div>
 
@@ -636,13 +636,13 @@ export const CreateEventPage: React.FC = () => {
         {/* Event Details */}
         <Card>
           <div className="p-6 space-y-6">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-heading flex items-center gap-2">
               <Calendar className="w-5 h-5" />
               {t('events.eventDetails')}
             </h2>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('events.eventType')}
               </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -654,11 +654,11 @@ export const CreateEventPage: React.FC = () => {
                     className={`p-4 rounded-lg border-2 transition-all ${
                       formData.event_type === type.value
                         ? 'tile-selected'
-                        : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                        : 'border-line hover:border-line-strong'
                     }`}
                   >
                     <div className="text-2xl mb-1">{type.emoji}</div>
-                    <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{type.name}</div>
+                    <div className="text-sm font-medium text-heading">{type.name}</div>
                   </button>
                 ))}
               </div>
@@ -689,12 +689,12 @@ export const CreateEventPage: React.FC = () => {
                 renders the event (block vs all-day banner). 15-minute
                 snap matches the calendar's drag-create grid. */}
             <div className="mt-3 space-y-2">
-              <label className="inline-flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+              <label className="inline-flex items-center gap-2 text-sm text-body">
                 <input
                   type="checkbox"
                   checked={formData.is_full_day}
                   onChange={(e) => setFormData({ ...formData, is_full_day: e.target.checked })}
-                  className="rounded border-neutral-300 dark:border-neutral-600"
+                  className="rounded border-line-strong"
                 />
                 {t('events.fullDay', 'Full day')}
               </label>
@@ -715,7 +715,7 @@ export const CreateEventPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('events.welcomeMessage')}
               </label>
               <WelcomeMessageEditor
@@ -732,7 +732,7 @@ export const CreateEventPage: React.FC = () => {
         <Card>
           <div className="p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-heading flex items-center gap-2">
                 <Palette className="w-5 h-5" />
                 {t('events.themeAndStyle')}
               </h2>
@@ -749,9 +749,9 @@ export const CreateEventPage: React.FC = () => {
 
             {/* Quick Theme Preview */}
             {!showThemeCustomizer && (
-              <div className="p-4 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800">
+              <div className="p-4 rounded-lg border border-line bg-subtle">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-neutral-900 dark:text-neutral-100" style={{ fontFamily: formData.theme_config.fontFamily }}>
+                  <h3 className="font-semibold text-heading" style={{ fontFamily: formData.theme_config.fontFamily }}>
                     {GALLERY_THEME_PRESETS[formData.theme_preset]?.name || 'Custom Theme'}
                   </h3>
                   <div className="flex gap-2">
@@ -765,7 +765,7 @@ export const CreateEventPage: React.FC = () => {
                     />
                   </div>
                 </div>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                <p className="text-sm text-soft">
                   Gallery Layout: <span className="font-medium capitalize">{formData.theme_config.galleryLayout || 'grid'}</span>
                 </p>
               </div>
@@ -829,12 +829,12 @@ export const CreateEventPage: React.FC = () => {
 
             {/* Custom CSS Template Selection */}
             {cssTemplates && cssTemplates.length > 0 && (
-              <div className="pt-6 border-t border-neutral-200 dark:border-neutral-700">
-                <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
+              <div className="pt-6 border-t border-line">
+                <h3 className="text-md font-semibold text-heading mb-3 flex items-center gap-2">
                   <Code className="w-4 h-4" />
                   {t('events.customCssTemplate', 'Custom CSS Template')}
                 </h3>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+                <p className="text-sm text-soft mb-4">
                   {t('events.customCssTemplateDesc', 'Apply a custom CSS template to style the gallery with unique visual effects.')}
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -845,11 +845,11 @@ export const CreateEventPage: React.FC = () => {
                     className={`p-4 rounded-lg border-2 transition-all text-left ${
                       formData.css_template_id === null
                         ? 'tile-selected'
-                        : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                        : 'border-line hover:border-line-strong'
                     }`}
                   >
-                    <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100">{t('events.noTemplate', 'No Template')}</div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                    <div className="font-medium text-sm text-heading">{t('events.noTemplate', 'No Template')}</div>
+                    <div className="text-xs text-muted mt-1">
                       {t('events.useThemeOnly', 'Use theme preset only')}
                     </div>
                   </button>
@@ -863,11 +863,11 @@ export const CreateEventPage: React.FC = () => {
                       className={`p-4 rounded-lg border-2 transition-all text-left ${
                         formData.css_template_id === template.id
                           ? 'tile-selected'
-                          : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600'
+                          : 'border-line hover:border-line-strong'
                       }`}
                     >
-                      <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100">{template.name}</div>
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                      <div className="font-medium text-sm text-heading">{template.name}</div>
+                      <div className="text-xs text-muted mt-1">
                         {t('events.customTemplate', 'Custom Template')} {template.slot_number}
                       </div>
                     </button>
@@ -881,7 +881,7 @@ export const CreateEventPage: React.FC = () => {
         {/* Access & Security */}
         <Card>
           <div className="p-6 space-y-6">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-heading flex items-center gap-2">
               <Lock className="w-5 h-5" />
               {t('events.accessAndSecurity')}
             </h2>
@@ -938,7 +938,7 @@ export const CreateEventPage: React.FC = () => {
               />
               {activeAdmins.length > 1 && (
                 <div className="flex items-center gap-2 -mt-1">
-                  <label htmlFor="admin-email-picker" className="text-xs text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
+                  <label htmlFor="admin-email-picker" className="text-xs text-soft whitespace-nowrap">
                     {t('events.adminEmailPickFromAdmins', 'Pick from admins:')}
                   </label>
                   <select
@@ -950,7 +950,7 @@ export const CreateEventPage: React.FC = () => {
                         setFormData(prev => ({ ...prev, admin_email: email }));
                       }
                     }}
-                    className="text-xs px-2 py-1 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                    className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
                   >
                     <option value="">{t('events.adminEmailCustom', 'Custom email')}</option>
                     {activeAdmins.map(a => (
@@ -967,7 +967,7 @@ export const CreateEventPage: React.FC = () => {
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
                   checked={formData.require_password}
                   onChange={(e) => {
                     const checked = e.target.checked;
@@ -983,10 +983,10 @@ export const CreateEventPage: React.FC = () => {
                   }}
                 />
                 <div>
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  <span className="text-sm font-medium text-body">
                     {t('events.requirePasswordToggle')}
                   </span>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  <p className="text-xs text-muted mt-1">
                     {t('events.requirePasswordToggleHelp', 'Disable this if you want to share the gallery without a password. Anyone with the link will be able to view the photos.')}
                   </p>
                 </div>
@@ -1055,8 +1055,8 @@ export const CreateEventPage: React.FC = () => {
                 photographers to the edit screen to set it up. The heading and
                 icon are the edit screen's, so the same control is recognisable
                 in both places. */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
+            <div className="pt-4 border-t border-line">
+              <h3 className="text-sm font-semibold text-heading mb-3 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-accent" />
                 {t('clientAccess.adminTitle')}
               </h3>
@@ -1064,7 +1064,7 @@ export const CreateEventPage: React.FC = () => {
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
                   checked={formData.client_access_enabled}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
@@ -1073,10 +1073,10 @@ export const CreateEventPage: React.FC = () => {
                   }))}
                 />
                 <div>
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  <span className="text-sm font-medium text-body">
                     {t('clientAccess.enableToggle')}
                   </span>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  <p className="text-xs text-muted mt-1">
                     {t('clientAccess.enableDescription')}
                   </p>
                 </div>
@@ -1098,7 +1098,7 @@ export const CreateEventPage: React.FC = () => {
                       with the event. Saying so here stops the next person
                       hunting this screen for a link that only appears once
                       the event is saved. */}
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-muted">
                     {t('clientAccess.linkAfterCreate')}
                   </p>
                 </div>
@@ -1107,7 +1107,7 @@ export const CreateEventPage: React.FC = () => {
 
             {requireExpiration ? (
               <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                <label className="block text-sm font-medium text-body mb-2">
                   {t('events.galleryExpiration')}
                 </label>
                 <div className="flex items-center gap-2">
@@ -1122,10 +1122,10 @@ export const CreateEventPage: React.FC = () => {
                       leftIcon={<Clock className="w-5 h-5" />}
                     />
                   </div>
-                  <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.daysAfterEvent')}</span>
+                  <span className="text-sm text-soft">{t('events.daysAfterEvent')}</span>
                 </div>
                 {formData.event_date && (
-                  <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
+                  <p className="mt-2 text-sm text-muted">
                     {/* Coerce to Number — handleInputChange stores the
                         <input type="number"> value as a string, and date-fns
                         addDays does `_date.setDate(_date.getDate() + amount)`
@@ -1148,8 +1148,8 @@ export const CreateEventPage: React.FC = () => {
             )}
 
             {/* Photo Cap */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+            <div className="pt-4 border-t border-line">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('events.photoCap', 'Photo Limit')}
               </label>
               <div className="flex items-center gap-2">
@@ -1169,15 +1169,15 @@ export const CreateEventPage: React.FC = () => {
                     leftIcon={<Image className="w-5 h-5" />}
                   />
                 </div>
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                <span className="text-sm text-soft">
                   {t('events.photoCapHelp', 'Maximum number of photos allowed. 0 = unlimited')}
                 </span>
               </div>
             </div>
 
             {/* Download limit (issue 1560) */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <label htmlFor="create-download-limit" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+            <div className="pt-4 border-t border-line">
+              <label htmlFor="create-download-limit" className="block text-sm font-medium text-body mb-2">
                 {t('events.downloadLimit', 'Download Limit')}
               </label>
               <div className="flex items-center gap-2">
@@ -1193,21 +1193,21 @@ export const CreateEventPage: React.FC = () => {
                     leftIcon={<Download className="w-5 h-5" />}
                   />
                 </div>
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                <span className="text-sm text-soft">
                   {t('events.downloadLimitHelp', 'Maximum number of photos the client can download. 0 = unlimited')}
                 </span>
               </div>
             </div>
 
             {/* Default Photo Sort */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+            <div className="pt-4 border-t border-line">
+              <label className="block text-sm font-medium text-body mb-2">
                 {t('photoSort.defaultSort', 'Default Photo Sort')}
               </label>
               <select
                 value={formData.default_photo_sort}
                 onChange={(e) => setFormData({ ...formData, default_photo_sort: e.target.value })}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
               >
                 <option value="upload_date_desc">{t('photoSort.uploadDateNewest', 'Upload Date (Newest First)')}</option>
                 <option value="upload_date_asc">{t('photoSort.uploadDateOldest', 'Upload Date (Oldest First)')}</option>
@@ -1219,19 +1219,19 @@ export const CreateEventPage: React.FC = () => {
             </div>
 
             {/* User Upload Settings */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
+            <div className="pt-4 border-t border-line">
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
                   checked={formData.allow_user_uploads}
                   onChange={(e) => setFormData({ ...formData, allow_user_uploads: e.target.checked })}
-                  className="rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                  className="rounded border-line-strong text-accent focus:ring-primary-500"
                 />
                 <div>
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  <span className="text-sm font-medium text-body">
                     {t('events.allowUserUploads')}
                   </span>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <p className="text-xs text-muted mt-0.5">
                     {t('events.allowUserUploadsDescription')}
                   </p>
                 </div>
@@ -1239,7 +1239,7 @@ export const CreateEventPage: React.FC = () => {
 
               {formData.allow_user_uploads && categories && categories.length > 0 && (
                 <div className="mt-4 ml-7">
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  <label className="block text-sm font-medium text-body mb-2">
                     {t('events.uploadCategory')}
                   </label>
                   <select
@@ -1248,7 +1248,7 @@ export const CreateEventPage: React.FC = () => {
                       ...formData,
                       upload_category_id: e.target.value ? Number(e.target.value) : null
                     })}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg focus:ring-2 focus:ring-primary-500 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+                    className="w-full px-3 py-2 border border-line-strong rounded-lg focus:ring-2 focus:ring-primary-500 bg-panel text-heading"
                   >
                     <option value="">{t('events.selectCategory')}</option>
                     {categories.map(category => (
@@ -1257,7 +1257,7 @@ export const CreateEventPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="mt-1 text-xs text-muted">
                     {t('events.uploadCategoryHelp')}
                   </p>
                 </div>

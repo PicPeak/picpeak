@@ -17,7 +17,7 @@ export const SlideshowSettingsPage: React.FC = () => {
           SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the same
           `settings.slideshow.title` key, so repeating it stacked two
           identical H2s on top of each other (QA warning). */}
-      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="text-sm text-soft">
         {t('settings.slideshow.subtitle', 'Global defaults for the Live Slideshow. Events and event types can override these.')}
       </p>
       <SlideshowGlobalDefaultsCard />

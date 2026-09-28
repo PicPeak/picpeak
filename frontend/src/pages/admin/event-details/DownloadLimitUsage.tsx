@@ -55,7 +55,7 @@ export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId,
         className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded ${
           exhausted
             ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-            : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
+            : 'bg-inset text-body'
         }`}
       >
         <Download className="w-3 h-3 mr-1" aria-hidden="true" />
@@ -66,7 +66,7 @@ export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId,
           type="button"
           onClick={handleReset}
           disabled={resetMutation.isPending}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300 border border-neutral-300 dark:border-neutral-600 rounded hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-body border border-line-strong rounded hover:bg-hover-soft disabled:opacity-50"
         >
           <RotateCcw className="w-3 h-3" aria-hidden="true" />
           {t('events.downloadLimitReset', 'Reset')}

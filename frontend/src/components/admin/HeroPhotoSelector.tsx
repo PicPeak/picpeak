@@ -37,7 +37,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
   if (!isEditing) {
     return (
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+        <label className="block text-sm font-medium text-body mb-1">
           {t('events.heroPhoto')}
         </label>
         {currentHeroPhoto ? (
@@ -57,10 +57,10 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+      <label className="block text-sm font-medium text-body mb-1">
         {t('events.heroPhoto')}
       </label>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+      <p className="text-xs text-muted mb-2">
         {t('events.heroPhotoHelp')}
       </p>
       
@@ -107,12 +107,12 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
       {isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <Card className="max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-6 border-b border-neutral-200 dark:border-neutral-700">
+            <div className="p-6 border-b border-line">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('events.selectHeroPhoto')}</h2>
+                <h2 className="text-xl font-semibold text-heading">{t('events.selectHeroPhoto')}</h2>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-hover rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -157,7 +157,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
               )}
             </div>
             
-            <div className="p-6 border-t border-neutral-200 dark:border-neutral-700 flex justify-end gap-3">
+            <div className="p-6 border-t border-line flex justify-end gap-3">
               <Button
                 variant="outline"
                 onClick={() => setIsOpen(false)}

@@ -104,7 +104,7 @@ export const LanguageSelector: React.FC = () => {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-body bg-panel border border-line-strong rounded-lg hover:bg-hover focus:outline-none focus:ring-2 focus:ring-primary-500"
         // On <sm the language *name* is hidden — the Globe + flag pair
         // is enough recognition on its own and stops this control from
         // pushing into the company-name title on narrow mobile widths
@@ -118,15 +118,15 @@ export const LanguageSelector: React.FC = () => {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 py-1 z-50">
+        <div className="absolute right-0 mt-2 w-48 bg-panel rounded-lg shadow-lg border border-line py-1 z-50">
           {SUPPORTED_LANGUAGES.map((language) => (
             <button
               key={language.code}
               onClick={() => handleLanguageChange(language.code)}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-700 flex items-center gap-3 ${
+              className={`w-full text-left px-4 py-2 text-sm hover:bg-hover flex items-center gap-3 ${
                 language.code === i18n.language
                   ? 'text-accent bg-accent-dark/15'
-                  : 'text-neutral-700 dark:text-neutral-300'
+                  : 'text-body'
               }`}
             >
               <language.Flag className="w-5 h-5" />

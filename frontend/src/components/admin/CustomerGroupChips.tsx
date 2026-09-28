@@ -34,7 +34,7 @@ export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, cla
   const { t } = useTranslation();
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 ${className}`}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-subtle px-2 py-0.5 text-xs text-body ${className}`}
       title={group.description || group.name}
     >
       <GroupDot color={group.color} />
@@ -79,7 +79,7 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
     <span className="flex flex-wrap items-center gap-1">
       {shown.map((group) => <CustomerGroupChip key={group.id} group={group} />)}
       {rest.length > 0 && !expandable && (
-        <span className="text-xs text-neutral-500 dark:text-neutral-400" title={rest.map((group) => group.name).join(', ')}>
+        <span className="text-xs text-muted" title={rest.map((group) => group.name).join(', ')}>
           {t('customers.groups.more', '+{{count}}', { count: rest.length })}
         </span>
       )}
@@ -102,7 +102,7 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
                 defaultValue_one: 'Show {{count}} more group',
                 defaultValue_other: 'Show {{count}} more groups',
               })}
-            className="rounded px-1 text-xs text-neutral-500 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:text-neutral-400"
+            className="rounded px-1 text-xs text-muted underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             {expanded ? t('customers.groups.less', 'Less') : t('customers.groups.more', '+{{count}}', { count: rest.length })}
           </button>
@@ -136,7 +136,7 @@ interface CustomerGroupFilterProps {
 const pillClass = (active: boolean) => `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
   active
     ? 'border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900'
-    : 'border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+    : 'border-line bg-shell text-body hover:bg-hover-soft'
 }`;
 
 const ClearFilters: React.FC<{ onClear: () => void }> = ({ onClear }) => {
@@ -145,7 +145,7 @@ const ClearFilters: React.FC<{ onClear: () => void }> = ({ onClear }) => {
     <button
       type="button"
       onClick={onClear}
-      className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-neutral-500 underline hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+      className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted underline hover:text-body"
     >
       <X className="h-3 w-3" />
       {t('customers.groups.clearFilter', 'Clear')}
@@ -172,7 +172,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
   }
   return (
     <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('customers.groups.filterLabel', 'Filter by group')}>
-      <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+      <span className="text-xs font-medium text-muted">
         {t('customers.groups.filterLabel', 'Filter by group')}
       </span>
       {groups.map((group) => {
@@ -204,7 +204,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
       </button>
       {selectedIds.length >= 2 && (
         <span
-          className="inline-flex overflow-hidden rounded-full border border-neutral-200 text-xs dark:border-neutral-700"
+          className="inline-flex overflow-hidden rounded-full border border-line text-xs"
           role="group"
           aria-label={t('customers.groups.matchLabel', 'Customers in')}
         >
@@ -217,7 +217,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
               className={`px-2.5 py-1 ${
                 match === value
                   ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
-                  : 'bg-white text-neutral-700 hover:bg-neutral-50 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+                  : 'bg-shell text-body hover:bg-hover-soft'
               }`}
             >
               {value === 'any'
@@ -228,7 +228,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
         </span>
       )}
       {atLimit && (
-        <span className="text-xs text-neutral-500 dark:text-neutral-400">{limitHint}</span>
+        <span className="text-xs text-muted">{limitHint}</span>
       )}
       {showClear && <ClearFilters onClear={onClear} />}
     </div>

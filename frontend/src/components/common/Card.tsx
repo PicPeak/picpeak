@@ -57,9 +57,9 @@ export const CardHeader: React.FC<CardHeaderProps> = ({
       {...props}
     >
       <div>
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{title}</h3>
+        <h3 className="text-lg font-semibold text-heading">{title}</h3>
         {subtitle && (
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{subtitle}</p>
+          <p className="mt-1 text-sm text-muted">{subtitle}</p>
         )}
       </div>
       {action && <div className="ml-4">{action}</div>}
@@ -95,7 +95,7 @@ export const CardFooter: React.FC<CardFooterProps> = ({
   return (
     <div
       className={clsx(
-        'mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700',
+        'mt-6 pt-6 border-t border-line',
         className
       )}
       {...props}

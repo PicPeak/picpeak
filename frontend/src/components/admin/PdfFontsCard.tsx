@@ -16,9 +16,9 @@ import { Button, Card } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { pdfThemesService } from '../../services/pdfThemes.service';
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 '
-  + 'bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100';
-const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+  + 'bg-panel text-sm text-heading';
+const labelClass = 'block text-sm font-medium text-body mb-1';
 const FACES = ['regular', 'bold', 'italic'] as const;
 type Face = (typeof FACES)[number];
 const STYLE_FACE: Record<string, Face> = { 400: 'regular', 700: 'bold', '400i': 'italic' };
@@ -88,10 +88,10 @@ export const PdfFontsCard: React.FC = () => {
   return (
     <Card padding="md" className="mb-6">
       <div className="flex items-start gap-3 mb-4">
-        <Type className="w-5 h-5 mt-0.5 text-neutral-600 dark:text-neutral-300" aria-hidden />
+        <Type className="w-5 h-5 mt-0.5 text-body" aria-hidden />
         <div>
-          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{t('branding.pdfFonts.title', 'Your fonts for PDFs')}</h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <h3 className="text-base font-semibold text-heading">{t('branding.pdfFonts.title', 'Your fonts for PDFs')}</h3>
+          <p className="text-sm text-soft">
             {t('branding.pdfFonts.description', 'Add your brand font as TTF or OTF files (up to 5 MB each). Once added, pick it in the PDF theme.')}
           </p>
         </div>
@@ -106,15 +106,15 @@ export const PdfFontsCard: React.FC = () => {
       )}
 
       {fonts.length > 0 && (
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700 mb-4">
+        <ul className="divide-y divide-line mb-4">
           {fonts.map((font) => (
             <li key={font.id} className="py-2 flex flex-wrap items-center gap-3 text-sm">
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">{font.name}</span>
-              <span className="text-xs text-neutral-600 dark:text-neutral-400">
+              <span className="font-medium text-heading">{font.name}</span>
+              <span className="text-xs text-soft">
                 {font.files.map((f) => t(`branding.pdfFonts.face.${STYLE_FACE[f.style]}`, FACE_LABELS[STYLE_FACE[f.style]] || f.style)).join(' · ')}
               </span>
               {!font.isActive && <span className="text-xs text-neutral-500">{t('branding.pdfFonts.archived', 'Archived')}</span>}
-              <span className="flex-1 text-xs text-neutral-600 dark:text-neutral-400 truncate" title={font.licenceNote}>{font.licenceNote}</span>
+              <span className="flex-1 text-xs text-soft truncate" title={font.licenceNote}>{font.licenceNote}</span>
               {font.isActive && (
                 <PermissionGate permission="settings.banking">
                   <Button variant="outline" size="sm" onClick={() => archive(font.id)}>{t('branding.pdfFonts.archive', 'Archive')}</Button>
@@ -127,7 +127,7 @@ export const PdfFontsCard: React.FC = () => {
 
       <PermissionGate permission="settings.banking">
         <form ref={form} onSubmit={submit} className="space-y-3" aria-labelledby="pdf-fonts-add">
-          <h4 id="pdf-fonts-add" className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t('branding.pdfFonts.add', 'Add a font')}</h4>
+          <h4 id="pdf-fonts-add" className="text-sm font-semibold text-heading">{t('branding.pdfFonts.add', 'Add a font')}</h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {FACES.map((face) => (
               <div key={face}>
@@ -149,7 +149,7 @@ export const PdfFontsCard: React.FC = () => {
               placeholder={t('branding.pdfFonts.licencePlaceholder', 'e.g. SIL Open Font License 1.1, or: desktop licence bought with the brand kit, allows embedding') as string}
               onChange={(e) => setLicenceNote(e.target.value)} />
           </div>
-          <label className="flex items-start gap-2 text-sm text-neutral-800 dark:text-neutral-200">
+          <label className="flex items-start gap-2 text-sm text-body">
             <input type="checkbox" className="mt-1" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
             {t('branding.pdfFonts.confirm', 'I have the right to embed this font in the documents I send.')}
           </label>

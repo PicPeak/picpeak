@@ -204,7 +204,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
       {isUploading && (
         <div
           role="status"
-          className="flex items-start gap-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-neutral-700 dark:text-neutral-300"
+          className="flex items-start gap-2 rounded-lg border border-line bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-body"
         >
           <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500" />
           <p>{t('upload.alreadyRunning', 'An upload is already running. It has to finish before the next one can start.')}</p>
@@ -213,13 +213,13 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
 
       {/* Category Selection */}
       <div>
-        <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+        <label className="block text-sm font-medium text-body mb-2">
           {t('upload.photoCategory')}
         </label>
         <select
           value={selectedCategoryId || ''}
           onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500"
         >
           <option value="">{t('upload.noCategory')}</option>
           {categories.map((category) => (
@@ -239,7 +239,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
           onChange={(e) => setReplaceByName(e.target.checked)}
           className="rounded border-neutral-300 text-accent focus:ring-primary-500"
         />
-        <label htmlFor="replace-by-name" className="text-sm text-neutral-700 dark:text-neutral-300">
+        <label htmlFor="replace-by-name" className="text-sm text-body">
           {t('upload.replaceByName', 'Replace existing photos with same name')}
         </label>
       </div>
@@ -253,7 +253,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
             ? "border-accent-dark bg-accent-dark/25"
             : selectedFiles.length > 0
               ? "border-accent-dark bg-accent-dark/15"
-              : "border-neutral-300 dark:border-neutral-600"
+              : "border-line-strong"
         )}
         onClick={() => fileInputRef.current?.click()}
         onDragOver={handleDragOver}
@@ -261,22 +261,22 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <Upload className="w-12 h-12 mx-auto text-neutral-400 dark:text-neutral-500 mb-4" />
-        <p className="text-neutral-700 dark:text-neutral-300 font-medium mb-1">
+        <Upload className="w-12 h-12 mx-auto text-faint mb-4" />
+        <p className="text-body font-medium mb-1">
           {t('upload.clickToUpload')}
         </p>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted">
           {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
         </p>
         {videoUploadsAllowed && (
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-muted">
             {t('upload.videoSizeLimit', 'Videos: max {{sizeLimit}}MB per file', { sizeLimit: maxVideoSizeMb })}
           </p>
         )}
         <p
           className={clsx(
             "text-xs mt-2",
-            remainingSlots === 0 ? "text-red-600" : "text-neutral-500 dark:text-neutral-400"
+            remainingSlots === 0 ? "text-red-600" : "text-muted"
           )}
         >
           {remainingSlots === 0
@@ -300,22 +300,22 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
       {/* Selected Files */}
       {selectedFiles.length > 0 && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+          <p className="text-sm font-medium text-body">
             {t('upload.selectedFiles')} ({selectedFiles.length})
           </p>
           <div className="max-h-48 overflow-y-auto space-y-2">
             {selectedFiles.map((file, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-2 bg-neutral-50 dark:bg-neutral-800 rounded-lg"
+                className="flex items-center justify-between p-2 bg-subtle rounded-lg"
               >
                 <div className="flex items-center gap-3">
                   <Image className="w-5 h-5 text-neutral-400" />
                   <div>
-                    <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate max-w-xs">
+                    <p className="text-sm font-medium text-body truncate max-w-xs">
                       {file.name}
                     </p>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="text-xs text-muted">
                       {formatFileSize(file.size)}
                     </p>
                   </div>

@@ -91,7 +91,7 @@ export const BillsListPage: React.FC = () => {
             <input
               type="text"
               placeholder={t('bills.searchPlaceholder', 'Search by number or customer…') as string}
-              className="w-full pl-9 pr-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full pl-9 pr-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
@@ -107,7 +107,7 @@ export const BillsListPage: React.FC = () => {
             return (
               <button key={s} type="button" onClick={() => toggleStatus(s)}
                 className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  active ? 'bg-accent-dark text-white border-accent-dark' : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-300 dark:border-neutral-600'
+                  active ? 'bg-accent-dark text-white border-accent-dark' : 'bg-panel text-body border-line-strong'
                 }`}
               >{t(`bills.status.${s}`, s)}</button>
             );
@@ -117,12 +117,12 @@ export const BillsListPage: React.FC = () => {
         {/* Body inside the same card (matches Customers + Quotes). */}
         <div className="mt-4">
           {isLoading ? <Loading /> : !data || data.invoices.length === 0 ? (
-            <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">{t('bills.empty', 'No invoices yet.')}</p>
+            <p className="text-center text-muted py-8">{t('bills.empty', 'No invoices yet.')}</p>
           ) : (
-            <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+            <div className="rounded-lg border border-line overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                  <thead className="bg-subtle text-body">
                     <tr>
                       <SortableHeader label="#" columnKey="number" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
                       <SortableHeader label={t('bills.table.customer', 'Customer')} columnKey="customer" activeKey={activeKey} activeDir={activeDir} onSort={onSort} />
@@ -137,7 +137,7 @@ export const BillsListPage: React.FC = () => {
                   <tbody>
                     {data.invoices.map((inv) => (
                       <tr key={inv.id}
-                        className="border-t border-neutral-200 dark:border-neutral-700 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                        className="border-t border-line cursor-pointer hover:bg-hover-soft"
                         onClick={() => navigate(`/admin/clients/bills/${inv.id}`)}
                       >
                         <td className="px-3 py-2 font-mono text-xs">
@@ -168,11 +168,11 @@ export const BillsListPage: React.FC = () => {
                         <td className="px-3 py-2 truncate max-w-xs">
                           {inv.eventName
                             ? (inv.eventId
-                                ? <Link to={`/admin/events/${inv.eventId}`} className="text-neutral-900 dark:text-neutral-100 hover:underline" onClick={(e) => e.stopPropagation()}>{inv.eventName}</Link>
+                                ? <Link to={`/admin/events/${inv.eventId}`} className="text-heading hover:underline" onClick={(e) => e.stopPropagation()}>{inv.eventName}</Link>
                                 : inv.eventName)
                             : '—'}
                         </td>
-                        <td className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+                        <td className="px-3 py-2 text-xs text-muted">
                           {inv.installmentTotal > 1 ? `${inv.installmentIndex + 1}/${inv.installmentTotal} · ${inv.installmentLabel || ''}` : '—'}
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">{inv.issueDate ? fmtDate(inv.issueDate) : '—'}</td>
@@ -280,13 +280,13 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
       onClick={onClose}>
-      <div className="bg-white dark:bg-neutral-900 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+      <div className="bg-shell rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-700">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <h2 className="text-lg font-semibold">
             {t('bills.importTitle', 'Import historical invoice')}
           </h2>
-          <button type="button" onClick={onClose} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded">
+          <button type="button" onClick={onClose} className="p-1 hover:bg-hover-soft rounded">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -303,7 +303,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
             </label>
             {customerId ? (
               <div className="flex items-center gap-2 text-sm">
-                <span className="px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-800">{customerLabel}</span>
+                <span className="px-2 py-1 rounded bg-subtle">{customerLabel}</span>
                 <button type="button" onClick={() => { setCustomerId(null); setCustomerLabel(''); }}
                   className="text-xs text-neutral-500 hover:underline">
                   {t('common.change', 'Change')}
@@ -315,7 +315,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
                   value={customerSearch}
                   onChange={(e) => setCustomerSearch(e.target.value)} />
                 {customerSearch.length >= 2 && customerOptions && (
-                  <ul className="mt-1 max-h-40 overflow-y-auto border border-neutral-200 dark:border-neutral-700 rounded">
+                  <ul className="mt-1 max-h-40 overflow-y-auto border border-line rounded">
                     {(customerOptions as any[]).map((c) => (
                       <li key={c.id}>
                         <button type="button"
@@ -323,7 +323,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
                             setCustomerId(c.id);
                             setCustomerLabel(c.companyName || c.displayName || c.email);
                           }}
-                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800">
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-hover-soft">
                           {c.companyName || c.displayName || c.email}
                           <span className="text-xs text-neutral-500 ml-2">{c.email}</span>
                         </button>
@@ -377,7 +377,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
               <label className="block text-sm font-medium mb-1">{t('bills.field.status', 'Status')}</label>
               <select value={status}
                 onChange={(e) => setStatus(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+                className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
                 <option value="paid">{t('bills.status.paid', 'Paid')}</option>
                 <option value="sent">{t('bills.status.sent', 'Sent')}</option>
                 <option value="overdue">{t('bills.status.overdue', 'Overdue')}</option>
@@ -408,7 +408,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
             )}
           </div>
         </div>
-        <div className="flex justify-end gap-2 px-5 py-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="flex justify-end gap-2 px-5 py-4 border-t border-line">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             {t('common.cancel', 'Cancel')}
           </Button>

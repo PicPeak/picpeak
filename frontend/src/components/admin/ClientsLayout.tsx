@@ -139,12 +139,12 @@ export const ClientsLayout: React.FC = () => {
   if (enabledItems.length === 0) {
     return (
       <div>
-        <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-8 text-center">
+        <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
           <Briefcase className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+          <h2 className="text-lg font-semibold text-heading mb-1">
             {t('clients.empty.title', 'No CRM features enabled')}
           </h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t(
               'clients.empty.body',
               'Enable Accounts (or another CRM sub-feature) under Settings → Features to get started.',

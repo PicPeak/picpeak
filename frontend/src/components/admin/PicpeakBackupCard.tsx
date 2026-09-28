@@ -58,15 +58,15 @@ export const PicpeakExportCard: React.FC = () => {
 
   return (
     <Card padding="lg">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+      <h3 className="text-lg font-semibold text-heading">
         {t('backup.picpeak.title', 'Portable backup (.picpeak)')}
       </h3>
-      <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mt-1 text-sm text-soft">
         {t('backup.picpeak.intro', 'Download a single self-contained file, then upload it on another instance to clone this one — all through the browser.')}
       </p>
 
       <div className="mt-6">
-        <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+        <label className="flex items-center gap-2 text-sm text-body">
           <input
             type="checkbox"
             className="h-4 w-4 rounded border-neutral-300"
@@ -144,10 +144,10 @@ export const PicpeakRestoreCard: React.FC = () => {
 
   return (
     <Card padding="lg">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+      <h3 className="text-lg font-semibold text-heading">
         {t('backup.picpeak.restoreTitle', 'Restore from a .picpeak')}
       </h3>
-      <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mt-1 text-sm text-soft">
         {t('backup.picpeak.restoreIntro', 'Upload a .picpeak taken from this or another instance. Restoring a SQLite backup onto a PostgreSQL instance is supported (the upgrade path); other engine combinations must match.')}
       </p>
       <input ref={fileRef} type="file" accept=".picpeak,application/zip" className="hidden" onChange={onFilePick} />
@@ -217,17 +217,17 @@ export const PicpeakRestoreCard: React.FC = () => {
       {/* Destructive confirmation */}
       {pendingFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-neutral-800">
+          <div className="w-full max-w-md rounded-xl bg-panel p-6 shadow-xl">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-6 w-6 flex-shrink-0 text-red-600 dark:text-red-400" />
               <div>
-                <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                <h3 className="text-lg font-semibold text-heading">
                   {t('backup.picpeak.confirmTitle', 'Restore will delete all current data')}
                 </h3>
-                <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="mt-2 text-sm text-body">
                   {t('backup.picpeak.confirmBody', 'This permanently replaces ALL data on this instance with the uploaded backup, except your current account. This cannot be undone.')}
                 </p>
-                <p className="mt-2 truncate text-xs text-neutral-500 dark:text-neutral-400">{pendingFile.name}</p>
+                <p className="mt-2 truncate text-xs text-muted">{pendingFile.name}</p>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">

@@ -9,11 +9,11 @@ import { CONTRACT_LOCALES, type ContractLocale, type LocaleText } from '../../..
 import { PlaceholderPicker, placeholderLang, useContractPlaceholders } from './PlaceholderPicker';
 import { applyCondition, readCondition, type ClauseCondition } from './clauseCondition';
 
-export const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 '
-  + 'bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100';
-export const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-export const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200 '
-  + 'disabled:opacity-40 hover:bg-neutral-50 dark:hover:bg-neutral-700';
+export const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+  + 'bg-panel text-sm text-heading';
+export const labelClass = 'block text-sm font-medium text-body mb-1';
+export const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
+  + 'disabled:opacity-40 hover:bg-hover';
 
 /** A text per language, with a tab per language. */
 export const LocaleTextField: React.FC<{
@@ -51,7 +51,7 @@ export const LocaleTextField: React.FC<{
   return (
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-        <label htmlFor={`${id}-${locale}`} className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{label}</label>
+        <label htmlFor={`${id}-${locale}`} className="text-sm font-medium text-body">{label}</label>
         <div className="flex gap-1 items-center flex-wrap" role="group" aria-label={t('contracts.templates.languages', 'Languages') as string}>
           {!readOnly && (
             <PlaceholderPicker target={textarea} onInsert={(next) => onChange({ ...value, [locale]: next }, locale)} />
@@ -64,7 +64,7 @@ export const LocaleTextField: React.FC<{
               onClick={() => setLocale(l)}
               className={`px-2 py-0.5 rounded text-xs border ${locale === l
                 ? 'bg-primary-600 text-white border-primary-600'
-                : 'border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300'}`}
+                : 'border-line-strong text-body'}`}
             >
               {l.toUpperCase()}{value[l] ? ' •' : ''}
             </button>

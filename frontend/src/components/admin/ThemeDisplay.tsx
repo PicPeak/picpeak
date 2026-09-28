@@ -82,10 +82,10 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
       {/* Theme Name & Layout */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Layout className="w-4 h-4 text-neutral-500 dark:text-neutral-300" />
-          <span className="text-sm font-medium text-neutral-700 dark:text-neutral-100">{themeName}</span>
+          <Layout className="w-4 h-4 text-muted" />
+          <span className="text-sm font-medium text-body">{themeName}</span>
         </div>
-        <div className="flex items-center gap-2 text-sm text-neutral-600 dark:text-neutral-200">
+        <div className="flex items-center gap-2 text-sm text-body">
           {layoutIcons[galleryLayout]}
           <span className="capitalize">{t(`branding.layoutDescriptions.${galleryLayout}`)}</span>
         </div>
@@ -97,8 +97,8 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
               Each swatch only renders if its token is set so legacy themes
               (pre-8-token migration) still render their original 4 swatches. */}
           <div className="flex items-center gap-2">
-            <Palette className="w-4 h-4 text-neutral-500 dark:text-neutral-300" />
-            <span className="text-sm text-neutral-600 dark:text-neutral-200">{t('branding.colors')}:</span>
+            <Palette className="w-4 h-4 text-muted" />
+            <span className="text-sm text-body">{t('branding.colors')}:</span>
             <div className="flex gap-1">
               {[
                 { value: themeConfig.backgroundColor, title: t('branding.backgroundColor', 'Background') },
@@ -112,7 +112,7 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
               ].filter((s) => !!s.value).map((s, i) => (
                 <div
                   key={i}
-                  className="w-6 h-6 rounded border border-neutral-300 dark:border-neutral-600"
+                  className="w-6 h-6 rounded border border-line-strong"
                   style={{ backgroundColor: s.value }}
                   title={s.title}
                 />
@@ -123,9 +123,9 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
           {/* Typography */}
           {themeConfig.fontFamily && (
             <div className="flex items-center gap-2">
-              <Type className="w-4 h-4 text-neutral-500 dark:text-neutral-300" />
-              <span className="text-sm text-neutral-600 dark:text-neutral-200">{t('branding.bodyFont')}:</span>
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-100" style={{ fontFamily: themeConfig.fontFamily }}>
+              <Type className="w-4 h-4 text-muted" />
+              <span className="text-sm text-body">{t('branding.bodyFont')}:</span>
+              <span className="text-sm font-medium text-body" style={{ fontFamily: themeConfig.fontFamily }}>
                 {themeConfig.fontFamily}
               </span>
             </div>
@@ -133,11 +133,11 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
 
           {/* Layout Settings */}
           {themeConfig.gallerySettings && (
-            <div className="text-sm text-neutral-600 dark:text-neutral-200">
+            <div className="text-sm text-body">
               {themeConfig.gallerySettings.spacing && (
                 <span className="inline-flex items-center gap-1 mr-3">
                   <span>{t('branding.photoSpacing')}:</span>
-                  <span className="font-medium capitalize text-neutral-700 dark:text-neutral-100">
+                  <span className="font-medium capitalize text-body">
                     {t(`branding.spacing.${themeConfig.gallerySettings.spacing}`)}
                   </span>
                 </span>
@@ -145,7 +145,7 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
               {themeConfig.gallerySettings.photoAnimation && themeConfig.gallerySettings.photoAnimation !== 'none' && (
                 <span className="inline-flex items-center gap-1">
                   <span>{t('branding.photoAnimation')}:</span>
-                  <span className="font-medium capitalize text-neutral-700 dark:text-neutral-100">
+                  <span className="font-medium capitalize text-body">
                     {t(`branding.animation.${themeConfig.gallerySettings.photoAnimation}`)}
                   </span>
                 </span>

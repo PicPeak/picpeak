@@ -153,7 +153,7 @@ export const EditInstallmentPlanModal: React.FC<EditInstallmentPlanModalProps> =
             <h2 className="text-xl font-semibold">
               {t('dealLineage.editPlanModalTitle', 'Edit installment plan')}
             </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted mt-1">
               {t('dealLineage.editPlanHelp',
                 'Atomically reshape this plan: change percents, labels, triggers, add or remove rows. The plan total stays fixed; existing invoice numbers are kept where possible. Refused once any invoice has shipped.')}
             </p>

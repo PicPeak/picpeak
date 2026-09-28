@@ -34,7 +34,7 @@ export const UploadProgressBar: React.FC = () => {
         'sticky top-16 z-20 border-b px-4 sm:px-6 lg:px-8 py-2.5 text-sm',
         phase.kind === 'done' && hasFailures
           ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/60'
-          : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700'
+          : 'bg-shell border-line'
       )}
     >
       <div className="flex items-center gap-3">
@@ -45,12 +45,12 @@ export const UploadProgressBar: React.FC = () => {
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3">
-            <p className="truncate font-medium text-neutral-800 dark:text-neutral-100">
+            <p className="truncate font-medium text-heading">
               {phase.kind === 'transferring' && (
                 <>
                   {t('upload.bar.uploading', { count: session.fileCount })}
                   {session.totalChunks > 1 && (
-                    <span className="font-normal text-neutral-500 dark:text-neutral-400">
+                    <span className="font-normal text-muted">
                       {` (${t('common.chunk')} ${session.currentChunk}/${session.totalChunks})`}
                     </span>
                   )}
@@ -60,7 +60,7 @@ export const UploadProgressBar: React.FC = () => {
                 <>
                   {t('upload.processing')}
                   {session.processing.total > 0 && (
-                    <span className="font-normal text-neutral-500 dark:text-neutral-400">
+                    <span className="font-normal text-muted">
                       {` · ${t('upload.processingProgress', {
                         complete: session.processing.complete + session.processing.failed,
                         total: session.processing.total,
@@ -71,7 +71,7 @@ export const UploadProgressBar: React.FC = () => {
               )}
               {phase.kind === 'done' && !hasFailures && t('upload.bar.uploaded', { count: session.uploadedCount })}
               {phase.kind === 'done' && session.processingUnknown && (
-                <span className="block font-normal text-neutral-600 dark:text-neutral-300">
+                <span className="block font-normal text-body">
                   {t('upload.bar.statusUnavailable', 'Processing status could not be read — the photos are queued and appear as the worker finishes.')}
                 </span>
               )}
@@ -79,7 +79,7 @@ export const UploadProgressBar: React.FC = () => {
                 <>
                   {t('upload.failures.title', { count: session.failures.length })}
                   {session.uploadedCount > 0 && (
-                    <span className="font-normal text-neutral-600 dark:text-neutral-300">
+                    <span className="font-normal text-body">
                       {` · ${t('upload.bar.uploaded', { count: session.uploadedCount })}`}
                     </span>
                   )}
@@ -93,14 +93,14 @@ export const UploadProgressBar: React.FC = () => {
                 </Link>
               )}
               {phase.kind === 'transferring' && (
-                <span className="tabular-nums text-neutral-600 dark:text-neutral-400">{session.progress}%</span>
+                <span className="tabular-nums text-soft">{session.progress}%</span>
               )}
               {phase.kind === 'done' && (
                 <button
                   type="button"
                   onClick={dismiss}
                   aria-label={t('common.dismiss', 'Dismiss')}
-                  className="p-1 -m-1 rounded text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                  className="p-1 -m-1 rounded text-neutral-500 hover:text-body hover:bg-hover-soft"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -109,7 +109,7 @@ export const UploadProgressBar: React.FC = () => {
           </div>
 
           {phase.kind !== 'done' && (
-            <div className="mt-1.5 h-1.5 w-full rounded-full bg-neutral-200 dark:bg-neutral-700 overflow-hidden">
+            <div className="mt-1.5 h-1.5 w-full rounded-full bg-fill overflow-hidden">
               <div
                 className={clsx(
                   'h-full rounded-full transition-all duration-300',
@@ -143,8 +143,8 @@ export const UploadProgressBar: React.FC = () => {
                 {f.kind === 'processing' && t('upload.failures.kindProcessing', 'Processing failed')}
               </span>
               <span className="min-w-0">
-                <span className="font-medium text-neutral-800 dark:text-neutral-200 break-all">{f.filename}</span>
-                <span className="text-neutral-500 dark:text-neutral-400"> — {f.reason}</span>
+                <span className="font-medium text-body break-all">{f.filename}</span>
+                <span className="text-muted"> — {f.reason}</span>
               </span>
             </li>
           ))}

@@ -20,7 +20,7 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+      <h3 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
         <Code className="w-5 h-5" />
         {t('branding.eventCustomCSS', 'Event-specific Custom CSS')}
       </h3>
@@ -38,13 +38,13 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
         </button>
 
         {showCssInstructions && (
-          <div className="mt-3 p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 text-sm space-y-4">
+          <div className="mt-3 p-4 bg-subtle rounded-lg border border-line text-sm space-y-4">
             {/* Available CSS Variables */}
             <div>
-              <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              <h4 className="font-semibold text-heading mb-2">
                 {t('branding.cssInstructions.variables', 'Theme CSS Variables')}
               </h4>
-              <p className="text-neutral-600 dark:text-neutral-400 mb-2">
+              <p className="text-soft mb-2">
                 {t('branding.cssInstructions.variablesDesc', 'Use these CSS variables to match your theme presets:')}
               </p>
               <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
@@ -63,10 +63,10 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
 
             {/* Custom Gallery Layouts */}
             <div>
-              <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              <h4 className="font-semibold text-heading mb-2">
                 {t('branding.cssInstructions.layouts', 'Custom Gallery Layouts')}
               </h4>
-              <p className="text-neutral-600 dark:text-neutral-400 mb-2">
+              <p className="text-soft mb-2">
                 {t('branding.cssInstructions.layoutsDesc', 'Target gallery elements with these selectors:')}
               </p>
               <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
@@ -82,10 +82,10 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
 
             {/* Glassmorphism Example */}
             <div>
-              <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+              <h4 className="font-semibold text-heading mb-2">
                 {t('branding.cssInstructions.glassEffect', 'Glassmorphism Effect')}
               </h4>
-              <p className="text-neutral-600 dark:text-neutral-400 mb-2">
+              <p className="text-soft mb-2">
                 {t('branding.cssInstructions.glassEffectDesc', 'Create modern glass effects:')}
               </p>
               <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
@@ -115,9 +115,9 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
         value={customCss}
         onChange={(e) => onCustomCssChange(e.target.value)}
         placeholder="/* Add custom CSS here */"
-        className="w-full h-40 px-3 py-2 font-mono text-sm border border-neutral-300 dark:border-neutral-600 rounded-lg bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+        className="w-full h-40 px-3 py-2 font-mono text-sm border border-line-strong rounded-lg bg-shell text-heading"
       />
-      <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
+      <p className="mt-2 text-sm text-soft">
         {t('branding.customCSSHelp')}
       </p>
     </Card>

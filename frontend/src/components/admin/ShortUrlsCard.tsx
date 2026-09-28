@@ -123,11 +123,11 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
     <Card padding="md">
       <div className="flex items-center gap-2 mb-3">
         <LinkIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        <h3 className="text-lg font-semibold text-heading">
           {t('events.shortUrls.title', 'Branded short URLs')}
         </h3>
       </div>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t(
           'events.shortUrls.description',
           'Create memorable links like /s/sofia-graduation that resolve to this gallery. The short URL itself shows the rich social preview when shared — so iMessage, Facebook, WhatsApp etc. see the gallery photo + name even when pasting the short link.',
@@ -168,7 +168,7 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
             {t('events.shortUrls.useSuggested', 'Use “{{suggested}}” instead', { suggested })}
           </button>
         )}
-        <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="mt-2 text-xs text-muted">
           {t(
             'events.shortUrls.slugHelp',
             'Leave empty to auto-generate from the gallery name. Allowed characters: lowercase letters, digits, hyphens.',
@@ -178,22 +178,22 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
 
       {/* Existing short URLs */}
       {isLoading ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted">
           {t('common.loading', 'Loading…')}
         </p>
       ) : shortUrls.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted">
           {t('events.shortUrls.empty', 'No short URLs yet. Create one above to share this gallery with a memorable link.')}
         </p>
       ) : (
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+        <ul className="divide-y divide-line">
           {shortUrls.map((row) => (
             <li key={row.id} className="py-3 flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm text-neutral-900 dark:text-neutral-100 break-all">
+                <div className="font-mono text-sm text-heading break-all">
                   /s/{row.short_slug}
                 </div>
-                <div className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                <div className="mt-1 text-xs text-muted">
                   {t('events.shortUrls.hits', '{{count}} hits', { count: row.hit_count })}
                   {row.last_hit_at && (
                     <>
@@ -204,7 +204,7 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
                   {' · '}
                   {t('events.shortUrls.createdAt', 'created {{when}}', { when: formatDateTime(row.created_at) })}
                 </div>
-                <div className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                <div className="mt-0.5 text-xs text-muted truncate">
                   → {row.target_path}
                 </div>
               </div>

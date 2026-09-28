@@ -66,12 +66,12 @@ export const AccountingLayout: React.FC = () => {
   if (enabledItems.length === 0) {
     return (
       <div>
-        <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-8 text-center">
+        <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
           <Landmark className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+          <h2 className="text-lg font-semibold text-heading mb-1">
             {t('accounting.empty.title', 'No accounting features enabled')}
           </h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('accounting.empty.body', 'Enable the Tax report (or another accounting sub-feature) under Settings → Features to get started.')}
           </p>
         </div>

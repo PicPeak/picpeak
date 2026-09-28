@@ -164,7 +164,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center gap-2">
-        <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('categories.galleryOrder', 'Gallery order')}</h3>
+        <h3 className="text-sm font-medium text-body">{t('categories.galleryOrder', 'Gallery order')}</h3>
         <div className="flex items-center gap-2">
           {isCustomised && (
             <Button
@@ -191,7 +191,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       </div>
 
       {/* Explain the two ordering layers */}
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 italic">
+      <p className="text-xs text-muted italic">
         {isCustomised
           ? t('categories.orderCustomisedHint', 'This gallery uses a custom order. Reset to follow the global default (Settings → Photo Categories).')
           : t('categories.orderDefaultHint', 'Use the arrows to set the order for this gallery. Otherwise it follows the global default (Settings → Photo Categories).')}
@@ -207,7 +207,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
             onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
             placeholder={t('categories.categoryName')}
             maxLength={100}
-            className="flex-1 px-3 py-1.5 text-sm border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500"
+            className="flex-1 px-3 py-1.5 text-sm border border-line-strong rounded-md bg-panel text-heading focus:ring-2 focus:ring-primary-500"
             autoFocus
           />
           <Button
@@ -233,7 +233,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
 
       {/* Combined, reorderable category list (globals + event-specific) */}
       {ordered.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 italic">
+        <p className="text-sm text-muted italic">
           {t('categories.noEventSpecificCategories')}
         </p>
       ) : (
@@ -245,7 +245,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
             return (
               <div
                 key={category.id}
-                className="flex items-center justify-between px-3 py-2 bg-neutral-50 dark:bg-neutral-800 rounded-md"
+                className="flex items-center justify-between px-3 py-2 bg-subtle rounded-md"
               >
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   {/* Reorder controls (#782). The gallery renders categories in
@@ -255,7 +255,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     <button
                       onClick={() => handleMove(index, -1)}
                       disabled={index === 0 || busy}
-                      className="p-0.5 text-neutral-400 dark:text-neutral-500 hover:text-accent-dark disabled:opacity-30 disabled:hover:text-neutral-400 transition-colors"
+                      className="p-0.5 text-faint hover:text-accent-dark disabled:opacity-30 disabled:hover:text-neutral-400 transition-colors"
                       title={t('categories.moveUp', 'Move up')}
                       aria-label={t('categories.moveUp', 'Move up')}
                     >
@@ -264,7 +264,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                     <button
                       onClick={() => handleMove(index, 1)}
                       disabled={index === ordered.length - 1 || busy}
-                      className="p-0.5 text-neutral-400 dark:text-neutral-500 hover:text-accent-dark disabled:opacity-30 disabled:hover:text-neutral-400 transition-colors"
+                      className="p-0.5 text-faint hover:text-accent-dark disabled:opacity-30 disabled:hover:text-neutral-400 transition-colors"
                       title={t('categories.moveDown', 'Move down')}
                       aria-label={t('categories.moveDown', 'Move down')}
                     >
@@ -274,7 +274,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                   {/* Hero photo thumbnail */}
                   <button
                     onClick={() => setHeroPickerCategoryId(category.id)}
-                    className="flex-shrink-0 w-10 h-10 rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-neutral-100 dark:bg-neutral-700 hover:border-accent-dark transition-colors flex items-center justify-center"
+                    className="flex-shrink-0 w-10 h-10 rounded border border-line overflow-hidden bg-inset hover:border-accent-dark transition-colors flex items-center justify-center"
                     title={t('categories.setCoverPhoto')}
                   >
                     {heroPhoto ? (
@@ -289,9 +289,9 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                       <ImageIcon className="w-4 h-4 text-neutral-300" />
                     )}
                   </button>
-                  <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{category.name}</span>
+                  <span className="text-sm text-body truncate">{category.name}</span>
                   {category.is_global && (
-                    <span className="flex-shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-700 text-neutral-500 dark:text-neutral-400">
+                    <span className="flex-shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-fill text-muted">
                       {t('categories.sharedBadge', 'Shared')}
                     </span>
                   )}
@@ -309,7 +309,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                         className={`p-1 transition-colors ${
                           category.is_folder
                             ? 'text-primary-600 dark:text-primary-400 hover:text-neutral-400'
-                            : 'text-neutral-400 dark:text-neutral-500 hover:text-primary-600 dark:hover:text-primary-400'
+                            : 'text-faint hover:text-primary-600 dark:hover:text-primary-400'
                         }`}
                         title={
                           category.is_folder
@@ -333,7 +333,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                         })}
                         className={`p-1 transition-colors ${
                           category.allow_downloads === false
-                            ? 'text-neutral-400 dark:text-neutral-500 hover:text-green-600 dark:hover:text-green-400'
+                            ? 'text-faint hover:text-green-600 dark:hover:text-green-400'
                             : 'text-green-600 dark:text-green-400 hover:text-neutral-400'
                         }`}
                         title={
@@ -353,7 +353,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                       </button>
                       <button
                         onClick={() => handleDelete(category)}
-                        className="p-1 text-neutral-400 dark:text-neutral-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        className="p-1 text-faint hover:text-red-600 dark:hover:text-red-400 transition-colors"
                         title={t('categories.deleteCategoryTitle')}
                         disabled={deleteMutation.isPending}
                       >
@@ -373,7 +373,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       )}
 
       {/* Hint about hero photo fallback */}
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 italic">
+      <p className="text-xs text-muted italic">
         {t('categories.categoryHeroHint')}
       </p>
 
@@ -381,12 +381,12 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       {heroPickerCategoryId !== null && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <Card className="max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-6 border-b border-neutral-200 dark:border-neutral-700">
+            <div className="p-6 border-b border-line">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('categories.setCoverPhoto')}</h2>
+                <h2 className="text-xl font-semibold text-heading">{t('categories.setCoverPhoto')}</h2>
                 <button
                   onClick={() => setHeroPickerCategoryId(null)}
-                  className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-hover rounded-lg transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -395,7 +395,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
               {photos.length === 0 ? (
-                <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">
+                <p className="text-center text-muted py-8">
                   {t('events.noPhotosAvailable')}
                 </p>
               ) : (
@@ -413,7 +413,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                             : 'border-transparent hover:border-neutral-300'
                         }`}
                       >
-                        <div className="aspect-square bg-neutral-100 dark:bg-neutral-700">
+                        <div className="aspect-square bg-inset">
                           <AuthenticatedImage
                             src={photo.thumbnail_url || photo.url}
                             alt={photo.filename}
@@ -435,7 +435,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
               )}
             </div>
 
-            <div className="p-6 border-t border-neutral-200 dark:border-neutral-700 flex justify-between gap-3">
+            <div className="p-6 border-t border-line flex justify-between gap-3">
               {ordered.find(c => c.id === heroPickerCategoryId)?.hero_photo_id && (
                 <Button
                   variant="outline"

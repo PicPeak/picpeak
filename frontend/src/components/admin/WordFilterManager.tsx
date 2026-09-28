@@ -154,7 +154,7 @@ export const WordFilterManager: React.FC = () => {
       case 'block':
         return 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300';
       default:
-        return 'bg-neutral-100 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-300';
+        return 'bg-inset text-heading';
     }
   };
 
@@ -181,13 +181,13 @@ export const WordFilterManager: React.FC = () => {
               heading (icon + label + divider). A second H2 stacked
               directly under it (QA warning). */}
           <div className="mb-6">
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            <p className="text-sm text-soft">
               {t('settings.moderation.description', 'Manage words that should be filtered or blocked in comments')}
             </p>
           </div>
 
           {/* Add new filter */}
-          <div className="mb-6 p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
+          <div className="mb-6 p-4 bg-subtle rounded-lg">
             <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 dark:text-neutral-100 mb-3">
               {t('settings.moderation.addFilter', 'Add New Filter')}
             </h3>
@@ -203,7 +203,7 @@ export const WordFilterManager: React.FC = () => {
               <select
                 value={newSeverity}
                 onChange={(e) => setNewSeverity(e.target.value as any)}
-                className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="low">{t('settings.moderation.severityLow', 'Low')}</option>
                 <option value="moderate">{t('settings.moderation.severityModerate', 'Moderate')}</option>
@@ -235,7 +235,7 @@ export const WordFilterManager: React.FC = () => {
           {/* Filters list */}
           <div className="space-y-2">
             {filteredFilters.length === 0 ? (
-              <div className="text-center py-8 text-neutral-500 dark:text-neutral-400">
+              <div className="text-center py-8 text-muted">
                 {searchTerm ? 
                   t('settings.moderation.noMatchingFilters', 'No matching filters found') : 
                   t('settings.moderation.noFilters', 'No word filters configured yet')
@@ -246,7 +246,7 @@ export const WordFilterManager: React.FC = () => {
                 <div
                   key={filter.id}
                   className={`flex items-center justify-between p-3 rounded-lg border ${
-                    filter.is_active ? 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800' : 'border-neutral-100 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 opacity-60'
+                    filter.is_active ? 'border-line bg-panel' : 'border-line bg-shell opacity-60'
                   }`}
                 >
                   {editingId === filter.id ? (
@@ -261,7 +261,7 @@ export const WordFilterManager: React.FC = () => {
                         <select
                           value={editSeverity}
                           onChange={(e) => setEditSeverity(e.target.value as any)}
-                          className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                           <option value="low">{t('settings.moderation.severityLow', 'Low')}</option>
                           <option value="moderate">{t('settings.moderation.severityModerate', 'Moderate')}</option>
@@ -298,7 +298,7 @@ export const WordFilterManager: React.FC = () => {
                           onChange={() => handleToggleActive(filter)}
                           className="w-4 h-4 text-accent rounded focus:ring-primary-500"
                         />
-                        <span className="font-medium text-neutral-900 dark:text-neutral-100">{filter.word}</span>
+                        <span className="font-medium text-heading">{filter.word}</span>
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getSeverityBadgeClass(filter.severity)}`}>
                           {getSeverityIcon(filter.severity)}
                           {filter.severity}
@@ -336,15 +336,15 @@ export const WordFilterManager: React.FC = () => {
       {/* Severity explanation */}
       <Card>
         <div className="p-6">
-          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+          <h3 className="text-sm font-semibold text-heading mb-3">
             {t('settings.moderation.severityLevels', 'Severity Levels')}
           </h3>
           <div className="space-y-2 text-sm">
             <div className="flex items-start gap-3">
               {getSeverityIcon('low')}
               <div>
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{t('settings.moderation.severityLow', 'Low')}: </span>
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-heading">{t('settings.moderation.severityLow', 'Low')}: </span>
+                <span className="text-soft">
                   {t('settings.moderation.lowDescription', 'Word is flagged for review but not automatically blocked')}
                 </span>
               </div>
@@ -352,8 +352,8 @@ export const WordFilterManager: React.FC = () => {
             <div className="flex items-start gap-3">
               {getSeverityIcon('moderate')}
               <div>
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{t('settings.moderation.severityModerate', 'Moderate')}: </span>
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-heading">{t('settings.moderation.severityModerate', 'Moderate')}: </span>
+                <span className="text-soft">
                   {t('settings.moderation.moderateDescription', 'Comment requires manual approval before being visible')}
                 </span>
               </div>
@@ -361,8 +361,8 @@ export const WordFilterManager: React.FC = () => {
             <div className="flex items-start gap-3">
               {getSeverityIcon('high')}
               <div>
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{t('settings.moderation.severityHigh', 'High')}: </span>
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-heading">{t('settings.moderation.severityHigh', 'High')}: </span>
+                <span className="text-soft">
                   {t('settings.moderation.highDescription', 'Comment is automatically hidden and requires admin review')}
                 </span>
               </div>
@@ -370,8 +370,8 @@ export const WordFilterManager: React.FC = () => {
             <div className="flex items-start gap-3">
               {getSeverityIcon('block')}
               <div>
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">{t('settings.moderation.severityBlock', 'Block')}: </span>
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-heading">{t('settings.moderation.severityBlock', 'Block')}: </span>
+                <span className="text-soft">
                   {t('settings.moderation.blockDescription', 'Comment is rejected immediately and cannot be submitted')}
                 </span>
               </div>

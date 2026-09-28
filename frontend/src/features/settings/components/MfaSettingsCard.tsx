@@ -52,7 +52,7 @@ const RecoveryCodesPanel: React.FC<RecoveryCodesPanelProps> = ({ codes, onConfir
         <p className="text-sm text-amber-800 dark:text-amber-200">{t('settings.mfa.recoveryCodesWarning')}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 p-4 rounded-lg bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 font-mono text-sm text-neutral-900 dark:text-neutral-100">
+      <div className="grid grid-cols-2 gap-2 p-4 rounded-lg bg-subtle border border-line font-mono text-sm text-heading">
         {codes.map((code) => (
           <span key={code} className="select-all">{code}</span>
         ))}
@@ -74,7 +74,7 @@ const RecoveryCodesPanel: React.FC<RecoveryCodesPanelProps> = ({ codes, onConfir
           onChange={(e) => setAcknowledged(e.target.checked)}
           className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
         />
-        <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('settings.mfa.recoveryCodesAck')}</span>
+        <span className="text-sm text-body">{t('settings.mfa.recoveryCodesAck')}</span>
       </label>
 
       <Button variant="primary" disabled={!acknowledged} onClick={onConfirm}>
@@ -175,10 +175,10 @@ export const MfaSettingsCard: React.FC = () => {
   return (
     <Card padding="md">
       <div className="flex items-center gap-2 mb-1">
-        <ShieldCheck className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('settings.mfa.title')}</h2>
+        <ShieldCheck className="w-5 h-5 text-body" />
+        <h2 className="text-lg font-semibold text-heading">{t('settings.mfa.title')}</h2>
       </div>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">{t('settings.mfa.description')}</p>
+      <p className="text-sm text-soft mb-4">{t('settings.mfa.description')}</p>
 
       {isLoading ? (
         <div className="py-8 flex justify-center">
@@ -194,13 +194,13 @@ export const MfaSettingsCard: React.FC = () => {
             <span className="text-sm text-green-800 dark:text-green-200">{t('settings.mfa.enabledBadge')}</span>
           </div>
 
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('settings.mfa.recoveryCodesRemaining', { count: status.recoveryCodesRemaining })}
           </p>
 
           {showRegenerate ? (
-            <div className="space-y-3 p-4 rounded-lg border border-neutral-200 dark:border-neutral-700">
-              <p className="text-sm text-neutral-700 dark:text-neutral-300">{t('settings.mfa.regenerateHelp')}</p>
+            <div className="space-y-3 p-4 rounded-lg border border-line">
+              <p className="text-sm text-body">{t('settings.mfa.regenerateHelp')}</p>
               <Input
                 type="text"
                 value={regenerateCode}
@@ -249,23 +249,23 @@ export const MfaSettingsCard: React.FC = () => {
       ) : setupData ? (
         /* ---------------- Setup in progress ---------------- */
         <div className="space-y-4">
-          <p className="text-sm text-neutral-700 dark:text-neutral-300">{t('settings.mfa.setupScanInstruction')}</p>
+          <p className="text-sm text-body">{t('settings.mfa.setupScanInstruction')}</p>
           <div className="flex flex-col sm:flex-row gap-4 items-start">
             <img
               src={setupData.qr}
               alt={t('settings.mfa.qrAlt')}
-              className="w-44 h-44 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white p-2"
+              className="w-44 h-44 rounded-lg border border-line bg-white p-2"
             />
             <div className="space-y-2">
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('settings.mfa.manualEntry')}</p>
-              <code className="block px-3 py-2 rounded bg-neutral-100 dark:bg-neutral-800 text-sm font-mono text-neutral-900 dark:text-neutral-100 break-all select-all">
+              <p className="text-sm text-soft">{t('settings.mfa.manualEntry')}</p>
+              <code className="block px-3 py-2 rounded bg-subtle text-sm font-mono text-heading break-all select-all">
                 {setupData.secret}
               </code>
             </div>
           </div>
 
           <div>
-            <label htmlFor="mfa-enable-code" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label htmlFor="mfa-enable-code" className="block text-sm font-medium text-body mb-1">
               {t('settings.mfa.enterCodeLabel')}
             </label>
             <Input
@@ -304,7 +304,7 @@ export const MfaSettingsCard: React.FC = () => {
       ) : (
         /* ---------------- Not enrolled ---------------- */
         <div className="space-y-3">
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('settings.mfa.notEnrolled')}</p>
+          <p className="text-sm text-soft">{t('settings.mfa.notEnrolled')}</p>
           <Button
             variant="primary"
             leftIcon={<ShieldCheck className="w-5 h-5" />}

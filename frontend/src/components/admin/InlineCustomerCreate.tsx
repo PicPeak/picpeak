@@ -263,17 +263,17 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
     <div className="space-y-3">
       <div className="flex items-start gap-3 mb-2">
         <div>
-          <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+          <h4 className="text-sm font-semibold text-heading">
             {heading.title}
           </h4>
-          <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
+          <p className="text-xs text-soft mt-0.5">
             {heading.subtitle}
           </p>
         </div>
         <button
           type="button"
           onClick={onCancel}
-          className="ml-auto p-1 rounded text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+          className="ml-auto p-1 rounded text-neutral-500 hover:text-heading"
           aria-label={t('common.cancel', 'Cancel') as string}
         >
           <X className="w-4 h-4" />
@@ -295,7 +295,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
           onChange={setField('companyName')}
         />
         <div>
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <label className="block text-sm font-medium text-body mb-1">
             {t('customers.detail.salutation', 'Salutation')}
           </label>
           {/* Salutation values are stored verbatim ("Herr", "Frau",
@@ -306,7 +306,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
           <select
             value={form.salutation}
             onChange={setField('salutation')}
-            className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+            className="w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading"
           >
             <option value="">{t('customer.profile.salutation.none', '— Not specified —')}</option>
             <option value="Herr">{t('customer.profile.salutation.herr', 'Mr.')}</option>
@@ -375,13 +375,13 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
           onChange={(code) => setForm((prev) => ({ ...prev, countryCode: code }))}
         />
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <label className="block text-sm font-medium text-body mb-1">
             {t('customers.detail.preferredLanguage', 'Preferred language')}
           </label>
           <select
             value={form.preferredLanguage || ''}
             onChange={setField('preferredLanguage')}
-            className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+            className="w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading"
           >
             <option value="en">English</option>
             <option value="de">Deutsch</option>
@@ -395,13 +395,13 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
 
       {canAssignGroups && liveGroups.length > 0 && (
         <fieldset>
-          <legend className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+          <legend className="block text-sm font-medium text-body mb-1">
             {t('customers.detail.groupsSection', 'Groups')}
           </legend>
           <ul className="flex flex-wrap gap-x-4 gap-y-2">
             {liveGroups.map((group) => (
               <li key={group.id}>
-                <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                <label className="flex items-center gap-2 text-sm text-body">
                   <input
                     type="checkbox"
                     checked={groupIds.includes(group.id)}
@@ -420,7 +420,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
         </fieldset>
       )}
 
-      <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-line">
         <Button variant="outline" onClick={onCancel} disabled={busy !== null}>
           {t('common.cancel', 'Cancel')}
         </Button>

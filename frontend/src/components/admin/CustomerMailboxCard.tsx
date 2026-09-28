@@ -13,8 +13,8 @@ import { Button, Card, Input, Loading } from '../common';
 import { emailService, type MailAccount } from '../../services/email.service';
 import { useMutationWithToast, useModal } from '../../hooks';
 
-const labelCls = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
-const selectCls = 'w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
+const labelCls = 'block text-sm font-medium text-body mb-1';
+const selectCls = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
 
 const ACCOUNT_KEY = 'customers';
 
@@ -54,16 +54,16 @@ export const CustomerMailboxCard: React.FC = () => {
 
   return (
     <Card padding="md" className="mt-6">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
         <Inbox className="w-5 h-5 text-neutral-400" />
         {t('email.customerMailbox.title', 'Customer mailbox (hello@)')}
       </h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t('email.customerMailbox.subtitle', 'A second inbound mailbox for customer conversations. Its mail appears under Messages → Customers; attachments are not routed to Accounting.')}
       </p>
 
       <div className="space-y-4">
-        <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+        <label className="flex items-center gap-2 text-sm text-body">
           <input type="checkbox" checked={!!cfg.enabled} onChange={(e) => set('enabled', e.target.checked)} />
           {t('email.customerMailbox.enabled', 'Poll this mailbox every minute')}
         </label>
@@ -107,11 +107,11 @@ export const CustomerMailboxCard: React.FC = () => {
           <Input type="text" value={cfg.imap_folder || 'INBOX'} onChange={(e) => set('imap_folder', e.target.value)} placeholder="INBOX" />
         </div>
 
-        <div className="pt-4 mt-1 border-t border-neutral-200 dark:border-neutral-700">
-          <div className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+        <div className="pt-4 mt-1 border-t border-line">
+          <div className="text-sm font-semibold text-body">
             {t('email.customerMailbox.outgoing', 'Outgoing (SMTP)')}
           </div>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 mb-3">
+          <p className="text-xs text-muted mt-0.5 mb-3">
             {t('email.customerMailbox.outgoingHint', 'Replies from this mailbox send from here. Leave blank to fall back to the global outgoing address.')}
           </p>
           <div className="space-y-4">

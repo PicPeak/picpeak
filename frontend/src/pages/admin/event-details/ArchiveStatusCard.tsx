@@ -19,12 +19,12 @@ export const ArchiveStatusCard: React.FC<ArchiveStatusCardProps> = ({ event, id 
 
   return (
     <Card padding="md">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.archiveStatusTitle')}</h2>
+      <h2 className="text-lg font-semibold text-heading mb-4">{t('events.archiveStatusTitle')}</h2>
 
       <div className="space-y-3">
         <div>
-          <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.archivedOn')}</p>
-          <p className="text-sm text-neutral-900 dark:text-neutral-100">
+          <p className="text-sm font-medium text-muted">{t('events.archivedOn')}</p>
+          <p className="text-sm text-heading">
             {event.archived_at && fmtDateTime(safeParseDate(event.archived_at)!)}
           </p>
         </div>

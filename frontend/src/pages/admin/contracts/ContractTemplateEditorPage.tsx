@@ -741,12 +741,12 @@ export const ContractTemplateEditorPage: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Link to="/admin/clients/contracts/templates" className="p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        <Link to="/admin/clients/contracts/templates" className="p-1 rounded hover:bg-hover-soft"
           aria-label={t('contracts.templates.backToTemplates', 'Back to templates') as string}>
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <h1 className="text-2xl font-bold flex-1 text-neutral-900 dark:text-neutral-100">{template.name}</h1>
-        <span className="text-sm text-neutral-600 dark:text-neutral-400">
+        <h1 className="text-2xl font-bold flex-1 text-heading">{template.name}</h1>
+        <span className="text-sm text-soft">
           {template.status === 'archived'
             ? t('contracts.templates.status.archived', 'Archived')
             : template.currentVersion
@@ -758,7 +758,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
 
       {template.isSystem && (
         <Card padding="md" className="flex flex-wrap items-center gap-3">
-          <p className="flex-1 text-sm text-neutral-700 dark:text-neutral-300">
+          <p className="flex-1 text-sm text-body">
             {t('contracts.templates.systemNotice', 'The standard template can\'t be edited. Duplicate it to make a version of your own.')}
           </p>
           <PermissionGate permission="contracts.templates.manage">
@@ -787,7 +787,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       )}
 
       {!readOnly && (
-        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 p-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white/95 dark:bg-neutral-900/95">
+        <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 p-2 rounded-md border border-line bg-white/95 dark:bg-neutral-900/95">
           <button type="button" className={iconButton} disabled={!history.canUndo} onClick={undo}
             aria-label={t('contracts.templates.undo', 'Undo') as string} title={t('contracts.templates.undoHint', 'Undo (Ctrl+Z)') as string}>
             <Undo2 className="w-4 h-4" />
@@ -798,7 +798,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
           </button>
           <span role="status" aria-live="polite" data-testid="autosave-status"
             className={`text-sm ${saveState === 'conflict' || saveState === 'error' ? 'text-red-700 dark:text-red-400'
-              : saveState === 'offline' || dirty ? 'text-amber-800 dark:text-amber-300' : 'text-neutral-600 dark:text-neutral-400'}`}>
+              : saveState === 'offline' || dirty ? 'text-amber-800 dark:text-amber-300' : 'text-soft'}`}>
             {status}
           </span>
         </div>
@@ -838,7 +838,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       )}
 
       <Card padding="lg" className="space-y-3">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('contracts.templates.details', 'Details')}</h2>
+        <h2 className="text-lg font-semibold text-heading">{t('contracts.templates.details', 'Details')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input id="contract-template-name" label={t('contracts.templates.name', 'Name') as string} value={draft.name}
             maxLength={128} readOnly={readOnly} onChange={(e) => setField('name', e.target.value, 'name')} />
@@ -860,20 +860,20 @@ export const ContractTemplateEditorPage: React.FC = () => {
         <LocaleTextField id="contract-template-outro" label={t('contracts.templates.outroText', 'Closing text') as string}
           value={draft.outro} onChange={(value, locale) => setField('outro', value, `outro:${locale}`)} rows={2} readOnly={readOnly}
           focusRequest={focusFor('outro')} />
-        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+        <p className="text-xs text-muted">
           {t('contracts.templates.placeholdersHint', 'Placeholders are filled in when a contract is made. Use “Insert placeholder” next to a text; the preview shows them with sample data.')}
         </p>
       </Card>
 
       <Card padding="lg" className="space-y-3">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('contracts.templates.clauses', 'Clauses')}</h2>
+        <h2 className="text-lg font-semibold text-heading">{t('contracts.templates.clauses', 'Clauses')}</h2>
         {draft.items.length === 0 && (
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('contracts.templates.noClauses', 'No clauses yet. Add clauses from the library or free text.')}
           </p>
         )}
         {!readOnly && draft.items.length > 1 && (
-          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          <p className="text-xs text-muted">
             {t('contracts.templates.reorderHint', 'Reorder with the handle, the arrow buttons, or Alt+↑/↓ on a clause.')}
             {check ? '' : ` ${t('contracts.templates.pageBreaks.hint', 'Run “Check” to see where the pages break.')}`}
           </p>
@@ -892,7 +892,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
         />
 
         {!readOnly && (
-          <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-700">
+          <div className="flex flex-wrap items-end gap-2 pt-2 border-t border-line">
             <div className="flex-1 min-w-[220px]">
               <label htmlFor="contract-template-pick-block" className={labelClass}>{t('contracts.templates.pickClause', 'Clause from the library')}</label>
               <select id="contract-template-pick-block" className={fieldClass} value={pickBlockId} onChange={(e) => setPickBlockId(e.target.value)}>
@@ -915,7 +915,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       </Card>
 
       <Card padding="lg" className="space-y-3">
-        <h2 id="contract-template-attachments" tabIndex={-1} className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 focus:outline-none">
+        <h2 id="contract-template-attachments" tabIndex={-1} className="text-lg font-semibold text-heading focus:outline-none">
           {t('contracts.attachments.heading', 'Attachments')}
         </h2>
         <AttachmentListEditor idPrefix="contract-template-attachment" value={draft.attachments}
@@ -938,15 +938,15 @@ export const ContractTemplateEditorPage: React.FC = () => {
       </div>
 
       <Card padding="lg">
-        <h2 className="text-lg font-semibold mb-2 text-neutral-900 dark:text-neutral-100">{t('contracts.templates.versions', 'Versions')}</h2>
+        <h2 className="text-lg font-semibold mb-2 text-heading">{t('contracts.templates.versions', 'Versions')}</h2>
         {detail.versions.length === 0 ? (
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('contracts.templates.noVersions', 'Not published yet.')}</p>
+          <p className="text-sm text-soft">{t('contracts.templates.noVersions', 'Not published yet.')}</p>
         ) : (
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+          <ul className="divide-y divide-line">
             {detail.versions.map((v, index) => (
               <li key={v.id} className="py-2 flex flex-wrap items-center gap-3 text-sm">
-                <span className="font-medium text-neutral-900 dark:text-neutral-100">v{v.version}</span>
-                <span className="text-neutral-600 dark:text-neutral-400">
+                <span className="font-medium text-heading">v{v.version}</span>
+                <span className="text-soft">
                   {v.status === 'published' ? t('contracts.templates.versionCurrent', 'Current') : t('contracts.templates.versionEarlier', 'Earlier')}
                   {v.publishedAt ? ` · ${formatDateTime(v.publishedAt)}` : ''}
                   {' · '}
@@ -955,7 +955,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
                     : t('contracts.templates.publishedBySystem', 'built in')}
                 </span>
                 {v.contentSha256 && (
-                  <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400" title={v.contentSha256}>
+                  <span className="font-mono text-xs text-muted" title={v.contentSha256}>
                     {v.contentSha256.slice(0, 12)}
                   </span>
                 )}

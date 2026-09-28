@@ -143,10 +143,10 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
     <Card padding="lg">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-base font-semibold text-heading">
             {t('customers.groups.title', 'Groups')}
           </h2>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1 text-sm text-muted">
             {t('customers.groups.intro', 'Organise customers into groups. A customer can be in several, and the overview can be filtered by them.')}
           </p>
         </div>
@@ -159,7 +159,7 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
 
       {creating && (
         <form
-          className="mb-4 space-y-3 rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+          className="mb-4 space-y-3 rounded-lg border border-line p-3"
           onSubmit={(e) => { e.preventDefault(); createGroup.mutate(); }}
         >
           <div className="grid gap-3 sm:grid-cols-2">
@@ -190,11 +190,11 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
       )}
 
       {ordered.length === 0 ? (
-        <p className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="py-6 text-center text-sm text-muted">
           {t('customers.groups.empty', 'No groups yet. Create one to organise your customers.')}
         </p>
       ) : (
-        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+        <ul className="divide-y divide-line">
           {ordered.map((group, index) => (
             <li key={group.id} className="py-3">
               {editingId === group.id ? (
@@ -227,19 +227,19 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
                 <div className="flex flex-wrap items-center gap-3">
                   <GroupDot color={group.color} className="h-3 w-3" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    <p className="truncate text-sm font-medium text-heading">
                       {group.name}
                       {group.isArchived && (
-                        <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                        <span className="ml-2 text-xs font-normal text-muted">
                           {t('customers.groups.archived', 'Archived')}
                         </span>
                       )}
                     </p>
                     {group.description && (
-                      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{group.description}</p>
+                      <p className="truncate text-xs text-muted">{group.description}</p>
                     )}
                   </div>
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="text-xs text-muted">
                     {t('customers.groups.memberCount', {
                       count: group.memberCount || 0,
                       defaultValue_one: '{{count}} customer',
@@ -325,7 +325,7 @@ const IconButton: React.FC<{
     disabled={disabled}
     aria-label={label}
     title={title || label}
-    className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+    className="rounded p-1.5 text-muted hover:bg-hover-soft hover:text-heading disabled:cursor-not-allowed disabled:opacity-40"
   >
     {children}
   </button>
@@ -335,7 +335,7 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
   const { t } = useTranslation();
   return (
     <div>
-      <span className="mb-1 block text-sm font-medium text-neutral-700 dark:text-neutral-300">
+      <span className="mb-1 block text-sm font-medium text-body">
         {t('customers.groups.color', 'Colour')}
       </span>
       <div className="flex flex-wrap items-center gap-2">
@@ -358,7 +358,7 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
           value={value}
           onChange={(e) => onChange(e.target.value.toUpperCase())}
           aria-label={t('customers.groups.customColor', 'Custom colour')}
-          className="h-6 w-10 cursor-pointer rounded border border-neutral-200 bg-transparent dark:border-neutral-700"
+          className="h-6 w-10 cursor-pointer rounded border border-line bg-transparent"
         />
       </div>
       {/* Advice, not a refusal: the name carries the meaning and the dot has

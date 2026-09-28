@@ -254,11 +254,11 @@ export const MessagesPage: React.FC = () => {
     <div className="flex flex-col h-[calc(100vh-8.5rem)] min-h-[540px]">
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-none">
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-            <Mail className="w-6 h-6 text-neutral-500 dark:text-neutral-400" />
+          <h1 className="text-2xl font-bold text-heading flex items-center gap-2">
+            <Mail className="w-6 h-6 text-muted" />
             {t('messages.title', 'Messages')}
           </h1>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-0.5">
+          <p className="text-sm text-soft mt-0.5">
             {t('messages.subtitle', 'Sent, automated and incoming mail — one place.')}
           </p>
         </div>
@@ -268,14 +268,14 @@ export const MessagesPage: React.FC = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('messages.searchPlaceholder', 'Search this folder…')}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-accent"
+            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-subtle text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>
         <div className="flex items-center gap-2 flex-none">
           <button
             onClick={() => sync.mutate()}
             disabled={sync.isPending}
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-neutral-300 dark:border-neutral-700 text-sm font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 disabled:opacity-60"
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-line-strong text-sm font-medium text-body hover:bg-hover-soft disabled:opacity-60"
           >
             <RefreshCw className={`w-4 h-4 ${sync.isPending ? 'animate-spin' : ''}`} />
             {t('messages.sync', 'Sync')}
@@ -290,15 +290,15 @@ export const MessagesPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white dark:bg-neutral-900">
+      <div className="flex flex-1 min-h-0 rounded-xl border border-line-faint overflow-hidden bg-shell">
         {/* ── account tree ── */}
-        <nav className="w-56 flex-none border-r border-neutral-200 dark:border-neutral-800 overflow-y-auto p-2 bg-neutral-50 dark:bg-neutral-950/40">
+        <nav className="w-56 flex-none border-r border-line-faint overflow-y-auto p-2 bg-neutral-50 dark:bg-neutral-950/40">
           {accounts.map((a) => (
             <div key={a.id} className="mb-1.5">
-              <div className="flex items-center gap-2 px-2 py-1.5 text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+              <div className="flex items-center gap-2 px-2 py-1.5 text-sm font-semibold text-body">
                 <span className="w-2 h-2 rounded-full flex-none" style={{ background: a.color }} />
                 <span>{a.name}</span>
-                {a.addr && <span title={a.addr} className="ml-auto text-[11px] font-medium font-mono text-neutral-400 dark:text-neutral-500 truncate max-w-[7rem]">{localPart(a.addr)}</span>}
+                {a.addr && <span title={a.addr} className="ml-auto text-[11px] font-medium font-mono text-faint truncate max-w-[7rem]">{localPart(a.addr)}</span>}
               </div>
               <div className="flex flex-col gap-0.5">
                 {a.folders.map((f) => {
@@ -311,7 +311,7 @@ export const MessagesPage: React.FC = () => {
                       className={`flex items-center gap-2 pl-7 pr-2 py-1.5 rounded-lg text-[13.5px] text-left transition-colors ${
                         active
                           ? 'bg-accent-soft text-on-accent-soft font-semibold'
-                          : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
+                          : 'text-soft hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
                       }`}
                     >
                       <f.icon className="w-4 h-4 opacity-80" />
@@ -326,7 +326,7 @@ export const MessagesPage: React.FC = () => {
             </div>
           ))}
           {/* System folders — Archived + Deleted, across all accounts. */}
-          <div className="mt-2 pt-2 border-t border-neutral-200 dark:border-neutral-800 flex flex-col gap-0.5">
+          <div className="mt-2 pt-2 border-t border-line-faint flex flex-col gap-0.5">
             {systemFolders.map((f) => {
               const active = f.id === activeFolder;
               return (
@@ -336,7 +336,7 @@ export const MessagesPage: React.FC = () => {
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13.5px] text-left transition-colors ${
                     active
                       ? 'bg-accent-soft text-on-accent-soft font-semibold'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
+                      : 'text-soft hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
                   }`}
                 >
                   <f.icon className="w-4 h-4 opacity-80" />
@@ -348,10 +348,10 @@ export const MessagesPage: React.FC = () => {
         </nav>
 
         {/* ── message list ── */}
-        <section className="w-[22rem] flex-none flex flex-col min-h-0 border-r border-neutral-200 dark:border-neutral-800">
-          <div className="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 flex-none">
-            <div className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{folder.f.name}</div>
-            <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+        <section className="w-[22rem] flex-none flex flex-col min-h-0 border-r border-line-faint">
+          <div className="px-4 py-3 border-b border-line-faint flex-none">
+            <div className="text-base font-semibold text-heading">{folder.f.name}</div>
+            <div className="text-xs text-muted mt-0.5">
               {folder.f.src === 'state'
                 ? t('messages.acrossAccounts', 'Across all accounts')
                 : folder.a.addr || (folder.a.id === 'all' ? t('messages.unified', 'Unified across accounts') : t('messages.systemGenerated', 'System-generated'))}
@@ -428,7 +428,7 @@ const MessageList: React.FC<{
 }> = ({ folder, queue, received, loading, search, selection, onSelect, t }) => {
   if (folder.src === 'empty') {
     return (
-      <div className="p-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+      <div className="p-8 text-center text-sm text-muted">
         <Inbox className="w-8 h-8 mx-auto mb-3 text-neutral-300 dark:text-neutral-600" />
         {folder.note}
       </div>
@@ -468,7 +468,7 @@ const MessageList: React.FC<{
   if (q) rows = rows.filter((r) => r.who.toLowerCase().includes(q) || r.subject.toLowerCase().includes(q));
 
   if (rows.length === 0) {
-    return <div className="p-8 text-center text-sm text-neutral-500 dark:text-neutral-400">{q ? t('messages.noSearchResults', 'No matches') : t('messages.noMessages', 'No messages')}</div>;
+    return <div className="p-8 text-center text-sm text-muted">{q ? t('messages.noSearchResults', 'No matches') : t('messages.noMessages', 'No messages')}</div>;
   }
 
   return (
@@ -484,12 +484,12 @@ const MessageList: React.FC<{
             }`}
           >
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-[13.5px] text-neutral-800 dark:text-neutral-100 truncate">{r.who}</span>
+              <span className="font-semibold text-[13.5px] text-heading truncate">{r.who}</span>
               <span className="ml-auto text-[11px] text-neutral-400 tabular-nums whitespace-nowrap">{r.when}</span>
             </div>
-            <div className="text-[13px] text-neutral-600 dark:text-neutral-300 truncate mt-0.5">{r.subject}</div>
+            <div className="text-[13px] text-body truncate mt-0.5">{r.subject}</div>
             <div className="flex items-center gap-2 mt-1.5">
-              <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_STYLES[r.status] || 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'}`}>
+              <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_STYLES[r.status] || 'bg-subtle text-body'}`}>
                 {r.status}
               </span>
               {r.attach > 0 && (
@@ -527,7 +527,7 @@ const ReadingPane: React.FC<{
 
   if (!selection) {
     return (
-      <div className="flex-1 grid place-items-center text-center text-neutral-400 dark:text-neutral-500 p-10">
+      <div className="flex-1 grid place-items-center text-center text-faint p-10">
         <div>
           <Mail className="w-9 h-9 mx-auto mb-3 text-neutral-300 dark:text-neutral-700" />
           <div className="text-sm">{t('messages.selectPrompt', 'Select a message to read')}</div>
@@ -588,26 +588,26 @@ const ReadingPane: React.FC<{
 
 const QueueDetail: React.FC<{ d: import('../../../services/email.service').EmailQueueDetail; fromAddr?: string | null; t: TFunction }> = ({ d, fromAddr, t }) => (
   <>
-    <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100" style={{ textWrap: 'balance' } as React.CSSProperties}>
+    <h2 className="text-xl font-semibold text-heading" style={{ textWrap: 'balance' } as React.CSSProperties}>
       {friendlyType(d.emailType)}
     </h2>
-    <div className="mt-3 pb-4 border-b border-neutral-200 dark:border-neutral-800 text-sm">
-      <div className="text-neutral-600 dark:text-neutral-300">
+    <div className="mt-3 pb-4 border-b border-line-faint text-sm">
+      <div className="text-body">
         {t('messages.from', 'from')} <span className="font-mono text-xs">{fromAddr || '—'}</span> · {t('messages.to', 'to')}{' '}
-        <span className="font-semibold text-neutral-800 dark:text-neutral-100">{d.recipientEmail}</span>
+        <span className="font-semibold text-heading">{d.recipientEmail}</span>
       </div>
-      {d.cc && <div className="text-neutral-500 dark:text-neutral-400 text-xs mt-0.5">cc {d.cc}</div>}
-      <div className="text-neutral-400 dark:text-neutral-500 text-xs mt-0.5 tabular-nums">{fmt(d.sentAt || d.createdAt)}</div>
+      {d.cc && <div className="text-muted text-xs mt-0.5">cc {d.cc}</div>}
+      <div className="text-faint text-xs mt-0.5 tabular-nums">{fmt(d.sentAt || d.createdAt)}</div>
     </div>
 
     {d.renderedHtml ? (
-      <div className="mt-4 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white" style={{ height: '52vh' }}>
+      <div className="mt-4 rounded-lg border border-line-faint overflow-hidden bg-white" style={{ height: '52vh' }}>
         {/* Our own template output, but rendered with a strict script-less,
             no-same-origin sandbox anyway — matches the inbound-mail pane. */}
         <iframe title="Email body" sandbox="" srcDoc={d.renderedHtml} className="w-full h-full border-0" />
       </div>
     ) : (
-      <div className="mt-4 text-sm text-neutral-500 dark:text-neutral-400 italic">
+      <div className="mt-4 text-sm text-muted italic">
         {t('messages.noBody', 'This message was sent before body capture was added, so no preview is available.')}
       </div>
     )}
@@ -619,9 +619,9 @@ const QueueDetail: React.FC<{ d: import('../../../services/email.service').Email
         </div>
         <div className="flex flex-col gap-2 max-w-md">
           {d.attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40">
+            <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint bg-neutral-50 dark:bg-neutral-800/40">
               <FileText className="w-5 h-5 text-red-500 flex-none" />
-              <span className="text-[13.5px] font-medium text-neutral-800 dark:text-neutral-100 truncate">{a.filename}</span>
+              <span className="text-[13.5px] font-medium text-heading truncate">{a.filename}</span>
               <span className="ml-auto text-[11px] text-neutral-400" title={t('messages.sentAttachHint', 'Sent attachments are not archived yet — Phase 2.')}>
                 {t('messages.notArchived', 'not archived yet')}
               </span>
@@ -647,27 +647,27 @@ const ReceivedDetail: React.FC<{
   const toAddr = detail.data?.to_address || item.to_address || mailboxAddr || '—';
   return (
     <>
-      <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100" style={{ textWrap: 'balance' } as React.CSSProperties}>
+      <h2 className="text-xl font-semibold text-heading" style={{ textWrap: 'balance' } as React.CSSProperties}>
         {item.subject || t('messages.noSubject', '(no subject)')}
       </h2>
-      <div className="mt-3 pb-4 border-b border-neutral-200 dark:border-neutral-800 text-sm">
-        <div className="text-neutral-600 dark:text-neutral-300">
-          {t('messages.from', 'from')} <span className="font-semibold text-neutral-800 dark:text-neutral-100">{item.from_address || '—'}</span>
+      <div className="mt-3 pb-4 border-b border-line-faint text-sm">
+        <div className="text-body">
+          {t('messages.from', 'from')} <span className="font-semibold text-heading">{item.from_address || '—'}</span>
           {' · '}{t('messages.to', 'to')} <span className="font-mono text-xs">{toAddr}</span>
         </div>
-        <div className="text-neutral-400 dark:text-neutral-500 text-xs mt-0.5 tabular-nums">{fmt(item.received_at)}</div>
+        <div className="text-faint text-xs mt-0.5 tabular-nums">{fmt(item.received_at)}</div>
       </div>
 
       {detail.isLoading ? (
         <div className="mt-4"><Loading /></div>
       ) : detail.data?.body_html ? (
-        <div className="mt-4 rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white" style={{ height: '48vh' }}>
+        <div className="mt-4 rounded-lg border border-line-faint overflow-hidden bg-white" style={{ height: '48vh' }}>
           <EmailBodyFrame key={item.id} html={detail.data.body_html} />
         </div>
       ) : detail.data?.body_text ? (
-        <pre className="mt-4 whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300 font-sans">{detail.data.body_text}</pre>
+        <pre className="mt-4 whitespace-pre-wrap text-sm text-body font-sans">{detail.data.body_text}</pre>
       ) : (
-        <div className="mt-4 text-sm text-neutral-500 dark:text-neutral-400 italic">
+        <div className="mt-4 text-sm text-muted italic">
           {t('messages.noInboundBody', 'No message body was captured for this email.')}
         </div>
       )}
@@ -682,7 +682,7 @@ const ReceivedDetail: React.FC<{
           </button>
           <button
             onClick={onOpenAccounting}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-200 text-sm font-medium hover:bg-neutral-50 dark:hover:bg-neutral-800"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-line-strong text-body text-sm font-medium hover:bg-hover-soft"
           >
             <Link2 className="w-4 h-4" />{t('messages.openInAccounting', 'Open in Accounting inbox')}
           </button>
@@ -713,8 +713,8 @@ const Toolbar: React.FC<{
         disabled={!enabled}
         title={enabled ? undefined : t('messages.soon', 'Available in a later phase')}
         className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium ${
-          enabled ? 'hover:bg-neutral-100 dark:hover:bg-neutral-800 ' : 'cursor-not-allowed opacity-50 '
-        }${accent ? 'text-accent-dark font-semibold' : 'text-neutral-600 dark:text-neutral-300'}`}
+          enabled ? 'hover:bg-hover-soft ' : 'cursor-not-allowed opacity-50 '
+        }${accent ? 'text-accent-dark font-semibold' : 'text-body'}`}
       >
         <Icon className="w-[15px] h-[15px]" />{label}
       </button>
@@ -722,11 +722,11 @@ const Toolbar: React.FC<{
   };
   const doc = (docType: DocType) => (onDoc ? () => onDoc(docType) : undefined);
   return (
-    <div className="flex items-center gap-1 flex-wrap px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 flex-none">
+    <div className="flex items-center gap-1 flex-wrap px-3 py-2 border-b border-line-faint flex-none">
       <Tb icon={Reply} label={t('messages.reply', 'Reply')} onClick={onReply} />
       <Tb icon={ReplyAll} label={t('messages.replyAll', 'Reply all')} />
       <Tb icon={Forward} label={t('messages.forward', 'Forward')} />
-      <span className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1" />
+      <span className="w-px h-5 bg-fill mx-1" />
       {isAcct ? (
         <>
           <Tb icon={ReceiptText} label={t('messages.bookExpense', 'Book as expense')} accent />
@@ -782,36 +782,36 @@ const PdfModal: React.FC<{ docId: number; onClose: () => void; t: TFunction }> =
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6" onClick={onClose}>
-      <div className="bg-white dark:bg-neutral-900 rounded-xl w-[min(620px,94vw)] max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800">
+      <div className="bg-shell rounded-xl w-[min(620px,94vw)] max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-line-faint">
           <FileText className="w-4 h-4 text-red-500" />
-          <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{t('messages.document', 'Document')}</span>
+          <span className="text-sm font-medium text-heading">{t('messages.document', 'Document')}</span>
           <div className="ml-auto flex items-center gap-1">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-40">
+              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft disabled:opacity-40">
               <ChevronLeft className="w-4 h-4" />
             </button>
             <span className="text-xs tabular-nums text-neutral-500 w-6 text-center">{page}</span>
             <button onClick={() => setPage((p) => p + 1)}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft">
               <ChevronRight className="w-4 h-4" />
             </button>
             <button onClick={onClose} aria-label={t('messages.close', 'Close')}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 ml-1">
+              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft ml-1">
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
-        <div className="overflow-auto p-5 bg-neutral-100 dark:bg-neutral-800 grid place-items-center min-h-[240px]">
+        <div className="overflow-auto p-5 bg-subtle grid place-items-center min-h-[240px]">
           {err ? (
-            <div className="text-sm text-neutral-500 dark:text-neutral-400">{t('messages.previewUnavailable', 'Preview unavailable')}</div>
+            <div className="text-sm text-muted">{t('messages.previewUnavailable', 'Preview unavailable')}</div>
           ) : url ? (
             <img src={url} alt="" className="max-w-full shadow-lg rounded" />
           ) : (
             <Loading />
           )}
         </div>
-        <div className="text-center text-[11px] text-neutral-400 py-2 border-t border-neutral-200 dark:border-neutral-800">
+        <div className="text-center text-[11px] text-neutral-400 py-2 border-t border-line-faint">
           {t('messages.rasterNote', 'Server-rendered preview — the raw file never reaches the browser.')}
         </div>
       </div>

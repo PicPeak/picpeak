@@ -75,7 +75,7 @@ export const BackupCoverageCard: React.FC = () => {
 
           <DriftSection drift={data.drift} />
 
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-4">
+          <p className="text-xs text-muted mt-4">
             {t('backup.coverage.generatedAt', 'Coverage generated: {{when}}', {
               when: formatDateTime(new Date(data.generatedAt)),
             })}
@@ -107,11 +107,11 @@ const Header: React.FC<{
           ) : (
             <ShieldCheck className="w-5 h-5 text-neutral-400" />
           )}
-          <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          <h3 className="text-lg font-semibold text-heading">
             {t('backup.coverage.title', 'Backup coverage')}
           </h3>
         </div>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 max-w-2xl">
+        <p className="text-sm text-soft max-w-2xl">
           {t(
             'backup.coverage.description',
             'Shows what the next backup will include, skip, or silently miss. The database block confirms the dump strategy. The "drift" section flags subdirectories that exist on disk but are not in the backup configuration — usually a sign that a new feature shipped without a matching backup_paths row.',
@@ -282,16 +282,16 @@ const SummaryCard: React.FC<{
 const PathsTable: React.FC<{ paths: BackupCoverageReport['paths'] }> = ({ paths }) => {
   const { t } = useTranslation();
   return (
-    <div className="border border-neutral-200 dark:border-neutral-700 rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 border-b border-neutral-200 dark:border-neutral-700">
-        <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+    <div className="border border-line rounded-lg overflow-hidden">
+      <div className="px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 border-b border-line">
+        <h4 className="text-sm font-semibold text-heading">
           {t('backup.coverage.paths.heading', 'Configured paths')}
         </h4>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 dark:bg-neutral-800/30">
-            <tr className="text-left text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-3 py-2">{t('backup.coverage.paths.path', 'Path')}</th>
               <th className="px-3 py-2">{t('backup.coverage.paths.coverage', 'Coverage')}</th>
               <th className="px-3 py-2">{t('backup.coverage.paths.featureFlag', 'Feature flag')}</th>
@@ -302,20 +302,20 @@ const PathsTable: React.FC<{ paths: BackupCoverageReport['paths'] }> = ({ paths 
             {paths.map((p) => (
               <tr
                 key={p.path}
-                className="border-t border-neutral-200 dark:border-neutral-700"
+                className="border-t border-line"
               >
-                <td className="px-3 py-2 font-mono text-xs text-neutral-700 dark:text-neutral-300">
+                <td className="px-3 py-2 font-mono text-xs text-body">
                   {p.path}
                 </td>
                 <td className="px-3 py-2">
                   <CoverageBadge coverage={p.coverage} />
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <td className="px-3 py-2 text-xs text-soft">
                   {p.featureFlag
                     ? `${p.featureFlag} = ${p.featureFlagValue === null ? '∅' : String(p.featureFlagValue)}`
                     : '—'}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <td className="px-3 py-2 text-xs text-soft">
                   {p.description ?? '—'}
                 </td>
               </tr>
@@ -418,7 +418,7 @@ const Row: React.FC<{ label: string; value: string; icon?: React.ReactNode }> = 
 type Tone = 'neutral' | 'green' | 'amber' | 'red';
 
 const TONE_BG: Record<Tone, string> = {
-  neutral: 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200',
+  neutral: 'bg-subtle text-body',
   green: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300',
   amber: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
   red: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300',

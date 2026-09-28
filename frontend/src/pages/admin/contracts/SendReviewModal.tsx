@@ -22,7 +22,7 @@ import { contractsService } from '../../../services/contracts.service';
 import { formatMoneyMinor } from '../../../utils/money';
 import { ContractModal } from './ContractModal';
 
-const heading = 'text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-1';
+const heading = 'text-sm font-semibold text-heading mb-1';
 
 export const SendReviewModal: React.FC<{
   contractId: number;
@@ -115,14 +115,14 @@ export const SendReviewModal: React.FC<{
           )}
 
           {customerAddressMissing && (
-            <section className="p-3 rounded-md border border-neutral-200 dark:border-neutral-700">
-              <label className="flex items-start gap-2 text-neutral-800 dark:text-neutral-200">
+            <section className="p-3 rounded-md border border-line">
+              <label className="flex items-start gap-2 text-body">
                 <input type="checkbox" className="mt-0.5" checked={collectChecked}
                   onChange={(e) => { setCollectData(e.target.checked); setShowLayout(false); }} />
                 {t('contracts.detail.collectData', 'Ask the customer to complete their details first')}
               </label>
               {collectData && (
-                <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+                <p className="mt-1 text-soft">
                   {t('contracts.detail.review.collectHint', 'Only the first signer gets a link now, to complete their details. The contract, its PDF and the price are prepared once they have, and then go to the other signers.')}
                 </p>
               )}
@@ -133,20 +133,20 @@ export const SendReviewModal: React.FC<{
             <section>
               <h3 className={heading}>{t('contracts.detail.review.customer', 'Customer')}</h3>
               {review.content.recipient ? (
-                <p className="text-neutral-800 dark:text-neutral-200">
+                <p className="text-body">
                   {review.content.recipient.companyName || review.content.recipient.displayName}
-                  {review.content.recipient.email && <span className="block text-neutral-600 dark:text-neutral-400">{review.content.recipient.email}</span>}
+                  {review.content.recipient.email && <span className="block text-soft">{review.content.recipient.email}</span>}
                 </p>
               ) : <p>—</p>}
             </section>
             <section>
               <h3 className={heading}>{t('contracts.detail.review.signers', 'Signers')}</h3>
-              <p className="text-neutral-600 dark:text-neutral-400 mb-1">
+              <p className="text-soft mb-1">
                 {review.signingOrder === 'sequential'
                   ? t('contracts.detail.review.sequential', 'One after the other, in this order')
                   : t('contracts.detail.review.parallel', 'All at once')}
               </p>
-              <ol className="list-decimal pl-5 space-y-0.5 text-neutral-800 dark:text-neutral-200">
+              <ol className="list-decimal pl-5 space-y-0.5 text-body">
                 {review.signers.map((s) => (
                   <li key={`${s.role}-${s.position}`}>
                     {s.name || '—'}
@@ -159,16 +159,16 @@ export const SendReviewModal: React.FC<{
             <section>
               <h3 className={heading}>{t('contracts.attachments.heading', 'Attachments')}</h3>
               {review.attachments.length === 0 ? (
-                <p className="text-neutral-600 dark:text-neutral-400">{t('contracts.detail.review.noAttachments', 'None')}</p>
+                <p className="text-soft">{t('contracts.detail.review.noAttachments', 'None')}</p>
               ) : (
-                <ul className="space-y-0.5 text-neutral-800 dark:text-neutral-200">
+                <ul className="space-y-0.5 text-body">
                   {review.attachments.map((a) => (
                     <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
                       {a.ok
                         ? <CheckCircle2 className="w-3.5 h-3.5 text-green-700 dark:text-green-400" aria-hidden="true" />
                         : <XCircle className="w-3.5 h-3.5 text-red-700 dark:text-red-400" aria-hidden="true" />}
                       <span>{a.name}</span>
-                      <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                      <span className="text-xs text-soft">
                         {a.delivery === 'merged'
                           ? t('contracts.detail.review.merged', 'in the PDF')
                           : t('contracts.detail.review.separate', 'separate file')}
@@ -183,9 +183,9 @@ export const SendReviewModal: React.FC<{
             <section>
               <h3 className={heading}>{t('contracts.detail.review.price', 'Price')}</h3>
               {collectData ? (
-                <p className="text-neutral-600 dark:text-neutral-400">{t('contracts.detail.review.afterDetails', 'Set once the customer has completed their details.')}</p>
+                <p className="text-soft">{t('contracts.detail.review.afterDetails', 'Set once the customer has completed their details.')}</p>
               ) : review.totals ? (
-                <dl className="grid grid-cols-2 gap-x-3 text-neutral-800 dark:text-neutral-200">
+                <dl className="grid grid-cols-2 gap-x-3 text-body">
                   <dt>{t('publicContract.price.net', 'Net')}</dt><dd className="text-right tabular-nums">{money(review.totals.netMinor)}</dd>
                   {(review.totals.vatMinor !== 0 || review.totals.vatRatePercent > 0) && (
                     <><dt>{t('publicContract.price.vat', 'VAT')} ({review.totals.vatRatePercent}%)</dt><dd className="text-right tabular-nums">{money(review.totals.vatMinor)}</dd></>
@@ -194,12 +194,12 @@ export const SendReviewModal: React.FC<{
                   <dd className="text-right tabular-nums font-semibold">{money(review.totals.grossMinor)}</dd>
                 </dl>
               ) : (
-                <p className="text-neutral-600 dark:text-neutral-400">{t('contracts.detail.review.noPrice', 'No quote attached — the contract names no price.')}</p>
+                <p className="text-soft">{t('contracts.detail.review.noPrice', 'No quote attached — the contract names no price.')}</p>
               )}
             </section>
             <section>
               <h3 className={heading}>{t('contracts.detail.review.template', 'Template')}</h3>
-              <p className="text-neutral-800 dark:text-neutral-200">
+              <p className="text-body">
                 {review.template
                   ? t('contracts.detail.review.templateVersion', '{{name}}, version {{version}}', { name: review.template.name, version: review.template.version })
                   : t('contracts.detail.review.noTemplate', 'No template')}

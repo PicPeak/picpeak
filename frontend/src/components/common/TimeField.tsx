@@ -97,7 +97,7 @@ export const TimeField: React.FC<TimeFieldProps> = ({
   if (!label) return input;
   return (
     <div className="w-full">
-      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5">
+      <label className="block text-sm font-medium text-body mb-1.5">
         {label}
       </label>
       {input}

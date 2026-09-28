@@ -74,19 +74,19 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-md w-full">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-xl font-semibold text-heading">
             {t('events.publishDialog.title', 'Publish gallery')}
           </h2>
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+            className="text-neutral-400 hover:text-body"
             aria-label={t('common.close', 'Close')}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-soft mb-4">
           {/* Follows the checkbox. Left static it contradicted itself — the
               text promised an email to the customer while the box beneath it
               said none would be sent. */}
@@ -132,13 +132,13 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
                 setNotifyCustomer(e.target.checked);
                 if (error) setError(undefined);
               }}
-              className="mt-1 h-4 w-4 rounded border-neutral-300 dark:border-neutral-600"
+              className="mt-1 h-4 w-4 rounded border-line-strong"
             />
             <span className="text-sm">
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              <span className="font-medium text-heading">
                 {t('events.publishDialog.notifyLabel', 'Send the gallery email now')}
               </span>
-              <span className="block text-neutral-600 dark:text-neutral-400">
+              <span className="block text-soft">
                 {t(
                   'events.publishDialog.notifyHelp',
                   'Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page.',

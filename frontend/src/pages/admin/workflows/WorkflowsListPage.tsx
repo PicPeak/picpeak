@@ -93,8 +93,8 @@ export const WorkflowsListPage: React.FC = () => {
             <WorkflowIcon className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('workflows.title', 'Workflows')}</h1>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('workflows.subtitle', 'Visual automations — triggers, conditions, gates and actions.')}</p>
+            <h1 className="text-xl font-semibold text-heading">{t('workflows.title', 'Workflows')}</h1>
+            <p className="text-sm text-soft">{t('workflows.subtitle', 'Visual automations — triggers, conditions, gates and actions.')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -111,19 +111,19 @@ export const WorkflowsListPage: React.FC = () => {
         {isLoading ? (
           <div className="p-10"><Loading /></div>
         ) : !workflows || workflows.length === 0 ? (
-          <div className="p-10 text-center text-neutral-500 dark:text-neutral-400">{t('workflows.empty', 'No workflows yet. Create one to automate your invoicing and booking steps.')}</div>
+          <div className="p-10 text-center text-muted">{t('workflows.empty', 'No workflows yet. Create one to automate your invoicing and booking steps.')}</div>
         ) : (
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+          <ul className="divide-y divide-line">
             {workflows.map((w) => (
               <li key={w.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <Link to={`/admin/workflows/${w.id}`} className="font-medium text-neutral-900 dark:text-neutral-100 truncate hover:underline">{w.name}</Link>
+                    <Link to={`/admin/workflows/${w.id}`} className="font-medium text-heading truncate hover:underline">{w.name}</Link>
                     {isBuiltin(w) && (
-                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300">{t('workflows.builtin', 'built-in')}</span>
+                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-subtle text-body">{t('workflows.builtin', 'built-in')}</span>
                     )}
                   </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                  <div className="text-xs text-muted mt-0.5">
                     {t('workflows.triggerLabel', 'Trigger')}: <code>{w.trigger_type}</code> · v{w.version}
                   </div>
                 </div>
@@ -132,7 +132,7 @@ export const WorkflowsListPage: React.FC = () => {
                   onClick={() => toggle(w)}
                   className={`text-xs px-2 py-1 rounded-full border ${isEnabled(w)
                     ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
-                    : 'bg-neutral-50 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400 border-neutral-300 dark:border-neutral-600'}`}
+                    : 'bg-subtle text-muted border-line-strong'}`}
                 >
                   {isEnabled(w) ? t('workflows.enabled', 'Enabled') : t('workflows.disabled', 'Disabled')}
                 </button>
@@ -160,33 +160,33 @@ export const WorkflowsListPage: React.FC = () => {
 
       {testTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTestTarget(null)}>
-          <div className="w-full max-w-lg rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-lg rounded-lg bg-shell border border-line p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('workflows.test.title', 'Test run')} — {testTarget.name}</h2>
-              <button type="button" onClick={() => setTestTarget(null)} aria-label={t('common.close', 'Close') as string} className="text-neutral-500 dark:text-neutral-400">✕</button>
+              <h2 className="text-lg font-semibold text-heading">{t('workflows.test.title', 'Test run')} — {testTarget.name}</h2>
+              <button type="button" onClick={() => setTestTarget(null)} aria-label={t('common.close', 'Close') as string} className="text-muted">✕</button>
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-muted">
               {t('workflows.test.hint', 'Dry run: walks the whole flow now (waits skipped, gates auto-confirmed) with side effects mocked — no real emails. Optionally give an entity id (e.g. an invoice) so conditions can read it.')}
             </p>
             <input
               value={testEntityId} onChange={(e) => setTestEntityId(e.target.value)}
               placeholder={t('workflows.test.entityId', 'Entity id (optional, e.g. invoice id)') as string}
-              className="w-full px-2 py-1.5 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 text-sm"
+              className="w-full px-2 py-1.5 rounded border border-line-strong bg-shell text-heading text-sm"
             />
             <Button variant="primary" isLoading={testMutation.isPending} onClick={() => testMutation.mutate()}>
               {t('workflows.test.run', 'Run dry test')}
             </Button>
             {testResult && (
               <div className="mt-2">
-                <div className="text-sm mb-1 text-neutral-700 dark:text-neutral-300">
+                <div className="text-sm mb-1 text-body">
                   {t('workflows.test.result', 'Result')}: <span className="font-medium">{testResult.status}</span>
                 </div>
                 <ol className="text-xs space-y-1 max-h-72 overflow-y-auto">
                   {testResult.steps.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2 border-b border-neutral-100 dark:border-neutral-800 pb-1">
+                    <li key={i} className="flex items-start gap-2 border-b border-line-faint pb-1">
                       <span className="text-neutral-400 w-6 shrink-0">{i + 1}.</span>
-                      <span className="font-mono text-neutral-700 dark:text-neutral-300">{s.node_type}:{s.node_key}</span>
-                      <span className="text-neutral-500 dark:text-neutral-400">{s.status}</span>
+                      <span className="font-mono text-body">{s.node_type}:{s.node_key}</span>
+                      <span className="text-muted">{s.status}</span>
                       {s.result && (s.result as any).would ? <span className="text-purple-600 dark:text-purple-400">→ would {String((s.result as any).would)}</span> : null}
                       {s.error ? <span className="text-red-600 dark:text-red-400">{s.error}</span> : null}
                     </li>

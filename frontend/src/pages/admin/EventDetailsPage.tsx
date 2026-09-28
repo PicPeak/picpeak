@@ -389,7 +389,7 @@ export const EventDetailsPage: React.FC = () => {
   if (eventError || !event) {
     return (
       <Card padding="lg">
-        <p className="text-neutral-900 dark:text-neutral-100">{t('events.notFound', 'Event not found')}</p>
+        <p className="text-heading">{t('events.notFound', 'Event not found')}</p>
         <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/events')}>
           {t('events.backToEvents')}
         </Button>

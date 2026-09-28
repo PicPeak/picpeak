@@ -29,8 +29,8 @@ export interface SlideshowStyleFieldsProps {
 }
 
 const inputClass =
-  'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
-const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+  'w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm';
+const labelClass = 'block text-sm font-medium text-body mb-1';
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -132,7 +132,7 @@ export const SlideshowStyleFields: React.FC<SlideshowStyleFieldsProps> = ({ valu
 
       {/* Watermark — MODE only. The look (logo/position/opacity/style/size)
           lives in Settings → Slideshow, so it isn't duplicated here. */}
-      <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+      <div className="pt-2 border-t border-line">
         <label className={labelClass}>{t('slideshow.watermarkToggle', 'Logo watermark')}</label>
         <select
           value={value.watermark}
@@ -145,13 +145,13 @@ export const SlideshowStyleFields: React.FC<SlideshowStyleFieldsProps> = ({ valu
             </option>
           ))}
         </select>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+        <p className="text-xs text-muted mt-1">
           {t('slideshow.watermarkModeHint', 'The logo, position, opacity, style and size are configured under Settings → Slideshow.')}
         </p>
       </div>
 
       {/* QR overlay (#837) — MODE only, same pattern as the watermark. */}
-      <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+      <div className="pt-2 border-t border-line">
         <label className={labelClass}>{t('slideshow.qrToggle', 'Gallery QR code')}</label>
         <select
           value={value.qr}
@@ -164,7 +164,7 @@ export const SlideshowStyleFields: React.FC<SlideshowStyleFieldsProps> = ({ valu
             </option>
           ))}
         </select>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+        <p className="text-xs text-muted mt-1">
           {t('slideshow.qrModeHint', 'Position, size and opacity are configured under Settings → Slideshow.')}
         </p>
       </div>

@@ -144,14 +144,14 @@ export const HourEntryInlinePopover: React.FC<HourEntryInlinePopoverProps> = ({
             <h2 className="font-semibold text-lg">
               {item.customerName || t('calendar.hourEntry.untitledCustomer', 'Hours')}
             </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-muted">
               {item.entryDate} · {item.startTime}–{item.endTime}
             </p>
           </div>
           {item.locked && (
             <span
               className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded
-                         bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200"
+                         bg-fill text-body"
               title={t('calendar.hourEntry.lockedTooltip',
                 'Already billed — Storno the invoice to edit.') as string}
             >
@@ -166,7 +166,7 @@ export const HourEntryInlinePopover: React.FC<HourEntryInlinePopoverProps> = ({
           // here so the admin can't accidentally type into a locked
           // entry. The invoice link is omitted for now — clicking
           // through to the bill belongs on a follow-up commit.
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          <p className="text-sm text-muted">
             {item.description || t('calendar.hourEntry.noDescription', 'No description.')}
           </p>
         ) : (

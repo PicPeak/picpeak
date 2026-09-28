@@ -35,8 +35,8 @@ export const SectionPageHeader: React.FC<SectionPageHeaderProps> = ({
     <div className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${className}`}>
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          {Icon && <Icon className="w-6 h-6 flex-shrink-0 text-neutral-500 dark:text-neutral-400" />}
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{title}</h1>
+          {Icon && <Icon className="w-6 h-6 flex-shrink-0 text-muted" />}
+          <h1 className="text-2xl font-bold text-heading">{title}</h1>
           {beta && (
             <span
               className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
@@ -47,7 +47,7 @@ export const SectionPageHeader: React.FC<SectionPageHeaderProps> = ({
           )}
         </div>
         {description && (
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">{description}</p>
+          <p className="text-sm text-soft mt-1">{description}</p>
         )}
       </div>
       {actions && (

@@ -30,7 +30,7 @@ export const TextBlockPicker: React.FC<Props> = ({ blocks, onPick, id }) => {
         if (block) onPick(block.body);
         e.target.value = '';
       }}
-      className="text-xs rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 px-2 py-1"
+      className="text-xs rounded border border-line-strong bg-panel text-heading px-2 py-1"
     >
       <option value="" disabled>{t('quotes.textBlocks.insert', 'Insert text block…')}</option>
       {blocks.map((b) => (

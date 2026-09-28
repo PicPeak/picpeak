@@ -106,7 +106,7 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
       <Card className="w-full max-w-md max-h-full overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="bulk-group-title">
         <div className="p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 id="bulk-group-title" className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 id="bulk-group-title" className="text-lg font-semibold text-heading">
               {mode === 'add'
                 ? t('customers.groups.bulk.addTitle', {
                   count: customerIds.length,
@@ -124,14 +124,14 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
               onClick={onClose}
               disabled={apply.isPending}
               aria-label={t('common.close', 'Close')}
-              className="rounded-lg p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+              className="rounded-lg p-1 hover:bg-hover"
             >
-              <X className="h-5 w-5 text-neutral-500 dark:text-neutral-400" />
+              <X className="h-5 w-5 text-muted" />
             </button>
           </div>
 
           {options.length === 0 ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            <p className="text-sm text-muted">
               {mode === 'add'
                 ? t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')
                 : t('customers.groups.bulk.noneCarried', 'None of the selected customers is in a group.')}
@@ -140,12 +140,12 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
             <ul className="max-h-60 space-y-2 overflow-y-auto">
               {options.map((group) => (
                 <li key={group.id}>
-                  <label className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
+                  <label className="flex items-center gap-2 text-sm text-body">
                     <input type="checkbox" checked={picked.includes(group.id)} onChange={() => toggle(group.id)} />
                     <GroupDot color={group.color} className="h-2.5 w-2.5" />
                     <span>{group.name}</span>
                     {group.isArchived && (
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="text-xs text-muted">
                         {t('customers.groups.archived', 'Archived')}
                       </span>
                     )}
@@ -155,9 +155,9 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
             </ul>
           )}
 
-          <div className="mt-4 min-h-[2.5rem] text-sm text-neutral-700 dark:text-neutral-300" aria-live="polite">
+          <div className="mt-4 min-h-[2.5rem] text-sm text-body" aria-live="polite">
             {picked.length > 0 && (preview.isFetching ? (
-              <span className="text-neutral-500 dark:text-neutral-400">
+              <span className="text-muted">
                 {t('customers.groups.bulk.previewing', 'Working out the change…')}
               </span>
             ) : preview.isError ? (
@@ -187,7 +187,7 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
                     })}
                 </p>
                 {unchanged.map((row) => (
-                  <p key={row.groupId} className="text-neutral-500 dark:text-neutral-400">
+                  <p key={row.groupId} className="text-muted">
                     {mode === 'add'
                       ? t('customers.groups.bulk.alreadyIn', {
                         count: row.count,

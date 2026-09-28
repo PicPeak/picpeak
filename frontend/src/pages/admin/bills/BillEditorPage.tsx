@@ -488,7 +488,7 @@ export const BillEditorPage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <button onClick={() => navigate('/admin/clients/bills')}
-            className="text-sm text-neutral-600 dark:text-neutral-400 hover:underline mb-1 inline-flex items-center gap-1">
+            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
             <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
           </button>
           <h2 className="text-xl font-bold">{isEdit ? `${t('bills.edit', 'Edit invoice')} ${existing?.invoice.invoiceNumber || ''}` : t('bills.new', 'New invoice')}</h2>
@@ -562,12 +562,12 @@ export const BillEditorPage: React.FC = () => {
               onChange={setDueDate}
               disabled={!dueDateOverridden}
             />
-            <label className="mt-1.5 flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+            <label className="mt-1.5 flex items-center gap-2 text-xs text-soft">
               <input
                 type="checkbox"
                 checked={dueDateOverridden}
                 onChange={(e) => setDueDateOverridden(e.target.checked)}
-                className="rounded border-neutral-300 dark:border-neutral-600"
+                className="rounded border-line-strong"
               />
               {dueDateOverridden
                 ? t('bills.field.dueDateOverrideOn', 'Manual due date — untick to auto-set from send date + payment term')
@@ -604,7 +604,7 @@ export const BillEditorPage: React.FC = () => {
             <select
               value={qrFormat || ''}
               onChange={(e) => setQrFormat((e.target.value || null) as any)}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
               {/* Empty value = use the business-profile default. Server
                   resolves the actual format at render time, so admins
                   who curate it once in Settings → Business profile
@@ -628,7 +628,7 @@ export const BillEditorPage: React.FC = () => {
             <select
               value={businessBankAccountId == null ? '' : String(businessBankAccountId)}
               onChange={(e) => setBusinessBankAccountId(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
               <option value="">
                 {t('bills.field.bankAccountProfileDefault',
                   'Use business profile default for {{currency}}', { currency })}
@@ -670,7 +670,7 @@ export const BillEditorPage: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.currency', 'Currency')}</label>
             <select value={currency} onChange={(e) => setCurrency(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm">
               <option>CHF</option><option>EUR</option><option>USD</option><option>GBP</option>
             </select>
           </div>
@@ -696,7 +696,7 @@ export const BillEditorPage: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.paymentNetDays', 'Net days')}</label>
             <select
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
               value={paymentNetDaysTemplateId || ''}
               onChange={(e) => setPaymentNetDaysTemplateId(e.target.value ? Number(e.target.value) : null)}
             >
@@ -709,7 +709,7 @@ export const BillEditorPage: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-1">{t('bills.field.paymentTiming', 'Payment schedule')}</label>
             <select
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm"
               value={paymentTimingTemplateId || ''}
               onChange={(e) => setPaymentTimingTemplateId(e.target.value ? Number(e.target.value) : null)}
             >
@@ -746,7 +746,7 @@ export const BillEditorPage: React.FC = () => {
             a multi-row plan and clicks Save, the backend spawns one
             invoice per row via spawnInstallmentInvoices (commit #4)
             and returns the array of new ids. */}
-        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="mt-4 pt-4 border-t border-line">
           <InstallmentsPanel
             value={installments}
             onChange={setInstallments}
@@ -767,7 +767,7 @@ export const BillEditorPage: React.FC = () => {
             value={ccPdfEmail} onChange={(e) => setCcPdfEmail(e.target.value)} />
           {activeAdmins.length > 1 && (
             <div className="flex items-center gap-2">
-              <label htmlFor="bill-cc-pdf-picker" className="text-xs text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
+              <label htmlFor="bill-cc-pdf-picker" className="text-xs text-soft whitespace-nowrap">
                 {t('bills.field.ccPdfPickFromAdmins', 'Pick from admins:')}
               </label>
               <select
@@ -777,7 +777,7 @@ export const BillEditorPage: React.FC = () => {
                   const email = e.target.value;
                   if (email) setCcPdfEmail(email);
                 }}
-                className="text-xs px-2 py-1 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
               >
                 <option value="">{t('bills.field.ccPdfCustom', 'Custom email')}</option>
                 {activeAdmins.map((a: any) => (

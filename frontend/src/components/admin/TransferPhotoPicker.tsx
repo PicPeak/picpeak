@@ -99,10 +99,10 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-neutral-900">
+      <div className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-shell shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-3 dark:border-neutral-700">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
+          <h2 className="text-lg font-semibold text-heading">
             {t('transfers.picker.title', 'Select images from other events')}
           </h2>
           <div className="flex items-center gap-2">
@@ -114,7 +114,7 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
             >
               {t('transfers.picker.lightbox', 'Lightbox')}
             </Button>
-            <button onClick={onClose} className="rounded p-1 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+            <button onClick={onClose} className="rounded p-1 text-neutral-500 hover:bg-hover-soft">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -122,7 +122,7 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
 
         <div className="flex min-h-0 flex-1">
           {/* Event list */}
-          <div className="flex w-64 flex-col border-r border-neutral-200 dark:border-neutral-700">
+          <div className="flex w-64 flex-col border-r border-line">
             <div className="p-3">
               <Input
                 leftIcon={<Search className="h-4 w-4" />}
@@ -139,8 +139,8 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
                   <button
                     key={ev.id}
                     onClick={() => { setSelectedEventId(ev.id); setSelectedEventName(ev.event_name); }}
-                    className={`block w-full truncate px-4 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
-                      selectedEventId === ev.id ? 'bg-primary-50 font-medium text-primary-700 dark:bg-neutral-800' : 'text-neutral-700 dark:text-neutral-300'
+                    className={`block w-full truncate px-4 py-2 text-left text-sm hover:bg-hover-soft ${
+                      selectedEventId === ev.id ? 'bg-primary-50 font-medium text-primary-700 dark:bg-neutral-800' : 'text-body'
                     }`}
                   >
                     {ev.event_name}
@@ -181,7 +181,7 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
                       {photo.thumbnail_url ? (
                         <AdminAuthenticatedImage src={photo.thumbnail_url} alt={photo.filename} className="h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-neutral-100 dark:bg-neutral-800">
+                        <div className="flex h-full w-full items-center justify-center bg-subtle">
                           <ImageIcon className="h-6 w-6 text-neutral-400" />
                         </div>
                       )}
@@ -204,8 +204,8 @@ export const TransferPhotoPicker: React.FC<TransferPhotoPickerProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-3 dark:border-neutral-700">
-          <span className="text-sm text-neutral-600 dark:text-neutral-400">
+        <div className="flex items-center justify-between border-t border-line px-5 py-3">
+          <span className="text-sm text-soft">
             {t('transfers.picker.selectedCount', '{{count}} selected', { count: selected.size })}
           </span>
           <div className="flex gap-2">

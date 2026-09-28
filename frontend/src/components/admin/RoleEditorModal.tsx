@@ -134,7 +134,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-accent" />
-              <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+              <h2 className="text-xl font-semibold text-heading">
                 {mode === 'create'
                   ? t('roleEditor.createTitle', 'Create role')
                   : t('roleEditor.editTitle', 'Edit role: {{name}}', { name: role?.displayName })}
@@ -142,10 +142,10 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
             </div>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-hover rounded-lg transition-colors"
               disabled={isLoading}
             >
-              <X className="w-5 h-5 text-neutral-500 dark:text-neutral-400" />
+              <X className="w-5 h-5 text-muted" />
             </button>
           </div>
 
@@ -161,7 +161,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
           {/* Identity fields */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('roleEditor.displayName', 'Display name')}
               </label>
               <Input
@@ -172,7 +172,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t('roleEditor.key', 'Key (identifier)')}
               </label>
               <Input
@@ -183,14 +183,14 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
               />
               {nameError && <p className="mt-1 text-sm text-red-600">{nameError}</p>}
               {mode === 'edit' && (
-                <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
+                <p className="mt-1 text-xs text-faint">
                   {t('roleEditor.keyLocked', 'The key is fixed once a role is created.')}
                 </p>
               )}
             </div>
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            <label className="block text-sm font-medium text-body mb-1">
               {t('roleEditor.description', 'Description')}
             </label>
             <Input
@@ -203,10 +203,10 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
 
           {/* Permission matrix */}
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+            <h3 className="text-sm font-semibold text-body">
               {t('roleEditor.permissions', 'Permissions')}
             </h3>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="text-xs text-muted">
               {t('roleEditor.selectedCount', '{{count}} selected', { count: selected.size })}
             </span>
           </div>
@@ -216,11 +216,11 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
               const selectedInCat = perms.filter((p) => selected.has(p.name)).length;
               const allSelected = selectedInCat === perms.length;
               return (
-                <div key={category} className="border border-neutral-200 dark:border-neutral-700 rounded-lg overflow-hidden">
-                  <div className="flex items-center justify-between px-3 py-2 bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
+                <div key={category} className="border border-line rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-subtle border-b border-line">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">{categoryLabel(category)}</span>
-                      <span className="text-xs text-neutral-400 dark:text-neutral-500">{selectedInCat}/{perms.length}</span>
+                      <span className="text-sm font-medium text-body">{categoryLabel(category)}</span>
+                      <span className="text-xs text-faint">{selectedInCat}/{perms.length}</span>
                     </div>
                     <button
                       type="button"
@@ -245,11 +245,11 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
                             checked={checked}
                             onChange={() => togglePerm(p.name)}
                             disabled={readOnly}
-                            className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-accent"
+                            className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
                           />
                           <span className="min-w-0">
-                            <span className="block text-sm text-neutral-800 dark:text-neutral-200">{p.display_name}</span>
-                            <span className="block text-[11px] text-neutral-400 dark:text-neutral-500 font-mono truncate">{p.name}</span>
+                            <span className="block text-sm text-body">{p.display_name}</span>
+                            <span className="block text-[11px] text-faint font-mono truncate">{p.name}</span>
                           </span>
                         </label>
                       );
@@ -261,7 +261,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 p-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="flex justify-end gap-3 p-4 border-t border-line">
           <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
             {t('common.cancel')}
           </Button>

@@ -44,7 +44,7 @@ interface SectionProps {
 
 const Section: React.FC<SectionProps> = ({ title, children }) => (
   <section className="mt-6 first:mt-0">
-    <h3 className="px-1 mb-3 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+    <h3 className="px-1 mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted">
       {title}
     </h3>
     <ul className="space-y-3">{children}</ul>

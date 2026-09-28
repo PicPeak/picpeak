@@ -58,15 +58,15 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-16">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white dark:bg-neutral-900 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+      <div className="relative bg-shell rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-line flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-heading">
             {t('admin.guests.invitesTitle', 'Guest invites')}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+            className="p-1 text-neutral-500 hover:text-heading"
           >
             <X className="w-5 h-5" />
           </button>
@@ -74,8 +74,8 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
 
         <div className="overflow-y-auto p-4 space-y-4">
           {/* Create form */}
-          <div className="p-4 bg-neutral-50 dark:bg-neutral-800 rounded">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-3">
+          <div className="p-4 bg-subtle rounded">
+            <h3 className="text-sm font-medium text-heading mb-3">
               {t('admin.guests.createInvite', 'Create invite')}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -108,13 +108,13 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
 
           {/* Existing invites */}
           <div>
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+            <h3 className="text-sm font-medium text-heading mb-2">
               {t('admin.guests.existingInvites', 'Existing invites')}
             </h3>
             {isLoading ? (
               <Loading size="sm" />
             ) : invites.length === 0 ? (
-              <div className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-4">
+              <div className="text-sm text-muted text-center py-4">
                 {t('admin.guests.noInvites', 'No invites yet')}
               </div>
             ) : (
@@ -122,14 +122,14 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
                 {invites.map((invite) => (
                   <div
                     key={invite.id}
-                    className="p-3 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded"
+                    className="p-3 bg-panel border border-line rounded"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100">
+                        <div className="font-medium text-sm text-heading">
                           {invite.guest.name}
                           {invite.guest.email && (
-                            <span className="text-neutral-500 dark:text-neutral-400 font-normal ml-2">
+                            <span className="text-muted font-normal ml-2">
                               · {invite.guest.email}
                             </span>
                           )}
@@ -140,14 +140,14 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
                               invite.status === 'redeemed'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                                 : invite.status === 'revoked'
-                                ? 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300'
+                                ? 'bg-fill text-body'
                                 : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
                             }`}
                           >
                             {t(`admin.guests.inviteStatus.${invite.status}`, invite.status)}
                           </span>
                         </div>
-                        <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate mt-1 font-mono">
+                        <div className="text-xs text-muted truncate mt-1 font-mono">
                           {invite.url}
                         </div>
                       </div>

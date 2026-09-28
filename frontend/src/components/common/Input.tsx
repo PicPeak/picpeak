@@ -37,7 +37,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             htmlFor={inputId}
             className={clsx(
               'block text-sm font-medium mb-1.5',
-              themed ? 'text-theme' : 'text-neutral-700 dark:text-neutral-300'
+              themed ? 'text-theme' : 'text-body'
             )}
           >
             {label}
@@ -46,7 +46,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         <div className="relative">
           {leftIcon && (
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="text-neutral-500 dark:text-neutral-400">{leftIcon}</span>
+              <span className="text-muted">{leftIcon}</span>
             </div>
           )}
           <input
@@ -67,7 +67,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           />
           {rightIcon && (
             <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-              <span className="text-neutral-500 dark:text-neutral-400">{rightIcon}</span>
+              <span className="text-muted">{rightIcon}</span>
             </div>
           )}
         </div>
@@ -79,7 +79,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {helperText && !error && (
           <p
             id={`${inputId}-helper`}
-            className={clsx('mt-1.5 text-sm', themed ? 'text-muted-theme' : 'text-neutral-500 dark:text-neutral-400')}
+            className={clsx('mt-1.5 text-sm', themed ? 'text-muted-theme' : 'text-muted')}
           >
             {helperText}
           </p>

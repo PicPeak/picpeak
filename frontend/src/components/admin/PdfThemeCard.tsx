@@ -41,9 +41,9 @@ const LOGO_STACKS: PdfLogoStack[] = ['above', 'inline'];
 const BODY_SIZES = [9, 9.5, 10, 10.5, 11, 11.5, 12];
 const LINE_HEIGHTS = [1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6];
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 '
-  + 'bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100';
-const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+  + 'bg-panel text-sm text-heading';
+const labelClass = 'block text-sm font-medium text-body mb-1';
 
 function errorMessage(err: unknown): string | undefined {
   return (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
@@ -153,12 +153,12 @@ export const PdfThemeCard: React.FC = () => {
   return (
     <Card padding="md" className="mb-6">
       <div className="flex items-start gap-3 mb-4">
-        <FileText className="w-5 h-5 mt-0.5 text-neutral-600 dark:text-neutral-300" aria-hidden />
+        <FileText className="w-5 h-5 mt-0.5 text-body" aria-hidden />
         <div>
-          <h3 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+          <h3 className="text-base font-semibold text-heading">
             {t('branding.pdfTheme.title', 'PDF theme')}
           </h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <p className="text-sm text-soft">
             {t('branding.pdfTheme.description', 'Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from "All documents", then your business profile.')}
           </p>
         </div>
@@ -173,7 +173,7 @@ export const PdfThemeCard: React.FC = () => {
             onClick={() => setScope(s)}
             className={`px-3 py-1.5 rounded-md text-sm border ${scope === s
               ? 'bg-primary-600 text-white border-primary-600'
-              : 'border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700'}`}
+              : 'border-line-strong text-body hover:bg-hover'}`}
           >
             {t(`branding.pdfTheme.scope.${s}`, s)}
           </button>
@@ -189,7 +189,7 @@ export const PdfThemeCard: React.FC = () => {
             </Button>
           ))}
         </div>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+        <p className="text-xs text-muted mt-1">
           {t('branding.pdfTheme.presetsHint', 'A preset fills in the form; nothing is saved until you save the theme.')}
         </p>
       </div>
@@ -208,17 +208,17 @@ export const PdfThemeCard: React.FC = () => {
                   type="color"
                   value={shown}
                   onChange={(e) => setColor(key, e.target.value)}
-                  className="h-9 w-12 rounded border border-neutral-300 dark:border-neutral-600 bg-transparent"
+                  className="h-9 w-12 rounded border border-line-strong bg-transparent"
                 />
-                <label htmlFor={inputId} className="flex-1 text-sm text-neutral-800 dark:text-neutral-200">
+                <label htmlFor={inputId} className="flex-1 text-sm text-body">
                   {t(`branding.pdfTheme.color.${key}`, key)}
-                  <span className="block text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
+                  <span className="block text-xs text-muted tabular-nums">
                     {own ? own : `${t('branding.pdfTheme.inherited', 'Inherited')} · ${shown}`}
                   </span>
                 </label>
                 {own && (
                   <button type="button" onClick={() => setColor(key, null)}
-                    className="text-xs underline text-neutral-600 dark:text-neutral-300">
+                    className="text-xs underline text-body">
                     {t('branding.pdfTheme.reset', 'Reset')}
                   </button>
                 )}
@@ -361,7 +361,7 @@ export const PdfThemeCard: React.FC = () => {
         </div>
       </fieldset>
 
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+      <p className="text-xs text-muted mb-4">
         {t('branding.pdfTheme.marginsNote', 'The top margin is set by the address window and the letterhead. A contract\'s signature page keeps its fixed layout whatever the margins are, so signatures always land in their boxes.')}
       </p>
 

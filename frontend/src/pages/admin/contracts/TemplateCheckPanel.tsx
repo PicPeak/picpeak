@@ -55,7 +55,7 @@ export const TemplateCheckPanel: React.FC<{
       <span className="sr-only">
         {f.severity === 'error' ? t('contracts.templates.check.error', 'Error') : t('contracts.templates.check.warning', 'Warning')}:
       </span>
-      <span className="flex-1 text-neutral-800 dark:text-neutral-200">{describe(f)}</span>
+      <span className="flex-1 text-body">{describe(f)}</span>
       {canGo(f) && (
         <button type="button" onClick={() => onGoTo(f)}
           className="text-xs underline text-primary-700 dark:text-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded px-1">
@@ -74,13 +74,13 @@ export const TemplateCheckPanel: React.FC<{
     >
       <div className="flex items-center gap-2 flex-wrap mb-2">
         {errors.length === 0 && <CheckCircle2 className="w-4 h-4 text-green-700 dark:text-green-400" aria-hidden="true" />}
-        <h2 id="contract-template-check-heading" className="font-semibold text-neutral-900 dark:text-neutral-100">
+        <h2 id="contract-template-check-heading" className="font-semibold text-heading">
           {errors.length
             ? t('contracts.templates.check.blocked', 'Fix these before publishing')
             : t('contracts.templates.check.passed', 'Ready to publish')}
         </h2>
         {check.pageCount != null && (
-          <span className="text-neutral-600 dark:text-neutral-400">
+          <span className="text-soft">
             {t('contracts.templates.check.pageCount', '{{count}} pages in the dry run', { count: check.pageCount })}
           </span>
         )}

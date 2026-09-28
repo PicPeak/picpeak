@@ -14,8 +14,8 @@ export const CategoriesTab: React.FC<CategoriesTabProps> = ({ id }) => {
     <div>
       <Card padding="md">
         <div className="mb-6">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('events.photoCategories')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          <h2 className="text-lg font-semibold text-heading mb-2">{t('events.photoCategories')}</h2>
+          <p className="text-sm text-soft">
             {t('events.organizeCategoriesInfo')}
           </p>
         </div>

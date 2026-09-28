@@ -103,7 +103,7 @@ export const SkeletonTable: React.FC<{ rows?: number; className?: string }> = ({
   className
 }) => (
   <div className={cn('rounded-lg shadow-sm overflow-hidden', className)} style={SURFACE_STYLE}>
-    <div className="border-b border-neutral-200 dark:border-neutral-700 p-4">
+    <div className="border-b border-line p-4">
       <div className="flex gap-4">
         <Skeleton width="30%" height={20} />
         <Skeleton width="25%" height={20} />
@@ -111,7 +111,7 @@ export const SkeletonTable: React.FC<{ rows?: number; className?: string }> = ({
         <Skeleton width="25%" height={20} />
       </div>
     </div>
-    <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+    <div className="divide-y divide-line-faint">
       {Array.from({ length: rows }).map((_, index) => (
         <div key={index} className="p-4">
           <div className="flex gap-4">

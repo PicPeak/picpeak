@@ -24,7 +24,7 @@ export const Switch: React.FC<SwitchProps> = ({ checked, onChange, disabled = fa
     className={clsx(
       'relative inline-flex flex-shrink-0 h-6 w-11 items-center rounded-full transition-colors',
       'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500',
-      checked ? 'bg-primary-600 dark:bg-primary-500' : 'bg-neutral-300 dark:bg-neutral-600',
+      checked ? 'bg-primary-600 dark:bg-primary-500' : 'bg-fill-strong',
       disabled && 'opacity-50 cursor-not-allowed',
     )}
   >

@@ -101,10 +101,10 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
       <Card className="w-full max-w-md">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('passwordChange.title')}</h2>
+            <h2 className="text-xl font-semibold text-heading">{t('passwordChange.title')}</h2>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-hover rounded-lg transition-colors"
             >
               <X className="w-5 h-5 text-neutral-500" />
             </button>
@@ -113,7 +113,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Current Password */}
             <div>
-              <label htmlFor="currentPassword" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label htmlFor="currentPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.currentPassword')}
               </label>
               <div className="relative">
@@ -129,7 +129,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
-                  className="absolute right-3 top-2 p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded"
+                  className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.current ? 
                     <EyeOff className="w-4 h-4 text-neutral-500" /> : 
@@ -141,7 +141,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
 
             {/* New Password */}
             <div>
-              <label htmlFor="newPassword" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label htmlFor="newPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.newPassword')}
               </label>
               <div className="relative">
@@ -157,7 +157,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
-                  className="absolute right-3 top-2 p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded"
+                  className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.new ? 
                     <EyeOff className="w-4 h-4 text-neutral-500" /> : 
@@ -169,7 +169,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.confirmPassword')}
               </label>
               <div className="relative">
@@ -185,7 +185,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({ isOpen
                 <button
                   type="button"
                   onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
-                  className="absolute right-3 top-2 p-1 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded"
+                  className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.confirm ? 
                     <EyeOff className="w-4 h-4 text-neutral-500" /> : 

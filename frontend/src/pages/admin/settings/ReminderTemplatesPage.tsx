@@ -282,7 +282,7 @@ export const ReminderTemplatesPage: React.FC = () => {
   return (
     <div>
       <div className="mb-3">
-        <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700">
+        <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-hover">
           <ArrowLeft className="w-4 h-4" />
         </Link>
       </div>
@@ -299,7 +299,7 @@ export const ReminderTemplatesPage: React.FC = () => {
             <WorkflowIcon className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
               <p className="font-medium">{t('reminderTemplates.scheduleMoved.title', 'The reminder schedule is now in Workflows')}</p>
-              <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+              <p className="mt-1 text-soft">
                 {t('reminderTemplates.scheduleMoved.body', 'Whether pre-event reminders are sent, and how many days before the event, is configured in the “Pre-event reminder” workflow. This page edits the email templates; per-event overrides stay on each event’s detail page.')}{' '}
                 <Link to="/admin/workflows" className="underline font-medium">{t('reminderTemplates.scheduleMoved.link', 'Open Workflows')}</Link>
               </p>
@@ -307,20 +307,20 @@ export const ReminderTemplatesPage: React.FC = () => {
           </div>
         ) : (
           <>
-            <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100 mb-2">
+            <h3 className="font-semibold text-sm text-heading mb-2">
               {t('reminderTemplates.globalSection', 'Global behaviour')}
             </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+            <p className="text-xs text-muted mb-3">
               {t('reminderTemplates.globalHelp',
                 'Off by default — turn on to start sending pre-event reminders. The offset below is the default; each event can override on its detail page.')}
             </p>
             <div className="flex items-center gap-6 flex-wrap">
-              <label className="inline-flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200 cursor-pointer">
+              <label className="inline-flex items-center gap-2 text-sm text-body cursor-pointer">
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
                 {t('reminderTemplates.enableLabel', 'Send pre-event reminder emails')}
               </label>
               <div className="flex items-center gap-2">
-                <label htmlFor="reminder-days-before" className="text-sm text-neutral-700 dark:text-neutral-300">
+                <label htmlFor="reminder-days-before" className="text-sm text-body">
                   {t('reminderTemplates.daysBeforeLabel', 'Days before the event')}
                 </label>
                 <Input id="reminder-days-before" type="number" min={0} max={365}
@@ -335,7 +335,7 @@ export const ReminderTemplatesPage: React.FC = () => {
         {/* Sidebar — same shape as EmailConfigPage + BlockLibraryPage. */}
         <Card padding="sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            <h3 className="text-lg font-semibold text-heading">
               {t('reminderTemplates.sidebarHeading', 'Templates')}
             </h3>
           </div>
@@ -346,7 +346,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                 one uppercase header and let the rows speak for the
                 taxonomy via the "Default" pill. */}
             <div>
-              <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
                 {t('reminderTemplates.sectionTemplates', 'Templates')}
               </h4>
               <div className="space-y-2">
@@ -360,13 +360,13 @@ export const ReminderTemplatesPage: React.FC = () => {
                       className={`w-full text-left p-3 rounded-lg transition-colors ${
                         isSelected
                           ? 'tile-selected'
-                          : 'bg-neutral-50 dark:bg-neutral-700 border-2 border-transparent hover:bg-neutral-100 dark:hover:bg-neutral-600'
+                          : 'bg-inset border-2 border-transparent hover:bg-hover'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="text-base shrink-0">{row.emoji}</span>
-                          <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                          <p className="font-medium text-heading truncate">
                             {row.label}
                           </p>
                         </div>
@@ -381,7 +381,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                             </span>
                           )}
                           {row.hasTemplate && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-600 text-neutral-600 dark:text-neutral-300">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-fill text-body">
                               {count}/{totalLangs}
                             </span>
                           )}
@@ -402,7 +402,7 @@ export const ReminderTemplatesPage: React.FC = () => {
             {selectedLoading ? <Loading /> : (
               <>
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                  <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  <h3 className="text-lg font-semibold text-heading">
                     {sidebarRows.find((r) => r.key === selectedKey)?.label || selectedKey}
                   </h3>
                 </div>
@@ -410,7 +410,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                 {/* Language tabs — full SUPPORTED_LANGUAGES row with
                     flags and an amber bullet on locales the admin
                     hasn't filled. */}
-                <div className="flex flex-wrap gap-1 mb-4 p-1 bg-neutral-100 dark:bg-neutral-700 rounded-lg">
+                <div className="flex flex-wrap gap-1 mb-4 p-1 bg-inset rounded-lg">
                   {SUPPORTED_LANGUAGES.map((lang) => {
                     const tr = translations[lang.code];
                     const filled = !!(tr && ((tr.subject || '').trim() || (tr.body_html || '').trim()));
@@ -420,8 +420,8 @@ export const ReminderTemplatesPage: React.FC = () => {
                         onClick={() => setEditingLang(lang.code)}
                         className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
                           editingLang === lang.code
-                            ? 'bg-white dark:bg-neutral-800 text-accent-dark shadow-sm'
-                            : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+                            ? 'bg-panel text-accent-dark shadow-sm'
+                            : 'text-soft hover:text-body'
                         }`}
                       >
                         <lang.Flag />
@@ -449,7 +449,7 @@ export const ReminderTemplatesPage: React.FC = () => {
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('reminderTemplates.subjectLabel', 'Subject')} ({SUPPORTED_LANGUAGES.find((l) => l.code === editingLang)?.name || editingLang})
                     </label>
                     <Input
@@ -461,7 +461,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    <label className="block text-sm font-medium text-body mb-1">
                       {t('reminderTemplates.bodyLabel', 'Body')} ({SUPPORTED_LANGUAGES.find((l) => l.code === editingLang)?.name || editingLang})
                     </label>
                     <EmailTemplateEditor
@@ -471,7 +471,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                     />
                   </div>
 
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <p className="text-xs text-muted">
                     {t('reminderTemplates.variablesHint',
                       'Available variables: {{customer_name}}, {{event_name}}, {{event_date}}, {{event_type}}, {{days_before}}, {{business_name}} — substituted when the email is rendered.')}
                   </p>

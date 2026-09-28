@@ -497,7 +497,7 @@ export const CalendarPage: React.FC = () => {
 
       <Card padding="md">
         {itemsLoading && !itemsResp && (
-          <div className="mb-3 flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+          <div className="mb-3 flex items-center gap-2 text-sm text-muted">
             <Loading />
             <span>{t('calendar.loading', 'Loading items…')}</span>
           </div>
@@ -719,7 +719,7 @@ const Legend: React.FC = () => {
   const { t } = useTranslation();
   return (
     <Card padding="sm">
-      <div className="flex flex-wrap gap-4 text-xs text-neutral-500 dark:text-neutral-400">
+      <div className="flex flex-wrap gap-4 text-xs text-muted">
         <LegendSwatch color={COLOR_EVENT} label={t('calendar.legend.events', 'Events')} />
         <LegendSwatch color={COLOR_HOURS} label={t('calendar.legend.hours', 'Hours')} />
         <LegendSwatch

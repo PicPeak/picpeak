@@ -59,22 +59,22 @@ export const PdfTypographyCard: React.FC<PdfTypographyCardProps> = ({ value, onC
 
   return (
     <Card className="p-6">
-      <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+      <h3 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
         <Type className="w-5 h-5" />
         {t('branding.pdfTypography', 'PDF typography')}
       </h3>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+      <p className="text-sm text-soft mb-4">
         {t('branding.pdfTypographyHelp',
           'Used for invoice + quote letterheads. Pick one of the bundled fonts, or leave on default to use Helvetica.')}
       </p>
 
-      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+      <label className="block text-sm font-medium text-body mb-2">
         {t('branding.pdfFontFamily', 'Body font')}
       </label>
       <select
         value={selection}
         onChange={(e) => onChange(e.target.value ? e.target.value : null)}
-        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
+        className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
       >
         <option value="">
           {t('branding.pdfFontFamilyDefault', 'Use Helvetica (default)')}

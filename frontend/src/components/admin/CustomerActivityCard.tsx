@@ -46,11 +46,11 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
 
   return (
     <Card padding="lg">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
         <History className="w-5 h-5" />
         {t('customers.activity.title', 'Activity')}
       </h2>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+      <p className="text-xs text-muted mb-4">
         {t('customers.activity.hint', 'What happened on this customer\'s account and documents, newest first.')}
       </p>
       {isLoading ? <Loading /> : isError ? (
@@ -58,17 +58,17 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
           {t('customers.activity.loadError', 'Could not load the activity.')}
         </p>
       ) : entries.length === 0 ? (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted">
           {t('customers.activity.empty', 'No activity yet.')}
         </p>
       ) : (
         <>
-          <ol className="divide-y divide-neutral-200 dark:divide-neutral-700">
+          <ol className="divide-y divide-line">
             {entries.map((e) => (
               <li key={e.id} className="py-2 flex items-start justify-between gap-3 flex-wrap">
-                <span className="text-sm text-neutral-900 dark:text-neutral-100 min-w-0 break-words">
+                <span className="text-sm text-heading min-w-0 break-words">
                   {label(e)}
-                  <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="block text-xs text-muted">
                     {e.actorType === 'customer'
                       ? t('customers.activity.byCustomer', 'By the customer')
                       : e.actorType === 'admin'
@@ -77,7 +77,7 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
                   </span>
                 </span>
                 {e.at && (
-                  <time dateTime={e.at} className="text-xs text-neutral-500 dark:text-neutral-400 whitespace-nowrap">
+                  <time dateTime={e.at} className="text-xs text-muted whitespace-nowrap">
                     {formatDateTime(e.at)}
                   </time>
                 )}

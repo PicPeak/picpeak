@@ -12,7 +12,7 @@ export function EmailBodyFrame({ html }: { html: string }) {
   return (
     <div className="flex h-full flex-col">
       {!allowRemoteImages && (
-        <div className="flex items-center justify-between gap-3 border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-shell px-3 py-2 text-sm text-body">
           <span>{t('messages.remoteContentBlocked')}</span>
           <button type="button" onClick={() => setAllowedBody(html)} className="shrink-0 font-medium text-accent-dark underline">
             {t('messages.loadRemoteContent')}

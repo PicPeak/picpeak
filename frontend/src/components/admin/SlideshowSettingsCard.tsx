@@ -161,16 +161,16 @@ export const SlideshowSettingsCard: React.FC<SlideshowSettingsCardProps> = ({
   };
 
   const inputClass =
-    'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
-  const labelClass = 'block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1';
+    'w-full px-3 py-2 bg-inset border border-line-strong text-heading rounded-lg text-sm';
+  const labelClass = 'block text-sm font-medium text-body mb-1';
 
   return (
     <Card padding="md">
-      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+      <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
         <MonitorPlay className="w-5 h-5" />
         {t('slideshow.adminTitle', 'Live Slideshow')}
       </h2>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+      <p className="text-xs text-muted mb-4">
         {t('slideshow.adminDescription', 'A separate fullscreen link for projectors at live events. It shows all published photos and automatically picks up new uploads while running.')}
       </p>
 
@@ -226,10 +226,10 @@ export const SlideshowSettingsCard: React.FC<SlideshowSettingsCardProps> = ({
             </div>
 
             {/* Live style settings */}
-            <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+            <div className="pt-2 border-t border-line">
               <SlideshowStyleFields value={style} onChange={setStyle} categories={categories} />
             </div>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="text-xs text-muted">
               {t('slideshow.liveHint', 'Changes apply to a running slideshow within a few seconds — no need to regenerate the link.')}
             </p>
             <Button

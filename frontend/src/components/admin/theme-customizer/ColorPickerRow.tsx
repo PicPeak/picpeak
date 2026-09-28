@@ -18,10 +18,10 @@ export const ColorPickerRow: React.FC<{
   onChange: (value: string) => void;
 }> = ({ label, help, value, fallback, onChange }) => (
   <div>
-    <label className="flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+    <label className="flex items-center gap-1.5 text-sm font-medium text-body mb-2">
       {label}
       <span
-        className="info-tooltip text-neutral-400 dark:text-neutral-500"
+        className="info-tooltip text-faint"
         data-tooltip={help}
         tabIndex={0}
       >
@@ -33,7 +33,7 @@ export const ColorPickerRow: React.FC<{
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-20 rounded border border-neutral-300 dark:border-neutral-600 cursor-pointer"
+        className="h-10 w-20 rounded border border-line-strong cursor-pointer"
       />
       <Input
         value={value}

@@ -76,7 +76,7 @@ const Clause: React.FC<ClauseProps> = ({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       onKeyDown={onKeyDown}
       data-clause-key={item.key}
-      className={`rounded border border-neutral-200 dark:border-neutral-700 p-2 bg-white dark:bg-neutral-900 ${isDragging ? 'shadow-lg relative z-10' : ''}`}
+      className={`rounded border border-line p-2 bg-shell ${isDragging ? 'shadow-lg relative z-10' : ''}`}
     >
       <div className="flex items-center gap-2 flex-wrap">
         {!readOnly && (
@@ -91,21 +91,21 @@ const Clause: React.FC<ClauseProps> = ({
             <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         )}
-        <span className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400 w-6">{index + 1}.</span>
-        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-200">
+        <span className="text-xs tabular-nums text-muted w-6">{index + 1}.</span>
+        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-fill text-body">
           {item.kind === 'block' ? t('contracts.templates.clause', 'Clause') : t('contracts.templates.freeText', 'Free text')}
         </span>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400">{t(`contracts.sections.${item.section}`, item.section)}</span>
-        <span className="flex-1 min-w-[160px] text-sm font-medium text-neutral-900 dark:text-neutral-100">
+        <span className="text-xs text-muted">{t(`contracts.sections.${item.section}`, item.section)}</span>
+        <span className="flex-1 min-w-[160px] text-sm font-medium text-heading">
           {label}
           {item.kind === 'block' && Object.keys(item.body).length > 0 && (
-            <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">{t('contracts.templates.customised', 'customised')}</span>
+            <span className="ml-2 text-xs font-normal text-muted">{t('contracts.templates.customised', 'customised')}</span>
           )}
           {item.blockArchived && (
             <span className="ml-2 text-xs font-normal text-red-700 dark:text-red-400">{t('contracts.templates.archivedBlock', 'Archived in the library')}</span>
           )}
           {pages && pages.lastPage > pages.firstPage && (
-            <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+            <span className="ml-2 text-xs font-normal text-muted">
               {t('contracts.templates.pageBreaks.spans', 'pages {{first}}–{{last}}', { first: pages.firstPage, last: pages.lastPage })}
             </span>
           )}
@@ -115,7 +115,7 @@ const Clause: React.FC<ClauseProps> = ({
             aria-label={t('contracts.templates.moveUp', 'Move up') as string}><ArrowUp className="w-3.5 h-3.5" /></button>
           <button type="button" className={iconButton} disabled={readOnly || index === count - 1} onClick={() => onMove(index, index + 1)}
             aria-label={t('contracts.templates.moveDown', 'Move down') as string}><ArrowDown className="w-3.5 h-3.5" /></button>
-          <button type="button" className="text-xs underline text-neutral-700 dark:text-neutral-300 px-1"
+          <button type="button" className="text-xs underline text-body px-1"
             aria-expanded={expanded} onClick={() => onToggle(item.key)}>
             {expanded ? t('contracts.templates.hideText', 'Hide text') : t('contracts.templates.showText', 'Text')}
           </button>
@@ -170,7 +170,7 @@ const Clause: React.FC<ClauseProps> = ({
 const PageMarker: React.FC<{ page: number; stale: boolean }> = ({ page, stale }) => {
   const { t } = useTranslation();
   return (
-    <li aria-hidden={false} className={`flex items-center gap-2 text-xs ${stale ? 'text-neutral-400 dark:text-neutral-500' : 'text-neutral-600 dark:text-neutral-400'}`}>
+    <li aria-hidden={false} className={`flex items-center gap-2 text-xs ${stale ? 'text-faint' : 'text-soft'}`}>
       <span className="flex-1 border-t border-dashed border-current" />
       <span>
         {t('contracts.templates.pageBreaks.page', 'page {{page}}', { page })}

@@ -238,7 +238,7 @@ export const HourEntryDragCreateModal: React.FC<HourEntryDragCreateModalProps> =
         <h2 className="font-semibold text-lg mb-1">
           {t('calendar.hourEntry.createTitle', 'Log hours')}
         </h2>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+        <p className="text-xs text-muted mb-4">
           {/* The pre-filled range is part of the page state, not editable
               from this modal. Admin can edit start/end after creating
               via the inline-edit popover (also in this commit). */}

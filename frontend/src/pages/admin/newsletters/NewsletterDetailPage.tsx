@@ -23,10 +23,10 @@ import {
 import { StatusChip } from './NewsletterListPage';
 
 const RECIPIENT_STATUS_STYLES: Record<RecipientStatus, string> = {
-  queued: 'text-neutral-600 dark:text-neutral-400',
+  queued: 'text-soft',
   sent: 'text-green-700 dark:text-green-400',
   failed: 'text-red-700 dark:text-red-400',
-  cancelled: 'text-neutral-400 dark:text-neutral-500',
+  cancelled: 'text-faint',
   skipped_opt_out: 'text-amber-700 dark:text-amber-400',
 };
 
@@ -102,7 +102,7 @@ export const NewsletterDetailPage: React.FC = () => {
         <button
           type="button"
           onClick={() => navigate('/admin/clients/newsletters')}
-          className="flex items-center gap-1 text-sm text-neutral-600 dark:text-neutral-400 hover:underline"
+          className="flex items-center gap-1 text-sm text-soft hover:underline"
         >
           <ArrowLeft className="w-4 h-4" />
           {t('newsletters.backToList', 'All campaigns')}
@@ -117,10 +117,10 @@ export const NewsletterDetailPage: React.FC = () => {
       <Card className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+            <h2 className="text-xl font-semibold text-heading">
               {campaign.name}
             </h2>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">{campaign.subject}</p>
+            <p className="text-sm text-soft">{campaign.subject}</p>
           </div>
           <StatusChip status={campaign.status} />
         </div>
@@ -133,7 +133,7 @@ export const NewsletterDetailPage: React.FC = () => {
           ] as const).map(([key, value, cls]) => (
             <div key={key} className="rounded-md bg-neutral-50 dark:bg-neutral-800/60 p-3">
               <div className={`text-2xl font-semibold tabular-nums ${cls}`}>{value}</div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide mt-1">
+              <div className="text-xs text-muted uppercase tracking-wide mt-1">
                 {t(`newsletters.col.${key}`, key)}
               </div>
             </div>
@@ -142,14 +142,14 @@ export const NewsletterDetailPage: React.FC = () => {
 
         {inFlight && (
           <div className="mt-4">
-            <div className="h-2 rounded-full bg-neutral-200 dark:bg-neutral-700 overflow-hidden">
+            <div className="h-2 rounded-full bg-fill overflow-hidden">
               <div
                 data-testid="newsletter-progress"
                 className="h-full rounded-full transition-all"
                 style={{ width: `${progress}%`, backgroundColor: 'var(--color-accent)' }}
               />
             </div>
-            <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="mt-2 text-xs text-muted">
               {t('newsletters.sendingAt', 'Sending at {{rate}} emails per minute.',
                 { rate: campaign.sendRatePerMinute })}
             </p>
@@ -158,15 +158,15 @@ export const NewsletterDetailPage: React.FC = () => {
       </Card>
 
       <Card padding="none">
-        <div className="p-4 flex items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-700">
-          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="p-4 flex items-center justify-between gap-4 border-b border-line">
+          <h3 className="font-semibold text-heading">
             {t('newsletters.recipientsTitle', 'Recipients')}
           </h3>
           <select
             aria-label={t('newsletters.filterByStatus', 'Filter by status') as string}
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value as RecipientStatus | ''); setPage(1); }}
-            className="rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-1.5 text-sm"
+            className="rounded-md border border-line-strong bg-panel px-3 py-1.5 text-sm"
           >
             <option value="">{t('newsletters.allStatuses', 'All statuses')}</option>
             {(['queued', 'sent', 'failed', 'cancelled', 'skipped_opt_out'] as RecipientStatus[])
@@ -180,12 +180,12 @@ export const NewsletterDetailPage: React.FC = () => {
           <table className="w-full text-sm">
             <tbody>
               {(recipients?.data ?? []).map((r) => (
-                <tr key={r.id} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
-                  <td className="px-4 py-2 text-neutral-800 dark:text-neutral-200">{r.email}</td>
+                <tr key={r.id} className="border-b border-line-faint last:border-0">
+                  <td className="px-4 py-2 text-body">{r.email}</td>
                   <td className={`px-4 py-2 ${RECIPIENT_STATUS_STYLES[r.status]}`}>
                     {t(`newsletters.recipientStatus.${r.status}`, r.status)}
                   </td>
-                  <td className="px-4 py-2 text-xs text-neutral-500 dark:text-neutral-400">
+                  <td className="px-4 py-2 text-xs text-muted">
                     {r.errorMessage || (r.sentAt ? new Date(r.sentAt).toLocaleString() : '')}
                   </td>
                 </tr>
@@ -195,11 +195,11 @@ export const NewsletterDetailPage: React.FC = () => {
         </div>
 
         {recipients && recipients.pagination.totalPages > 1 && (
-          <div className="p-4 flex items-center justify-between border-t border-neutral-200 dark:border-neutral-700">
+          <div className="p-4 flex items-center justify-between border-t border-line">
             <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               {t('common.previous', 'Previous')}
             </Button>
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">
+            <span className="text-sm text-muted">
               {t('common.pageOf', 'Page {{page}} of {{total}}',
                 { page, total: recipients.pagination.totalPages })}
             </span>

@@ -82,15 +82,15 @@ export const WhatsNewBanner: React.FC = () => {
           onClick={detailsModal.close}
         >
           <div
-            className="bg-white dark:bg-neutral-800 rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6"
+            className="bg-panel rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2 text-neutral-900 dark:text-neutral-100">
+              <h3 className="text-lg font-semibold flex items-center gap-2 text-heading">
                 <Sparkles className="w-5 h-5 text-green-600" />
                 {t('admin.whatsnew.modalTitle', "What's new")}
               </h3>
-              <button onClick={detailsModal.close} className="p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
+              <button onClick={detailsModal.close} className="p-1 text-neutral-400 hover:text-body">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -98,7 +98,7 @@ export const WhatsNewBanner: React.FC = () => {
               {data.versions.map((v) => (
                 <div key={v.version}>
                   <div className="flex items-center justify-between gap-3">
-                    <h4 className="font-medium text-sm text-neutral-900 dark:text-neutral-100">{v.name || `v${v.version}`}</h4>
+                    <h4 className="font-medium text-sm text-heading">{v.name || `v${v.version}`}</h4>
                     <a
                       href={v.htmlUrl}
                       target="_blank"
@@ -109,7 +109,7 @@ export const WhatsNewBanner: React.FC = () => {
                       <ExternalLink className="w-3 h-3 ml-1" />
                     </a>
                   </div>
-                  <ul className="mt-1 list-disc list-inside text-sm text-neutral-700 dark:text-neutral-300">
+                  <ul className="mt-1 list-disc list-inside text-sm text-body">
                     {v.bullets.map((b, i) => <li key={i}>{b}</li>)}
                   </ul>
                 </div>
