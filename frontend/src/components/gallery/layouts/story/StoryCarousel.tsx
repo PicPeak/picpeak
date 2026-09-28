@@ -21,6 +21,7 @@ interface StoryCarouselProps {
   isSelectionMode?: boolean;
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
+  likesAllowed?: boolean;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -36,6 +37,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   isSelectionMode = false,
   selectedPhotos,
   onPhotoSelect,
+  likesAllowed = true,
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -68,6 +70,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 isSelectionMode={isSelectionMode}
                 isSelected={selectedPhotos?.has(photo.id) ?? false}
                 onSelect={onPhotoSelect}
+                likesAllowed={likesAllowed}
               />
             </div>
           </SwiperSlide>

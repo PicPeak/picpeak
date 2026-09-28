@@ -15,6 +15,7 @@ interface StoryJustifiedGridProps {
   isSelectionMode?: boolean;
   selectedPhotos?: Set<number>;
   onPhotoSelect?: (id: number) => void;
+  likesAllowed?: boolean;
 }
 
 /**
@@ -46,6 +47,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
   isSelectionMode = false,
   selectedPhotos,
   onPhotoSelect,
+  likesAllowed = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -121,6 +123,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               isSelectionMode={isSelectionMode}
               isSelected={selectedPhotos?.has(photo.id) ?? false}
               onSelect={onPhotoSelect}
+              likesAllowed={likesAllowed}
             />
           </div>
         );

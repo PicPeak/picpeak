@@ -71,6 +71,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
+  feedbackOptions,
   heroPhotoOverride,
   welcomeMessage,
   storyGridMode = 'fixed',
@@ -192,7 +193,18 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     () => photos.filter((photo) => selected.has(photo.id)),
     [photos, selected]
   );
-  const canSelect = Boolean(onToggleSelectionMode && onPhotoSelect && photos.length > 1);
+  // A container that can toggle the mode is what makes the bar (and its
+  // Cancel) safe to show; the nav control and the card checkboxes need more
+  // than one photo, or the only way out of a one-photo selection would be a
+  // reload.
+  const selectionAvailable = Boolean(onToggleSelectionMode && onPhotoSelect);
+  const canSelect = selectionAvailable && photos.length > 1;
+  const cardSelect = canSelect ? onPhotoSelect : undefined;
+  // Likes are a per-event sub-toggle (#506): with them off the like endpoint
+  // answers 403, so the card hearts are not offered. The bulk control and the
+  // nav heart also need the feedback master switch, as before.
+  const likesAllowed = feedbackOptions?.allowLikes !== false;
+  const bulkLikesAllowed = feedbackEnabled && likesAllowed;
   const allVisibleSelected = visiblePhotos.length > 0 && visiblePhotos.every((photo) => selected.has(photo.id));
 
   const handleToggleSelectionMode = useCallback(() => {
@@ -341,7 +353,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               <Download size={20} />
             </button>
           )}
-          {feedbackEnabled && (
+          {bulkLikesAllowed && (
             <button className="story-nav-btn" title={t('gallery.favorites', 'Favorites')}>
               <Heart size={20} />
               {favorites.size > 0 && (
@@ -367,7 +379,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           on the selection. Download goes through the container's handler so
           the resolution picker and the download limit apply exactly as they
           do on every other layout. */}
-      {isSelectionMode && canSelect && (
+      {isSelectionMode && selectionAvailable && (
         <div className="story-selection-bar" role="region" aria-label={t('gallery.selectPhotos', 'Select Photos')}>
           <span className="story-selection-count" aria-live="polite">
             {t('gallery.photosSelected', { count: selected.size })}
@@ -376,7 +388,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             <button type="button" className="story-selection-btn" onClick={handleSelectAllVisible}>
               {allVisibleSelected ? t('gallery.deselectAll', 'Deselect All') : t('gallery.selectAll', 'Select All')}
             </button>
-            {feedbackEnabled && selected.size > 0 && (
+            {bulkLikesAllowed && selected.size > 0 && (
               <button
                 type="button"
                 className="story-selection-btn"
@@ -449,7 +461,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   naturalAspect={naturalGrid}
                   isSelectionMode={isSelectionMode}
                   selectedPhotos={selected}
-                  onPhotoSelect={onPhotoSelect}
+                  onPhotoSelect={cardSelect}
+                  likesAllowed={likesAllowed}
                 />
               ) : naturalGrid ? (
                 <StoryJustifiedGrid
@@ -463,7 +476,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   useEnhancedProtection={useEnhancedProtection}
                   isSelectionMode={isSelectionMode}
                   selectedPhotos={selected}
-                  onPhotoSelect={onPhotoSelect}
+                  onPhotoSelect={cardSelect}
+                  likesAllowed={likesAllowed}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -483,7 +497,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       featured={index === 0 && scene.photos.length > 4}
                       isSelectionMode={isSelectionMode}
                       isSelected={selected.has(photo.id)}
-                      onSelect={onPhotoSelect}
+                      onSelect={cardSelect}
+                      likesAllowed={likesAllowed}
                     />
                   ))}
                 </div>

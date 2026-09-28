@@ -146,6 +146,41 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     expect(bar(noContainer.container)).toBeNull();
   });
 
+  it('never traps a one-photo gallery: no checkbox to enter with, but a bar to leave by', () => {
+    const h = handlers();
+    const one = [photo(1)];
+    const off = render(<GalleryStoryLayout {...baseProps} {...h} photos={one} />);
+    expect(off.container.querySelector('[role="checkbox"]')).toBeNull();
+    off.unmount();
+
+    // The container may already be in selection mode (another surface, a
+    // folder change): the card still opens the lightbox and the bar can cancel.
+    const on = render(<GalleryStoryLayout {...baseProps} {...h} photos={one} isSelectionMode />);
+    expect(bar(on.container)).not.toBeNull();
+    fireEvent.click(cardLink(on.container, 1));
+    expect(screen.getByTestId('lightbox')).toBeInTheDocument();
+    expect(h.onPhotoSelect).not.toHaveBeenCalled();
+    fireEvent.click(within(bar(on.container) as HTMLElement).getByRole('button', { name: 'Cancel Selection' }));
+    expect(h.onToggleSelectionMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no favourite controls when the event has likes switched off', () => {
+    const h = handlers();
+    const { container } = render(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        isSelectionMode
+        selectedPhotos={new Set([1, 2])}
+        feedbackOptions={{ allowLikes: false, allowComments: true }}
+      />
+    );
+    expect(within(bar(container) as HTMLElement).queryByTestId('story-favorite-selected')).toBeNull();
+    expect(container.querySelector('.story-photo-card-btn')).toBeNull();
+    expect(nav(container).queryByTitle('Favorites')).toBeNull();
+    expect(within(bar(container) as HTMLElement).getByTestId('story-download-selected')).toBeInTheDocument();
+  });
+
   it('asks the container to enter selection mode, and clears then leaves it on cancel', () => {
     const h = handlers();
     const off = render(<GalleryStoryLayout {...baseProps} {...h} />);

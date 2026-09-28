@@ -27,6 +27,8 @@ interface StoryPhotoCardProps {
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onSelect?: (id: number) => void;
+  /** Likes are a per-event sub-toggle (#506); the heart is not offered when they are off. */
+  likesAllowed?: boolean;
 }
 
 export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
@@ -41,6 +43,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   isSelectionMode = false,
   isSelected = false,
   onSelect,
+  likesAllowed = true,
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
@@ -158,18 +161,20 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       )}
 
       {/* Actions */}
-      <div className="story-photo-card-actions">
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleFavorite(photo.id);
-          }}
-          className={`story-photo-card-btn ${isFavorite ? 'favorite' : ''}`}
-        >
-          <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
-        </button>
-      </div>
+      {likesAllowed && (
+        <div className="story-photo-card-actions">
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleFavorite(photo.id);
+            }}
+            className={`story-photo-card-btn ${isFavorite ? 'favorite' : ''}`}
+          >
+            <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+          </button>
+        </div>
+      )}
 
       {/* Caption */}
       <div className="story-photo-card-caption">
