@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.148.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.148.1-beta.0...v3.148.2-beta.0) (2026-09-28)
+
+
+### Bug Fixes
+
+* **backup:** individual backup run delete route the History table already called ([#1714](https://github.com/PicPeak/picpeak/issues/1714)) ([c294880](https://github.com/PicPeak/picpeak/commit/c294880216200ed5f3eb53584ef461bb5e4c3589))
+* **gallery-story:** legible hero title, natural aspect grid option, Download All in the nav ([#1713](https://github.com/PicPeak/picpeak/issues/1713)) ([d1bffd3](https://github.com/PicPeak/picpeak/commit/d1bffd3de56acf8ac799607a5f9f7ea356f11a0e))
+
 ## [3.148.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.148.0-beta.0...v3.148.1-beta.0) (2026-09-28)
 
 
