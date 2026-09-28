@@ -4779,15 +4779,15 @@
         "previous": "Previous",
         "next": "Next"
       },
-      "deleteConfirm": "Delete the backup from {{date}}? Its record and its stored backup files are removed. This cannot be undone.",
+      "deleteConfirm": "Delete the backup from {{date}}? Its record and its manifest are removed; backed-up files that later backups rely on stay in place. This cannot be undone.",
       "deleteSuccess": "Backup deleted",
-      "deleteSuccessArtifactMissing": "Backup record deleted; its stored files were already gone",
+      "deleteSuccessArtifactMissing": "Backup record deleted; its manifest was already gone",
       "deleteError": "Failed to delete backup",
       "deleteErrors": {
         "BACKUP_NOT_FOUND": "This backup no longer exists",
         "BACKUP_RUNNING": "A running backup cannot be deleted",
         "ARTIFACT_OUT_OF_SCOPE": "This backup's files are outside the configured backup destination, so nothing was deleted",
-        "ARTIFACT_DELETE_FAILED": "The stored backup files could not be removed, so the record was kept",
+        "ARTIFACT_DELETE_FAILED": "The backup manifest could not be removed, so the record was kept",
         "FORBIDDEN": "You do not have permission to delete backups"
       }
     },

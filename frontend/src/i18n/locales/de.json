@@ -1475,15 +1475,15 @@
         "previous": "Zurück",
         "next": "Weiter"
       },
-      "deleteConfirm": "Backup vom {{date}} löschen? Der Eintrag und die gespeicherten Backup-Dateien werden entfernt. Das kann nicht rückgängig gemacht werden.",
+      "deleteConfirm": "Backup vom {{date}} löschen? Eintrag und Manifest werden entfernt; gesicherte Dateien, auf die spätere Backups aufbauen, bleiben erhalten. Das kann nicht rückgängig gemacht werden.",
       "deleteSuccess": "Backup gelöscht",
-      "deleteSuccessArtifactMissing": "Backup-Eintrag gelöscht; die gespeicherten Dateien waren bereits weg",
+      "deleteSuccessArtifactMissing": "Backup-Eintrag gelöscht; das Manifest war bereits weg",
       "deleteError": "Backup konnte nicht gelöscht werden",
       "deleteErrors": {
         "BACKUP_NOT_FOUND": "Dieses Backup existiert nicht mehr",
         "BACKUP_RUNNING": "Ein laufendes Backup kann nicht gelöscht werden",
         "ARTIFACT_OUT_OF_SCOPE": "Die Dateien dieses Backups liegen außerhalb des konfigurierten Backup-Ziels, daher wurde nichts gelöscht",
-        "ARTIFACT_DELETE_FAILED": "Die gespeicherten Backup-Dateien konnten nicht entfernt werden, der Eintrag wurde behalten",
+        "ARTIFACT_DELETE_FAILED": "Das Backup-Manifest konnte nicht entfernt werden, der Eintrag wurde behalten",
         "FORBIDDEN": "Du hast keine Berechtigung, Backups zu löschen"
       }
     },

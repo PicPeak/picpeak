@@ -471,16 +471,19 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //
 // What "the stored artifact" is depends on the destination, and only the
 // metadata recorded on the run at backup time decides where to look, never
-// anything in the request:
-//   s3     every object under the run's own prefix, derived from the recorded
-//          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>), and
-//          only when that prefix sits under the configured bucket and base
-//          prefix.
+// anything in the request. On every destination it is the run's own
+// metadata, never its data files: an incremental run only stores the files
+// that changed since the previous one (hasFileChanged against the shared
+// backup_file_states table), so a later run's manifest points at files that
+// exist only under an earlier run. Removing those would take the only copy.
+//   s3     the manifest objects under <run prefix>/manifests/ and the run's
+//          backup-summary.json, with the prefix derived from the recorded
+//          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>) and
+//          only when it sits under the configured bucket and base prefix.
+//          The data objects under the prefix stay; the retention-based S3
+//          cleanup route is what purges them.
 //   local  the manifest file, when it resolves inside the manifest directory.
-//          The mirrored tree under backup_destination_path is shared by every
-//          incremental run, so it is left alone: removing this run's files
-//          would take the only copy of anything a later run skipped as
-//          unchanged.
+//          The mirrored tree under backup_destination_path stays.
 //   rsync  the local manifest as above; nothing on the remote mirror.
 // The record goes only after the artifact step succeeded or found nothing to
 // do, so the UI never reports a deletion that left storage behind.
@@ -540,20 +543,22 @@ async function deleteS3BackupRun(config, manifestPath) {
     ...backupS3Access(config)
   });
 
-  const listPrefix = `${runPrefix}/`;
+  // Only the run's metadata objects (see the comment above the route).
   const keys = [];
-  let continuationToken;
-  do {
-    const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
-    for (const object of page.Contents || page.objects || []) {
-      const objectKey = object.Key || object.key;
-      // The listing is prefix-scoped already; refuse anything that is not.
-      if (objectKey && objectKey.startsWith(listPrefix)) keys.push(objectKey);
-    }
-    continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
-  } while (continuationToken);
+  for (const listPrefix of [`${runPrefix}/manifests/`, `${runPrefix}/backup-summary.json`]) {
+    let continuationToken;
+    do {
+      const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
+      for (const object of page.Contents || page.objects || []) {
+        const objectKey = object.Key || object.key;
+        // The listing is prefix-scoped already; refuse anything that is not.
+        if (objectKey && objectKey.startsWith(listPrefix)) keys.push(objectKey);
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+  }
 
-  if (keys.length === 0) return { kind: 's3-prefix', status: 'missing', removed: 0 };
+  if (keys.length === 0) return { kind: 'manifest', status: 'missing', removed: 0 };
   const result = await s3Adapter.deleteMany(keys);
   const removed = result.Deleted ? result.Deleted.length : 0;
   const errors = result.Errors || [];
@@ -563,7 +568,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     error.removed = removed;
     throw error;
   }
-  return { kind: 's3-prefix', status: 'deleted', removed };
+  return { kind: 'manifest', status: 'deleted', removed };
 }
 
 router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async (req, res) => {

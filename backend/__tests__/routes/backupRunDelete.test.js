@@ -272,19 +272,24 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       ...extra,
     });
 
-    it('deletes every object under the run prefix, paginated, and nothing outside it', async () => {
+    it('deletes the run manifests and summary, paginated, and never a data object', async () => {
       await s3Settings();
       const id = await insertRun({ manifest_path: manifestUri });
       mockS3.list
+        // manifests/ listing, two pages, one stray key the listing should not contain
         .mockResolvedValueOnce({
           Contents: [
-            { Key: `${runPrefix}/events/active/a.jpg` },
             { Key: `${runPrefix}/manifests/backup-manifest-s3.json` },
-            { Key: 'backups/2026/09/02/backup-1756778400000/events/active/b.jpg' },
+            { Key: `${runPrefix}/events/active/a.jpg` },
           ],
           IsTruncated: true,
           NextContinuationToken: 'page-2',
         })
+        .mockResolvedValueOnce({
+          Contents: [{ Key: `${runPrefix}/manifests/backup-manifest-s3.yaml` }],
+          IsTruncated: false,
+        })
+        // backup-summary.json listing
         .mockResolvedValueOnce({
           Contents: [{ Key: `${runPrefix}/backup-summary.json` }],
           IsTruncated: false,
@@ -293,12 +298,14 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
 
       const res = await del(id);
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ destination: 's3', artifact: { kind: 's3-prefix', status: 'deleted', removed: 3 } });
-      expect(mockS3.list).toHaveBeenNthCalledWith(1, `${runPrefix}/`, { maxKeys: 1000, continuationToken: undefined });
-      expect(mockS3.list).toHaveBeenNthCalledWith(2, `${runPrefix}/`, { maxKeys: 1000, continuationToken: 'page-2' });
+      expect(res.body).toMatchObject({ destination: 's3', artifact: { kind: 'manifest', status: 'deleted', removed: 3 } });
+      expect(mockS3.list).toHaveBeenNthCalledWith(1, `${runPrefix}/manifests/`, { maxKeys: 1000, continuationToken: undefined });
+      expect(mockS3.list).toHaveBeenNthCalledWith(2, `${runPrefix}/manifests/`, { maxKeys: 1000, continuationToken: 'page-2' });
+      expect(mockS3.list).toHaveBeenNthCalledWith(3, `${runPrefix}/backup-summary.json`, { maxKeys: 1000, continuationToken: undefined });
+      // The data objects an incremental chain relies on are never touched.
       expect(mockS3.deleteMany).toHaveBeenCalledWith([
-        `${runPrefix}/events/active/a.jpg`,
         `${runPrefix}/manifests/backup-manifest-s3.json`,
+        `${runPrefix}/manifests/backup-manifest-s3.yaml`,
         `${runPrefix}/backup-summary.json`,
       ]);
       expect(mockS3.constructed[0]).toMatchObject({ bucket: 'picpeak-backups', endpoint: 'https://s3.example.com' });
@@ -345,12 +352,14 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
     it('keeps the record and reports a partial failure when S3 rejects some objects', async () => {
       await s3Settings();
       const id = await insertRun({ manifest_path: manifestUri });
-      mockS3.list.mockResolvedValueOnce({
-        Contents: [{ Key: `${runPrefix}/a.jpg` }, { Key: `${runPrefix}/b.jpg` }], IsTruncated: false,
-      });
+      mockS3.list
+        .mockResolvedValueOnce({
+          Contents: [{ Key: `${runPrefix}/manifests/a.json` }, { Key: `${runPrefix}/manifests/b.json` }], IsTruncated: false,
+        })
+        .mockResolvedValueOnce({ Contents: [], IsTruncated: false });
       mockS3.deleteMany.mockResolvedValueOnce({
-        Deleted: [{ Key: `${runPrefix}/a.jpg` }],
-        Errors: [{ Key: `${runPrefix}/b.jpg`, Code: 'AccessDenied' }],
+        Deleted: [{ Key: `${runPrefix}/manifests/a.json` }],
+        Errors: [{ Key: `${runPrefix}/manifests/b.json`, Code: 'AccessDenied' }],
       });
 
       const res = await del(id);
@@ -362,14 +371,14 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(JSON.parse(audit.metadata)).toMatchObject({ code: 'ARTIFACT_DELETE_FAILED', removed: 1 });
     });
 
-    it('deletes the record when the prefix holds no objects any more', async () => {
+    it('deletes the record when the run metadata is already gone', async () => {
       await s3Settings();
       const id = await insertRun({ manifest_path: manifestUri });
-      mockS3.list.mockResolvedValueOnce({ Contents: [], IsTruncated: false });
+      mockS3.list.mockResolvedValue({ Contents: [], IsTruncated: false });
 
       const res = await del(id);
       expect(res.status).toBe(200);
-      expect(res.body.artifact).toEqual({ kind: 's3-prefix', status: 'missing', removed: 0 });
+      expect(res.body.artifact).toEqual({ kind: 'manifest', status: 'missing', removed: 0 });
       expect(mockS3.deleteMany).not.toHaveBeenCalled();
       expect(await runExists(id)).toBe(false);
     });
