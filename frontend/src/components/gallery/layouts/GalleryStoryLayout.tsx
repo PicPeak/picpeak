@@ -113,8 +113,30 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // every payload, and only the ids whose submit is still in flight keep
   // their optimistic state.
   const inFlightLikesRef = useRef<Set<number>>(new Set());
+  // A like made in the lightbox reaches this set only through the parent's
+  // refetch. Until that payload lands, Favourite selected would decide from
+  // a set that is known to be behind, so it waits; a short timeout covers a
+  // parent that never refetches.
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
+  const awaitingRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleLightboxFeedbackChange = useCallback(() => {
+    if (onFeedbackChange) {
+      setAwaitingRefresh(true);
+      if (awaitingRefreshTimer.current) clearTimeout(awaitingRefreshTimer.current);
+      awaitingRefreshTimer.current = setTimeout(() => setAwaitingRefresh(false), 5000);
+      onFeedbackChange();
+    }
+  }, [onFeedbackChange]);
+  useEffect(() => () => {
+    if (awaitingRefreshTimer.current) clearTimeout(awaitingRefreshTimer.current);
+  }, []);
   useEffect(() => {
     if (photos.length === 0) return;
+    setAwaitingRefresh(false);
+    if (awaitingRefreshTimer.current) {
+      clearTimeout(awaitingRefreshTimer.current);
+      awaitingRefreshTimer.current = null;
+    }
     setFavorites((previous) => {
       const next = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
       inFlightLikesRef.current.forEach((id) => {
@@ -466,7 +488,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                 type="button"
                 className="story-selection-btn"
                 onClick={handleFavoriteSelected}
-                disabled={favoritingSelection}
+                disabled={favoritingSelection || awaitingRefresh}
                 data-testid="story-favorite-selected"
               >
                 <Heart size={14} fill={selectionUnlikes ? 'currentColor' : 'none'} />
@@ -610,7 +632,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           protectionLevel={protectionLevel}
           useEnhancedProtection={useEnhancedProtection}
           useCanvasRendering={useCanvasRendering}
-          onFeedbackChange={onFeedbackChange}
+          onFeedbackChange={handleLightboxFeedbackChange}
           showOriginalFilename={showOriginalFilename}
           // #1074: this layout renders its own lightbox, so the people props
           // have to be threaded through explicitly or the "In this photo"

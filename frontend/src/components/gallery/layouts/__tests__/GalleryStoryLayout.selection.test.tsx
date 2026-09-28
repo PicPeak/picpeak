@@ -55,7 +55,11 @@ vi.mock('../../../common', () => ({
   AuthenticatedImage: ({ src, alt }: { src: string; alt?: string }) => <img src={src} alt={alt} />,
   PoweredBy: () => null,
 }));
-vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
+vi.mock('../../PhotoLightbox', () => ({
+  PhotoLightbox: ({ onFeedbackChange }: { onFeedbackChange?: () => void }) => (
+    <button data-testid="lightbox" onClick={onFeedbackChange}>lightbox</button>
+  ),
+}));
 vi.mock('../../FeedbackIdentityModal', () => ({
   FeedbackIdentityModal: ({ isOpen, onSubmit, onClose }: { isOpen: boolean; onSubmit: (n: string, e: string) => void; onClose: () => void }) =>
     isOpen ? (
@@ -413,6 +417,26 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     // Only 3 needed a toggle; 2 is not un-liked.
     expect(mocks.submitFeedback).toHaveBeenCalledTimes(1);
     expect(mocks.submitFeedback).toHaveBeenCalledWith('x', '3', { feedback_type: 'like' });
+  });
+
+  it('waits for the refetch after a lightbox like before offering a bulk toggle', () => {
+    const h = handlers();
+    const view = (selecting: boolean, list = photos) => (
+      <GalleryStoryLayout {...baseProps} {...h} photos={list} isSelectionMode={selecting} selectedPhotos={new Set([2, 3])} />
+    );
+    const { container, rerender } = render(view(false));
+    fireEvent.click(cardLink(container, 2));
+    fireEvent.click(screen.getByTestId('lightbox'));
+    expect(h.onFeedbackChange).toHaveBeenCalledTimes(1);
+
+    rerender(view(true));
+    expect(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected')).toBeDisabled();
+
+    // The parent's refetch lands with photo 2 liked: enabled again, and the set knows.
+    rerender(view(true, [photo(1, { is_liked: true }), photo(2, { is_liked: true }), photo(3)]));
+    expect(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected')).not.toBeDisabled();
+    const heart2 = cardLink(container, 2).closest('.story-photo-card')?.querySelector('.story-photo-card-btn');
+    expect(heart2?.classList.contains('favorite')).toBe(true);
   });
 
   it('stays busy while a batch waits behind the identity modal, and releases on cancel', async () => {
