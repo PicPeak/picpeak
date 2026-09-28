@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.146.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.145.1-beta.0...v3.146.0-beta.0) (2026-09-28)
+
+
+### Features
+
+* **admin:** one sidebar, sections take over the menu, one page header ([#1689](https://github.com/PicPeak/picpeak/issues/1689)) ([fcca6d0](https://github.com/PicPeak/picpeak/commit/fcca6d02e5b18a8b306b7f3c9c36350699684e4a))
+* **settings:** one sticky save bar with dirty state and a leave guard on every settings tab ([#1693](https://github.com/PicPeak/picpeak/issues/1693)) ([2cb6152](https://github.com/PicPeak/picpeak/commit/2cb6152c137606f20c8f45de4bf16b8c5225a6a3))
+
 ## [3.145.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.145.0-beta.0...v3.145.1-beta.0) (2026-09-27)
 
 
