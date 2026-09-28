@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Mail,
   Send,
@@ -183,6 +183,9 @@ export const EmailConfigPage: React.FC = () => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'smtp' | 'templates' | 'sent' | 'received'>('smtp');
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('gallery_created');
+  // For callbacks that outlive a render (a save completing after a switch).
+  const selectedTemplateKeyRef = useRef(selectedTemplateKey);
+  selectedTemplateKeyRef.current = selectedTemplateKey;
   const [editedTemplate, setEditedTemplate] = useState<Partial<EmailTemplate>>({});
   const [editingLang, setEditingLang] = useState<string>('en');
   const [showPassword, setShowPassword] = useState(false);
@@ -516,10 +519,17 @@ export const EmailConfigPage: React.FC = () => {
   const handleSaveTemplate = () => {
     if (selectedTemplateKey && editedTemplate.translations) {
       const snapshot = editedTemplate;
+      const savedKey = selectedTemplateKey;
       void saveTemplateMutation.mutateAsync({
-        key: selectedTemplateKey,
+        key: savedKey,
         translations: editedTemplate.translations,
-      }).then(() => setLoadedTemplate(snapshot)).catch(() => {});
+      }).then(() => {
+        // Only if this template is still the open one: picking another
+        // template while the save was in flight has already loaded that
+        // one's snapshot, and this one's must not replace it — Discard
+        // would then copy A into B's editor.
+        if (selectedTemplateKeyRef.current === savedKey) setLoadedTemplate(snapshot);
+      }).catch(() => {});
     }
   };
 

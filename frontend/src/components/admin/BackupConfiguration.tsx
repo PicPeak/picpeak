@@ -215,7 +215,14 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
         ...config,
         ...scheduleFromConfig(config)
       }));
+      // The refreshed config carrying the approval means it was stored; the
+      // tick is no longer a pending change, or the bar would stay dirty and
+      // the leave guard would keep asking after a successful save.
+      const stored = (config as Record<string, unknown>)[APPROVAL_KEY];
+      setPendingPrivateOrigin(prev => (prev && prev === stored ? null : prev));
+      setApprovePrivate(prev => (prev && pendingPrivateOrigin === stored ? false : prev));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
   const handleChange = <K extends keyof BackupFormData>(field: K, value: BackupFormData[K]) => {

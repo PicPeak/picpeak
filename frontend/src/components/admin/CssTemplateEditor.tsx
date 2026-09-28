@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { RotateCcw, AlertTriangle, Check } from 'lucide-react';
 import { Button, Card, Loading } from '../common';
+import { useConfirm } from '../common/ConfirmDialog';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { cssTemplatesService, CssTemplate } from '../../services/cssTemplates.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -15,6 +16,7 @@ export const CssTemplateEditor: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeSlot, setActiveSlot] = useState(1);
   const [localTemplates, setLocalTemplates] = useState<CssTemplate[]>([]);
+  const confirmDialog = useConfirm();
 
   // Fetch templates
   const { data: templates, isLoading } = useQuery({
@@ -83,6 +85,23 @@ export const CssTemplateEditor: React.FC = () => {
       prev.map(t => (t.slot_number === activeSlot ? savedTemplate : t))
     );
   };
+  // The bar and the leave guard follow the active slot, so a slot may not
+  // be left with edits in it: switching asks first and discards them.
+  const pickSlot = async (slot: number) => {
+    if (slot === activeSlot) return;
+    if (isDirty) {
+      const ok = await confirmDialog({
+        title: t('settings.saveBar.leaveTitle', 'Discard unsaved changes?'),
+        message: t('settings.saveBar.leaveMessage', 'You have unsaved changes on this page. Leaving now discards them.'),
+        confirmLabel: t('settings.saveBar.leaveConfirm', 'Discard and leave'),
+        cancelLabel: t('settings.saveBar.leaveCancel', 'Stay'),
+        variant: 'warning',
+      });
+      if (!ok) return;
+      discardActive();
+    }
+    setActiveSlot(slot);
+  };
 
   const handleReset = () => {
     if (!confirm(t('cssTemplates.resetConfirm', 'Reset this template to the default? Your changes will be lost.'))) {
@@ -110,7 +129,7 @@ export const CssTemplateEditor: React.FC = () => {
             return (
               <button
                 key={slot}
-                onClick={() => setActiveSlot(slot)}
+                onClick={() => { void pickSlot(slot); }}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeSlot === slot
                     ? 'border-accent text-accent'
