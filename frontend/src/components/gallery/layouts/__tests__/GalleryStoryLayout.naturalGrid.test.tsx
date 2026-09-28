@@ -192,6 +192,19 @@ describe('GalleryStoryLayout natural grid (issue 1709)', () => {
     containerWidth = 1200;
   });
 
+  it('treats a clamp under one percent as a clamp too', () => {
+    // 3.02:1 in 390px clamps to a 390x130 box: 0.66% off, 2.6px cropped.
+    containerWidth = 390;
+    const { container } = render(
+      <GalleryStoryLayout {...props} photos={[photo(1, 3020, 1000)]} storyGridMode="natural" />
+    );
+    const [box] = boxes(container);
+    expect(Math.abs(box.width / box.height - 3.02)).toBeGreaterThan(0.001);
+    const card = container.querySelector('.story-gallery-justified-box .story-photo-card') as HTMLElement;
+    expect(card.classList.contains('story-photo-card--contain')).toBe(true);
+    containerWidth = 1200;
+  });
+
   it('keeps cover on boxes that took the photo ratio', () => {
     const { container } = render(<GalleryStoryLayout {...props} storyGridMode="natural" />);
     const cards = Array.from(container.querySelectorAll<HTMLElement>('.story-gallery-justified-box .story-photo-card'));

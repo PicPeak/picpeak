@@ -89,8 +89,12 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
         // lone tall portrait) and widens or narrows its boxes to fit, so the
         // box no longer has the photo's ratio. object-cover would crop exactly
         // there; contain keeps the photo whole on the card background instead.
+        // An unclamped box keeps the ratio to floating-point precision (the
+        // library never rounds per box), so anything past 0.1% is a clamp; a
+        // clamp that small letterboxes by a fraction of a pixel, which is
+        // invisible, while cropping by the same amount is not always.
         const ratio = storyPhotoAspectRatio(photo);
-        const clamped = Math.abs(box.width / box.height - ratio) > ratio * 0.01;
+        const clamped = Math.abs(box.width / box.height - ratio) > ratio * 0.001;
         return (
           <div
             key={photo.id}

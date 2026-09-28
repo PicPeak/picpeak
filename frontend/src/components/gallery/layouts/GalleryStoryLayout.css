@@ -202,11 +202,15 @@
   position: relative;
   padding: 2.5rem 2rem;
   border-radius: 1.5rem;
+  /* The ellipse reaches the box corners at 100%, so the fade ends late
+     enough that a three-line title on a phone still sits on darkened
+     pixels; the text shadow carries the last few percent. */
   background: radial-gradient(
     ellipse at center,
-    rgba(0, 0, 0, 0.5) 0%,
-    rgba(0, 0, 0, 0.32) 45%,
-    rgba(0, 0, 0, 0) 72%
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.35) 50%,
+    rgba(0, 0, 0, 0.12) 80%,
+    rgba(0, 0, 0, 0) 100%
   );
 }
 
