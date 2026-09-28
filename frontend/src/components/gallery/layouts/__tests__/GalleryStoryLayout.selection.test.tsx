@@ -57,8 +57,13 @@ vi.mock('../../../common', () => ({
 }));
 vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
 vi.mock('../../FeedbackIdentityModal', () => ({
-  FeedbackIdentityModal: ({ isOpen, onSubmit }: { isOpen: boolean; onSubmit: (n: string, e: string) => void }) =>
-    isOpen ? <button data-testid="identity-modal" onClick={() => onSubmit('Ann', 'ann@example.com')}>submit</button> : null,
+  FeedbackIdentityModal: ({ isOpen, onSubmit, onClose }: { isOpen: boolean; onSubmit: (n: string, e: string) => void; onClose: () => void }) =>
+    isOpen ? (
+      <div>
+        <button data-testid="identity-modal" onClick={() => onSubmit('Ann', 'ann@example.com')}>submit</button>
+        <button data-testid="identity-modal-close" onClick={onClose}>close</button>
+      </div>
+    ) : null,
 }));
 vi.mock('../../../../contexts/GuestIdentityContext', () => ({
   useGuestIdentityOptional: () =>
@@ -384,6 +389,63 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     expect(mocks.submitFeedback).toHaveBeenLastCalledWith('x', '1', {
       feedback_type: 'like', guest_name: 'Ann', guest_email: 'ann@example.com',
     });
+  });
+
+  it('follows a like made elsewhere (lightbox refetch) before deciding what to toggle', async () => {
+    const h = handlers();
+    const { container, rerender } = render(
+      <GalleryStoryLayout {...baseProps} {...h} isSelectionMode selectedPhotos={new Set([2, 3])} />
+    );
+    // The lightbox liked photo 2; the parent refetched and is_liked arrived.
+    rerender(
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        isSelectionMode
+        selectedPhotos={new Set([2, 3])}
+        photos={[photo(1, { is_liked: true }), photo(2, { is_liked: true }), photo(3)]}
+      />
+    );
+    const heart2 = cardLink(container, 2).closest('.story-photo-card')?.querySelector('.story-photo-card-btn');
+    expect(heart2?.classList.contains('favorite')).toBe(true);
+    fireEvent.click(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('gallery.favoritesAdded'));
+    // Only 3 needed a toggle; 2 is not un-liked.
+    expect(mocks.submitFeedback).toHaveBeenCalledTimes(1);
+    expect(mocks.submitFeedback).toHaveBeenCalledWith('x', '3', { feedback_type: 'like' });
+  });
+
+  it('stays busy while a batch waits behind the identity modal, and releases on cancel', async () => {
+    const h = handlers();
+    const withIdentity = () => (
+      <GalleryStoryLayout
+        {...baseProps}
+        {...h}
+        isSelectionMode
+        selectedPhotos={new Set([2, 3])}
+        feedbackOptions={{ allowLikes: true, requireNameEmail: true }}
+      />
+    );
+    const { container, unmount } = render(withIdentity());
+    const favourite = () => within(bar(container) as HTMLElement).getByTestId('story-favorite-selected');
+    fireEvent.click(favourite());
+    expect(favourite()).toBeDisabled();
+    fireEvent.click(favourite());
+    fireEvent.click(screen.getByTestId('identity-modal'));
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledTimes(1));
+    // One batch, no duplicate toggles.
+    expect(mocks.submitFeedback).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(favourite()).not.toBeDisabled());
+    unmount();
+
+    mocks.submitFeedback.mockClear();
+    const second = render(withIdentity());
+    const favourite2 = () => within(bar(second.container) as HTMLElement).getByTestId('story-favorite-selected');
+    fireEvent.click(favourite2());
+    expect(favourite2()).toBeDisabled();
+    fireEvent.click(screen.getByTestId('identity-modal-close'));
+    expect(favourite2()).not.toBeDisabled();
+    expect(mocks.submitFeedback).not.toHaveBeenCalled();
   });
 
   it('in guest identity mode resolves the guest first and sends nothing when that is declined', async () => {

@@ -105,16 +105,24 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Seed favorites from per-viewer is_liked on first non-empty payload
-  // (#590 follow-up). The previous code seeded from like_count > 0 which
-  // marked every photo with ANY likes as "favorited" for the current
-  // viewer — wrong. Also gated by a mount-only ref so refetches don't
-  // clobber the user's in-session toggles.
-  const favoritesSeededRef = useRef(false);
+  // Per-viewer is_liked is the server's truth (#590 follow-up: like_count > 0
+  // marked every photo with ANY likes as favorited). It used to be read once
+  // on mount so a refetch could not clobber an in-session toggle, but that
+  // left a like made in the lightbox invisible here, and Favourite selected
+  // (issue 1716) decides what to toggle from this set. So the set follows
+  // every payload, and only the ids whose submit is still in flight keep
+  // their optimistic state.
+  const inFlightLikesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    if (favoritesSeededRef.current || photos.length === 0) return;
-    setFavorites(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
-    favoritesSeededRef.current = true;
+    if (photos.length === 0) return;
+    setFavorites((previous) => {
+      const next = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
+      inFlightLikesRef.current.forEach((id) => {
+        if (previous.has(id)) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
   }, [photos]);
 
   // Get hero photo
@@ -184,6 +192,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       return next;
     });
     if (!bulk) apply(ids, unlike);
+    ids.forEach((id) => inFlightLikesRef.current.add(id));
     const done: number[] = [];
     for (let i = 0; i < ids.length; i += 5) {
       const batch = ids.slice(i, i + 5);
@@ -197,6 +206,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     const failed = ids.filter((id) => !done.includes(id));
     if (bulk) apply(done, unlike);
     else if (failed.length > 0) apply(failed, !unlike);
+    ids.forEach((id) => inFlightLikesRef.current.delete(id));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
       onFeedbackChange?.();
@@ -207,20 +217,23 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
   }, [slug, t, onFeedbackChange]);
 
-  const likeWithIdentity = useCallback(async (ids: number[], unlike: boolean, bulk: boolean) => {
+  // 'deferred' means the batch is parked behind the identity modal; the
+  // caller keeps its busy state until handleIdentitySubmit or the modal's
+  // close releases it.
+  const likeWithIdentity = useCallback(async (ids: number[], unlike: boolean, bulk: boolean): Promise<'done' | 'deferred'> => {
     if (guestIdentity?.identityMode === 'guest') {
       try {
         await guestIdentity.ensureIdentity();
       } catch {
-        return;
+        return 'done';
       }
       await runLikeBatch(ids, unlike, {}, bulk);
-      return;
+      return 'done';
     }
     if (feedbackOptions?.requireNameEmail && !savedIdentity) {
       setPendingLikes({ ids, unlike, bulk });
       setShowIdentityModal(true);
-      return;
+      return 'deferred';
     }
     await runLikeBatch(
       ids,
@@ -228,15 +241,29 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       savedIdentity ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email } : {},
       bulk
     );
+    return 'done';
   }, [guestIdentity, feedbackOptions, savedIdentity, runLikeBatch]);
+
+  const [favoritingSelection, setFavoritingSelection] = useState(false);
 
   const handleIdentitySubmit = useCallback(async (name: string, email: string) => {
     setSavedIdentity({ name, email });
     setShowIdentityModal(false);
     const pending = pendingLikes;
     setPendingLikes(null);
-    if (pending) await runLikeBatch(pending.ids, pending.unlike, { guest_name: name, guest_email: email }, pending.bulk);
+    if (!pending) return;
+    try {
+      await runLikeBatch(pending.ids, pending.unlike, { guest_name: name, guest_email: email }, pending.bulk);
+    } finally {
+      if (pending.bulk) setFavoritingSelection(false);
+    }
   }, [pendingLikes, runLikeBatch]);
+
+  const handleIdentityClose = useCallback(() => {
+    setShowIdentityModal(false);
+    if (pendingLikes?.bulk) setFavoritingSelection(false);
+    setPendingLikes(null);
+  }, [pendingLikes]);
 
   const handleToggleFavorite = useCallback((photoId: number) => {
     void likeWithIdentity([photoId], favorites.has(photoId), false);
@@ -283,7 +310,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     else onSelectMany?.(visiblePhotos.map((photo) => photo.id));
   }, [allVisibleSelected, onDeselectAll, onSelectMany, visiblePhotos]);
 
-  const [favoritingSelection, setFavoritingSelection] = useState(false);
   // Likes not yet set on the selection are added; a selection that is already
   // liked throughout is unliked instead, so the same control never un-likes
   // half a selection by accident.
@@ -297,10 +323,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     const ids = selectionUnlikes ? selectedPhotoList.map((photo) => photo.id) : selectionToLike;
     if (ids.length === 0 || favoritingSelection) return;
     setFavoritingSelection(true);
+    let outcome: 'done' | 'deferred' = 'done';
     try {
-      await likeWithIdentity(ids, selectionUnlikes, true);
+      outcome = await likeWithIdentity(ids, selectionUnlikes, true);
     } finally {
-      setFavoritingSelection(false);
+      if (outcome !== 'deferred') setFavoritingSelection(false);
     }
   }, [selectionUnlikes, selectedPhotoList, selectionToLike, favoritingSelection, likeWithIdentity]);
 
@@ -595,7 +622,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
       <FeedbackIdentityModal
         isOpen={showIdentityModal}
-        onClose={() => { setShowIdentityModal(false); setPendingLikes(null); }}
+        onClose={handleIdentityClose}
         onSubmit={handleIdentitySubmit}
         feedbackType="like"
       />
