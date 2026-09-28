@@ -70,13 +70,18 @@ export function useUploadProgress(
       try {
         const snap = await uploadsService.getStatus(uploadId);
         merge(uploadId, snap);
+        // Cleanup may have run while the request was in flight; its
+        // clearTimeout only reaches timers that already existed, so a
+        // reschedule here would poll on, unowned, after the unmount.
+        if (cancelled) return;
         if (!isTerminal(snap)) {
           pollHandles[uploadId] = setTimeout(() => pollOnce(uploadId), pollIntervalMs);
         } else {
           closeStream(uploadId);
         }
       } catch (e) {
-        if (!cancelled) setError(e as Error);
+        if (cancelled) return;
+        setError(e as Error);
         // Retry polling on error after a longer interval — don't drop
         // the group entirely just because one snapshot failed.
         pollHandles[uploadId] = setTimeout(() => pollOnce(uploadId), pollIntervalMs * 4);

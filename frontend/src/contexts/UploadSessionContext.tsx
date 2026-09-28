@@ -399,16 +399,21 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [processingAggregate.complete, processingAggregate.failed, processingAggregate.total, session?.phase.kind]);
 
   // The modal no longer holds the user on the page, so closing the tab
-  // mid-transfer is the one way to lose an upload without noticing.
+  // mid-transfer is the one way to lose an upload without noticing. Only
+  // while bytes are still leaving the browser: once every transfer has its
+  // response the worker finishes on the server whether this tab stays or
+  // not, and a prompt then would only get in the way — of a 401 redirect
+  // among other things.
+  const transferring = isUploading && !transferSettled;
   useEffect(() => {
-    if (!isUploading) return;
+    if (!transferring) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [isUploading]);
+  }, [transferring]);
 
   // A clean finish needs no acknowledgement: the toast said it, the grid
   // shows it. Failures stay until dismissed so the list can be acted on.
