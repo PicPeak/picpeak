@@ -30,6 +30,7 @@ import { BackupIntegrityCard } from '../../components/admin/BackupIntegrityCard'
 import { BackupCoverageCard } from '../../components/admin/BackupCoverageCard';
 import { api } from '../../config/api';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
 
@@ -117,14 +118,13 @@ export const BackupManagement: React.FC = () => {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div>
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-neutral-900 dark:text-neutral-100 mb-2">{t('backup.title')}</h1>
-        <p className="text-neutral-600 dark:text-neutral-400">
-          {t('backup.subtitle')}
-        </p>
-      </div>
+      <SectionPageHeader
+        icon={HardDrive}
+        title={t('backup.title')}
+        description={t('backup.subtitle')}
+      />
 
       {/* Status Bar */}
       <Card className="mb-6 p-4">

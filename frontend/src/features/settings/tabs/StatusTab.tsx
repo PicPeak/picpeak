@@ -1,6 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Save,
   Database,
   Server,
   CheckCircle,
@@ -19,7 +18,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../../config/api';
 import { settingsService } from '../../../services/settings.service';
 import { useStatusTab } from '../hooks/useStatusTab';
-import { UpdateNotificationSettings } from '../components/UpdateNotificationSettings';
+import { UpdateNotificationSettings, type SettingsFormState } from '../components/UpdateNotificationSettings';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../hooks/usePermission';
 
@@ -170,6 +170,11 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       queryClient.invalidateQueries({ queryKey: ['photo-capture-date-status'] });
     },
   });
+
+  // The update-notification card reports its form here; one bar saves it
+  // together with the storage limits.
+  const [updateForm, setUpdateForm] = useState<SettingsFormState | null>(null);
+  const anyDirty = softLimitDirty || overrideDirty || !!updateForm?.isDirty;
 
   // Sync soft limit from storage info
   useEffect(() => {
@@ -417,18 +422,6 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 </Button>
               </div>
 
-              <div className="flex justify-end">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleSaveSoftLimit}
-                  isLoading={saveSoftLimitMutation.isPending}
-                  leftIcon={<Save className="w-4 h-4" />}
-                >
-                  {t('settings.storage.saveSoftLimit')}
-                </Button>
-              </div>
-
               <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 mt-6 space-y-4">
                 <div>
                   <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.storage.overrideTitle')}</p>
@@ -490,18 +483,6 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                   />
                 </div>
 
-                <div className="flex justify-end">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={handleSaveCapacityOverride}
-                    isLoading={saveCapacityOverrideMutation.isPending}
-                    disabled={overrideControlled}
-                    leftIcon={<Save className="w-4 h-4" />}
-                  >
-                    {t('settings.storage.saveOverride')}
-                  </Button>
-                </div>
               </div>
             </div>
           </Card>
@@ -928,7 +909,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       )}
 
       {/* Update Notification Settings */}
-      <UpdateNotificationSettings />
+      <UpdateNotificationSettings onFormState={setUpdateForm} />
 
       {/* Last update time */}
       {systemStatus && (
@@ -937,6 +918,22 @@ export const StatusTab: React.FC<StatusTabProps> = ({
           {t('settings.systemStatus.lastUpdate')}: {fmtDateTime(systemStatus.timestamp)}
         </div>
       )}
+
+      <SettingsSaveBar
+        isDirty={anyDirty}
+        isSaving={saveSoftLimitMutation.isPending || saveCapacityOverrideMutation.isPending || !!updateForm?.isSaving}
+        onSave={() => {
+          if (softLimitDirty) handleSaveSoftLimit();
+          if (overrideDirty) handleSaveCapacityOverride();
+          if (updateForm?.isDirty) updateForm.save();
+        }}
+        onDiscard={() => {
+          // Clearing the flags lets the sync effects re-seed from the server.
+          setSoftLimitDirty(false);
+          setOverrideDirty(false);
+          updateForm?.discard();
+        }}
+      />
     </div>
   );
 };

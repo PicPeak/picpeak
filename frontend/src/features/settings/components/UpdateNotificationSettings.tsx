@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Bell, Save, Mail, Send, RefreshCw } from 'lucide-react';
+import { Bell, Mail, Send, RefreshCw } from 'lucide-react';
 import { Card, Button, Input } from '../../../components/common';
 import { api } from '../../../config/api';
 import { toast } from 'react-toastify';
@@ -35,7 +35,19 @@ async function checkForNotifications(): Promise<{ notified: boolean; reason?: st
   return response.data;
 }
 
-export const UpdateNotificationSettings: React.FC = () => {
+export interface SettingsFormState {
+  isDirty: boolean;
+  isSaving: boolean;
+  save: () => void;
+  discard: () => void;
+}
+
+interface UpdateNotificationSettingsProps {
+  /** Reports dirty/save/discard to the host, which renders the one save bar. */
+  onFormState?: (state: SettingsFormState) => void;
+}
+
+export const UpdateNotificationSettings: React.FC<UpdateNotificationSettingsProps> = ({ onFormState }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -46,21 +58,32 @@ export const UpdateNotificationSettings: React.FC = () => {
 
   const [localEnabled, setLocalEnabled] = React.useState<boolean>(false);
   const [localRecipients, setLocalRecipients] = React.useState<string>('');
-  const [isDirty, setIsDirty] = React.useState(false);
+  // What the form was last seeded from. Dirty is the draft against THAT,
+  // not against whatever the query holds now: a refetch that brings a
+  // change made elsewhere must not read as edits of ours (it would block
+  // the reseed below, and a combined save would then write our stale
+  // copy over the newer one).
+  const [loaded, setLoaded] = React.useState<UpdateNotificationSettingsData | null>(null);
+  const isDirty = !!loaded && (localEnabled !== loaded.enabled || localRecipients !== (loaded.recipients || ''));
 
-  // Sync local state when data is loaded
   React.useEffect(() => {
-    if (settings && !isDirty) {
+    if (!settings) return;
+    const draftMatchesServer = localEnabled === settings.enabled && localRecipients === (settings.recipients || '');
+    // Seed on the first response, after a save (the draft already equals
+    // the new server copy) and on a refetch with no edits pending. A draft
+    // with edits is kept, dirty, until saved or discarded.
+    if (!loaded || !isDirty || draftMatchesServer) {
       setLocalEnabled(settings.enabled);
       setLocalRecipients(settings.recipients || '');
+      setLoaded(settings);
     }
-  }, [settings, isDirty]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
 
   const updateMutation = useMutation({
     mutationFn: updateNotificationSettings,
     onSuccess: (data) => {
       queryClient.setQueryData(['update-notification-settings'], data);
-      setIsDirty(false);
       toast.success(t('settings.updateNotifications.saved', 'Settings saved'));
     },
     onError: () => {
@@ -104,21 +127,31 @@ export const UpdateNotificationSettings: React.FC = () => {
     }
   });
 
-  const handleSave = () => {
-    updateMutation.mutate({
-      enabled: localEnabled,
-      recipients: localRecipients
-    });
+  const discard = () => {
+    if (!settings) return;
+    setLocalEnabled(settings.enabled);
+    setLocalRecipients(settings.recipients || '');
+    setLoaded(settings);
   };
+  const onFormStateRef = React.useRef(onFormState);
+  onFormStateRef.current = onFormState;
+  React.useEffect(() => {
+    onFormStateRef.current?.({
+      isDirty,
+      isSaving: updateMutation.isPending,
+      save: () => updateMutation.mutate({ enabled: localEnabled, recipients: localRecipients }),
+      discard,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty, updateMutation.isPending, localEnabled, localRecipients, settings]);
+
 
   const handleToggleEnabled = (value: boolean) => {
     setLocalEnabled(value);
-    setIsDirty(true);
   };
 
   const handleRecipientsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalRecipients(e.target.value);
-    setIsDirty(true);
   };
 
   if (isLoading) {
@@ -189,7 +222,7 @@ export const UpdateNotificationSettings: React.FC = () => {
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+        <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-neutral-200 dark:border-neutral-700">
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
@@ -212,16 +245,6 @@ export const UpdateNotificationSettings: React.FC = () => {
               {t('settings.updateNotifications.sendTest', 'Send Test Email')}
             </Button>
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleSave}
-            isLoading={updateMutation.isPending}
-            leftIcon={<Save className="w-4 h-4" />}
-            disabled={!isDirty}
-          >
-            {t('common.save', 'Save')}
-          </Button>
         </div>
       </div>
     </Card>

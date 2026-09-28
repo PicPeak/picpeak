@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { X, Plus, Paperclip, Car, CalendarDays, Coins, Pencil, FileText, CheckCircle2, Circle, Lock } from 'lucide-react';
+import { Wallet, X, Plus, Paperclip, Car, CalendarDays, Coins, Pencil, FileText, CheckCircle2, Circle, Lock } from 'lucide-react';
 import { Button, Card, CardContent, Input, LocalizedDateInput, Loading } from '../../../components/common';
 import { DecimalInput } from '../../../components/common/DecimalInput';
 import { EventBookingSelect } from '../../../components/admin/EventBookingSelect';
@@ -23,6 +23,7 @@ import {
   accountingService, categoryLabel,
   type Expense, type ExpenseKind, type ExpenseCategory, type MarkupType, type PaymentMethod,
 } from '../../../services/accounting.service';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'paypal', 'card', 'other'];
 
@@ -265,6 +266,11 @@ export const ExpensesLedgerPage: React.FC = () => {
 
   return (
     <div>
+      <SectionPageHeader
+        icon={Wallet}
+        title={t('accounting.subnav.expenses', 'Expenses')}
+        description={t('accounting.ledger.subtitle', 'Internal expenses such as mileage, per diems and cash receipts, booked to an event or the company.')}
+      />
       <div className="mb-4 flex flex-wrap gap-3">
         <select value={kind} onChange={(e) => setKind(e.target.value)} className={selectCls} style={{ maxWidth: 200 }}>
           <option value="">{t('accounting.ledger.allKinds', 'All types')}</option>

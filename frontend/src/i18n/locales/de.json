@@ -3352,6 +3352,13 @@
       "running": "Urheber werden gelesen...",
       "noneToRead": "Keine Fotos mehr zu lesen",
       "button": "Urheber aus EXIF lesen"
+    },
+    "saveBar": {
+      "unsaved": "Du hast ungespeicherte Änderungen",
+      "leaveTitle": "Ungespeicherte Änderungen verwerfen?",
+      "leaveMessage": "Auf dieser Seite gibt es ungespeicherte Änderungen. Wenn du jetzt gehst, gehen sie verloren.",
+      "leaveConfirm": "Verwerfen und verlassen",
+      "leaveCancel": "Hier bleiben"
     }
   },
   "branding": {
@@ -4486,6 +4493,7 @@
     "viewReleaseNotes": "Versionshinweise auf GitHub ansehen",
     "expandSidebar": "Seitenleiste ausklappen",
     "collapseSidebar": "Seitenleiste einklappen",
+    "backToMenu": "Zurück zum Menü",
     "viewOnGithub": "PicPeak auf GitHub ansehen"
   },
   "acceptInvitation": {
@@ -4938,11 +4946,6 @@
     "title": "Systemwartung",
     "message": "Wir führen derzeit geplante Wartungsarbeiten durch, um unseren Service zu verbessern. Wir sind in Kürze wieder online.",
     "urgentMatters": "Bei dringenden Anliegen kontaktieren Sie bitte"
-  },
-  "migrationBanner": {
-    "title": "Die Image-Registry von PicPeak wurde verschoben",
-    "body": "Aktualisieren Sie Ihre docker-compose.yml, um Images von {{newPath}} zu beziehen — der alte Pfad wird nicht mehr aktualisiert.",
-    "link": "Migrationshinweise ansehen"
   },
   "passwordChange": {
     "title": "Passwort ändern",
@@ -6469,6 +6472,7 @@
       "flat": "Pauschal"
     },
     "inbox": {
+      "subtitle": "Per Kamera, Upload oder Eingangspostfach erfasste Lieferantenrechnungen, bereit zum Kategorisieren und Weiterverrechnen.",
       "captureTitle": "Lieferantenrechnung erfassen",
       "captureBody": "Fotografiere eine Papierrechnung mit der Gerätekamera oder lade ein PDF / Bild hoch.",
       "scanCamera": "Mit Kamera scannen",
@@ -6596,6 +6600,7 @@
       "other": "Sonstiges"
     },
     "ledger": {
+      "subtitle": "Interne Aufwände wie Kilometer, Spesenpauschalen und Barbelege, gebucht auf ein Event oder die Firma.",
       "allStatuses": "Alle Status",
       "allDispositions": "Alle Zuordnungen",
       "allKinds": "Alle Arten",

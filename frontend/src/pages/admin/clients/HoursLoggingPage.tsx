@@ -27,6 +27,7 @@ import {
 } from '../../../services/customerAdmin.service';
 import { businessProfileService } from '../../../services/businessProfile.service';
 import { formatMoneyMinor } from '../../../utils/money';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 /** Build a display label matching the CustomerPicker convention. */
 function summaryLabel(r: UnbilledHoursSummaryRow): string {
@@ -87,29 +88,14 @@ export const HoursLoggingPage: React.FC = () => {
   };
 
   return (
-    <div className="container py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-              {t('hoursLogging.title', 'Hours logging')}
-            </h1>
-            {/* Beta badge — matches Customers + Quotes + Contracts +
-                Invoices so the whole /admin/clients tab reads as one
-                product. */}
-            <span
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title="Beta — feature is functional but still evolving"
-            >
-              {t('navigation.betaTag', 'Beta')}
-            </span>
-          </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            {t('hoursLogging.subtitle',
-              'Pick a customer and log billable time blocks. Entries flow into the next monthly bill or are billed on demand for per-event customers.')}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <SectionPageHeader
+        icon={Clock}
+        title={t('hoursLogging.title', 'Hours logging')}
+        beta
+        description={t('hoursLogging.subtitle', 'Pick a customer and log billable time blocks. Entries flow into the next monthly bill or are billed on demand for per-event customers.')}
+        className=""
+      />
 
       <Card padding="lg">
         <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-2">

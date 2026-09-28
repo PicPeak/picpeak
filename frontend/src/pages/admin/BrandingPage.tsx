@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Eye, Palette, Upload } from 'lucide-react';
+import { Eye, Palette, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
@@ -16,6 +16,41 @@ import { PdfThemeCard } from '../../components/admin/PdfThemeCard';
 import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { SettingsSaveBar } from '../../components/admin/SettingsSaveBar';
+
+const INITIAL_BRANDING: BrandingSettings = {
+  company_name: '',
+  company_tagline: '',
+  footer_text: '',
+  support_email: '',
+  watermark_enabled: false,
+  watermark_position: 'bottom-right',
+  watermark_opacity: 50,
+  watermark_size: 15,
+  watermark_logo_url: '',
+  favicon_url: '',
+  logo_url: '',
+  logo_size: 'medium',
+  logo_max_height: 48,
+  logo_position: 'left',
+  logo_display_header: true,
+  logo_display_hero: true,
+  logo_display_mode: 'logo_and_text',
+  hide_powered_by: false,
+  force_color_mode: null,
+  login_logo_frame_enabled: true,
+  login_logo_size: 'medium',
+  facebook_url: '',
+  instagram_url: '',
+  whatsapp_url: '',
+  twitter_url: '',
+  youtube_url: '',
+  promo_markdown: '',
+  promo_position: 'above_footer',
+  promo_alignment: 'center',
+  info_markdown: '',
+};
 
 export const BrandingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -23,41 +58,16 @@ export const BrandingPage: React.FC = () => {
   // Used to gate the PDF typography card — when no PDF-producing
   // feature is enabled the setting has no surface to apply to.
   const { flags } = useFeatureFlags();
-  const [brandingSettings, setBrandingSettings] = useState<BrandingSettings>({
-    company_name: '',
-    company_tagline: '',
-    footer_text: '',
-    support_email: '',
-    watermark_enabled: false,
-    watermark_position: 'bottom-right',
-    watermark_opacity: 50,
-    watermark_size: 15,
-    watermark_logo_url: '',
-    favicon_url: '',
-    logo_url: '',
-    logo_size: 'medium',
-    logo_max_height: 48,
-    logo_position: 'left',
-    logo_display_header: true,
-    logo_display_hero: true,
-    logo_display_mode: 'logo_and_text',
-    hide_powered_by: false,
-    force_color_mode: null,
-    login_logo_frame_enabled: true,
-    login_logo_size: 'medium',
-    facebook_url: '',
-    instagram_url: '',
-    whatsapp_url: '',
-    twitter_url: '',
-    youtube_url: '',
-    promo_markdown: '',
-    promo_position: 'above_footer',
-    promo_alignment: 'center',
-    info_markdown: '',
-  });
+  const [brandingSettings, setBrandingSettings] = useState<BrandingSettings>(INITIAL_BRANDING);
 
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
   const [currentThemeName, setCurrentThemeName] = useState('default');
+  // What the server last sent for everything handleSave writes, so the save
+  // bar can tell dirty from clean and Discard can put the draft back.
+  const [loadedBranding, setLoadedBranding] = useState<BrandingSettings>(INITIAL_BRANDING);
+  const [loadedTheme, setLoadedTheme] = useState<ThemeConfig>(theme);
+  const [loadedThemeName, setLoadedThemeName] = useState('default');
+  const [loadedPdfFontFamily, setLoadedPdfFontFamily] = useState<string | null>(null);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   // PDF body font selection (migration 121). Lives on this page so the
   // top-level Save button can persist it together with branding +
@@ -117,6 +127,7 @@ export const BrandingPage: React.FC = () => {
       const formatted = settingsService.formatBrandingSettings(settings);
       // Include logo_url from branding settings
       setBrandingSettings(prev => ({ ...prev, ...formatted }));
+      setLoadedBranding(prev => ({ ...prev, ...formatted }));
     }
   }, [settings]);
 
@@ -124,6 +135,7 @@ export const BrandingPage: React.FC = () => {
   useEffect(() => {
     if (businessProfileSnapshot?.profile) {
       setPdfFontFamily(businessProfileSnapshot.profile.pdfFontFamily || null);
+      setLoadedPdfFontFamily(businessProfileSnapshot.profile.pdfFontFamily || null);
     }
   }, [businessProfileSnapshot?.profile?.pdfFontFamily]);
 
@@ -135,11 +147,13 @@ export const BrandingPage: React.FC = () => {
       if (formatted && Object.keys(formatted).length > 0) {
         // Use the theme's logo URL as stored in the theme config
         setCurrentTheme(formatted);
+        setLoadedTheme(formatted);
         setTheme(formatted);
 
         // Only sync logo URL from theme if it exists there (logo is stored in branding settings)
         if (formatted.logoUrl) {
           setBrandingSettings(prev => ({ ...prev, logo_url: formatted.logoUrl }));
+          setLoadedBranding(prev => ({ ...prev, logo_url: formatted.logoUrl }));
         }
 
         // Try to identify which preset this matches. Compare only on the
@@ -153,6 +167,7 @@ export const BrandingPage: React.FC = () => {
           );
           if (matches) {
             setCurrentThemeName(key);
+            setLoadedThemeName(key);
             break;
           }
         }
@@ -174,9 +189,16 @@ export const BrandingPage: React.FC = () => {
    * waiting for its 30-second poll.
    */
   const handleForceColorModeChange = (value: 'dark' | 'light' | null) => {
+    const previous = loadedBranding.force_color_mode;
     const next = { ...brandingSettings, force_color_mode: value };
     setBrandingSettings(next);
-    brandingMutation.mutate(next);
+    // Instant-save: not a pending change for the save bar. If the request
+    // fails the snapshot goes back to what the server still holds, so the
+    // draft reads dirty and Save offers the retry.
+    setLoadedBranding(prev => ({ ...prev, force_color_mode: value }));
+    brandingMutation.mutate(next, {
+      onError: () => setLoadedBranding(prev => ({ ...prev, force_color_mode: previous })),
+    });
   };
 
   const handleThemeChange = (newTheme: ThemeConfig) => {
@@ -227,6 +249,10 @@ export const BrandingPage: React.FC = () => {
       try {
         const faviconUrl = await settingsService.uploadFavicon(file);
         setBrandingSettings(prev => ({ ...prev, favicon_url: faviconUrl }));
+        // The upload endpoint stores the URL and deletes the old file, so
+        // the snapshot moves with it: Discard must not put back a URL that
+        // no longer resolves, and a later save must not re-persist it.
+        setLoadedBranding(prev => ({ ...prev, favicon_url: faviconUrl }));
         toast.success(t('toast.uploadSuccess'));
       } catch (error) {
         console.error('Failed to upload favicon:', error);
@@ -240,7 +266,30 @@ export const BrandingPage: React.FC = () => {
     if (file) {
       try {
         const logoUrl = await settingsService.uploadLogo(file);
+        // The upload endpoint stores branding_logo_url and deletes the old
+        // file. The logo also lives in theme_config.logoUrl, which is what
+        // the page reads back on load, so that copy is stored here as well —
+        // on the SAVED theme, not the draft, so other unsaved theme edits are
+        // neither persisted nor lost. Both snapshots then move with the
+        // draft: an upload alone is not a pending change, and Discard cannot
+        // put a deleted file's URL back.
+        // The upload is done whatever happens next, so the branding half
+        // moves first; if storing the theme copy fails, the theme half stays
+        // dirty and Save writes it — the deleted file's URL is never the one
+        // a later Save or reload would pick up.
         setBrandingSettings(prev => ({ ...prev, logo_url: logoUrl }));
+        setLoadedBranding(prev => ({ ...prev, logo_url: logoUrl }));
+        let themeStored = false;
+        if (themeSettings) {
+          try {
+            const storedTheme: ThemeConfig = { ...loadedTheme, logoUrl };
+            await settingsService.updateTheme(storedTheme);
+            themeStored = true;
+          } catch (themeError) {
+            console.error('Failed to store the logo in the theme:', themeError);
+          }
+        }
+        if (themeStored) setLoadedTheme(prev => ({ ...prev, logoUrl }));
         setCurrentTheme(prev => {
           const updated = { ...prev, logoUrl };
           if (isPreviewMode) {
@@ -314,6 +363,8 @@ export const BrandingPage: React.FC = () => {
       try {
         const watermarkLogoUrl = await settingsService.uploadWatermarkLogo(file);
         setBrandingSettings(prev => ({ ...prev, watermark_logo_url: watermarkLogoUrl }));
+        // Stored by the upload endpoint (old file deleted) — see the favicon handler.
+        setLoadedBranding(prev => ({ ...prev, watermark_logo_url: watermarkLogoUrl }));
         toast.success(t('toast.uploadSuccess'));
       } catch (error) {
         console.error('Failed to upload watermark logo:', error);
@@ -354,8 +405,28 @@ export const BrandingPage: React.FC = () => {
 
       // Update local state to reflect saved values
       setBrandingSettings(updatedBrandingSettings);
+      setLoadedBranding(updatedBrandingSettings);
+      setLoadedTheme(currentTheme);
+      setLoadedThemeName(currentThemeName);
+      setLoadedPdfFontFamily(pdfFontFamily);
     } catch (error) {
       console.error('Failed to save settings:', error);
+    }
+  };
+
+  // Everything handleSave writes. The upload endpoints store their URL on
+  // the spot, so the upload handlers move the snapshot along with the draft
+  // and an upload alone does not read as dirty.
+  const isDirty = JSON.stringify([brandingSettings, currentTheme, currentThemeName, pdfFontFamily])
+    !== JSON.stringify([loadedBranding, loadedTheme, loadedThemeName, loadedPdfFontFamily]);
+
+  const handleDiscard = () => {
+    setBrandingSettings(loadedBranding);
+    setCurrentTheme(loadedTheme);
+    setCurrentThemeName(loadedThemeName);
+    setPdfFontFamily(loadedPdfFontFamily);
+    if (isPreviewMode) {
+      setTheme(loadedTheme);
     }
   };
 
@@ -385,28 +456,22 @@ export const BrandingPage: React.FC = () => {
     <ErrorBoundary>
       <div>
         {/* Page Header */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('branding.title')}</h1>
-            <p className="text-neutral-600 dark:text-neutral-400 mt-1">{t('branding.subtitle')}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              leftIcon={<Eye className="w-4 h-4" />}
-              onClick={handlePreview}
-            >
-              {t('branding.preview')}
-            </Button>
-            <Button
-              variant="primary"
-              leftIcon={<Save className="w-4 h-4" />}
-              onClick={handleSave}
-            >
-              {t('branding.saveChanges')}
-            </Button>
-          </div>
-        </div>
+        <SectionPageHeader
+          icon={Palette}
+          title={t('branding.title')}
+          description={t('branding.subtitle')}
+          actions={(
+            <>
+              <Button
+                variant="outline"
+                leftIcon={<Eye className="w-4 h-4" />}
+                onClick={handlePreview}
+              >
+                {t('branding.preview')}
+              </Button>
+            </>
+          )}
+        />
 
         {/* Company Branding */}
         <Card padding="md" className="mb-6">
@@ -1197,6 +1262,13 @@ export const BrandingPage: React.FC = () => {
             </div>
           </div>
         </Card>
+
+        <SettingsSaveBar
+          isDirty={isDirty}
+          isSaving={brandingMutation.isPending || themeMutation.isPending}
+          onSave={() => { void handleSave(); }}
+          onDiscard={handleDiscard}
+        />
       </div>
     </ErrorBoundary>
   );

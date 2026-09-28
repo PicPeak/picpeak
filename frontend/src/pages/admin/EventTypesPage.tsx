@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
+  Tag,
   Plus,
   Edit,
   Trash2,
@@ -10,14 +11,14 @@ import {
   Eye,
   EyeOff,
   X,
-  AlertTriangle,
-  Tags
+  AlertTriangle
 } from 'lucide-react';
 
 import { Button, Input, Card, Loading } from '../../components/common';
 import { useModal, useMutationWithToast } from '../../hooks';
 import { eventTypesService, EventType, CreateEventTypeData, UpdateEventTypeData } from '../../services/eventTypes.service';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 // Common emoji options for event types
 const EMOJI_OPTIONS = [
@@ -107,28 +108,23 @@ export const EventTypesPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-              <Tags className="w-6 h-6" />
-              {t('eventTypes.title', 'Event Types')}
-            </h1>
-            <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-              {t('eventTypes.subtitle', 'Customize event types and their default themes')}
-            </p>
-          </div>
-          <Button
-            variant="primary"
-            leftIcon={<Plus className="w-4 h-4" />}
-            onClick={() => createModal.open()}
-          >
-            {t('eventTypes.createNew', 'New Event Type')}
-          </Button>
-        </div>
-      </div>
+    <div>
+      <SectionPageHeader
+        icon={Tag}
+        title={t('eventTypes.title', 'Event Types')}
+        description={t('eventTypes.subtitle', 'Customize event types and their default themes')}
+        actions={(
+          <>
+            <Button
+              variant="primary"
+              leftIcon={<Plus className="w-4 h-4" />}
+              onClick={() => createModal.open()}
+            >
+              {t('eventTypes.createNew', 'New Event Type')}
+            </Button>
+          </>
+        )}
+      />
 
       {/* Filters */}
       <Card className="mb-6">

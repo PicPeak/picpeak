@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Shield, Monitor, Image, RefreshCw, AlertCircle } from 'lucide-react';
-import { Button, Card, Loading } from '../../../components/common';
+import { Shield, Monitor, Image, AlertCircle } from 'lucide-react';
+import { Card, Loading } from '../../../components/common';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -40,7 +41,9 @@ export const ImageSecurityTab: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<ImageSecuritySettings>(defaultSettings);
-  const [isDirty, setIsDirty] = useState(false);
+  // What the server last sent, in draft shape — dirty is a comparison against it.
+  const [loaded, setLoaded] = useState<ImageSecuritySettings>(defaultSettings);
+  const isDirty = JSON.stringify(settings) !== JSON.stringify(loaded);
 
   // Fetch current settings
   const { data: fetchedSettings, isLoading, error } = useQuery({
@@ -54,10 +57,9 @@ export const ImageSecurityTab: React.FC = () => {
   // Update local state when settings are fetched
   useEffect(() => {
     if (fetchedSettings) {
-      setSettings({
-        ...defaultSettings,
-        ...fetchedSettings,
-      });
+      const next = { ...defaultSettings, ...fetchedSettings };
+      setSettings(next);
+      setLoaded(next);
     }
   }, [fetchedSettings]);
 
@@ -67,10 +69,10 @@ export const ImageSecurityTab: React.FC = () => {
       const response = await api.put('/admin/image-security/settings', newSettings);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, saved) => {
       queryClient.invalidateQueries({ queryKey: ['image-security-settings'] });
       toast.success(t('settings.imageSecurity.saveSuccess', 'Image security settings saved'));
-      setIsDirty(false);
+      setLoaded(saved);
     },
     onError: () => {
       toast.error(t('settings.imageSecurity.saveError', 'Failed to save settings'));
@@ -82,7 +84,6 @@ export const ImageSecurityTab: React.FC = () => {
     value: ImageSecuritySettings[K]
   ) => {
     setSettings(prev => ({ ...prev, [key]: value }));
-    setIsDirty(true);
   };
 
   const handleSave = () => {
@@ -90,10 +91,7 @@ export const ImageSecurityTab: React.FC = () => {
   };
 
   const handleReset = () => {
-    if (fetchedSettings) {
-      setSettings({ ...defaultSettings, ...fetchedSettings });
-      setIsDirty(false);
-    }
+    setSettings(loaded);
   };
 
   if (isLoading) {
@@ -337,28 +335,12 @@ export const ImageSecurityTab: React.FC = () => {
         </div>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex gap-3">
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          isLoading={saveMutation.isPending}
-          leftIcon={<Save className="w-5 h-5" />}
-          disabled={!isDirty}
-        >
-          {t('common.saveChanges', 'Save Changes')}
-        </Button>
-
-        {isDirty && (
-          <Button
-            variant="outline"
-            onClick={handleReset}
-            leftIcon={<RefreshCw className="w-5 h-5" />}
-          >
-            {t('common.resetChanges', 'Reset Changes')}
-          </Button>
-        )}
-      </div>
+      <SettingsSaveBar
+        isDirty={isDirty}
+        isSaving={saveMutation.isPending}
+        onSave={handleSave}
+        onDiscard={handleReset}
+      />
     </div>
   );
 };

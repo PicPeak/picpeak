@@ -6,13 +6,14 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Upload, X } from 'lucide-react';
+import { Receipt, Plus, Search, Upload, X } from 'lucide-react';
 import { billsService, isDraftInvoice, type InvoiceStatus, type InvoiceSort } from '../../../services/bills.service';
 import { Button, Card, Input, Loading, LocalizedDateInput, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { customerAdminService } from '../../../services/customerAdmin.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const STATUSES: InvoiceStatus[] = ['scheduled', 'pending_delivery', 'sent', 'paid', 'overdue', 'cancelled', 'skipped'];
 
@@ -60,33 +61,24 @@ export const BillsListPage: React.FC = () => {
   };
 
   return (
-    <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('bills.title', 'Invoices')}</h1>
-            {/* Beta badge — matches the Customers + Quotes pages. */}
-            <span
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title="Beta — feature is functional but still evolving"
-            >
-              {t('navigation.betaTag', 'Beta')}
-            </span>
-          </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            {t('bills.subtitle', 'Schedule, send, track payments and chase late invoices.')}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="w-4 h-4 mr-1" />
-            {t('bills.import', 'Import historical')}
-          </Button>
-          <Link to="/admin/clients/bills/new">
-            <Button><Plus className="w-4 h-4 mr-1" />{t('bills.new', 'New invoice')}</Button>
-          </Link>
-        </div>
-      </div>
+    <div>
+      <SectionPageHeader
+        icon={Receipt}
+        title={t('bills.title', 'Invoices')}
+        beta
+        description={t('bills.subtitle', 'Schedule, send, track payments and chase late invoices.')}
+        actions={(
+          <>
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="w-4 h-4 mr-1" />
+              {t('bills.import', 'Import historical')}
+            </Button>
+            <Link to="/admin/clients/bills/new">
+              <Button><Plus className="w-4 h-4 mr-1" />{t('bills.new', 'New invoice')}</Button>
+            </Link>
+          </>
+        )}
+      />
 
       {importOpen && (
         <ImportHistoricalInvoiceModal onClose={() => setImportOpen(false)} />

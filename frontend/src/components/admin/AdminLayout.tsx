@@ -5,11 +5,11 @@ import { useAdminAuth } from '../../contexts';
 import { FeatureFlagsProvider } from '../../contexts/FeatureFlagsContext';
 import { UploadSessionProvider } from '../../contexts/UploadSessionContext';
 import { UploadProgressBar } from './UploadProgressBar';
+import { UnsavedChangesProvider } from '../../contexts/UnsavedChangesContext';
 import { useSessionTimeout } from '../../hooks/useSessionTimeout';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
 import { MaintenanceBanner } from './MaintenanceBanner';
-import { MigrationBanner } from './MigrationBanner';
 import { MandatoryPasswordChangeModal } from './MandatoryPasswordChangeModal';
 
 const SIDEBAR_COLLAPSED_KEY = 'admin-sidebar-collapsed';
@@ -57,15 +57,19 @@ export const AdminLayout: React.FC = () => {
     <FeatureFlagsProvider>
       {/* Photo uploads run here, above the page, so the upload modal can close
           as soon as an upload starts and the bar survives navigating within
-          the admin. */}
+          the admin. Settings forms register their dirty state in
+          UnsavedChangesProvider; the sidebar and header ask before navigating
+          away from unsaved edits. */}
       <UploadSessionProvider>
-        <AdminLayoutInner
-          sidebarOpen={sidebarOpen}
-          setSidebarOpen={setSidebarOpen}
-          sidebarCollapsed={sidebarCollapsed}
-          setSidebarCollapsed={setSidebarCollapsed}
-          mustChangePassword={mustChangePassword}
-        />
+        <UnsavedChangesProvider>
+          <AdminLayoutInner
+            sidebarOpen={sidebarOpen}
+            setSidebarOpen={setSidebarOpen}
+            sidebarCollapsed={sidebarCollapsed}
+            setSidebarCollapsed={setSidebarCollapsed}
+            mustChangePassword={mustChangePassword}
+          />
+        </UnsavedChangesProvider>
       </UploadSessionProvider>
     </FeatureFlagsProvider>
   );
@@ -133,10 +137,6 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
         {/* Live upload progress, sticky under the header */}
         <UploadProgressBar />
 
-        {/* One-time migration banner — flip the constant in MigrationBanner.tsx
-            (or remove this mount) after operators have had time to update their
-            docker-compose.yml. See #669. */}
-        <MigrationBanner />
         {!mustChangePassword && <Suspense fallback={null}><ProductUsageNotice /></Suspense>}
         {!mustChangePassword && <Suspense fallback={null}><UsageReportingPrompt /></Suspense>}
 

@@ -42,8 +42,10 @@ test('all flags and catalog capabilities have a documented decision', () => {
 });
 
 test('all current settings tabs have an explicit scope decision', () => {
-  const source = fs.readFileSync(path.resolve(__dirname, '../../../frontend/src/pages/admin/SettingsPage.tsx'), 'utf8');
-  const union = source.match(/type TabType =([\s\S]*?);/)[1].replace(/\/\/[^\n]*/g, '');
+  // The tab union lives in the settings nav declaration since the sidebar
+  // takeover; SettingsPage only re-imports it as TabType.
+  const source = fs.readFileSync(path.resolve(__dirname, '../../../frontend/src/features/settings/settingsNav.tsx'), 'utf8');
+  const union = source.match(/export type SettingsTab =([\s\S]*?);/)[1].replace(/\/\/[^\n]*/g, '');
   const tabs = [...union.matchAll(/'([^']+)'/g)].map((m) => m[1]);
   expect(Object.keys(inventory.settings_tabs).sort()).toEqual(tabs.sort());
   for (const entry of Object.values(inventory.settings_tabs)) {

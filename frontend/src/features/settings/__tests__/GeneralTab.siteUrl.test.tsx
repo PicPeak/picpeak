@@ -48,6 +48,8 @@ function renderTab(overrides: Partial<GeneralSettings>) {
       generalSettings={settings}
       setGeneralSettings={setGeneralSettings as never}
       saveGeneralMutation={{ mutate: vi.fn(), isPending: false }}
+      isDirty
+      onDiscard={() => {}}
       accountForm={{ username: 'a', email: 'a@b.c' }}
       accountErrors={{}}
       handleAccountChange={() => () => {}}
@@ -58,7 +60,7 @@ function renderTab(overrides: Partial<GeneralSettings>) {
   );
   const { rerender } = render(<Tab />);
   return {
-    saveButton: () => screen.getByRole('button', { name: /save general settings|allgemeine/i }),
+    saveButton: () => screen.getByRole('button', { name: /save changes|änderungen speichern/i }),
     urlInput: () => screen.getByPlaceholderText('https://yourdomain.com'),
   };
 }

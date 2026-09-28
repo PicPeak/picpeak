@@ -39,6 +39,7 @@ import {
   type CustomerInvitationSummary,
   type CustomerStatusFilter,
 } from '../../services/customerAdmin.service';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 
 type TabType = 'customers' | 'invitations' | 'groups';
 const TABS: TabType[] = ['customers', 'invitations', 'groups'];
@@ -342,46 +343,33 @@ export const CustomerManagementPage: React.FC = () => {
   );
 
   return (
-    <div className="container py-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('customers.pageTitle', 'Customers')}</h1>
-            {/* Beta badge — Calendar/Quotes/Bills tabs in the customer
-                surface are placeholders, so flag the whole feature as
-                still evolving. Keeps expectations honest. */}
-            <span
-              className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-              title="Beta — feature is functional but still evolving"
+    <div>
+      <SectionPageHeader
+        icon={UserCog}
+        title={t('customers.pageTitle', 'Customers')}
+        beta
+        description={t('customers.pageSubtitle', 'Recurring customer accounts that can log in at /customer/login.')}
+        actions={(
+          <>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto justify-center"
+              leftIcon={<UserCog className="w-4 h-4" />}
+              onClick={() => setCreateMode('passive')}
             >
-              {t('navigation.betaTag', 'Beta')}
-            </span>
-          </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            {t('customers.pageSubtitle', 'Recurring customer accounts that can log in at /customer/login.')}
-          </p>
-        </div>
-        {/* On a phone the two labels are wider than the screen side by side,
-            so they stack and fill the row instead of being cut off. */}
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
-          <Button
-            variant="outline"
-            className="w-full sm:w-auto justify-center"
-            leftIcon={<UserCog className="w-4 h-4" />}
-            onClick={() => setCreateMode('passive')}
-          >
-            {t('customers.create.openButton', 'Create passive customer')}
-          </Button>
-          <Button
-            variant="primary"
-            className="w-full sm:w-auto justify-center"
-            leftIcon={<UserPlus className="w-4 h-4" />}
-            onClick={() => setCreateMode('invite')}
-          >
-            {t('customers.invite.button', 'Invite customer')}
-          </Button>
-        </div>
-      </div>
+              {t('customers.create.openButton', 'Create passive customer')}
+            </Button>
+            <Button
+              variant="primary"
+              className="w-full sm:w-auto justify-center"
+              leftIcon={<UserPlus className="w-4 h-4" />}
+              onClick={() => setCreateMode('invite')}
+            >
+              {t('customers.invite.button', 'Invite customer')}
+            </Button>
+          </>
+        )}
+      />
 
       <Card padding="lg">
         {renderTabs()}

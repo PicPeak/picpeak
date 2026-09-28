@@ -33,6 +33,8 @@ function mount(overrides: Partial<RateLimitSettings> = {}) {
       rateLimitSettings={{ ...rateLimit, ...overrides }}
       setRateLimitSettings={setRateLimitSettings}
       saveSecurityMutation={{ mutate, isPending: false }}
+      isDirty
+      onDiscard={() => {}}
     />
   );
   return { setRateLimitSettings, mutate };
@@ -72,7 +74,7 @@ describe('SecurityTab rate limiter card', () => {
 
   it('the tab\'s Save button saves the limiter along with the rest', () => {
     const { mutate } = mount();
-    fireEvent.click(screen.getByRole('button', { name: /save security settings/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
     expect(mutate).toHaveBeenCalledTimes(1);
   });
 });
