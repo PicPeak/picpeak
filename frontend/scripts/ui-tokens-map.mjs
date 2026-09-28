@@ -18,8 +18,13 @@ const BG_BY_PAIR = {
   'neutral-50|neutral-700': 'inset', 'white|neutral-700': 'inset',
   'neutral-100|neutral-800': 'subtle',
 };
+// No entry for neutral-200: `hover` is neutral-100 / neutral-700, the same
+// values as `inset`, so `bg-neutral-100 … hover:bg-neutral-200` rewritten to
+// `bg-inset hover:bg-hover` would lose its hover feedback in both modes. Those
+// pairs stay as they are (there is no 200/600 hover token) and the lint rule,
+// reading this table, leaves them alone.
 const HOVER_BG = {
-  'neutral-50': 'hover-soft', 'neutral-100': 'hover', 'neutral-200': 'hover', 'white': 'panel',
+  'neutral-50': 'hover-soft', 'neutral-100': 'hover', 'white': 'panel',
 };
 const HOVER_BG_BY_PAIR = { 'neutral-50|neutral-700': 'hover', 'neutral-100|neutral-800': 'hover-soft' };
 const TEXT = {

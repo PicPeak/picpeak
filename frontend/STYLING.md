@@ -139,6 +139,7 @@ visible ones are:
 - `.input` in dark mode moved its border from `neutral-700` to `neutral-600`, matching the raw inputs around it.
 
 `text-neutral-300` pairs (light text on a dark surface) have no token and stay raw.
+`hover:bg-neutral-200 dark:hover:bg-neutral-600` stays raw too: `hover` is the same value as `inset` in both modes, so rewriting it would take the hover feedback off every button that sits on an inset background.
 
 ## Tooling
 
