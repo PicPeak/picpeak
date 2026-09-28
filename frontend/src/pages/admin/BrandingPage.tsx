@@ -268,9 +268,10 @@ export const BrandingPage: React.FC = () => {
         const logoUrl = await settingsService.uploadLogo(file);
         setBrandingSettings(prev => ({ ...prev, logo_url: logoUrl }));
         // Stored by the upload endpoint (old file deleted) — see the favicon
-        // handler; the theme snapshot carries the logo too.
+        // handler. Only branding_logo_url, though: theme_config.logoUrl is
+        // written by Save (themeMutation) and is what the page reads back on
+        // load, so the theme half stays dirty until then.
         setLoadedBranding(prev => ({ ...prev, logo_url: logoUrl }));
-        setLoadedTheme(prev => ({ ...prev, logoUrl }));
         setCurrentTheme(prev => {
           const updated = { ...prev, logoUrl };
           if (isPreviewMode) {
