@@ -85,6 +85,11 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   // the completion effect can merge processing failures without racing a
   // stale closure.
   const transferFailuresRef = useRef<UploadFailure[]>([]);
+  // Files that were done by the time the transfer loop ended: large files
+  // (their own chunked path) and replacements (the backend swaps the bytes
+  // in the request). Neither goes through the worker, so the processing
+  // aggregate never sees them; the outcome adds them back.
+  const syncSucceededRef = useRef(0);
 
   const isUploading = session !== null && session.phase.kind !== 'done';
 
@@ -155,6 +160,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     const totalUnits = chunks.length + largeFilesToUpload.length;
 
     transferFailuresRef.current = [];
+    syncSucceededRef.current = 0;
     setUploadIds([]);
     setSession({
       eventId,
@@ -279,13 +285,14 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
         // headline; the list in the bar is where the user finds out *which*
         // files failed.
         transferFailuresRef.current = collected;
+        syncSucceededRef.current = largeSucceeded + totalReplaced;
         patch({ failures: collected });
         if (collected.length > 0) {
           toast.warning(
             t('upload.failures.toast', '{{count}} file(s) could not be uploaded — details in the upload bar at the top.', { count: collected.length })
           );
-        } else if (largeSucceeded > 0 && !anyQueued) {
-          toast.success(t('upload.uploadComplete') || `Successfully uploaded ${largeSucceeded} file(s)`);
+        } else if (largeSucceeded + totalReplaced > 0 && !anyQueued) {
+          toast.success(t('upload.uploadComplete') || `Successfully uploaded ${largeSucceeded + totalReplaced} file(s)`);
         }
 
         // Refresh the grid early so the user sees their photos appearing
@@ -298,7 +305,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
         // Otherwise the processing effect below finishes it once the worker
         // is through, so processing failures land in the same report.
         if (!anyQueued) {
-          patch({ phase: { kind: 'done' }, progress: 100, uploadedCount: largeSucceeded });
+          patch({ phase: { kind: 'done' }, progress: 100, uploadedCount: largeSucceeded + totalReplaced });
         } else {
           // Bytes are all on the server. Make sure the tracker is armed even
           // when the browser never reported a final progress event.
@@ -327,6 +334,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!processingAggregate.isComplete) return;
 
     const transferFailures = transferFailuresRef.current;
+    const uploaded = processingAggregate.complete + syncSucceededRef.current;
     const processingFailures: UploadFailure[] = processingAggregate.failedPhotos.map((p) => ({
       filename: p.filename,
       reason: p.error || t('upload.failures.unknownReason', 'Unknown error'),
@@ -344,13 +352,13 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       // report (QA P4-B.05 / 7.05) — report the real split.
       toast.warning(
         t('upload.partialComplete', '{{uploaded}} of {{total}} files uploaded — {{failed}} could not be uploaded.', {
-          uploaded: processingAggregate.complete,
-          total: processingAggregate.complete + transferFailures.length,
+          uploaded,
+          total: uploaded + transferFailures.length,
           failed: transferFailures.length,
         })
       );
     } else {
-      toast.success(t('upload.uploadComplete') || `Successfully uploaded ${processingAggregate.complete} photo(s)`);
+      toast.success(t('upload.uploadComplete') || `Successfully uploaded ${uploaded} photo(s)`);
     }
 
     refreshEvent(session.eventId);
@@ -358,7 +366,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       phase: { kind: 'done' },
       progress: 100,
       processing: { complete: processingAggregate.complete, failed: processingAggregate.failed, total: processingAggregate.total },
-      uploadedCount: processingAggregate.complete,
+      uploadedCount: uploaded,
       failures: [...transferFailures, ...processingFailures],
     });
     setUploadIds([]);

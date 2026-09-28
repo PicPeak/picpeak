@@ -148,6 +148,57 @@ describe('PhotoUpload completion toast', () => {
     expect(toastMock.success).not.toHaveBeenCalled();
   });
 
+  it('counts replacements that the backend swapped in the request', async () => {
+    // Replace-by-name: the backend swaps the bytes synchronously and reports
+    // them in replacedCount, not in count — nothing is queued. The outcome
+    // used to read "0 uploaded" for a replacement-only run, and the bar's
+    // failure report omitted the count line altogether.
+    postMock.mockResolvedValue({
+      data: {
+        count: 0,
+        replacedCount: 2,
+        upload_id: 'u1',
+        errors: [{ filename: 'fake.jpg', error: 'File content does not match declared type' }],
+      },
+    });
+    const user = userEvent.setup();
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+
+    await uploadFiles(container, user, ['a.png', 'b.png', 'fake.jpg']);
+
+    const report = await screen.findByTestId('upload-failure-report');
+    // The bar prints the uploaded line only for a count above zero.
+    expect(await screen.findByText(/upload\.bar\.uploaded/)).toBeInTheDocument();
+    expect(report).toBeInTheDocument();
+  });
+
+  it('adds synchronous successes to the processed count in the split', async () => {
+    // One file queued and processed, one replaced in the request, one
+    // rejected: 2 of 3, not 1 of 2.
+    postMock.mockResolvedValue({
+      data: {
+        count: 1,
+        replacedCount: 1,
+        upload_id: 'u1',
+        errors: [{ filename: 'fake.jpg', error: 'File content does not match declared type' }],
+      },
+    });
+    hoisted.aggregate = {
+      total: 1, pending: 0, processing: 0, complete: 1, failed: 0,
+      failedPhotos: [], isComplete: true, isReady: true,
+    };
+    const user = userEvent.setup();
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+
+    await uploadFiles(container, user, ['good.png', 'again.png', 'fake.jpg']);
+
+    await waitFor(() =>
+      expect(toastMock.warning).toHaveBeenCalledWith(
+        '2 of 3 files uploaded — 1 could not be uploaded.'
+      )
+    );
+  });
+
   it('still congratulates a clean upload', async () => {
     postMock.mockResolvedValue({ data: { count: 1, upload_id: 'u1', errors: [] } });
     hoisted.aggregate = {
