@@ -18,11 +18,28 @@ jest.mock('swissqrbill/pdf', () => ({
   }),
 }));
 
+const path = require('path');
+const PDFDocument = require('pdfkit');
 const { drawLineItems } = require('../../src/services/pdfService')._internal;
 
+/**
+ * A real document: drawLineItems plans its own page breaks now (#1546) and has
+ * to measure every row to do it, so a `{ y }` stub no longer stands in. The
+ * Table is still mocked, so nothing is actually drawn — these tests read the
+ * rows it was handed.
+ */
 function draw(lineItems, extra = {}) {
   mockTables.length = 0;
-  drawLineItems({ y: 100 }, {
+  const doc = new PDFDocument({ size: 'A4' });
+  // The renderer registers its logical font names on the document before it
+  // draws; measuring the rows resolves them, so the test has to register them
+  // too. Any real face will do — these tests read row data, not glyphs.
+  const face = (weight) => path.join(__dirname, '../../assets/fonts/Jost', weight);
+  doc.registerFont('crm-body', face('400.ttf'));
+  doc.registerFont('crm-bold', face('600.ttf'));
+  doc.registerFont('crm-italic', face('400i.ttf'));
+  doc.y = 100;
+  drawLineItems(doc, {
     type: 'quote', locale: 'de', currency: 'CHF', intlLocale: 'de-CH', lineItems, ...extra,
   });
   const [{ rows }] = mockTables;

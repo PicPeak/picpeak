@@ -186,6 +186,12 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
   // Not VAT-registered (Settings → Accounting): an invoice without VAT shows
   // no MwSt. row, and the VAT note stands in its place. Null = never set.
   const vatRegistered = await require('../../utils/vatRegistration').getVatRegisteredSetting();
+  // What the Leistungsdatum row does when the service date is the issue date
+  // (Settings → CRM → Invoices, #1546). Unset → state it in words, which keeps
+  // the time of supply on the document without printing the same date twice.
+  const serviceDateModeRaw = await getAppSetting('crm_invoices_service_date_mode');
+  const serviceDateMode = ['note', 'repeat', 'omit'].includes(serviceDateModeRaw)
+    ? serviceDateModeRaw : 'note';
 
   return {
     locale: invoice.language || profile?.default_locale || 'de',
@@ -207,6 +213,7 @@ async function buildInvoiceRenderContext(invoice, lineItems) {
     // Free-text VAT/legal note (#794) — rendered under the MwSt. line by drawTotals.
     vatNote,
     vatRegistered,
+    serviceDateMode,
     lineItems: lineItems.map((li) => ({
       quantity: li.quantity,
       description: li.description,

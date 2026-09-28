@@ -9,6 +9,38 @@ const path = require('path');
 const logger = require('../utils/logger');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { queueEmail } = require('./emailProcessor');
+const { getStorage } = require('./storage');
+
+/**
+ * Run `fn` over `items` with at most `limit` in flight. On the first failure
+ * no further item is started, the in-flight ones are allowed to settle, and
+ * that error is rethrown — so a caller recording progress in `fn` sees every
+ * item that actually completed.
+ */
+async function forEachBounded(items, limit, fn) {
+  let cursor = 0;
+  let failure = null;
+  const worker = async () => {
+    while (cursor < items.length && !failure) {
+      const item = items[cursor++];
+      try {
+        await fn(item);
+      } catch (error) {
+        failure = failure || error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failure) throw failure;
+}
+
+/** A missing source, on either backend: ENOENT locally, NoSuchKey/404 on S3. */
+function isNotFound(err) {
+  return err.code === 'ENOENT'
+    || err.name === 'NoSuchKey'
+    || err.name === 'NotFound'
+    || err.$metadata?.httpStatusCode === 404;
+}
 
 class EventRenameService {
   constructor() {
@@ -137,15 +169,85 @@ class EventRenameService {
   }
 
   /**
+   * Copy every object under the old event prefix to the new one (#1694).
+   *
+   * S3 has no directory rename. `renameEventFolder` above is a local
+   * `fs.rename`, which on STORAGE_BACKEND=s3 found no folder, logged "not
+   * found, skipping" and returned true — so the rows were rewritten to the
+   * new slug while every object stayed under the old one, and the renamed
+   * gallery 404ed on every image.
+   *
+   * Copy only, here: the sources are deleted after the transaction commits
+   * (`deleteObjects`), so a failure anywhere before that point leaves the
+   * event readable at its old keys and the rollback has only the copies to
+   * remove. Server-side copies, bounded like the cascade delete's sweep so a
+   * large event neither serialises into minutes nor exhausts the S3 client's
+   * connection pool.
+   *
+   * @param {{sourceKeys: string[], copiedKeys: string[]}} progress - Filled in
+   *   as the copies land, so a throw midway still leaves the rollback an
+   *   exact list of what to remove.
+   */
+  async moveEventObjects(oldSlug, newSlug, progress) {
+    const storage = getStorage();
+    const oldPrefix = path.posix.join('events/active', oldSlug);
+    const newPrefix = path.posix.join('events/active', newSlug);
+
+    // `list` is prefix-based on S3, so `wedding-x` would also match a
+    // sibling `wedding-x-2`; the slash keeps both checks to this event.
+    const occupied = (await storage.list(newPrefix))
+      .filter((entry) => entry.key.startsWith(`${newPrefix}/`));
+    if (occupied.length > 0) {
+      throw new Error('Target folder already exists');
+    }
+
+    progress.sourceKeys = (await storage.list(oldPrefix))
+      .map((entry) => entry.key)
+      .filter((key) => key.startsWith(`${oldPrefix}/`));
+    if (progress.sourceKeys.length === 0) {
+      logger.warn('Event prefix holds no objects, skipping move', { oldSlug });
+      return;
+    }
+
+    await forEachBounded(progress.sourceKeys, 16, async (key) => {
+      const target = newPrefix + key.slice(oldPrefix.length);
+      await storage.copy(key, target);
+      progress.copiedKeys.push(target);
+    });
+    logger.info('Event objects copied', { oldSlug, newSlug, count: progress.copiedKeys.length });
+  }
+
+  /** Best-effort removal of `keys`; a leftover is recoverable noise, not an error. */
+  async deleteObjects(keys, context) {
+    const storage = getStorage();
+    let removed = 0;
+    await forEachBounded(keys, 16, async (key) => {
+      try {
+        await storage.delete(key);
+        removed++;
+      } catch (error) {
+        logger.warn('Could not delete stored object after rename', { key, error: error.message, ...context });
+      }
+    });
+    return removed;
+  }
+
+  /**
    * Rename individual photo files to match new event name
    * @param {number} eventId - Event ID
    * @param {string} oldEventName - Old event name
    * @param {string} newEventName - New event name
    * @param {string} newSlug - New slug for path updates
+   * @param {object} [trx] - Knex transaction; the rows are read and written
+   *   through it so a failed rename rolls them back with the event. On SQLite
+   *   this is not optional: the pool holds one connection and the open
+   *   transaction owns it, so a query through `db` here waited out the
+   *   60s acquire timeout and every rename failed.
    * @returns {Promise<number>} Number of files renamed
    */
-  async renamePhotoFiles(eventId, oldEventName, newEventName, oldSlug, newSlug) {
-    const photos = await db('photos').where({ event_id: eventId });
+  async renamePhotoFiles(eventId, oldEventName, newEventName, oldSlug, newSlug, trx = db) {
+    const storage = getStorage();
+    const photos = await trx('photos').where({ event_id: eventId });
     let renamedCount = 0;
 
     // Process event name for filenames
@@ -167,17 +269,17 @@ class EventRenameService {
         const newThumbnailPath = photo.thumbnail_path ?
           photo.thumbnail_path.replace(oldSlug, newSlug) : null;
 
-        // Rename physical file if filename changed
+        // Rename physical file if filename changed. Through the storage
+        // backend, not `fs`: on S3 there is no local file to rename (#1694).
         if (newFilename !== oldFilename) {
-          const oldFilePath = path.join(this.storagePath, 'events/active', newSlug,
-            photo.type === 'collage' ? 'collages' : 'individual', oldFilename);
-          const newFilePath = path.join(this.storagePath, 'events/active', newSlug,
-            photo.type === 'collage' ? 'collages' : 'individual', newFilename);
+          const subfolder = photo.type === 'collage' ? 'collages' : 'individual';
+          const oldKey = path.posix.join('events/active', newSlug, subfolder, oldFilename);
+          const newKey = path.posix.join('events/active', newSlug, subfolder, newFilename);
 
           try {
-            await fs.rename(oldFilePath, newFilePath);
+            await storage.rename(oldKey, newKey);
           } catch (error) {
-            if (error.code !== 'ENOENT') {
+            if (!isNotFound(error)) {
               logger.warn('Could not rename photo file', { oldFilename, error: error.message });
             }
           }
@@ -198,7 +300,7 @@ class EventRenameService {
         }
 
         // Update database record
-        await db('photos')
+        await trx('photos')
           .where({ id: photo.id })
           .update({
             filename: newFilename,
@@ -222,18 +324,11 @@ class EventRenameService {
    * @param {string} oldSlug - Current slug
    * @param {string} newSlug - New slug
    * @param {string} newEventName - New event name
-   * @returns {Promise<{newShareLink: string}>}
+   * @param {string} shareLinkToStore - Built before the transaction opened:
+   *   buildShareLinkVariants reads app_settings through `db`, which on
+   *   SQLite waits for the connection the transaction holds.
    */
-  async updateDatabaseRecords(trx, eventId, oldSlug, newSlug, newEventName) {
-    const event = await trx('events').where({ id: eventId }).first();
-
-    // Generate new share link
-    const { shareUrl, shareLinkToStore } = await buildShareLinkVariants({
-      slug: newSlug,
-      shareToken: event.share_token
-    });
-
-    // Update event
+  async updateDatabaseRecords(trx, eventId, oldSlug, newSlug, newEventName, shareLinkToStore) {
     await trx('events')
       .where({ id: eventId })
       .update({
@@ -241,8 +336,6 @@ class EventRenameService {
         slug: newSlug,
         share_link: shareLinkToStore
       });
-
-    return { newShareLink: shareUrl };
   }
 
   /**
@@ -314,6 +407,14 @@ class EventRenameService {
    */
   async rollbackRename(backupData) {
     try {
+      if (backupData.moved && backupData.moved.copiedKeys.length > 0) {
+        // The sources were never deleted, so the event is still readable at
+        // its old keys; only the copies have to go, or the next attempt is
+        // refused for finding the target occupied.
+        const removed = await this.deleteObjects(backupData.moved.copiedKeys, { newSlug: backupData.newSlug });
+        logger.info('Rolled back object copies', { removed, total: backupData.moved.copiedKeys.length });
+      }
+
       if (backupData.folderRenamed && backupData.event) {
         const oldPath = path.join(this.storagePath, 'events/active', backupData.newSlug);
         const newPath = path.join(this.storagePath, 'events/active', backupData.event.slug);
@@ -357,19 +458,34 @@ class EventRenameService {
       const oldName = event.event_name;
       const newSlug = validation.newSlug;
 
+      // Reads settings through `db`, so it has to happen before the
+      // transaction takes SQLite's only connection.
+      const { shareUrl: newShareLink, shareLinkToStore } = await buildShareLinkVariants({
+        slug: newSlug,
+        shareToken: event.share_token
+      });
+
       // 3. Start transaction
       const trx = await db.transaction();
 
       try {
-        // 4. Rename folder (filesystem)
-        await this.renameEventFolder(oldSlug, newSlug);
-        backupData.folderRenamed = true;
+        // 4. Move the event's objects. Local disk keeps the one-call folder
+        // rename; a remote backend has no such thing, so its objects are
+        // copied here and the sources removed only after commit (#1694).
+        const remote = getStorage().kind() !== 'local';
+        if (remote) {
+          backupData.moved = { sourceKeys: [], copiedKeys: [] };
+          await this.moveEventObjects(oldSlug, newSlug, backupData.moved);
+        } else {
+          await this.renameEventFolder(oldSlug, newSlug);
+          backupData.folderRenamed = true;
+        }
 
         // 5. Rename photo files and update paths
-        const filesRenamed = await this.renamePhotoFiles(eventId, oldName, newEventName.trim(), oldSlug, newSlug);
+        const filesRenamed = await this.renamePhotoFiles(eventId, oldName, newEventName.trim(), oldSlug, newSlug, trx);
 
         // 6. Update database records
-        const { newShareLink } = await this.updateDatabaseRecords(trx, eventId, oldSlug, newSlug, newEventName.trim());
+        await this.updateDatabaseRecords(trx, eventId, oldSlug, newSlug, newEventName.trim(), shareLinkToStore);
 
         // 7. Create redirect entry
         await this.createSlugRedirect(trx, eventId, oldSlug, newSlug);
@@ -393,6 +509,14 @@ class EventRenameService {
 
         // 9. Commit transaction
         await trx.commit();
+
+        // Post-commit and best-effort, like the cascade delete's sweep: an
+        // orphaned source object is recoverable noise, a rolled-back rename
+        // with its objects already gone is not.
+        if (backupData.moved && backupData.moved.sourceKeys.length > 0) {
+          const removed = await this.deleteObjects(backupData.moved.sourceKeys, { oldSlug });
+          logger.info('Event objects moved', { oldSlug, newSlug, removed, total: backupData.moved.sourceKeys.length });
+        }
 
         // 10. Send email (after commit, non-critical)
         let emailSent = false;

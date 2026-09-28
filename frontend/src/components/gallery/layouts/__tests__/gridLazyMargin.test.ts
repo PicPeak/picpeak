@@ -37,7 +37,7 @@ describe('grid lazy pre-load band', () => {
   it('every inViewRootMargin in every layout uses a legal unit', () => {
     // A vh value throws at IntersectionObserver construction and takes the
     // whole gallery down with it, so this guards the unit, not just presence.
-    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
+    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx', 'MosaicGalleryLayout.tsx']) {
       const src = read(file);
       for (const [, value] of src.matchAll(/inViewRootMargin="([^"]+)"/g)) {
         expect(value, `${file}: "${value}"`).toMatch(LEGAL_ROOT_MARGIN);
@@ -65,10 +65,25 @@ describe('grid lazy pre-load band', () => {
     expect(percent(release![1])).toBeGreaterThan(percent(load![1]));
   });
 
+  it('Mosaic is lazy and releases, with the same bands as Grid', () => {
+    // #1695. Mosaic passed `loading: 'lazy'` on the <img> and nothing to
+    // PhotoCard, but AuthenticatedImage fetches in an effect the moment it
+    // mounts, so the attribute deferred nothing: every tile of a 266-photo
+    // gallery entered the fetch queue on first render, ahead of the hero.
+    // Mosaic's tile carries an explicit aspectRatio, so it can release like
+    // Grid without reflowing.
+    const mosaic = read('MosaicGalleryLayout.tsx');
+    const grid = read('GridGalleryLayout.tsx');
+    expect(/^\s*lazy\s*$/m.test(mosaic)).toBe(true);
+    const band = (src: string, name: string) => src.match(new RegExp(`${name}="([^"]+)"`))?.[1];
+    expect(band(mosaic, 'inViewRootMargin')).toBe(band(grid, 'inViewRootMargin'));
+    expect(band(mosaic, 'releaseRootMargin')).toBe(band(grid, 'releaseRootMargin'));
+  });
+
   it('every layout that lazy-renders also declares a pre-load band', () => {
     // The defect was Grid being lazy with no margin. Any future layout that
     // opts into `lazy` and forgets the margin reintroduces it.
-    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
+    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx', 'MosaicGalleryLayout.tsx']) {
       const src = read(file);
       const isLazy = /^\s*lazy\s*$/m.test(src) || /\slazy=\{?true/.test(src);
       if (!isLazy) continue;

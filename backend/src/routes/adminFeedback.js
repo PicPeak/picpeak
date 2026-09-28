@@ -13,7 +13,7 @@ const {
   validateWordFilter,
   checkValidation
 } = require('../utils/feedbackValidation');
-const { requireEventOwnership } = require('../middleware/ownership');
+const { requireEventOwnership, canAccessEvent, scopeEventsQuery } = require('../middleware/ownership');
 
 // Get event feedback settings
 router.get('/events/:eventId/feedback-settings',
@@ -172,11 +172,10 @@ router.get('/events/:eventId/feedback',
 // false and sends a 404 (not 403 — don't leak which feedback ids exist)
 // when the caller may not act on it.
 async function assertOwnsFeedback(req, res, feedbackId) {
-  if (req.admin.roleName === 'super_admin') return true;
   const fb = await db('photo_feedback').where('id', feedbackId).first('event_id');
   if (!fb) { res.status(404).json({ error: 'Feedback not found' }); return false; }
   const event = await db('events').where('id', fb.event_id).first('created_by');
-  if (event && event.created_by && event.created_by !== req.admin.id) {
+  if (event && !canAccessEvent(req.admin, event)) {
     res.status(404).json({ error: 'Feedback not found' });
     return false;
   }
@@ -377,9 +376,7 @@ router.get('/feedback/pending-moderation',
       // Scope to the caller's owned events unless super_admin (GHSA-3335).
       let ownedEventIds = null;
       if (req.admin.roleName !== 'super_admin') {
-        const rows = await db('events')
-          .where((q) => q.whereNull('created_by').orWhere('created_by', req.admin.id))
-          .select('id');
+        const rows = await scopeEventsQuery(db('events'), req.admin).select('id');
         ownedEventIds = rows.map((r) => r.id);
       }
       const pending = await feedbackService.getPendingModeration(null, ownedEventIds);

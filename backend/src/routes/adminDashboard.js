@@ -9,6 +9,7 @@ const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
+const { queueTimestamp } = require('../utils/queueTimestamps');
 const router = express.Router();
 
 /**
@@ -276,12 +277,12 @@ router.get('/health', adminAuth, requirePermission('settings.view'), async (req,
       .where('status', 'pending')
       .count('* as count');
     
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-    
+    // Failures of the last day, by created_at: scheduled_at is NULL for mail
+    // that was to go out at once (issue 1670). The bind is engine-shaped — a
+    // Date on Postgres, epoch ms on SQLite — so it compares on both.
     const [failedEmails] = await db('email_queue')
       .where('status', 'failed')
-      .where('scheduled_at', '>=', twentyFourHoursAgo.toISOString())
+      .where('created_at', '>=', queueTimestamp(Date.now() - 24 * 60 * 60 * 1000))
       .count('* as count');
 
     const emailStatus = failedEmails.count > 10 ? 'warning' : 'healthy';

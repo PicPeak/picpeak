@@ -97,7 +97,7 @@ class WatermarkService {
    * file — which matters because the mark is sized relative to the input's
    * own width, so it has to be applied at the OUTPUT size to come out right.
    */
-  async applyWatermark(imagePath, settings) {
+  async applyWatermark(imagePath, settings, { keepMetadata = false } = {}) {
     const isBuffer = Buffer.isBuffer(imagePath);
     try {
       if (!settings || !settings.enabled) {
@@ -108,7 +108,9 @@ class WatermarkService {
       // Check cache first. Buffer inputs are already-resized intermediates:
       // they have no stable key (hashing megabytes per photo would cost more
       // than the watermark) and no reuse across requests, so skip the cache.
-      const cacheKey = isBuffer ? null : `${imagePath}_${JSON.stringify(settings)}`;
+      // keepMetadata is part of the key: the gallery-view rendition and the
+      // download of the same photo must never serve each other's bytes.
+      const cacheKey = isBuffer ? null : `${imagePath}_${JSON.stringify(settings)}_${keepMetadata ? 'meta' : 'stripped'}`;
       if (cacheKey) {
         const cached = this.cache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < this.cacheMaxAge) {
@@ -218,6 +220,16 @@ class WatermarkService {
         top: Math.max(0, Math.floor(position.top)),
         left: Math.max(0, Math.floor(position.left))
       }]);
+
+      // A DOWNLOAD keeps the photo's EXIF, XMP and IPTC (issue 1649) — same
+      // reasoning as resizeToBox: the credit travels with the file the guest
+      // takes away. Only downloadRendition asks for it. Every other caller
+      // makes the gallery-VIEW rendition (gallery/media.js, the persisted
+      // watermark_path), which stays stripped like every other rendition:
+      // a viewer who cannot download must not read the GPS tag either.
+      // rotate() above has already corrected the pixels, and keepMetadata()
+      // resets the Orientation tag to 1 to match.
+      if (keepMetadata) watermarkedImage = watermarkedImage.keepMetadata();
 
       // Preserve original format with high quality settings
       const format = metadata.format || 'jpeg';

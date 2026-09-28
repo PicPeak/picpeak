@@ -224,7 +224,7 @@ router.post(
     } catch (error) {
       if (error.isOperational) return res.status(error.statusCode).json(error.responseBody || { error: error.message, code: error.code });
       logger.error('v1 POST /events failed', { error: error.message, stack: error.stack });
-      res.status(500).json({ error: 'Failed to create event', detail: error.message });
+      res.status(500).json({ error: 'Failed to create event' });
     }
   }
 );

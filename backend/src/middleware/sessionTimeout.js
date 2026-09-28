@@ -87,7 +87,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
   
   try {
     // Verify token is valid
-    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
     
     // Check if this is an admin token
     if (!decoded.id) {
@@ -138,7 +138,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
     for (const oldToken of sessions.keys()) {
       if (oldToken !== token) {
         try {
-          const oldDecoded = jwt.verify(oldToken, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+          const oldDecoded = jwt.verify(oldToken, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'picpeak-auth' });
           if (oldDecoded.id === userId) {
             sessions.delete(oldToken);
           }

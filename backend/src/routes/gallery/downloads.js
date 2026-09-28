@@ -9,6 +9,12 @@ const watermarkService = require('../../services/watermarkService');
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const logger = require('../../utils/logger');
+// Download statistics are best-effort: a failed write must never break the
+// download it describes, but it must not vanish either — silently skewed
+// counts were an audit finding. Every such write ends in this.
+const statsWriteFailed = (what) => (err) => {
+  logger.warn(`Download stats not recorded (${what})`, { error: err && err.message });
+};
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../../services/photoResolver');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -615,8 +621,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           ip_address: req.ip,
           user_agent: req.headers['user-agent'],
           action: 'download_all'
-        }).catch(() => {});
-        bumpEventDownloadCounts(req.event.id).catch(() => {});
+        }).catch(statsWriteFailed('access log, download_all'));
+        bumpEventDownloadCounts(req.event.id).catch(statsWriteFailed('event download counts'));
         // Surface in the admin notification bell (#746) — only once the
         // stream actually finished; logging at pipe-time would report
         // downloads that then broke mid-transfer (codex review of #849).
@@ -847,7 +853,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
         db('photos').whereIn('id', appendedIds)
-          .increment('download_count', 1).catch(() => {});
+          .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
   } catch (error) {
@@ -1060,7 +1066,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
         db('photos').whereIn('id', appendedIds)
-          .increment('download_count', 1).catch(() => {});
+          .increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
     }
   } catch (error) {
@@ -1266,7 +1272,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       if (res.statusCode >= 400 || req.isAdminPreview) return;
       const ids = Array.isArray(deliveredIds) ? deliveredIds : [];
       if (ids.length > 0) {
-        db('photos').whereIn('id', ids).increment('download_count', 1).catch(() => {});
+        db('photos').whereIn('id', ids).increment('download_count', 1).catch(statsWriteFailed('photo download count'));
       }
       db('access_logs').insert({
         event_id: req.event.id,
@@ -1274,7 +1280,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         user_agent: req.headers['user-agent'],
         action: 'download',
         photo_id: null,
-      }).catch(() => {});
+      }).catch(statsWriteFailed('access log, download job'));
       logActivity('gallery_downloaded', { scope: 'all', resolution: job.resolution },
         req.event.id, galleryActor(req));
     });
@@ -1302,3 +1308,4 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
 // The slideshow kiosk is excluded (denySlideshowToken; migration 138).
 
 module.exports = router;
+module.exports._internal = { statsWriteFailed };

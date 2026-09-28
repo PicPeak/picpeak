@@ -112,8 +112,9 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        * Thumbnails are served `private, max-age=1800`, so coming back costs a
        * cache hit rather than a round trip.
        *
-       * Grid only, and deliberately so: the skeleton here is `aspect-square`
-       * and holds the tile's box exactly, so releasing shifts nothing. The
+       * Grid and Mosaic only, and deliberately so: the skeleton here is
+       * `aspect-square`, Mosaic's tile carries an explicit `aspectRatio`, and
+       * either holds the tile's box exactly, so releasing shifts nothing. The
        * measured layouts have no such guarantee.
        */
       releaseRootMargin="300% 0px"

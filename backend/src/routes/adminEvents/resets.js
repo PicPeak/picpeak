@@ -13,7 +13,7 @@ const { validatePasswordInContext, getBcryptRounds } = require('../../utils/pass
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const { parseBooleanInput } = require('../../utils/parsers');
 
@@ -26,12 +26,9 @@ module.exports = (router) => {
       const { id } = req.params;
       const { sendEmail = true, password: clientPassword } = req.body;
 
-      let eventQuery = db('events').where('id', id);
-      // Editor role can only edit their own events
-      if (req.admin.roleName === 'editor') {
-        eventQuery = eventQuery.where('created_by', req.admin.id);
-      }
-      const event = await eventQuery.first();
+      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // defence in depth (issue 1670, §2.4).
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
@@ -127,12 +124,9 @@ module.exports = (router) => {
       const { id } = req.params;
 
       // Get event details
-      let eventQuery = db('events').where('id', id);
-      // Editor role can only edit their own events
-      if (req.admin.roleName === 'editor') {
-        eventQuery = eventQuery.where('created_by', req.admin.id);
-      }
-      const event = await eventQuery.first();
+      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // defence in depth (issue 1670, §2.4).
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
 
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });

@@ -1564,8 +1564,16 @@ async function resizeToBox(inputBuffer, box, options = {}) {
       ? sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none', animated: true })
       : probe.rotate();
 
+    // A download keeps the photo's EXIF, XMP and IPTC (issue 1649): the
+    // photographer's Artist and Copyright belong on the file the guest takes
+    // away, and the original — the default download — ships with them anyway.
+    // sharp strips everything unless told otherwise, and this path used to
+    // leave it at that. Only the renditions (thumbnails, previews, heroes)
+    // strip on purpose. keepMetadata() after rotate() resets the Orientation
+    // tag to 1, so the corrected pixels are not rotated a second time.
     let pipeline = image
-      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true });
+      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true })
+      .keepMetadata();
 
     // Re-encode in the SOURCE format. The download routes keep the original
     // filename and mime type, so emitting JPEG for a .gif would ship

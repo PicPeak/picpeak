@@ -826,6 +826,7 @@
     "noCategory": "No category",
     "eventSpecific": "(Event specific)",
     "clickToUpload": "Click to upload or drag and drop",
+    "takePhoto": "Take a photo",
     "fileRequirements": "{{formats}} (max {{sizeLimit}}MB per file, {{limit}} files per upload)",
     "videoSizeLimit": "Videos: max {{sizeLimit}}MB per file",
     "selectedFiles": "Selected files",
@@ -5495,6 +5496,7 @@
     "enableToggle": "Enable Client Access",
     "enableDescription": "Allow clients to review and hide photos before the gallery is shared with guests.",
     "pinHelperText": "The client will use this PIN to access the review page. At least 6 characters.",
+    "linkAfterCreate": "The client access link appears on the event page as soon as the event is created.",
     "pinUpdated": "Client PIN updated",
     "setPin": "Set PIN",
     "linkLabel": "Client Access Link",
@@ -7881,6 +7883,13 @@
     "customer_documents_allowed_formats": {
       "label": "File types customers can upload",
       "help": "Every file is checked by its content. PDF is the only type on by default. The check of Word, Excel and OpenDocument files is best-effort: it refuses macros, embedded objects and the known ways of linking to outside content (including web links), but it does not detect every active-content mechanism these formats have. Turn them on only for customers you trust, and open such files with care. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet."
+    },
+    "crm_invoices_service_date_mode": {
+      "label": "Service date equal to the invoice date",
+      "note": "State it in words (\"same as invoice date\")",
+      "repeat": "Print the date again",
+      "omit": "Leave the row out",
+      "help": "Only applies when the service date falls on the invoice date; a service period always prints. Tax law in CH/LI and DE/AT wants the time of supply on the invoice, so leaving the row out is a decision to confirm with your tax advisor."
     }
   },
   "quoteResponse": {

@@ -5,6 +5,60 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.145.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.145.0-beta.0...v3.145.1-beta.0) (2026-09-27)
+
+
+### Bug Fixes
+
+* **events:** move the objects through the storage backend when an event is renamed ([#1696](https://github.com/PicPeak/picpeak/issues/1696)) ([9bbe784](https://github.com/PicPeak/picpeak/commit/9bbe7848c7365ff977008c447b63c27153b6e653))
+* **gallery:** fetch the hero ahead of Mosaic's tiles, and lazy-load Mosaic ([#1697](https://github.com/PicPeak/picpeak/issues/1697)) ([74216de](https://github.com/PicPeak/picpeak/commit/74216de62d0ad75c68949fe5e0fc529d2899e736))
+
+## [3.145.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.2-beta.0...v3.145.0-beta.0) (2026-09-25)
+
+
+### Features
+
+* **admin:** make Client Access findable when creating an event ([#1686](https://github.com/PicPeak/picpeak/issues/1686)) ([421584d](https://github.com/PicPeak/picpeak/commit/421584d0827efbef9f0430a80728b1ab9e03de0d))
+* **gallery:** a camera button on the guest upload for phones whose picker hides the camera ([#1687](https://github.com/PicPeak/picpeak/issues/1687)) ([e8516d3](https://github.com/PicPeak/picpeak/commit/e8516d36ff369a40e7811aa9916b0d038ee280cf))
+
+## [3.144.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.1-beta.0...v3.144.2-beta.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* **documents:** compact, consistent quote and invoice PDFs ([#1658](https://github.com/PicPeak/picpeak/issues/1658)) ([df83400](https://github.com/PicPeak/picpeak/commit/df834007443ea6c15e9b2b78e98cde0ca1fb8489))
+
+## [3.144.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.144.0-beta.0...v3.144.1-beta.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* **downloads:** keep EXIF, XMP and IPTC on resized and watermarked downloads ([#1678](https://github.com/PicPeak/picpeak/issues/1678)) ([d416c04](https://github.com/PicPeak/picpeak/commit/d416c049f8297c2c7358dfa6c924b2dc1ad709ad))
+* **email:** queued mail left to the column default never came due on SQLite ([#1681](https://github.com/PicPeak/picpeak/issues/1681)) ([ec1dbac](https://github.com/PicPeak/picpeak/commit/ec1dbac6b3ce2ed13c607a2cc9f78e64b07e8b55))
+
+## [3.144.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.143.0-beta.0...v3.144.0-beta.0) (2026-09-25)
+
+
+### Features
+
+* **i18n:** complete the Slovenian locale ([#1676](https://github.com/PicPeak/picpeak/issues/1676)) ([d773c76](https://github.com/PicPeak/picpeak/commit/d773c76bea88bfbf5077372730d48871a7e7cedd))
+
+## [3.143.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.2-beta.0...v3.143.0-beta.0) (2026-09-25)
+
+
+### Features
+
+* **i18n:** complete Brazilian Portuguese for guest-facing screens ([#1657](https://github.com/PicPeak/picpeak/issues/1657)) ([8fafcca](https://github.com/PicPeak/picpeak/commit/8fafcca27815e3a4c66c5c8fa445dbdd667642ae))
+
+## [3.142.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.1-beta.0...v3.142.2-beta.0) (2026-09-25)
+
+
+### Bug Fixes
+
+* **audit:** ISO processing claim, tunable watcher window, issuer on every auxiliary jwt.verify ([#1673](https://github.com/PicPeak/picpeak/issues/1673)) ([e507c17](https://github.com/PicPeak/picpeak/commit/e507c17e6511177f7c96e5169516c7f327d3151d))
+* **security:** generic admin 500 bodies, no swallowed stats writes, tighter preview and analytics sandboxes ([#1672](https://github.com/PicPeak/picpeak/issues/1672)) ([652e5ba](https://github.com/PicPeak/picpeak/commit/652e5ba826a1ee54adec4606dccd82ccf210b159))
+* **setup:** super_admin-only wizard completion, documented photos mounts, typed customer admin envelopes ([#1671](https://github.com/PicPeak/picpeak/issues/1671)) ([bbbc0ff](https://github.com/PicPeak/picpeak/commit/bbbc0ffbc1002906e60d51b81573651be939dbc6))
+
 ## [3.142.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.142.0-beta.0...v3.142.1-beta.0) (2026-09-24)
 
 

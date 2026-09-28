@@ -1291,9 +1291,13 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
       // schedule and the retry cap: the admin is forcing a retry, typically
       // right after fixing SMTP. Without this, emails that failed 3× during
       // an SMTP outage are stuck "pending" forever with no way to resend.
+      // Oldest effective time first. scheduled_at is NULL for mail that goes
+      // out at once (issue 1670), and Postgres sorts NULL last on ASC where
+      // SQLite sorts it first — either would let one kind starve the other
+      // under a full batch. COALESCE puts every row at the time it became due.
       pendingEmails = await query
-        .orderBy('scheduled_at', 'asc')
-        .orderBy('created_at', 'asc')
+        .orderByRaw('COALESCE(scheduled_at, created_at) ASC')
+        .orderBy('id', 'asc')
         .limit(limit);
     } catch (dbError) {
       logger.error('Failed to query email queue:', dbError);
@@ -1605,6 +1609,12 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       status: 'pending',
       retry_count: 0,
       created_at: new Date(),
+      // Explicit NULL, never the column default. The default is
+      // CURRENT_TIMESTAMP, which on SQLite is the text '2026-09-25 08:57:45'
+      // in a column the processor compares against a number — and SQLite
+      // sorts every number below every text, so such a row is never due
+      // (issue 1670). NULL is what the processor's whereNull() looks for.
+      scheduled_at: null,
     };
     let snappedFrom = null;
     // Base time to schedule from:
@@ -1627,7 +1637,7 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       if (snapped.getTime() !== baseTime.getTime()) snappedFrom = baseTime;
       // Persist a future scheduled_at for an explicit scheduledAt always;
       // for the respectBusinessHours floor only when it actually moved the
-      // time forward (inside hours → leave null → processor sends at once).
+      // time forward (inside hours → stays null → processor sends at once).
       if (options.scheduledAt || snappedFrom) row.scheduled_at = snapped;
     }
     await db('email_queue').insert(row);

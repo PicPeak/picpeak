@@ -85,7 +85,10 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     expect(queries[0].skipped).toBe(true);
     // The second query is the status update.
     expect(queries[1].updates.processing_status).toBe('processing');
-    expect(queries[1].updates.processing_started_at).toBeInstanceOf(Date);
+    // An ISO string, not a Date: on SQLite the column holds whatever the
+    // driver bound, and a Date bound inside Jest lands as "[object Object]"
+    // (CLAUDE.md). The janitor compares against the same shape.
+    expect(queries[1].updates.processing_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
   it('returns null when the SQLite UPDATE-with-guard loses the race', async () => {
@@ -105,5 +108,6 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     // SQLite path: no FOR UPDATE / SKIP LOCKED.
     expect(queries[0].locked).toBe(false);
     expect(queries[0].skipped).toBe(false);
+    expect(queries.find((q) => q.updates).updates.processing_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 });

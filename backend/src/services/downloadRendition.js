@@ -45,11 +45,13 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
     // bypass its cache, so buffering here would re-run sharp over the
     // full-size original for every download of an unresized gallery.
     if (!wantsResize) {
-      return watermarkService.applyWatermark(localPath, watermarkSettings);
+      // keepMetadata: a download carries the photo's EXIF/XMP/IPTC (issue
+      // 1649); the gallery-view rendition the same function makes does not.
+      return watermarkService.applyWatermark(localPath, watermarkSettings, { keepMetadata: true });
     }
     const buffer = await resizeToBox(await fs.promises.readFile(localPath), box);
     return wantsWatermark
-      ? watermarkService.applyWatermark(buffer, watermarkSettings)
+      ? watermarkService.applyWatermark(buffer, watermarkSettings, { keepMetadata: true })
       : buffer;
   };
 

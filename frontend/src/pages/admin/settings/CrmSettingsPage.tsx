@@ -33,6 +33,8 @@ const SETTING_KEYS = [
   'crm_invoice_round_total',
   // Free-text VAT/legal note printed under the MwSt. line on invoice PDFs (#794).
   'crm_invoices_vat_note_text',
+  // What the Leistungsdatum row does when the service date is the invoice date (#1546).
+  'crm_invoices_service_date_mode',
   'crm_invoices_reminders_enabled',
   'crm_invoices_reminder_first_days',
   'crm_invoices_reminder_second_days',
@@ -309,6 +311,28 @@ export const CrmSettingsPage: React.FC = () => {
           />
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
             {t('crmSettings.crm_invoices_vat_note_text.help', 'Printed directly under the MwSt. line on every invoice PDF. If the business isn\'t VAT-registered (Settings → Accounting), it replaces that line on invoices and quotes without VAT. Leave empty to hide. Please confirm the exact wording with your tax advisor.')}
+          </p>
+        </div>
+
+        {/* Leistungsdatum when the service date IS the invoice date (#1546).
+            The time of supply belongs on the document (MWSTG Art. 26, §14(4)
+            Nr. 6 UStG), but printing the same date twice reads as a mistake —
+            so the default states it in words. */}
+        <div className="mt-3">
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            {t('crmSettings.crm_invoices_service_date_mode.label', 'Service date equal to the invoice date')}
+          </label>
+          <select
+            value={values.crm_invoices_service_date_mode ?? 'note'}
+            onChange={(e) => setVal('crm_invoices_service_date_mode', e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+          >
+            <option value="note">{t('crmSettings.crm_invoices_service_date_mode.note', 'State it in words ("same as invoice date")')}</option>
+            <option value="repeat">{t('crmSettings.crm_invoices_service_date_mode.repeat', 'Print the date again')}</option>
+            <option value="omit">{t('crmSettings.crm_invoices_service_date_mode.omit', 'Leave the row out')}</option>
+          </select>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {t('crmSettings.crm_invoices_service_date_mode.help', 'Only applies when the service date falls on the invoice date; a service period always prints. Tax law in CH/LI and DE/AT wants the time of supply on the invoice, so leaving the row out is a decision to confirm with your tax advisor.')}
           </p>
         </div>
 

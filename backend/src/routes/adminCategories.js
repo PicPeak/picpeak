@@ -351,17 +351,15 @@ router.post('/reorder', adminAuth, requirePermission('settings.edit'), [
     const orderedIds = req.body.orderedIds.map((id) => parseInt(id, 10));
 
     // Event ownership (event_id comes from the body, so requireEventOwnership —
-    // which reads req.params — can't be used here). Mirror it: super_admins
-    // bypass; other admins may only reorder events they own (ownerless
-    // legacy/system events allowed).
-    if (req.admin.roleName !== 'super_admin') {
-      const event = await db('events').where('id', eventId).first();
-      if (!event) {
-        return res.status(404).json({ error: 'Event not found' });
-      }
-      if (event.created_by && event.created_by !== req.admin.id) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
+    // which reads req.params — can't be used here). Same rule, same helper:
+    // super_admin bypasses; other admins may only reorder events they own
+    // (ownerless legacy/system events allowed).
+    const event = await db('events').where('id', eventId).first();
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    if (!canAccessEvent(req.admin, event)) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Every id must be a category available to this event: a shared global OR

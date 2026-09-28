@@ -29,6 +29,25 @@ const watcherConcurrency = Number.isFinite(configuredConcurrency)
   : 2;
 const processLimit = pLimit(watcherConcurrency);
 
+// chokidar waits for a file to stop growing before it fires 'add'. The
+// defaults suit a local disk; a slow NAS or a camera tether that flushes in
+// bursts needs a longer quiet window, and a very fast SSD can use a shorter
+// one. Same parsing rule as the concurrency bound: a positive integer, or the
+// default with a warning.
+function positiveIntEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  // Strict: "2s" must not become a 2 ms window.
+  const parsed = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    logger.warn(`[fileWatcher] ${name}=${JSON.stringify(raw)} is not a positive integer; using ${fallback}`);
+    return fallback;
+  }
+  return parsed;
+}
+const writeFinishStabilityMs = positiveIntEnv('FILE_WATCHER_STABILITY_MS', 2000);
+const writeFinishPollIntervalMs = positiveIntEnv('FILE_WATCHER_POLL_INTERVAL_MS', 100);
+
 let watcher = null;
 const pending = new Set();
 const enqueue = (run) => {
@@ -58,8 +77,8 @@ function startFileWatcher() {
     ignored: /(^|[/\\])\../, // ignore dotfiles
     persistent: true,
     awaitWriteFinish: {
-      stabilityThreshold: 2000,
-      pollInterval: 100
+      stabilityThreshold: writeFinishStabilityMs,
+      pollInterval: writeFinishPollIntervalMs
     }
   });
 

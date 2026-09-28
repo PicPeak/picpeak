@@ -20,6 +20,8 @@ router.use('/archives', archiveRoutes);
 router.use('/email', emailRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/events', eventsRoutes);
+// Second mount of adminPhotos, as /api/admin/events/:eventId/photos/...; the
+// media and repair tree is /api/admin/photos in server.js (audit §2.3).
 router.use('/events', photosRoutes);
 router.use('/categories', categoriesRoutes);
 router.use('/cms', cmsRoutes);

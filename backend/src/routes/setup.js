@@ -13,6 +13,7 @@ const setupService = require('../services/setupService');
 const { getClientIp } = require('../utils/requestIp');
 const { setAdminAuthCookie } = require('../utils/tokenUtils');
 const { adminAuth } = require('../middleware/auth');
+const { requireSuperAdmin } = require('../middleware/permissions');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -86,8 +87,10 @@ router.post('/admin', [
 // admin exists (the wizard is authenticated from the account step onward), so
 // it takes the normal admin auth. One-way: while the flag is unset the seeded
 // SYSTEM event types may be deleted from the wizard's event-types step; once
-// set they are permanently protected (#800).
-router.post('/complete', adminAuth, async (req, res) => {
+// set they are permanently protected (#800). Completing the wizard is a
+// setup-class action like backup import: the first account is a super_admin,
+// and a later viewer or editor must not be able to lock the event types.
+router.post('/complete', adminAuth, requireSuperAdmin(), async (req, res) => {
   try {
     await setupService.markSetupWizardCompleted();
     res.json({ completed: true });

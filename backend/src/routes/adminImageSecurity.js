@@ -69,7 +69,7 @@ router.get('/settings', adminAuth, requirePermission(['settings.view', 'image_se
     res.json(config);
   } catch (error) {
     logger.error('Error getting image security settings', { error: error.message, stack: error.stack });
-    res.status(500).json({ error: 'Failed to get security settings', details: error.message });
+    res.status(500).json({ error: 'Failed to get security settings' });
   }
 });
 

@@ -344,8 +344,11 @@ describe('v1 photo renditions and previews', () => {
       }).onConflict('setting_key').merge();
       await db('events').where({ id: eventId }).update({ watermark_downloads: 1 });
       try {
+        // The same pipeline resizeToBox runs — keepMetadata() included, since
+        // a download keeps the photo's metadata (issue 1649).
         const plain = await sharp(await makeImage(1200, 800))
           .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+          .keepMetadata()
           .jpeg({ quality: 90, mozjpeg: true }).toBuffer();
         const res = await get(`/api/v1/events/${eventId}/photos/${photos.large}/download?resolution=400x400`);
         expect(res.status).toBe(200);
