@@ -84,6 +84,13 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
       {layout && photos.map((photo, index) => {
         const box = layout.boxes[index];
         if (!box) return null;
+        // justified-layout clamps a row that would be shorter than half or
+        // taller than twice the target height (a lone panorama on a phone, a
+        // lone tall portrait) and widens or narrows its boxes to fit, so the
+        // box no longer has the photo's ratio. object-cover would crop exactly
+        // there; contain keeps the photo whole on the card background instead.
+        const ratio = storyPhotoAspectRatio(photo);
+        const clamped = Math.abs(box.width / box.height - ratio) > ratio * 0.01;
         return (
           <div
             key={photo.id}
@@ -100,6 +107,7 @@ export const StoryJustifiedGrid: React.FC<StoryJustifiedGridProps> = ({
               galleryId={id}
               allowDownloads={allowDownloads}
               useEnhancedProtection={useEnhancedProtection}
+              fit={clamped ? 'contain' : 'cover'}
             />
           </div>
         );

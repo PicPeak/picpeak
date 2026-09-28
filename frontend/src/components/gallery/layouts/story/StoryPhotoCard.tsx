@@ -17,6 +17,12 @@ interface StoryPhotoCardProps {
   useEnhancedProtection?: boolean;
   featured?: boolean;
   galleryId: string;
+  /**
+   * Issue 1709: 'contain' when the box could not take the photo's own aspect
+   * ratio (justified-layout clamps a lone very wide or very tall row), so the
+   * photo is letterboxed on the card background instead of cropped.
+   */
+  fit?: 'cover' | 'contain';
 }
 
 export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
@@ -27,6 +33,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   onClick,
   slug,
   featured = false,
+  fit = 'cover',
   galleryId: _galleryId
 }) => {
   // galleryId is kept for potential PhotoSwipe integration but not currently used
@@ -94,7 +101,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           src={lightboxImageUrl(photo)}
           alt={photo.filename}
           onLoad={() => setIsLoaded(true)}
-          className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${
+          className={`w-full h-full ${fit === 'contain' ? 'object-contain' : 'object-cover'} transition-all duration-700 ease-out will-change-transform ${
             !isLoaded ? 'opacity-0 scale-110' : 'opacity-100 scale-100'
           }`}
           isGallery={true}

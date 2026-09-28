@@ -40,7 +40,9 @@ vi.mock('swiper/css', () => ({}));
 vi.mock('swiper/css/free-mode', () => ({}));
 
 vi.mock('../../../common', () => ({
-  AuthenticatedImage: ({ src, alt }: { src: string; alt?: string }) => <img src={src} alt={alt} />,
+  AuthenticatedImage: ({ src, alt, className }: { src: string; alt?: string; className?: string }) => (
+    <img src={src} alt={alt} className={className} />
+  ),
   PoweredBy: () => null,
 }));
 vi.mock('../../PhotoLightbox', () => ({ PhotoLightbox: () => <div data-testid="lightbox" /> }));
@@ -164,6 +166,28 @@ describe('GalleryStoryLayout natural grid (issue 1709)', () => {
     const tallest = Math.max(...laidOut.map((b) => b.height));
     expect(tallest).toBeLessThan(400);
     containerWidth = 1200;
+  });
+
+  it('never crops a lone panorama on a phone: a clamped box switches the card to contain', () => {
+    containerWidth = 343;
+    const panorama = [photo(1, 3000, 1000)];
+    const { container } = render(<GalleryStoryLayout {...props} photos={panorama} storyGridMode="natural" />);
+    const [box] = boxes(container);
+    // justified-layout clamps the row to half the target height, so the box is
+    // wider than 3:1 ...
+    expect(box.width / box.height).toBeLessThan(3);
+    // ... and the card must not crop to it.
+    const img = container.querySelector('.story-gallery-justified-box img') as HTMLImageElement;
+    expect(img.className).toContain('object-contain');
+    expect(img.className).not.toContain('object-cover');
+    containerWidth = 1200;
+  });
+
+  it('keeps cover on boxes that took the photo ratio', () => {
+    const { container } = render(<GalleryStoryLayout {...props} storyGridMode="natural" />);
+    const imgs = Array.from(container.querySelectorAll<HTMLImageElement>('.story-gallery-justified-box img'));
+    expect(imgs).toHaveLength(6);
+    for (const img of imgs) expect(img.className).toContain('object-cover');
   });
 
   it('keeps favourites, lightbox links and lazy placeholders on every card', () => {
