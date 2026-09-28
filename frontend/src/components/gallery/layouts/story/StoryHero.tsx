@@ -58,7 +58,9 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: 'easeOut' }}
-          className="space-y-6"
+          // Issue 1708: the scrim behind the copy is what keeps the title
+          // legible; the title no longer relies on a blend mode.
+          className="story-hero-copy space-y-6"
         >
           {formattedDate && (
             <p className="story-hero-date">{formattedDate}</p>

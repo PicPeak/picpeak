@@ -3472,6 +3472,12 @@
       "xl": "XL — Größte Fotos"
     },
     "thumbnailScaleHint": "Passt die Spaltenanzahl relativ zu den Basis-Rasterspalten an",
+    "storyGridMode": "Bildausschnitt",
+    "storyGridModeOptions": {
+      "fixed": "Feste Kacheln (zuschneiden)",
+      "natural": "Natürlich (Seitenverhältnis beibehalten)"
+    },
+    "storyGridModeHint": "Natürlich ordnet die Szenen in Reihen nach den Bildmaßen an, sodass Hochformate vollständig statt beschnitten gezeigt werden.",
     "typographyAndStyle": "Typografie & Stil",
     "bodyFont": "Fließtext-Schriftart",
     "headingFont": "Überschriften-Schriftart",

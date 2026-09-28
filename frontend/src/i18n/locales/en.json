@@ -2979,6 +2979,12 @@
       "xl": "XL — Largest photos"
     },
     "thumbnailScaleHint": "Adjusts column count relative to the base grid columns",
+    "storyGridMode": "Photo Framing",
+    "storyGridModeOptions": {
+      "fixed": "Fixed tiles (crop to fill)",
+      "natural": "Natural (keep every aspect ratio)"
+    },
+    "storyGridModeHint": "Natural lays scenes out in rows from each photo's dimensions, so portrait photos are shown whole instead of cropped.",
     "typographyAndStyle": "Typography & Style",
     "bodyFont": "Body Font",
     "headingFont": "Heading Font",

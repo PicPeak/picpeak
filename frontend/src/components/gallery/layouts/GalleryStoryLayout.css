@@ -134,6 +134,12 @@
   color: var(--story-primary);
 }
 
+.story-nav-btn:focus-visible {
+  outline: 2px solid var(--story-primary);
+  outline-offset: 2px;
+  border-radius: 9999px;
+}
+
 .story-nav-favorites-count {
   position: absolute;
   top: -0.25rem;
@@ -187,11 +193,29 @@
   padding: 1rem;
 }
 
+/* Issue 1708: the title used `mix-blend-mode: overlay`, so its contrast came
+   entirely from the pixels behind it and it vanished over mid-toned hero
+   images. The copy now sits on a localised radial scrim that only darkens the
+   pixels behind the text, and the text itself carries a shadow, so the title
+   is legible over light, dark and mixed images without covering the hero. */
+.story-hero-copy {
+  position: relative;
+  padding: 2.5rem 2rem;
+  border-radius: 1.5rem;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.32) 45%,
+    rgba(0, 0, 0, 0) 72%
+  );
+}
+
 .story-hero-date {
   font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  opacity: 0.8;
+  opacity: 0.9;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
 .story-hero-title {
@@ -199,7 +223,8 @@
   font-size: 3.75rem;
   font-style: italic;
   line-height: 1.1;
-  mix-blend-mode: overlay;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), 0 8px 32px rgba(0, 0, 0, 0.55);
 }
 
 @media (min-width: 768px) {
@@ -221,7 +246,8 @@
   gap: 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  opacity: 0.7;
+  opacity: 0.85;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
 .story-hero-stats-divider {
@@ -294,6 +320,24 @@
     gap: 1rem;
     grid-auto-rows: 400px;
   }
+}
+
+/* Issue 1709: `storyGridMode: 'natural'`. Rows are laid out from the stored
+   photo dimensions (justified-layout), so every box has the photo's own
+   aspect ratio and object-cover has nothing to crop. Boxes are positioned
+   before the images arrive, so nothing shifts while they load. */
+.story-gallery-justified {
+  position: relative;
+  width: 100%;
+}
+
+.story-gallery-justified-box {
+  position: absolute;
+}
+
+.story-gallery-justified-box .story-photo-card {
+  width: 100%;
+  height: 100%;
 }
 
 .story-gallery-grid-featured {
@@ -429,15 +473,24 @@
 }
 
 .story-carousel-item {
+  --story-carousel-height: 400px;
   width: 300px;
-  height: 400px;
+  height: var(--story-carousel-height);
 }
 
 @media (min-width: 768px) {
   .story-carousel-item {
+    --story-carousel-height: 500px;
     width: 400px;
-    height: 500px;
   }
+}
+
+/* Issue 1709: in natural mode a slide is as wide as the photo's aspect ratio
+   makes it at the row height, capped so a panorama cannot outgrow the
+   viewport. */
+.story-carousel-item--natural {
+  width: calc(var(--story-carousel-height) * var(--story-ratio, 0.75));
+  max-width: calc(100vw - 2rem);
 }
 
 /* Scroll to Top */
@@ -499,4 +552,9 @@
 
 .story-footer-btn:hover {
   background-color: white;
+}
+
+.story-footer-btn:focus-visible {
+  outline: 2px solid var(--story-primary);
+  outline-offset: 3px;
 }

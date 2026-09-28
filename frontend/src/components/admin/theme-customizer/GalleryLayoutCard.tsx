@@ -345,6 +345,26 @@ export const GalleryLayoutCard: React.FC<GalleryLayoutCardProps> = ({
           )}
 
           {/* Mosaic specific */}
+          {/* Gallery Story specific (issue 1709) */}
+          {localTheme.galleryLayout === 'gallery-story' && (
+            <div>
+              <label className="block text-sm font-medium text-body mb-2">
+                {t('branding.storyGridMode', 'Photo Framing')}
+              </label>
+              <select
+                value={localTheme.gallerySettings?.storyGridMode || 'fixed'}
+                onChange={(e) => updateGallerySettings('storyGridMode', e.target.value)}
+                className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading"
+              >
+                <option value="fixed">{t('branding.storyGridModeOptions.fixed', 'Fixed tiles (crop to fill)')}</option>
+                <option value="natural">{t('branding.storyGridModeOptions.natural', 'Natural (keep every aspect ratio)')}</option>
+              </select>
+              <p className="text-xs text-muted mt-1">
+                {t('branding.storyGridModeHint', 'Natural lays scenes out in rows from each photo\'s dimensions, so portrait photos are shown whole instead of cropped.')}
+              </p>
+            </div>
+          )}
+
           {localTheme.galleryLayout === 'mosaic' && (
             <div>
               <label className="block text-sm font-medium text-body mb-2">

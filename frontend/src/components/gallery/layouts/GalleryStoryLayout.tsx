@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, Heart, LogOut } from 'lucide-react';
+import { Search, Heart, LogOut, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -14,6 +14,7 @@ import {
   StoryScene,
   StoryPhotoCard,
   StoryCarousel,
+  StoryJustifiedGrid,
   StoryScrollToTop
 } from './story';
 import { PhotoLightbox } from '../PhotoLightbox';
@@ -38,6 +39,8 @@ interface CategoryScene {
 interface GalleryStoryLayoutProps extends BaseGalleryLayoutProps {
   heroPhotoOverride?: Photo | null;
   welcomeMessage?: string;
+  /** Issue 1709: 'natural' keeps every photo's aspect ratio; 'fixed' (default) is the original tile grid. */
+  storyGridMode?: 'fixed' | 'natural';
 }
 
 export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
@@ -64,6 +67,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   feedbackEnabled = false,
   heroPhotoOverride,
   welcomeMessage,
+  storyGridMode = 'fixed',
   onLogout,
   showOriginalFilename = false,
 
@@ -204,6 +208,15 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
   }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution, downloadQuota]);
 
+  // Needs something to download: either the whole-gallery callback, or
+  // photos in the current scope. On a folder-only root of a gallery with
+  // a category download opt-out it has neither, and posting an empty id
+  // list is a 400 (#1160). Shared by the nav button (issue 1710) and the
+  // footer button so both appear and disappear together.
+  const canDownloadAll = allowDownloads && Boolean(onDownloadEverything || photos.length > 0);
+  const downloadAllLabel = t('common.downloadAll', 'Download All');
+  const naturalGrid = storyGridMode === 'natural';
+
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
   // controls) without the contradictory message.
@@ -235,6 +248,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
+          {/* Issue 1710: the footer button was the only Download All in the
+              layout, unreachable without scrolling through every scene. Same
+              handler, same resolution / quota / whole-gallery flow. */}
+          {canDownloadAll && (
+            <button
+              type="button"
+              className="story-nav-btn"
+              onClick={handleDownloadAll}
+              aria-label={downloadAllLabel}
+              title={downloadAllLabel}
+              data-testid="story-nav-download-all"
+            >
+              <Download size={20} />
+            </button>
+          )}
           {feedbackEnabled && (
             <button className="story-nav-btn" title={t('gallery.favorites', 'Favorites')}>
               <Heart size={20} />
@@ -290,6 +318,18 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   slug={slug}
                   allowDownloads={allowDownloads}
                   useEnhancedProtection={useEnhancedProtection}
+                  naturalAspect={naturalGrid}
+                />
+              ) : naturalGrid ? (
+                <StoryJustifiedGrid
+                  id={`gallery-${scene.id}`}
+                  photos={scene.photos}
+                  favorites={favorites}
+                  onToggleFavorite={handleToggleFavorite}
+                  onPhotoClick={handleOpenLightbox}
+                  slug={slug}
+                  allowDownloads={allowDownloads}
+                  useEnhancedProtection={useEnhancedProtection}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -322,12 +362,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         <p className="story-footer-text">
           {welcomeMessage || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
-        {/* Needs something to download: either the whole-gallery callback, or
-            photos in the current scope. On a folder-only root of a gallery with
-            a category download opt-out it has neither, and posting an empty id
-            list is a 400 (#1160). */}
-        {allowDownloads && (onDownloadEverything || photos.length > 0) && (
-          <button className="story-footer-btn" onClick={handleDownloadAll}>
+        {canDownloadAll && (
+          <button type="button" className="story-footer-btn" onClick={handleDownloadAll}>
             {t('common.downloadAll', 'Download All Photos')}
           </button>
         )}

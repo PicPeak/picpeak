@@ -48,6 +48,11 @@ export interface GalleryLayoutSettings {
   // Mosaic specific
   mosaicPattern?: 'random' | 'structured' | 'alternating';
 
+  // Gallery Story specific (issue 1709). 'fixed' is the original composition:
+  // fixed-height tiles that crop to fill. 'natural' lays scenes out as
+  // justified rows from the stored photo dimensions so nothing is cropped.
+  storyGridMode?: 'fixed' | 'natural';
+
   // Thumbnail scale (applies to Grid, Masonry columns, Mosaic)
   thumbnailScale?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 }

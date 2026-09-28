@@ -4,6 +4,7 @@ import { FreeMode, Mousewheel } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/free-mode';
 import { StoryPhotoCard } from './StoryPhotoCard';
+import { storyPhotoAspectRatio } from './StoryJustifiedGrid';
 import type { Photo } from '../../../../types';
 
 interface StoryCarouselProps {
@@ -15,6 +16,8 @@ interface StoryCarouselProps {
   id: string;
   allowDownloads?: boolean;
   useEnhancedProtection?: boolean;
+  /** Issue 1709: size each slide from the photo's aspect ratio instead of a fixed box. */
+  naturalAspect?: boolean;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -26,6 +29,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   id,
   allowDownloads = true,
   useEnhancedProtection = false,
+  naturalAspect = false,
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -39,7 +43,12 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
       >
         {photos.map((photo, index) => (
           <SwiperSlide key={photo.id} className="!w-auto">
-            <div className="story-carousel-item">
+            <div
+              className={`story-carousel-item${naturalAspect ? ' story-carousel-item--natural' : ''}`}
+              style={naturalAspect
+                ? ({ '--story-ratio': storyPhotoAspectRatio(photo) } as React.CSSProperties)
+                : undefined}
+            >
               <StoryPhotoCard
                 photo={photo}
                 index={index}
