@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.148.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.148.0-beta.0...v3.148.1-beta.0) (2026-09-28)
+
+
+### Bug Fixes
+
+* **documents:** two follow-ups to [#1658](https://github.com/PicPeak/picpeak/issues/1658) — the VAT note is an invoice statement, and a reference stays in the meta block ([#1690](https://github.com/PicPeak/picpeak/issues/1690)) ([7766804](https://github.com/PicPeak/picpeak/commit/7766804899768341b78a65d5d795cef4283407b6))
+
 ## [3.148.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.147.0-beta.0...v3.148.0-beta.0) (2026-09-28)
 
 
