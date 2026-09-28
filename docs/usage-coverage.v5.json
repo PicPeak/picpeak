@@ -285,6 +285,7 @@
         "GET /picpeak/export",
         "POST /picpeak/import",
         "GET /runs/:id",
+        "DELETE /runs/:id",
         "GET /files",
         "DELETE /cleanup",
         "POST /test-connection",
