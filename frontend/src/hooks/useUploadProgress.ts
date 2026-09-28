@@ -20,6 +20,12 @@ interface UseUploadProgressOptions {
    * falls back to polling when the stream errors. Default: true.
    */
   preferStream?: boolean;
+  /**
+   * Consecutive failed status reads after which an upload id is given up
+   * on: its polling stops and the aggregate reports `isStalled`. The
+   * worker is unaffected — only this view of it is. Default: 10.
+   */
+  maxConsecutiveFailures?: number;
 }
 
 /**
@@ -33,10 +39,13 @@ interface UseUploadProgressOptions {
  */
 export function useUploadProgress(
   uploadIds: string[],
-  { enabled = true, pollIntervalMs = 1500, preferStream = true }: UseUploadProgressOptions = {}
+  { enabled = true, pollIntervalMs = 1500, preferStream = true, maxConsecutiveFailures = 10 }: UseUploadProgressOptions = {}
 ) {
   const [snapshots, setSnapshots] = useState<Record<string, UploadStatusSnapshot | null>>({});
   const [error, setError] = useState<Error | null>(null);
+  // Upload ids whose status could not be read maxConsecutiveFailures times
+  // in a row. Polling them has stopped; the caller decides what to show.
+  const [stalled, setStalled] = useState<Record<string, true>>({});
   const eventSourcesRef = useRef<Record<string, EventSource>>({});
   // Stable string key so we re-trigger the effect only when the actual
   // set of IDs changes (parents may pass a new array each render).
@@ -49,6 +58,8 @@ export function useUploadProgress(
 
     let cancelled = false;
     const pollHandles: Record<string, ReturnType<typeof setTimeout>> = {};
+    const consecutiveFailures: Record<string, number> = {};
+    setStalled((prev) => (Object.keys(prev).length ? {} : prev));
 
     const closeStream = (uploadId: string) => {
       const es = eventSourcesRef.current[uploadId];
@@ -70,6 +81,7 @@ export function useUploadProgress(
       try {
         const snap = await uploadsService.getStatus(uploadId);
         merge(uploadId, snap);
+        consecutiveFailures[uploadId] = 0;
         // Cleanup may have run while the request was in flight; its
         // clearTimeout only reaches timers that already existed, so a
         // reschedule here would poll on, unowned, after the unmount.
@@ -83,7 +95,15 @@ export function useUploadProgress(
         if (cancelled) return;
         setError(e as Error);
         // Retry polling on error after a longer interval — don't drop
-        // the group entirely just because one snapshot failed.
+        // the group entirely just because one snapshot failed. Not
+        // forever, though: a status route that keeps failing would
+        // otherwise hold the caller in "processing" for good.
+        consecutiveFailures[uploadId] = (consecutiveFailures[uploadId] || 0) + 1;
+        if (consecutiveFailures[uploadId] >= maxConsecutiveFailures) {
+          closeStream(uploadId);
+          setStalled((prev) => ({ ...prev, [uploadId]: true }));
+          return;
+        }
         pollHandles[uploadId] = setTimeout(() => pollOnce(uploadId), pollIntervalMs * 4);
       }
     };
@@ -128,7 +148,7 @@ export function useUploadProgress(
       for (const uploadId of Object.keys(eventSourcesRef.current)) closeStream(uploadId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, enabled, pollIntervalMs, preferStream]);
+  }, [idsKey, enabled, pollIntervalMs, preferStream, maxConsecutiveFailures]);
 
   // Aggregate counters across all tracked upload IDs.
   const aggregate = (() => {
@@ -153,7 +173,12 @@ export function useUploadProgress(
       }
     }
     const isComplete = allReady && totals.pending === 0 && totals.processing === 0 && totals.total > 0;
-    return { ...totals, failedPhotos, isComplete, isReady: allReady };
+    // Given up on at least one id that never reached a terminal snapshot.
+    const isStalled = uploadIds.some((id) => {
+      const snap = snapshots[id];
+      return !!stalled[id] && !(snap && snap.pending === 0 && snap.processing === 0);
+    });
+    return { ...totals, failedPhotos, isComplete, isReady: allReady, isStalled };
   })();
 
   return {

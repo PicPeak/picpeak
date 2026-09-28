@@ -884,7 +884,8 @@
       "uploading_other": "Uploading {{count}} files",
       "uploaded_one": "{{count}} file uploaded",
       "uploaded_other": "{{count}} files uploaded",
-      "viewEvent": "View event"
+      "viewEvent": "View event",
+      "statusUnavailable": "Processing status could not be read — the photos are queued and appear as the worker finishes."
     }
   },
   "navigation": {

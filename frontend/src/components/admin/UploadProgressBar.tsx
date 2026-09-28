@@ -70,6 +70,11 @@ export const UploadProgressBar: React.FC = () => {
                 </>
               )}
               {phase.kind === 'done' && !hasFailures && t('upload.bar.uploaded', { count: session.uploadedCount })}
+              {phase.kind === 'done' && session.processingUnknown && (
+                <span className="block font-normal text-neutral-600 dark:text-neutral-300">
+                  {t('upload.bar.statusUnavailable', 'Processing status could not be read — the photos are queued and appear as the worker finishes.')}
+                </span>
+              )}
               {phase.kind === 'done' && hasFailures && (
                 <>
                   {t('upload.failures.title', { count: session.failures.length })}

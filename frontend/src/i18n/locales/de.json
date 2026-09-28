@@ -884,7 +884,8 @@
       "uploading_other": "{{count}} Dateien werden hochgeladen",
       "uploaded_one": "{{count}} Datei hochgeladen",
       "uploaded_other": "{{count}} Dateien hochgeladen",
-      "viewEvent": "Zur Veranstaltung"
+      "viewEvent": "Zur Veranstaltung",
+      "statusUnavailable": "Der Verarbeitungsstatus konnte nicht gelesen werden — die Fotos sind in der Warteschlange und erscheinen, sobald sie verarbeitet sind."
     }
   },
   "navigation": {

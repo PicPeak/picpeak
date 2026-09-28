@@ -50,6 +50,11 @@ export interface UploadSession {
   /** Files that landed in the gallery, known once the session is done. */
   uploadedCount: number;
   failures: UploadFailure[];
+  /**
+   * Done, but the worker's status could not be read: the photos are queued
+   * and appear as it finishes; the counts above stop at what was known.
+   */
+  processingUnknown?: boolean;
 }
 
 export interface StartUploadOptions {
@@ -95,6 +100,11 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   // worker can finish those while a later batch is still in flight — the
   // completion effect must not take that for the whole session.
   const [transferSettled, setTransferSettled] = useState(false);
+  // Cancels the transfer loop when the provider goes away (logout, the 401
+  // redirect): later batches must not keep POSTing into a session nobody
+  // sees, and a fresh mount starts from nothing.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   const isUploading = session !== null && session.phase.kind !== 'done';
 
@@ -167,6 +177,9 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     transferFailuresRef.current = [];
     syncSucceededRef.current = 0;
     setTransferSettled(false);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setUploadIds([]);
     setSession({
       eventId,
@@ -178,6 +191,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       processing: { complete: 0, failed: 0, total: 0 },
       uploadedCount: 0,
       failures: [],
+      processingUnknown: false,
     });
 
     const run = async () => {
@@ -196,6 +210,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         // --- Large files: existing backend chunked-upload (10MB parts) ---
         for (const file of largeFilesToUpload) {
+          if (controller.signal.aborted) return;
           const index = unitIndex;
           patch({ currentChunk: index + 1, phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: 0 } });
           try {
@@ -220,6 +235,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // --- Small files: existing multipart batch path ---
         for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          if (controller.signal.aborted) return;
           const index = unitIndex;
           const chunk = chunks[chunkIndex];
           const formData = new FormData();
@@ -231,6 +247,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
 
           try {
             const response = await api.post(`/admin/events/${eventId}/upload`, formData, {
+              signal: controller.signal,
               onUploadProgress: (progressEvent) => {
                 if (!progressEvent.total) return;
                 const chunkProgress = progressEvent.loaded / progressEvent.total;
@@ -276,6 +293,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
               setUploadIds((prev) => (prev.includes(newId) ? prev : [...prev, newId]));
             }
           } catch (error: any) {
+            if (controller.signal.aborted) return;
             console.error(`Error uploading chunk ${chunkIndex + 1}:`, error);
             const reason = error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
             collected.push(...chunk.map((f) => ({ filename: f.name, reason, kind: 'transfer' as const })));
@@ -323,6 +341,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           );
         }
       } catch (error: any) {
+        if (controller.signal.aborted) return;
         console.error('Upload error:', error);
         toast.error(error.response?.data?.error || t('toast.uploadError'));
         setUploadIds([]);
@@ -384,6 +403,30 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processingAggregate.isComplete, processingAggregate.failed, session?.phase.kind, uploadIds.length, transferSettled]);
 
+  // The worker's status could not be read maxConsecutiveFailures times in
+  // a row (a broken status route, a proxy that 404s it): end the session
+  // with what is known rather than sit in "processing" for good. The
+  // photos are queued server-side either way and appear as it finishes.
+  useEffect(() => {
+    if (!session || session.phase.kind === 'done') return;
+    if (!transferSettled || uploadIds.length === 0) return;
+    if (!processingAggregate.isStalled) return;
+
+    const transferFailures = transferFailuresRef.current;
+    toast.warning(t('upload.bar.statusUnavailable', 'Processing status could not be read — the photos are queued and appear as the worker finishes.'));
+    refreshEvent(session.eventId);
+    patch({
+      phase: { kind: 'done' },
+      progress: 100,
+      processing: { complete: processingAggregate.complete, failed: processingAggregate.failed, total: processingAggregate.total },
+      uploadedCount: processingAggregate.complete + syncSucceededRef.current,
+      failures: transferFailures,
+      processingUnknown: true,
+    });
+    setUploadIds([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingAggregate.isStalled, session?.phase.kind, uploadIds.length, transferSettled]);
+
   // Live processing counters for the bar while the worker runs.
   useEffect(() => {
     if (!session || session.phase.kind !== 'processing') return;
@@ -418,7 +461,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
   // A clean finish needs no acknowledgement: the toast said it, the grid
   // shows it. Failures stay until dismissed so the list can be acted on.
   useEffect(() => {
-    if (!session || session.phase.kind !== 'done' || session.failures.length > 0) return;
+    if (!session || session.phase.kind !== 'done' || session.failures.length > 0 || session.processingUnknown) return;
     const handle = setTimeout(() => setSession(null), 4000);
     return () => clearTimeout(handle);
   }, [session]);
