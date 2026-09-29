@@ -405,7 +405,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             }`}>
               <div className={`flex items-center px-3 mt-1 mb-2 ${collapsed ? 'lg:hidden' : ''}`}>
                 <section.icon className="w-5 h-5 mr-3 flex-shrink-0 text-body" />
-                <span className="text-lg font-semibold text-heading truncate">{section.title}</span>
+                <span className="text-xl font-semibold text-heading truncate">{section.title}</span>
               </div>
               <button
                 type="button"
