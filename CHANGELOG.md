@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.151.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.150.0-beta.0...v3.151.0-beta.0) (2026-09-29)
+
+
+### Features
+
+* **admin:** eight sidebar entries, language in Settings, search across the admin ([#1718](https://github.com/PicPeak/picpeak/issues/1718)) ([7606b0a](https://github.com/PicPeak/picpeak/commit/7606b0a80187d5dc269849b0a839b470f86e6e8e))
+
 ## [3.150.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.149.0-beta.0...v3.150.0-beta.0) (2026-09-29)
 
 
