@@ -344,19 +344,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           collapsed ? 'lg:justify-center lg:px-2 px-6 justify-between' : 'justify-between px-6'
         }`}>
           <div className="flex items-center gap-2 min-w-0">
-            {section ? (
-              <>
-                {/* Section mode: the section's icon + title replace the
-                    brand while the admin is inside Settings / CRM /
-                    Accounting, so the sidebar reads top-down as
-                    "where am I → back → pages". On the collapsed rail
-                    only the icon shows, centered like the favicon. */}
-                <section.icon className="w-6 h-6 flex-shrink-0 text-body" />
-                <span className={`text-xl font-bold text-heading truncate ${collapsed ? 'lg:hidden' : ''}`}>
-                  {section.title}
-                </span>
-              </>
-            ) : showLogoBrand ? (
+            {showLogoBrand ? (
               <>
                 {/* Logo brand variant — fed by Branding > Logo
                     Position = "Sidebar". On the collapsed rail, only
@@ -402,10 +390,14 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           </button>
         </div>
 
-        {/* Section mode: back row pinned above the scrolling list so it
-            stays reachable however long the list gets. It uses the item
-            styles so it sits in the same type scale and icon column as
-            the list. The section title lives in the brand row above. */}
+        {/* Section mode: back row + section title pinned above the
+            scrolling list so they stay reachable however long the list
+            gets. The back row uses the item styles so it sits in the
+            same type scale and icon column as the list; the title heads
+            the list below it. The brand row above stays the brand
+            (logo or wordmark) in every mode — see issue 1712. On the
+            collapsed rail the title hides and the active item
+            identifies the section. */}
         {section && (
           <div className="flex-shrink-0 animate-panel-in-right">
             <div className={`border-b border-line py-2 ${
@@ -420,6 +412,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 <ArrowLeft className={iconClass(false)} />
                 <span className={collapsed ? 'lg:hidden' : ''}>{t('admin.backToMenu', 'Back to menu')}</span>
               </button>
+              <div className={`flex items-center px-3 mt-2 mb-1 ${collapsed ? 'lg:hidden' : ''}`}>
+                <section.icon className="w-5 h-5 mr-3 flex-shrink-0 text-body" />
+                <span className="text-base font-semibold text-heading truncate">{section.title}</span>
+              </div>
             </div>
           </div>
         )}
