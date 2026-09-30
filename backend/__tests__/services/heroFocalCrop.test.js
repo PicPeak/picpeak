@@ -34,7 +34,7 @@ jest.mock('../../src/database/db', () => {
 const LocalFsStorage = require('../../src/services/storage/LocalFsStorage');
 const storageModule = require('../../src/services/storage');
 const { db } = require('../../src/database/db');
-const { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect } = require('../../src/utils/heroAnchor');
+const { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect, heroRenditionName } = require('../../src/utils/heroAnchor');
 
 const EVENT = { id: 9, slug: 'tall-hero', source_mode: 'reference', external_path: 'weddings/2026-09', hero_image_anchor: 'center' };
 
@@ -92,6 +92,14 @@ describe('heroAnchor helpers', () => {
     expect(heroQueryRedirect({ fp: '50-0', wm: '3' }, null)).toBe('?wm=3');
     // Only a string fp counts; an array is not the current anchor either.
     expect(heroQueryRedirect({ fp: ['50-0', '50-0'] }, 'top')).toBe('?fp=50-0');
+  });
+
+  it('keeps the pre-258 file name at the centre and one file per anchor elsewhere', () => {
+    expect(heroRenditionName('a.jpg', undefined)).toBe('hero_a.jpg');
+    expect(heroRenditionName('a.jpg', 'center')).toBe('hero_a.jpg');
+    expect(heroRenditionName('a.jpg', '50% 50%')).toBe('hero_a.jpg');
+    expect(heroRenditionName('a.jpg', 'top')).toBe('hero_fp50-0_a.jpg');
+    expect(heroRenditionName('ext12_a.jpg', '12% 88%')).toBe('hero_fp12-88_ext12_a.jpg');
   });
 });
 
@@ -155,11 +163,30 @@ describe('hero focal crop (issue 1737)', () => {
     await expect(imageProcessor.ensureHeroImage(stored)).resolves.toBe(key);
     expect(db.__state.updates).toEqual([]);
 
-    // The admin moves the focal point to the bottom: same key, new crop.
+    // The admin moves the focal point to the bottom: a new file, and the
+    // previous anchor's file goes — the watermark cache keys on the path and
+    // a concurrent flight for the old anchor must never be handed this one.
     const again = await imageProcessor.ensureHeroImage(stored, { anchor: 'bottom' });
-    expect(again).toBe(key);
-    expect(db.__state.updates).toEqual([{ criteria: { id: 401 }, values: { hero_path: key, hero_anchor: '50% 100%' } }]);
-    expect(closeTo(await centrePixel(storage, key), BLUE)).toBe(true);
+    expect(again).not.toBe(key);
+    expect(again).toContain('hero_fp50-100_');
+    expect(db.__state.updates).toEqual([{ criteria: { id: 401 }, values: { hero_path: again, hero_anchor: '50% 100%' } }]);
+    expect(closeTo(await centrePixel(storage, again), BLUE)).toBe(true);
+    expect(await storage.exists(key)).toBe(false);
+  });
+
+  it('two requests for different anchors do not share a flight', async () => {
+    const photo = {
+      id: 403, event_id: EVENT.id, source_origin: 'external',
+      external_relpath: path.join(EVENT.external_path, 'banded.jpg'), filename: 'banded.jpg',
+      hero_path: null, hero_anchor: null,
+    };
+    const [top, bottom] = await Promise.all([
+      imageProcessor.ensureHeroImage(photo, { anchor: 'top' }),
+      imageProcessor.ensureHeroImage(photo, { anchor: 'bottom' }),
+    ]);
+    expect(top).not.toBe(bottom);
+    expect(closeTo(await centrePixel(storage, top), RED)).toBe(true);
+    expect(closeTo(await centrePixel(storage, bottom), BLUE)).toBe(true);
   });
 
   it('treats a pre-258 hero (NULL hero_anchor) as the centre crop', async () => {

@@ -54,4 +54,17 @@ function heroQueryRedirect(query, anchor) {
   return qs ? `?${qs}` : '';
 }
 
-module.exports = { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect };
+/**
+ * Storage name of the hero rendition for a source basename at an anchor.
+ *
+ * One file per anchor, not one file per photo: the watermark cache keys on
+ * the file path for an hour, and two requests for different anchors must
+ * never share an in-flight generation or overwrite each other's output. The
+ * centre keeps the pre-258 name, so existing renditions stay valid.
+ */
+function heroRenditionName(basename, anchor) {
+  const [x, y] = heroAnchorPoint(anchor);
+  return x === 50 && y === 50 ? `hero_${basename}` : `hero_fp${x}-${y}_${basename}`;
+}
+
+module.exports = { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect, heroRenditionName };

@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
-const { heroAnchorPoint, normalizeHeroAnchor } = require('../utils/heroAnchor');
+const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
@@ -764,7 +764,8 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
  */
 async function generateHeroImage(imagePath, options = {}) {
   const filename = options.outputBasename || path.basename(imagePath);
-  const heroFilename = `hero_${filename}`;
+  // One file per focal point (issue 1737): see heroRenditionName.
+  const heroFilename = heroRenditionName(filename, options.anchor);
   const heroRelKey = path.posix.join('heroes', heroFilename);
   const storage = getStorage();
 
@@ -889,7 +890,19 @@ async function ensureHeroImage(photo, { anchor } = {}) {
       : `Invalid hero image detected for photo ${photo.id}, regenerating...`);
   }
 
-  return singleFlight(flightKey('hero', photo), () => regenerateHeroImage(photo, anchor));
+  // Per anchor: a request for the new focal point must not join a flight that
+  // is still cutting the old one and be handed that rendition.
+  const flight = `${flightKey('hero', photo)}:${anchor === undefined ? 'stored' : normalizeHeroAnchor(anchor)}`;
+  return singleFlight(flight, () => regenerateHeroImage(photo, anchor));
+}
+
+// The rendition of a previous focal point is a different file (see
+// heroRenditionName); once the row points at the new one, drop it. Deleting
+// only what the row pointed at means a concurrent flight for another anchor
+// loses nothing it still needs.
+async function dropSupersededHero(photo, newHeroPath) {
+  if (!photo.hero_path || photo.hero_path === newHeroPath) return;
+  await getStorage().delete(photo.hero_path).catch(() => {});
 }
 
 async function regenerateHeroImage(photo, anchor) {
@@ -937,6 +950,7 @@ async function regenerateHeroImage(photo, anchor) {
     });
     if (newHeroPath) {
       await db('photos').where({ id: photo.id }).update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+      await dropSupersededHero(photo, newHeroPath);
     }
     return newHeroPath;
   }
@@ -971,6 +985,7 @@ async function regenerateHeroImage(photo, anchor) {
     await db('photos')
       .where({ id: photo.id })
       .update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+    await dropSupersededHero(photo, newHeroPath);
 
     logger.info(`Regenerated hero image for photo ${photo.id}`);
     return newHeroPath;
