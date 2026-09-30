@@ -54,12 +54,12 @@ export const productUsageService = {
   async enable(): Promise<UsageStatus> {
     return (
       await api.post('/admin/usage/enable', {
-        consent_version: 'usage-consent.v5'
+        consent_version: 'usage-consent.v6'
       })
     ).data;
   },
   async upgradeConsent(): Promise<{ delivered: boolean; queued: boolean; state: UsageStatus }> {
-    return (await api.post('/admin/usage/consent', { consent_version: 'usage-consent.v5' })).data;
+    return (await api.post('/admin/usage/consent', { consent_version: 'usage-consent.v6' })).data;
   },
   async disable(): Promise<UsageStatus> {
     return (await api.post('/admin/usage/disable')).data;

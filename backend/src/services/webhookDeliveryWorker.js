@@ -180,6 +180,20 @@ async function deliverOne(row) {
         next_retry_at: null,
       });
     await db('webhooks').where({ id: webhook.id }).update({ last_success_at: new Date().toISOString() });
+    // A delivered webhook is webhook use (issue 1740). Only the admin
+    // test/replay routes set the marker before this, so an install whose
+    // hooks fire on every publish reported webhooks as configured-but-unused.
+    // Same contract as the mail marker in emailProcessor: one lifetime bit,
+    // no destination, event type or count — and only under a consent whose
+    // catalog text counts deliveries (usage.v6); every earlier catalog
+    // promised "no automatic or visitor-triggered deliveries" and keeps that
+    // meaning until the install upgrades. A marker failure never touches the
+    // delivery row, which is already final.
+    try {
+      await require('./productUsageService').markUsed(['webhooks'], { since: 'usage.v6' });
+    } catch {
+      logger.warn('Product usage webhook marker could not be recorded');
+    }
     return;
   }
 

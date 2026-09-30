@@ -4,21 +4,21 @@
     "intro": "Helfen Sie, PicPeak mit freiwilligen Produktnutzungsberichten weiterzuentwickeln. Prüfen Sie vor Ihrer Entscheidung, welche pseudonymen Daten geteilt werden, wer sie sehen kann und wohin sie gesendet werden."
   },
   "productUsage": {
-    "fields": "usage.v5-Berichte enthalten einen Installationsfingerabdruck, die PicPeak-Version, UTC-Berichtsdatum und Erstellungszeit, Schema- und Signaturmetadaten, die Galerie-Layouts aus einer festen Liste, 87 Funktionssignale (64 Paare aus Konfiguriert und Genutzt, 23 reine Konfigurationswerte) sowie zwei Gesamtzahlen der Installation: gespeicherte Galerien und Fotoeinträge ohne Videos. Entwürfe, archivierte Galerien und deren erhaltene Fotoeinträge zählen mit. Der Katalog unten erklärt jedes Feld. Keine Aktionszähler, keine Beobachtung von Besuchern.",
-    "catalogTitle": "Vollständiger Katalog: 87 Funktionssignale und 2 Bestandszahlen (usage.v5)",
+    "fields": "usage.v6-Berichte enthalten einen Installationsfingerabdruck, die PicPeak-Version, UTC-Berichtsdatum und Erstellungszeit, Schema- und Signaturmetadaten, die Galerie-Layouts aus einer festen Liste, 87 Funktionssignale (64 Paare aus Konfiguriert und Genutzt, 23 reine Konfigurationswerte) sowie zwei Gesamtzahlen der Installation: gespeicherte Galerien und Fotoeinträge ohne Videos. Entwürfe, archivierte Galerien und deren erhaltene Fotoeinträge zählen mit. Der Katalog unten erklärt jedes Feld. Keine Aktionszähler, keine Beobachtung von Besuchern.",
+    "catalogTitle": "Vollständiger Katalog: 87 Funktionssignale und 2 Bestandszahlen (usage.v6)",
     "catalogExplanation": "„Konfiguriert“ beschreibt, ob eine Funktion technisch verfügbar oder eingerichtet ist. „Integriert“ heißt: immer verfügbar, ohne Nutzungsnachweis. „Genutzt“ ist ein einzelnes Ja/Nein für die ganze Installation seit der Zustimmung zu diesem Schema; ein angenommener Auftrag zählt als gestartet, nicht als abgeschlossen. Reine Konfigurationssignale haben kein Genutzt-Feld. Der Bestand enthält nur die aktuellen Gesamtzahlen der Galerie- und Fotoeinträge, ohne Aufschlüsselung nach Galerien. Nutzungsmarker speichern keine Personen, Objektkennungen, Zeitpunkte oder Häufigkeiten.",
     "catalogSearch": "Funktionsname oder Schlüssel suchen",
     "catalogEmpty": "Keine passenden Funktionen.",
     "configuredLabel": "Verfügbarkeit / Konfiguration",
     "usedLabel": "Genutzt",
     "configurationOnly": "Nur Konfiguration, die tatsächliche Nutzung wird nicht erfasst.",
-    "versionDisclosure": "Diese Zustimmung gilt für usage.v5 / usage-consent.v5: 87 Funktionen und dieselben zwei Bestandszahlen. Neue Ja/Nein-Werte unterscheiden echte CMS-, Vorlagen-, Branding-, SEO-, Kategorie- und Ereignistyp-Änderungen sowie die Annahme echter Vorlagen-E-Mails durch den Mailtransport (auch im Hintergrund) von Standards, unverändertem Speichern, Vorschauen und Tests. Inhalte, Empfänger, Vorlagenkennungen, Aktionszeitpunkte und Häufigkeiten werden nicht erfasst. Die Beobachtung beginnt erst nach bestätigter Zustimmung; Nein bedeutet nicht, dass noch Standards verwendet werden. Frühere Versionen behalten bis zum Upgrade Bedeutung und Umfang. Wartende Pakete bleiben unverändert; Markierungen starten nach Bestätigung neu.",
+    "versionDisclosure": "Diese Zustimmung gilt für usage.v6 / usage-consent.v6: dieselben 87 Funktionen und zwei Bestandszahlen wie usage.v5. Die eine Änderung: „Ausgehende Webhooks“ gilt nach jeder erfolgreichen Zustellung (HTTP 2xx) als genutzt, auch bei automatisch durch Ereignisse ausgelösten Zustellungen, nicht mehr nur nach einem expliziten Admin-Test/-Replay. Es bleibt ein einzelnes Ja/Nein für die ganze Installation; Ziele, Ereignistypen, Payloads, Zeitstempel und Zähler werden nicht erfasst. Die Beobachtung beginnt erst nach bestätigter Zustimmung. Frühere Versionen behalten bis zum Upgrade Bedeutung und Umfang. Wartende Pakete bleiben unverändert; Markierungen starten nach Bestätigung neu.",
     "currentSchema": "Aktuelles Berichtsschema: {{schema}}",
-    "reviewUpgrade": "Auf usage.v5 upgraden",
-    "upgrade": "usage.v5 ausdrücklich zustimmen",
+    "reviewUpgrade": "Auf usage.v6 upgraden",
+    "upgrade": "usage.v6 ausdrücklich zustimmen",
     "upgradeExplanation": "Deine bestehende Teilnahme behält ihren bisherigen Umfang. Sieh dir den erweiterten Katalog und die beiden Bestandszahlen an, bevor du dich entscheidest. Ablehnen beendet die Teilnahme nicht.",
     "upgradePending": "Die signierte Erweiterung wartet auf die Bestätigung des Collectors. Bis dahin wird nur der bisher bestätigte Umfang erfasst. Versuche es erneut, wenn der Collector erreichbar ist, oder deaktiviere die Teilnahme, um zu stoppen und zu löschen.",
-    "pendingBlocksActions": "Das v5-Upgrade und das Nutzungsportal sind gesperrt, bis der ausstehende Bericht erneut gesendet wurde oder zugestellt ist — nutze oben „Jetzt senden“.",
+    "pendingBlocksActions": "Das v6-Upgrade und das Nutzungsportal sind gesperrt, bis der ausstehende Bericht erneut gesendet wurde oder zugestellt ist — nutze oben „Jetzt senden“.",
     "pendingBlocksPortal": "Das Nutzungsportal ist gesperrt, bis der ausstehende Bericht erneut gesendet wurde oder zugestellt ist — nutze oben „Jetzt senden“.",
     "catalog": {
       "crm": {
@@ -267,7 +267,7 @@
       "webhooks": {
         "name": "Ausgehende Webhooks",
         "configured": "Mindestens ein aktiver Webhook ist konfiguriert; keine Ziele, Abonnements, Geheimnisse oder Zustellprotokolle.",
-        "used": "Erfolgreicher expliziter Admin-Webhook-Test/-Replay; keine automatischen oder durch Besucher ausgelösten Zustellungen."
+        "used": "Erfolgreiche Zustellung (HTTP 2xx) eines beliebigen ausgehenden Webhooks, ob automatisch durch ein Ereignis oder durch einen expliziten Admin-Test/-Replay ausgelöst; keine Ziele, Ereignistypen, Payloads, Zeitstempel oder Zähler."
       },
       "restore": {
         "name": "Wiederherstellung",

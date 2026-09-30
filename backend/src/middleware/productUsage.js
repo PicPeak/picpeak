@@ -42,6 +42,12 @@ const RULES = [
 // /backup/picpeak/export and everything under /database-backup/, which
 // produce a local file regardless of where scheduled backups go.
 const DESTINATION_BACKUP = /^\/backup\/(?:run|backup|create|start|test)(?:\/|$)/;
+// Route evidence that only satisfies an older catalog text. The webhook
+// test/replay routes answer 202 on enqueue; that is the v2-v5 definition of
+// webhook use, but usage.v6 counts a successful delivery (issue 1740), which
+// the delivery worker records itself. Without the bound, a test whose every
+// attempt then fails would still read as delivered under v6.
+const ENQUEUE_ONLY_UNTIL = { webhooks: 'usage.v6' };
 
 function productUsage(req, res, next) {
   const pathname = req.path;
@@ -60,16 +66,21 @@ function productUsage(req, res, next) {
       /^\/(?:photos|events)\/[^/]+\/upload(?:\/|$)/.test(pathname)
     )
       features.push('s3_storage');
-    const expanded = [...new Set([
+    const all = [...new Set([
       ...capabilityKeys(req.method, pathname),
       ...(res.locals.productUsageFeatures || [])
     ])];
+    const expanded = all.filter((f) => !ENQUEUE_ONLY_UNTIL[f]);
     if (features.length || expanded.length)
       service
         .markUsed(expanded, {
           legacyFeatures: features,
           destinationBackup: DESTINATION_BACKUP.test(pathname)
         })
+        .catch(() => logger.warn('Product usage marker could not be recorded'));
+    for (const feature of all.filter((f) => ENQUEUE_ONLY_UNTIL[f]))
+      service
+        .markUsed([feature], { until: ENQUEUE_ONLY_UNTIL[feature] })
         .catch(() => logger.warn('Product usage marker could not be recorded'));
   });
   next();

@@ -1,4 +1,4 @@
-# Product-usage coverage: usage.v5
+# Product-usage coverage: usage.v6
 
 ## What the numbers mean
 
@@ -6,6 +6,9 @@ The 86 v4 capabilities have all been reviewed for the distinction between
 availability, a present configuration, and observed use. v5 asks 87 questions:
 six broad admin-management questions are replaced by precisely defined edit
 signals, and one question measures real template-mail transport acceptance.
+v6 asks the same 87 questions; its one change is that `webhooks` use counts
+any successful delivery (HTTP 2xx), automatic or manual, instead of only an
+explicit admin test/replay (issue 1740). Still one bit, no delivery data.
 There are 64 configured/used pairs and 23 configuration-only signals.
 Historical views retain all 94 keys separately. No old value is renamed,
 backfilled, reinterpreted, or combined with its replacement.
@@ -52,8 +55,8 @@ Reports retain the existing stable installation fingerprint, PicPeak version,
 daily date/generation time and gallery-layout enum. They are pseudonymous,
 not fully anonymous. Existing retention, access controls and deletion apply.
 
-Every v1–v4 wire schema/catalog remains immutable. New evidence is retained only
-under active, confirmed usage-consent.v5. The signed consent upgrade preserves
+Every v1–v5 wire schema/catalog remains immutable. New evidence is retained only
+under active, confirmed usage-consent.v6. The signed consent upgrade preserves
 identity and raw history, finishes pending old packets unchanged and resets
 markers only after the matching receipt. Opt-out wins over late receipts.
 A marker write failure must not retry a successfully sent email.
@@ -61,9 +64,9 @@ Deploy the collector before the PicPeak client; existing clients keep working.
 
 ## Full audit
 
-The table is the decision for every active v5 capability. The route/flag/settings
-inventory is `usage-coverage.v5.json`; historical inventories remain unchanged.
-Exact definitions are served at `/schema/features.v5.json` and disclosed in the
+The table is the decision for every active v6 capability. The route/flag/settings
+inventory is `usage-coverage.v6.json`; historical inventories remain unchanged.
+Exact definitions are served at `/schema/features.v6.json` and disclosed in the
 PicPeak EN/DE consent catalog. A retired broad management signal remains under
 its original definition in the collector's earlier-measurements view/history.
 
@@ -118,7 +121,7 @@ its original definition in the collector's earlier-measurements view/history.
 | `seo_editing` — SEO customization | Built in; display a label, not a percentage. | An admin saved a real change to an allowlisted SEO setting since consent. Defaults, reading and unchanged saves do not count; no rules, paths or search-engine activity are collected. |
 | `admin_management` — Admin and role management | Enabled switch/capability; may be a default. | A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts. |
 | `api_integration` — HTTP API integration | Technical configuration exists; may be a default, not activity. | Successful authenticated HTTP API capability call; only this bit, never URLs, request values, token/owner IDs or call counts. Does not trigger a report. |
-| `webhooks` — Outbound webhooks | Technical configuration exists; may be a default, not activity. | Successful explicit admin webhook test/replay; no automatic or visitor-triggered deliveries. |
+| `webhooks` — Outbound webhooks | Technical configuration exists; may be a default, not activity. | Successful delivery (HTTP 2xx) of any outbound webhook, whether triggered automatically by an event or by an explicit admin test/replay; no destinations, event types, payloads, timestamps or counts. |
 | `restore` — Restore | Built in; display a label, not a percentage. | A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts. |
 | `portable_backup` — Portable PicPeak export/import | Built in; display a label, not a percentage. | A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts. |
 | `database_backup` — Database backups | Technical configuration exists; may be a default, not activity. | A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts. |

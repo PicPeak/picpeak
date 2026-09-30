@@ -1,8 +1,10 @@
 # Optional product usage and feedback (#1110)
 
-Current scope: **usage.v4**. v4 replaces `gallery_downloads` with
-`gallery_downloads_restricted` after explicit `usage-consent.v4` consent.
-All v1/v2/v3 schemas and queued packets remain immutable. Historical views
+Current scope: **usage.v6**. v4 replaced `gallery_downloads` with
+`gallery_downloads_restricted`, v5 added the edit and template-delivery
+signals, and v6 changes one definition: `webhooks` use is any successful
+delivery, not only a manual test/replay — each after explicit consent to
+its own version. All v1–v5 schemas and queued packets remain immutable. Historical views
 keep both questions separate; neither can be inferred by inverting the other.
 
 The inventory and other capabilities are unchanged from v3. The expanded catalog contains 86 capabilities
@@ -22,7 +24,7 @@ statements excluding all gallery/photo counts describe those earlier versions;
 v3 adds only the two installation totals above.
 
 Backward compatibility is required for future changes. The collector continues
-to accept v1/v2/v3/v4 reports, including omitted or null measurements, using their
+to accept v1–v6 reports, including omitted or null measurements, using their
 declared schema and original reporting day. Missing values remain unknown in
 aggregates and histories. PicPeak still emits complete reports through the
 unchanged sender schemas; only reception is more tolerant. Consent, field
@@ -210,7 +212,7 @@ Public voting uses a backend-authorized 15-minute session, never the lookup hash
 
 ## Contract
 
-The closed v1/v2/v3/v4 schemas are in `backend/src/usage/schema.cjs`, with signing in
+The closed v1–v5 schemas and the current v6 schema are in `backend/src/usage/schema.cjs`, with signing in
 `protocol.cjs`. Keep these and all versioned `features.v*.json` catalogs byte-identical to the collector's `protocol/` copies.
 The collector serves its schema and complete source archive publicly. Aggregate
 projections and the complete dataset are accessible to participating
@@ -229,7 +231,7 @@ cursor. Deletion removes the source publication; operators must also remove
 any externally copied content and follow the documented backup/log policies.
 
 Used flags represent successful allowlisted admin capability calls since
-consent to the current schema (v1: joining; v2/v3/v4: joining or explicit upgrade),
+consent to the current schema (v1: joining; v2–v6: joining or explicit upgrade),
 not visitor behavior or counts. OAuth marks successful admin SSO;
 applied CSS is observed during report generation. Gallery layouts are controlled
 enums extracted from event themes without IDs or counts. Other signals use the

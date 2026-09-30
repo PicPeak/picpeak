@@ -2,10 +2,10 @@
 
 // Vendored byte-identical in PicPeak. Existing wire versions stay immutable;
 // every expansion requires explicit consent to its own version.
-const CATALOG = require("./features.v5.json");
-const CATALOGS = { "usage.v2": require("./features.v2.json"), "usage.v3": require("./features.v3.json"), "usage.v4": require("./features.v4.json"), "usage.v5": CATALOG };
-const CONSENT_VERSIONS = { "usage.v1": "usage-consent.v1", "usage.v2": "usage-consent.v2", "usage.v3": "usage-consent.v3", "usage.v4": "usage-consent.v4", "usage.v5": "usage-consent.v5" };
-const CURRENT_SCHEMA_VERSION = "usage.v5";
+const CATALOG = require("./features.v6.json");
+const CATALOGS = { "usage.v2": require("./features.v2.json"), "usage.v3": require("./features.v3.json"), "usage.v4": require("./features.v4.json"), "usage.v5": require("./features.v5.json"), "usage.v6": CATALOG };
+const CONSENT_VERSIONS = { "usage.v1": "usage-consent.v1", "usage.v2": "usage-consent.v2", "usage.v3": "usage-consent.v3", "usage.v4": "usage-consent.v4", "usage.v5": "usage-consent.v5", "usage.v6": "usage-consent.v6" };
+const CURRENT_SCHEMA_VERSION = "usage.v6";
 const CURRENT_CONSENT_VERSION = CONSENT_VERSIONS[CURRENT_SCHEMA_VERSION];
 const schemaForConsent = (consent) => Object.keys(CONSENT_VERSIONS).find((version) => CONSENT_VERSIONS[version] === consent);
 const schemaRank = (version) => Object.keys(CONSENT_VERSIONS).indexOf(version);
@@ -49,7 +49,7 @@ const report = (version) => object({
     key, object({ configured: boolean, ...(observesUse(key, version) ? { used: boolean } : {}) })
   ]))),
   gallery_layouts: { type: "array", uniqueItems: true, maxItems: LAYOUTS.length, items: { enum: LAYOUTS } },
-  ...(["usage.v3", "usage.v4", "usage.v5"].includes(version) ? { inventory: object(Object.fromEntries(INVENTORY_KEYS.map(key => [key,
+  ...(["usage.v3", "usage.v4", "usage.v5", "usage.v6"].includes(version) ? { inventory: object(Object.fromEntries(INVENTORY_KEYS.map(key => [key,
     { type: "integer", minimum: 0, maximum: MAX_INVENTORY_COUNT }
   ]))) } : {}),
 });

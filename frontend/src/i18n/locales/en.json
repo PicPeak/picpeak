@@ -4,21 +4,21 @@
     "intro": "Help shape PicPeak with optional product usage reports. Review the pseudonymous data, who can see it and where it is sent before deciding."
   },
   "productUsage": {
-    "fields": "usage.v5 reports contain an installation fingerprint, PicPeak version, UTC report date and generation time, schema/signing metadata, controlled gallery layouts, 87 fixed capability signals (64 configured/used pairs and 23 configuration-only booleans), and two installation totals: stored galleries and photo records excluding videos. Drafts and archived galleries and their retained photo records are included. The catalog below defines every field. There are no action counts or visitor observations.",
-    "catalogTitle": "Full catalog: 87 capability signals and 2 inventory totals (usage.v5)",
+    "fields": "usage.v6 reports contain an installation fingerprint, PicPeak version, UTC report date and generation time, schema/signing metadata, controlled gallery layouts, 87 fixed capability signals (64 configured/used pairs and 23 configuration-only booleans), and two installation totals: stored galleries and photo records excluding videos. Drafts and archived galleries and their retained photo records are included. The catalog below defines every field. There are no action counts or visitor observations.",
+    "catalogTitle": "Full catalog: 87 capability signals and 2 inventory totals (usage.v6)",
     "catalogExplanation": "Configured describes current technical availability or configuration. Built-in means available, not used. Used is one installation-wide yes/no bit since consent to the reporting schema; accepted jobs mean initiated, not necessarily completed. Configuration-only capabilities omit used. Inventory contains only current gallery/photo record totals, with no per-gallery breakdown. No actor, entity identifier, action time or frequency is stored in usage markers.",
     "catalogSearch": "Search capability name or key",
     "catalogEmpty": "No matching capabilities.",
     "configuredLabel": "Availability / configuration",
     "usedLabel": "Used",
     "configurationOnly": "Configuration only — actual use is not collected.",
-    "versionDisclosure": "This consent covers usage.v5 / usage-consent.v5: 87 capabilities and the same two inventory totals. New booleans distinguish real CMS/template/branding/SEO/category/event-type edits and actual template-email transport acceptance, including background sends, from defaults, unchanged saves, previews and tests. No content, recipient, template key, action timestamp or frequency is collected. Observations begin only after accepted consent; false does not mean an installation still uses defaults. Previous versions keep their meanings and scope until upgrade; queued packets stay unchanged and markers restart after confirmation.",
+    "versionDisclosure": "This consent covers usage.v6 / usage-consent.v6: the same 87 capabilities and two inventory totals as usage.v5. The one change: Outbound webhooks counts as used after any successful delivery (HTTP 2xx), including automatic event-triggered deliveries, not only after an explicit admin test/replay. It stays one installation-wide yes/no bit; no destinations, event types, payloads, timestamps or counts are collected. Observations begin only after accepted consent. Previous versions keep their meanings and scope until upgrade; queued packets stay unchanged and markers restart after confirmation.",
     "currentSchema": "Current reporting schema: {{schema}}",
-    "reviewUpgrade": "Upgrade to usage.v5",
-    "upgrade": "Explicitly agree to usage.v5",
+    "reviewUpgrade": "Upgrade to usage.v6",
+    "upgrade": "Explicitly agree to usage.v6",
     "upgradeExplanation": "Your existing participation keeps its current scope. Review the expanded catalog and the two inventory totals before deciding whether to upgrade. Declining does not end participation.",
     "upgradePending": "The signed consent upgrade is pending confirmation. Only the previously accepted scope is collected. Retry when the collector is available, or disable participation to stop and delete.",
-    "pendingBlocksActions": "The v5 upgrade and the usage portal are unavailable until the pending report is retried or delivered — use \"Retry / send if due\" above.",
+    "pendingBlocksActions": "The v6 upgrade and the usage portal are unavailable until the pending report is retried or delivered — use \"Retry / send if due\" above.",
     "pendingBlocksPortal": "The usage portal is unavailable until the pending report is retried or delivered — use \"Retry / send if due\" above.",
     "catalog": {
       "crm": {
@@ -267,7 +267,7 @@
       "webhooks": {
         "name": "Outbound webhooks",
         "configured": "At least one active webhook is configured; no destinations, subscriptions, secrets or delivery logs.",
-        "used": "Successful explicit admin webhook test/replay; no automatic or visitor-triggered deliveries."
+        "used": "Successful delivery (HTTP 2xx) of any outbound webhook, whether triggered automatically by an event or by an explicit admin test/replay; no destinations, event types, payloads, timestamps or counts."
       },
       "restore": {
         "name": "Restore",

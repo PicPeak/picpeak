@@ -75,6 +75,15 @@ test('the collector has no way in: no inbound route and no scheduled pull', () =
       expect(email).not.toMatch(/productUsageService'\)\.(?:tick|enable|command|deliver)/);
       continue;
     }
+    if (entry.name === 'webhookDeliveryWorker.js') {
+      // Same shape for the webhook bit (issue 1740): one local marker on a
+      // delivered hook, gated to the consent whose text counts deliveries.
+      // No destination, event type or payload may reach the usage API.
+      const worker = fs.readFileSync(path.join(dir, entry.name), 'utf8');
+      expect(worker).toContain(".markUsed(['webhooks'], { since: 'usage.v6' })");
+      expect(worker).not.toMatch(/productUsageService'\)\.(?:tick|enable|command|deliver)/);
+      continue;
+    }
     expect(fs.readFileSync(path.join(dir, entry.name), 'utf8'))
       .not.toContain('productUsageService');
   }

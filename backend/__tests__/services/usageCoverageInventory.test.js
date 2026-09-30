@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const catalog = require('../../src/usage/features.v5.json');
-const inventory = require('../../../docs/usage-coverage.v5.json');
+const catalog = require('../../src/usage/features.v6.json');
+const inventory = require('../../../docs/usage-coverage.v6.json');
 const protocol = require('../../src/usage/schema.cjs');
 const { RULES_V2, capabilityKeys } = require('../../src/usage/capabilityRules');
 const { acceptedUpload, capabilityEvidence } = require('../../src/usage/capabilityEvidence');
@@ -54,7 +54,7 @@ test('all current settings tabs have an explicit scope decision', () => {
   }
 });
 
-test('v1/v2/v3 wire validation is immutable; v5 catalog, UI and translated descriptions agree', () => {
+test('v1/v2/v3 wire validation is immutable; v6 catalog, UI and translated descriptions agree', () => {
   expect(crypto.createHash('sha256').update(JSON.stringify(protocol.envelopeSchemas['usage.v1'].properties)).digest('hex'))
     .toBe('cc8d0a865d21e36d2b24d23ca6aa8dd8d48000cb17aef83996786f70755bc922');
   expect(crypto.createHash('sha256').update(JSON.stringify(protocol.envelopeSchemas['usage.v2'].properties)).digest('hex'))
@@ -69,7 +69,7 @@ test('v1/v2/v3 wire validation is immutable; v5 catalog, UI and translated descr
   expect(protocol.LEGACY_FEATURE_KEYS).toHaveLength(19);
   expect(inventory.configuration_only).toHaveLength(23);
   const frontend = path.resolve(__dirname, '../../../frontend');
-  expect(JSON.parse(fs.readFileSync(path.join(frontend, 'src/features/settings/usageFeatures.v5.json')))).toEqual(catalog);
+  expect(JSON.parse(fs.readFileSync(path.join(frontend, 'src/features/settings/usageFeatures.v6.json')))).toEqual(catalog);
   // The catalog is source, and source is English only: its strings are the
   // en locale verbatim. Every other language lives in its locale file and
   // must cover every key and field, but says whatever its translator chose.

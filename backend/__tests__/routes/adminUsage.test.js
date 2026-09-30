@@ -217,8 +217,32 @@ test('public/gallery paths and failed/unauthenticated admin operations never set
   expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('42');
 });
 
-test.each(['usage-consent.v2', 'usage-consent.v3', 'usage-consent.v4', 'usage-consent.v5'])('consent upgrade accepts exactly the explicit %s choice, never extra fields', async (consent_version) => {
-  for (const data of [{}, { consent_version: 'usage-consent.v1' }, { consent_version: 'usage-consent.v6' }, { consent_version, user: 'PRIVATE' }])
+test('a webhook test/replay enqueue records webhooks only for consents below usage.v6', () => {
+  // 202 on enqueue is the v2-v5 definition of webhook use; under usage.v6 the
+  // delivery worker records the successful delivery instead (issue 1740), so
+  // the route marker carries an `until` bound and never rides in the general
+  // call, where it would be recorded unconditionally.
+  const { EventEmitter } = require('events');
+  service.markUsed.mockClear();
+  const res = new EventEmitter();
+  res.locals = {};
+  res.statusCode = 202;
+  productUsage({ path: '/webhooks/7/test', method: 'POST', admin: { id: 1 } }, res, () => {});
+  res.emit('finish');
+  expect(service.markUsed).toHaveBeenCalledTimes(1);
+  expect(service.markUsed).toHaveBeenCalledWith(['webhooks'], { until: 'usage.v6' });
+  service.markUsed.mockClear();
+  const replay = new EventEmitter();
+  replay.locals = {};
+  replay.statusCode = 202;
+  productUsage({ path: '/webhooks/7/deliveries/9/replay', method: 'POST', admin: { id: 1 } }, replay, () => {});
+  replay.emit('finish');
+  expect(service.markUsed).toHaveBeenCalledWith(['webhooks'], { until: 'usage.v6' });
+  expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('"7"');
+});
+
+test.each(['usage-consent.v2', 'usage-consent.v3', 'usage-consent.v4', 'usage-consent.v5', 'usage-consent.v6'])('consent upgrade accepts exactly the explicit %s choice, never extra fields', async (consent_version) => {
+  for (const data of [{}, { consent_version: 'usage-consent.v1' }, { consent_version: 'usage-consent.v7' }, { consent_version, user: 'PRIVATE' }])
     await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`).send(data).expect(400);
   expect(service.command).not.toHaveBeenCalled();
   await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`)

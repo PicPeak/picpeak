@@ -227,6 +227,68 @@ describe('webhook delivery worker (#327)', () => {
     }
   });
 
+  // Issue 1740: only the admin test/replay routes set the `webhooks` usage
+  // marker, so real deliveries never counted. The worker now records the bit
+  // on a 2xx — but only under usage.v6, whose catalog text counts automatic
+  // deliveries; every earlier consent promised "no automatic deliveries".
+  describe('product usage marker (issue 1740)', () => {
+    const markers = () => db('product_usage_markers').pluck('feature');
+    const consent = (version) =>
+      db('product_usage_state').where({ id: 1 }).update({ status: 'active', consent_version: version });
+
+    beforeEach(async () => {
+      await db('product_usage_markers').del();
+    });
+    afterEach(async () => {
+      await db('product_usage_state').where({ id: 1 }).update({ status: 'disabled' });
+    });
+
+    test('a 2xx delivery under usage.v6 records the webhooks marker', async () => {
+      await consent('usage-consent.v6');
+      const stub = await makeStub({ status: 200 });
+      try {
+        await insertWebhook(stub.url);
+        await webhookService.fire('event.published', { event: {} });
+        await __test.tick();
+
+        expect(stub.requests).toHaveLength(1);
+        expect(await markers()).toEqual(['webhooks']);
+      } finally {
+        await stub.close();
+      }
+    });
+
+    test('a non-2xx delivery records nothing', async () => {
+      await consent('usage-consent.v6');
+      const stub = await makeStub({ status: 500 });
+      try {
+        await insertWebhook(stub.url);
+        await webhookService.fire('event.published', { event: {} });
+        await __test.tick();
+
+        expect(stub.requests).toHaveLength(1);
+        expect(await markers()).toEqual([]);
+      } finally {
+        await stub.close();
+      }
+    });
+
+    test('a 2xx delivery under the previous consent (usage.v5) records nothing', async () => {
+      await consent('usage-consent.v5');
+      const stub = await makeStub({ status: 200 });
+      try {
+        await insertWebhook(stub.url);
+        await webhookService.fire('event.published', { event: {} });
+        await __test.tick();
+
+        expect(stub.requests).toHaveLength(1);
+        expect(await markers()).toEqual([]);
+      } finally {
+        await stub.close();
+      }
+    });
+  });
+
   test('worker can be started + stopped without leaking timers', async () => {
     startWebhookDeliveryWorker();
     startWebhookDeliveryWorker(); // idempotent

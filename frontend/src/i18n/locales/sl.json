@@ -4,21 +4,21 @@
     "intro": "Pomagajte oblikovati PicPeak z neobveznimi poročili o uporabi izdelka. Pred odločitvijo preglejte psevdonimizirane podatke, kdo jih lahko vidi in kam se pošiljajo."
   },
   "productUsage": {
-    "fields": "Poročila usage.v5 vsebujejo prstni odtis namestitve, različico PicPeak, datum poročila po UTC in čas izdelave, metapodatke sheme/podpisovanja, nadzorovane postavitve galerij, 87 nespremenljivih signalov zmožnosti (64 parov nastavljeno/uporabljeno in 23 logičnih vrednosti samo za konfiguracijo) ter dve skupni vrednosti namestitve: shranjene galerije in zapise fotografij brez videov. Vključeni so osnutki in arhivirane galerije ter njihovi ohranjeni zapisi fotografij. Spodnji katalog opredeljuje vsako polje. Število dejanj in opazovanja obiskovalcev se ne zbirajo.",
-    "catalogTitle": "Celoten katalog: 87 signalov zmožnosti in 2 skupni vrednosti inventarja (usage.v5)",
+    "fields": "Poročila usage.v6 vsebujejo prstni odtis namestitve, različico PicPeak, datum poročila po UTC in čas izdelave, metapodatke sheme/podpisovanja, nadzorovane postavitve galerij, 87 nespremenljivih signalov zmožnosti (64 parov nastavljeno/uporabljeno in 23 logičnih vrednosti samo za konfiguracijo) ter dve skupni vrednosti namestitve: shranjene galerije in zapise fotografij brez videov. Vključeni so osnutki in arhivirane galerije ter njihovi ohranjeni zapisi fotografij. Spodnji katalog opredeljuje vsako polje. Število dejanj in opazovanja obiskovalcev se ne zbirajo.",
+    "catalogTitle": "Celoten katalog: 87 signalov zmožnosti in 2 skupni vrednosti inventarja (usage.v6)",
     "catalogExplanation": "Nastavljeno opisuje trenutno tehnično razpoložljivost ali konfiguracijo. Vgrajeno pomeni, da je funkcija na voljo, ne da je bila uporabljena. Uporabljeno je ena logična vrednost za celotno namestitev od soglasja k shemi poročanja; sprejeta opravila pomenijo začeta, ne nujno dokončana. Zmožnosti samo za konfiguracijo nimajo podatka o uporabi. Inventar vsebuje samo trenutno skupno število zapisov galerij/fotografij, brez razčlenitve po galerijah. V označevalnikih uporabe se ne hranijo izvajalec, identifikator entitete, čas dejanja ali pogostost.",
     "catalogSearch": "Išči po imenu ali ključu zmožnosti",
     "catalogEmpty": "Ni ujemajočih se zmožnosti.",
     "configuredLabel": "Razpoložljivost / konfiguracija",
     "usedLabel": "Uporabljeno",
     "configurationOnly": "Samo konfiguracija — dejanska uporaba se ne zbira.",
-    "versionDisclosure": "To soglasje zajema usage.v5 / usage-consent.v5: 87 zmožnosti in isti dve skupni vrednosti inventarja. Nove logične vrednosti razlikujejo dejanske spremembe CMS/predlog/blagovne znamke/SEO/kategorij/vrst dogodkov ter dejanski sprejem e-pošte iz predlog pri transportu, vključno s pošiljanjem v ozadju, od privzetih vrednosti, nespremenjenih shranjevanj, predogledov in testov. Vsebina, prejemnik, ključ predloge, čas dejanja ali pogostost se ne zbirajo. Opazovanje se začne šele po sprejetem soglasju; vrednost false ne pomeni, da namestitev še vedno uporablja privzete nastavitve. Prejšnje različice ohranijo svoj pomen in obseg do nadgradnje; paketi v čakalni vrsti ostanejo nespremenjeni, označevalniki pa se po potrditvi začnejo znova.",
+    "versionDisclosure": "To soglasje zajema usage.v6 / usage-consent.v6: istih 87 zmožnosti in isti dve skupni vrednosti inventarja kot usage.v5. Edina sprememba: »Odhodni webhooki« veljajo za uporabljene po vsaki uspešni dostavi (HTTP 2xx), tudi pri dostavah, ki jih samodejno sprožijo dogodki, in ne več le po izrecnem skrbniškem testu/ponovitvi. Ostaja ena sama logična vrednost da/ne za celotno namestitev; cilji, vrste dogodkov, vsebine, časovni žigi ali števci se ne zbirajo. Opazovanje se začne šele po sprejetem soglasju. Prejšnje različice ohranijo svoj pomen in obseg do nadgradnje; paketi v čakalni vrsti ostanejo nespremenjeni, označevalniki pa se po potrditvi začnejo znova.",
     "currentSchema": "Trenutna shema poročanja: {{schema}}",
-    "reviewUpgrade": "Nadgradi na usage.v5",
-    "upgrade": "Izrecno soglašam z usage.v5",
+    "reviewUpgrade": "Nadgradi na usage.v6",
+    "upgrade": "Izrecno soglašam z usage.v6",
     "upgradeExplanation": "Vaše obstoječe sodelovanje ohrani trenutni obseg. Pred odločitvijo preglejte razširjeni katalog in dve skupni vrednosti inventarja. Zavrnitev ne konča sodelovanja.",
     "upgradePending": "Podpisana nadgradnja soglasja čaka na potrditev. Zbira se samo prej sprejeti obseg. Poskusite znova, ko bo zbiralnik dosegljiv, ali onemogočite sodelovanje, da ustavite zbiranje in izbrišete podatke.",
-    "pendingBlocksActions": "Nadgradnja v5 in portal uporabe nista na voljo, dokler čakajoče poročilo ni ponovno poslano ali dostavljeno — zgoraj uporabite »Ponovi / pošlji, če je čas«.",
+    "pendingBlocksActions": "Nadgradnja v6 in portal uporabe nista na voljo, dokler čakajoče poročilo ni ponovno poslano ali dostavljeno — zgoraj uporabite »Ponovi / pošlji, če je čas«.",
     "pendingBlocksPortal": "Portal uporabe ni na voljo, dokler čakajoče poročilo ni ponovno poslano ali dostavljeno — zgoraj uporabite »Ponovi / pošlji, če je čas«.",
     "catalog": {
       "crm": {
@@ -267,7 +267,7 @@
       "webhooks": {
         "name": "Odhodni webhooki",
         "configured": "Nastavljen je vsaj en aktiven webhook; cilji, naročnine, skrivnosti ali dnevniki dostave se ne zbirajo.",
-        "used": "Uspešen izrecni skrbniški test/ponovitev webhooka; brez samodejnih ali z obiskovalci sproženih dostav."
+        "used": "Uspešna dostava (HTTP 2xx) katerega koli odhodnega webhooka, ne glede na to, ali jo je samodejno sprožil dogodek ali izrecen skrbniški test/ponovitev; brez ciljev, vrst dogodkov, vsebin, časovnih žigov ali števcev."
       },
       "restore": {
         "name": "Obnovi",

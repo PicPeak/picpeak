@@ -808,7 +808,7 @@ class UsageService {
     return this.status();
   }
 
-  async markUsed(features, { destinationBackup = false, legacyFeatures } = {}) {
+  async markUsed(features, { destinationBackup = false, legacyFeatures, since, until } = {}) {
     let allowed = [...new Set([...features, ...(legacyFeatures || [])])].filter((f) =>
       ALL_FEATURE_KEYS.includes(f)
     );
@@ -820,6 +820,13 @@ class UsageService {
       const state = await query.first();
       if (!state || state.status !== 'active') return;
       const version = this.schemaVersion(state);
+      // A signal whose meaning changed in a later schema: evidence for the new
+      // meaning is recorded only under that schema or newer (`since`), and
+      // evidence that only satisfied the old meaning stops there (`until`,
+      // exclusive). The consents in between were given to the narrower
+      // catalog text (webhooks, issue 1740).
+      if (since && schemaRank(version) < schemaRank(since)) return;
+      if (until && schemaRank(version) >= schemaRank(until)) return;
       if (legacyFeatures) allowed = version === 'usage.v1' ? legacyFeatures : features;
       allowed = allowed.filter((feature) => featureKeysFor(version).includes(feature) && observesUse(feature, version));
       if (!allowed.length) return;
@@ -974,7 +981,7 @@ class UsageService {
       generated_at: now,
       features: expanded,
       gallery_layouts: [...layouts].sort(),
-      ...(['usage.v3', 'usage.v4', 'usage.v5'].includes(version) ? { inventory: await require('./inventorySnapshot').inventorySnapshot(this.db) } : {})
+      ...(['usage.v3', 'usage.v4', 'usage.v5', 'usage.v6'].includes(version) ? { inventory: await require('./inventorySnapshot').inventorySnapshot(this.db) } : {})
     };
   }
 

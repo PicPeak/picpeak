@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import catalog from './usageFeatures.v5.json';
+import catalog from './usageFeatures.v6.json';
 
 /** Local, static disclosure: opening it never contacts the collector. */
 export function UsageCatalog() {

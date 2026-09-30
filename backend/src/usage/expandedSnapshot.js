@@ -85,7 +85,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     gallery_guest_uploads: 'allow_user_uploads',
     gallery_client_access: 'client_access_enabled', gallery_watermarks: 'watermark_downloads'
   })) result[key].configured = await enabled('events', column);
-  if (['usage.v4', 'usage.v5'].includes(version)) {
+  if (['usage.v4', 'usage.v5', 'usage.v6'].includes(version)) {
     result.gallery_downloads_restricted.configured = await exists('events', ['allow_downloads'], (query) =>
       query.where('allow_downloads', formatBoolean(false)));
   } else {
@@ -122,7 +122,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     query.where({ feedback_enabled: formatBoolean(true), [column]: formatBoolean(true) }));
   result.gallery_guest_accounts.configured = await exists('event_feedback_settings', ['feedback_enabled', 'identity_mode'], (query) =>
     query.where('feedback_enabled', formatBoolean(true)).whereIn('identity_mode', ['guest', 'shared']));
-  if (['usage.v3', 'usage.v4', 'usage.v5'].includes(version)) {
+  if (['usage.v3', 'usage.v4', 'usage.v5', 'usage.v6'].includes(version)) {
     result.gallery_folders.configured = await exists('photo_categories', ['is_folder', 'event_id'], (query) =>
       query.where('is_folder', formatBoolean(true)).where((q) => q.whereNull('event_id').orWhereIn('event_id', db('events').select('id'))));
     result.transfer_upload_links.configured = Boolean(effective.transfers) && await exists('transfers',
