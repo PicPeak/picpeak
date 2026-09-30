@@ -34,7 +34,7 @@ jest.mock('../../src/database/db', () => {
 const LocalFsStorage = require('../../src/services/storage/LocalFsStorage');
 const storageModule = require('../../src/services/storage');
 const { db } = require('../../src/database/db');
-const { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery } = require('../../src/utils/heroAnchor');
+const { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect } = require('../../src/utils/heroAnchor');
 
 const EVENT = { id: 9, slug: 'tall-hero', source_mode: 'reference', external_path: 'weddings/2026-09', hero_image_anchor: 'center' };
 
@@ -76,6 +76,22 @@ describe('heroAnchor helpers', () => {
     expect(heroAnchorQuery(null)).toBe('');
     expect(heroAnchorQuery('0% 0%')).toBe('fp=0-0');
     expect(heroAnchorQuery('bottom')).toBe('fp=50-100');
+  });
+
+  it('redirects a hero URL whose fp is not the current anchor, keeping the other parameters', () => {
+    // Matching URLs are served.
+    expect(heroQueryRedirect({}, 'center')).toBeNull();
+    expect(heroQueryRedirect({ fp: '50-0' }, 'top')).toBeNull();
+    expect(heroQueryRedirect({ fp: '0-0', wm: '3' }, '0% 0%')).toBeNull();
+    // A stale centre URL while the event is off-centre: the cache must not
+    // learn the off-centre crop under it.
+    expect(heroQueryRedirect({}, 'top')).toBe('?fp=50-0');
+    expect(heroQueryRedirect({ wm: '3', admin_preview: '1' }, 'bottom')).toBe('?wm=3&admin_preview=1&fp=50-100');
+    // A stale off-centre URL after the event went back to centre.
+    expect(heroQueryRedirect({ fp: '50-0' }, 'center')).toBe('');
+    expect(heroQueryRedirect({ fp: '50-0', wm: '3' }, null)).toBe('?wm=3');
+    // Only a string fp counts; an array is not the current anchor either.
+    expect(heroQueryRedirect({ fp: ['50-0', '50-0'] }, 'top')).toBe('?fp=50-0');
   });
 });
 

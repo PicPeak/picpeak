@@ -15,6 +15,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
+const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
@@ -493,6 +494,17 @@ router.get('/:slug/hero/:photoId',
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}`));
+      }
+
+      // The rendition follows the event's focal point and the response below
+      // is cached for an hour under the URL it was requested at (issue 1737).
+      // A URL whose `fp` is not the current anchor — an open tab whose payload
+      // predates the admin moving it — is sent to the current crop's URL
+      // instead of being served bytes that would then sit in the cache under
+      // the wrong URL. A redirect is not cached.
+      const redirectQuery = heroQueryRedirect(req.query, req.event.hero_image_anchor);
+      if (redirectQuery !== null) {
+        return res.redirect(`/api/gallery/${req.params.slug}/hero/${photoId}${redirectQuery}`);
       }
 
       // Ensure hero image exists, is valid and was cut at the event's focal

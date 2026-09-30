@@ -30,4 +30,28 @@ function heroAnchorQuery(anchor) {
   return x === 50 && y === 50 ? '' : `fp=${x}-${y}`;
 }
 
-module.exports = { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery };
+/**
+ * Where a hero request whose `fp` does not match the event's anchor has to
+ * go: the query string for the current crop (other parameters kept), or
+ * null when the URL already matches.
+ *
+ * The hero route caches for an hour under the URL it was requested at. An
+ * open tab holding a payload from before the admin moved the focal point
+ * still asks for the old URL; serving it the current crop would park an
+ * off-centre rendition under the centre URL for that hour, and it would
+ * resurface after the admin moved the point back.
+ */
+function heroQueryRedirect(query, anchor) {
+  const wanted = heroAnchorQuery(anchor);
+  const given = typeof query.fp === 'string' ? `fp=${query.fp}` : '';
+  if (given === wanted) return null;
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query || {})) {
+    if (key !== 'fp' && typeof value === 'string') params.set(key, value);
+  }
+  if (wanted) params.set('fp', wanted.slice('fp='.length));
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+module.exports = { heroAnchorPoint, normalizeHeroAnchor, heroAnchorQuery, heroQueryRedirect };
