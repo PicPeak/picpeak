@@ -128,7 +128,14 @@ function buildUploader(maxSizeBytes, allowed) {
     // not bracket-indexed field names like `files[0]`, and this route is
     // unauthenticated (token-only) — no legitimate field name uses
     // array-index syntax at all. Reject any that do.
-    limits: { fileSize: maxSizeBytes, files: MAX_FILES_PER_UPLOAD, fieldArrayIndexLimit: 0 },
+    // This route reads no text fields at all, so a handful is plenty. Without
+    // fields/parts caps busboy accepts an unbounded number of ~1 MiB text
+    // parts and multer keeps every one in memory before the handler ever
+    // runs (Codex security audit 2026-09-30).
+    limits: {
+      fileSize: maxSizeBytes, files: MAX_FILES_PER_UPLOAD, fieldArrayIndexLimit: 0,
+      fields: 5, fieldSize: 1024, parts: MAX_FILES_PER_UPLOAD + 5,
+    },
     fileFilter: (req, file, cb) => {
       if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
       return cb(new Error('This file type is not allowed'));

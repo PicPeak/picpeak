@@ -31,7 +31,7 @@ const jwt = require('jsonwebtoken');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 describe('database backup destination-path config guard (GHSA-jw8m class, #1365)', () => {
-  let db; let cleanup; let app; let adminToken;
+  let db; let cleanup; let app; let adminToken; let superToken;
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -50,6 +50,27 @@ describe('database backup destination-path config guard (GHSA-jw8m class, #1365)
     const id = r[0]?.id ?? r[0];
     adminToken = jwt.sign(
       { id, username: 'limited-admin', type: 'admin', role: 'admin', loginTime: Date.now() },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h', issuer: 'picpeak-auth' },
+    );
+    // Changing the destination became a super-admin action (security audit
+    // 2026-09-30: a backup.create holder could otherwise aim the dump into the
+    // file-backup tree any backup.view holder downloads). The public-mount
+    // rejections above still answer 400 for the limited admin, since that
+    // check runs first; the accepting case needs a super admin.
+    const superRole = await db('roles').where({ name: 'super_admin' }).first();
+    const s = await db('admin_users').insert({
+      username: 'root-admin-config',
+      email: 'root-admin-config@example.com',
+      password_hash: await bcrypt.hash('Passw0rd!', 4),
+      role_id: superRole.id,
+      is_active: 1,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }).returning('id');
+    const superId = s[0]?.id ?? s[0];
+    superToken = jwt.sign(
+      { id: superId, username: 'root-admin-config', type: 'admin', role: 'super_admin', loginTime: Date.now() },
       process.env.JWT_SECRET,
       { expiresIn: '1h', issuer: 'picpeak-auth' },
     );
@@ -83,11 +104,18 @@ describe('database backup destination-path config guard (GHSA-jw8m class, #1365)
     expect(res.status).toBe(400);
   });
 
-  it('accepts a destination outside any public mount', async () => {
+  it('accepts a destination outside any public mount (from a super admin)', async () => {
     const safePath = path.join(process.env.STORAGE_PATH, 'db-backups');
-    const res = await request(app)
+    const limited = await request(app)
       .put('/api/admin/database-backup/config')
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ database_backup_destination_path: safePath });
+    expect(limited.status).toBe(403);
+    expect(limited.body.code).toBe('SUPER_ADMIN_REQUIRED');
+
+    const res = await request(app)
+      .put('/api/admin/database-backup/config')
+      .set('Authorization', `Bearer ${superToken}`)
       .send({ database_backup_destination_path: safePath });
 
     expect(res.status).toBe(200);

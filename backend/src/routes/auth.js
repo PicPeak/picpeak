@@ -332,10 +332,24 @@ router.post('/admin/login/mfa', [
     }
 
     if (usedRecovery) {
-      await db('admin_users').where('id', admin.id).update({
-        two_factor_recovery_codes: JSON.stringify(remainingHashes),
-        updated_at: new Date()
-      });
+      // Compare-and-set against the list this request read. Two requests
+      // carrying the same captured code both passed the bcrypt compare and
+      // both overwrote the list, so both got a session and a code was
+      // redeemable twice; concurrent redemption of two different codes let
+      // the last writer restore the other one. Only the writer that still
+      // sees the list it read consumes the code (Codex security audit
+      // 2026-09-30) — the same rule persistTotpStep applies to TOTP.
+      const consumed = await db('admin_users')
+        .where('id', admin.id)
+        .where('two_factor_recovery_codes', admin.two_factor_recovery_codes)
+        .update({
+          two_factor_recovery_codes: JSON.stringify(remainingHashes),
+          updated_at: new Date()
+        });
+      if (consumed !== 1) {
+        await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
+        return res.status(401).json({ error: 'Invalid verification code', code: 'MFA_INVALID' });
+      }
       await logActivity('admin_mfa_recovery_used',
         { admin_id: admin.id, remaining: remainingHashes.length },
         null,

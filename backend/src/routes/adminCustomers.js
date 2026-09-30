@@ -710,7 +710,9 @@ router.delete('/:id/hour-entries/:entryId', [
 router.post('/:id/hour-entries/bill', [
   adminAuth,
   requireHoursLogging,
-  requirePermission('customers.edit'),
+  // Billing hours creates invoices, so the billing permission is required
+  // alongside the customer one (Codex security audit 2026-09-30).
+  requirePermission(['customers.edit', 'bills.manage'], { requireAll: true }),
   param('id').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
@@ -726,7 +728,7 @@ router.post('/:id/hour-entries/bill', [
 router.post('/:id/bill-combined', [
   adminAuth,
   requireIncoming,
-  requirePermission('customers.edit'),
+  requirePermission(['customers.edit', 'bills.manage'], { requireAll: true }),
   param('id').isInt({ min: 1 }),
   body('includeHours').optional().isBoolean(),
   body('includeRebills').optional().isBoolean(),
@@ -780,7 +782,8 @@ router.post('/:id/trigger-monthly-bill', [
   // Migration 134 — admin-override fire is a customer-scoped write,
   // not a create. Roles holding customers.create were granted
   // customers.edit on upgrade so this still works for existing admins.
-  requirePermission('customers.edit'),
+  // It schedules and sends an invoice, so bills.manage is required too.
+  requirePermission(['customers.edit', 'bills.manage'], { requireAll: true }),
   param('id').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);

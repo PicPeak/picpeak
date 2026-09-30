@@ -13,6 +13,13 @@
  */
 function neutralizeSpreadsheetFormula(value) {
   const s = value === null || value === undefined ? '' : String(value);
+  // A plain number is not a formula, and a leading minus is how every
+  // negative amount is written: cost rows in the tax report and storno
+  // invoices in the ledger. Prefixing those turned them into text cells, so
+  // a SUM over the imported column silently dropped every one of them
+  // (security review 2026-09-29). Only strict numerics are exempt — an
+  // optional sign, digits, one decimal separator (dot or comma), digits.
+  if (/^-?\d+(?:[.,]\d+)?$/.test(s)) return s;
   return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
 }
 

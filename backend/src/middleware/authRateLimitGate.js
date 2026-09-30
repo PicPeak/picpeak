@@ -65,6 +65,13 @@ const CREDENTIAL_ENDPOINTS = [
   // one legitimate change a user makes costs nothing.
   { method: 'POST', path: /^\/api\/auth\/admin\/change-password\/?$/i },
   { method: 'POST', path: /^\/api\/customer\/profile\/password\/?$/i },
+  // Disabling MFA and regenerating recovery codes verify a current TOTP or
+  // recovery code, the same way change-password verifies the current
+  // password: a hijacked session can drive them, the session's own JWT skips
+  // the general limiter, and a ±1-step window leaves three valid codes at any
+  // moment. Without this entry nothing bounded the guessing.
+  { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/disable\/?$/i },
+  { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/recovery-codes\/?$/i },
 ];
 
 /**
@@ -72,8 +79,13 @@ const CREDENTIAL_ENDPOINTS = [
  * @returns {boolean} true when the request is an attempt to prove a secret.
  */
 function isCredentialEndpoint(req) {
+  // Express collapses repeated slashes at a router boundary, so the login
+  // router also answers /api/auth//admin/login; the patterns are tested
+  // against the collapsed path or that spelling walks past the gate
+  // (Codex security audit 2026-09-30).
+  const requestPath = req.path.replace(/\/{2,}/g, '/');
   return CREDENTIAL_ENDPOINTS.some(
-    (endpoint) => endpoint.method === req.method && endpoint.path.test(req.path)
+    (endpoint) => endpoint.method === req.method && endpoint.path.test(requestPath)
   );
 }
 

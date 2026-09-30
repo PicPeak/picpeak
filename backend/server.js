@@ -88,6 +88,7 @@ const { startScheduledBackups } = require('./src/services/databaseBackup');
 const backgroundProcessor = require('./src/services/backgroundProcessor');
 const { maintenanceMiddleware } = require('./src/middleware/maintenance');
 const { sessionTimeoutMiddleware } = require('./src/middleware/sessionTimeout');
+const { createLargeJsonBody } = require('./src/middleware/largeJsonBody');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 const rateLimitService = require('./src/services/rateLimitService');
 const { createApiRateLimitGate } = require('./src/middleware/apiRateLimitGate');
@@ -528,11 +529,16 @@ app.use(createApiRateLimitGate(rateLimitService.getGeneralLimiter));
 app.use(createAuthRateLimitGate(rateLimitService.getAuthLimiter));
 
 // Body limits. 50mb is only needed by the authenticated admin and API-token
-// surfaces (restore manifests, CMS and email templates, bulk operations);
-// applied globally it let any unauthenticated caller hand JSON.parse a 50mb
-// body and block the event loop. express.json skips a request whose body
-// is already parsed, so the scoped parser must run first.
-app.use(['/api/admin', '/api/v1'], express.json({ limit: '50mb' }));
+// surfaces (restore manifests, CMS and email templates, bulk operations).
+// Scoping the large parser to those path prefixes was not enough: it still
+// ran before any authentication, so an unauthenticated POST to an admin path
+// was parsed at 50mb and only then refused. largeJsonBody parses at the large
+// limit only for a verified admin JWT or a known API token; everything else
+// falls through to the 2mb parser below. express.json skips a request whose
+// body is already parsed, so the scoped parser must run first.
+// fallbackLimitBytes mirrors the 2mb parser right below: a body that fits it
+// never triggers the identity check.
+app.use(['/api/admin', '/api/v1'], createLargeJsonBody({ limit: '50mb', fallbackLimitBytes: 2 * 1024 * 1024 }));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 

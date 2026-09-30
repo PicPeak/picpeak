@@ -10,3 +10,16 @@ coverage
 README.md
 .eslintrc.js
 jest.config.js
+# Runtime state and local secrets a used checkout accumulates. The image
+# creates its own empty data/ at build time; nothing below belongs in a layer.
+# (The root .dockerignore fixed the same class for the AIO build; this file
+# governs `docker compose build` of the backend alone.)
+data
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

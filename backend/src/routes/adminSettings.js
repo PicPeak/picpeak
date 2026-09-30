@@ -35,6 +35,10 @@ const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers')
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
+
+// What a stored secret looks like on GET; a save that carries it back means
+// "unchanged", never "set the secret to this".
+const SECRET_MASK = '••••••••';
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -774,6 +778,21 @@ router.put('/sso', adminAuth, requirePermission('settings.security'), [
     const providerChanged = (nextIssuer !== undefined && nextIssuer !== (current.issuerUrl || ''))
       || (nextClientId !== undefined && nextClientId !== (current.clientId || ''));
     const secretEntered = typeof req.body.oidc_client_secret === 'string' && req.body.oidc_client_secret.length > 0;
+    // The provider is the trust anchor for every SSO login, and email linking
+    // hands whoever completes SSO the matching local account, super admins
+    // included. A settings.security holder who could point the app at a
+    // provider of their own choosing could mint a token for a super admin's
+    // address and take that account over — the role-mapping containment
+    // below never sees that path. Repointing the provider (issuer or client
+    // ID) is therefore a super-admin decision; everything else on this tab,
+    // mappings included, stays with settings.security under the containment
+    // checks (Codex security audit 2026-09-30).
+    if (providerChanged && !(await isSuperAdminUser(req.admin.id))) {
+      return res.status(403).json({
+        error: 'Only a super admin can change the identity provider (issuer URL or client ID)',
+        code: 'SUPER_ADMIN_REQUIRED',
+      });
+    }
     if (providerChanged && current.clientSecret && !secretEntered && (nextIssuer ?? current.issuerUrl)) {
       return res.status(400).json({ error: 'Enter the client secret again when changing the issuer URL or client ID' });
     }
@@ -1686,6 +1705,16 @@ router.put('/security', adminAuth, requirePermission('settings.security'), async
     const settings = stripReservedSettingKeys({ ...req.body });
     // A settings.security holder still can't write domain/accounting keys here.
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
+
+    // The reCAPTCHA secret goes out masked on GET, and the Security tab sends
+    // every security_* key back on save, mask included. Writing the mask
+    // would replace the stored secret with eight bullets and every
+    // captcha-gated login would then fail closed until it is re-entered.
+    // Analytics and backup already skip the sentinel; this tab did not
+    // (security review 2026-09-29).
+    if (settings.security_recaptcha_secret_key === SECRET_MASK) {
+      delete settings.security_recaptcha_secret_key;
+    }
 
     // Update or insert each setting
     const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);

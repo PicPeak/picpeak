@@ -127,8 +127,15 @@ function AnalyticsBootstrap() {
         websiteId: settings.rybbit_website_id,
         doNotTrack: true,
         // Mask every /gallery/* path (they embed the share token) so Rybbit's
-        // auto-tracked page views never carry the secret (GHSA-7m6c).
-        maskPatterns: ['/gallery/**'],
+        // auto-tracked page views never carry the secret (GHSA-7m6c). The
+        // other token-bearing pages never load the tracker at all (see
+        // isCredentialPath in analytics.service); they are listed here too
+        // so a page view recorded before a client-side navigation away from
+        // them cannot carry the token either.
+        maskPatterns: [
+          '/gallery/**', '/invite/**', '/quote/**', '/contract/**', '/payment-check/**',
+          '/transfer/**', '/transfer-upload/**', '/customer/invite/**', '/customer/reset-password/**',
+        ],
       });
       return;
     }

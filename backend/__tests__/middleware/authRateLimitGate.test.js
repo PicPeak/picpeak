@@ -66,6 +66,14 @@ function mountRoutes(app) {
   app.post('/api/customer/auth/password-reset', (req, res) => fail(res));
   // Password changes verify the current password before replacing it.
   app.post('/api/auth/admin/change-password', (req, res) => fail(res));
+  app.post('/api/admin/auth/mfa/disable', (req, res) => fail(res));
+  app.post('/api/admin/auth/mfa/recovery-codes', (req, res) => fail(res));
+  // The real login router is MOUNTED at /api/auth, and Express collapses a
+  // repeated slash at that boundary, so /api/auth//admin/login reaches the
+  // same handler; a directly registered route would 404 it. Mirror the mount.
+  const mountedAuth = express.Router();
+  mountedAuth.post('/admin/login', (req, res) => fail(res));
+  app.use('/api/auth', mountedAuth);
   app.post('/api/customer/profile/password', (req, res) => fail(res));
 
   // Benign endpoints living under the very same prefixes the old registrations
@@ -126,6 +134,8 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
     ['/api/customer/auth/login'],
     ['/api/customer/auth/password-reset'],
     ['/api/auth/admin/change-password'],
+    ['/api/admin/auth/mfa/disable'],
+    ['/api/admin/auth/mfa/recovery-codes'],
     ['/api/customer/profile/password']
   ])('429s %s once the budget is spent', async (endpoint) => {
     const app = await buildApp();
@@ -133,6 +143,20 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
       expect((await request(app).post(endpoint).send({})).status).toBe(401);
     }
     expect((await request(app).post(endpoint).send({})).status).toBe(429);
+  });
+
+  it('counts the double-slash spelling Express also routes, /api/auth//admin/login', async () => {
+    // Express collapses repeated slashes at the router boundary, so this
+    // reaches the login handler; the general limiter exempts login paths by
+    // suffix, so before the gate normalised the path this spelling escaped
+    // both limiters (Codex security audit 2026-09-30).
+    const app = await buildApp();
+    for (let i = 0; i < 5; i += 1) {
+      expect((await request(app).post('/api/auth//admin/login').send({})).status).toBe(401);
+    }
+    expect((await request(app).post('/api/auth//admin/login').send({})).status).toBe(429);
+    // And the budget is the same one the canonical spelling uses.
+    expect((await request(app).post('/api/auth/admin/login').send({})).status).toBe(429);
   });
 
   it('shares one budget across the credential endpoints, so spraying is bounded', async () => {

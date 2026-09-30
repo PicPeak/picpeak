@@ -497,7 +497,14 @@ router.post(
 
 router.post(
   '/:id/convert',
-  requirePermission('quotes.manage'),
+  // Conversion creates a record in another domain, so it needs that
+  // domain's permission as well; quotes.manage alone let a quote manager
+  // create events, contracts and invoices they could not create directly
+  // (Codex security audit 2026-09-30).
+  // Converting to an event also schedules the quote's invoices (convertToEvent
+  // has no invoice-free path outside workflow reserve_date), so bills.manage
+  // is required as well.
+  requirePermission(['quotes.manage', 'events.create', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -513,7 +520,7 @@ router.post(
 // deliverable to ship.
 router.post(
   '/:id/convert-to-invoice',
-  requirePermission('quotes.manage'),
+  requirePermission(['quotes.manage', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -531,7 +538,7 @@ router.post(
 // layer here would force admins to flip TWO flags to use the workflow.
 router.post(
   '/:id/convert-to-contract',
-  requirePermission('quotes.manage'),
+  requirePermission(['quotes.manage', 'contracts.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);

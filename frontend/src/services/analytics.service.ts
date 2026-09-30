@@ -92,6 +92,31 @@ declare global {
 // The admin UI, including its login page. Matched the way the router matches
 // routes: case-insensitively, on the percent-decoded path, so `/ADMIN` or
 // `/%61dmin` counts too. A path that cannot be decoded counts as admin.
+// Pages whose URL carries a bearer secret: invitation, reset, quote, contract,
+// payment-check and transfer tokens. A tracker that auto-collects page views
+// would ship the token to the analytics host, where anyone with access to the
+// events could redeem it first. These pages get no tracker and no custom head
+// scripts, admin-style (Codex security audit 2026-09-30). Keep in sync with
+// the maskPatterns list in App.tsx, which is the second line of defence for
+// the gallery paths the tracker does run on.
+const CREDENTIAL_PATH_PREFIXES = [
+  '/invite/', '/quote/', '/contract/', '/payment-check/', '/transfer/',
+  '/transfer-upload/', '/customer/invite/', '/customer/reset-password/',
+];
+const isCredentialPath = (pathname: string) => {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return true;
+  }
+  const lower = decoded.toLowerCase();
+  return CREDENTIAL_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix));
+};
+
+/** No tracker and no third-party head scripts here. */
+const isUntrackedPath = (pathname: string) => isAdminPath(pathname) || isCredentialPath(pathname);
+
 const isAdminPath = (pathname: string) => {
   let decoded: string;
   try {
@@ -145,7 +170,10 @@ class AnalyticsService {
       if (config.autoTrack !== true) script.setAttribute('data-auto-track', 'false');
       if (config.doNotTrack !== false) script.setAttribute('data-do-not-track', 'true');
       if (config.domains?.length) script.setAttribute('data-domains', config.domains.join(','));
-      document.head.appendChild(script);
+      // Not on a token-bearing page: an auto-tracked view would carry the
+      // secret in the URL (stable has no deferral for the tracker script, so
+      // such a visit simply goes untracked).
+      if (!isUntrackedPath(window.location.pathname)) document.head.appendChild(script);
     } else if (config.provider === 'rybbit') {
       if (!config.websiteId || !config.hostUrl) {
         console.warn('Rybbit: missing websiteId or hostUrl');
@@ -170,13 +198,16 @@ class AnalyticsService {
       if (config.maskPatterns?.length) {
         script.setAttribute('data-mask-patterns', JSON.stringify(config.maskPatterns));
       }
-      document.head.appendChild(script);
+      // Not on a token-bearing page: an auto-tracked view would carry the
+      // secret in the URL (stable has no deferral for the tracker script, so
+      // such a visit simply goes untracked).
+      if (!isUntrackedPath(window.location.pathname)) document.head.appendChild(script);
     } else if (config.provider === 'custom') {
       this.customHeadHtml = (config.customHeadHtml || '').trim();
       // Scripts pasted here run with the privileges of whoever is signed in on
       // this origin, so they are kept out of the admin UI. A visit that starts
       // on an admin route defers them until a public route is shown.
-      if (!isAdminPath(window.location.pathname)) this.injectCustomHead();
+      if (!isUntrackedPath(window.location.pathname)) this.injectCustomHead();
     }
 
     this.provider = config.provider;
@@ -224,7 +255,7 @@ class AnalyticsService {
    */
   handleRouteChange(pathname: string) {
     if (this.provider !== 'custom' || !this.customHeadHtml) return;
-    if (isAdminPath(pathname)) {
+    if (isUntrackedPath(pathname)) {
       if (this.customHeadInjected) this.reloadPage();
       return;
     }

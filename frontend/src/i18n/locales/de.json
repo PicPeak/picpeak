@@ -3135,6 +3135,7 @@
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Admins melden sich über Ihren Identity Provider an (Keycloak, Authentik, Pocket ID oder jeder OIDC-konforme IdP). Die lokale Anmeldung mit E-Mail/Passwort bleibt als Fallback verfügbar.",
+      "superAdminOnly": "Nur ein Super-Admin kann den Identitätsanbieter ändern (Issuer-URL und Client-ID). Alles andere auf diesem Tab bleibt bearbeitbar.",
       "redirectUri": "Redirect-URI (beim IdP-Client registrieren)",
       "issuerUrl": "Issuer-URL",
       "issuerHint": "Die Basis-URL, die /.well-known/openid-configuration ausliefert.",

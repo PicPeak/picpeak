@@ -1287,11 +1287,14 @@ router.post('/templates/:key/preview', adminAuth, requirePermission('email.view'
         .replace(/'/g, '&#039;');
 
       Object.keys(preview_data).forEach(key => {
-        const regex = new RegExp(`{{${key}}}`, 'g');
+        // A literal replace: the key comes from the request, and compiling it
+        // into a RegExp let a crafted key stall the event loop through
+        // catastrophic backtracking (Codex security audit 2026-09-30).
+        const placeholder = `{{${key}}}`;
         const escapedValue = escapeHtml(preview_data[key]);
-        htmlContent = htmlContent.replace(regex, escapedValue);
-        textContent = textContent.replace(regex, preview_data[key]);
-        subject = subject.replace(regex, escapeHtml(preview_data[key]));
+        htmlContent = htmlContent.split(placeholder).join(escapedValue);
+        textContent = textContent.split(placeholder).join(String(preview_data[key]));
+        subject = subject.split(placeholder).join(escapeHtml(preview_data[key]));
       });
     }
 

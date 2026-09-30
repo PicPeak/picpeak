@@ -111,3 +111,41 @@ describe('validateExternalUrl — NAT64 + embedded-IPv4 SSRF', () => {
     });
   });
 });
+
+describe('isPrivateIP — IPv4 special-purpose ranges beyond RFC 1918 (security review 2026-09-29)', () => {
+  // The hand-written range table knew loopback, RFC 1918, link-local and
+  // 0/8. Everything else in the IANA special-purpose registry passed as
+  // public, so a webhook could reach a provider's metadata service that sits
+  // in carrier-grade NAT space (100.100.100.200 on Alibaba Cloud).
+  test.each([
+    ['100.100.100.200', 'carrier-grade NAT (100.64/10) — cloud metadata on some providers'],
+    ['100.64.0.1', 'carrier-grade NAT lower bound'],
+    ['100.127.255.254', 'carrier-grade NAT upper bound'],
+    ['192.0.0.1', 'IETF protocol assignments (192.0.0/24)'],
+    ['192.0.2.1', 'documentation TEST-NET-1'],
+    ['198.18.0.1', 'benchmarking (198.18/15)'],
+    ['198.19.255.254', 'benchmarking upper bound'],
+    ['224.0.0.1', 'multicast'],
+    ['240.0.0.1', 'reserved (240/4)'],
+    ['255.255.255.255', 'broadcast'],
+  ])('treats %s as private (%s)', (ip) => {
+    expect(isPrivateIP(ip)).toBe(true);
+    expect(validateExternalUrl(`http://${ip}/`).valid).toBe(false);
+  });
+
+  test.each([
+    ['8.8.8.8'],
+    ['93.184.216.34'],
+    ['100.63.255.255', 'just below carrier-grade NAT'],
+    ['100.128.0.1', 'just above carrier-grade NAT'],
+    ['172.32.0.1', 'just above 172.16/12'],
+    ['198.17.255.255', 'just below the benchmarking block'],
+  ])('still allows public unicast %s %s', (ip) => {
+    expect(isPrivateIP(ip)).toBe(false);
+  });
+
+  it('keeps failing closed on a malformed address', () => {
+    expect(isPrivateIP('1.2.3')).toBe(false); // not an IP: falls through to the hostname rules, as before
+    expect(validateExternalUrl('http://999.1.1.1/').valid).toBe(false);
+  });
+});

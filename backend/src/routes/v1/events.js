@@ -422,7 +422,10 @@ router.post(
       tempPath = req.file.path;
 
       const event = await db('events').where({ id: req.params.id }).first();
-      if (!event) return res.status(404).json({ error: 'Event not found' });
+      if (!event) {
+        await fs.unlink(tempPath).catch(() => {});
+        return res.status(404).json({ error: 'Event not found' });
+      }
 
       // Optional category assignment, mirroring the admin upload route
       // (adminPhotos.js). Multipart form field `category_id`. If the
@@ -446,6 +449,10 @@ router.post(
           })
           .first();
         if (!category) {
+          // The staged file is on disk by now and the temp sweeper ignores v1_*
+          // files, so an early exit without this leaks it for good
+          // (Codex security audit 2026-09-30).
+          await fs.unlink(tempPath).catch(() => {});
           return res.status(400).json({
             error: `Unknown or out-of-scope category_id ${parsedCategoryId}`,
           });

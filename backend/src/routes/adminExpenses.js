@@ -117,7 +117,9 @@ router.get('/inbound/pending-summary', requireIncoming, requirePermission('accou
   handleAsync(async (_req, res) => successResponse(res, { items: await expenseService.listPendingRebillSummary() })));
 
 // Bundle a customer's pending re-bills into one invoice (per-event only).
-router.post('/inbound/bill-pending', requireIncoming, requirePermission('accounting.manage'),
+// These three create invoices, so the billing permission is required alongside
+// accounting.manage (Codex security audit 2026-09-30).
+router.post('/inbound/bill-pending', requireIncoming, requirePermission(['accounting.manage', 'bills.manage'], { requireAll: true }),
   [body('customerAccountId').isInt({ min: 1 })],
   handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, await expenseService.billPendingRebills(toInt(req.body.customerAccountId), req.admin.id), 201, 'Re-billed'); }));
 
@@ -183,7 +185,7 @@ router.post('/inbound/:id/categorize', requireIncoming, requirePermission('accou
     body('markupType').optional().isIn(expenseService.MARKUP_TYPES)],
   handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { document: await expenseService.categorizeInbound(toInt(req.params.id), req.body, req.admin.id) }, 200, 'Categorized'); }));
 
-router.post('/inbound/:id/rebill', requireIncoming, requirePermission('accounting.manage'),
+router.post('/inbound/:id/rebill', requireIncoming, requirePermission(['accounting.manage', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('customerAccountId').isInt({ min: 1 }),
     body('eventId').optional({ nullable: true }).isInt({ min: 1 }), body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
     body('markupType').optional().isIn(expenseService.MARKUP_TYPES)],
@@ -253,7 +255,7 @@ router.patch('/:id', requireExpenses, requirePermission('accounting.manage'),
   }));
 
 // Add an expense onto a client invoice -> marks it invoiced (locks editing).
-router.post('/:id/invoice', requireExpenses, requirePermission('accounting.manage'),
+router.post('/:id/invoice', requireExpenses, requirePermission(['accounting.manage', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('customerAccountId').isInt({ min: 1 }),
     body('eventId').optional({ nullable: true }).isInt({ min: 1 }), body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
     body('markupType').optional().isIn(expenseService.MARKUP_TYPES)],

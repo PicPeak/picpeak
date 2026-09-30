@@ -446,7 +446,11 @@ router.post(
 // to replay).
 router.post(
   '/:id/convert-to-event',
-  requirePermission('contracts.manage'),
+  // Same rule as the quote conversions: the destination domain's permission
+  // is required too (Codex security audit 2026-09-30).
+  // Delegates to quoteService.convertToEvent, which schedules the invoices
+  // too, so bills.manage is required as well.
+  requirePermission(['contracts.manage', 'events.create', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -460,7 +464,7 @@ router.post(
 // Convert a fully-signed contract into invoice(s) only — no event.
 router.post(
   '/:id/convert-to-invoice',
-  requirePermission('contracts.manage'),
+  requirePermission(['contracts.manage', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);

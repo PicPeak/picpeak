@@ -35,3 +35,29 @@ describe('neutralizeSpreadsheetFormula — CSV/Banana formula-injection defence 
     expect(_internal.csvEscape('a"b')).toBe('"a""b"');
   });
 });
+
+describe('neutralizeSpreadsheetFormula — negative amounts stay numbers (security review 2026-09-29)', () => {
+  // Cost rows in the tax report and storno invoices in the ledger are
+  // written with a leading minus. Prefixing them turned every one into a
+  // text cell, and a SUM over the imported column silently dropped them.
+  it.each([
+    ['-120.00'],
+    ['-120,50'],
+    ['-7'],
+    ['-0.5'],
+  ])('leaves the strict numeric %s untouched', (value) => {
+    expect(neutralizeSpreadsheetFormula(value)).toBe(value);
+  });
+
+  it.each([
+    ['-2+3', 'an expression'],
+    ['-1e5', 'scientific notation is not a plain amount'],
+    ['--1', 'double sign'],
+    ['- 5', 'sign then space'],
+    ['-', 'a bare minus'],
+    ['-1.2.3', 'two separators'],
+    ['+1+1', 'plus is never exempt'],
+  ])('still neutralises %s (%s)', (value) => {
+    expect(neutralizeSpreadsheetFormula(value)).toBe(`'${value}`);
+  });
+});

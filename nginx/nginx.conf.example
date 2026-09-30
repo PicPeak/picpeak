@@ -59,6 +59,13 @@ http {
         ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
         ssl_prefer_server_ciphers off;
 
+        # HSTS is an opt-in. Once EVERY hostname under this domain is served
+        # over HTTPS, either set ENABLE_HSTS=true on the backend (the inner
+        # nginx passes its header through) or emit it here; start with a short
+        # max-age while you are still validating the setup, because a browser
+        # that has seen the header refuses plain HTTP for the whole period.
+        # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
         # API proxy
         location /api {
             proxy_pass http://backend:3000;
