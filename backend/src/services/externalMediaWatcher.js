@@ -62,6 +62,7 @@ const {
   importExternalFolder,
   ImportInProgressError,
   IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
 } = require('./externalImportService');
 
 const envInt = (name, fallback) => {
@@ -112,7 +113,12 @@ async function listWatchedEvents() {
     .select('id', 'slug', 'external_path');
 }
 
-const isImage = (filePath) => IMAGE_EXTENSIONS.includes(path.extname(filePath).toLowerCase());
+// Which files are worth a pass. Every video extension counts here, allowed or
+// not: the pass itself reads the setting and takes only what it may
+// (importableExtensions), so a clip on an install without video costs one walk
+// that imports nothing.
+const MEDIA_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS];
+const isMedia = (filePath) => MEDIA_EXTENSIONS.includes(path.extname(filePath).toLowerCase());
 
 /**
  * One import pass for an event. The event is re-read first: the folder may
@@ -237,11 +243,11 @@ async function startWatching(event) {
 
   watcher
     .on('add', (filePath) => {
-      if (isImage(filePath)) scheduleImport(event.id);
+      if (isMedia(filePath)) scheduleImport(event.id);
     })
     .on('unlink', (filePath) => {
       // Deliberately not acted on — see the header comment.
-      if (isImage(filePath)) logger.debug(`[externalMediaWatcher] event ${event.id}: file removed, row kept: ${path.relative(absPath, filePath)}`);
+      if (isMedia(filePath)) logger.debug(`[externalMediaWatcher] event ${event.id}: file removed, row kept: ${path.relative(absPath, filePath)}`);
     })
     .on('error', (err) => {
       logger.warn(`[externalMediaWatcher] event ${event.id}: watcher error: ${err.message}`);

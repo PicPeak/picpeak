@@ -22,12 +22,18 @@ const sharp = require('sharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { resolveExternalPath } = require('./externalMediaService');
+const {
+  IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
+  isVideoFile,
+  videoMimeType,
+  importableExtensions,
+} = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
+const { processUploadedVideo } = require('./videoProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
 const jobState = require('./maintenanceJobState');
-
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
 class ImportInProgressError extends Error {
   constructor(eventId) {
@@ -90,18 +96,18 @@ async function existingRelpaths(eventId, relpaths) {
   return found;
 }
 
-// Helper to recursively collect files under a directory, filtered by image extensions
-async function walkDir(dir, baseDir) {
+// Helper to recursively collect files under a directory, filtered by extension
+async function walkDir(dir, baseDir, extensions) {
   const results = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      results.push(...await walkDir(full, baseDir));
+      results.push(...await walkDir(full, baseDir, extensions));
     } else if (e.isFile()) {
       const ext = path.extname(e.name).toLowerCase();
-      if (IMAGE_EXTENSIONS.includes(ext)) {
+      if (extensions.includes(ext)) {
         const rel = path.relative(baseDir, full);
         results.push({ full, rel, name: e.name });
       }
@@ -203,11 +209,13 @@ async function importExternalFolder({
     const basePrefix = String(external_path).replace(/^\/+|\/+$/g, '');
     const toRootRelative = (rel) => (basePrefix ? path.join(basePrefix, rel) : rel);
 
-    // Collect files
-    const files = recursive ? await walkDir(baseAbs, baseAbs) : (await fs.readdir(baseAbs, { withFileTypes: true }))
+    // Collect files. Images always; videos only for the types this install
+    // accepts as uploads (see importableExtensions).
+    const extensions = await importableExtensions();
+    const files = recursive ? await walkDir(baseAbs, baseAbs, extensions) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
-      .filter(f => IMAGE_EXTENSIONS.includes(path.extname(f.name).toLowerCase()));
+      .filter(f => extensions.includes(path.extname(f.name).toLowerCase()));
 
     // Prepare file metadata and deduplicate by filename within type (keep largest)
     let skipped = 0;
@@ -347,8 +355,8 @@ async function importExternalFolder({
     // The event path is already committed (above), so the enqueue below is
     // free of the ordering hazard it used to carry. It stays at the end anyway
     // so the setting can be read after the loop, and it only touches rows that
-    // are still untouched — see the whereNull there. No video guard needed:
-    // walkDir collects only jpg/jpeg/png/webp.
+    // are still untouched — see the whereNull there. Videos are kept out of
+    // this list: they are not scanned, the same as for managed uploads.
     const importedPhotoIds = [];
 
     let superseded = false;
@@ -397,18 +405,22 @@ async function importExternalFolder({
           if (excludedRow) { excluded++; continue; }
         }
         const stats = await fs.stat(f.full);
+        const isVideo = isVideoFile(f.name);
 
-        // Extract dimensions via Sharp
+        // Extract dimensions via Sharp. A video gets them from ffprobe after
+        // the insert, together with its poster frame and runtime.
         let width = null;
         let height = null;
-        try {
-          const metadata = await sharp(f.full).metadata();
-          // Oriented, not raw: a portrait shot from a body that tags rather
-          // than rotates reports landscape dimensions, and the grid would size
-          // its tile from those (#1185).
-          ({ width, height } = orientedDimensions(metadata));
-        } catch (dimErr) {
-          logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
+        if (!isVideo) {
+          try {
+            const metadata = await sharp(f.full).metadata();
+            // Oriented, not raw: a portrait shot from a body that tags rather
+            // than rotates reports landscape dimensions, and the grid would size
+            // its tile from those (#1185).
+            ({ width, height } = orientedDimensions(metadata));
+          } catch (dimErr) {
+            logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
+          }
         }
 
         // Capture date from EXIF (#1172). Managed uploads get this from
@@ -426,14 +438,17 @@ async function importExternalFolder({
         // one Sharp/exifr cannot parse, imports with captured_at NULL and
         // falls back to uploaded_at as before.
         let capturedAt = null;
-        try {
-          capturedAt = await extractCaptureDate(f.full);
-        } catch (dateErr) {
-          logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+        if (!isVideo) {
+          try {
+            capturedAt = await extractCaptureDate(f.full);
+          } catch (dateErr) {
+            logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+          }
         }
 
         // Credit from EXIF (#1561), same best-effort read as the date above.
-        const credit = await resolveCredit({ localPath: f.full });
+        // Videos carry none, as on every other ingest path.
+        const credit = await resolveCredit({ localPath: f.full, isVideo });
 
         let inserted;
         try {
@@ -460,6 +475,10 @@ async function importExternalFolder({
               // "[object Object]" (see CLAUDE.md). Strings round-trip on both
               // engines.
               captured_at: capturedAt ? capturedAt.toISOString() : null,
+              // Both columns, as the upload pipeline writes them: every
+              // serving route and every image-only job tells a video from a
+              // photo by these two.
+              ...(isVideo ? { media_type: 'video', mime_type: videoMimeType(f.name) } : {}),
               ...credit
             })
             .returning('id');
@@ -486,7 +505,7 @@ async function importExternalFolder({
         // doing this synchronously is ~100-300ms per image; for the
         // worst-case 1000-photo import that's still under the 5-minute
         // request timeout typical of the import flow.
-        if (photoId != null) {
+        if (photoId != null && !isVideo) {
           try {
             const outputBasename = `ext${photoId}_${path.basename(f.rel)}`;
             const thumbnailPath = await generateThumbnail(f.full, { outputBasename });
@@ -502,7 +521,37 @@ async function importExternalFolder({
           }
         }
 
-        if (photoId != null) importedPhotoIds.push(photoId);
+        // A video goes through the same routine an uploaded one does: a poster
+        // frame (or the placeholder when ffmpeg cannot read the file) plus
+        // whatever ffprobe can tell about it, read straight off the mount. The
+        // key is the one regenerateVideoThumbnail derives for an external row,
+        // so a later regenerate overwrites this file instead of leaving it
+        // behind. Best-effort like the image branch: on a failure
+        // thumbnail_path stays null and ensureThumbnail retries on first view.
+        if (photoId != null && isVideo) {
+          try {
+            const thumbnailKey = path.posix.join(
+              'thumbnails',
+              `thumb_ext${photoId}_${path.basename(f.rel).replace(/\.[^.]+$/, '.jpg')}`
+            );
+            const result = await processUploadedVideo(f.full, thumbnailKey);
+            const m = result.metadata || {};
+            await db('photos').where({ id: photoId }).update({
+              thumbnail_path: result.thumbnailKey,
+              ...(m.duration != null ? { duration: m.duration } : {}),
+              ...(m.videoCodec ? { video_codec: m.videoCodec } : {}),
+              ...(m.audioCodec ? { audio_codec: m.audioCodec } : {}),
+              ...(m.width ? { width: m.width } : {}),
+              ...(m.height ? { height: m.height } : {}),
+            });
+            thumbnailsGenerated++;
+          } catch (videoErr) {
+            thumbnailsFailed++;
+            logger.warn(`Video processing failed for external video ${photoId} (${f.rel}): ${videoErr.message}`);
+          }
+        }
+
+        if (photoId != null && !isVideo) importedPhotoIds.push(photoId);
         imported += (inserted?.length ? 1 : 0);
 
         // The manual Import is the explicit intent the exclusion list exists
@@ -587,4 +636,5 @@ module.exports = {
   EventNotFoundError,
   jobNameFor,
   IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
 };

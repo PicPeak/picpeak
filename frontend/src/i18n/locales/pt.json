@@ -815,7 +815,7 @@
     "devtoolsDetection": "Deteção de ferramentas de desenvolvedor",
     "watermarked": "Com marca d'água",
     "importExternal": "Importar de pasta externa",
-    "externalImportInfo": "Todas as imagens da pasta selecionada serão importadas.",
+    "externalImportInfo": "Todas as imagens da pasta selecionada serão importadas. Os vídeos também são importados quando o tipo de arquivo é permitido para envios.",
     "selectExternalFolder": "Selecionar pasta externa em /external-media",
     "importFromSelectedFolder": "Importar da pasta selecionada",
     "promoBanner": {

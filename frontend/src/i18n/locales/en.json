@@ -1484,7 +1484,7 @@
     "externalFolder": "External Folder",
     "externalFolderHint": "These folders are read from the /external-media mount inside your container or host.",
     "externalWatch": "Watch folder for new files",
-    "externalWatchHint": "New images copied into this folder are imported automatically, the same way the Import button does it. Files removed from the folder are never deleted from the gallery.",
+    "externalWatchHint": "New images copied into this folder are imported automatically, and so are videos of an allowed file type, the same way the Import button does it. Files removed from the folder are never deleted from the gallery.",
     "externalWatchActive": "Folder is watched — new files are imported automatically.",
     "externalWatchNoPermission": "Requires the permission to upload photos.",
     "externalFolderRequired": "Please select an external folder before saving.",
@@ -1797,7 +1797,7 @@
     "devtoolsDetection": "DevTools detection",
     "watermarked": "Watermarked",
     "importExternal": "Import from External Folder",
-    "externalImportInfo": "All pictures from the selected folder will be imported.",
+    "externalImportInfo": "All pictures from the selected folder will be imported. Videos are imported too when their file type is allowed for uploads.",
     "selectExternalFolder": "Select external folder under /external-media",
     "importFromSelectedFolder": "Import from selected folder",
     "promoBanner": {

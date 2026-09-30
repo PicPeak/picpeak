@@ -61,6 +61,8 @@ async function list(relativePath = '') {
   const targetDir = safePathJoin(root, relativePath || '.');
 
   const entries = [];
+  // Required here, not at the top: see externalMediaTypes.
+  const extensions = await require('./externalMediaTypes').importableExtensions();
   // Errors propagate to the caller to handle (e.g. invalid path).
   const dirents = await fs.readdir(targetDir, { withFileTypes: true });
   for (const d of dirents) {
@@ -74,7 +76,7 @@ async function list(relativePath = '') {
       entries.push({ name: d.name, type: 'dir' });
     } else if (d.isFile()) {
       const ext = path.extname(d.name).toLowerCase();
-      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+      if (extensions.includes(ext)) {
         entries.push({ name: d.name, type: 'file', size: stat.size, mtime: stat.mtime });
       }
     }

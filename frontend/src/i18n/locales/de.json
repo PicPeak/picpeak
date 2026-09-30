@@ -2029,7 +2029,7 @@
     "externalFolder": "Externer Ordner",
     "externalFolderHint": "Diese Ordner stammen aus dem /external-media Mount innerhalb des Containers oder Hosts.",
     "externalWatch": "Ordner auf neue Dateien überwachen",
-    "externalWatchHint": "Neue Bilder, die in diesen Ordner kopiert werden, werden automatisch importiert – genau wie über den Import-Button. Aus dem Ordner entfernte Dateien werden nie aus der Galerie gelöscht.",
+    "externalWatchHint": "Neue Bilder, die in diesen Ordner kopiert werden, werden automatisch importiert, ebenso Videos eines erlaubten Dateityps – genau wie über den Import-Button. Aus dem Ordner entfernte Dateien werden nie aus der Galerie gelöscht.",
     "externalWatchActive": "Ordner wird überwacht – neue Dateien werden automatisch importiert.",
     "externalWatchNoPermission": "Erfordert die Berechtigung, Fotos hochzuladen.",
     "externalFolderRequired": "Bitte wählen Sie vor dem Speichern einen externen Ordner aus.",
@@ -2335,7 +2335,7 @@
     "devtoolsDetection": "DevTools-Erkennung",
     "watermarked": "Mit Wasserzeichen",
     "importExternal": "Aus externem Ordner importieren",
-    "externalImportInfo": "Alle Bilder aus dem ausgewählten Ordner werden importiert.",
+    "externalImportInfo": "Alle Bilder aus dem ausgewählten Ordner werden importiert. Videos werden ebenfalls importiert, wenn ihr Dateityp für Uploads erlaubt ist.",
     "selectExternalFolder": "Externen Ordner unter /external-media auswählen",
     "importFromSelectedFolder": "Aus ausgewähltem Ordner importieren",
     "promoBanner": {

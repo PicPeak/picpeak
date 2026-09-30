@@ -700,7 +700,7 @@
     "devtoolsDetection": "Détection des outils DevTools",
     "watermarked": "Avec filigrane",
     "importExternal": "Importer depuis un dossier externe",
-    "externalImportInfo": "Toutes les images du dossier sélectionné seront importées.",
+    "externalImportInfo": "Toutes les images du dossier sélectionné seront importées. Les vidéos le sont aussi lorsque leur type de fichier est autorisé pour les téléversements.",
     "selectExternalFolder": "Sélectionner un dossier externe sous /external-media",
     "importFromSelectedFolder": "Importer depuis le dossier sélectionné",
     "promoBanner": {

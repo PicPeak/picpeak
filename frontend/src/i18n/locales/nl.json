@@ -698,7 +698,7 @@
     "devtoolsDetection": "Ontwikkelaarshulpmiddelen detectie",
     "watermarked": "Voorzien van watermerk",
     "importExternal": "Importeren vanuit externe map",
-    "externalImportInfo": "Alle afbeeldingen uit de geselecteerde map worden geïmporteerd.",
+    "externalImportInfo": "Alle afbeeldingen uit de geselecteerde map worden geïmporteerd. Video's worden ook geïmporteerd als hun bestandstype voor uploads is toegestaan.",
     "selectExternalFolder": "Externe map selecteren onder /external-media",
     "importFromSelectedFolder": "Importeren vanuit geselecteerde map",
     "promoBanner": {

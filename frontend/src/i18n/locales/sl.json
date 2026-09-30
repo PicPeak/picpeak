@@ -1466,7 +1466,7 @@
     "externalFolder": "Zunanja mapa",
     "externalFolderHint": "Te mape se berejo iz priklopa /external-media znotraj vsebnika ali gostitelja.",
     "externalWatch": "Spremljaj mapo za nove datoteke",
-    "externalWatchHint": "Nove slike, kopirane v to mapo, se samodejno uvozijo enako kot z gumbom Uvozi. Datoteke, odstranjene iz mape, se nikoli ne izbrišejo iz galerije.",
+    "externalWatchHint": "Nove slike, kopirane v to mapo, se samodejno uvozijo enako kot z gumbom Uvozi, prav tako videi dovoljene vrste datoteke. Datoteke, odstranjene iz mape, se nikoli ne izbrišejo iz galerije.",
     "externalWatchActive": "Mapa se spremlja — nove datoteke se samodejno uvažajo.",
     "externalWatchNoPermission": "Potrebujete dovoljenje za nalaganje fotografij.",
     "externalFolderRequired": "Pred shranjevanjem izberite zunanjo mapo.",
@@ -1783,7 +1783,7 @@
     "devtoolsDetection": "Zaznavanje DevTools",
     "watermarked": "Z vodnim žigom",
     "importExternal": "Uvozi iz zunanje mape",
-    "externalImportInfo": "Uvožene bodo vse slike iz izbrane mape.",
+    "externalImportInfo": "Uvožene bodo vse slike iz izbrane mape. Uvozijo se tudi videi, če je njihova vrsta datoteke dovoljena za nalaganje.",
     "selectExternalFolder": "Izberite zunanjo mapo pod /external-media",
     "importFromSelectedFolder": "Uvozi iz izbrane mape",
     "promoBanner": {
