@@ -60,6 +60,10 @@ async function hasKnownApiToken(req) {
  */
 function mightExceed(req, fallbackLimitBytes) {
   if (!req.is('application/json')) return false;
+  // express.json inflates gzip/deflate bodies and applies its limit to the
+  // inflated size, so a compressed Content-Length says nothing about it.
+  const encoding = String(req.headers['content-encoding'] || 'identity').trim().toLowerCase();
+  if (encoding !== 'identity') return true;
   const declared = Number(req.headers['content-length']);
   if (Number.isFinite(declared)) return declared > fallbackLimitBytes;
   return /chunked/i.test(req.headers['transfer-encoding'] || '');

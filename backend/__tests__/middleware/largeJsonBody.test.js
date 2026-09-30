@@ -17,6 +17,7 @@ process.env.TEST_DATABASE_PATH = path.join(
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'largejson-test-secret-with-32-chars!!';
 process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-largejson-storage-'));
 
+const zlib = require('zlib');
 const request = require('supertest');
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -103,6 +104,21 @@ describe('largeJsonBody — the 50 MB parser is for authenticated callers only',
     } finally {
       db.removeListener('query', onQuery);
     }
+  });
+
+  it('treats a compressed JSON body as possibly large, whatever its Content-Length says', async () => {
+    // 3 MB of repetitive JSON gzips to a few KB. express.json inflates it and
+    // applies the limit to the inflated size, so the small parser refuses it;
+    // an authenticated caller must still get the large parser.
+    const gz = zlib.gzipSync(Buffer.from(bigBody));
+    expect(gz.length).toBeLessThan(64 * 1024);
+    const token = mintAdminToken(adminId);
+    const ok = await post('/api/admin/echo').set('Authorization', `Bearer ${token}`)
+      .set('Content-Encoding', 'gzip').send(gz);
+    expect(ok.status).toBe(200);
+    expect(ok.body.size).toBe(bigBody.length);
+    const anon = await post('/api/admin/echo').set('Content-Encoding', 'gzip').send(gz);
+    expect(anon.status).toBe(413);
   });
 
   it('leaves paths outside the two prefixes on the ordinary limit even when authenticated', async () => {
