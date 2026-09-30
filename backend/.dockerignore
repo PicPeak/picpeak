@@ -16,6 +16,7 @@ jest.config.js
 # governs `docker compose build` of the backend alone.)
 data
 .env.*
+!.env.example
 *.db
 *.db-journal
 *.db-wal
