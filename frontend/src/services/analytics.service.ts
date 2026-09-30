@@ -266,7 +266,7 @@ class AnalyticsService {
       return;
     }
     if (this.provider !== 'custom' || !this.customHeadHtml) return;
-    if (isAdminPath(pathname)) {
+    if (isUntrackedPath(pathname)) {
       if (this.customHeadInjected) this.reloadPage();
       return;
     }

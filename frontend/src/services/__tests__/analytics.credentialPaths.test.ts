@@ -53,6 +53,17 @@ describe('tracker and token-bearing pages', () => {
     expect(scripts()).toBe(1);
   });
 
+  it('does not inject deferred custom scripts when the route changes onto a token page', () => {
+    window.history.pushState({}, '', '/invite/9f3a1c');
+    const service = freshService();
+    service.initialize({ provider: 'custom', customHeadHtml: '<script>window.__x = 1</script>' });
+    expect(scripts()).toBe(0);
+    service.handleRouteChange('/invite/9f3a1c?step=2');
+    expect(scripts()).toBe(0);
+    service.handleRouteChange('/gallery/summer-party');
+    expect(scripts()).toBe(1);
+  });
+
   it('keeps custom head scripts off token pages too', () => {
     window.history.pushState({}, '', '/customer/reset-password/9f3a1c');
     const service = freshService();

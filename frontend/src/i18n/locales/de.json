@@ -1487,7 +1487,7 @@
       }
     },
     "restore": {
-      "superAdminOnly": "Nur ein Super-Admin kann den Identitätsanbieter ändern (Issuer-URL und Client-ID). Alles andere auf diesem Tab bleibt bearbeitbar.",
+      "superAdminOnly": "Das Wiederherstellen eines Backups ersetzt alle Daten dieser Instanz, einschließlich Benutzerkonten und Rollen, und ist daher nur einem Super Admin möglich.",
       "steps": {
         "selectSource": "Quelle auswählen",
         "chooseBackup": "Backup auswählen",
@@ -3296,7 +3296,7 @@
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Admins melden sich über Ihren Identity Provider an (Keycloak, Authentik, Pocket ID oder jeder OIDC-konforme IdP). Die lokale Anmeldung mit E-Mail/Passwort bleibt als Fallback verfügbar.",
-      "superAdminOnly": "Nur ein Super-Admin kann den Identitätsanbieter ändern. Die Konfiguration kann hier eingesehen werden.",
+      "superAdminOnly": "Nur ein Super-Admin kann den Identitätsanbieter ändern (Issuer-URL und Client-ID). Alles andere auf diesem Tab bleibt bearbeitbar.",
       "redirectUri": "Redirect-URI (beim IdP-Client registrieren)",
       "issuerUrl": "Issuer-URL",
       "issuerHint": "Die Basis-URL, die /.well-known/openid-configuration ausliefert.",
