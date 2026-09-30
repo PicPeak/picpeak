@@ -86,6 +86,25 @@ describe('largeJsonBody — the 50 MB parser is for authenticated callers only',
     expect((await post('/api/v1/echo').set('Authorization', `Bearer ${revokedToken}`).send(bigBody)).status).toBe(413);
   });
 
+  it('never touches api_tokens unless the declared body could exceed the small limit', async () => {
+    // The lookup is the only cost an unauthenticated caller can impose here,
+    // and a made-up pp_live_ header must not buy one on every request.
+    const seen = [];
+    const onQuery = (q) => { if (/api_tokens/.test(q.sql)) seen.push(q.sql); };
+    db.on('query', onQuery);
+    try {
+      const bogus = 'Bearer pp_live_' + 'e'.repeat(48);
+      expect((await post('/api/v1/echo').set('Authorization', bogus).send(smallBody)).status).toBe(200);
+      expect((await post('/api/admin/echo').set('Authorization', bogus).send(smallBody)).status).toBe(200);
+      expect((await post('/api/v1/echo').set('Authorization', bogus).set('Content-Type', 'text/plain').send('x')).status).toBe(200);
+      expect(seen).toHaveLength(0);
+      expect((await post('/api/v1/echo').set('Authorization', bogus).send(bigBody)).status).toBe(413);
+      expect(seen).toHaveLength(1);
+    } finally {
+      db.removeListener('query', onQuery);
+    }
+  });
+
   it('leaves paths outside the two prefixes on the ordinary limit even when authenticated', async () => {
     const token = mintAdminToken(adminId);
     expect((await post('/api/other/echo').set('Authorization', `Bearer ${token}`).send(bigBody)).status).toBe(413);

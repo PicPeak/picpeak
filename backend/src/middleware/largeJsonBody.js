@@ -16,7 +16,12 @@
  *
  * The full authentication (revocation, is_active, must_change_password) still
  * happens in adminAuth / apiTokenAuth afterwards; this only decides the body
- * limit.
+ * limit — and it decides it only when the decision matters. A body that
+ * cannot exceed the ordinary limit (Content-Length within it, or no JSON
+ * body at all) goes straight to the ordinary parser without any check, so
+ * the API-token lookup never runs for normal traffic, and a request that
+ * merely carries a made-up Bearer header costs the database nothing unless
+ * it also claims a body the small parser would refuse.
  */
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -48,10 +53,23 @@ async function hasKnownApiToken(req) {
   return !!row;
 }
 
-function createLargeJsonBody({ limit = '50mb' } = {}) {
+/**
+ * Could this body be more than the ordinary parser accepts? Only a JSON body
+ * whose declared length is over the small limit, or a chunked JSON body with
+ * no declared length, needs the large parser at all.
+ */
+function mightExceed(req, fallbackLimitBytes) {
+  if (!req.is('application/json')) return false;
+  const declared = Number(req.headers['content-length']);
+  if (Number.isFinite(declared)) return declared > fallbackLimitBytes;
+  return /chunked/i.test(req.headers['transfer-encoding'] || '');
+}
+
+function createLargeJsonBody({ limit = '50mb', fallbackLimitBytes = 2 * 1024 * 1024 } = {}) {
   const parser = express.json({ limit });
   return async function largeJsonBody(req, res, next) {
     try {
+      if (!mightExceed(req, fallbackLimitBytes)) return next();
       if (hasVerifiedAdminJwt(req) || await hasKnownApiToken(req)) {
         return parser(req, res, next);
       }
@@ -62,4 +80,4 @@ function createLargeJsonBody({ limit = '50mb' } = {}) {
   };
 }
 
-module.exports = { createLargeJsonBody, hasVerifiedAdminJwt, hasKnownApiToken };
+module.exports = { createLargeJsonBody, hasVerifiedAdminJwt, hasKnownApiToken, mightExceed };
