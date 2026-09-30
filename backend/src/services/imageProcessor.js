@@ -902,6 +902,19 @@ async function ensureHeroImage(photo, { anchor } = {}) {
 // loses nothing it still needs.
 async function dropSupersededHero(photo, newHeroPath) {
   if (!photo.hero_path || photo.hero_path === newHeroPath) return;
+  // Managed hero names derive from the source basename, so another photo
+  // row can point at the same key; deleteEventCascade (adminEvents/helpers)
+  // makes the same check before it deletes. When in doubt, keep the file.
+  try {
+    const shared = await db('photos')
+      .where({ hero_path: photo.hero_path })
+      .whereNot({ id: photo.id })
+      .first();
+    if (shared) return;
+  } catch (e) {
+    logger.warn(`Could not check whether hero ${photo.hero_path} is shared; keeping it: ${e.message}`);
+    return;
+  }
   await getStorage().delete(photo.hero_path).catch(() => {});
 }
 

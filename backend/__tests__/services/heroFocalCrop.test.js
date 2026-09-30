@@ -19,11 +19,17 @@ const EXTERNAL_ROOT = path.join(os.tmpdir(), `picpeak-hero-focal-${process.pid}`
 process.env.EXTERNAL_MEDIA_ROOT = EXTERNAL_ROOT;
 
 jest.mock('../../src/database/db', () => {
-  const state = { event: null, updates: [] };
+  // `sharedHeroPaths`: hero keys some OTHER photo row still points at.
+  const state = { event: null, updates: [], sharedHeroPaths: [] };
   const api = (table) => {
     if (table === 'events') return { where: () => ({ first: async () => state.event }) };
     if (table === 'photos') {
-      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
+      return {
+        where: (criteria) => ({
+          update: async (values) => { state.updates.push({ criteria, values }); return 1; },
+          whereNot: () => ({ first: async () => (state.sharedHeroPaths.includes(criteria.hero_path) ? { id: -1 } : undefined) }),
+        }),
+      };
     }
     throw new Error(`unexpected table in test: ${table}`);
   };
@@ -123,7 +129,7 @@ describe('hero focal crop (issue 1737)', () => {
     await fs.rm(EXTERNAL_ROOT, { recursive: true, force: true }).catch(() => {});
   });
 
-  beforeEach(() => { db.__state.event = { ...EVENT }; db.__state.updates = []; });
+  beforeEach(() => { db.__state.event = { ...EVENT }; db.__state.updates = []; db.__state.sharedHeroPaths = []; });
 
   it.each([
     ['50% 0%', RED, 'red'],
@@ -172,6 +178,22 @@ describe('hero focal crop (issue 1737)', () => {
     expect(db.__state.updates).toEqual([{ criteria: { id: 401 }, values: { hero_path: again, hero_anchor: '50% 100%' } }]);
     expect(closeTo(await centrePixel(storage, again), BLUE)).toBe(true);
     expect(await storage.exists(key)).toBe(false);
+  });
+
+  it('keeps the previous file when another photo row still points at it', async () => {
+    // Managed hero names derive from the source basename, so two photos can
+    // share a key; the superseded file must survive for the other row.
+    const photo = {
+      id: 404, event_id: EVENT.id, source_origin: 'external',
+      external_relpath: path.join(EVENT.external_path, 'banded.jpg'), filename: 'banded.jpg',
+      hero_path: null, hero_anchor: null,
+    };
+    const key = await imageProcessor.ensureHeroImage(photo, { anchor: 'top' });
+    db.__state.sharedHeroPaths = [key];
+    const next = await imageProcessor.ensureHeroImage({ ...photo, hero_path: key, hero_anchor: '50% 0%' }, { anchor: 'bottom' });
+    expect(next).not.toBe(key);
+    expect(await storage.exists(key)).toBe(true);
+    expect(await storage.exists(next)).toBe(true);
   });
 
   it('two requests for different anchors do not share a flight', async () => {
