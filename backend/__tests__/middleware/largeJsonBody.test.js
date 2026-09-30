@@ -113,11 +113,14 @@ describe('largeJsonBody — the 50 MB parser is for authenticated callers only',
     const gz = zlib.gzipSync(Buffer.from(bigBody));
     expect(gz.length).toBeLessThan(64 * 1024);
     const token = mintAdminToken(adminId);
-    const ok = await post('/api/admin/echo').set('Authorization', `Bearer ${token}`)
-      .set('Content-Encoding', 'gzip').send(gz);
+    // superagent would JSON-serialise a Buffer under this Content-Type and
+    // corrupt the gzip stream; send the bytes as they are.
+    const raw = (req) => req.serialize((d) => d);
+    const ok = await raw(post('/api/admin/echo').set('Authorization', `Bearer ${token}`)
+      .set('Content-Encoding', 'gzip')).send(gz);
     expect(ok.status).toBe(200);
     expect(ok.body.size).toBe(bigBody.length);
-    const anon = await post('/api/admin/echo').set('Content-Encoding', 'gzip').send(gz);
+    const anon = await raw(post('/api/admin/echo').set('Content-Encoding', 'gzip')).send(gz);
     expect(anon.status).toBe(413);
   });
 
