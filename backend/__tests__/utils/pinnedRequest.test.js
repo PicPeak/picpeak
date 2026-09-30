@@ -9,7 +9,12 @@ it('never performs a second DNS lookup that could reach a private listener', asy
   const server = http.createServer((req, res) => { received(); res.end('private'); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://rebind.example:${server.address().port}/hook`;
-  const preflight = jest.spyOn(dns.promises, 'lookup').mockResolvedValue([{ address: '192.0.2.1', family: 4 }]);
+  // A real public unicast address: the preflight has to classify it as
+  // reachable. TEST-NET-1 (192.0.2.1) no longer qualifies — the SSRF guard
+  // refuses every IANA special-purpose range, documentation nets included,
+  // the same way integrationHttp and s3EndpointPolicy always did. Nothing is
+  // listening on this port there, so the pinned connect times out.
+  const preflight = jest.spyOn(dns.promises, 'lookup').mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
   const unsafeLookup = jest.spyOn(dns, 'lookup').mockImplementation((_host, opts, cb) => {
     if (typeof opts === 'function') { cb = opts; opts = {}; }
     cb(null, ...(opts.all ? [[{ address: '127.0.0.1', family: 4 }]] : ['127.0.0.1', 4]));
