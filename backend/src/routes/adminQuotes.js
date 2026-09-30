@@ -635,7 +635,10 @@ router.post(
   // domain's permission as well; quotes.manage alone let a quote manager
   // create events, contracts and invoices they could not create directly
   // (Codex security audit 2026-09-30).
-  requirePermission(['quotes.manage', 'events.create'], { requireAll: true }),
+  // Converting to an event also schedules the quote's invoices (convertToEvent
+  // has no invoice-free path outside workflow reserve_date), so bills.manage
+  // is required as well.
+  requirePermission(['quotes.manage', 'events.create', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);

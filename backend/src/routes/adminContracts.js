@@ -553,7 +553,9 @@ router.post(
   '/:id/convert-to-event',
   // Same rule as the quote conversions: the destination domain's permission
   // is required too (Codex security audit 2026-09-30).
-  requirePermission(['contracts.manage', 'events.create'], { requireAll: true }),
+  // Delegates to quoteService.convertToEvent, which schedules the invoices
+  // too, so bills.manage is required as well.
+  requirePermission(['contracts.manage', 'events.create', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
