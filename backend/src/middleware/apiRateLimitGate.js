@@ -60,7 +60,8 @@ function createApiRateLimitGate(getLimiter) {
     // default, so `/API/admin/events` reaches the same handler as
     // `/api/admin/events`. A case-sensitive prefix test here would have been a
     // free bypass of the limiter (verified against a real Express app).
-    const path = req.path.toLowerCase();
+    // Repeated slashes collapsed for the same reason as in authRateLimitGate.
+    const path = req.path.toLowerCase().replace(/\/{2,}/g, '/');
     if (!path.startsWith('/api/')) return next();
     if (EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
     if (AUTH_ENDPOINT_RE.test(path)) return next();

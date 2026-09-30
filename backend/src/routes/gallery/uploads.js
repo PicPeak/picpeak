@@ -105,6 +105,12 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
       limits: {
         fileSize: maxFileSizeBytes,
         files: maxFilesPerUpload,
+        // The only text field this route reads is category_id. Without these
+        // caps an unbounded number of ~1 MiB text parts is held in memory
+        // before the handler runs (Codex security audit 2026-09-30).
+        fields: 5,
+        fieldSize: 1024,
+        parts: maxFilesPerUpload + 5,
         // CVE-2026-82333: files arrive as repeated `photos` parts via
         // .array(), not bracket-indexed field names like `photos[0]` — no
         // legitimate field name uses array-index syntax at all. Reject any

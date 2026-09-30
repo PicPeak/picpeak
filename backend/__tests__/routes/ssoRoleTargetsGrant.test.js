@@ -157,6 +157,37 @@ describe('SSO settings: role targets and client secret', () => {
     expect(config.roleMappings).toEqual({ 'idp-owners': 'super_admin' });
   });
 
+  it('lets only a super admin repoint the provider (issuer URL or client ID)', async () => {
+    // The provider is the trust anchor: whoever controls it can mint a token
+    // for any local address, and email linking then hands out that account,
+    // super admins included — a path the mapping containment never sees
+    // (Codex security audit 2026-09-30).
+    expect((await putSso(superToken, {
+      oidc_issuer_url: 'https://idp-one.example.com',
+      oidc_client_id: 'picpeak',
+      oidc_client_secret: 'first-secret',
+    })).status).toBe(200);
+
+    const repoint = await putSso(managerToken, { oidc_issuer_url: 'https://idp-mine.example.com' });
+    expect(repoint.status).toBe(403);
+    expect(repoint.body.code).toBe('SUPER_ADMIN_REQUIRED');
+    const otherClient = await putSso(managerToken, { oidc_client_id: 'someone-else' });
+    expect(otherClient.status).toBe(403);
+    expect((await oidcService.getOidcConfig()).issuerUrl).toBe('https://idp-one.example.com');
+
+    // Resaving the same provider with other edits is still theirs to do.
+    const unchanged = await putSso(managerToken, {
+      oidc_issuer_url: 'https://idp-one.example.com', oidc_client_id: 'picpeak', oidc_button_label: 'Company login',
+    });
+    expect(unchanged.status).toBe(200);
+    expect((await oidcService.getOidcConfig()).buttonLabel).toBe('Company login');
+
+    expect((await putSso(superToken, {
+      oidc_issuer_url: 'https://idp-two.example.com', oidc_client_secret: 'second-secret',
+    })).status).toBe(200);
+    expect((await oidcService.getOidcConfig()).issuerUrl).toBe('https://idp-two.example.com');
+  });
+
   it('asks for the client secret again when the issuer or client ID changes', async () => {
     expect((await putSso(superToken, {
       oidc_issuer_url: 'https://idp-one.example.com',

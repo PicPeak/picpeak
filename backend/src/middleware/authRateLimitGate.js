@@ -79,8 +79,13 @@ const CREDENTIAL_ENDPOINTS = [
  * @returns {boolean} true when the request is an attempt to prove a secret.
  */
 function isCredentialEndpoint(req) {
+  // Express collapses repeated slashes at a router boundary, so the login
+  // router also answers /api/auth//admin/login; the patterns are tested
+  // against the collapsed path or that spelling walks past the gate
+  // (Codex security audit 2026-09-30).
+  const requestPath = req.path.replace(/\/{2,}/g, '/');
   return CREDENTIAL_ENDPOINTS.some(
-    (endpoint) => endpoint.method === req.method && endpoint.path.test(req.path)
+    (endpoint) => endpoint.method === req.method && endpoint.path.test(requestPath)
   );
 }
 

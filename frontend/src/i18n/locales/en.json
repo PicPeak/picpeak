@@ -2758,6 +2758,7 @@
     "sso": {
       "title": "Single Sign-On (OIDC)",
       "intro": "Let admins sign in through your identity provider (Keycloak, Authentik, Pocket ID, or any OIDC-compliant IdP). Local email/password login stays available as a fallback.",
+      "superAdminOnly": "Only a super admin can change the identity provider (issuer URL and client ID). Everything else on this tab can be edited.",
       "redirectUri": "Redirect URI (register this on your IdP client)",
       "issuerUrl": "Issuer URL",
       "issuerHint": "The base URL that serves /.well-known/openid-configuration.",

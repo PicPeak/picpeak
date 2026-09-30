@@ -826,6 +826,21 @@ router.put('/sso', adminAuth, requirePermission('settings.security'), [
     const providerChanged = (nextIssuer !== undefined && nextIssuer !== (current.issuerUrl || ''))
       || (nextClientId !== undefined && nextClientId !== (current.clientId || ''));
     const secretEntered = typeof req.body.oidc_client_secret === 'string' && req.body.oidc_client_secret.length > 0;
+    // The provider is the trust anchor for every SSO login, and email linking
+    // hands whoever completes SSO the matching local account, super admins
+    // included. A settings.security holder who could point the app at a
+    // provider of their own choosing could mint a token for a super admin's
+    // address and take that account over — the role-mapping containment
+    // below never sees that path. Repointing the provider (issuer or client
+    // ID) is therefore a super-admin decision; everything else on this tab,
+    // mappings included, stays with settings.security under the containment
+    // checks (Codex security audit 2026-09-30).
+    if (providerChanged && !(await isSuperAdminUser(req.admin.id))) {
+      return res.status(403).json({
+        error: 'Only a super admin can change the identity provider (issuer URL or client ID)',
+        code: 'SUPER_ADMIN_REQUIRED',
+      });
+    }
     if (providerChanged && current.clientSecret && !secretEntered && (nextIssuer ?? current.issuerUrl)) {
       return res.status(400).json({ error: 'Enter the client secret again when changing the issuer URL or client ID' });
     }

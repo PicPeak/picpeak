@@ -24,6 +24,47 @@
  * server.js both normalise these variables before the app opens a pool.
  */
 
+let warnedUnverifiedTls = false;
+
+/**
+ * TLS towards PostgreSQL.
+ *
+ * DB_SSL=true alone used to mean `rejectUnauthorized: false`: encrypted, but
+ * any certificate accepted, so whoever can redirect the database connection
+ * can impersonate the database (Codex security audit 2026-09-30). Verification
+ * is now on whenever the operator gives us the means or asks for it:
+ *
+ *   DB_SSL_CA                  PEM text, or a path to a PEM file — verify
+ *                              against it (private CAs, managed databases).
+ *   DB_SSL_REJECT_UNAUTHORIZED true  — verify against the system CA store
+ *                              false — accept any certificate (explicit)
+ *
+ * DB_SSL=true with neither set keeps the old behaviour so existing installs
+ * with self-signed certificates keep connecting, and logs one warning at
+ * boot so the gap is visible rather than silent.
+ */
+function pgSslFromEnv() {
+  if (process.env.DB_SSL !== 'true') return false;
+  const ssl = {};
+  const ca = (process.env.DB_SSL_CA || '').trim();
+  if (ca) {
+    ssl.ca = ca.includes('-----BEGIN') ? ca : require('fs').readFileSync(ca, 'utf8');
+  }
+  const explicit = (process.env.DB_SSL_REJECT_UNAUTHORIZED || '').trim().toLowerCase();
+  if (explicit === 'false') {
+    ssl.rejectUnauthorized = false;
+  } else if (explicit === 'true' || ca) {
+    ssl.rejectUnauthorized = true;
+  } else {
+    ssl.rejectUnauthorized = false;
+    if (!warnedUnverifiedTls && process.env.NODE_ENV !== 'test') {
+      warnedUnverifiedTls = true;
+      console.warn('[db] DB_SSL=true without DB_SSL_CA or DB_SSL_REJECT_UNAUTHORIZED: the PostgreSQL certificate is NOT verified. Set DB_SSL_CA to your CA, or DB_SSL_REJECT_UNAUTHORIZED=true for a publicly trusted certificate.');
+    }
+  }
+  return ssl;
+}
+
 function pgConnectionFromEnv() {
   return {
     host: process.env.DB_HOST || 'postgres',
@@ -31,8 +72,8 @@ function pgConnectionFromEnv() {
     user: process.env.DB_USER || 'picpeak',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'picpeak',
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    ssl: pgSslFromEnv(),
   };
 }
 
-module.exports = { pgConnectionFromEnv };
+module.exports = { pgConnectionFromEnv, pgSslFromEnv };

@@ -8,6 +8,7 @@ import type { AxiosError } from 'axios';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { ssoService, SsoSettings, UpdateSsoSettings } from '../../../services/sso.service';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 
 interface MappingRow {
   idpRole: string;
@@ -30,6 +31,11 @@ const ROLE_OPTIONS: Record<string, string> = {
 // admin types a new value.
 export const SsoTab: React.FC = () => {
   const { t } = useTranslation();
+  // Repointing the provider (issuer URL, client ID) is a super-admin decision
+  // on the backend (PUT /sso answers 403 otherwise): the provider is the trust
+  // anchor for every SSO login and email linking hands out matching local
+  // accounts. Everything else on this tab stays editable with settings.security.
+  const { isSuperAdmin } = usePermissions();
   const queryClient = useQueryClient();
 
   const [form, setForm] = useState<SsoSettings | null>(null);
@@ -151,6 +157,12 @@ export const SsoTab: React.FC = () => {
           <p className="text-sm text-soft">
             {t('settings.sso.intro', 'Let admins sign in through your identity provider (Keycloak, Authentik, Pocket ID, or any OIDC-compliant IdP). Local email/password login stays available as a fallback.')}
           </p>
+          {!isSuperAdmin && (
+            <div className="flex items-start gap-2 rounded-lg border border-line bg-subtle p-3 text-sm text-body">
+              <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-muted" aria-hidden="true" />
+              <span>{t('settings.sso.superAdminOnly', 'Only a super admin can change the identity provider (issuer URL and client ID). Everything else on this tab can be edited.')}</span>
+            </div>
+          )}
 
           {/* Redirect URI for the IdP client registration */}
           <div className="rounded-lg border border-line bg-subtle p-3">
@@ -178,6 +190,7 @@ export const SsoTab: React.FC = () => {
             placeholder="https://id.example.com/realms/main"
             value={form.oidc_issuer_url}
             onChange={(e) => set('oidc_issuer_url', e.target.value)}
+            disabled={!isSuperAdmin}
           />
           <p className="-mt-2 text-xs text-muted">
             {t('settings.sso.issuerHint', 'The base URL that serves /.well-known/openid-configuration.')}
@@ -188,6 +201,7 @@ export const SsoTab: React.FC = () => {
               label={t('settings.sso.clientId', 'Client ID')}
               value={form.oidc_client_id}
               onChange={(e) => set('oidc_client_id', e.target.value)}
+              disabled={!isSuperAdmin}
             />
             <div>
               <Input

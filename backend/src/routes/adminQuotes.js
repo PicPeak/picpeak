@@ -631,7 +631,11 @@ router.post(
 
 router.post(
   '/:id/convert',
-  requirePermission('quotes.manage'),
+  // Conversion creates a record in another domain, so it needs that
+  // domain's permission as well; quotes.manage alone let a quote manager
+  // create events, contracts and invoices they could not create directly
+  // (Codex security audit 2026-09-30).
+  requirePermission(['quotes.manage', 'events.create'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -647,7 +651,7 @@ router.post(
 // deliverable to ship.
 router.post(
   '/:id/convert-to-invoice',
-  requirePermission('quotes.manage'),
+  requirePermission(['quotes.manage', 'bills.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -665,7 +669,7 @@ router.post(
 // layer here would force admins to flip TWO flags to use the workflow.
 router.post(
   '/:id/convert-to-contract',
-  requirePermission('quotes.manage'),
+  requirePermission(['quotes.manage', 'contracts.manage'], { requireAll: true }),
   // Optional (#1445): the contract template to start from; without it, the
   // one the quote's template names, else the default.
   [param('id').isInt({ min: 1 }), body('contractTemplateId').optional({ nullable: true }).isInt({ min: 1 }).toInt()],
