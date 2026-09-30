@@ -17,8 +17,9 @@
  * The full authentication (revocation, is_active, must_change_password) still
  * happens in adminAuth / apiTokenAuth afterwards; this only decides the body
  * limit — and it decides it only when the decision matters. A body that
- * cannot exceed the ordinary limit (Content-Length within it, or no JSON
- * body at all) goes straight to the ordinary parser without any check, so
+ * cannot exceed the ordinary limit (an uncompressed JSON body whose
+ * Content-Length is within it, or no JSON body at all) goes straight to the
+ * ordinary parser without any check, so
  * the API-token lookup never runs for normal traffic, and a request that
  * merely carries a made-up Bearer header costs the database nothing unless
  * it also claims a body the small parser would refuse.
