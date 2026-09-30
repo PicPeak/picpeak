@@ -60,7 +60,9 @@ export function formatFeatureFlagsChanged(
 export interface DashboardStats {
   activeEvents: number;
   expiringEvents: number;
+  // Rows of either type; totalVideos is how many of them are videos.
   totalPhotos: number;
+  totalVideos?: number;
   // Real bytes under the storage root — thumbnails, previews, hero
   // renditions, download caches and any managed originals (#1164). Null when
   // the measurement failed, which the UI must show as unavailable rather than

@@ -43,7 +43,7 @@ export const EventTabs: React.FC<EventTabsProps> = ({
           }`}
         >
           <Image className="w-4 h-4" />
-          <span>{t('events.photos')}</span>
+          <span>{(event.video_count ?? 0) > 0 ? t('events.media', 'Media') : t('events.photos')}</span>
           {event.photo_count !== undefined && event.photo_count > 0 && (
             <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-inset text-body rounded-full">
               {event.photo_count}

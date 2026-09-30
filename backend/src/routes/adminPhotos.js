@@ -29,6 +29,7 @@ const {
   EXTENSION_TO_MIME
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
+const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -1272,7 +1273,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
 router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { category_id, type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label, credit } = req.query;
+    const { category_id, type, media_type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label, credit } = req.query;
     const order = ['asc', 'desc'].includes(req.query.order) ? req.query.order : 'desc';
     const logic = req.query.logic === 'OR' ? 'OR' : 'AND';
 
@@ -1301,6 +1302,15 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     // Keep type filter for backwards compatibility
     if (type) {
       query = query.where({ 'photos.type': type });
+    }
+
+    // Media type filter. The admin grid has sent media_type=photo|video since
+    // the filter was added, and this route never read it, so the select
+    // changed nothing. Any other value means "both".
+    if (media_type === 'video') {
+      query = query.whereRaw(IS_VIDEO_SQL);
+    } else if (media_type === 'photo') {
+      query = query.whereRaw(IS_PHOTO_SQL);
     }
 
     // Credit filter (#1561): an exact name, or CREDIT_NONE for the photos

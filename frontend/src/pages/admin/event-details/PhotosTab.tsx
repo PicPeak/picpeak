@@ -115,7 +115,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
               leftIcon={<Upload className="w-4 h-4" />}
               onClick={() => setShowPhotoUpload(true)}
             >
-              {t('events.uploadPhotos')}
+              {(event.video_count ?? 0) > 0 ? t('upload.uploadMedia', 'Upload Photos & Videos') : t('events.uploadPhotos')}
             </Button>
           </PermissionGate>
           {event.source_mode === 'reference' && (

@@ -10,6 +10,7 @@ import { photosService } from '../../services/photos.service';
 import { uploadsService } from '../../services/uploads.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { getPhotoViewMode, setPhotoViewMode, type PhotoViewMode } from '../../utils/photoViewPrefs';
+import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { Button } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
@@ -43,6 +44,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const { t } = useTranslation();
   const { format: formatDate } = useLocalizedDate();
   const queryClient = useQueryClient();
+  // The same test the tiles below use to tell a video from a photo.
+  const videoCount = photos.filter((photo) =>
+    photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video'
+  ).length;
   const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set());
   // Where a shift-click measures its range from: the last tile clicked without
   // the shift key (#1212). The index is what a range needs — a span of the
@@ -343,7 +348,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
         
         <div className="flex items-center gap-3">
           <div className="text-sm text-soft">
-            {t('gallery.photosCount', { count: photos.length })}
+            {/* Counted by type once the list holds a video: three clips are
+                not "3 photos". A list of photos only reads as it always did. */}
+            {videoCount > 0
+              ? mediaSplitLabel(t, splitMediaCount(photos.length, videoCount))
+              : t('gallery.photosCount', { count: photos.length })}
           </div>
           {/* Layout toggle: Grid / List — radiogroup so a screen reader
               announces the two options as one mutually-exclusive set. */}

@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { isGalleryPublic, normalizeRequirePassword } from '../../utils/accessControl';
+import { splitMediaCount } from '../../utils/mediaCounts';
 import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type FeedbackFilters } from '../../services/photos.service';
 import { feedbackService, FeedbackSettings as FeedbackSettingsType } from '../../services/feedback.service';
 import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTemplates.service';
@@ -215,19 +216,13 @@ export const EventDetailsPage: React.FC = () => {
     enabled: !!id && activeTab === 'photos',
   });
 
-  const mediaTypes = useMemo(() => {
-    const types = new Set<'photo' | 'video'>();
-    photos.forEach((p) => {
-      const mediaType = (p.media_type as 'photo' | 'video' | undefined)
-        || ((p.mime_type && String(p.mime_type).startsWith('video/')) || p.type === 'video' ? 'video' : 'photo');
-      if (mediaType === 'video' || mediaType === 'photo') {
-        types.add(mediaType);
-      }
-    });
-    return types;
-  }, [photos]);
-
-  const showMediaFilter = mediaTypes.has('photo') && mediaTypes.has('video');
+  // The photo / video select is offered when the event holds both. Read from
+  // the event's counts, not from the rows on screen: those are what the select
+  // filters, so an answer derived from them would hide the select the moment a
+  // type is chosen. (The old derivation also never matched: the API reports a
+  // photo as 'image', and it looked for 'photo'.)
+  const eventMedia = splitMediaCount(event?.photo_count, event?.video_count);
+  const showMediaFilter = eventMedia.photos > 0 && eventMedia.videos > 0;
 
   useEffect(() => {
     if (!showMediaFilter && photoFilters.media_type) {

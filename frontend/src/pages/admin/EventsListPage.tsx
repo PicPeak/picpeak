@@ -33,6 +33,7 @@ import { eventsService, type EventStatusFilter, type EventSortBy } from '../../s
 import { eventTypesService } from '../../services/eventTypes.service';
 import { adminService } from '../../services/admin.service';
 import { isGalleryPublic } from '../../utils/accessControl';
+import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { buildShareLinkUrl } from '../../utils/url';
 import type { Event } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -231,6 +232,7 @@ export const EventsListPage: React.FC = () => {
     queryKey: ['admin-dashboard-stats'],
     queryFn: () => adminService.getDashboardStats(),
   });
+  const installMedia = splitMediaCount(dashboardStats?.totalPhotos, dashboardStats?.totalVideos);
 
   // Every type ever assigned, including deactivated ones: a gallery created
   // years ago can still carry a type that has since been switched off, and
@@ -478,10 +480,15 @@ export const EventsListPage: React.FC = () => {
         <Card padding="sm">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-soft">{t('events.stats.totalPhotos')}</p>
+              <p className="text-sm text-soft">
+                {installMedia.hasVideos ? t('admin.totalMedia', 'Total Media') : t('events.stats.totalPhotos')}
+              </p>
               <p className="text-2xl font-bold text-heading">
                 {dashboardStats?.totalPhotos ?? 0}
               </p>
+              {installMedia.hasVideos && (
+                <p className="text-xs text-muted">{mediaSplitLabel(t, installMedia)}</p>
+              )}
             </div>
             <Image className="w-8 h-8 text-blue-600" />
           </div>
@@ -634,7 +641,7 @@ export const EventsListPage: React.FC = () => {
                   onSelect={applySort}
                 />
                 <ColumnMenuHeader
-                  label={t('events.photos', 'Photos')}
+                  label={installMedia.hasVideos ? t('events.media', 'Media') : t('events.photos', 'Photos')}
                   menuLabel={t('events.sortByPhotos', 'Sort by photo count')}
                   options={PHOTOS_SORT}
                   value={sortSelection(PHOTOS_SORT)}
@@ -713,6 +720,11 @@ export const EventsListPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-right tabular-nums text-body">
                         {event.photo_count ?? 0}
+                        {(event.video_count ?? 0) > 0 && (
+                          <p className="text-xs text-muted whitespace-nowrap">
+                            {mediaSplitLabel(t, splitMediaCount(event.photo_count, event.video_count))}
+                          </p>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}>

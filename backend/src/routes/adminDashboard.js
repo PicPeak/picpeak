@@ -10,6 +10,7 @@ const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const { queueTimestamp } = require('../utils/queueTimestamps');
+const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
 const router = express.Router();
 
 /**
@@ -89,6 +90,13 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
 
     // Get total photos count
     const totalPhotos = await applyEventScope(db('photos'), req.admin, 'event_id')
+      .count('id as count')
+      .first();
+
+    // How many of those rows are videos. totalPhotos stays the count of both
+    // types; the dashboard shows the split when this is non-zero.
+    const totalVideos = await applyEventScope(db('photos'), req.admin, 'event_id')
+      .whereRaw(IS_VIDEO_SQL)
       .count('id as count')
       .first();
 
@@ -185,6 +193,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       activeEvents: activeEvents.count || 0,
       expiringEvents: expiringEvents.count || 0,
       totalPhotos: totalPhotos.count || 0,
+      totalVideos: Number(totalVideos.count) || 0,
       // Real bytes on this disk. Null when the measurement failed, which the
       // UI shows as "unavailable" rather than substituting a number that
       // means something else.
