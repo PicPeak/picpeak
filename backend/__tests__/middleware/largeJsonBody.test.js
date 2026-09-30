@@ -1,0 +1,93 @@
+/**
+ * The 50 MB JSON parser used to run on /api/admin and /api/v1 before any
+ * authentication, so anyone could make JSON.parse chew a 50 MB nested body.
+ * largeJsonBody parses at the large limit only for a verified admin JWT or a
+ * known API token; everything else falls through to the 2 MB parser and an
+ * oversized body is refused with 413 unparsed (security review 2026-09-29).
+ */
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+
+process.env.NODE_ENV = 'test';
+process.env.TEST_DATABASE_PATH = path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-largejson-')), 'db.sqlite',
+);
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'largejson-test-secret-with-32-chars!!';
+process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-largejson-storage-'));
+
+const request = require('supertest');
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
+const { bootCrmDb, seedMinimal, mintAdminToken } = require('../integration/helpers/crmDb');
+const { createLargeJsonBody } = require('../../src/middleware/largeJsonBody');
+
+// 3 MB: over the small limit, under the large one.
+const bigBody = JSON.stringify({ blob: 'x'.repeat(3 * 1024 * 1024) });
+const smallBody = JSON.stringify({ blob: 'x' });
+
+describe('largeJsonBody — the 50 MB parser is for authenticated callers only', () => {
+  let db; let cleanup; let app; let adminId;
+  const apiToken = 'pp_live_' + crypto.randomBytes(24).toString('hex');
+  const revokedToken = 'pp_live_' + crypto.randomBytes(24).toString('hex');
+  const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+
+  beforeAll(async () => {
+    ({ db, cleanup } = await bootCrmDb());
+    ({ adminId } = await seedMinimal(db));
+    await db('api_tokens').insert([
+      { name: 'live', hashed_token: sha(apiToken), scopes: 'read', created_by: adminId },
+      { name: 'revoked', hashed_token: sha(revokedToken), scopes: 'read', created_by: adminId, revoked_at: new Date().toISOString() },
+    ]);
+    app = express();
+    app.use(cookieParser());
+    app.use(['/api/admin', '/api/v1'], createLargeJsonBody({ limit: '50mb' }));
+    app.use(express.json({ limit: '2mb' }));
+    app.post('/api/admin/echo', (req, res) => res.json({ size: JSON.stringify(req.body).length }));
+    app.post('/api/v1/echo', (req, res) => res.json({ size: JSON.stringify(req.body).length }));
+    app.post('/api/other/echo', (req, res) => res.json({ size: JSON.stringify(req.body).length }));
+  }, 120000);
+  afterAll(async () => { if (cleanup) await cleanup(); });
+
+  const post = (url) => request(app).post(url).set('Content-Type', 'application/json');
+
+  it('refuses an oversized body from an unauthenticated caller with 413, on both prefixes', async () => {
+    expect((await post('/api/admin/echo').send(bigBody)).status).toBe(413);
+    expect((await post('/api/v1/echo').send(bigBody)).status).toBe(413);
+  });
+
+  it('still parses a small unauthenticated body through the ordinary parser', async () => {
+    const res = await post('/api/admin/echo').send(smallBody);
+    expect(res.status).toBe(200);
+    expect(res.body.size).toBe(smallBody.length);
+  });
+
+  it('accepts the large body for a verified admin JWT, as a Bearer header and as the cookie', async () => {
+    const token = mintAdminToken(adminId);
+    const viaHeader = await post('/api/admin/echo').set('Authorization', `Bearer ${token}`).send(bigBody);
+    expect(viaHeader.status).toBe(200);
+    expect(viaHeader.body.size).toBe(bigBody.length);
+    const viaCookie = await post('/api/admin/echo').set('Cookie', `admin_token=${token}`).send(bigBody);
+    expect(viaCookie.status).toBe(200);
+  });
+
+  it('does not accept a forged or wrong-type token as proof', async () => {
+    const forged = jwt.sign({ id: adminId, type: 'admin' }, 'not-the-secret', { issuer: 'picpeak-auth' });
+    expect((await post('/api/admin/echo').set('Authorization', `Bearer ${forged}`).send(bigBody)).status).toBe(413);
+    const gallery = jwt.sign({ id: 1, type: 'gallery' }, process.env.JWT_SECRET, { issuer: 'picpeak-auth' });
+    expect((await post('/api/admin/echo').set('Authorization', `Bearer ${gallery}`).send(bigBody)).status).toBe(413);
+  });
+
+  it('accepts the large body for a known API token and refuses an unknown or revoked one', async () => {
+    expect((await post('/api/v1/echo').set('Authorization', `Bearer ${apiToken}`).send(bigBody)).status).toBe(200);
+    expect((await post('/api/v1/echo').set('Authorization', 'Bearer pp_live_' + 'f'.repeat(48)).send(bigBody)).status).toBe(413);
+    expect((await post('/api/v1/echo').set('Authorization', `Bearer ${revokedToken}`).send(bigBody)).status).toBe(413);
+  });
+
+  it('leaves paths outside the two prefixes on the ordinary limit even when authenticated', async () => {
+    const token = mintAdminToken(adminId);
+    expect((await post('/api/other/echo').set('Authorization', `Bearer ${token}`).send(bigBody)).status).toBe(413);
+  });
+});

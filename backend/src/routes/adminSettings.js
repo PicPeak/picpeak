@@ -35,6 +35,10 @@ const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers')
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
+
+// What a stored secret looks like on GET; a save that carries it back means
+// "unchanged", never "set the secret to this".
+const SECRET_MASK = '••••••••';
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { GUEST_NAME_MODES } = require('../services/photoCredit');
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
@@ -1770,6 +1774,16 @@ router.put('/security', adminAuth, requirePermission('settings.security'), async
     if (rejectBackupRouteOwnedKeys(settings, res)) return;
     // A settings.security holder still can't write domain/accounting keys here.
     if (await rejectUnauthorizedProtectedKeys(settings, req, res)) return;
+
+    // The reCAPTCHA secret goes out masked on GET, and the Security tab sends
+    // every security_* key back on save, mask included. Writing the mask
+    // would replace the stored secret with eight bullets and every
+    // captcha-gated login would then fail closed until it is re-entered.
+    // Analytics and backup already skip the sentinel; this tab did not
+    // (security review 2026-09-29).
+    if (settings.security_recaptcha_secret_key === SECRET_MASK) {
+      delete settings.security_recaptcha_secret_key;
+    }
 
     // Update or insert each setting
     const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);

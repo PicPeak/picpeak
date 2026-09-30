@@ -1,6 +1,7 @@
 const { URL } = require('url');
 const net = require('net');
 const dns = require('dns').promises;
+const ipaddr = require('ipaddr.js');
 
 /**
  * Check if a hostname or IP resolves to a private/internal network address.
@@ -43,25 +44,23 @@ function isPrivateIP(hostname) {
 }
 
 function isPrivateIPv4(ip) {
-  const parts = ip.split('.').map(Number);
-  if (parts.length !== 4 || parts.some(p => isNaN(p))) return true;
-
-  const [a, b] = parts;
-
-  // 127.0.0.0/8 — loopback
-  if (a === 127) return true;
-  // 10.0.0.0/8 — private
-  if (a === 10) return true;
-  // 172.16.0.0/12 — private
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  // 192.168.0.0/16 — private
-  if (a === 192 && b === 168) return true;
-  // 169.254.0.0/16 — link-local
-  if (a === 169 && b === 254) return true;
-  // 0.0.0.0/8
-  if (a === 0) return true;
-
-  return false;
+  // ipaddr.js carries the full IANA special-purpose table, so every range
+  // that is not plain public unicast is refused: loopback, RFC 1918, link-local,
+  // 0/8, carrier-grade NAT (100.64/10 — cloud metadata on some providers sits
+  // at 100.100.100.200), the IETF protocol block 192.0.0/24, the benchmarking
+  // block 198.18/15, documentation nets, multicast, reserved and broadcast.
+  // The hand-written table it replaces knew five of those and let the rest
+  // through (security review 2026-09-29).
+  // Fail closed: anything that is not a dotted quad (ipaddr.js would accept
+  // shorter forms), or that ipaddr cannot parse, we treat as private.
+  if (!net.isIPv4(ip)) return true;
+  let parsed;
+  try {
+    parsed = ipaddr.IPv4.parse(ip);
+  } catch {
+    return true;
+  }
+  return parsed.range() !== 'unicast';
 }
 
 /**

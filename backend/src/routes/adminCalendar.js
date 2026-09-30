@@ -47,7 +47,9 @@
 const express = require('express');
 const { query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
+const { scopeEventsListQuery } = require('../middleware/ownership');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { hasColumnCached } = require('../utils/schemaCache');
 const { db } = require('../database/db');
@@ -148,11 +150,18 @@ router.get(
     const hasEventCalendarCols = await hasColumnCached('events', 'is_full_day');
 
     // -- 1. Events ---------------------------------------------------------
-    const eventsQ = db('events')
-      .whereBetween('event_date', [from, to])
-      .where('is_active', true)
-      .where('is_archived', false)
-      .orderBy('event_date', 'asc');
+    // Same visibility as the events list: roles that do not see every
+    // event get their own (and unowned) events only. Without this the
+    // calendar handed a restricted role every studio event by name, date
+    // and customer (security review 2026-09-29).
+    const eventsQ = scopeEventsListQuery(
+      db('events')
+        .whereBetween('event_date', [from, to])
+        .where('is_active', true)
+        .where('is_archived', false)
+        .orderBy('event_date', 'asc'),
+      req.admin,
+    );
     // Project columns. The new time columns are guarded so older installs
     // that ran the service before migration 137 still get sane defaults.
     const eventsRows = await eventsQ.select(
@@ -175,13 +184,23 @@ router.get(
       customerName: r.customer_name || null,
     }));
 
+    // The CRM sections follow the same gates as the pages they summarise:
+    // the feature has to be on, and the role has to hold the domain's view
+    // permission. `customers.view` alone opened all three before, so a role
+    // without `contracts.view` still read every pending contract number.
+    const [canSeeHours, canSeeQuotes, canSeeContracts] = await Promise.all([
+      isFeatureEnabled('hoursLogging'),
+      isFeatureEnabled('quotes').then((on) => on && userHasAnyPermission(req.admin.id, ['quotes.view'])),
+      isFeatureEnabled('contracts').then((on) => on && userHasAnyPermission(req.admin.id, ['contracts.view'])),
+    ]);
+
     // -- 2. Hour entries ---------------------------------------------------
     // LEFT JOIN invoices so isEntryLocked has the invoice context it needs.
     // We use the SAME predicate shape the service uses internally
     // (customerHoursService._internal.isEntryLocked at lines 84-91) so
     // the calendar's lock badge matches what the UI shows on the customer
     // detail page.
-    const hoursRows = await db('customer_hour_entries as h')
+    const hoursRows = !canSeeHours ? [] : await db('customer_hour_entries as h')
       .leftJoin('invoices as i', 'i.id', 'h.invoice_id')
       .leftJoin('customer_accounts as c', 'c.id', 'h.customer_account_id')
       .whereBetween('h.entry_date', [from, to])
@@ -239,7 +258,7 @@ router.get(
     // -- 3. Pending quotes ------------------------------------------------
     // Only quotes with status IN ('sent','accepted') AND no converted
     // event yet. The frontend renders these dashed amber.
-    const quotesRows = await db('quotes as q')
+    const quotesRows = !canSeeQuotes ? [] : await db('quotes as q')
       .leftJoin('customer_accounts as c', 'c.id', 'q.customer_account_id')
       .whereIn('q.status', PENDING_QUOTE_STATUSES)
       .whereNull('q.converted_event_id')
@@ -272,7 +291,7 @@ router.get(
     }));
 
     // -- 4. Pending contracts --------------------------------------------
-    const contractsRows = await db('contracts as c')
+    const contractsRows = !canSeeContracts ? [] : await db('contracts as c')
       .leftJoin('customer_accounts as ca', 'ca.id', 'c.customer_account_id')
       .whereIn('c.status', PENDING_CONTRACT_STATUSES)
       .whereNull('c.converted_event_id')

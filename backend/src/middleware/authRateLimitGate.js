@@ -65,6 +65,13 @@ const CREDENTIAL_ENDPOINTS = [
   // one legitimate change a user makes costs nothing.
   { method: 'POST', path: /^\/api\/admin\/auth\/change-password\/?$/i },
   { method: 'POST', path: /^\/api\/customer\/profile\/password\/?$/i },
+  // Disabling MFA and regenerating recovery codes verify a current TOTP or
+  // recovery code, the same way change-password verifies the current
+  // password: a hijacked session can drive them, the session's own JWT skips
+  // the general limiter, and a ±1-step window leaves three valid codes at any
+  // moment. Without this entry nothing bounded the guessing.
+  { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/disable\/?$/i },
+  { method: 'POST', path: /^\/api\/admin\/auth\/mfa\/recovery-codes\/?$/i },
 ];
 
 /**
