@@ -135,6 +135,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const retryAfterRef = useRef(0);
   const lastSrcRef = useRef<string | undefined>(undefined);
   const retryRef = useRef<HTMLDivElement | null>(null);
+  // Read at enqueue time, never a dependency of the fetch effect (#1734).
+  // The lightbox keeps a slide's element across navigation and only flips
+  // this prop when the slide moves between neighbour and current; as a
+  // dependency that flip tore the effect down — aborting the in-flight
+  // request or revoking the loaded blob — and fetched the same image again,
+  // which threw away exactly the prefetch the tiers exist for.
+  const queuePriorityRef = useRef(queuePriority);
+  queuePriorityRef.current = queuePriority;
 
   // Draw image to canvas when canvas rendering is enabled
   // Returns whether the pixels actually made it onto the canvas, so the
@@ -248,7 +256,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }
 
         return await response.blob();
-      }, { priority: queuePriority });
+      }, { priority: queuePriorityRef.current });
       const objectUrl = URL.createObjectURL(blob);
       // The effect may have been torn down while this was in flight. Revoke
       // immediately rather than pushing onto an array nobody will read again.
@@ -313,8 +321,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       controller.abort();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, fallbackSrc, slug, queuePriority, retryNonce]);
+  }, [src, fallbackSrc, slug, retryNonce]);
 
   // Retry a failed fetch once the tile is back on screen (#1287).
   //
