@@ -120,8 +120,13 @@ export default function ProductUsageTab() {
       }
     });
   };
+  // UI tokens, not `text-theme` (issue 1741): ThemeContext.applyTheme() writes
+  // the branding theme's --color-text onto <html>, so a themed wrapper here
+  // painted every label, paragraph and outline button in the gallery's text
+  // colour — grey on white in the light admin whenever the install uses a
+  // dark-toned branding theme. STYLING.md rule 2.
   return (
-    <div className="space-y-6 text-theme">
+    <div className="space-y-6 text-body">
       <p>{t('productUsage.purpose')}</p>
       <Card padding="md" className="space-y-4">
         <h3 className="text-lg font-semibold text-heading">
@@ -130,7 +135,7 @@ export default function ProductUsageTab() {
         <p>{t(`productUsage.stateDetails.${data.status}`)}</p>
         {data.status !== 'disabled' && <p>{t('productUsage.currentSchema', { schema: data.schema_version })}</p>}
         {data.consent_update_available && (
-          <div className="rounded border border-theme p-3 space-y-2">
+          <div className="rounded border border-line p-3 space-y-2">
             <p>{t('productUsage.upgradeExplanation')}</p>
             <Button disabled={busy || Boolean(data.pending_action) || !data.collector_url} onClick={() => setConsent(true)}>
               {t('productUsage.reviewUpgrade')}
@@ -142,7 +147,7 @@ export default function ProductUsageTab() {
           <label className="block">
             {t('productUsage.hash')}
             <input
-              className="mt-1 w-full rounded border border-theme bg-theme-surface p-2 font-mono text-sm"
+              className="mt-1 w-full rounded border border-line-strong bg-panel p-2 font-mono text-sm"
               readOnly
               value={data.installation_id}
             />
@@ -406,7 +411,7 @@ export default function ProductUsageTab() {
             </div>
             {preview !== null && (
               <pre
-                className="max-h-96 overflow-auto rounded border border-theme p-3 text-xs"
+                className="max-h-96 overflow-auto rounded border border-line p-3 text-xs"
                 aria-label={t('productUsage.preview')}
               >
                 {JSON.stringify(preview, null, 2)}
@@ -457,7 +462,7 @@ export default function ProductUsageTab() {
               {t('productUsage.kind')}
               <select
                 aria-label={t('productUsage.kind')}
-                className="block mt-1 rounded border border-theme bg-theme-surface p-2"
+                className="block mt-1 rounded border border-line-strong bg-panel p-2"
                 value={form.kind}
                 onChange={(e) =>
                   setForm({
@@ -480,7 +485,7 @@ export default function ProductUsageTab() {
               <input
                 required
                 maxLength={120}
-                className="block mt-1 w-full rounded border border-theme bg-theme-surface p-2"
+                className="block mt-1 w-full rounded border border-line-strong bg-panel p-2"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
@@ -491,7 +496,7 @@ export default function ProductUsageTab() {
                 required
                 maxLength={4000}
                 rows={5}
-                className="block mt-1 w-full rounded border border-theme bg-theme-surface p-2"
+                className="block mt-1 w-full rounded border border-line-strong bg-panel p-2"
                 value={form.body}
                 onChange={(e) => setForm({ ...form, body: e.target.value })}
               />
@@ -515,7 +520,7 @@ export default function ProductUsageTab() {
                   <input
                     required
                     maxLength={80}
-                    className="block mt-1 rounded border border-theme bg-theme-surface p-2"
+                    className="block mt-1 rounded border border-line-strong bg-panel p-2"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                   />
