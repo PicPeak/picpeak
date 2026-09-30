@@ -495,8 +495,9 @@ router.get('/:slug/hero/:photoId',
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/thumbnail/${photoId}`));
       }
 
-      // Ensure hero image exists and is valid, regenerate if needed
-      const heroPath = await ensureHeroImage(photo);
+      // Ensure hero image exists, is valid and was cut at the event's focal
+      // point (issue 1737); regenerate if needed.
+      const heroPath = await ensureHeroImage(photo, { anchor: req.event.hero_image_anchor });
 
       if (!heroPath) {
         // If hero generation fails, fall back to original photo

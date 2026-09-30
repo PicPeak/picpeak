@@ -10,6 +10,7 @@ const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { getUseOriginalFilenames } = require('./downloadFilenameService');
 const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
+const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
@@ -522,6 +523,10 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // same-origin).
       const imgQuery = [wmVersion, adminPreview ? 'admin_preview=1' : ''].filter(Boolean).join('&');
       const wmQuery = imgQuery ? `?${imgQuery}` : '';
+      // The hero crop follows the event's focal point (issue 1737) and the
+      // hero route caches for an hour, so a non-centre anchor rides in the
+      // URL: a changed anchor is a new URL, not a stale cached crop.
+      const heroQuery = [imgQuery, heroAnchorQuery(event.hero_image_anchor)].filter(Boolean).join('&');
       const previewUrl = `/api/gallery/${slug}/preview/${photo.id}${wmQuery}`;
       // A limited gallery withholds the original of every image it has not
       // granted yet (routes/gallery/media.js), so point straight at the
@@ -549,7 +554,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
           ? `/api/gallery/${slug}/thumbnail/${photo.id}${wmQuery}`
           : null,
         // Hero-optimized image URL (1920x1080) for full-width hero sections
-        hero_url: `/api/gallery/${slug}/hero/${photo.id}${wmQuery}`,
+        hero_url: `/api/gallery/${slug}/hero/${photo.id}${heroQuery ? `?${heroQuery}` : ''}`,
         // Lightbox preview URL (#492). Only emitted when the admin
         // has flipped lightbox_preview_enabled — the frontend
         // lightbox reads preview_url with a fallback to url so

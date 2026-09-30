@@ -90,7 +90,9 @@ describe('ensureHeroImage — external sources', () => {
     // Per-photo basename, so two events sharing a NAS filename cannot clobber
     // each other — same rule as the preview tier.
     expect(key).toContain(`ext${photo.id}_`);
-    expect(db.__state.updates).toEqual([{ criteria: { id: photo.id }, values: { hero_path: key } }]);
+    // No anchor passed and the event has none: the centre crop, recorded as
+    // such so a later anchor change is detected (issue 1737).
+    expect(db.__state.updates).toEqual([{ criteria: { id: photo.id }, values: { hero_path: key, hero_anchor: '50% 50%' } }]);
   });
 
   it('returns null rather than throwing when the external source is gone', async () => {
