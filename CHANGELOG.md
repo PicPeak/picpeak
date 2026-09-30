@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.8](https://github.com/PicPeak/picpeak/compare/v3.133.7...v3.133.8) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** close the four open Trivy findings on the backend image (stable) ([#1727](https://github.com/PicPeak/picpeak/issues/1727)) ([e97898b](https://github.com/PicPeak/picpeak/commit/e97898b04f634031834d12718d5e32cfd9f08435))
+* **security:** close the 2026-09-29 review and Codex audit findings (stable) ([#1729](https://github.com/PicPeak/picpeak/issues/1729)) ([f309a27](https://github.com/PicPeak/picpeak/commit/f309a27261a2dd93395184b8b61dcbea0a17ee10))
+
 ## [3.133.7](https://github.com/PicPeak/picpeak/compare/v3.133.6...v3.133.7) (2026-09-27)
 
 
