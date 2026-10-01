@@ -15,6 +15,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { toast } from 'react-toastify';
 import {
   Plus, Send, Link2, Download, Trash2, Upload, X, Copy, Image as ImageIcon,
@@ -68,7 +69,7 @@ type TabKey = 'all' | 'send' | 'request';
  */
 function warnWriteNotes(
   result: TransferWriteResult | undefined,
-  t: (k: string, d: string, o?: object) => string,
+  t: TFunction,
 ) {
   const rejected = result?.rejected_files || [];
   const dropped = result?.dropped_files || [];
