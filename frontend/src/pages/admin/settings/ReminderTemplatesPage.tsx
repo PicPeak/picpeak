@@ -247,7 +247,11 @@ export const ReminderTemplatesPage: React.FC = () => {
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700">
+        {/* Settings has no child path routes — its tabs are selected with
+            ?tab= — so "/admin/settings/crm" matched nothing, fell through
+            to the global catch-all and rendered the public not-found page
+            outside the admin chrome (main PR 1730). */}
+        <Link to="/admin/settings?tab=crm" className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         {/* Explicit neutral colours (not `text-theme` / `text-muted-theme`):
