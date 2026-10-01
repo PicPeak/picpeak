@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.9](https://github.com/PicPeak/picpeak/compare/v3.133.8...v3.133.9) (2026-10-01)
+
+
+### Bug Fixes
+
+* **admin:** keep the reminder templates back arrow inside the admin (stable) ([#1753](https://github.com/PicPeak/picpeak/issues/1753)) ([f86c913](https://github.com/PicPeak/picpeak/commit/f86c913e16b9ce67e8315f56f2aa0093b5700961))
+* **admin:** stop the branding theme greying out the product usage tab (stable) ([#1752](https://github.com/PicPeak/picpeak/issues/1752)) ([3354937](https://github.com/PicPeak/picpeak/commit/3354937e89ab75240d1afeccc4d284a0b0d74314))
+* **deps:** close the sixteen open Trivy findings on the aio image (stable) ([#1758](https://github.com/PicPeak/picpeak/issues/1758)) ([cd6d007](https://github.com/PicPeak/picpeak/commit/cd6d007ad03e1ab4879b6dcf9a3e155a4f1b040e))
+* **gallery:** cut the hero rendition at the event's focal point ([#1744](https://github.com/PicPeak/picpeak/issues/1744)) ([#1751](https://github.com/PicPeak/picpeak/issues/1751)) ([75785a1](https://github.com/PicPeak/picpeak/commit/75785a1afe2ed5359b125e6c4c32511f0c3677cc))
+* **gallery:** fetch the lightbox slide on screen ahead of its neighbours ([#1736](https://github.com/PicPeak/picpeak/issues/1736)) ([#1750](https://github.com/PicPeak/picpeak/issues/1750)) ([8f3ffc5](https://github.com/PicPeak/picpeak/commit/8f3ffc5c094cf8d2873814905a51ff6eded2f3d6))
+* **gallery:** sort and search by the original camera filename ([#1702](https://github.com/PicPeak/picpeak/issues/1702)) ([#1749](https://github.com/PicPeak/picpeak/issues/1749)) ([350c4f2](https://github.com/PicPeak/picpeak/commit/350c4f2b4ab9d05bcb1c49eb2460ae7bf1a36032))
+
 ## [3.133.8](https://github.com/PicPeak/picpeak/compare/v3.133.7...v3.133.8) (2026-09-30)
 
 
