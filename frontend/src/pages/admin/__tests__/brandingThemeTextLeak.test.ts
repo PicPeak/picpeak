@@ -41,6 +41,10 @@ const ADMIN_ONLY_FILES = [
   'pages/admin/SystemHealthPage.tsx',
   'components/admin/CrmOverviewSection.tsx',
   'components/admin/HoursSection.tsx',
+  // Issue 1741: the whole usage tab was wrapped in `text-theme`, so a
+  // dark-toned branding theme greyed out every control on it in light mode.
+  'features/settings/tabs/ProductUsageTab.tsx',
+  'features/settings/UsageCatalog.tsx',
 ];
 
 const THEMED_TEXT_CLASS = /className="[^"]*\btext-(muted-)?theme\b/;

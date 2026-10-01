@@ -9,7 +9,7 @@ export function UsageCatalog() {
   const entries = Object.entries(catalog.features).filter(([key]) =>
     `${key} ${t(`productUsage.catalog.${key}.name`)}`.toLowerCase().includes(search.toLowerCase()));
   return (
-    <details className="rounded border border-theme p-3">
+    <details className="rounded border border-neutral-300 dark:border-neutral-600 p-3">
       <summary className="cursor-pointer font-semibold">{t('productUsage.catalogTitle')}</summary>
       <p className="my-3 text-sm">{t('productUsage.catalogExplanation')}</p>
       <section className="my-3 space-y-2 text-sm">
@@ -22,11 +22,11 @@ export function UsageCatalog() {
       <label className="block text-sm">
         {t('productUsage.catalogSearch')}
         <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-          className="my-2 w-full rounded border border-theme bg-theme-surface p-2" />
+          className="my-2 w-full rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 p-2" />
       </label>
       <div className="max-h-96 space-y-3 overflow-y-auto" tabIndex={0}>
         {entries.map(([key, definition]) => (
-          <section key={key} className="border-t border-theme pt-2">
+          <section key={key} className="border-t border-neutral-300 dark:border-neutral-600 pt-2">
             <h4 className="font-semibold">{t(`productUsage.catalog.${key}.name`)}</h4>
             <p className="text-xs"><code>{key}</code> · {definition.since}</p>
             <p className="text-sm">{t(definition.configuration === 'builtin' ? 'productUsage.builtinLabel' : definition.configuration === 'flag' || definition.configuration === 'capability' ? 'productUsage.enabledLabel' : 'productUsage.configuredLabel')}: {t(`productUsage.catalog.${key}.configured`)}</p>
