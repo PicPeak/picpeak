@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
+const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
@@ -763,7 +764,8 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
  */
 async function generateHeroImage(imagePath, options = {}) {
   const filename = options.outputBasename || path.basename(imagePath);
-  const heroFilename = `hero_${filename}`;
+  // One file per focal point (issue 1737): see heroRenditionName.
+  const heroFilename = heroRenditionName(filename, options.anchor);
   const heroRelKey = path.posix.join('heroes', heroFilename);
   const storage = getStorage();
 
@@ -802,11 +804,30 @@ async function generateHeroImage(imagePath, options = {}) {
     // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
 
-    sharpInstance = sharpInstance.resize(heroWidth, heroHeight, {
-      withoutEnlargement: false,
-      fit: 'cover',
-      position: 'center'
-    });
+    // Cover-crop at the event's focal point (issue 1737). This used to be
+    // `fit: 'cover', position: 'center'`, and the anchor only reached the
+    // gallery as CSS object-position — which can move within the centre
+    // crop but never reach the top or bottom of a portrait source. sharp's
+    // `position` takes compass gravities and the entropy/attention
+    // strategies, not a point, so the rectangle is computed here: scale so
+    // the shorter side fills the frame, then cut the frame out with the
+    // slack distributed by the anchor (0% = start edge, 100% = end edge).
+    // Oriented dimensions: .rotate() above swaps them for EXIF 5-8.
+    const [anchorX, anchorY] = heroAnchorPoint(options.anchor);
+    const swapped = metadata.orientation >= 5;
+    const srcWidth = swapped ? metadata.height : metadata.width;
+    const srcHeight = swapped ? metadata.width : metadata.height;
+    const scale = Math.max(heroWidth / srcWidth, heroHeight / srcHeight);
+    const scaledWidth = Math.max(heroWidth, Math.round(srcWidth * scale));
+    const scaledHeight = Math.max(heroHeight, Math.round(srcHeight * scale));
+    sharpInstance = sharpInstance
+      .resize(scaledWidth, scaledHeight, { withoutEnlargement: false, fit: 'fill' })
+      .extract({
+        left: Math.round((scaledWidth - heroWidth) * anchorX / 100),
+        top: Math.round((scaledHeight - heroHeight) * anchorY / 100),
+        width: heroWidth,
+        height: heroHeight
+      });
 
     sharpInstance = sharpInstance.jpeg({
       quality: quality,
@@ -853,19 +874,51 @@ async function isHeroValid(heroPath) {
 /**
  * Ensure a hero image exists for a photo, regenerate if needed
  */
-async function ensureHeroImage(photo) {
+async function ensureHeroImage(photo, { anchor } = {}) {
   if (photo.hero_path) {
     const isValid = await isHeroValid(photo.hero_path);
-    if (isValid) {
+    // A readable rendition cut at another focal point is stale too (issue
+    // 1737). A caller that does not know the event's anchor (undefined)
+    // keeps whatever is stored; a NULL hero_anchor is the pre-237 centre crop.
+    const anchorMatches = anchor === undefined
+      || normalizeHeroAnchor(photo.hero_anchor) === normalizeHeroAnchor(anchor);
+    if (isValid && anchorMatches) {
       return photo.hero_path;
     }
-    logger.warn(`Invalid hero image detected for photo ${photo.id}, regenerating...`);
+    logger.warn(isValid
+      ? `Hero image for photo ${photo.id} was cut at another focal point, regenerating...`
+      : `Invalid hero image detected for photo ${photo.id}, regenerating...`);
   }
 
-  return singleFlight(flightKey('hero', photo), () => regenerateHeroImage(photo));
+  // Per anchor: a request for the new focal point must not join a flight that
+  // is still cutting the old one and be handed that rendition.
+  const flight = `${flightKey('hero', photo)}:${anchor === undefined ? 'stored' : normalizeHeroAnchor(anchor)}`;
+  return singleFlight(flight, () => regenerateHeroImage(photo, anchor));
 }
 
-async function regenerateHeroImage(photo) {
+// The rendition of a previous focal point is a different file (see
+// heroRenditionName); once the row points at the new one, drop it. Deleting
+// only what the row pointed at means a concurrent flight for another anchor
+// loses nothing it still needs.
+async function dropSupersededHero(photo, newHeroPath) {
+  if (!photo.hero_path || photo.hero_path === newHeroPath) return;
+  // Managed hero names derive from the source basename, so another photo
+  // row can point at the same key; deleteEventCascade (adminEvents/helpers)
+  // makes the same check before it deletes. When in doubt, keep the file.
+  try {
+    const shared = await db('photos')
+      .where({ hero_path: photo.hero_path })
+      .whereNot({ id: photo.id })
+      .first();
+    if (shared) return;
+  } catch (e) {
+    logger.warn(`Could not check whether hero ${photo.hero_path} is shared; keeping it: ${e.message}`);
+    return;
+  }
+  await getStorage().delete(photo.hero_path).catch(() => {});
+}
+
+async function regenerateHeroImage(photo, anchor) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   let event;
@@ -875,6 +928,11 @@ async function regenerateHeroImage(photo) {
     logger.error(`Failed to load event for hero image (photo ${photo.id}): ${e.message}`);
     return null;
   }
+
+  // The route passes the anchor it authorised against; anyone else gets the
+  // event's. Stored alongside hero_path so the next request can tell whether
+  // the file still matches the event.
+  const heroAnchor = normalizeHeroAnchor(anchor !== undefined ? anchor : event?.hero_image_anchor);
 
   // External sources never reach the managed backend, so resolvePhotoStorageKey
   // returns null for them by design — and this function used to feed that null
@@ -901,9 +959,11 @@ async function regenerateHeroImage(photo) {
     newHeroPath = await generateHeroImage(localPath, {
       regenerate: true,
       outputBasename: `ext${photo.id}_${sourceBasename}`,
+      anchor: heroAnchor,
     });
     if (newHeroPath) {
-      await db('photos').where({ id: photo.id }).update({ hero_path: newHeroPath });
+      await db('photos').where({ id: photo.id }).update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+      await dropSupersededHero(photo, newHeroPath);
     }
     return newHeroPath;
   }
@@ -928,7 +988,7 @@ async function regenerateHeroImage(photo) {
   newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
     const proc = await withProcessableImage(localPath, sourceKey);
     try {
-      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
+      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename, anchor: heroAnchor });
     } finally {
       await proc.cleanup();
     }
@@ -937,7 +997,8 @@ async function regenerateHeroImage(photo) {
   if (newHeroPath) {
     await db('photos')
       .where({ id: photo.id })
-      .update({ hero_path: newHeroPath });
+      .update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+    await dropSupersededHero(photo, newHeroPath);
 
     logger.info(`Regenerated hero image for photo ${photo.id}`);
     return newHeroPath;
