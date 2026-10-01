@@ -170,13 +170,21 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   }
 
   let generatedThumbnailKey = null;
+  // Why the poster frame is missing, kept for the row: a video that completed
+  // with the placeholder used to be indistinguishable from one with a real
+  // poster frame, so the admin saw a grey tile and nothing to act on
+  // (issue 1430, item 6).
+  let thumbnailError = null;
   try {
     await generateVideoThumbnail(videoPath, thumbnailKey, options);
     const storage = getStorage();
     if (await storage.exists(thumbnailKey)) {
       generatedThumbnailKey = thumbnailKey;
+    } else {
+      thumbnailError = 'ffmpeg produced no poster frame';
     }
   } catch (error) {
+    thumbnailError = error.message;
     logger.error('Video thumbnail generation failed — continuing without a thumbnail', {
       error: error.message,
       videoPath
@@ -194,6 +202,10 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   // that placeholder too, not to "no thumbnail". thumbnailKey is always
   // `thumbnails/thumb_<name>.jpg` (see callers) — strip the prefix back to
   // a filename so generateVideoPlaceholder recomputes this exact same key.
+  // Tracked as a flag, not by comparing keys: the placeholder lands under the
+  // very same key as a real frame would (that is the point of the filename
+  // derivation below), so the key alone cannot tell the two apart.
+  let usedPlaceholder = false;
   if (!generatedThumbnailKey) {
     try {
       const {
@@ -212,6 +224,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
       });
       if (placeholderKey) {
         generatedThumbnailKey = placeholderKey;
+        usedPlaceholder = true;
       }
     } catch (error) {
       logger.error('Video placeholder generation also failed', { error: error.message, videoPath });
@@ -233,8 +246,25 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   return {
     success: true,
     metadata,
-    thumbnailKey: generatedThumbnailKey
+    thumbnailKey: generatedThumbnailKey,
+    // True when thumbnailKey holds the SVG placeholder, not a frame of the video.
+    placeholder: usedPlaceholder,
+    thumbnailError: usedPlaceholder ? thumbnailError : null
   };
+}
+
+/**
+ * The processing_error text for a video that completed with the placeholder
+ * tile. One place, so the upload worker, the synchronous upload path and the
+ * external import write the same note and the admin grid can show it.
+ */
+function posterFrameError(reason) {
+  // ffmpeg's message runs to several lines and names the file's path on
+  // disk; the first line without the path says what the admin can act on.
+  const detail = reason
+    ? String(reason).split('\n')[0].replace(/\/[^\s'"]+/g, '…').trim().slice(0, 200)
+    : '';
+  return detail ? `No poster frame: ${detail}` : 'No poster frame: ffmpeg could not read the video';
 }
 
 /**
@@ -268,6 +298,7 @@ module.exports = {
   isValidVideo,
   getVideoDuration,
   processUploadedVideo,
+  posterFrameError,
   getThumbnailAtTime,
   isVideoMimeType
 };

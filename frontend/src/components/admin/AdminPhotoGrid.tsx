@@ -10,7 +10,7 @@ import { photosService } from '../../services/photos.service';
 import { uploadsService } from '../../services/uploads.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { getPhotoViewMode, setPhotoViewMode, type PhotoViewMode } from '../../utils/photoViewPrefs';
-import { mediaSplitLabel, splitMediaCount } from '../../utils/mediaCounts';
+import { defaultCategoryLabel, isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../utils/mediaCounts';
 import { Button } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
@@ -45,9 +45,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const { format: formatDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   // The same test the tiles below use to tell a video from a photo.
-  const videoCount = photos.filter((photo) =>
-    photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video'
-  ).length;
+  const videoCount = photos.filter(isVideoItem).length;
   const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set());
   // Where a shift-click measures its range from: the last tile clicked without
   // the shift key (#1212). The index is what a range needs — a span of the
@@ -266,7 +264,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             onClick={toggleSelectionMode}
             leftIcon={<Package className="w-4 h-4" />}
           >
-            {isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : t('gallery.selectPhotos', 'Select Photos')}
+            {isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, videoCount > 0)}
           </Button>
           
           {(isSelectionMode || selectedPhotos.size > 0) && (
@@ -550,11 +548,49 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             </div>
 
             {/* Category Badge - move to top-left and prevent overlap with select checkbox */}
-            {photo.category_name && (
+            {defaultCategoryLabel(t, photo) && (
               <div className={`absolute left-2 ${isHidden ? 'top-9' : 'top-2'} pointer-events-none`}>
                 <span className="px-2 py-1 text-xs font-medium bg-white/90 text-neutral-700 rounded max-w-[70%] whitespace-nowrap overflow-hidden text-ellipsis">
-                  {photo.category_name}
+                  {defaultCategoryLabel(t, photo)}
                 </span>
+              </div>
+            )}
+
+            {/* A complete video on the placeholder tile (issue 1430, item 6):
+                the row is fine, the poster frame is not. Same Retry as the
+                failed placeholder above. One row above the video pill and
+                the colour label, which own the bottom-left corner, the way
+                the category badge drops a row under the hidden badge. */}
+            {photo.processing_status === 'complete' && photo.processing_error && (
+              <div
+                className="absolute bottom-9 left-2 z-20 flex items-center gap-1"
+                data-testid={`admin-photo-poster-note-${photo.id}`}
+              >
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-white text-[10px] font-medium"
+                  title={photo.processing_error}
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                  {t('admin.photos.noPosterFrame', 'No poster frame')}
+                </span>
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await uploadsService.retryPhoto(photo.id);
+                      toast.success(t('admin.photos.retryQueued', 'Retry queued'));
+                      queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
+                    } catch (err: any) {
+                      toast.error(err?.response?.data?.error || 'Retry failed');
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 text-neutral-700 text-[10px] font-medium"
+                  title={t('admin.photos.noPosterFrameRetry', 'Take the poster frame again') as string}
+                >
+                  <RefreshCw className="w-2.5 h-2.5" />
+                  {t('common.retry', 'Retry')}
+                </button>
               </div>
             )}
 
@@ -778,7 +814,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
                   {/* Category */}
                   <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] truncate text-sm text-soft">
-                    {photo.category_name || '—'}
+                    {defaultCategoryLabel(t, photo) || '—'}
                   </td>
 
                   {/* Credit (#1561) */}

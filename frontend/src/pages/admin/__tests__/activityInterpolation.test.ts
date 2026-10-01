@@ -22,8 +22,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import i18n from '../../../i18n/config';
 import { notificationsService, type Notification } from '../../../services/notifications.service';
-import { buildActivityParams } from '../AdminDashboard';
-import type { Activity } from '../../../services/admin.service';
+import { activityMessageKey, buildActivityParams } from '../AdminDashboard';
+import { adminService, type Activity } from '../../../services/admin.service';
 
 const activity = (type: string, metadata: Record<string, unknown>): Activity =>
   ({
@@ -49,7 +49,40 @@ const notification = (type: string, metadata: Record<string, unknown>): Notifica
   }) as Notification;
 
 const render = (a: Activity) =>
-  i18n.t(`admin.activities.${a.type}`, buildActivityParams(a)) as string;
+  i18n.t(activityMessageKey(a), buildActivityParams(a)) as string;
+
+describe('upload activity wording by media type (issue 1430)', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  // Exactly what adminPhotos.js records: count is the total, videoCount the
+  // videos among them. Older rows carry only count.
+  it('keeps the photo line for an upload without videos', () => {
+    const a = { ...activity('photos_uploaded', { count: 12, photoCount: 12, videoCount: 0 }), eventName: 'Anna & Tom' };
+    expect(render(a)).toBe('12 photos uploaded to Anna & Tom');
+    expect(render({ ...activity('photos_uploaded', { count: 3 }), eventName: 'Anna & Tom' })).toBe('3 photos uploaded to Anna & Tom');
+  });
+
+  it('says what was uploaded when videos were among it, in the feed and the bell', () => {
+    const a = { ...activity('photos_uploaded', { count: 12, photoCount: 9, videoCount: 3 }), eventName: 'Anna & Tom' };
+    expect(render(a)).toBe('9 photos · 3 videos uploaded to Anna & Tom');
+    expect(render({ ...a, metadata: { count: 2, photoCount: 0, videoCount: 2 } })).toBe('2 videos uploaded to Anna & Tom');
+
+    const n = { ...notification('photos_uploaded', { count: 12, videoCount: 3 }), eventName: 'Anna & Tom' };
+    expect(notificationsService.formatNotificationMessage(n)).toBe('9 photos · 3 videos uploaded to "Anna & Tom"');
+    // The English fallback the feed uses for a locale without the key.
+    expect(adminService.formatActivityMessage(a)).toBe('9 photos · 3 videos uploaded to Anna & Tom');
+  });
+
+  it('renders in German too', async () => {
+    await i18n.changeLanguage('de');
+    const a = { ...activity('photos_uploaded', { count: 12, photoCount: 9, videoCount: 3 }), eventName: 'Anna & Tom' };
+    expect(render(a)).toBe('9 Fotos · 3 Videos hochgeladen in Anna & Tom');
+    expect(render(a)).not.toContain('{{');
+    await i18n.changeLanguage('en');
+  });
+});
 
 describe('dashboard activity feed interpolation', () => {
   beforeAll(async () => {

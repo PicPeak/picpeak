@@ -283,6 +283,7 @@
     "downloadedPhotos_plural": "¡{{count}} fotos descargadas!",
     "downloadError": "Algunas fotos fallaron al descargar",
     "selectPhotos": "Seleccionar fotos",
+    "selectMedia": "Seleccionar medios",
     "cancelSelection": "Cancelar selección",
     "photosSelected": "{{count}} seleccionadas",
     "selectAll": "Seleccionar todo",
@@ -1542,6 +1543,7 @@
       "eventUpdated": "Evento \"{{eventName}}\" actualizado",
       "eventDeleted": "Evento \"{{eventName}}\" eliminado",
       "photosUploaded": "{{count}} fotos subidas a \"{{eventName}}\"",
+      "mediaUploaded": "{{media}} subidos a \"{{eventName}}\"",
       "photoDeleted": "Foto eliminada de \"{{eventName}}\"",
       "photosBulkDeleted": "{{count}} fotos eliminadas de \"{{eventName}}\"",
       "eventExpiring": "El evento \"{{eventName}}\" expira en {{days}} días",
@@ -1617,6 +1619,7 @@
       "gallery_opened": "Se abrió la galería «{{eventName}}»",
       "gallery_downloaded": "Se descargaron fotos de «{{eventName}}»",
       "photos_uploaded": "{{count}} fotos subidas a {{eventName}}",
+      "media_uploaded": "{{media}} subidos a {{eventName}}",
       "event_archived": "Evento archivado: {{eventName}}",
       "archive_restored": "Archivo restaurado: {{eventName}}",
       "archive_deleted": "Archivo eliminado: {{eventName}}",
@@ -1723,7 +1726,12 @@
         "filterLabel": "Filtrar por autor",
         "filterAll": "Todos los nombres",
         "filterNone": "Sin nombre"
-      }
+      },
+      "individualPhotos": "Fotos individuales",
+      "individualVideos": "Vídeos individuales",
+      "collages": "Collages",
+      "noPosterFrame": "Sin fotograma de portada",
+      "noPosterFrameRetry": "Volver a tomar el fotograma de portada"
     },
     "guests": {
       "columns": {
@@ -2621,6 +2629,7 @@
     "hasFavorites": "Con favoritos",
     "hasComments": "Con comentarios",
     "showingPhotos": "Fotos totales",
+    "showingMedia": "Medios totales",
     "withRatings": "Con valoraciones",
     "colorLabels": "Etiquetas de color",
     "showOnlyColor": "Mostrar solo {{color}}",

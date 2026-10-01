@@ -3,9 +3,9 @@ const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
-const { processUploadedVideo, extractVideoMetadata, isVideoMimeType } = require('./videoProcessor');
+const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrameError } = require('./videoProcessor');
 const { getStorage } = require('./storage');
-const { resolvePhotoStorageKey } = require('./photoResolver');
+const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const logger = require('../utils/logger');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 
@@ -136,6 +136,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       let thumbnailPath;
       let videoMetadata = null;
       let imageMetadata = null;
+      // A video that completes with the placeholder tile records why, so the
+      // admin grid can say so and offer a retry (issue 1430, item 6). The row
+      // still completes: the guest gallery lists only complete rows.
+      let processingError = null;
 
       if (isVideo) {
         const videoThumbnailKey = path.posix.join(
@@ -153,8 +157,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
           const result = await processUploadedVideo(tempPath, videoThumbnailKey);
           videoMetadata = result.metadata;
           thumbnailPath = result.thumbnailKey;
+          if (result.placeholder) processingError = posterFrameError(result.thumbnailError);
         } catch (videoErr) {
           logger.warn(`Video processing failed for ${file.originalname}, using placeholder thumbnail:`, videoErr.message);
+          processingError = posterFrameError(videoErr.message);
           try {
             videoMetadata = await extractVideoMetadata(tempPath);
           } catch (metaErr) {
@@ -232,6 +238,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         source_origin: 'managed',
         media_type: mediaType,
         mime_type: file.mimetype,
+        ...(processingError ? { processing_error: processingError } : {}),
         ...credit
       };
 
@@ -510,18 +517,28 @@ async function processPhoto(photoId) {
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!event) throw new Error(`Event ${photo.event_id} not found for photo ${photoId}`);
 
+  // Null for an external row: those live on the mount, not in the managed
+  // backend. The import writes them complete without this worker, so the only
+  // way one gets here is the admin grid's Retry on a video whose poster frame
+  // failed — which used to hand this null to withLocalCopy.
   const sourceKey = resolvePhotoStorageKey(event, photo);
   const isVideo =
     photo.media_type === 'video' ||
     (typeof photo.mime_type === 'string' && photo.mime_type.startsWith('video/'));
 
   const updateData = {};
+  // Set when a video completes with the placeholder tile (issue 1430, item 6).
+  let posterError = null;
 
   // withLocalCopy materialises the original from the storage backend so
   // sharp/ffmpeg can read it. For local storage this is a free O(1) path
-  // resolution; for S3 it downloads to a tmpdir that's auto-cleaned.
+  // resolution; for S3 it downloads to a tmpdir that's auto-cleaned. An
+  // external source is read straight off the mount.
+  const withSource = sourceKey
+    ? (fn) => withLocalCopy(sourceKey, fn)
+    : (fn) => fn(resolvePhotoFilePath(event, photo));
   let exifCredit = null;
-  await withLocalCopy(sourceKey, async (localPath) => {
+  await withSource(async (localPath) => {
     // Credit (#1561): admin uploads only. A guest upload already carries the
     // guest's name (or deliberately none), and a manual credit is final.
     if (!isVideo && creditOpenForExif(photo)) {
@@ -538,9 +555,16 @@ async function processPhoto(photoId) {
     }
 
     if (isVideo) {
+      // The external key carries the `ext<id>_` prefix regenerateVideoThumbnail
+      // uses, so a retried external video overwrites its import-time tile
+      // rather than writing a second one under a basename another event may
+      // share.
+      const thumbnailBasename = sourceKey
+        ? photo.filename
+        : `ext${photo.id}_${path.basename(photo.external_relpath || photo.filename)}`;
       const videoThumbnailKey = path.posix.join(
         'thumbnails',
-        `thumb_${photo.filename.replace(/\.[^.]+$/, '.jpg')}`
+        `thumb_${thumbnailBasename.replace(/\.[^.]+$/, '.jpg')}`
       );
       // A thumbnail/probe failure must not fail the row: processPhoto's caller
       // marks failed rows 'failed' and the guest gallery only lists 'complete',
@@ -553,15 +577,17 @@ async function processPhoto(photoId) {
       let videoResult = null;
       try {
         videoResult = await processUploadedVideo(localPath, videoThumbnailKey);
+        if (videoResult.placeholder) posterError = posterFrameError(videoResult.thumbnailError);
       } catch (videoErr) {
         logger.warn(`processPhoto: video processing failed for ${photoId}, using placeholder thumbnail`, { error: videoErr.message });
+        posterError = posterFrameError(videoErr.message);
         try {
           videoResult = { metadata: await extractVideoMetadata(localPath) };
         } catch (metaErr) {
           logger.warn(`processPhoto: video metadata extraction also failed for ${photoId}`, { error: metaErr.message });
         }
         // ffmpeg-free (sharp-rendered SVG); returns null on failure.
-        const placeholderKey = await generateVideoPlaceholder(photo.filename);
+        const placeholderKey = await generateVideoPlaceholder(thumbnailBasename);
         if (placeholderKey) videoResult = { ...(videoResult || {}), thumbnailKey: placeholderKey };
       }
       if (videoResult?.thumbnailKey) updateData.thumbnail_path = videoResult.thumbnailKey;
@@ -605,9 +631,10 @@ async function processPhoto(photoId) {
     }
   });
 
-  // Mark complete
+  // Mark complete. A video that got the placeholder completes with a note
+  // instead of a clean slate: the row is usable, the tile is not the video.
   updateData.processing_status = 'complete';
-  updateData.processing_error = null;
+  updateData.processing_error = posterError;
 
   // Face detection (#1074): this is the only correct place to enqueue.
   // Earlier and there is no preview rendition to scan; later and there is no

@@ -488,6 +488,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
           filename: newFilename,
           size: tempStats.size,
           category_id: parsedCategoryId,
+          media_type: isVideo ? 'video' : 'image',
         });
       } catch (err) {
         logger.error(`Error queuing file ${file.originalname}:`, err);
@@ -496,8 +497,17 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }
     
     // Log activity
+    // The type split lets the activity line say "2 videos" instead of
+    // "2 photos" for a video upload (issue 1430, item 3).
+    const videoCount = uploadedPhotos.filter((p) => p.media_type === 'video').length;
     await logActivity('photos_uploaded',
-      { count: uploadedPhotos.length, replacedCount: replacedPhotos.length, eventName: event.event_name },
+      {
+        count: uploadedPhotos.length,
+        photoCount: uploadedPhotos.length - videoCount,
+        videoCount,
+        replacedCount: replacedPhotos.length,
+        eventName: event.event_name,
+      },
       eventId,
       { type: 'admin', id: req.admin.id, name: req.admin.username }
     );
@@ -707,7 +717,12 @@ router.post(
         return res.status(404).json({ error: 'Photo not found' });
       }
 
-      if (photo.processing_status !== 'failed') {
+      // 'failed', or complete with a note: a video that got the placeholder
+      // tile is a usable row whose poster frame is still owed (issue 1430,
+      // item 6). Anything else is in flight or has nothing to redo.
+      const retryable = photo.processing_status === 'failed'
+        || ((photo.processing_status || 'complete') === 'complete' && !!photo.processing_error);
+      if (!retryable) {
         return res.status(409).json({
           error: `Photo is in '${photo.processing_status}' state and cannot be retried`,
         });
@@ -1476,8 +1491,15 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // Same omission: the grid's "Processing…" and "Failed"/Retry
         // placeholders read this, so neither could ever render either.
         processing_status: photo.processing_status || 'complete',
+        // Set on a complete video that shows the placeholder tile (issue
+        // 1430, item 6); the grid shows the note and offers Retry.
+        processing_error: photo.processing_error || null,
         category_id: photo.category_id || photo.type,
-        category_name: photo.pc_name || (photo.type === 'individual' ? 'Individual Photos' : 'Collages'),
+        // Only a real category has a name here. The fallback used to be the
+        // English "Individual Photos" / "Collages", which no locale could
+        // translate and which labelled a video a photo; the grid now derives
+        // the default label from category_slug and the media type.
+        category_name: photo.pc_name || null,
         category_slug: photo.pc_slug || photo.type,
         media_type: photo.media_type || 'image',
         mime_type: photo.mime_type || null,

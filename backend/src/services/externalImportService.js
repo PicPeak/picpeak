@@ -30,7 +30,7 @@ const {
   importableExtensions,
 } = require('./externalMediaTypes');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
-const { processUploadedVideo } = require('./videoProcessor');
+const { processUploadedVideo, posterFrameError } = require('./videoProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
 const jobState = require('./maintenanceJobState');
@@ -538,6 +538,9 @@ async function importExternalFolder({
             const m = result.metadata || {};
             await db('photos').where({ id: photoId }).update({
               thumbnail_path: result.thumbnailKey,
+              // The placeholder is a completed row with a note, so the admin
+              // grid can show it and offer a retry (issue 1430, item 6).
+              processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
               ...(m.duration != null ? { duration: m.duration } : {}),
               ...(m.videoCodec ? { video_codec: m.videoCodec } : {}),
               ...(m.audioCodec ? { audio_codec: m.audioCodec } : {}),
@@ -548,6 +551,9 @@ async function importExternalFolder({
           } catch (videoErr) {
             thumbnailsFailed++;
             logger.warn(`Video processing failed for external video ${photoId} (${f.rel}): ${videoErr.message}`);
+            await db('photos').where({ id: photoId })
+              .update({ processing_error: posterFrameError(videoErr.message) })
+              .catch(() => {});
           }
         }
 

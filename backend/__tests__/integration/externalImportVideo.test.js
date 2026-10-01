@@ -252,6 +252,26 @@ describe('external import of videos (issue 1430)', () => {
     expect(res.body).toMatchObject({ imported: 1, thumbnailsGenerated: 0, thumbnailsFailed: 1 });
     const video = await db('photos').where({ event_id: eventId }).first();
     expect(video).toMatchObject({ media_type: 'video', mime_type: 'video/mp4', thumbnail_path: null, duration: null });
+    // The admin grid shows the note and offers Retry (issue 1430, item 6).
+    expect(video.processing_error).toBe('No poster frame: Unable to generate any thumbnail');
+  });
+
+  it('notes a video that imported on the placeholder tile, and clears the note on a real frame', async () => {
+    await allowTypes('jpg,mp4');
+    const eventId = await seedEvent();
+    await write('shoot/hevc.mp4');
+    processUploadedVideo.mockImplementation(async (_p, thumbnailKey) => ({
+      success: true, thumbnailKey, placeholder: true, thumbnailError: 'ffmpeg seek failed',
+      metadata: { duration: 9, videoCodec: 'hevc' },
+    }));
+
+    await runImport(eventId);
+
+    const video = await db('photos').where({ event_id: eventId }).first();
+    expect(video.thumbnail_path).toBe(`thumbnails/thumb_ext${video.id}_hevc.jpg`);
+    expect(video).toMatchObject({ duration: 9, video_codec: 'hevc' });
+    expect(video.processing_error).toBe('No poster frame: ffmpeg seek failed');
+    expect(video.processing_status || 'complete').toBe('complete');
   });
 
   it('stores what ffprobe could read and nothing it could not', async () => {
