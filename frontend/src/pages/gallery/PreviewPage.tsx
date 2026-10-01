@@ -3,7 +3,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { GalleryLayout, PhotoFilterBar } from '../../components/gallery';
 import { Card } from '../../components/common';
 import { Camera } from 'lucide-react';
-import { photoDisplayFilename, photoMatchesFilenameSearch } from '../../utils/photoFilename';
+import { photoMatchesFilenameSearch, photoNameCompare } from '../../utils/photoFilename';
 
 // Mock photo data for preview
 const generateMockPhotos = (count: number) => {
@@ -80,7 +80,7 @@ export const PreviewPage: React.FC = () => {
     photos.sort((a, b) => {
       switch (sortBy) {
         case 'name':
-          return photoDisplayFilename(a).localeCompare(photoDisplayFilename(b));
+          return photoNameCompare(a, b);
         case 'size':
           return b.size - a.size;
         case 'rating':

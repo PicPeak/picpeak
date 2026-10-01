@@ -78,6 +78,19 @@ describe('useGalleryFiltering name sort', () => {
     expect(result.current.map((p) => p.id)).toEqual([11, 10, 12]);
   });
 
+  it('orders unpadded camera numbers numerically, not lexicographically', () => {
+    const photos: Photo[] = [
+      makePhoto(20, 'Event_cat_0001_a.jpg', 'IMG_100.jpg'),
+      makePhoto(21, 'Event_cat_0002_b.jpg', 'IMG_9.jpg'),
+      makePhoto(22, 'Event_cat_0003_c.jpg', 'IMG_10.jpg'),
+    ];
+    const { result } = renderHook(() =>
+      useGalleryFiltering({ ...baseOptions, sourcePhotos: photos })
+    );
+    // IMG_9 < IMG_10 < IMG_100 (plain localeCompare gives 10, 100, 9)
+    expect(result.current.map((p) => p.id)).toEqual([21, 22, 20]);
+  });
+
   it('search matches original_filename or stored filename', () => {
     const { result } = renderHook(() =>
       useGalleryFiltering({ ...baseOptions, searchTerm: '0v3a9999' })

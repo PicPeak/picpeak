@@ -4,7 +4,7 @@ import type { ColorLabel } from '../../../services/feedback.service';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { photosInScope } from '../folders';
 import { creditKeyOf } from '../../../utils/photoCredits';
-import { photoDisplayFilename, photoMatchesFilenameSearch } from '../../../utils/photoFilename';
+import { photoMatchesFilenameSearch, photoNameCompare } from '../../../utils/photoFilename';
 export type GallerySort = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
 export interface GalleryFilterOptions {
   sourcePhotos?: Photo[]; categories?: PhotoCategory[]; folderId: number | string | null;
@@ -109,7 +109,7 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
       switch (sortBy) {
         case 'name':
           // Natural order is ascending (A-Z); flip when sortDesc=true
-          return (sortDesc ? -1 : 1) * photoDisplayFilename(a).localeCompare(photoDisplayFilename(b));
+          return (sortDesc ? -1 : 1) * photoNameCompare(a, b);
         case 'size':
           return flip * (b.size - a.size);
         case 'rating': {
