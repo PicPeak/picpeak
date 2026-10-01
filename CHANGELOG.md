@@ -5,6 +5,21 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.153.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.152.0-beta.0...v3.153.0-beta.0) (2026-10-01)
+
+
+### Features
+
+* **admin:** count and filter videos, and import them from external folders ([#1738](https://github.com/PicPeak/picpeak/issues/1738)) ([b81352f](https://github.com/PicPeak/picpeak/commit/b81352fe1946b2b2120eed2634547af6eb571df8))
+
+
+### Bug Fixes
+
+* **admin:** stop the branding theme greying out the product usage tab ([#1742](https://github.com/PicPeak/picpeak/issues/1742)) ([8704fb9](https://github.com/PicPeak/picpeak/commit/8704fb943d16d04905c8a7f32cb57620f213dc89))
+* **admin:** type the warnWriteNotes translator as TFunction ([#1746](https://github.com/PicPeak/picpeak/issues/1746)) ([6edea1e](https://github.com/PicPeak/picpeak/commit/6edea1ea622b91cd34172ddf588cb09fd93d4a39))
+* **gallery:** cut the hero rendition at the event's focal point ([#1744](https://github.com/PicPeak/picpeak/issues/1744)) ([2c38498](https://github.com/PicPeak/picpeak/commit/2c38498959e00dfb1ddeadf883e17438dc7e64b1))
+* **gallery:** fetch the lightbox slide on screen ahead of its neighbours ([#1736](https://github.com/PicPeak/picpeak/issues/1736)) ([c9ffe05](https://github.com/PicPeak/picpeak/commit/c9ffe05aae536100fcd8a8b9dd4b6a773ac47295))
+
 ## [3.152.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.151.2-beta.0...v3.152.0-beta.0) (2026-10-01)
 
 
