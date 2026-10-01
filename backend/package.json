@@ -23,7 +23,7 @@
     "@aws-sdk/s3-request-presigner": "^3.850.0",
     "ajv": "^8.20.0",
     "archiver": "^5.3.1",
-    "axios": "1.18.1",
+    "axios": "1.20.0",
     "bcrypt": "6.0.0",
     "chokidar": "4.0.3",
     "compression": "^1.7.5",
