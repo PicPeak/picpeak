@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.154.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.153.0-beta.0...v3.154.0-beta.0) (2026-10-01)
+
+
+### Features
+
+* **usage:** count a delivered webhook as webhook use under usage.v6 ([#1743](https://github.com/PicPeak/picpeak/issues/1743)) ([2aaa12f](https://github.com/PicPeak/picpeak/commit/2aaa12fb5dfea0bedbc262a991aa9b4851102184))
+
 ## [3.153.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.152.0-beta.0...v3.153.0-beta.0) (2026-10-01)
 
 
