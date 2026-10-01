@@ -769,6 +769,10 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     if (photo.preview_path) {
       await storage.delete(photo.preview_path).catch(() => {});
     }
+    // Browser-playable video copy (issue 1430): derived, same semantics.
+    if (photo.web_path) {
+      await storage.delete(photo.web_path).catch(() => {});
+    }
     // Outside the preview_path guard on purpose: a responsive tier (#1095) can
     // exist when the canonical rendition never did — they are generated
     // independently, on demand — so keying their cleanup off preview_path
@@ -1007,6 +1011,9 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       // Lightbox preview tier (#492) — bulk delete cleanup.
       if (photo.preview_path) {
         await storage.delete(photo.preview_path).catch(() => {});
+      }
+      if (photo.web_path) {
+        await storage.delete(photo.web_path).catch(() => {});
       }
       // Outside the guard: a tier can exist when the canonical rendition never
       // did, so keying cleanup off preview_path would strand phone-only photos.
@@ -1481,6 +1488,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         category_slug: photo.pc_slug || photo.type,
         media_type: photo.media_type || 'image',
         mime_type: photo.mime_type || null,
+        // Browser-playable copy (issue 1430, item 8): null until the setting
+        // has queued the video. The grid shows a failed copy; the original
+        // keeps playing (or not) as before.
+        web_status: photo.web_status || null,
+        web_error: photo.web_error || null,
         width: photo.width || null,
         height: photo.height || null,
         duration: photo.duration || null,

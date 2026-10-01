@@ -29,7 +29,7 @@ async function deleteEventCascade(eventId, adminContext) {
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
     .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
-      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path');
 
   // A Set because a photo can carry the same key in two columns (an unresized
   // gallery's hero and preview can resolve to one object) and deleting it
@@ -54,7 +54,7 @@ async function deleteEventCascade(eventId, adminContext) {
       }
       // Derived tiers are stored as canonical keys and pass through verbatim,
       // the same list adminPhotoDimensions.js:801 sweeps on a re-render.
-      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.watermark_path]) {
+      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.watermark_path, photo.web_path]) {
         if (derived) {
           storageKeys.add(derived);
           derivedKeys.add(derived);
@@ -87,10 +87,11 @@ async function deleteEventCascade(eventId, adminContext) {
           .whereIn('thumbnail_path', chunk)
           .orWhereIn('hero_path', chunk)
           .orWhereIn('preview_path', chunk)
-          .orWhereIn('watermark_path', chunk))
-        .select('thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
+          .orWhereIn('watermark_path', chunk)
+          .orWhereIn('web_path', chunk))
+        .select('thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path');
       for (const row of shared) {
-        for (const key of [row.thumbnail_path, row.hero_path, row.preview_path, row.watermark_path]) {
+        for (const key of [row.thumbnail_path, row.hero_path, row.preview_path, row.watermark_path, row.web_path]) {
           if (key && derivedKeys.has(key)) storageKeys.delete(key);
         }
       }

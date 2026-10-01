@@ -786,6 +786,8 @@
       "defaultExpiration": "Expiración por defecto (días)",
       "defaultExpirationHelp": "Cuánto tiempo permanecen activas las galerías por defecto",
       "maxFileSize": "Tamaño máximo de archivo (MB)",
+      "videoWebRendition": "Copias de vídeo reproducibles en el navegador",
+      "videoWebRenditionHelp": "Recodifica los vídeos que un navegador no puede reproducir (HEVC, QuickTime, MP4 no transmitibles) a un MP4 H.264 para la reproducción. El original sigue siendo la descarga. Consume CPU por vídeo y un segundo archivo; al activarlo se ponen en cola los vídeos ya subidos.",
       "maxFileSizeHelp": "Tamaño máximo por foto subida",
       "maxFilesPerUpload": "Máx. archivos por subida",
       "maxFilesPerUploadHelp": "Número máximo de fotos permitido en un solo lote de subida (1-{{max}}).",
@@ -1693,6 +1695,7 @@
     },
     "photos": {
       "hidden": "Ocultas",
+      "webCopyFailed": "Sin copia web",
       "hideSelected": "Ocultar",
       "showSelected": "Mostrar",
       "hiddenSuccess": "Fotos ocultas a los invitados",

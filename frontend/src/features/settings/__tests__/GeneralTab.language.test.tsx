@@ -27,6 +27,7 @@ const base: GeneralSettings = {
   default_expiration_days: 30,
   max_file_size_mb: 50,
   max_video_size_mb: 500,
+  video_web_rendition: false,
   max_files_per_upload: 500,
   allowed_file_types: 'jpg,png',
   max_upload_batch_size_mb: 95,

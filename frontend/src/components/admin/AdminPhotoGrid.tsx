@@ -559,11 +559,25 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             )}
 
             {isVideo && (
-              <div className="absolute bottom-2 left-2 pointer-events-none">
+              <div className="absolute bottom-2 left-2 pointer-events-none flex items-center gap-1">
                 <span className="px-2 py-1 text-[11px] font-semibold bg-black/70 text-white rounded flex items-center gap-1">
                   <Video className="w-3 h-3" />
                   {t('common.video', 'Video')}
                 </span>
+                {/* The browser-playable copy could not be made (issue 1430,
+                    item 8): the original still streams, so this is a note,
+                    not a failed tile. Switching the setting off and on
+                    queues failed copies again. */}
+                {photo.web_status === 'failed' && (
+                  <span
+                    className="px-2 py-1 text-[11px] font-semibold bg-amber-500/90 text-white rounded flex items-center gap-1"
+                    title={photo.web_error || undefined}
+                    data-testid={`admin-photo-web-copy-failed-${photo.id}`}
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    {t('admin.photos.webCopyFailed', 'No web copy')}
+                  </span>
+                )}
               </div>
             )}
             

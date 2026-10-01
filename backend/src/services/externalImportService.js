@@ -538,6 +538,10 @@ async function importExternalFolder({
             const m = result.metadata || {};
             await db('photos').where({ id: photoId }).update({
               thumbnail_path: result.thumbnailKey,
+              // Browser-playable copy (issue 1430, item 8). The copy is
+              // written to the managed backend; the NAS file is never
+              // touched.
+              ...(await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
               ...(m.duration != null ? { duration: m.duration } : {}),
               ...(m.videoCodec ? { video_codec: m.videoCodec } : {}),
               ...(m.audioCodec ? { audio_codec: m.audioCodec } : {}),

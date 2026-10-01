@@ -1755,6 +1755,12 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       settings.general_max_video_size_mb = normalizedValue;
     }
 
+    // Browser-playable video copies (issue 1430, item 8): a plain boolean.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
+      const raw = settings.general_video_web_rendition;
+      settings.general_video_web_rendition = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    }
+
     // Default download limit for new events (issue 1560). Empty, 0 or null
     // clears it (unlimited); anything else must be a positive integer.
     if (Object.prototype.hasOwnProperty.call(settings, 'event_default_download_limit')) {
@@ -1849,6 +1855,22 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
     }
     if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
       clearShareLinkSettingsCache();
+    }
+    // Switching the video copies on queues the back catalogue: every video
+    // never looked at or whose last attempt failed. The queue probes each
+    // one and skips what already plays. Off leaves the rows as they are; the
+    // workers idle until it is on again.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_web_rendition')) {
+      const videoRendition = require('../services/videoRenditionService');
+      videoRendition.clearCache();
+      if (settings.general_video_web_rendition) {
+        try {
+          const queued = await videoRendition.backfillPending();
+          if (queued > 0) logger.info(`videoRendition: queued ${queued} existing video(s) after the setting was enabled`);
+        } catch (e) {
+          logger.warn('videoRendition: failed to queue existing videos:', e.message);
+        }
+      }
     }
     // The public origin is cached (it now sits in per-request CORS paths and
     // in a synchronous accessor); drop it immediately on write so a corrected

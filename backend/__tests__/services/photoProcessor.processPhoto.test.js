@@ -103,6 +103,10 @@ jest.mock('../../src/services/videoProcessor', () => ({
 
 jest.mock('../../src/services/storage', () => ({ getStorage: jest.fn() }));
 
+jest.mock('../../src/services/videoRenditionService', () => ({
+  isEnabled: jest.fn(async () => false),
+}));
+
 jest.mock('../../src/services/photoResolver', () => ({
   resolvePhotoStorageKey: jest.fn(
     (event, photo) => `events/active/${event.slug}/${photo.filename}`
@@ -259,6 +263,34 @@ describe('photoProcessor.processPhoto', () => {
     expect(imageProcessor.generateVideoPlaceholder).toHaveBeenCalledWith('drone-clip.mp4');
     expect(finalUpdate.data.duration).toBe(42);
     expect(finalUpdate.data.video_codec).toBe('hevc');
+  });
+
+  it('queues a completed video for its browser-playable copy only while the setting is on (issue 1430)', async () => {
+    const { isEnabled } = require('../../src/services/videoRenditionService');
+    const videoRow = {
+      id: 204, event_id: 9, filename: 'reel.mov', mime_type: 'video/quicktime', media_type: 'video', size_bytes: 1,
+    };
+    dbModule.__setEvent({ id: 9, slug: 'wedding', event_name: 'Wedding' });
+    videoProcessor.processUploadedVideo.mockResolvedValue({ thumbnailKey: 'thumbnails/thumb_reel.jpg', metadata: null });
+    const { processPhoto } = require('../../src/services/photoProcessor');
+
+    dbModule.__setPhoto(videoRow);
+    await processPhoto(204);
+    expect(dbModule.__recorded().updateCalls.pop().data).not.toHaveProperty('web_status');
+
+    isEnabled.mockResolvedValueOnce(true);
+    dbModule.__setPhoto(videoRow);
+    await processPhoto(204);
+    // Same UPDATE as the completion, so a crash in between cannot leave a
+    // complete video unqueued.
+    expect(dbModule.__recorded().updateCalls.pop().data).toMatchObject({ processing_status: 'complete', web_status: 'pending' });
+
+    // Never for a photo, whatever the setting says.
+    isEnabled.mockResolvedValueOnce(true);
+    dbModule.__setPhoto({ id: 205, event_id: 9, filename: 'still.jpg', mime_type: 'image/jpeg', media_type: 'image', size_bytes: 1 });
+    imageProcessor.generateThumbnail.mockResolvedValueOnce('thumbnails/thumb_still.jpg');
+    await processPhoto(205);
+    expect(dbModule.__recorded().updateCalls.pop().data).not.toHaveProperty('web_status');
   });
 
   it('throws when the photo row no longer exists', async () => {

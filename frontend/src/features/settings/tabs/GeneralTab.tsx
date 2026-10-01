@@ -187,6 +187,23 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               </p>
             </div>
             <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={generalSettings.video_web_rendition}
+                  onChange={(e) => setGeneralSettings(prev => ({ ...prev, video_web_rendition: e.target.checked }))}
+                  className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                  data-testid="general-video-web-rendition"
+                />
+                <span className="ml-2 text-sm text-body">
+                  {t('settings.general.videoWebRendition', 'Browser-playable copies of videos')}
+                </span>
+              </label>
+              <p className="text-xs text-muted ml-6 mt-1">
+                {t('settings.general.videoWebRenditionHelp', 'Re-encodes videos a browser cannot play (HEVC, QuickTime, MP4s that are not streamable) into an H.264 MP4 for playback. The original stays the download. Costs CPU per video and a second file; switching it on queues the videos already uploaded.')}
+              </p>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.general.maxFilesPerUpload')}
               </label>

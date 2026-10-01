@@ -1379,6 +1379,11 @@ async function startServer() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
+    // Browser-playable video copies (issue 1430). Same shape as the face
+    // queue: starts idle and re-reads the general_video_web_rendition
+    // setting every tick, so nothing runs until an admin switches it on.
+    require('./src/services/videoRenditionQueue').start();
+
     httpServer = app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
