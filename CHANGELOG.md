@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.155.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.155.0-beta.0...v3.155.1-beta.0) (2026-10-01)
+
+
+### Documentation
+
+* **frontend:** UX guide and styling-guide gaps (stacked on [#1747](https://github.com/PicPeak/picpeak/issues/1747)) ([#1756](https://github.com/PicPeak/picpeak/issues/1756)) ([e3a1b69](https://github.com/PicPeak/picpeak/commit/e3a1b696f5de522e077dfee2c7ce98b73d34cd78))
+
 ## [3.155.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.154.1-beta.0...v3.155.0-beta.0) (2026-10-01)
 
 
