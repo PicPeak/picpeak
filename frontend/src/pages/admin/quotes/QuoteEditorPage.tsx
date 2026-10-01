@@ -15,7 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, RefreshCw, Send } from 'lucide-react';
+import { Eye, RefreshCw, Send } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
 import {
   quotesService,
@@ -527,17 +527,22 @@ export const QuoteEditorPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Wraps: up to five controls here — Cancel, Recalculate, Preview PDF,
+          Save, Save & send — and they do not fit a phone in any language. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <button onClick={() => navigate('/admin/clients/quotes')}
-            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-          </button>
           <h2 className="text-xl font-bold">
             {isEdit ? `${t('quotes.edit', 'Edit quote')} ${existing?.quote.quoteNumber || ''}` : t('quotes.new', 'New quote')}
           </h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* The only exit that does not write. These editors have no other
+              cancel, and the sidebar is an off-canvas drawer below lg, so a
+              named control beats relying on browser-back. An edit returns to
+              the record it came from; a new one has no detail page yet. */}
+          <Button variant="outline" onClick={() => navigate(isEdit ? `/admin/clients/quotes/${id}` : '/admin/clients/quotes')} disabled={busy}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
           {canRecalculate && (
             <Button variant="outline" onClick={handleRecalculateRates} disabled={busy}>
               <RefreshCw className="w-4 h-4 mr-1" />{t('quotes.recalculateRates', 'Recalculate with current rates')}

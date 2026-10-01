@@ -23,10 +23,9 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { ScrollText, ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
+import { ScrollText, Plus, Trash2, Save } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { SUPPORTED_LANGUAGES } from '../../../components/common/LanguageSelector';
 import { useMutationWithToast } from '../../../hooks';
@@ -237,15 +236,6 @@ export const BlockLibraryPage: React.FC = () => {
     // bare layout; adding our own container made the contracts grid
     // measurably narrower than the email grid.
     <div>
-      <div className="mb-3">
-        <Link
-          to="/admin/clients/contracts"
-          className="inline-flex items-center gap-1 text-sm text-soft hover:text-accent-dark"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('contracts.blocks.back', 'Back to contracts')}
-        </Link>
-      </div>
       <SectionPageHeader
         icon={ScrollText}
         title={t('contracts.blocks.title', 'Contract block library')}

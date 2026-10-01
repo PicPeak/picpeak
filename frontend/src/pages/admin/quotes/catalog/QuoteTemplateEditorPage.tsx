@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading } from '../../../../components/common';
 import { DecimalInput } from '../../../../components/common/DecimalInput';
@@ -156,6 +156,10 @@ export const QuoteTemplateEditorPage: React.FC = () => {
   if (isLoading || !data || !draft) return <Loading />;
   const template = data.template;
   const archived = template.status === 'archived';
+  // With quotes.view, or on an archived template, there is nothing to
+  // cancel — the same reason the contract template editor says
+  // "Back to templates" rather than pretending to discard.
+  const canEdit = !archived && hasPermission('quotes.manage');
 
   const setSections = (sections: TemplateSection[]) => setDraft({ ...draft, sections });
   const updateSection = (idx: number, section: TemplateSection) => setSections(draft.sections.map((s, i) => (i === idx ? section : s)));
@@ -240,10 +244,6 @@ export const QuoteTemplateEditorPage: React.FC = () => {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <button onClick={() => navigate('/admin/clients/quotes/catalog?tab=templates')}
-            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-          </button>
           <h2 className="text-xl font-bold text-heading">
             {template.name}
             <span className="ml-2 text-sm font-normal text-muted">
@@ -251,16 +251,30 @@ export const QuoteTemplateEditorPage: React.FC = () => {
             </span>
           </h2>
         </div>
-        {/* Writes need quotes.manage; with quotes.view the editor is read-only. */}
-        {!archived && (
-          <PermissionGate permission="quotes.manage">
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={archive} disabled={busy}>{t('quotes.catalog.archive', 'Archive')}</Button>
-              <Button variant="outline" onClick={() => save()} disabled={busy}>{t('quotes.templates.saveDraft', 'Save draft')}</Button>
-              <Button onClick={publish} disabled={busy || draft.sections.length === 0}>{t('quotes.templates.publish', 'Publish')}</Button>
-            </div>
-          </PermissionGate>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {/* The exit sits in the action group so it lands next to Save rather
+              than mid-row, but outside the permission gate and the archived
+              check: a read-only viewer still needs it, and the catalogue is
+              not a sidebar entry to fall back on. */}
+          <Button
+            variant="outline"
+            onClick={() => navigate('/admin/clients/quotes/catalog?tab=templates')}
+          >
+            {canEdit
+              ? t('common.cancel', 'Cancel')
+              : t('quotes.catalog.backToTemplates', 'Back to templates')}
+          </Button>
+          {/* Writes need quotes.manage; with quotes.view the editor is read-only. */}
+          {!archived && (
+            <PermissionGate permission="quotes.manage">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={archive} disabled={busy}>{t('quotes.catalog.archive', 'Archive')}</Button>
+                <Button variant="outline" onClick={() => save()} disabled={busy}>{t('quotes.templates.saveDraft', 'Save draft')}</Button>
+                <Button onClick={publish} disabled={busy || draft.sections.length === 0}>{t('quotes.templates.publish', 'Publish')}</Button>
+              </div>
+            </PermissionGate>
+          )}
+        </div>
       </div>
 
       <Card padding="lg">

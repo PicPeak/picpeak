@@ -9,10 +9,10 @@
  * thing the operator can actually act on afterwards.
  */
 import React, { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Ban } from 'lucide-react';
+import { Ban } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Loading, useConfirm } from '../../../components/common';
@@ -34,7 +34,6 @@ export const NewsletterDetailPage: React.FC = () => {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const campaignId = Number(id);
-  const navigate = useNavigate();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   // Cancel stops a live send, so it is a `send` action. Progress and the
@@ -98,21 +97,16 @@ export const NewsletterDetailPage: React.FC = () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <button
-          type="button"
-          onClick={() => navigate('/admin/clients/newsletters')}
-          className="flex items-center gap-1 text-sm text-soft hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('newsletters.backToList', 'All campaigns')}
-        </button>
-        {inFlight && canSend && (
+      {/* Only rendered when the button is: with the back link gone this row
+          would otherwise be an empty 24px gap on a finished campaign, and
+          justify-between would park a lone button at the left edge. */}
+      {inFlight && canSend && (
+        <div className="flex items-center justify-end mb-6 gap-4">
           <Button variant="outline" onClick={cancelCampaign} leftIcon={<Ban className="w-4 h-4" />}>
             {t('newsletters.cancel', 'Cancel campaign')}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       <Card className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">

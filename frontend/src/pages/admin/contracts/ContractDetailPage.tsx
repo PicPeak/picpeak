@@ -21,7 +21,7 @@ import { billsService } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
 import SignaturePad from 'signature_pad';
 import {
-  ArrowLeft, Edit2, Send, X, FileDown, Upload, CheckSquare, ScrollText,
+  Edit2, Send, X, FileDown, Upload, CheckSquare, ScrollText,
   ArrowRightCircle, Receipt, RotateCcw, MailCheck,
   ShieldCheck, CheckCircle2, XCircle,
 } from 'lucide-react';
@@ -339,13 +339,6 @@ export const ContractDetailPage: React.FC = () => {
   return (
     <div>
       <div className="mb-4 flex items-center gap-3 flex-wrap">
-        <Link
-          to="/admin/clients/contracts"
-          className="inline-flex items-center gap-1 text-sm text-soft hover:text-accent-dark"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('contracts.detail.back', 'Back to list')}
-        </Link>
         <h1 className="text-2xl font-bold flex items-center gap-2 flex-1">
           <ScrollText className="w-6 h-6" />
           <span className="font-mono text-base">{c.contractNumber}</span>

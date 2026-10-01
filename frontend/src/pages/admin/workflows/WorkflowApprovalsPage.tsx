@@ -8,7 +8,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { workflowsService, type WorkflowApproval } from '../../../services/workflows.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -46,14 +46,9 @@ export const WorkflowApprovalsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/admin/automation/workflows')} aria-label={t('common.back', 'Back') as string}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <div>
-          <h1 className="text-xl font-semibold text-heading">{t('workflows.approvals.title', 'Approvals')}</h1>
-          <p className="text-sm text-soft">{t('workflows.approvals.subtitle', 'Workflow runs waiting on your confirmation.')}</p>
-        </div>
+      <div>
+        <h1 className="text-xl font-semibold text-heading">{t('workflows.approvals.title', 'Approvals')}</h1>
+        <p className="text-sm text-soft">{t('workflows.approvals.subtitle', 'Workflow runs waiting on your confirmation.')}</p>
       </div>
 
       <Card padding="none">

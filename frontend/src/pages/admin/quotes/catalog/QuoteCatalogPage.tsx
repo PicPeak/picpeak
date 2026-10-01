@@ -11,7 +11,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Plus, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Plus, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading, LocalizedDateInput } from '../../../../components/common';
 import { DecimalInput } from '../../../../components/common/DecimalInput';
@@ -876,7 +876,6 @@ const TemplatesTab: React.FC = () => {
 
 export const QuoteCatalogPage: React.FC = () => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get('tab') as Tab | null;
   const tab: Tab = requested && TABS.includes(requested) ? requested : 'services';
@@ -891,13 +890,7 @@ export const QuoteCatalogPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div>
-        <button onClick={() => navigate('/admin/clients/quotes')}
-          className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-        </button>
-        <h2 className="text-xl font-bold text-heading">{t('quotes.catalog.title', 'Catalogue & templates')}</h2>
-      </div>
+      <h2 className="text-xl font-bold text-heading">{t('quotes.catalog.title', 'Catalogue & templates')}</h2>
 
       <div role="tablist" className="flex flex-wrap gap-1 border-b border-line">
         {TABS.map((key) => (

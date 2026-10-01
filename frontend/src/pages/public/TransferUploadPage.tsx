@@ -1,8 +1,13 @@
 /**
- * Public client-upload page for PicTransfer (#997).
+ * Public client-upload page for PicTransfer (#997, reshaped in #1544).
  *
- * Token-only (6-char code, no auth). Lets a client send files back to the
- * photographer (logos etc.). Reached via /transfer-upload/:token.
+ * Token-only, no auth: either a file request's 64-hex token or the short
+ * read-aloud code that can be issued alongside it. Reached via
+ * /transfer-upload/:token.
+ *
+ * The server tells us the upload policy, so unsupported files are named and
+ * dropped here rather than being carried all the way up only to fail the whole
+ * batch on arrival.
  *
  * Like the recipient download page, styling reads the branding theme CSS
  * variables (`--color-*`) rather than Tailwind `dark:` utilities — a public
@@ -24,6 +29,32 @@ function formatBytes(bytes: number): string {
   const units = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot === -1 ? '' : name.slice(dot).toLowerCase();
+}
+
+/**
+ * Would the server accept this file?
+ *
+ * Mirrors validateTransferFileType: accept-all short-circuits, then a listed
+ * extension is a match on its own, and only then is the MIME consulted. The
+ * order matters and is the server's — the browser's `file.type` is a guess
+ * (Windows sends `application/x-zip-compressed` for a .zip, and .dng/.psd
+ * routinely arrive as `application/octet-stream` or empty), so the extension
+ * the admin typed into Settings is the more reliable signal.
+ */
+function isAccepted(
+  file: File,
+  info: { accept_all: boolean; allowed_mime: string[]; allowed_extensions: string[] },
+): boolean {
+  if (info.accept_all) return true;
+  const ext = extensionOf(file.name);
+  if (ext && info.allowed_extensions.includes(ext)) return true;
+  const mime = (file.type || '').toLowerCase().split(';')[0].trim();
+  return !!mime && info.allowed_mime.includes(mime);
 }
 
 export const TransferUploadPage: React.FC = () => {
@@ -73,23 +104,76 @@ export const TransferUploadPage: React.FC = () => {
   const addFiles = (list: FileList | null) => {
     if (!list) return;
     const incoming = Array.from(list);
+
+    // Drop what the server would refuse, and say which — one unsupported file
+    // used to fail the entire batch with a generic message.
+    const accepted = incoming.filter((f) => isAccepted(f, data));
+    const rejected = incoming.filter((f) => !isAccepted(f, data));
+    if (rejected.length) {
+      toast.error(t(
+        'transfers.upload.typeRejected',
+        'Not an accepted file type: {{names}}',
+        { names: rejected.map((f) => f.name).join(', ') },
+      ));
+    }
+
+    // Same for oversized files: named here, rather than after the upload.
+    const maxBytes = data.max_size_mb * 1024 * 1024;
+    const withinSize = accepted.filter((f) => f.size <= maxBytes);
+    const tooBig = accepted.filter((f) => f.size > maxBytes);
+    if (tooBig.length) {
+      toast.error(t(
+        'transfers.upload.tooBigNamed',
+        'Too large (max {{mb}} MB): {{names}}',
+        { mb: data.max_size_mb, names: tooBig.map((f) => f.name).join(', ') },
+      ));
+    }
+    if (!withinSize.length) return;
+
     setFiles((prev) => {
-      const merged = [...prev, ...incoming].slice(0, data.max_files);
-      return merged;
+      const merged = [...prev, ...withinSize];
+      if (merged.length > data.max_files) {
+        toast.warn(t(
+          'transfers.upload.toomany',
+          'Only the first {{count}} files can be uploaded at once.',
+          { count: data.max_files },
+        ));
+      }
+      return merged.slice(0, data.max_files);
     });
   };
 
   const handleUpload = async () => {
     if (!files.length) return;
-    const tooBig = files.find((f) => f.size > data.max_size_mb * 1024 * 1024);
-    if (tooBig) {
-      toast.error(t('transfers.upload.tooBig', 'Each file must be {{mb}} MB or smaller', { mb: data.max_size_mb }));
-      return;
-    }
     setUploading(true);
     setProgress(0);
     try {
-      await transfersService.upload(token as string, files, setProgress);
+      const result = await transfersService.upload(token as string, files, setProgress);
+      // The server filters independently of us, so it can still drop a file the
+      // page admitted (a type whose MIME the browser guessed differently).
+      if (result.rejected_files?.length) {
+        toast.warn(t(
+          'transfers.upload.someRejected',
+          'These files were not accepted: {{names}}',
+          { names: result.rejected_files.join(', ') },
+        ));
+      }
+
+      // Files whose bytes or row did not land are NOT uploaded, whatever the
+      // 201 says. Keep them on screen so retrying is one click, and do not
+      // show the "thank you" screen over a partial failure.
+      const failed = result.failed_files || [];
+      if (failed.length) {
+        toast.error(t(
+          'transfers.upload.someFailed',
+          'These files could not be stored. Please try them again: {{names}}',
+          { names: failed.join(', ') },
+        ));
+        setFiles((prev) => prev.filter((f) => failed.includes(f.name)));
+        setProgress(0);
+        return;
+      }
+
       setDone(true);
     } catch (err) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -121,6 +205,13 @@ export const TransferUploadPage: React.FC = () => {
         {data.message && <p className="mt-2 whitespace-pre-line" style={muted}>{data.message}</p>}
         <p className="mt-2 text-sm" style={muted}>
           {t('transfers.upload.limits', 'Up to {{files}} files, {{mb}} MB each', { files: data.max_files, mb: data.max_size_mb })}
+        </p>
+        <p className="mt-1 text-xs" style={muted}>
+          {data.accept_all
+            ? t('transfers.upload.anyType', 'Any file type is accepted.')
+            : t('transfers.upload.acceptedTypes', 'Accepted: {{types}}', {
+              types: data.allowed_extensions.join(', ') || data.allowed_mime.join(', '),
+            })}
         </p>
       </div>
 

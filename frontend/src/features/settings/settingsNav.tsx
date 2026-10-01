@@ -26,6 +26,7 @@ import {
   Landmark,
   Smartphone,
   MonitorPlay,
+  Send as SendIcon,
   Users,
   HeartPulse,
   type LucideIcon,
@@ -56,6 +57,9 @@ export type SettingsTab =
   | 'cms'
   | 'email'
   | 'moderation'
+  // PicTransfer upload policy (#1544) — which file types a client may send,
+  // and the accept-all escape hatch.
+  | 'transfers'
   | 'security'
   | 'sso'
   | 'imageSecurity'
@@ -104,7 +108,7 @@ export const ALL_SETTINGS_TABS: SettingsTab[] = [
   'features', 'general', 'events', 'eventTypes',
   'users',
   'branding', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
-  'email', 'moderation',
+  'email', 'moderation', 'transfers',
   'security', 'sso', 'imageSecurity', 'seo',
   'apiTokens', 'webhooks',
   'status', 'health', 'analytics', 'backup',
@@ -160,6 +164,7 @@ export const SETTINGS_TAB_PERMISSIONS: Record<SettingsTab, string[]> = {
   accounting:        ['settings.view', 'settings.banking', 'accounting.view', 'accounting.manage'],
   whatsapp:          ['settings.view', 'whatsapp.view', 'whatsapp.manage'],
   slideshow:         ['settings.view'],
+  transfers:         ['settings.view'],
   // Deliberately NOT carrying the `settings.view` baseline: every other tab
   // lists it as "can read settings at all", but user management was gated on
   // `users.view` alone while it was a top-level entry. Adding the baseline
@@ -217,6 +222,7 @@ export function settingsTabGatedOff(flags: Flags): Partial<Record<SettingsTab, b
     accounting: !flags.accounting,
     whatsapp: !flags.whatsapp,
     slideshow: !flags.slideshow,
+    transfers: !flags.transfers,
     users: !flags.userManagement,
   };
 }
@@ -272,6 +278,14 @@ export function useSettingsNavGroups(): SettingsNavGroup[] {
       items: [
         { key: 'email',      label: t('settings.email.title',      'Email Settings'), icon: Mail },
         { key: 'moderation', label: t('settings.moderation.title', 'Moderation'),     icon: Flag },
+        ...(flags.transfers
+          ? [{
+            key: 'transfers' as const,
+            label: t('settings.transfers.title', 'PicTransfer'),
+            icon: SendIcon,
+            description: t('settings.transfers.description', 'Which file types clients may send you, and how large.'),
+          }]
+          : []),
       ],
     },
     {

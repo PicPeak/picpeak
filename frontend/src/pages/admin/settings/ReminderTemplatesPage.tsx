@@ -32,7 +32,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Mail, ArrowLeft, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
+import { Mail, AlertTriangle, Workflow as WorkflowIcon } from 'lucide-react';
 import { Card, Loading, Input } from '../../../components/common';
 import { SUPPORTED_LANGUAGES } from '../../../components/common/LanguageSelector';
 import { EmailTemplateEditor } from '../../../components/admin/EmailTemplateEditor';
@@ -281,11 +281,6 @@ export const ReminderTemplatesPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-3">
-        <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-hover">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-      </div>
       <SectionPageHeader
         icon={Mail}
         title={t('reminderTemplates.title', 'Pre-event reminder emails')}

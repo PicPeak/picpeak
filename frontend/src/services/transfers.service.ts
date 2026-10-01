@@ -4,7 +4,11 @@
  * Three surfaces share one file:
  *   - Admin CRUD under /admin/transfers/* (cookie auth).
  *   - Public recipient download under /public/transfer/:token (token in URL).
- *   - Public client upload under /public/transfer-upload/:token (6-char token).
+ *   - Public client upload under /public/transfer-upload/:token.
+ *
+ * Since #1544 a transfer is a send OR a request (`kind`), never both. A send
+ * has a download_url; a request has an upload_url on its 64-hex token plus an
+ * optional short read-aloud code.
  */
 import { api } from '../config/api';
 import { getApiBaseUrl } from '../utils/url';
@@ -44,9 +48,12 @@ export interface TransferRecipient {
   last_sent_at: string | null;
 }
 
+export type TransferKind = 'send' | 'request';
+
 export interface Transfer {
   id: number;
   token: string;
+  kind: TransferKind;
   title: string;
   message: string | null;
   expires_at: string;
@@ -64,8 +71,13 @@ export interface Transfer {
   created_at: string;
   updated_at: string;
   status: 'active' | 'expired' | 'deleted';
-  download_url: string;
+  /** Sends only. */
+  download_url: string | null;
+  /** Requests only — the primary 64-hex link. */
   upload_url: string | null;
+  /** Requests only — the optional short read-aloud code, if one is issued. */
+  upload_code: string | null;
+  upload_code_url: string | null;
   file_count: number;
   upload_count: number;
   files?: TransferFile[];
@@ -75,19 +87,34 @@ export interface Transfer {
 }
 
 export interface CreateTransferInput {
+  /** 'send' (default) or 'request'. Decides the whole shape of the row. */
+  kind?: TransferKind;
   title?: string;
   message?: string | null;
   expiresInDays?: number;
   maxDownloads?: number | null;
   graceDays?: number;
-  allowUploads?: boolean;
-  uploadExpiresInDays?: number;
+  /** Sends only — a request carries no outbound photos. */
   photoIds?: number[];
-  /** 'link' (default) or 'email' — email the download link to recipientEmails. */
+  /** 'link' (default) or 'email' — email the link to recipientEmails. */
   deliveryMethod?: 'link' | 'email';
   recipientEmails?: string[];
-  /** The operator's own files to include in the transfer as deliverables. */
+  /** Sends only — the operator's own files to include as deliverables. */
   files?: File[];
+}
+
+/**
+ * A transfer plus what the write did NOT keep.
+ *
+ * The routes answer `{ transfer, rejected_files, dropped_files }`; returning
+ * `res.data.transfer` alone silently threw both lists away, so the admin was
+ * never told which files were skipped.
+ */
+export interface TransferWriteResult extends Transfer {
+  /** Files the server refused on type. */
+  rejected_files?: string[];
+  /** Files it accepted but did not keep (attached to a request, which sends nothing). */
+  dropped_files?: string[];
 }
 
 export interface UpdateTransferInput {
@@ -127,7 +154,34 @@ export interface UploadInfo {
   expires_at: string;
   max_size_mb: number;
   max_files: number;
+  /** When true the server skips the type check entirely. */
+  accept_all: boolean;
   allowed_mime: string[];
+  /** Lower-cased, dot-prefixed — what the page filters and labels with. */
+  allowed_extensions: string[];
+}
+
+/** What an upload actually did — not every file necessarily landed. */
+export interface UploadResult {
+  uploaded: number;
+  files: { filename: string; size_bytes: number }[];
+  /** Refused on type before any bytes were stored. */
+  rejected_files: string[];
+  /** Accepted, but the bytes or the row did not land. These are NOT uploaded. */
+  failed_files: string[];
+}
+
+/** Lift the sibling `rejected_files` / `dropped_files` onto the transfer. */
+function withWriteNotes(data: {
+  transfer: Transfer;
+  rejected_files?: string[];
+  dropped_files?: string[];
+}): TransferWriteResult {
+  return {
+    ...data.transfer,
+    rejected_files: data.rejected_files || [],
+    dropped_files: data.dropped_files || [],
+  };
 }
 
 export const transfersService = {
@@ -140,7 +194,7 @@ export const transfersService = {
     const res = await api.get(`/admin/transfers/${id}`);
     return res.data.transfer;
   },
-  async create(input: CreateTransferInput, onProgress?: (pct: number) => void): Promise<Transfer> {
+  async create(input: CreateTransferInput, onProgress?: (pct: number) => void): Promise<TransferWriteResult> {
     // multipart: the operator's own files ride along with the form fields.
     const form = new FormData();
     if (input.title != null) form.append('title', input.title);
@@ -148,8 +202,7 @@ export const transfersService = {
     if (input.expiresInDays != null) form.append('expiresInDays', String(input.expiresInDays));
     if (input.maxDownloads != null) form.append('maxDownloads', String(input.maxDownloads));
     if (input.graceDays != null) form.append('graceDays', String(input.graceDays));
-    form.append('allowUploads', String(!!input.allowUploads));
-    if (input.uploadExpiresInDays != null) form.append('uploadExpiresInDays', String(input.uploadExpiresInDays));
+    form.append('kind', input.kind || 'send');
     form.append('photoIds', JSON.stringify(input.photoIds || []));
     form.append('deliveryMethod', input.deliveryMethod || 'link');
     form.append('recipientEmails', JSON.stringify(input.recipientEmails || []));
@@ -159,10 +212,10 @@ export const transfersService = {
         if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
       },
     });
-    return res.data.transfer;
+    return withWriteNotes(res.data);
   },
   /** Add deliverable files to an existing transfer. */
-  async uploadFiles(id: number, files: File[], onProgress?: (pct: number) => void): Promise<Transfer> {
+  async uploadFiles(id: number, files: File[], onProgress?: (pct: number) => void): Promise<TransferWriteResult> {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/admin/transfers/${id}/upload-files`, form, {
@@ -170,7 +223,7 @@ export const transfersService = {
         if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
       },
     });
-    return res.data.transfer;
+    return withWriteNotes(res.data);
   },
   async removeExtraFile(id: number, extraId: number): Promise<Transfer> {
     const res = await api.delete(`/admin/transfers/${id}/extra-files/${extraId}`);
@@ -194,12 +247,19 @@ export const transfersService = {
     const res = await api.delete(`/admin/transfers/${id}/files/${fileId}`);
     return res.data.transfer;
   },
-  async enableUploads(id: number, uploadExpiresInDays?: number): Promise<Transfer> {
-    const res = await api.post(`/admin/transfers/${id}/upload-link`, { uploadExpiresInDays });
+  /** Issue (or, with rotate, replace) a request's short read-aloud upload code. */
+  async issueUploadCode(id: number, rotate = false): Promise<Transfer> {
+    const res = await api.post(`/admin/transfers/${id}/upload-code`, { rotate });
     return res.data.transfer;
   },
-  async disableUploads(id: number): Promise<Transfer> {
-    const res = await api.delete(`/admin/transfers/${id}/upload-link`);
+  /** Withdraw the short code. The request stays open on its 64-hex link. */
+  async revokeUploadCode(id: number): Promise<Transfer> {
+    const res = await api.delete(`/admin/transfers/${id}/upload-code`);
+    return res.data.transfer;
+  },
+  /** Re-send the delivery/request email to the addresses already on the row. */
+  async resendEmail(id: number, recipientEmails?: string[]): Promise<Transfer> {
+    const res = await api.post(`/admin/transfers/${id}/resend`, { recipientEmails });
     return res.data.transfer;
   },
   /** Absolute API URL for the admin ZIP download (cookie auth → usable as href). */
@@ -227,7 +287,7 @@ export const transfersService = {
     const res = await api.get(`/public/transfer-upload/${token}`);
     return res.data.transfer;
   },
-  async upload(token: string, files: File[], onProgress?: (pct: number) => void): Promise<{ uploaded: number }> {
+  async upload(token: string, files: File[], onProgress?: (pct: number) => void): Promise<UploadResult> {
     const form = new FormData();
     files.forEach((f) => form.append('files', f));
     const res = await api.post(`/public/transfer-upload/${token}`, form, {

@@ -901,7 +901,6 @@
   "transfers": {
     "title": "PicTransfer",
     "subtitle": "Pošljite izvirne datoteke iz katerega koli dogodka prek povezave za prenos.",
-    "new": "Nov prenos",
     "create": "Ustvari prenos",
     "created": "Prenos ustvarjen",
     "createFailed": "Prenosa ni bilo mogoče ustvariti",
@@ -921,12 +920,7 @@
     "deleteConfirmTitle": "Izbrišem prenos?",
     "deleteConfirmBody": "S tem odstranite povezavo in vsa nalaganja stranke. Izvorne fotografije dogodka ostanejo nespremenjene.",
     "addImages": "Dodaj slike",
-    "clientUpload": "Nalaganje stranke",
-    "disableUploads": "Onemogoči",
-    "enableUploads": "Omogoči povezavo za nalaganje",
-    "uploadEnabled": "Povezava za nalaganje omogočena",
     "noUploads": "Stranka še ni naložila nobene datoteke.",
-    "uploadHint": "Omogočite to, da stranka dobi 6-mestno kodo za pošiljanje datotek (logotipi ipd.).",
     "createAndSend": "Ustvari in pošlji",
     "uploadedFiles": "Naložene datoteke",
     "addFiles": "Dodaj datoteke",
@@ -940,9 +934,7 @@
       "title": "Naslov",
       "files": "Datoteke",
       "status": "Stanje",
-      "downloads": "Prenosi",
-      "expires": "Poteče",
-      "uploads": "Nalaganja"
+      "downloads": "Prenosi"
     },
     "status": {
       "active": "Aktivno",
@@ -956,7 +948,6 @@
       "messagePlaceholder": "Prikaže se prejemniku na strani za prenos",
       "expiresInDays": "Povezava aktivna (dni)",
       "maxDownloads": "Največ prenosov (0 = neomejeno)",
-      "allowUploads": "Stranki omogoči tudi povezavo za nalaganje (za pošiljanje logotipov ipd.)",
       "files": "Datoteke",
       "noFiles": "Slike še niso izbrane.",
       "uploadFiles": "Naložite svoje datoteke",
@@ -965,10 +956,7 @@
       "delivery": "Dostava",
       "recipients": "E-poštni naslovi prejemnikov",
       "recipientsPlaceholder": "ana@example.com, ben@example.com",
-      "recipientsCount": "{{count}} prejemnikov — vsak prejme povezavo za prenos",
-      "recipientsHint": "Več naslovov ločite z vejicami. Vsak prejemnik prejme povezavo za prenos.",
-      "recipientsCount_one": "{{count}} prejemnikov — vsak prejme povezavo za prenos",
-      "recipientsCount_other": "{{count}} prejemnikov — vsak prejme povezavo za prenos"
+      "recipientsHint": "Več naslovov ločite z vejicami. Vsak prejemnik prejme povezavo za prenos."
     },
     "picker": {
       "title": "Izberite slike iz drugih dogodkov",
@@ -6636,7 +6624,6 @@
     "search": "Išči po imenu ali stranki…",
     "empty": "Projektov še ni. Ustvarite ga zgoraj ali pa so bili obstoječi dogodki že samodejno združeni.",
     "notFound": "Projekt ni najden",
-    "backToList": "Vsi projekti",
     "noCustomer": "Brez ene določene stranke",
     "rename": "Preimenuj",
     "timeline": "Mejniki",
@@ -7164,6 +7151,7 @@
     "catalog": {
       "addItem": "Dodaj postavko",
       "archive": "Arhiv",
+      "backToTemplates": "Nazaj na predloge",
       "archived": "Arhiviran",
       "boundTo": "Količina",
       "boundToNone": "Fiksna količina",
@@ -8095,7 +8083,6 @@
       "auditEmpty": "V revizijskem dnevniku še ni vnosov.",
       "auditTrail": "Revizijska sled",
       "auditTrailHelp": "Vsak dogodek, zabeležen pri tej pogodbi. Seznam je samo za dodajanje in je vir resnice v primeru spora glede pogodbe.",
-      "back": "Nazaj na seznam",
       "blocks": "Vključeni sklopi",
       "cancel": "Prekliči",
       "cancelConfirm": "Prekličem to pogodbo? Povezava za podpis stranke bo razveljavljena.",
@@ -8228,7 +8215,6 @@
       }
     },
     "editor": {
-      "back": "Nazaj na seznam",
       "backToDetail": "Nazaj na pogodbo",
       "create": "Ustvari osnutek",
       "createdToast": "Pogodba ustvarjena.",
@@ -8306,7 +8292,6 @@
       "takeTheirs": "Uporabi njihove"
     },
     "blocks": {
-      "back": "Nazaj na pogodbe",
       "title": "Knjižnica pogodbenih sklopov",
       "hideInactive": "Skrij neaktivne",
       "disclaimerTitle": "Samo primeri — naj jih pregleda vaš pravnik",
@@ -8347,7 +8332,6 @@
     "templates": {
       "title": "Predloge pogodb",
       "intro": "Predloga določa določila, s katerimi se začne nova pogodba, njihov vrstni red in besedilo. Objava zamrzne različico; pogodba ohrani različico, iz katere je bila ustvarjena.",
-      "back": "Nazaj na pogodbe",
       "backToTemplates": "Nazaj na predloge",
       "newName": "Ime nove predloge",
       "create": "Ustvari predlogo",

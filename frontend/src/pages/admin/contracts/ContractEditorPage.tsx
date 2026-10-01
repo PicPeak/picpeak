@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { ArrowLeft, Eye, Save } from 'lucide-react';
+import { Eye, Save } from 'lucide-react';
 import { Button, Card, Input, Loading, LocalizedDateInput, TimeField } from '../../../components/common';
 import {
   contractsService,
@@ -642,19 +642,23 @@ export const ContractEditorPage: React.FC = () => {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <Link
-          to="/admin/clients/contracts"
-          className="inline-flex items-center gap-1 text-sm text-soft hover:text-accent-dark"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('contracts.editor.back', 'Back to list')}
-        </Link>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold flex-1">
           {isEdit
             ? t('contracts.editor.titleEdit', 'Edit contract')
             : t('contracts.editor.titleNew', 'New contract')}
         </h1>
+        {/* The only exit that does not write. This editor has no other
+            cancel, and the sidebar is an off-canvas drawer below lg, so a
+            named control beats relying on browser-back. An edit returns to
+            the contract it came from; a new one has no detail page yet. */}
+        <Button
+          variant="outline"
+          onClick={() => navigate(isEdit ? `/admin/clients/contracts/${numericId}` : '/admin/clients/contracts')}
+          disabled={isSaving}
+        >
+          {t('common.cancel', 'Cancel')}
+        </Button>
         {isEdit && (
           <Button variant="outline" onClick={handlePreview}>
             <Eye className="w-4 h-4 mr-1" />

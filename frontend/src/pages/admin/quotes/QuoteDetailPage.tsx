@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, Send, Copy, ArrowRightCircle, Edit2, Receipt, CheckCircle2, ScrollText, XCircle, FilePlus } from 'lucide-react';
+import { Eye, Send, Copy, ArrowRightCircle, Edit2, Receipt, CheckCircle2, ScrollText, XCircle, FilePlus } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import { QuoteAddOnsCard } from './QuoteAddOnsCard';
@@ -229,10 +229,6 @@ export const QuoteDetailPage: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <button onClick={() => navigate('/admin/clients/quotes')}
-            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-          </button>
           <h2 className="text-xl font-bold">
             {q.quoteNumber} <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-neutral-100 text-neutral-700">{t(`quotes.status.${q.status}`, q.status)}</span>
           </h2>

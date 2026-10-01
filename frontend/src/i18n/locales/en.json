@@ -909,12 +909,11 @@
   },
   "transfers": {
     "title": "PicTransfer",
-    "subtitle": "Send original files from any event as a download link.",
-    "new": "New transfer",
+    "subtitle": "Send files to a client, or ask a client to send files to you.",
     "create": "Create transfer",
     "created": "Transfer created",
     "createFailed": "Could not create transfer",
-    "empty": "No transfers yet. Create one to share files.",
+    "empty": "Nothing here yet. Send files to a client, or ask them to send you some.",
     "untitled": "Untitled transfer",
     "linkCopied": "Link copied to clipboard",
     "copyFailed": "Could not copy link",
@@ -928,14 +927,9 @@
     "filesAdded": "Files added",
     "deleted": "Transfer deleted",
     "deleteConfirmTitle": "Delete transfer?",
-    "deleteConfirmBody": "This removes the link and any client uploads. Source event photos are not affected.",
+    "deleteConfirmBody": "This removes the link. Source event photos are not affected.",
     "addImages": "Add images",
-    "clientUpload": "Client upload",
-    "disableUploads": "Disable",
-    "enableUploads": "Enable upload link",
-    "uploadEnabled": "Upload link enabled",
     "noUploads": "No files uploaded by the client yet.",
-    "uploadHint": "Enable this to give the client a 6-character code to send you files (logos etc.).",
     "createAndSend": "Create & send",
     "uploadedFiles": "Uploaded files",
     "addFiles": "Add files",
@@ -950,8 +944,8 @@
       "files": "Files",
       "status": "Status",
       "downloads": "Downloads",
-      "expires": "Expires",
-      "uploads": "Uploads"
+      "kind": "Type",
+      "deadline": "Deadline"
     },
     "status": {
       "active": "Active",
@@ -965,7 +959,6 @@
       "messagePlaceholder": "Shown to the recipient on the download page",
       "expiresInDays": "Link active for (days)",
       "maxDownloads": "Max downloads (0 = unlimited)",
-      "allowUploads": "Also give the client an upload link (to send logos etc.)",
       "files": "Files",
       "noFiles": "No images selected yet.",
       "uploadFiles": "Upload your own files",
@@ -974,10 +967,12 @@
       "delivery": "Delivery",
       "recipients": "Recipient email addresses",
       "recipientsPlaceholder": "anna@example.com, ben@example.com",
-      "recipientsCount": "{{count}} recipient(s) — each gets the download link",
       "recipientsHint": "Separate multiple addresses with commas. Each recipient gets the download link.",
-      "recipientsCount_one": "{{count}} recipient(s) — each gets the download link",
-      "recipientsCount_other": "{{count}} recipient(s) — each gets the download link"
+      "requestTitlePlaceholder": "e.g. Logo and brand assets for the Smiths",
+      "requestMessage": "What do you need from them? (optional)",
+      "requestMessagePlaceholder": "Shown to the client on the upload page",
+      "uploadWindowDays": "Accept uploads for (days)",
+      "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link."
     },
     "picker": {
       "title": "Select images from other events",
@@ -1018,8 +1013,51 @@
       "send": "Upload {{count}} files",
       "failed": "Upload failed. Please try again.",
       "send_one": "Upload {{count}} files",
-      "send_other": "Upload {{count}} files"
-    }
+      "send_other": "Upload {{count}} files",
+      "typeRejected": "Not an accepted file type: {{names}}",
+      "tooBigNamed": "Too large (max {{mb}} MB): {{names}}",
+      "toomany": "Only the first {{count}} files can be uploaded at once.",
+      "someRejected": "These files were not accepted: {{names}}",
+      "anyType": "Any file type is accepted.",
+      "acceptedTypes": "Accepted: {{types}}",
+      "someFailed": "These files could not be stored. Please try them again: {{names}}"
+    },
+    "newSend": "Send files",
+    "newRequest": "Request files",
+    "emptyTab": "Nothing in this tab yet.",
+    "requestCreated": "File request created",
+    "requestCreateFailed": "Could not create the file request",
+    "createRequest": "Create request",
+    "createRequestAndSend": "Create & ask",
+    "someRejected": "{{count}} file(s) were not an allowed type and were skipped: {{names}}",
+    "uploadBy": "Accepts uploads until",
+    "filesReceived": "Files received",
+    "closeRequest": "Close request",
+    "requestClosed": "Request closed",
+    "resend": "Send again",
+    "emailResent": "Email sent again",
+    "askedOf": "Asked of",
+    "uploadCode": "Short upload code",
+    "issueCode": "Issue a code",
+    "rotateCode": "New code",
+    "revokeCode": "Withdraw",
+    "codeIssued": "Upload code issued",
+    "codeRevoked": "Upload code withdrawn",
+    "codeHint": "Optional: a short code you can read out over the phone. The full link above always works.",
+    "unscannedNote": "These files are stored exactly as received and are never opened or scanned by PicPeak. Check them before you use or pass them on.",
+    "deleteRequestConfirmTitle": "Delete file request?",
+    "deleteRequestConfirmBody": "This removes the upload link and permanently deletes every file the client sent.",
+    "tab": {
+      "all": "All",
+      "sent": "Sent",
+      "requested": "Requested"
+    },
+    "kind": {
+      "send": "Send",
+      "request": "Request"
+    },
+    "emptyReadOnly": "Nothing here yet.",
+    "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}"
   },
   "workflows": {
     "title": "Workflows",
@@ -2606,7 +2644,7 @@
       },
       "transfers": {
         "title": "PicTransfer",
-        "description": "Send original files from any event(s) as a secure, token-protected download link, with an optional client-upload code so clients can send you logos and files back. Strictly opt-in.",
+        "description": "Send files to a client as a secure, token-protected download link, and request files from a client through an upload link of their own. Strictly opt-in.",
         "sidebar": "PicTransfer"
       },
       "workflows": {
@@ -3099,7 +3137,37 @@
         "messaging",
         "phone",
         "business api"
+      ],
+      "transfers": [
+        "transfer",
+        "pictransfer",
+        "upload",
+        "file types",
+        "mime",
+        "svg",
+        "allowlist",
+        "accept all",
+        "file size",
+        "request files"
       ]
+    },
+    "transfers": {
+      "title": "PicTransfer",
+      "description": "Which file types clients may send you, and how large.",
+      "uploadsTitle": "What clients may send you",
+      "uploadsIntro": "Applies to file requests and to files you attach to a transfer. It does not change what may be uploaded to a gallery.",
+      "acceptAll": "Accept all file types",
+      "acceptAllHint": "Any file a client picks is accepted. The size limit, file count and link expiry still apply.",
+      "acceptAllWarning": "Uploaded files are stored and delivered as opaque downloads. PicPeak never opens, renders or scans them, and they are never served as web content — but it also cannot tell you whether one is safe. Check anything you open or pass on.",
+      "allowedTypes": "Allowed file types",
+      "addType": "Add type",
+      "allowedTypesHint": "A file is accepted when its type matches and its extension is one of the listed ones. Leave the extensions empty to match on the type alone.",
+      "noTypes": "No types listed. Add at least one, or turn on \"Accept all file types\".",
+      "mime": "File type",
+      "extensions": "Extensions",
+      "maxSize": "Maximum file size (MB)",
+      "maxSizeHint": "Applies per file, not per upload.",
+      "readOnly": "Only admins who can edit settings can change what clients may send."
     }
   },
   "analytics": {
@@ -6926,7 +6994,6 @@
     "search": "Search by name or customer…",
     "empty": "No projects yet. Create one above, or events you already have were grouped automatically.",
     "notFound": "Project not found",
-    "backToList": "All projects",
     "noCustomer": "No single customer",
     "rename": "Rename",
     "timeline": "Milestones",
@@ -7454,6 +7521,7 @@
     "catalog": {
       "addItem": "Add item",
       "archive": "Archive",
+      "backToTemplates": "Back to templates",
       "archived": "Archived",
       "boundTo": "Quantity",
       "boundToNone": "Fixed quantity",
@@ -8392,7 +8460,6 @@
       "auditEmpty": "No audit-log entries yet.",
       "auditTrail": "Audit trail",
       "auditTrailHelp": "Every event recorded on this contract. The list is append-only and is the source of truth if the contract is challenged.",
-      "back": "Back to list",
       "blocks": "Included blocks",
       "cancel": "Cancel",
       "cancelConfirm": "Cancel this contract? Customer signing link will be invalidated.",
@@ -8525,7 +8592,6 @@
       }
     },
     "editor": {
-      "back": "Back to list",
       "backToDetail": "Back to contract",
       "create": "Create draft",
       "createdToast": "Contract created.",
@@ -8603,7 +8669,6 @@
       "takeTheirs": "Take theirs"
     },
     "blocks": {
-      "back": "Back to contracts",
       "title": "Contract block library",
       "hideInactive": "Hide inactive",
       "disclaimerTitle": "Examples only — have your lawyer review",
@@ -8644,7 +8709,6 @@
     "templates": {
       "title": "Contract templates",
       "intro": "A template sets the clauses a new contract starts with, their order and their wording. Publishing freezes a version; a contract keeps the version it was made from.",
-      "back": "Back to contracts",
       "backToTemplates": "Back to templates",
       "newName": "New template name",
       "create": "Create template",

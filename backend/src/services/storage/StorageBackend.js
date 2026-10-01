@@ -12,6 +12,9 @@
  *
  * @typedef {Object} PutOptions
  * @property {string} [contentType] - MIME type stored in object metadata.
+ * @property {string} [contentDisposition] - Content-Disposition stored on the object (S3 only).
+ *   PicTransfer writes `attachment` so a presigned or public URL downloads rather
+ *   than renders, matching the headers the app's own download routes send (#1544).
  * @property {string} [cacheControl] - Cache-Control header (S3 only).
  *
  * @typedef {Object} StatResult

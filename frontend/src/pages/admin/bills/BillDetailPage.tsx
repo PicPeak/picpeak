@@ -7,7 +7,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, Send, CheckCircle, BellRing, XCircle, Truck, Edit2, RefreshCw } from 'lucide-react';
+import { Eye, Send, CheckCircle, BellRing, XCircle, Truck, Edit2, RefreshCw } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput } from '../../../components/common';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import { billsService, isDraftInvoice } from '../../../services/bills.service';
@@ -294,10 +294,6 @@ export const BillDetailPage: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <button onClick={() => navigate('/admin/clients/bills')}
-            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-          </button>
           <h2 className="text-xl font-bold">{inv.invoiceNumber}
             {/* Storno discriminator badge — sits next to the number so
                 the admin sees at a glance that this row is a

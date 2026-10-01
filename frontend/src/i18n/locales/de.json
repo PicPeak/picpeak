@@ -909,12 +909,11 @@
   },
   "transfers": {
     "title": "PicTransfer",
-    "subtitle": "Originaldateien aus beliebigen Events als Download-Link versenden.",
-    "new": "Neuer Transfer",
+    "subtitle": "Dateien an Kundinnen und Kunden senden – oder Dateien von ihnen anfordern.",
     "create": "Transfer erstellen",
     "created": "Transfer erstellt",
     "createFailed": "Transfer konnte nicht erstellt werden",
-    "empty": "Noch keine Transfers. Erstellen Sie einen, um Dateien zu teilen.",
+    "empty": "Noch nichts vorhanden. Senden Sie Dateien, oder fordern Sie welche an.",
     "untitled": "Unbenannter Transfer",
     "linkCopied": "Link in die Zwischenablage kopiert",
     "copyFailed": "Link konnte nicht kopiert werden",
@@ -928,14 +927,9 @@
     "filesAdded": "Dateien hinzugefügt",
     "deleted": "Transfer gelöscht",
     "deleteConfirmTitle": "Transfer löschen?",
-    "deleteConfirmBody": "Dies entfernt den Link und alle Kunden-Uploads. Die Fotos der Quell-Events sind nicht betroffen.",
+    "deleteConfirmBody": "Damit wird der Link entfernt. Die Fotos im Event bleiben unberührt.",
     "addImages": "Bilder hinzufügen",
-    "clientUpload": "Kunden-Upload",
-    "disableUploads": "Deaktivieren",
-    "enableUploads": "Upload-Link aktivieren",
-    "uploadEnabled": "Upload-Link aktiviert",
     "noUploads": "Der Kunde hat noch keine Dateien hochgeladen.",
-    "uploadHint": "Aktivieren Sie dies, um dem Kunden einen 6-stelligen Code zu geben, mit dem er Ihnen Dateien (Logos etc.) senden kann.",
     "createAndSend": "Erstellen & senden",
     "uploadedFiles": "Hochgeladene Dateien",
     "addFiles": "Dateien hinzufügen",
@@ -950,8 +944,8 @@
       "files": "Dateien",
       "status": "Status",
       "downloads": "Downloads",
-      "expires": "Läuft ab",
-      "uploads": "Uploads"
+      "kind": "Typ",
+      "deadline": "Frist"
     },
     "status": {
       "active": "Aktiv",
@@ -965,7 +959,6 @@
       "messagePlaceholder": "Wird dem Empfänger auf der Download-Seite angezeigt",
       "expiresInDays": "Link aktiv für (Tage)",
       "maxDownloads": "Max. Downloads (0 = unbegrenzt)",
-      "allowUploads": "Dem Kunden zusätzlich einen Upload-Link geben (für Logos etc.)",
       "files": "Dateien",
       "noFiles": "Noch keine Bilder ausgewählt.",
       "uploadFiles": "Eigene Dateien hochladen",
@@ -974,10 +967,12 @@
       "delivery": "Zustellung",
       "recipients": "E-Mail-Adressen der Empfänger",
       "recipientsPlaceholder": "anna@example.com, ben@example.com",
-      "recipientsCount": "{{count}} Empfänger — jeder erhält den Download-Link",
       "recipientsHint": "Mehrere Adressen durch Kommas trennen. Jeder Empfänger erhält den Download-Link.",
-      "recipientsCount_one": "{{count}} Empfänger — er erhält den Download-Link",
-      "recipientsCount_other": "{{count}} Empfänger — jeder erhält den Download-Link"
+      "requestTitlePlaceholder": "z. B. Logo und Markenmaterial für Familie Schmidt",
+      "requestMessage": "Was benötigen Sie von ihnen? (optional)",
+      "requestMessagePlaceholder": "Wird dem Kunden auf der Upload-Seite angezeigt",
+      "uploadWindowDays": "Uploads annehmen für (Tage)",
+      "requestRecipientsHint": "Mehrere Adressen mit Komma trennen. Jede erhält den Upload-Link."
     },
     "picker": {
       "title": "Bilder aus anderen Events auswählen",
@@ -1018,8 +1013,51 @@
       "send": "{{count}} Dateien hochladen",
       "failed": "Upload fehlgeschlagen. Bitte erneut versuchen.",
       "send_one": "{{count}} Datei hochladen",
-      "send_other": "{{count}} Dateien hochladen"
-    }
+      "send_other": "{{count}} Dateien hochladen",
+      "typeRejected": "Kein akzeptierter Dateityp: {{names}}",
+      "tooBigNamed": "Zu groß (max. {{mb}} MB): {{names}}",
+      "toomany": "Es können nur die ersten {{count}} Dateien auf einmal hochgeladen werden.",
+      "someRejected": "Diese Dateien wurden nicht akzeptiert: {{names}}",
+      "anyType": "Jeder Dateityp wird akzeptiert.",
+      "acceptedTypes": "Akzeptiert: {{types}}",
+      "someFailed": "Diese Dateien konnten nicht gespeichert werden. Bitte erneut versuchen: {{names}}"
+    },
+    "newSend": "Dateien senden",
+    "newRequest": "Dateien anfordern",
+    "emptyTab": "In diesem Tab ist noch nichts vorhanden.",
+    "requestCreated": "Dateianfrage erstellt",
+    "requestCreateFailed": "Die Dateianfrage konnte nicht erstellt werden",
+    "createRequest": "Anfrage erstellen",
+    "createRequestAndSend": "Erstellen & anfragen",
+    "someRejected": "{{count}} Datei(en) hatten keinen erlaubten Typ und wurden übersprungen: {{names}}",
+    "uploadBy": "Nimmt Uploads an bis",
+    "filesReceived": "Erhaltene Dateien",
+    "closeRequest": "Anfrage schließen",
+    "requestClosed": "Anfrage geschlossen",
+    "resend": "Erneut senden",
+    "emailResent": "E-Mail erneut gesendet",
+    "askedOf": "Angefragt bei",
+    "uploadCode": "Kurzer Upload-Code",
+    "issueCode": "Code erstellen",
+    "rotateCode": "Neuer Code",
+    "revokeCode": "Zurückziehen",
+    "codeIssued": "Upload-Code erstellt",
+    "codeRevoked": "Upload-Code zurückgezogen",
+    "codeHint": "Optional: ein kurzer Code, den Sie am Telefon vorlesen können. Der vollständige Link oben funktioniert immer.",
+    "unscannedNote": "Diese Dateien werden genau so gespeichert, wie sie eingegangen sind, und von PicPeak nie geöffnet oder geprüft. Prüfen Sie sie, bevor Sie sie verwenden oder weitergeben.",
+    "deleteRequestConfirmTitle": "Dateianfrage löschen?",
+    "deleteRequestConfirmBody": "Damit wird der Upload-Link entfernt und jede vom Kunden gesendete Datei endgültig gelöscht.",
+    "tab": {
+      "all": "Alle",
+      "sent": "Gesendet",
+      "requested": "Angefordert"
+    },
+    "kind": {
+      "send": "Senden",
+      "request": "Anfrage"
+    },
+    "emptyReadOnly": "Noch nichts vorhanden.",
+    "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}"
   },
   "workflows": {
     "title": "Workflows",
@@ -3144,7 +3182,7 @@
       },
       "transfers": {
         "title": "PicTransfer",
-        "description": "Originaldateien aus beliebigen Events als sicheren, Token-geschützten Download-Link versenden – mit optionalem Kunden-Upload-Code, über den Kunden Ihnen Logos und Dateien zurücksenden können. Strikt optional.",
+        "description": "Dateien als sicheren, tokengeschützten Download-Link an Kunden senden – und über einen eigenen Upload-Link Dateien von Kunden anfordern. Strikt optional.",
         "sidebar": "PicTransfer"
       },
       "workflows": {
@@ -3602,7 +3640,37 @@
         "diashow",
         "präsentation",
         "kiosk"
+      ],
+      "transfers": [
+        "transfer",
+        "pictransfer",
+        "upload",
+        "dateitypen",
+        "mime",
+        "svg",
+        "erlaubte dateien",
+        "alle akzeptieren",
+        "dateigröße",
+        "dateien anfordern"
       ]
+    },
+    "transfers": {
+      "title": "PicTransfer",
+      "description": "Welche Dateitypen Kunden Ihnen senden dürfen – und wie groß.",
+      "uploadsTitle": "Was Kunden Ihnen senden dürfen",
+      "uploadsIntro": "Gilt für Dateianfragen und für Dateien, die Sie einem Transfer anhängen. Ändert nicht, was in eine Galerie hochgeladen werden darf.",
+      "acceptAll": "Alle Dateitypen akzeptieren",
+      "acceptAllHint": "Jede Datei, die ein Kunde auswählt, wird angenommen. Größenlimit, Dateianzahl und Ablauf des Links gelten weiterhin.",
+      "acceptAllWarning": "Hochgeladene Dateien werden als undurchsichtige Downloads gespeichert und ausgeliefert. PicPeak öffnet, rendert und prüft sie nie und liefert sie nie als Webinhalt aus – kann Ihnen aber auch nicht sagen, ob eine Datei sicher ist. Prüfen Sie alles, was Sie öffnen oder weitergeben.",
+      "allowedTypes": "Erlaubte Dateitypen",
+      "addType": "Typ hinzufügen",
+      "allowedTypesHint": "Eine Datei wird angenommen, wenn ihr Typ passt und ihre Endung eine der aufgeführten ist. Endungen leer lassen, um nur auf den Typ zu prüfen.",
+      "noTypes": "Keine Typen aufgeführt. Fügen Sie mindestens einen hinzu oder aktivieren Sie „Alle Dateitypen akzeptieren“.",
+      "mime": "Dateityp",
+      "extensions": "Endungen",
+      "maxSize": "Maximale Dateigröße (MB)",
+      "maxSizeHint": "Gilt pro Datei, nicht pro Upload.",
+      "readOnly": "Nur Admins mit Bearbeitungsrechten für Einstellungen können ändern, was Kunden senden dürfen."
     }
   },
   "branding": {
@@ -6891,7 +6959,6 @@
     "search": "Nach Name oder Kunde suchen…",
     "empty": "Noch keine Projekte. Erstellen Sie oben eines, oder vorhandene Events wurden automatisch gruppiert.",
     "notFound": "Projekt nicht gefunden",
-    "backToList": "Alle Projekte",
     "noCustomer": "Kein einzelner Kunde",
     "rename": "Umbenennen",
     "timeline": "Meilensteine",
@@ -7419,6 +7486,7 @@
     "catalog": {
       "addItem": "Leistung hinzufügen",
       "archive": "Archivieren",
+      "backToTemplates": "Zurück zu den Vorlagen",
       "archived": "Archiviert",
       "boundTo": "Menge",
       "boundToNone": "Feste Menge",
@@ -8358,7 +8426,6 @@
       "auditEmpty": "Noch keine Audit-Log-Einträge.",
       "auditTrail": "Audit-Verlauf",
       "auditTrailHelp": "Jedes auf diesem Vertrag erfasste Ereignis. Die Liste ist anhängend (append-only) und ist die Quelle der Wahrheit, falls der Vertrag angefochten wird.",
-      "back": "Zurück zur Liste",
       "blocks": "Enthaltene Bausteine",
       "cancel": "Stornieren",
       "cancelConfirm": "Diesen Vertrag stornieren? Der Signatur-Link des Kunden wird ungültig.",
@@ -8491,7 +8558,6 @@
       }
     },
     "editor": {
-      "back": "Zurück zur Liste",
       "backToDetail": "Zurück zum Vertrag",
       "create": "Entwurf erstellen",
       "createdToast": "Vertrag erstellt.",
@@ -8569,7 +8635,6 @@
       "takeTheirs": "Ihre übernehmen"
     },
     "blocks": {
-      "back": "Zurück zu den Verträgen",
       "title": "Vertragsbaustein-Bibliothek",
       "hideInactive": "Inaktive ausblenden",
       "disclaimerTitle": "Nur Beispiele — lassen Sie sie von Ihrem Anwalt prüfen",
@@ -8610,7 +8675,6 @@
     "templates": {
       "title": "Vertragsvorlagen",
       "intro": "Eine Vorlage legt fest, mit welchen Klauseln, in welcher Reihenfolge und mit welchem Wortlaut ein neuer Vertrag beginnt. Beim Veröffentlichen wird eine Version eingefroren; ein Vertrag behält die Version, aus der er erstellt wurde.",
-      "back": "Zurück zu den Verträgen",
       "backToTemplates": "Zurück zu den Vorlagen",
       "newName": "Name der neuen Vorlage",
       "create": "Vorlage erstellen",

@@ -184,6 +184,13 @@
       ],
       "reason": "Admin processing settings/regeneration initiation only; no image data or progress."
     },
+    "transfers": {
+      "signals": [
+        "transfers",
+        "transfer_upload_links"
+      ],
+      "reason": "Admin-side upload policy only: which file types a request accepts and the size cap. Never the files themselves, their names, who uploaded them or any recipient address."
+    },
     "usage": {
       "signals": [],
       "reason": "Explicit consent/report inspection/feedback is not itself adoption telemetry."
@@ -1207,6 +1214,8 @@
         "PUT /customer-surface",
         "PUT /accounting",
         "PUT /slideshow",
+        "GET /transfers",
+        "PUT /transfers",
         "GET /downloads",
         "PUT /downloads",
         "GET /sso",
@@ -1307,7 +1316,7 @@
         "transfers",
         "transfer_upload_links"
       ],
-      "reason": "Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin transfer CRUD/files/link and upload-code management/email resend/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "POST /",
@@ -1319,8 +1328,9 @@
         "POST /:id/upload-files",
         "DELETE /:id/extra-files/:extraId",
         "GET /:id/extra-files/:extraId/download",
-        "POST /:id/upload-link",
-        "DELETE /:id/upload-link",
+        "POST /:id/upload-code",
+        "DELETE /:id/upload-code",
+        "POST /:id/resend",
         "GET /:id/download",
         "GET /:id/uploads/:uploadId/download"
       ]

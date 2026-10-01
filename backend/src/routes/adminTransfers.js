@@ -1,9 +1,12 @@
 /**
  * Admin → Transfers routes (PicTransfer, #997).
  *
- * Mounted at /api/admin/transfers. A transfer bundles ORIGINAL photos picked
- * from any event into a token-protected download link, and can optionally open
- * a short upload token so the client can send files back.
+ * Mounted at /api/admin/transfers. A transfer is one of two things (#1544):
+ *   kind 'send'     bundles ORIGINAL photos picked from any event, plus the
+ *                   admin's own files, behind a token-protected download link.
+ *   kind 'request'  collects files FROM a client behind a token-protected
+ *                   upload link. Never serves a download.
+ * They are mutually exclusive — see migration 257.
  *
  * Read  = `events.view`; write = `events.edit` (transfers are an
  * events/photos-adjacent admin tool, so they ride the same permissions as the
@@ -18,11 +21,14 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
-const { validateFileType } = require('../utils/fileSecurityUtils');
 const { sanitizeFilename } = require('../utils/filenameSanitizer');
-const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('../services/storage');
 const transferService = require('../services/transferService');
+const {
+  getTransferUploadPolicy,
+  validateTransferFileType,
+  setAttachmentHeaders,
+} = require('../services/transferUploadPolicy');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const fs = require('fs');
@@ -33,8 +39,13 @@ const router = express.Router();
 // Bytes are written to a temp dir, handed to the storage backend (so S3 works),
 // then the temp copy is removed — same shape as the public client-upload route.
 const ADMIN_MAX_FILES = 50;
-const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 const { getStoragePath } = require('../config/storage');
+
+// S3 parity with the download routes — see publicTransferUpload for the why.
+const TRANSFER_OBJECT_OPTIONS = {
+  contentType: 'application/octet-stream',
+  contentDisposition: 'attachment',
+};
 
 const tempStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -48,7 +59,7 @@ const tempStorage = multer.diskStorage({
   },
 });
 
-function buildAdminUploader(maxSizeBytes, allowed) {
+function buildAdminUploader(maxSizeBytes, policy) {
   return multer({
     storage: tempStorage,
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
@@ -56,8 +67,15 @@ function buildAdminUploader(maxSizeBytes, allowed) {
     // field name uses array-index syntax at all. Reject any that do.
     limits: { fileSize: maxSizeBytes, files: ADMIN_MAX_FILES, fieldArrayIndexLimit: 0 },
     fileFilter: (req, file, cb) => {
-      if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
-      return cb(new Error('This file type is not allowed'));
+      // The transfer policy, not the media registry: these bytes are stored and
+      // handed back untouched, never decoded, so `validateFileType`'s "can the
+      // pipeline read this" rule is the wrong question. See transferUploadPolicy.
+      if (validateTransferFileType(file.originalname, file.mimetype, policy)) return cb(null, true);
+      // Skip rather than throw, so one unsupported file does not reject the
+      // whole batch. The names are collected for the response.
+      req.rejectedFiles = req.rejectedFiles || [];
+      req.rejectedFiles.push(file.originalname);
+      return cb(null, false);
     },
   }).array('files', ADMIN_MAX_FILES);
 }
@@ -67,17 +85,22 @@ function buildAdminUploader(maxSizeBytes, allowed) {
  * Resolves { ok:true } or sends a 4xx and resolves { ok:false }.
  */
 async function runAdminUpload(req, res) {
-  const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
-  const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
-  const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
-  const uploader = buildAdminUploader(maxSizeMb * 1024 * 1024, allowed);
+  const policy = await getTransferUploadPolicy();
+  const uploader = buildAdminUploader(policy.maxSizeMb * 1024 * 1024, policy);
   try {
     await new Promise((resolve, reject) => uploader(req, res, (err) => (err ? reject(err) : resolve())));
     return { ok: true };
   } catch (err) {
+    // Multer's own message is not echoed: a filesystem failure inside the
+    // temp-file destination carries the server path (EACCES /app/storage/...),
+    // and this route is unauthenticated. The size case is the only one worth
+    // naming, because it tells the client something actionable.
     const msg = err && err.code === 'LIMIT_FILE_SIZE'
-      ? `Each file must be ${maxSizeMb} MB or smaller`
-      : (err && err.message) || 'Upload failed';
+      ? `Each file must be ${policy.maxSizeMb} MB or smaller`
+      : 'Upload failed';
+    if (err && err.code !== 'LIMIT_FILE_SIZE') {
+      logger.warn('transfer upload rejected', { code: err.code, error: err.message });
+    }
     if (!res.headersSent) res.status(400).json({ error: msg, code: 'UPLOAD_REJECTED' });
     return { ok: false };
   }
@@ -87,13 +110,12 @@ async function runAdminUpload(req, res) {
 async function storeExtraFiles(transferId, files) {
   if (!files || !files.length) return;
   const storage = getStorage();
-  let i = 0;
   for (const file of files) {
-    i += 1;
-    const safeName = sanitizeFilename(path.basename(file.originalname), 120) || 'file';
-    const key = path.posix.join(transferService.extraFilesDirKey(transferId), `${Date.now()}-${i}-${safeName}`);
+    // Opaque key — the client's extension is deliberately not kept on disk or
+    // in S3. The real name lives on the row and is what the recipient sees.
+    const key = transferService.newExtraFileKey(transferId);
     try {
-      await storage.putFromFile(key, file.path);
+      await storage.putFromFile(key, file.path, TRANSFER_OBJECT_OPTIONS);
       await transferService.addExtraFile(transferId, {
         originalFilename: file.originalname,
         storedPath: key,
@@ -166,32 +188,83 @@ router.post('/',
     if (!up.ok) return; // 4xx already sent
 
     const b = req.body || {};
+    const kind = transferService.normalizeKind(b.kind);
+    const isRequest = kind === transferService.KIND_REQUEST;
     const photoIds = parseJsonArrayField(b.photoIds)
       .map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 5000);
     const recipientEmails = parseJsonArrayField(b.recipientEmails)
       .map((e) => String(e || '').trim()).filter(Boolean).slice(0, 100);
     const deliveryMethod = b.deliveryMethod === 'email' ? 'email' : 'link';
 
+    // A send has to be sending something. Before #1544 the file filter threw,
+    // so a create whose files were all rejected was a 400; now the filter skips
+    // them, and without this the row is created empty and — on
+    // deliveryMethod 'email' — a "your files are ready" mail goes out for a
+    // transfer holding nothing.
+    if (!isRequest && photoIds.length === 0 && !(req.files || []).length) {
+      const rejectedNow = req.rejectedFiles || [];
+      for (const file of req.files || []) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+      return res.status(400).json({
+        error: rejectedNow.length
+          ? `Nothing to send — no allowed file type among: ${rejectedNow.join(', ')}`
+          : 'Add at least one photo or file to send',
+        code: rejectedNow.length ? 'TYPE_REJECTED' : 'NOTHING_TO_SEND',
+        rejected_files: rejectedNow,
+      });
+    }
+
     const transfer = await transferService.createTransfer({
+      kind,
       title: b.title,
       message: b.message,
       expiresInDays: b.expiresInDays,
       maxDownloads: b.maxDownloads,
       graceDays: b.graceDays,
-      allowUploads: b.allowUploads === 'true' || b.allowUploads === true,
-      uploadExpiresInDays: b.uploadExpiresInDays,
-      photoIds,
+      // A request carries no outbound photos; createTransfer ignores them, but
+      // don't hand them over either — a scoped admin's picks are still checked
+      // against ownership there, and silently dropping them here is clearer.
+      photoIds: isRequest ? [] : photoIds,
       deliveryMethod,
     }, req.admin);
 
-    await storeExtraFiles(transfer.id, req.files);
+    // Likewise: the admin's own deliverable files are outbound content.
+    //
+    // storeExtraFiles is also what unlinks multer's temp copies, so on the
+    // request branch they have to be cleaned up here or they sit in
+    // storage/temp/transfer-admin-uploads forever — nothing sweeps that
+    // directory. The names are reported back so the drop is not silent.
+    const droppedOnRequest = isRequest ? (req.files || []).map((f) => f.originalname) : [];
+    if (isRequest) {
+      for (const file of req.files || []) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    } else {
+      await storeExtraFiles(transfer.id, req.files);
+    }
 
     if (deliveryMethod === 'email' && recipientEmails.length) {
-      await transferService.sendTransferEmails(transfer.id, recipientEmails);
+      if (isRequest) {
+        await transferService.sendTransferRequestEmails(transfer.id, recipientEmails);
+      } else {
+        await transferService.sendTransferEmails(transfer.id, recipientEmails);
+      }
     }
 
     const fresh = await transferService.getTransfer(transfer.id);
-    return successResponse(res, { transfer: fresh }, 201, 'Transfer created');
+    const rejected = req.rejectedFiles || [];
+    const notes = [];
+    if (rejected.length) notes.push(`${rejected.length} file(s) were not an allowed type`);
+    if (droppedOnRequest.length) {
+      notes.push(`${droppedOnRequest.length} attached file(s) were not kept — a file request only collects files`);
+    }
+    return successResponse(
+      res,
+      { transfer: fresh, rejected_files: rejected, dropped_files: droppedOnRequest },
+      201,
+      notes.length ? `${isRequest ? 'File request' : 'Transfer'} created — ${notes.join('; ')}` : 'Transfer created',
+    );
   }),
 );
 
@@ -253,7 +326,7 @@ router.delete('/:id',
   }),
 );
 
-// Add photos (cross-event) to a transfer
+// Add photos (cross-event) to a SEND. A request has no outbound content.
 router.post('/:id/files',
   requirePermission('events.edit'),
   [
@@ -265,6 +338,11 @@ router.post('/:id/files',
     validateRequest(req);
     const existing = await transferService.getTransfer(parseInt(req.params.id, 10));
     if (!existing) return res.status(404).json({ error: 'Transfer not found' });
+    if (existing.kind === transferService.KIND_REQUEST) {
+      return res.status(400).json({
+        error: 'A file request does not send files out', code: 'NOT_A_SEND',
+      });
+    }
     const transfer = await transferService.addFiles(parseInt(req.params.id, 10), req.body.photoIds, req.admin);
     return successResponse(res, { transfer }, 200, 'Files added');
   }),
@@ -292,14 +370,31 @@ router.post('/:id/upload-files',
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id' });
     const existing = await transferService.getTransfer(id);
     if (!existing) return res.status(404).json({ error: 'Transfer not found' });
+    if (existing.kind === transferService.KIND_REQUEST) {
+      return res.status(400).json({
+        error: 'A file request does not send files out', code: 'NOT_A_SEND',
+      });
+    }
     const up = await runAdminUpload(req, res);
     if (!up.ok) return;
+    const rejected = req.rejectedFiles || [];
     if (!req.files || !req.files.length) {
-      return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
+      return res.status(400).json({
+        error: rejected.length
+          ? `Not an allowed file type: ${rejected.join(', ')}`
+          : 'No files uploaded',
+        code: rejected.length ? 'TYPE_REJECTED' : 'NO_FILES',
+        rejected_files: rejected,
+      });
     }
     await storeExtraFiles(id, req.files);
     const transfer = await transferService.getTransfer(id);
-    return successResponse(res, { transfer }, 200, 'Files added');
+    return successResponse(
+      res,
+      { transfer, rejected_files: rejected },
+      200,
+      rejected.length ? `Files added — ${rejected.length} were not an allowed type` : 'Files added',
+    );
   }),
 );
 
@@ -332,29 +427,76 @@ router.get('/:id/extra-files/:extraId/download',
   }),
 );
 
-// Enable / regenerate the client-upload link
-router.post('/:id/upload-link',
+// Issue or rotate the short read-aloud upload code on a REQUEST.
+//
+// Pre-#1544 this opened an upload channel on any transfer. A request is born
+// with its channel open on the 64-hex token, so this now only manages the
+// optional short code; `{ rotate: true }` replaces one that has leaked.
+router.post('/:id/upload-code',
   requirePermission('events.edit'),
-  [param('id').isInt({ min: 1 }), body('uploadExpiresInDays').optional({ nullable: true }).isInt({ min: 1, max: 3650 })],
+  [param('id').isInt({ min: 1 }), body('rotate').optional().isBoolean()],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const transfer = await transferService.enableUploads(
-      parseInt(req.params.id, 10), { uploadExpiresInDays: req.body.uploadExpiresInDays },
+    const transfer = await transferService.enableUploadCode(
+      parseInt(req.params.id, 10), { rotate: req.body.rotate === true || req.body.rotate === 'true' },
     );
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
-    return successResponse(res, { transfer }, 200, 'Upload link enabled');
+    if (transfer.error === 'NOT_A_REQUEST') {
+      return res.status(400).json({ error: 'Only a file request has an upload code', code: 'NOT_A_REQUEST' });
+    }
+    return successResponse(res, { transfer }, 200, 'Upload code issued');
   }),
 );
 
-// Disable the client-upload link
-router.delete('/:id/upload-link',
+// Withdraw the short code. The request stays open on its 64-hex link.
+router.delete('/:id/upload-code',
   requirePermission('events.edit'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const transfer = await transferService.disableUploads(parseInt(req.params.id, 10));
+    const transfer = await transferService.disableUploadCode(parseInt(req.params.id, 10));
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
-    return successResponse(res, { transfer }, 200, 'Upload link disabled');
+    if (transfer.error === 'NOT_A_REQUEST') {
+      return res.status(400).json({ error: 'Only a file request has an upload code', code: 'NOT_A_REQUEST' });
+    }
+    return successResponse(res, { transfer }, 200, 'Upload code withdrawn');
+  }),
+);
+
+// Re-send this transfer's email: the "please upload your files" ask for a
+// request, the "your files are ready" delivery for a send. Both go through the
+// ownership mount above, so the addresses can only be attached to a transfer
+// this admin owns.
+router.post('/:id/resend',
+  requirePermission('events.edit'),
+  [
+    param('id').isInt({ min: 1 }),
+    body('recipientEmails').optional().isArray({ max: 100 }),
+    // Validate each address here rather than only dropping the bad ones in the
+    // service: a typo'd list otherwise answers 200 "Email sent" with sent: 0,
+    // and the admin has no reason to look again.
+    body('recipientEmails.*').optional().isEmail().withMessage('Not a valid email address'),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    const transfer = await transferService.getTransfer(id);
+    if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
+
+    // Default to the addresses already on the row so "resend" needs no input.
+    const emails = Array.isArray(req.body.recipientEmails) && req.body.recipientEmails.length
+      ? req.body.recipientEmails
+      : (transfer.recipients || []).map((r) => r.email);
+    if (!emails.length) {
+      return res.status(400).json({ error: 'No recipients to send to', code: 'NO_RECIPIENTS' });
+    }
+
+    const result = transfer.kind === transferService.KIND_REQUEST
+      ? await transferService.sendTransferRequestEmails(id, emails)
+      : await transferService.sendTransferEmails(id, emails);
+    return successResponse(
+      res, { transfer: await transferService.getTransfer(id), sent: result.sent }, 200, 'Email sent',
+    );
   }),
 );
 
@@ -367,6 +509,11 @@ router.get('/:id/download',
     validateRequest(req);
     const transfer = await transferService.getTransfer(parseInt(req.params.id, 10));
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
+    if (transfer.kind === transferService.KIND_REQUEST) {
+      // A request's bytes are the client's uploads, downloaded one at a time
+      // below — there is no outbound bundle to zip.
+      return res.status(400).json({ error: 'A file request has no outgoing bundle', code: 'NOT_A_SEND' });
+    }
     // getTransfer returns the serialized view; streamTransferArchive only needs
     // { id, title }, both present on it.
     await transferService.streamTransferArchive(transfer, res);
@@ -393,8 +540,7 @@ router.get('/:id/uploads/:uploadId/download',
       // S3 / non-local backend: stream via the storage abstraction.
       body = await getStorage().get(upload.stored_path);
     }
-    res.setHeader('Content-Type', upload.mime_type || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(upload.original_filename)}"`);
+    setAttachmentHeaders(res, upload.original_filename, upload.mime_type);
     // Through the helper, never a bare pipe: the local read stream opens
     // lazily and a source 'error' with no listener ends the process.
     pipeStreamToResponse(body, res, { context: `transfer ${upload.transfer_id} upload ${upload.id}` });

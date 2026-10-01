@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
@@ -75,15 +75,9 @@ export const ContractTemplatesPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Link to="/admin/clients/contracts" className="p-1 rounded hover:bg-hover-soft"
-          aria-label={t('contracts.templates.back', 'Back to contracts') as string}>
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-2xl font-bold flex-1 text-heading">
-          {t('contracts.templates.title', 'Contract templates')}
-        </h1>
-      </div>
+      <h1 className="text-2xl font-bold text-heading">
+        {t('contracts.templates.title', 'Contract templates')}
+      </h1>
       <p className="text-sm text-soft max-w-3xl">
         {t('contracts.templates.intro', 'A template sets the clauses a new contract starts with, their order and their wording. Publishing freezes a version; a contract keeps the version it was made from.')}
       </p>

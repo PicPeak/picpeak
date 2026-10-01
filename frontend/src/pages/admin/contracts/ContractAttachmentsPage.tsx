@@ -7,9 +7,8 @@
  */
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
@@ -100,15 +99,9 @@ export const ContractAttachmentsPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Link to="/admin/clients/contracts" className="p-1 rounded hover:bg-hover-soft"
-          aria-label={t('contracts.templates.back', 'Back to contracts') as string}>
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-2xl font-bold flex-1 text-heading">
-          {t('contracts.attachments.title', 'Contract attachments')}
-        </h1>
-      </div>
+      <h1 className="text-2xl font-bold text-heading">
+        {t('contracts.attachments.title', 'Contract attachments')}
+      </h1>
       <p className="text-sm text-soft max-w-3xl">
         {t('contracts.attachments.intro', 'PDFs that go out with contracts — terms and conditions, a privacy notice, an appendix. Add them to a template or a single contract, either inside the contract PDF or as a separate file.')}
       </p>

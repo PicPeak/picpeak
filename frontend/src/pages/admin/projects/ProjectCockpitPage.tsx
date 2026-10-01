@@ -7,13 +7,13 @@
  * gallery and logged hour that rolls up to the project. Admin-only.
  */
 import React, { useMemo, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
   Mail, FileText, ScrollText, Receipt, Image as ImageIcon, Clock,
-  X, Send, RotateCw, Ban, Eye, Save, ArrowLeft, Plus, Search,
+  X, Send, RotateCw, Ban, Eye, Save, Plus, Search,
 } from 'lucide-react';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import {
@@ -264,10 +264,6 @@ export const ProjectCockpitPage: React.FC = () => {
 
   return (
     <div>
-      <Link to="/admin/clients/projects" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-body mb-3">
-        <ArrowLeft className="w-4 h-4" />{t('projects.backToList', 'All projects')}
-      </Link>
-
       {/* Header */}
       <Card className="mb-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

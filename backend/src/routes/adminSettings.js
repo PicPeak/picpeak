@@ -71,9 +71,19 @@ const RESERVED_SETTING_KEYS = [
 // built AT the standard resolution, so changing it has to invalidate those
 // zips and re-validate the value against the preset list. A generic upsert
 // would do neither, leaving galleries handing out archives at the old size.
+// Every transfer_upload_* / transfer_max_upload_* key is reserved (#1544) for
+// the same reason: PUT /transfers is gated on the `transfers` feature flag and
+// refuses an empty allowlist, and it is the ONLY writer that does. Left
+// unreserved, a settings.edit holder could set transfer_upload_accept_all
+// through the generic /general writer with the feature flag off, and the public
+// upload route — which reads the key directly — would start accepting every
+// file type. A backend flag gate that another endpoint can write around is not
+// a gate.
 const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
   || key.startsWith('oidc_')
   || key.startsWith('download_')
+  || key.startsWith('transfer_upload_')
+  || key === 'transfer_max_upload_size_mb'
   // Derived, read-only fields the GET response adds for the General tab
   // (#705). They are computed from the environment, never stored, so a
   // round-trip of the GET payload must not create phantom setting rows.
@@ -609,6 +619,99 @@ router.put('/slideshow', adminAuth, requirePermission('settings.edit'), async (r
     errorResponse(res, error, 500, 'Failed to save slideshow settings');
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// PicTransfer upload policy (#1544). Its own endpoints rather than a field on
+// the general settings page because this list is NOT `general_allowed_file_types`
+// — that one governs gallery photos, which the media pipeline decodes, and
+// widening it to carry a client's .psd would widen what sharp is handed.
+//
+// Behind the `transfers` feature flag on the BACKEND, not only in the sidebar:
+// a disabled feature must not be configurable by a direct API hit.
+// ──────────────────────────────────────────────────────────────────────────
+
+const { requireFeatureFlag: requireFlag } = require('../middleware/requireFeatureFlag');
+
+router.get('/transfers',
+  adminAuth,
+  requirePermission('settings.view'),
+  requireFlag('transfers'),
+  async (req, res) => {
+    try {
+      const { getTransferUploadPolicy } = require('../services/transferUploadPolicy');
+      const policy = await getTransferUploadPolicy();
+      res.json({
+        accept_all: policy.acceptAll,
+        allowed_types: policy.allowedTypes,
+        max_size_mb: policy.maxSizeMb,
+      });
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to load transfer settings');
+    }
+  });
+
+router.put('/transfers',
+  adminAuth,
+  requirePermission('settings.edit'),
+  requireFlag('transfers'),
+  async (req, res) => {
+    try {
+      const { normalizeAllowedTypes } = require('../services/transferUploadPolicy');
+      const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
+
+      // Validate EVERY field before writing any of them. Interleaving the two
+      // meant `{ allowed_types, max_size_mb: 0 }` saved the list and then
+      // answered 400 — the caller is told the save failed while half of it
+      // landed, and a retry with the size fixed is now a different change.
+      const writes = [];
+
+      if (has('allowed_types')) {
+        // normalizeAllowedTypes drops anything that isn't a well-formed
+        // `type/subtype`, so a typo cannot land in the setting and silently
+        // match nothing. An empty result would make the policy fall back to
+        // the legacy key, which is not what "I cleared the list" means, so
+        // refuse it and say why.
+        const cleaned = normalizeAllowedTypes(req.body.allowed_types);
+        if (!cleaned.length) {
+          return res.status(400).json({
+            error: 'Add at least one file type, or turn on "Accept all file types".',
+            code: 'EMPTY_ALLOWLIST',
+          });
+        }
+        writes.push(['transfer_upload_allowed_types', JSON.stringify(cleaned), 'general']);
+      }
+
+      if (has('accept_all')) {
+        const acceptAll = req.body.accept_all === true || req.body.accept_all === 'true';
+        writes.push(['transfer_upload_accept_all', JSON.stringify(acceptAll), 'boolean']);
+      }
+
+      if (has('max_size_mb')) {
+        const mb = Math.round(Number(req.body.max_size_mb));
+        if (!Number.isFinite(mb) || mb < 1 || mb > 100000) {
+          return res.status(400).json({ error: 'Maximum file size must be between 1 and 100000 MB', code: 'BAD_SIZE' });
+        }
+        writes.push(['transfer_max_upload_size_mb', JSON.stringify(mb), 'number']);
+      }
+
+      const updated = [];
+      for (const [key, value, type] of writes) {
+        await upsertAppSetting(key, value, type);
+        updated.push(key);
+      }
+
+      await logActivity(
+        'settings_updated',
+        { category: 'transfers', changes: updated },
+        null,
+        { type: 'admin', id: req.admin.id, name: req.admin.username },
+      );
+
+      return res.json({ message: 'Transfer settings updated', updated });
+    } catch (error) {
+      return errorResponse(res, error, 500, 'Failed to save transfer settings');
+    }
+  });
 
 // ──────────────────────────────────────────────────────────────────────────
 // Download resolutions (#858). The standard resolution is what every ordinary

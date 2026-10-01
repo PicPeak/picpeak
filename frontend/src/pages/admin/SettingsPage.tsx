@@ -14,6 +14,7 @@ import {
   CategoriesTab,
   AnalyticsTab,
   ModerationTab,
+  TransfersTab,
   StylingTab,
   SEOTab,
   ThumbnailsTab,
@@ -319,6 +320,7 @@ export const SettingsPage: React.FC = () => {
           )}
 
           {activeTab === 'moderation' && <ModerationTab />}
+          {activeTab === 'transfers' && <TransfersTab />}
           {activeTab === 'styling' && <StylingTab />}
           {activeTab === 'apiTokens' && <ApiTokensTab />}
           {activeTab === 'webhooks' && <WebhooksTab />}

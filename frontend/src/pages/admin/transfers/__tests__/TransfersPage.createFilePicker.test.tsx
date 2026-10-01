@@ -33,6 +33,10 @@ vi.mock('../../../../hooks/useLocalizedDate', () => ({
   useLocalizedDate: () => ({ formatDateTime: (v: string) => v, formatDate: (v: string) => v }),
 }));
 
+// The page gates its create/mutate controls on events.edit (#1544); this test
+// is about the file picker, so it runs as an admin who holds it.
+vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => true }));
+
 vi.mock('../../../../services/transfers.service', () => ({
   transfersService: { list: vi.fn().mockResolvedValue([]), create: vi.fn() },
 }));
@@ -69,7 +73,9 @@ describe('create transfer dialog file picker', () => {
       </QueryClientProvider>,
     );
 
-    await user.click(await screen.findByRole('button', { name: /new transfer/i }));
+    // "New transfer" became "Send files" when the create flow split into send
+    // and request (#1544); the FileList regression below is unchanged.
+    await user.click(await screen.findByRole('button', { name: /send files/i }));
     if (title) await user.type(screen.getByPlaceholderText(/wedding finals/i), title);
 
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;

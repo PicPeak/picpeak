@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
-  ArrowLeft, Mail, MapPin, Phone, Building2, Save, Trash2, AlertTriangle,
+  Mail, MapPin, Phone, Building2, Save, Trash2, AlertTriangle,
   CheckCircle2, X, FileText, Calendar, KeyRound, ToggleLeft, Settings as SettingsIcon, Megaphone,
 } from 'lucide-react';
 
@@ -303,20 +303,11 @@ export const CustomerDetailPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <Link
-            to="/admin/clients/accounts"
-            className="p-2 -ml-2 rounded hover:bg-hover"
-            aria-label={t('common.back', 'Back')}
-          >
-            <ArrowLeft className="w-4 h-4 text-muted" />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-heading truncate">
-              {customer.displayName || customer.email}
-            </h1>
-            <p className="text-sm text-muted truncate">{customer.email}</p>
-          </div>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-heading truncate">
+            {customer.displayName || customer.email}
+          </h1>
+          <p className="text-sm text-muted truncate">{customer.email}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
           {customer.isActive ? (

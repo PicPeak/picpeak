@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Eye, Save as SaveIcon } from 'lucide-react';
+import { Eye, Save as SaveIcon } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
 import { billsService, type InvoiceCreatePayload, type InvoiceQrFormat } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
@@ -485,15 +485,21 @@ export const BillEditorPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* Wraps: Cancel made this row one button wider, and at 390px the
+          action group ran past the card edge. German labels are wider
+          still. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <button onClick={() => navigate('/admin/clients/bills')}
-            className="text-sm text-soft hover:underline mb-1 inline-flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> {t('common.back', 'Back')}
-          </button>
           <h2 className="text-xl font-bold">{isEdit ? `${t('bills.edit', 'Edit invoice')} ${existing?.invoice.invoiceNumber || ''}` : t('bills.new', 'New invoice')}</h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {/* The only exit that does not write. These editors have no other
+              cancel, and the sidebar is an off-canvas drawer below lg, so a
+              named control beats relying on browser-back. An edit returns to
+              the record it came from; a new one has no detail page yet. */}
+          <Button variant="outline" onClick={() => navigate(isEdit ? `/admin/clients/bills/${id}` : '/admin/clients/bills')} disabled={busy}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
           <Button variant="outline" onClick={handlePreviewUnsaved} disabled={busy}>
             <Eye className="w-4 h-4 mr-1" />{t('common.preview', 'Preview')}
           </Button>
