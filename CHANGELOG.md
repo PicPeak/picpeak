@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.155.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.154.1-beta.0...v3.155.0-beta.0) (2026-10-01)
+
+
+### Features
+
+* **admin:** one gallery page, support role, global theme with override, folders in one step ([#1747](https://github.com/PicPeak/picpeak/issues/1747)) ([09ea6b7](https://github.com/PicPeak/picpeak/commit/09ea6b7a5ad3146a9e75d952011e63c02c803b85))
+
 ## [3.154.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.154.0-beta.0...v3.154.1-beta.0) (2026-10-01)
 
 
