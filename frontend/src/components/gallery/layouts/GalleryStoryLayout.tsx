@@ -17,6 +17,7 @@ import {
   StoryScrollToTop
 } from './story';
 import { PhotoLightbox } from '../PhotoLightbox';
+import { photoMatchesFilenameSearch } from '../../../utils/photoFilename';
 
 import './GalleryStoryLayout.css';
 
@@ -115,8 +116,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     const filteredPhotos = searchQuery
       ? photos.filter(p => {
           const term = searchQuery.toLowerCase();
-          return p.filename.toLowerCase().includes(term) ||
-            (p.original_filename?.toLowerCase().includes(term) ?? false) ||
+          return photoMatchesFilenameSearch(p, searchQuery) ||
             (p.category_name && p.category_name.toLowerCase().includes(term));
         })
       : photos;

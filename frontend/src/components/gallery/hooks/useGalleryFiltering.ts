@@ -3,6 +3,7 @@ import type { Photo, PhotoCategory } from '../../../types';
 import type { ColorLabel } from '../../../services/feedback.service';
 import type { FeedbackFilterType } from '../GalleryFilter';
 import { photosInScope } from '../folders';
+import { photoMatchesFilenameSearch, photoNameCompare } from '../../../utils/photoFilename';
 export type GallerySort = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
 export interface GalleryFilterOptions {
   sourcePhotos?: Photo[]; categories?: PhotoCategory[]; folderId: number | string | null;
@@ -37,10 +38,7 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
 
     // Apply search filter
     if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      photos = photos.filter(photo => 
-        photo.filename.toLowerCase().includes(term)
-      );
+      photos = photos.filter(photo => photoMatchesFilenameSearch(photo, searchTerm));
     }
     
     // Apply feedback filters. Multi-select (#889): a photo matching ANY
@@ -102,7 +100,7 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
       switch (sortBy) {
         case 'name':
           // Natural order is ascending (A-Z); flip when sortDesc=true
-          return (sortDesc ? -1 : 1) * a.filename.localeCompare(b.filename);
+          return (sortDesc ? -1 : 1) * photoNameCompare(a, b);
         case 'size':
           return flip * (b.size - a.size);
         case 'rating': {

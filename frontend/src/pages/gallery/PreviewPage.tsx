@@ -3,6 +3,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { GalleryLayout, PhotoFilterBar } from '../../components/gallery';
 import { Card } from '../../components/common';
 import { Camera } from 'lucide-react';
+import { photoMatchesFilenameSearch, photoNameCompare } from '../../utils/photoFilename';
 
 // Mock photo data for preview
 const generateMockPhotos = (count: number) => {
@@ -72,16 +73,14 @@ export const PreviewPage: React.FC = () => {
     
     // Apply search filter
     if (searchTerm) {
-      photos = photos.filter(photo => 
-        photo.filename.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      photos = photos.filter(photo => photoMatchesFilenameSearch(photo, searchTerm));
     }
     
     // Apply sorting
     photos.sort((a, b) => {
       switch (sortBy) {
         case 'name':
-          return a.filename.localeCompare(b.filename);
+          return photoNameCompare(a, b);
         case 'size':
           return b.size - a.size;
         case 'rating':
