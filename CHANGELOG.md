@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.152.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.151.2-beta.0...v3.152.0-beta.0) (2026-10-01)
+
+
+### Features
+
+* **transfers:** split PicTransfer into send and request, and give uploads their own type policy ([#1735](https://github.com/PicPeak/picpeak/issues/1735)) ([4d55ed6](https://github.com/PicPeak/picpeak/commit/4d55ed6ea55dd55a6f6cf14995abd078abe57c3d))
+
+
+### Bug Fixes
+
+* **admin:** remove a back arrow that led out of the admin, and give editors a named exit ([#1730](https://github.com/PicPeak/picpeak/issues/1730)) ([bd9f9da](https://github.com/PicPeak/picpeak/commit/bd9f9da5e5b861e91c32e2a7d0fc0a0dfa2a6cfd))
+* **gallery:** sort and search by the original camera filename ([#1702](https://github.com/PicPeak/picpeak/issues/1702)) ([d27830f](https://github.com/PicPeak/picpeak/commit/d27830fb74800897d589ecca966da58d7745ecb3))
+
 ## [3.151.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.151.1-beta.0...v3.151.2-beta.0) (2026-09-30)
 
 
