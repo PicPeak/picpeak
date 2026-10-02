@@ -235,4 +235,30 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('image/jpeg');
   });
+
+  it('labels a RAW original honestly rather than as a JPEG', async () => {
+    const id = await addPhoto('DSC01234.arw');
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/x-sony-arw');
+  });
+
+  it('points the admin viewer at the preview for originals it cannot decode', async () => {
+    // The listing's `url` is only ever an <img>/<video> src admin-side, and no
+    // browser decodes a RAW or a HEIC, so sending the original there showed a
+    // broken frame whatever Content-Type it carried.
+    const raw = await addPhoto('DSC09876.ARW');
+    const heic = await addPhoto('IMG_5555.heic');
+    const jpeg = await addPhoto('ordinary.jpg');
+
+    const res = await request(app)
+      .get(`/api/admin/photos/${eventId}/photos`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+
+    const urlOf = (id) => res.body.photos.find((p) => p.id === id).url;
+    expect(urlOf(raw)).toBe(`/admin/photos/${eventId}/preview/${raw}`);
+    expect(urlOf(heic)).toBe(`/admin/photos/${eventId}/preview/${heic}`);
+    expect(urlOf(jpeg)).toBe(`/admin/photos/${eventId}/photo/${jpeg}`);
+  });
 });

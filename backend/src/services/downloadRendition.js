@@ -15,7 +15,8 @@
  */
 
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
-const { withLocalCopy, resizeToBox, ensurePreviewImage, isRawFilename } = require('./imageProcessor');
+const { withLocalCopy, resizeToBox, ensurePreviewImage } = require('./imageProcessor');
+const { isRawFilename } = require('../utils/rawFormats');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
 const fs = require('fs');
