@@ -10,16 +10,23 @@ const { getStoragePath } = require('../config/storage');
  *
  * The blocker names the nearest existing ancestor, so a host path typed into
  * a Docker install ("/home/ubuntu/...") reports the "/home" the container
- * does have rather than the path it does not (issue 1365).
+ * does have rather than the path it does not (issue 1365). `code` is the
+ * errno, or BROKEN_SYMLINK for a link whose target is gone.
  */
 async function findWriteBlocker(dir) {
   let current = path.resolve(dir);
   for (;;) {
     try {
-      await fs.access(current, fsConstants.W_OK);
+      // Creating an entry needs search permission on the directory as well.
+      await fs.access(current, fsConstants.W_OK | fsConstants.X_OK);
       return null;
     } catch (error) {
       if (error.code !== 'ENOENT') return { path: current, code: error.code };
+    }
+    // ENOENT for a name that is there: a dangling symlink, which mkdir can
+    // neither create through nor replace.
+    if (await fs.lstat(current).then(() => true, () => false)) {
+      return { path: current, code: 'BROKEN_SYMLINK' };
     }
     const parent = path.dirname(current);
     if (parent === current) return { path: current, code: 'ENOENT' };
