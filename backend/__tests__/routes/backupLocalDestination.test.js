@@ -171,13 +171,14 @@ describe('local backup destination', () => {
   });
 
   describe('backup run', () => {
-    itAsNonRoot('fails with the configured path and where it is resolved, not a bare mkdir error', async () => {
-      const backupService = require('../../src/services/backupService');
-      const target = path.join(readOnly, 'ubuntu', 'backups');
+    let backupService;
 
+    const runBackupTo = async (target) => {
+      backupService = backupService || require('../../src/services/backupService');
       // A dump the run can verify, so it reaches the file backup.
       const dump = path.join(writable, 'fake.sql.gz');
       fs.writeFileSync(dump, 'pretend dump');
+      await db('database_backup_runs').del();
       await db('database_backup_runs').insert({
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
@@ -195,11 +196,26 @@ describe('local backup destination', () => {
       ]).onConflict('setting_key').merge();
 
       await backupService.runBackup(true).catch(() => {});
+      return db('backup_runs').orderBy('id', 'desc').first();
+    };
 
-      const run = await db('backup_runs').orderBy('id', 'desc').first();
+    itAsNonRoot('fails with the configured path and where it is resolved, not a bare mkdir error', async () => {
+      const target = path.join(readOnly, 'ubuntu', 'backups');
+      const run = await runBackupTo(target);
       expect(run.status).toBe('failed');
       expect(run.error_message).toContain(`Cannot create the backup directory ${target}: EACCES.`);
       expect(run.error_message).toContain('inside the backend container, not on the host');
+    });
+
+    itAsNonRoot('creates the directory the connection test probed when the path holds ".."', async () => {
+      // Typed as it stands, mkdir -p would first try to create "new" in the
+      // read-only directory; the files below go through path.join either way.
+      const target = `${readOnly}/new/../../writable/dotdot-backups`;
+      expect((await testLocal(target)).body).toMatchObject({ success: true });
+
+      const run = await runBackupTo(target);
+      expect(run.status).toBe('completed');
+      expect(fs.statSync(path.join(writable, 'dotdot-backups')).isDirectory()).toBe(true);
     });
   });
 });
