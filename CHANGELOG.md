@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.156.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.156.0-beta.0...v3.156.1-beta.0) (2026-10-02)
+
+
+### Bug Fixes
+
+* **video:** note the missing poster frame on the tile and finish the media wording ([#1760](https://github.com/PicPeak/picpeak/issues/1760)) ([b61402c](https://github.com/PicPeak/picpeak/commit/b61402cb8bf431ef3f792f94b78a51fdd76bc1be))
+
 ## [3.156.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.155.1-beta.0...v3.156.0-beta.0) (2026-10-02)
 
 
