@@ -40,7 +40,7 @@ describe('local backup destination', () => {
 
   beforeAll(async () => {
     fs.mkdirSync(writable);
-    fs.mkdirSync(path.join(readOnly, 'sub'), { recursive: true });
+    fs.mkdirSync(readOnly);
     fs.chmodSync(readOnly, 0o555);
 
     ({ db, cleanup } = await bootCrmDb());
@@ -108,18 +108,13 @@ describe('local backup destination', () => {
       }
     });
 
-    itAsNonRoot('follows a symlink before "..", as mkdir does', async () => {
-      // Lexically this is <writable>/backups; on disk the link leads into the
-      // read-only directory, so ".." is that directory.
-      const link = path.join(writable, 'link');
-      fs.symlinkSync(path.join(readOnly, 'sub'), link);
-      const target = `${link}/../backups`;
-      try {
-        expect(await findWriteBlocker(target)).toEqual({ path: `${link}/..`, code: 'EACCES' });
-        await expect(fs.promises.mkdir(target, { recursive: true })).rejects.toThrow();
-      } finally {
-        fs.unlinkSync(link);
-      }
+    itAsNonRoot('resolves ".." the way the backup joins its paths', async () => {
+      // "new" does not exist: stopping at the writable ancestor would miss
+      // that the path leads into the read-only directory.
+      const target = `${writable}/new/../../read-only/backups`;
+      expect(await findWriteBlocker(target)).toEqual({ path: readOnly, code: 'EACCES' });
+      await expect(fs.promises.mkdir(target, { recursive: true })).rejects.toThrow();
+      fs.rmdirSync(path.join(writable, 'new'));
     });
 
     it('does not take a dangling symlink for a missing directory', async () => {

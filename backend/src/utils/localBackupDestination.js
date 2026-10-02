@@ -14,10 +14,10 @@ const { getStoragePath } = require('../config/storage');
  * errno, or BROKEN_SYMLINK for a link whose target is gone.
  */
 async function findWriteBlocker(dir) {
-  // Absolute, but not normalised: path.resolve would collapse "link/.."
-  // lexically, while mkdir follows the link first. path.dirname only strips
-  // the last component, so every prefix is probed as the kernel sees it.
-  let current = path.isAbsolute(dir) ? dir : process.cwd() + path.sep + dir;
+  // Normalised lexically, which is what path.join does to every file the
+  // backup writes below the destination, and what settles a ".." that
+  // follows a component not created yet.
+  let current = path.resolve(dir);
   for (;;) {
     try {
       // Creating an entry needs search permission on the directory as well.
