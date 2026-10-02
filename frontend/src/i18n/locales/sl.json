@@ -2255,8 +2255,8 @@
       },
       "fields": {
         "destinationPath": "Ciljna pot",
-        "destinationPathHelp": "Lokalna pot mape za shranjevanje varnostnih kopij",
-        "destinationPathPlaceholder": "/pot/do/mape/varnostnih/kopij",
+        "destinationPathHelp": "Mapa, kot jo vidi backend. V Dockerju je to pot znotraj vsebnika backenda, ne na gostitelju: uporabite mapo, ki je priklopljena v vsebnik.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Oddaljeni gostitelj",
         "rsyncHostPlaceholder": "backup.example.com",
         "rsyncUser": "SSH uporabnik",

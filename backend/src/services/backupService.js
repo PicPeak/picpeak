@@ -126,6 +126,7 @@ async function resolveConfigWithFallback() {
 function getStoragePath() {
   return process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 }
+const { localDestinationHint } = require('../utils/localBackupDestination');
 
 function normalizeBoolean(value) {
   if (typeof value === 'boolean') {
@@ -755,7 +756,16 @@ async function updateFileState(filePath, checksum, size, modified) {
 
 async function performLocalBackup(config, files) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
-  await fs.mkdir(destinationRoot, { recursive: true });
+  // A bare "EACCES ... mkdir '/home/ubuntu'" did not say that the configured
+  // path is looked up inside the container (issue 1365).
+  try {
+    await fs.mkdir(destinationRoot, { recursive: true });
+  } catch (mkdirError) {
+    throw new Error(
+      `Cannot create the backup directory ${destinationRoot}: ${mkdirError.code || mkdirError.message}. ` +
+      localDestinationHint()
+    );
+  }
 
   const backedUpFiles = [];
   let backedUpSize = 0;

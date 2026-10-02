@@ -1306,8 +1306,8 @@
       },
       "fields": {
         "destinationPath": "Zielpfad",
-        "destinationPathHelp": "Lokaler Verzeichnispfad für Backup-Speicherung",
-        "destinationPathPlaceholder": "/pfad/zum/backup/verzeichnis",
+        "destinationPathHelp": "Verzeichnis aus Sicht des Backends. Unter Docker ist das ein Pfad im Backend-Container, nicht auf dem Host: Verwenden Sie ein Verzeichnis, das in den Container eingebunden ist.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Remote-Host",
         "rsyncHostPlaceholder": "backup.beispiel.de",
         "rsyncUser": "SSH-Benutzer",

@@ -2008,8 +2008,8 @@
       },
       "fields": {
         "destinationPath": "Ruta de destino",
-        "destinationPathHelp": "Ruta local para almacenar copias",
-        "destinationPathPlaceholder": "/ruta/a/copia/seguridad",
+        "destinationPathHelp": "Directorio tal como lo ve el backend. Con Docker es una ruta dentro del contenedor del backend, no del host: usa un directorio montado en el contenedor.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Host remoto",
         "rsyncHostHelp": "Hostname o IP SSH",
         "rsyncHostPlaceholder": "backup.example.com",

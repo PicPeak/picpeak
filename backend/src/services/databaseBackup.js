@@ -31,6 +31,7 @@ const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissa
 function getStoragePath() {
   return process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 }
+const { findWriteBlocker } = require('../utils/localBackupDestination');
 
 // The historical default, also what migration 030 seeds into
 // database_backup_destination_path. It only exists when something is mounted
@@ -42,18 +43,7 @@ const LEGACY_DESTINATION = '/backup/database';
 // Writable as it stands, or creatable: the nearest existing ancestor must be
 // writable. A present-but-read-only directory is not usable.
 async function canWriteOrCreate(dir) {
-  let current = path.resolve(dir);
-  for (;;) {
-    try {
-      await fs.access(current, fsConstants.W_OK);
-      return true;
-    } catch (error) {
-      if (error.code !== 'ENOENT') return false;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) return false;
-    current = parent;
-  }
+  return (await findWriteBlocker(dir)) === null;
 }
 
 async function canWriteLegacyDestination() {

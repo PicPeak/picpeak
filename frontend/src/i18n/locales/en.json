@@ -4354,8 +4354,8 @@
       },
       "fields": {
         "destinationPath": "Destination Path",
-        "destinationPathHelp": "Local directory path for storing backups",
-        "destinationPathPlaceholder": "/path/to/backup/directory",
+        "destinationPathHelp": "Directory as the backend sees it. With Docker this is a path inside the backend container, not on the host: use a directory that is mounted into the container.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Remote Host",
         "rsyncHostPlaceholder": "backup.example.com",
         "rsyncUser": "SSH User",
