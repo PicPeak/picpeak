@@ -61,7 +61,7 @@ describe('backupService — configurable walker (backup_paths)', () => {
     })));
   });
 
-  it('migration 109 seeds the canonical 7 paths', async () => {
+  it('migration 109 seeds the canonical 8 paths', async () => {
     const rows = await db('backup_paths').orderBy('display_order', 'asc').select();
     expect(rows.map((r) => r.path)).toEqual([
       'events/active',
@@ -71,6 +71,7 @@ describe('backupService — configurable walker (backup_paths)', () => {
       'heroes',
       'uploads',
       'business-docs',
+      'videos',
     ]);
     // Only events/archived is gated by a feature flag.
     expect(rows.filter((r) => r.feature_flag).map((r) => r.path)).toEqual([

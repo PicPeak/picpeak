@@ -217,6 +217,22 @@ router.get('/:slug/photo/:photoId',
             videoSize = webStat.size;
             videoViaStorage = true;
             videoContentType = 'video/mp4';
+          } else {
+            // The row names a copy storage does not have — a backup restored
+            // without videos/, or a bucket cleaned by hand. Left at
+            // `complete` it would never be rebuilt (the switch-on backfill
+            // takes NULL and failed rows only), so it goes back to the queue
+            // now while the setting is on, or to `failed` for the next
+            // switch-on. Guarded on the stale pointer, so a concurrent
+            // worker's fresh publish is not undone.
+            const { isEnabled } = require('../../services/videoRenditionService');
+            const enabled = await isEnabled().catch(() => false);
+            await db('photos').where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
+              web_path: null,
+              web_status: enabled ? 'pending' : 'failed',
+              web_started_at: null,
+              web_error: 'copy missing from storage',
+            }).catch((e) => logger.warn(`Could not re-queue the missing web copy of video ${photo.id}: ${e.message}`));
           }
         }
         const range = req.headers.range;

@@ -59,11 +59,14 @@ async function claimNext() {
         .skipLocked()
         .first();
       if (!row) return null;
+      // The claim time doubles as the claim's token: completion and failure
+      // write back only while the row still carries it (renderWebCopy).
+      const claimedAt = new Date().toISOString();
       await trx('photos').where('id', row.id).update({
         web_status: 'processing',
-        web_started_at: new Date().toISOString(),
+        web_started_at: claimedAt,
       });
-      return row;
+      return { ...row, web_status: 'processing', web_started_at: claimedAt };
     });
   }
 
@@ -73,13 +76,14 @@ async function claimNext() {
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;
+    const claimedAt = new Date().toISOString();
     const updated = await trx('photos')
       .where({ id: row.id, web_status: 'pending' })
       .update({
         web_status: 'processing',
-        web_started_at: new Date().toISOString(),
+        web_started_at: claimedAt,
       });
-    return updated > 0 ? row : null;
+    return updated > 0 ? { ...row, web_status: 'processing', web_started_at: claimedAt } : null;
   });
 }
 
@@ -106,15 +110,16 @@ async function workerLoop(workerIdx) {
     }
 
     try {
-      await renderWebCopy(claimed.id);
+      await renderWebCopy(claimed.id, { claimedAt: claimed.web_started_at });
     } catch (err) {
       logger.error(`videoRenditionQueue[${workerIdx}]: video ${claimed.id} failed`, {
         error: err.message,
       });
       try {
-        // Guarded on 'processing', the state this worker put the row in: a
-        // delete or a replacement meanwhile has already moved it on.
-        await db('photos').where({ id: claimed.id, web_status: 'processing' }).update({
+        // Guarded on this worker's own claim (status + claim time): a delete,
+        // a replacement or the janitor meanwhile has already moved it on,
+        // possibly into another worker's hands.
+        await db('photos').where({ id: claimed.id, web_status: 'processing', web_started_at: claimed.web_started_at }).update({
           web_status: 'failed',
           web_started_at: null,
           web_error: String(err.message || err).split('\n')[0].slice(0, 1000),

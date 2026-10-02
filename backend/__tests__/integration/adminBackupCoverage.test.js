@@ -5,7 +5,7 @@
  * "Run Backup Now" will include, skip, or silently miss.
  *
  * Test surface:
- *   1. Empty / fresh install → default seed (7 paths), inline mode,
+ *   1. Empty / fresh install → default seed (8 paths), inline mode,
  *      no DB dump on file yet, no drift
  *   2. Toggle `include_in_default=false` → coverage flips to
  *      'skipped-by-toggle'
@@ -86,7 +86,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     await db('app_settings').where('setting_type', 'backup').del().catch(() => {});
   });
 
-  it('returns the canonical 7 paths + database block on a fresh install', async () => {
+  it('returns the canonical 8 paths + database block on a fresh install', async () => {
     const res = await request(app).get('/api/admin/system-health/backup-coverage');
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('report');
@@ -100,6 +100,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
       'heroes',
       'uploads',
       'business-docs',
+      'videos',
     ]);
 
     // Default mode is inline — no inline_dump setting present means
@@ -108,7 +109,7 @@ describe('GET /api/admin/system-health/backup-coverage', () => {
     expect(report.database.ok).toBe(true);
 
     expect(report.summary).toMatchObject({
-      configuredCount: 7,
+      configuredCount: 8,
       tableMissingFallbackInUse: false,
     });
   });

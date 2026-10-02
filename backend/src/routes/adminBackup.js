@@ -1462,7 +1462,8 @@ router.post('/estimate', adminAuth, requirePermission('backup.view'), async (req
     const categories = [
       { path: 'events/active', name: 'Active Events' },
       { path: 'thumbnails', name: 'Thumbnails' },
-      { path: 'uploads', name: 'Uploads' }
+      { path: 'uploads', name: 'Uploads' },
+      { path: 'videos', name: 'Video copies' }
     ];
     
     if (includeArchived) {

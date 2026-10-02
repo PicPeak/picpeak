@@ -443,6 +443,7 @@ const LEGACY_BACKUP_PATHS = [
   { path: 'heroes',           feature_flag: null },
   { path: 'uploads',          feature_flag: null },
   { path: 'business-docs',    feature_flag: null },
+  { path: 'videos',           feature_flag: null },
 ];
 
 // "What to Backup" opt-OUT toggles written by BackupConfiguration.tsx.

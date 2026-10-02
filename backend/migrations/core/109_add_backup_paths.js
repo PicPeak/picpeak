@@ -100,6 +100,15 @@ const DEFAULT_PATHS = [
     display_order: 70,
     description: 'CRM PDFs, signature artefacts, admin-imported historical invoices',
   },
+  {
+    // Browser-playable video copies (issue 1430, item 8). Added after the
+    // table shipped; the boot self-heal seeds it on existing installs.
+    path: 'videos',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 80,
+    description: 'Browser-playable copies of videos',
+  },
 ];
 
 exports.up = async function(knex) {

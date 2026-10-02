@@ -46,7 +46,8 @@ describe('videoRenditionQueue.claimNext', () => {
   it('claims with FOR UPDATE SKIP LOCKED on Postgres and flips the row to processing', async () => {
     const pendingRow = { id: 42, web_status: 'pending' };
     const { db, queries } = makeFakeDb({ pendingRow, clientName: 'pg' });
-    expect(await loadQueue(db).claimNext()).toEqual(pendingRow);
+    // The claim comes back with its token: the time the worker fences on.
+    expect(await loadQueue(db).claimNext()).toEqual({ ...pendingRow, web_status: 'processing', web_started_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) });
     expect(queries[0].locked).toBe(true);
     expect(queries[0].skipped).toBe(true);
     expect(queries[0].wheres[0]).toEqual(['web_status', 'pending']);
@@ -60,7 +61,7 @@ describe('videoRenditionQueue.claimNext', () => {
     expect(await loadQueue(lost.db).claimNext()).toBeNull();
 
     const won = makeFakeDb({ pendingRow, clientName: 'sqlite3', updateResult: 1 });
-    expect(await loadQueue(won.db).claimNext()).toEqual(pendingRow);
+    expect(await loadQueue(won.db).claimNext()).toEqual({ ...pendingRow, web_status: 'processing', web_started_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) });
     expect(won.queries[0].locked).toBe(false);
     const update = won.queries.find((q) => q.updates);
     expect(update.wheres[0]).toEqual([{ id: 7, web_status: 'pending' }]);

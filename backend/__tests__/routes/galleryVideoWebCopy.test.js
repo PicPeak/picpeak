@@ -151,6 +151,13 @@ describe('gallery video playback with a web copy (issue 1430)', () => {
       expect(res.status).toBe(200);
       expect(Buffer.from(res.body)).toEqual(ORIGINAL);
     }
+    // A pointer at a copy storage lost is dropped on the spot (the setting is
+    // off here, so `failed`: the next switch-on backfill rebuilds it). Left at
+    // `complete` it would never be rebuilt.
+    expect(await db('photos').where({ id: gone }).first()).toMatchObject({
+      web_path: null, web_status: 'failed', web_error: 'copy missing from storage',
+    });
+    expect(await db('photos').where({ id: failedCopy }).first()).toMatchObject({ web_status: 'failed', web_error: 'ffmpeg exited with code 1' });
   });
 
   test('serves the managed copy of an external original, and still the NAS file for download', async () => {

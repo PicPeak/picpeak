@@ -208,9 +208,15 @@ function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS } = {}) {
  * Decide for one video and, if needed, write its copy. Throws on failure so
  * the queue records it; returns the status it wrote otherwise.
  */
-async function renderWebCopy(photoId) {
+async function renderWebCopy(photoId, { claimedAt } = {}) {
   const photo = await db('photos').where({ id: photoId }).first();
   if (!photo) throw new Error(`Photo ${photoId} not found`);
+  // The worker's claim, as the queue wrote it: status plus claim time. Every
+  // write below matches on it, so a worker that lost the row — replaced,
+  // deleted, or re-queued by the janitor and claimed again by another
+  // worker — writes nothing. Without the time, a second claim on the same
+  // row would look like the first.
+  const claim = { id: photoId, web_status: 'processing', ...(claimedAt ? { web_started_at: claimedAt } : {}) };
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!event) throw new Error(`Event ${photo.event_id} not found for photo ${photoId}`);
 
@@ -235,7 +241,7 @@ async function renderWebCopy(photoId) {
       // worth keeping: the original is what plays now.
       if (photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
       // Same fence as the publish below: a row that moved on keeps its state.
-      await db('photos').where({ id: photoId, web_status: 'processing' }).update({
+      await db('photos').where(claim).update({
         web_path: null, web_status: 'skipped', web_started_at: null, web_error: null,
       });
       return 'skipped';
@@ -252,17 +258,20 @@ async function renderWebCopy(photoId) {
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
-    // Publish only while the row is still this worker's claim. A replacement
+    // Publish only against this worker's claim. A replacement
     // (photoReplacementService) resets the columns and re-queues the new
     // file mid-transcode, a delete removes the row, the janitor may have
     // handed a stuck claim to another worker: writing the copy of the old
     // source over any of those would serve stale content and lose the new
-    // file's queue entry. On a lost claim the object is dropped again.
-    const published = await db('photos').where({ id: photoId, web_status: 'processing' }).update({
+    // file's queue entry. On a lost claim the object is dropped again —
+    // unless the row meanwhile points at this very key, i.e. another
+    // worker finished the same source first and the object is now its copy.
+    const published = await db('photos').where(claim).update({
       web_path: webKey, web_status: 'complete', web_started_at: null, web_error: null,
     });
     if (!published) {
-      await getStorage().delete(webKey).catch(() => {});
+      const current = await db('photos').where({ id: photoId }).first('web_path');
+      if (current?.web_path !== webKey) await getStorage().delete(webKey).catch(() => {});
       logger.info(`videoRendition: photo ${photoId} changed during the transcode, dropped ${webKey}`);
       return 'superseded';
     }

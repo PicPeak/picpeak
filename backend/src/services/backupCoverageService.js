@@ -308,6 +308,7 @@ async function getCoverageReport() {
     { path: 'heroes',           include_in_default: true,  feature_flag: null,                       display_order: 50, description: 'Legacy fallback (backup_paths missing)' },
     { path: 'uploads',          include_in_default: true,  feature_flag: null,                       display_order: 60, description: 'Legacy fallback (backup_paths missing)' },
     { path: 'business-docs',    include_in_default: true,  feature_flag: null,                       display_order: 70, description: 'Legacy fallback (backup_paths missing)' },
+    { path: 'videos',           include_in_default: true,  feature_flag: null,                       display_order: 80, description: 'Legacy fallback (backup_paths missing)' },
   ];
 
   const [database, paths] = await Promise.all([

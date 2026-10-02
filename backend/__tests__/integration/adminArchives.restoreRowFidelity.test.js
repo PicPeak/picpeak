@@ -573,7 +573,7 @@ describe('archive restore rebuilds the photo row faithfully', () => {
       return typeof r === 'object' ? r.id : r;
     };
     // One video with a copy, one the probe had passed as playable.
-    const copied = await seed('phone.mov', { web_path: `videos/web_x_phone.mp4`, web_status: 'complete' });
+    const copied = await seed('phone.mov', { web_path: 'videos/web_x_phone.mp4', web_status: 'complete' });
     const playable = await seed('cam.mov', { web_status: 'skipped' });
     await fs.promises.writeFile(path.join(storagePath, 'videos/web_x_phone.mp4'), BYTES);
 
