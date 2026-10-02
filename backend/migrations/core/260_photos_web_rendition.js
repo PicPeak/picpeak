@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 259: a browser-playable copy of a video (issue 1430, item 8).
+ * Migration 260: a browser-playable copy of a video (issue 1430, item 8).
  *
  * The guest player is a bare <video src> of the original, and an HEVC phone
  * recording plays nowhere but Safari. With the setting on, a queue probes

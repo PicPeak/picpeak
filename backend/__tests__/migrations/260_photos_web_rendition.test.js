@@ -1,12 +1,12 @@
 /**
- * Migration 259: the browser-playable copy columns (issue 1430, item 8).
+ * Migration 260: the browser-playable copy columns (issue 1430, item 8).
  * Guarded on the column, so it is a no-op on a second run and on a photos
  * table that already carries it; down() removes exactly what up() added.
  */
 const knex = require('knex');
-const migration = require('../../migrations/core/259_photos_web_rendition');
+const migration = require('../../migrations/core/260_photos_web_rendition');
 
-describe('migration 259 on SQLite', () => {
+describe('migration 260 on SQLite', () => {
   let db;
 
   beforeEach(async () => {
