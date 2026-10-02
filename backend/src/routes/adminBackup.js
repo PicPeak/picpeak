@@ -732,7 +732,7 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         blockedAt: blocker.path,
         error: blocker.code
       });
-      const reason = blocker.path === path.resolve(target)
+      const reason = path.resolve(blocker.path) === path.resolve(target)
         ? `The backend cannot write to ${target} (${blocker.code}).`
         : `${target} does not exist and the backend cannot create it: ${blocker.path} is not writable (${blocker.code}).`;
       res.json({
