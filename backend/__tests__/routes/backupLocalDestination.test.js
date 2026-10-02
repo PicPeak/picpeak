@@ -155,18 +155,37 @@ describe('local backup destination', () => {
       expect(res.body.message).toContain(`The backend cannot write to ${readOnly} (EACCES).`);
     });
 
-    itAsNonRoot('probes the path as typed, which is the path that gets saved and used', async () => {
-      // With the trailing space this is a missing sibling of the read-only
-      // directory, creatable below the writable base; trimmed, it would be
-      // the read-only directory itself.
-      const res = await testLocal(`${readOnly} `);
-      expect(res.body).toMatchObject({ success: true });
+    itAsNonRoot('probes the trimmed path, which is the path that gets saved', async () => {
+      // Untrimmed, this would be a missing sibling of the read-only
+      // directory, creatable below the writable base.
+      const res = await testLocal(` ${readOnly} `);
+      expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_NOT_WRITABLE' });
+      expect(res.body.message).toContain(`The backend cannot write to ${readOnly} (EACCES).`);
     });
 
     it('refuses an empty path without probing the working directory', async () => {
       const res = await testLocal('   ');
       expect(res.body).toMatchObject({ success: false });
       expect(res.body.code).toBeUndefined();
+    });
+  });
+
+  describe('PUT /config', () => {
+    it('stores the destination trimmed, as the database dump reads it', async () => {
+      const target = path.join(writable, 'padded');
+      const res = await request(app).put('/api/admin/backup/config')
+        .set('Authorization', `Bearer ${superToken}`)
+        .send({ backup_destination_type: 'local', backup_destination_path: `  ${target} ` });
+      expect(res.status).toBe(200);
+      const row = await db('app_settings').where({ setting_key: 'backup_destination_path' }).first();
+      expect(JSON.parse(row.setting_value)).toBe(target);
+    });
+
+    it('refuses a destination that is only whitespace', async () => {
+      const res = await request(app).put('/api/admin/backup/config')
+        .set('Authorization', `Bearer ${superToken}`)
+        .send({ backup_destination_type: 'local', backup_destination_path: '   ' });
+      expect(res.status).toBe(400);
     });
   });
 
