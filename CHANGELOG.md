@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.156.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.155.1-beta.0...v3.156.0-beta.0) (2026-10-02)
+
+
+### Features
+
+* **admin:** the brand in the sidebar and header goes to the dashboard ([#1762](https://github.com/PicPeak/picpeak/issues/1762)) ([76492c1](https://github.com/PicPeak/picpeak/commit/76492c11836fdf0e79e8cecfbc18e004e0cde9cc))
+
 ## [3.155.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.155.0-beta.0...v3.155.1-beta.0) (2026-10-01)
 
 
