@@ -67,6 +67,12 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
     throw new Error('Event not found');
   }
   
+  // Read the setting before any transaction opens: on SQLite the pool is one
+  // connection, and a read through `db` while `trx` holds it waits for the
+  // acquire timeout (isEnabled then logs and answers false). The value is
+  // cached for a minute, so once per batch is right.
+  const webCopyEnabled = await require('./videoRenditionService').isEnabled();
+
   // Process each file
   for (const file of fileList) {
     const trx = await db.transaction();
@@ -234,7 +240,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         mime_type: file.mimetype,
         // Browser-playable copy (issue 1430): queued only while the setting
         // is on, so installs without it never write a web_status.
-        ...(isVideo && await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
+        ...(isVideo && webCopyEnabled ? { web_status: 'pending' } : {}),
         ...credit
       };
 

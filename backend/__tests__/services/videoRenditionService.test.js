@@ -11,7 +11,7 @@ jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), e
 jest.mock('fluent-ffmpeg');
 
 jest.mock('../../src/database/db', () => {
-  const state = { photo: null, event: null, setting: null, updates: [] };
+  const state = { photo: null, event: null, setting: null, updates: [], updateResult: null };
   let pendingWhere = null;
   function query(table) {
     return {
@@ -26,7 +26,7 @@ jest.mock('../../src/database/db', () => {
         if (table === 'app_settings') return state.setting;
         return null;
       },
-      async update(data) { state.updates.push({ table, where: pendingWhere, data }); return 1; },
+      async update(data) { state.updates.push({ table, where: pendingWhere, data }); return table === 'photos' && state.updateResult != null ? state.updateResult : 1; },
     };
   }
   query.client = { config: { client: 'sqlite3' } };
@@ -146,6 +146,7 @@ describe('isEnabled', () => {
 describe('renderWebCopy', () => {
   beforeEach(() => {
     dbModule.__state.updates.length = 0;
+    dbModule.__state.updateResult = null;
     dbModule.__state.event = { id: 9, slug: 'wedding' };
     storage.putFromFile.mockClear();
     storage.delete.mockClear();
@@ -192,8 +193,37 @@ describe('renderWebCopy', () => {
     expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_phone.mp4', savedTo, { contentType: 'video/mp4' });
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
     expect(update.data).toMatchObject({ web_path: 'videos/web_22_phone.mp4', web_status: 'complete', web_error: null });
+    // Published only against the worker's own claim.
+    expect(update.where).toEqual({ id: 22, web_status: 'processing' });
     // The temp file is gone once the copy is in storage.
     expect(fs.existsSync(savedTo)).toBe(false);
+  });
+
+  it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {
+    // A replacement re-queued the new file (or the row is gone) while ffmpeg
+    // ran: the fenced UPDATE matches nothing, the old source's copy must not
+    // be published over it.
+    dbModule.__state.photo = { id: 22, event_id: 9, filename: 'phone.mov', media_type: 'video', mime_type: 'video/quicktime' };
+    dbModule.__state.updateResult = 0;
+    mockProbe(
+      [{ codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p', width: 3840, height: 2160 }, { codec_type: 'audio', codec_name: 'aac' }],
+      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'qt  ' } },
+    );
+    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'h264-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(22)).toBe('superseded');
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_phone.mp4', expect.any(String), { contentType: 'video/mp4' });
+    expect(storage.delete).toHaveBeenCalledWith('videos/web_22_phone.mp4');
+    const update = dbModule.__state.updates.find((u) => u.table === 'photos');
+    expect(update.where).toEqual({ id: 22, web_status: 'processing' });
   });
 
   it('reads an external video off the mount and keys the copy by id and NAS basename', async () => {

@@ -71,8 +71,9 @@ function clearCache() {
  * it after years of uploads gets its back catalogue; the queue probes each
  * one and skips what already plays. Returns the number of rows queued.
  */
-async function backfillPending() {
+async function backfillPending({ eventId } = {}) {
   return db('photos')
+    .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
     .whereRaw(IS_VIDEO_SQL)
     .where(function () {
       this.whereNull('web_status').orWhere('web_status', 'failed');
@@ -233,7 +234,8 @@ async function renderWebCopy(photoId) {
       // A stale copy from an earlier source (a replacement, say) is not
       // worth keeping: the original is what plays now.
       if (photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
-      await db('photos').where({ id: photoId }).update({
+      // Same fence as the publish below: a row that moved on keeps its state.
+      await db('photos').where({ id: photoId, web_status: 'processing' }).update({
         web_path: null, web_status: 'skipped', web_started_at: null, web_error: null,
       });
       return 'skipped';
@@ -250,9 +252,20 @@ async function renderWebCopy(photoId) {
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
-    await db('photos').where({ id: photoId }).update({
+    // Publish only while the row is still this worker's claim. A replacement
+    // (photoReplacementService) resets the columns and re-queues the new
+    // file mid-transcode, a delete removes the row, the janitor may have
+    // handed a stuck claim to another worker: writing the copy of the old
+    // source over any of those would serve stale content and lose the new
+    // file's queue entry. On a lost claim the object is dropped again.
+    const published = await db('photos').where({ id: photoId, web_status: 'processing' }).update({
       web_path: webKey, web_status: 'complete', web_started_at: null, web_error: null,
     });
+    if (!published) {
+      await getStorage().delete(webKey).catch(() => {});
+      logger.info(`videoRendition: photo ${photoId} changed during the transcode, dropped ${webKey}`);
+      return 'superseded';
+    }
     logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName})`);
     return 'complete';
   });

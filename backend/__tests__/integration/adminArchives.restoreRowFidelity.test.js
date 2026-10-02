@@ -532,6 +532,75 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     }
   });
 
+  it('drops the browser-playable copy on archive and queues it again on restore (issue 1430)', async () => {
+    jest.doMock('../../src/services/emailProcessor', () => ({
+      queueEmail: async () => {},
+      getSupportEmail: async () => 'support@example.com',
+    }));
+    const { archiveEvent } = require('../../src/services/archiveService');
+    const videoRendition = require('../../src/services/videoRenditionService');
+
+    const slug = 'web-copy-round-trip';
+    const [row] = await db('events').insert({
+      slug,
+      event_type: 'wedding',
+      event_name: slug,
+      event_date: '2026-06-27',
+      host_email: 'h@example.com',
+      admin_email: null,
+      password_hash: 'x',
+      share_link: `${slug}-share`,
+      expires_at: new Date().toISOString(),
+    }).returning('id');
+    const eventId = typeof row === 'object' ? row.id : row;
+    const dir = path.join(storagePath, 'events/active', slug, 'individual');
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.mkdir(path.join(storagePath, 'videos'), { recursive: true });
+    const seed = async (name, extra) => {
+      await fs.promises.writeFile(path.join(dir, name), BYTES);
+      const [r] = await db('photos').insert({
+        event_id: eventId,
+        filename: name,
+        original_filename: name,
+        path: `events/active/${slug}/individual/${name}`,
+        type: 'individual',
+        size_bytes: BYTES.length,
+        media_type: 'video',
+        mime_type: 'video/quicktime',
+        processing_status: 'complete',
+        ...extra,
+      }).returning('id');
+      return typeof r === 'object' ? r.id : r;
+    };
+    // One video with a copy, one the probe had passed as playable.
+    const copied = await seed('phone.mov', { web_path: `videos/web_x_phone.mp4`, web_status: 'complete' });
+    const playable = await seed('cam.mov', { web_status: 'skipped' });
+    await fs.promises.writeFile(path.join(storagePath, 'videos/web_x_phone.mp4'), BYTES);
+
+    await archiveEvent(await db('events').where('id', eventId).first());
+
+    // The copy is gone with the originals, and the row no longer names it:
+    // a `complete` row pointing at nothing could never be queued again.
+    await expect(fs.promises.access(path.join(storagePath, 'videos/web_x_phone.mp4'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await db('photos').where('id', copied).first()).toMatchObject({ web_path: null, web_status: null });
+    // No copy to lose, and the original comes back byte for byte: the verdict stays.
+    expect(await db('photos').where('id', playable).first()).toMatchObject({ web_status: 'skipped' });
+
+    // Restore with the setting on queues the video again.
+    await db('app_settings').insert({ setting_key: 'general_video_web_rendition', setting_value: JSON.stringify(true), setting_type: 'general' }).catch(async () => {
+      await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).update({ setting_value: JSON.stringify(true) });
+    });
+    videoRendition.clearCache();
+    try {
+      await restore(eventId);
+      expect(await db('photos').where('id', copied).first()).toMatchObject({ web_status: 'pending' });
+      expect(await db('photos').where('id', playable).first()).toMatchObject({ web_status: 'skipped' });
+    } finally {
+      await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).del();
+      videoRendition.clearCache();
+    }
+  });
+
   it('keeps the original upload time rather than stamping the restore time', async () => {
     const uploadedAt = '2026-06-27T10:30:00.000Z';
     const archiveRelPath = await writeArchive('uploadedat.zip', {

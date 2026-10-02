@@ -265,9 +265,17 @@ async function archiveEvent(event) {
         await storage.delete(photo.preview_path).catch(() => {});
       }
       // Browser-playable video copy (issue 1430): the original is in the
-      // zip; the copy is rebuilt on restore if the setting is still on.
-      if (photo.web_path) {
-        await storage.delete(photo.web_path).catch(() => {});
+      // zip, the copy is not. The row is reset with it: a row left at
+      // `complete` would name a copy storage no longer has, and the
+      // switch-on backfill only takes NULL and failed rows, so the restored
+      // video could never get its copy back. The restore route re-queues it.
+      // `skipped` rows have no copy and the original comes back byte for
+      // byte, so that verdict stays.
+      if (photo.web_path || (photo.web_status && photo.web_status !== 'skipped')) {
+        if (photo.web_path) await storage.delete(photo.web_path).catch(() => {});
+        await db('photos').where({ id: photo.id }).update({
+          web_path: null, web_status: null, web_started_at: null, web_error: null,
+        });
       }
       // Outside the guard: a tier can exist when the canonical rendition never
       // did, so keying cleanup off preview_path would strand phone-only photos.
