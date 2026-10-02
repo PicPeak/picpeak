@@ -203,6 +203,14 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       updates.backup_rsync_ssh_key = sshKeyUpdate.trim();
     }
 
+    // Stored trimmed: the database dump reads this setting trimmed
+    // (databaseBackup.js readSettingValue) while the file backup and the
+    // restore use it as stored, so a padded value split one backup across
+    // two directories.
+    if (typeof (updates || {}).backup_destination_path === 'string') {
+      updates.backup_destination_path = updates.backup_destination_path.trim();
+    }
+
     if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_manifest_format')
         && !MANIFEST_FORMATS.has(updates.backup_manifest_format)) {
       return res.status(400).json({ error: 'backup_manifest_format must be json or yaml' });
@@ -715,10 +723,9 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // The reason goes into the answer: in production a warn only reaches
       // logs/combined.log, so "check the server logs" showed nothing in
       // `docker compose logs` (issue 1365).
-      // Probed as typed: PUT /config stores the path verbatim and the backup
-      // uses it verbatim, so a trimmed probe would test another directory.
-      const target = typeof config.path === 'string' ? config.path : '';
-      if (!target.trim()) {
+      // Trimmed, as PUT /config stores it.
+      const target = typeof config.path === 'string' ? config.path.trim() : '';
+      if (!target) {
         res.json({ success: false, message: 'Local backup requires destination path' });
         break;
       }
