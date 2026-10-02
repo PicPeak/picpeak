@@ -58,12 +58,15 @@ export interface PhotoCreditSummary {
   none: number;
 }
 
+/** Sort keys of the admin photo list. `date` is the upload date. */
+export type PhotoSortKey = 'date' | 'name' | 'size' | 'rating' | 'capture_date';
+
 export interface PhotoFilters {
   category_id?: number | string | null;
   type?: string;
   media_type?: 'photo' | 'video';
   search?: string;
-  sort?: 'date' | 'name' | 'size' | 'rating';
+  sort?: PhotoSortKey;
   order?: 'asc' | 'desc';
   hasLikes?: boolean;
   hasFavorites?: boolean;

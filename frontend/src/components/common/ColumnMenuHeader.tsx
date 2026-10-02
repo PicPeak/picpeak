@@ -59,6 +59,12 @@ interface ColumnMenuHeaderProps {
    * screen reader would never read the column out (WCAG 2.5.3).
    */
   menuLabel?: string;
+  /**
+   * Cell padding and visibility for the `th`. A table with tighter rows or
+   * columns that hide at a breakpoint passes its own, e.g.
+   * "hidden md:table-cell px-3 py-2".
+   */
+  className?: string;
 }
 
 const MENU_WIDTH = 224; // w-56
@@ -78,6 +84,7 @@ interface MenuPosition {
 
 export const ColumnMenuHeader: React.FC<ColumnMenuHeaderProps> = ({
   label, options, value, onSelect, state = null, align = 'left', disabled = false, menuLabel,
+  className = 'px-6 py-3',
 }) => {
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -201,7 +208,7 @@ export const ColumnMenuHeader: React.FC<ColumnMenuHeaderProps> = ({
   const applied = state !== null;
 
   return (
-    <th className={`px-6 py-3 ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    <th className={`${className} ${align === 'right' ? 'text-right' : 'text-left'}`}>
       <button
         ref={triggerRef}
         type="button"
@@ -210,7 +217,7 @@ export const ColumnMenuHeader: React.FC<ColumnMenuHeaderProps> = ({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className={`group inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider transition-colors ${
+        className={`group inline-flex items-center gap-1 align-middle text-xs font-medium uppercase tracking-wider transition-colors ${
           align === 'right' ? 'flex-row-reverse' : ''
         } ${applied ? 'text-body' : 'text-muted'} ${
           disabled ? 'cursor-default' : 'hover:text-body'

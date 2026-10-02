@@ -196,6 +196,9 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           }}
           onSelectionChange={setSelectedPhotoIds}
           categories={categories}
+          sortBy={photoFilters.sort ?? 'date'}
+          sortOrder={photoFilters.order ?? 'desc'}
+          onSortChange={(sort, order) => setPhotoFilters(prev => ({ ...prev, sort, order }))}
         />
       )}
 

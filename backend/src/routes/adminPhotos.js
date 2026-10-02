@@ -30,6 +30,7 @@ const {
 } = require('../services/uploadSettings');
 const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { IS_VIDEO_SQL, IS_PHOTO_SQL } = require('../utils/mediaTypeSql');
+const { captureDateOrderSql } = require('../utils/captureDateSql');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -40,6 +41,9 @@ const { getStorage } = require('../services/storage');
 const { errorResponse } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
 const router = express.Router();
+
+// Filename order for the photo list: digit runs compare as numbers.
+const NATURAL_NAME_ORDER = new Intl.Collator('en', { numeric: true });
 
 // Get storage path from environment or default
 const { getStoragePath } = require('../config/storage');
@@ -1442,15 +1446,32 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       }
     }
 
-    // Sorting
-    let orderByColumn = 'photos.uploaded_at';
-    if (sort === 'name') {
-      orderByColumn = 'photos.filename';
+    // Sorting. Every branch ends on photos.id: a bulk import writes hundreds
+    // of rows inside the same second, and without a tiebreaker the order
+    // inside a tie is whatever the engine returns, which moves rows under a
+    // shift-click range from one load to the next.
+    if (sort === 'capture_date') {
+      query = query.orderByRaw(`${captureDateOrderSql(db.client.config.client)} ${order}`);
     } else if (sort === 'size') {
-      orderByColumn = 'photos.size_bytes';
+      query = query.orderBy('photos.size_bytes', order);
+    } else if (sort === 'rating') {
+      // The filter bar has always offered this and the route never read it.
+      query = query.orderByRaw(`COALESCE(photos.average_rating, 0) ${order}`);
+    } else if (sort !== 'name') {
+      query = query.orderBy('photos.uploaded_at', order);
     }
-    
-    const photos = await query.orderBy(orderByColumn, order);
+    const photos = await query.orderBy('photos.id', order);
+
+    // By name means natural order (issue 1739): IMG_2 before IMG_10, the way
+    // a file manager lists them. ORDER BY filename compares character by
+    // character, so 1, 10, 100, 2 — and a shift-click range over "1 to 20"
+    // picked up the wrong files. Sorted here rather than in SQL: the list is
+    // not paginated, and neither engine has a natural collation to ask for.
+    if (sort === 'name') {
+      const direction = order === 'asc' ? 1 : -1;
+      photos.sort((a, b) => direction
+        * (NATURAL_NAME_ORDER.compare(a.filename || '', b.filename || '') || a.id - b.id));
+    }
     
     // Get comment counts separately
     const commentCounts = await db('photo_feedback')

@@ -2,16 +2,17 @@ import React from 'react';
 import { Search, Filter, SortAsc, SortDesc, UserRound } from 'lucide-react';
 import { Input } from '../common';
 import { useTranslation } from 'react-i18next';
+import type { PhotoSortKey } from '../../services/photos.service';
 
 interface PhotoFiltersProps {
   categories: Array<{ id: number | string; name: string; slug: string }>;
   selectedCategory: number | string | null | undefined;
   searchTerm: string;
-  sortBy: 'date' | 'name' | 'size' | 'rating';
+  sortBy: PhotoSortKey;
   sortOrder: 'asc' | 'desc';
   onCategoryChange: (categoryId: number | string | null | undefined) => void;
   onSearchChange: (search: string) => void;
-  onSortChange: (sort: 'date' | 'name' | 'size' | 'rating', order: 'asc' | 'desc') => void;
+  onSortChange: (sort: PhotoSortKey, order: 'asc' | 'desc') => void;
   mediaType?: 'all' | 'photo' | 'video';
   onMediaTypeChange?: (mediaType: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
@@ -138,10 +139,11 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
         <div className="flex items-center gap-2">
           <select
             value={sortBy}
-            onChange={(e) => onSortChange(e.target.value as 'date' | 'name' | 'size' | 'rating', sortOrder)}
+            onChange={(e) => onSortChange(e.target.value as PhotoSortKey, sortOrder)}
             className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
           >
             <option value="date">{t('gallery.sortByDate', 'Sort by Date')}</option>
+            <option value="capture_date">{t('gallery.sortByCaptureDate', 'Sort by Capture Date')}</option>
             <option value="name">{t('gallery.sortByName', 'Sort by Name')}</option>
             <option value="size">{t('gallery.sortBySize', 'Sort by Size')}</option>
             <option value="rating">{t('gallery.sortByRating', 'Sort by Rating')}</option>

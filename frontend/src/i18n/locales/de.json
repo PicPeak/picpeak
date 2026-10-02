@@ -4508,6 +4508,12 @@
         "likes": "Likes",
         "credit": "Urheber"
       },
+      "sort": {
+        "ratingHighest": "Beste Bewertung zuerst",
+        "ratingLowest": "Niedrigste Bewertung zuerst",
+        "sizeLargest": "Größte zuerst",
+        "sizeSmallest": "Kleinste zuerst"
+      },
       "myMarks": "Ihre Markierungen",
       "myMarksHelp": "Nur für Sie sichtbar. Sie erscheinen nie in der Kundengalerie und werden als XMP nach Lightroom exportiert.",
       "myRating": "Ihre Bewertung",

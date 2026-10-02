@@ -4039,6 +4039,12 @@
         "likes": "Likes",
         "credit": "Credit"
       },
+      "sort": {
+        "ratingHighest": "Best rated first",
+        "ratingLowest": "Lowest rated first",
+        "sizeLargest": "Largest first",
+        "sizeSmallest": "Smallest first"
+      },
       "myMarks": "Your marks",
       "myMarksHelp": "Only you see these. They never appear in the client gallery, and they export to Lightroom as XMP.",
       "myRating": "Your rating",

@@ -5,13 +5,14 @@ import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
-import { AdminPhoto } from '../../services/photos.service';
+import { AdminPhoto, type PhotoSortKey } from '../../services/photos.service';
 import { photosService } from '../../services/photos.service';
 import { uploadsService } from '../../services/uploads.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { getPhotoViewMode, setPhotoViewMode, type PhotoViewMode } from '../../utils/photoViewPrefs';
 import { defaultCategoryLabel, isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../utils/mediaCounts';
-import { Button } from '../common';
+import { Button, ColumnMenuHeader } from '../common';
+import type { ColumnMenuOption } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { BulkCategoryModal } from './BulkCategoryModal';
@@ -31,6 +32,11 @@ interface AdminPhotoGridProps {
   onPhotosDeleted: () => void;
   onSelectionChange?: (selectedIds: number[]) => void;
   categories?: CategoryOption[];
+  // The list's sort, owned by the parent together with the filter bar's
+  // select. Without onSortChange the list headers are plain text.
+  sortBy?: PhotoSortKey;
+  sortOrder?: 'asc' | 'desc';
+  onSortChange?: (sort: PhotoSortKey, order: 'asc' | 'desc') => void;
 }
 
 export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
@@ -39,7 +45,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   onPhotoClick,
   onPhotosDeleted,
   onSelectionChange,
-  categories = []
+  categories = [],
+  sortBy,
+  sortOrder,
+  onSortChange
 }) => {
   const { t } = useTranslation();
   const { format: formatDate } = useLocalizedDate();
@@ -77,6 +86,61 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     } catch (err: any) {
       toast.error(err?.response?.data?.error || 'Retry failed');
     }
+  };
+
+  // Sort menus on the list headers (issue 1739). Each option value is the
+  // `sort:order` pair, the same shape the events list uses.
+  const sortValue = sortBy && sortOrder ? `${sortBy}:${sortOrder}` : null;
+  const NAME_SORT: ColumnMenuOption[] = [
+    { value: 'name:asc', label: t('events.sortNameAsc', 'A – Z') },
+    { value: 'name:desc', label: t('events.sortNameDesc', 'Z – A') },
+  ];
+  const UPLOADED_SORT: ColumnMenuOption[] = [
+    { value: 'date:desc', label: t('events.sortDateNewest', 'Newest first') },
+    { value: 'date:asc', label: t('events.sortDateOldest', 'Oldest first') },
+  ];
+  const RATING_SORT: ColumnMenuOption[] = [
+    { value: 'rating:desc', label: t('admin.photos.sort.ratingHighest', 'Best rated first') },
+    { value: 'rating:asc', label: t('admin.photos.sort.ratingLowest', 'Lowest rated first') },
+  ];
+  const SIZE_SORT: ColumnMenuOption[] = [
+    { value: 'size:desc', label: t('admin.photos.sort.sizeLargest', 'Largest first') },
+    { value: 'size:asc', label: t('admin.photos.sort.sizeSmallest', 'Smallest first') },
+  ];
+  const listHeader = (
+    label: string,
+    cell: string,
+    align: 'left' | 'right',
+    options?: ColumnMenuOption[],
+    menuLabel?: string,
+  ) => {
+    if (!options || !onSortChange) {
+      // The label sits in the same inline-flex box a menu header uses, so
+      // plain and sortable headers share one baseline in the row.
+      return (
+        <th className={`${cell} ${align === 'right' ? 'text-right' : 'text-left'} text-xs`}>
+          <span className="inline-flex items-center align-middle font-medium text-muted uppercase tracking-wider">
+            {label}
+          </span>
+        </th>
+      );
+    }
+    const selected = sortValue && options.some((o) => o.value === sortValue) ? sortValue : null;
+    return (
+      <ColumnMenuHeader
+        label={label}
+        menuLabel={menuLabel}
+        options={options}
+        value={selected}
+        state={selected ? (sortOrder ?? null) : null}
+        onSelect={(value) => {
+          const [sort, order] = value.split(':');
+          onSortChange(sort as PhotoSortKey, order as 'asc' | 'desc');
+        }}
+        align={align}
+        className={`${cell} text-xs`}
+      />
+    );
   };
 
   // Persist on user action only — writing in an effect would re-save the
@@ -700,30 +764,14 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           <thead className="bg-subtle border-b border-line">
             <tr>
               <th className="w-8 px-3 py-2" />
-              <th className="px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.photo', 'Photo')}
-              </th>
-              <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.category', 'Category')}
-              </th>
-              <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.credit')}
-              </th>
-              <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.uploaded', 'Uploaded')}
-              </th>
-              <th className="hidden xl:table-cell px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.engagement', 'Engagement')}
-              </th>
-              <th className="hidden sm:table-cell px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.feedback', 'Feedback')}
-              </th>
-              <th className="px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.size', 'Size')}
-              </th>
-              <th className="w-px px-3 py-2 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                {t('admin.photos.columns.actions', 'Actions')}
-              </th>
+              {listHeader(t('admin.photos.columns.photo', 'Photo'), 'px-3 py-2', 'left', NAME_SORT, t('gallery.sortByName', 'Sort by Name'))}
+              {listHeader(t('admin.photos.columns.category', 'Category'), 'hidden lg:table-cell px-3 py-2', 'left')}
+              {listHeader(t('admin.photos.columns.credit'), 'hidden lg:table-cell px-3 py-2', 'left')}
+              {listHeader(t('admin.photos.columns.uploaded', 'Uploaded'), 'hidden md:table-cell px-3 py-2', 'left', UPLOADED_SORT, t('gallery.sortByDate', 'Sort by Date'))}
+              {listHeader(t('admin.photos.columns.engagement', 'Engagement'), 'hidden xl:table-cell px-3 py-2', 'right')}
+              {listHeader(t('admin.photos.columns.feedback', 'Feedback'), 'hidden sm:table-cell px-3 py-2', 'right', RATING_SORT, t('gallery.sortByRating', 'Sort by Rating'))}
+              {listHeader(t('admin.photos.columns.size', 'Size'), 'px-3 py-2', 'right', SIZE_SORT, t('gallery.sortBySize', 'Sort by Size'))}
+              {listHeader(t('admin.photos.columns.actions', 'Actions'), 'w-px px-3 py-2', 'right')}
             </tr>
           </thead>
           <tbody className="bg-panel divide-y divide-line">
