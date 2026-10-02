@@ -76,10 +76,12 @@ describe('withProcessableImage', () => {
     await expect(Promise.resolve(proc.cleanup())).resolves.toBeUndefined();
   });
 
-  it('routes RAW files to extraction (which fails cleanly without exiftool/preview)', async () => {
-    // In the dev sandbox exiftool isn't installed, so extraction throws — the
-    // caller turns that into a normal processing failure. In the built image
-    // (exiftool present) this instead returns the embedded JPEG preview.
+  it('routes RAW files to extraction, which fails cleanly on a file with no preview', async () => {
+    // Rejects either way, which is the point: with no exiftool the spawn fails,
+    // and with exiftool the path does not exist, and both are a normal
+    // processing failure to the caller. What is asserted is the routing — an
+    // ordinary image would have returned above without spawning anything.
+    // The real extraction is covered in imageProcessorRawExtraction.test.js.
     await expect(withProcessableImage('/tmp/whatever/IMG_1234.dng', 'IMG_1234.dng')).rejects.toThrow();
   });
 });
