@@ -40,7 +40,7 @@ describe('local backup destination', () => {
 
   beforeAll(async () => {
     fs.mkdirSync(writable);
-    fs.mkdirSync(readOnly);
+    fs.mkdirSync(path.join(readOnly, 'sub'), { recursive: true });
     fs.chmodSync(readOnly, 0o555);
 
     ({ db, cleanup } = await bootCrmDb());
@@ -94,6 +94,31 @@ describe('local backup destination', () => {
         await expect(fs.promises.mkdir(path.join(noSearch, 'backups'), { recursive: true })).rejects.toThrow();
       } finally {
         fs.chmodSync(noSearch, 0o755);
+      }
+    });
+
+    it('does not take a writable, executable file for a directory', async () => {
+      const file = path.join(writable, 'script.sh');
+      fs.writeFileSync(file, '#!/bin/sh\n', { mode: 0o755 });
+      try {
+        expect(await findWriteBlocker(file)).toEqual({ path: file, code: 'ENOTDIR' });
+        await expect(fs.promises.mkdir(file, { recursive: true })).rejects.toThrow();
+      } finally {
+        fs.unlinkSync(file);
+      }
+    });
+
+    itAsNonRoot('follows a symlink before "..", as mkdir does', async () => {
+      // Lexically this is <writable>/backups; on disk the link leads into the
+      // read-only directory, so ".." is that directory.
+      const link = path.join(writable, 'link');
+      fs.symlinkSync(path.join(readOnly, 'sub'), link);
+      const target = `${link}/../backups`;
+      try {
+        expect(await findWriteBlocker(target)).toEqual({ path: `${link}/..`, code: 'EACCES' });
+        await expect(fs.promises.mkdir(target, { recursive: true })).rejects.toThrow();
+      } finally {
+        fs.unlinkSync(link);
       }
     });
 
