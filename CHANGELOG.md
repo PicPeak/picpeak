@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.157.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.156.1-beta.0...v3.157.0-beta.0) (2026-10-02)
+
+
+### Features
+
+* **video:** opt-in browser-playable copies of videos ([#1761](https://github.com/PicPeak/picpeak/issues/1761)) ([db5e050](https://github.com/PicPeak/picpeak/commit/db5e0509a9757ac2685decbdfa95401657559b8a))
+
 ## [3.156.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.156.0-beta.0...v3.156.1-beta.0) (2026-10-02)
 
 
