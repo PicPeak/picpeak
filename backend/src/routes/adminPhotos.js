@@ -1481,8 +1481,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         original_filename: photo.original_filename || null,
         // Use the correct admin photos router base for serving images
         url: `/admin/photos/${eventId}/photo/${photo.id}`,
-        // Always expose a thumbnail URL; backend will generate on demand if missing
-        thumbnail_url: `/admin/photos/${eventId}/thumbnail/${photo.id}`,
+        // Always expose a thumbnail URL; backend will generate on demand if missing.
+        // The route caches for an hour and a retried poster frame lands under
+        // the same key as the placeholder it replaces, so the URL of a tile
+        // showing the placeholder note differs from the URL once the note
+        // is gone — otherwise the browser kept the cached placeholder after
+        // a successful Retry (issue 1430, item 6).
+        thumbnail_url: `/admin/photos/${eventId}/thumbnail/${photo.id}${photo.processing_error ? '?v=note' : ''}`,
         type: photo.type,
         // Guest visibility (#172). This explicit mapper never included it,
         // so the admin grid's "Hidden" badge could never render and a photo

@@ -129,6 +129,13 @@ describe('video poster-frame note and retry (issue 1430)', () => {
       expect(byId[failedId]).toMatchObject({ processing_status: 'failed', processing_error: 'sharp: bad header' });
     });
 
+    it('gives the placeholder tile a thumbnail URL of its own, so a retried frame is not served from cache', () => {
+      // The thumbnail route caches for an hour and the real frame lands under
+      // the placeholder's key; the note is what tells the two apart.
+      expect(byId[noteId].thumbnail_url).toBe(`/admin/photos/${eventId}/thumbnail/${noteId}?v=note`);
+      expect(byId[cleanId].thumbnail_url).toBe(`/admin/photos/${eventId}/thumbnail/${cleanId}`);
+    });
+
     it('names only a real category; the grid derives the default label', () => {
       expect(byId[categorisedId]).toMatchObject({ category_name: 'Ceremony', category_slug: 'ceremony' });
       // Used to be the English "Individual Photos", even for a video.
