@@ -173,6 +173,10 @@ function probe(localPath) {
         pixFmt: video?.pix_fmt || null,
         width: video?.width || null,
         height: video?.height || null,
+        // HDR is told by the transfer function: PQ (smpte2084) or HLG
+        // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
+        colorTransfer: video?.color_transfer || null,
+        colorPrimaries: video?.color_primaries || null,
       });
     });
   });
@@ -193,13 +197,54 @@ function playsInBrowser(probed, faststart) {
   return !!faststart;
 }
 
+/** Whether a probed video is HDR: PQ or HLG transfer, as phones record it. */
+function isHdr(probed) {
+  return probed?.colorTransfer === 'smpte2084' || probed?.colorTransfer === 'arib-std-b67';
+}
+
+/**
+ * HDR to SDR for the copy. Dropping an HDR source to yuv420p alone keeps the
+ * HDR transfer curve in an 8-bit SDR container, which plays dark and flat
+ * (the scene's highlights are mapped as mid-greys). This chain goes to
+ * linear light, tone-maps the range into what an SDR display shows (Hable,
+ * the film-like curve; `desat=0` keeps the colours), and lands on BT.709,
+ * which is what every browser assumes for H.264. Needs ffmpeg's zscale
+ * (libzimg) and tonemap filters: Alpine's ffmpeg package in the image has
+ * both; canToneMap checks at runtime for anyone on another build.
+ */
+const HDR_TO_SDR_FILTER = 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv';
+
+let toneMapSupport = null;
+/** Whether this ffmpeg has the filters HDR_TO_SDR_FILTER needs. Asked once. */
+function canToneMap() {
+  if (!toneMapSupport) {
+    toneMapSupport = new Promise((resolve) => {
+      try {
+        ffmpeg.getAvailableFilters((err, filters) => {
+          resolve(!err && !!filters && !!filters.zscale && !!filters.tonemap);
+        });
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+  return toneMapSupport;
+}
+
+/** Forget the capability answer, so a test can mock another ffmpeg. */
+function _resetToneMapSupportForTests() {
+  toneMapSupport = null;
+}
+
 /**
  * ffmpeg's arguments for the copy, in one place so the test can pin them.
  * The scale keeps the aspect ratio, never upsizes, and keeps both sides
  * even, which libx264 needs for 4:2:0. ffmpeg applies the rotation tag on
- * input, so a portrait phone recording comes out portrait.
+ * input, so a portrait phone recording comes out portrait. With `toneMap`
+ * the HDR to SDR chain runs first, so the scale works on the SDR picture.
  */
-function transcodeOptions() {
+function transcodeOptions({ toneMap = false } = {}) {
+  const scale = `scale=w='min(${MAX_EDGE},iw)':h='min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
   return [
     '-map', '0:v:0',
     '-map', '0:a:0?',
@@ -208,7 +253,10 @@ function transcodeOptions() {
     '-preset', 'medium',
     '-crf', String(CRF),
     '-pix_fmt', 'yuv420p',
-    '-vf', `scale=w='min(${MAX_EDGE},iw)':h='min(${MAX_EDGE},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`,
+    '-vf', toneMap ? `${HDR_TO_SDR_FILTER},${scale}` : scale,
+    // BT.709 tags on the output: the copy is SDR whatever the source was, and
+    // a player that honoured leftover BT.2020/PQ tags would misrender it.
+    ...(toneMap ? ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709'] : []),
     '-c:a', 'aac',
     '-b:a', '128k',
     '-movflags', '+faststart',
@@ -216,10 +264,10 @@ function transcodeOptions() {
   ];
 }
 
-function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS } = {}) {
+function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS, toneMap = false } = {}) {
   return new Promise((resolve, reject) => {
     let timer = null;
-    const command = ffmpeg(localPath).outputOptions(transcodeOptions());
+    const command = ffmpeg(localPath).outputOptions(transcodeOptions({ toneMap }));
     command
       .on('end', () => { clearTimeout(timer); resolve(); })
       .on('error', (err) => { clearTimeout(timer); reject(err); });
@@ -277,8 +325,16 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
     const webKey = webKeyFor(photo, claimedAt);
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
+    // An HDR source is tone-mapped to SDR when this ffmpeg can; otherwise the
+    // copy is still made (it plays, which the original did not) and the log
+    // says why it looks flat.
+    const hdr = isHdr(probed);
+    const toneMap = hdr && await canToneMap();
+    if (hdr && !toneMap) {
+      logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
+    }
     try {
-      await transcode(localPath, tmpPath);
+      await transcode(localPath, tmpPath, { toneMap });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
       await getStorage().putFromFile(webKey, tmpPath, { contentType: 'video/mp4' });
@@ -300,7 +356,7 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
       logger.info(`videoRendition: photo ${photoId} changed during the transcode, dropped ${webKey}`);
       return 'superseded';
     }
-    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName})`);
+    logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
     return 'complete';
   });
   return status;
@@ -322,6 +378,10 @@ module.exports = {
   probe,
   playsInBrowser,
   transcodeOptions,
+  isHdr,
+  canToneMap,
+  _resetToneMapSupportForTests,
+  HDR_TO_SDR_FILTER,
   transcode,
   renderWebCopy,
   deleteWebCopy,

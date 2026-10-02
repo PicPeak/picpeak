@@ -161,6 +161,38 @@ describe('webKeyFor', () => {
   });
 });
 
+describe('HDR', () => {
+  it('tells PQ and HLG from SDR by the transfer function', () => {
+    expect(service.isHdr(probeResult({ colorTransfer: 'smpte2084' }))).toBe(true);
+    expect(service.isHdr(probeResult({ colorTransfer: 'arib-std-b67' }))).toBe(true);
+    expect(service.isHdr(probeResult({ colorTransfer: 'bt709' }))).toBe(false);
+    // Wide primaries alone are not HDR.
+    expect(service.isHdr(probeResult({ colorTransfer: null, colorPrimaries: 'bt2020' }))).toBe(false);
+  });
+
+  it('runs the tone-map chain ahead of the scale and tags the copy BT.709', () => {
+    const plain = service.transcodeOptions();
+    const mapped = service.transcodeOptions({ toneMap: true });
+    const vf = (opts) => opts[opts.indexOf('-vf') + 1];
+    expect(vf(plain).startsWith('scale=')).toBe(true);
+    expect(vf(mapped)).toBe(`${service.HDR_TO_SDR_FILTER},${vf(plain)}`);
+    expect(mapped).toEqual(expect.arrayContaining(['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709']));
+    expect(plain).not.toContain('-color_trc');
+  });
+
+  it('asks ffmpeg for its filters once', async () => {
+    service._resetToneMapSupportForTests();
+    ffmpeg.getAvailableFilters = jest.fn((cb) => cb(null, { zscale: {}, tonemap: {}, scale: {} }));
+    expect(await service.canToneMap()).toBe(true);
+    expect(await service.canToneMap()).toBe(true);
+    expect(ffmpeg.getAvailableFilters).toHaveBeenCalledTimes(1);
+
+    service._resetToneMapSupportForTests();
+    ffmpeg.getAvailableFilters = jest.fn((cb) => cb(null, { scale: {} }));
+    expect(await service.canToneMap()).toBe(false);
+  });
+});
+
 describe('renderWebCopy', () => {
   beforeEach(() => {
     dbModule.__state.updates.length = 0;
@@ -216,6 +248,35 @@ describe('renderWebCopy', () => {
     expect(update.where).toEqual({ id: 22, web_status: 'processing', web_started_at: '2026-10-02T09:00:00.000Z' });
     // The temp file is gone once the copy is in storage.
     expect(fs.existsSync(savedTo)).toBe(false);
+  });
+
+  it.each([
+    ['tone-maps an HLG clip when ffmpeg has the filters', { zscale: {}, tonemap: {} }, true],
+    ['still writes the copy, untone-mapped, when ffmpeg lacks them', { scale: {} }, false],
+  ])('%s', async (_name, filters, mapped) => {
+    service._resetToneMapSupportForTests();
+    ffmpeg.getAvailableFilters = jest.fn((cb) => cb(null, filters));
+    const logger = require('../../src/utils/logger');
+    logger.warn.mockClear();
+    dbModule.__state.photo = { id: 24, event_id: 9, filename: 'hlg.mov', media_type: 'video', mime_type: 'video/quicktime' };
+    mockProbe(
+      [{ codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p10le', width: 3840, height: 2160, color_transfer: 'arib-std-b67', color_primaries: 'bt2020' }, { codec_type: 'audio', codec_name: 'aac' }],
+      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'qt  ' } },
+    );
+    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
+    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
+    const command = {
+      outputOptions: jest.fn(function () { return this; }),
+      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
+      save: jest.fn(function (out) { fs.writeFileSync(out, 'h264-bytes'); setImmediate(() => this._end()); }),
+      kill: jest.fn(),
+    };
+    ffmpeg.mockImplementation(() => command);
+
+    expect(await service.renderWebCopy(24, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('complete');
+    expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions({ toneMap: mapped }));
+    if (mapped) expect(logger.warn).not.toHaveBeenCalled();
+    else expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('lacks zscale/tonemap'));
   });
 
   it('drops the copy and leaves the row alone when the claim was lost during the transcode', async () => {
