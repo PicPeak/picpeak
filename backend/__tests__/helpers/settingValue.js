@@ -13,6 +13,11 @@
  * Keyed on the engine, not on the value's shape: a stored string such as
  * "true" or "90" would otherwise decode to a boolean or a number on
  * PostgreSQL and stay a string on SQLite.
+ *
+ * Only for a table the core migrations built (bootCrmDb). A suite that
+ * creates app_settings by hand with a text column on PostgreSQL (usageV3,
+ * productUsagePg, externalRelpathFoldPg) gets the JSON text back there too,
+ * and this helper would hand it over undecoded.
  */
 const decodeSettingValue = (db, value) =>
   (db.client.config.client === 'pg' ? value : JSON.parse(value));
