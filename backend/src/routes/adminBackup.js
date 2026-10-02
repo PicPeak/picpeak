@@ -715,8 +715,10 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // The reason goes into the answer: in production a warn only reaches
       // logs/combined.log, so "check the server logs" showed nothing in
       // `docker compose logs` (issue 1365).
-      const target = typeof config.path === 'string' ? config.path.trim() : '';
-      if (!target) {
+      // Probed as typed: PUT /config stores the path verbatim and the backup
+      // uses it verbatim, so a trimmed probe would test another directory.
+      const target = typeof config.path === 'string' ? config.path : '';
+      if (!target.trim()) {
         res.json({ success: false, message: 'Local backup requires destination path' });
         break;
       }

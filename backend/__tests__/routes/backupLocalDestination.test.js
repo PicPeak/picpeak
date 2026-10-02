@@ -83,6 +83,31 @@ describe('local backup destination', () => {
       expect(await findWriteBlocker(path.join(readOnly, 'ubuntu', 'backups')))
         .toEqual({ path: readOnly, code: 'EACCES' });
     });
+
+    itAsNonRoot('needs search permission on the ancestor, as mkdir does', async () => {
+      const noSearch = path.join(base, 'no-search');
+      fs.mkdirSync(noSearch);
+      fs.chmodSync(noSearch, 0o222);
+      try {
+        expect(await findWriteBlocker(path.join(noSearch, 'backups')))
+          .toEqual({ path: path.join(noSearch, 'backups'), code: 'EACCES' });
+        await expect(fs.promises.mkdir(path.join(noSearch, 'backups'), { recursive: true })).rejects.toThrow();
+      } finally {
+        fs.chmodSync(noSearch, 0o755);
+      }
+    });
+
+    it('does not take a dangling symlink for a missing directory', async () => {
+      const link = path.join(writable, 'dangling');
+      fs.symlinkSync(path.join(writable, 'gone'), link);
+      try {
+        expect(await findWriteBlocker(link)).toEqual({ path: link, code: 'BROKEN_SYMLINK' });
+        expect(await findWriteBlocker(path.join(link, 'backups'))).toEqual({ path: link, code: 'BROKEN_SYMLINK' });
+        await expect(fs.promises.mkdir(path.join(link, 'backups'), { recursive: true })).rejects.toThrow();
+      } finally {
+        fs.unlinkSync(link);
+      }
+    });
   });
 
   describe('POST /test-connection (local)', () => {
@@ -108,6 +133,14 @@ describe('local backup destination', () => {
       const res = await testLocal(readOnly);
       expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_NOT_WRITABLE' });
       expect(res.body.message).toContain(`The backend cannot write to ${readOnly} (EACCES).`);
+    });
+
+    itAsNonRoot('probes the path as typed, which is the path that gets saved and used', async () => {
+      // With the trailing space this is a missing sibling of the read-only
+      // directory, creatable below the writable base; trimmed, it would be
+      // the read-only directory itself.
+      const res = await testLocal(`${readOnly} `);
+      expect(res.body).toMatchObject({ success: true });
     });
 
     it('refuses an empty path without probing the working directory', async () => {
