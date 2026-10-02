@@ -67,6 +67,18 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   // Layout toggle (Grid / List) persisted per admin via localStorage.
   const [viewMode, setViewMode] = useState<PhotoViewMode>(() => getPhotoViewMode());
 
+  // Retry for a complete video on the placeholder tile (issue 1430, item 6);
+  // the grid tile and the list row offer the same control.
+  const retryPosterFrame = async (photoId: number) => {
+    try {
+      await uploadsService.retryPhoto(photoId);
+      toast.success(t('admin.photos.retryQueued', 'Retry queued'));
+      queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Retry failed');
+    }
+  };
+
   // Persist on user action only — writing in an effect would re-save the
   // value on every mount (i.e. each time the Photos tab is opened), even
   // when the user never touched the toggle.
@@ -575,16 +587,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try {
-                      await uploadsService.retryPhoto(photo.id);
-                      toast.success(t('admin.photos.retryQueued', 'Retry queued'));
-                      queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
-                    } catch (err: any) {
-                      toast.error(err?.response?.data?.error || 'Retry failed');
-                    }
-                  }}
+                  onClick={(e) => { e.stopPropagation(); void retryPosterFrame(photo.id); }}
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/90 text-neutral-700 text-[10px] font-medium"
                   title={t('admin.photos.noPosterFrameRetry', 'Take the poster frame again') as string}
                 >
@@ -791,6 +794,31 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                             <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-fill text-body text-[10px] font-medium">
                               <Video className="w-3 h-3" />
                               {t('common.video', 'Video')}
+                            </span>
+                          )}
+                          {/* The same note and Retry as the grid tile, for admins on the list view. */}
+                          {status === 'complete' && photo.processing_error && (
+                            <span
+                              className="flex-shrink-0 inline-flex items-center gap-1"
+                              data-testid={`admin-photo-poster-note-${photo.id}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-white text-[10px] font-medium"
+                                title={photo.processing_error}
+                              >
+                                <AlertTriangle className="w-3 h-3" />
+                                {t('admin.photos.noPosterFrame', 'No poster frame')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); void retryPosterFrame(photo.id); }}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-fill text-body text-[10px] font-medium hover:bg-hover-soft"
+                                title={t('admin.photos.noPosterFrameRetry', 'Take the poster frame again') as string}
+                              >
+                                <RefreshCw className="w-2.5 h-2.5" />
+                                {t('common.retry', 'Retry')}
+                              </button>
                             </span>
                           )}
                           {isHidden && (

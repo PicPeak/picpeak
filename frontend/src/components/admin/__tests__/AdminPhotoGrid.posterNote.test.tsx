@@ -95,6 +95,21 @@ describe('AdminPhotoGrid poster-frame note', () => {
     expect(screen.queryByTestId('admin-photo-poster-note-3')).not.toBeInTheDocument();
   });
 
+  it('shows the note and Retry on the list view too', async () => {
+    // The view mode is persisted per admin; a list-view admin would otherwise
+    // never see the warning or get the control.
+    localStorage.setItem('picpeak.adminPhotos.view', 'list');
+    const user = userEvent.setup();
+    renderGrid([
+      photo(1, { filename: 'clip.mov', media_type: 'video', processing_error: 'No poster frame: ffmpeg seek failed' }),
+      photo(2, { filename: 'still.jpg', media_type: 'image' }),
+    ]);
+    expect(screen.getByTestId('admin-photo-poster-note-1')).toHaveTextContent('No poster frame');
+    expect(screen.queryByTestId('admin-photo-poster-note-2')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /retry/i }));
+    await waitFor(() => expect(retryPhoto).toHaveBeenCalledWith(1));
+  });
+
   it('retries the video from the note', async () => {
     const user = userEvent.setup();
     renderGrid([
