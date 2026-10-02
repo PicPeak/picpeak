@@ -73,6 +73,15 @@ describe('general_video_web_rendition (issue 1430)', () => {
     await mk('busy', { media_type: 'video', mime_type: 'video/mp4', web_status: 'processing', web_started_at: new Date().toISOString() });
     await mk('still-uploading', { media_type: 'video', mime_type: 'video/mp4', processing_status: 'pending' });
     await mk('photo', { media_type: 'image', mime_type: 'image/jpeg' });
+    // An archived gallery: its originals are in the zip, not in storage.
+    const archivedEventId = unwrap(await db('events').insert({
+      slug: 'web-setting-archived', event_type: 'wedding', event_name: 'Archived', event_date: '2026-07-01',
+      host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
+      share_token: 'tok-web-setting-archived', share_link: '/gallery/web-setting-archived/tok', created_by: adminId,
+      expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+      is_active: 0, is_archived: 1, is_draft: 0, created_at: new Date().toISOString(),
+    }).returning('id'));
+    await mk('archived', { event_id: archivedEventId, media_type: 'video', mime_type: 'video/mp4' });
 
     app = express();
     app.use(express.json());
@@ -109,6 +118,8 @@ describe('general_video_web_rendition (issue 1430)', () => {
     // Not complete yet: the upload worker queues it when it is.
     expect(await statusOf('still-uploading')).toBeNull();
     expect(await statusOf('photo')).toBeNull();
+    // Queuing it could only fail; the restore route backfills the event instead.
+    expect(await statusOf('archived')).toBeNull();
   });
 
   it('the service reads the new value without waiting out its cache', async () => {

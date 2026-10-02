@@ -152,6 +152,12 @@ describe('webKeyFor', () => {
     expect(key.split('/').pop().length).toBeLessThan(140);
     // A short name is kept whole.
     expect(service.webKeyFor({ id: 7, external_relpath: 'shoot/Teaser.MOV' })).toBe('videos/web_7_Teaser.mp4');
+    // Bytes, not characters: 80 three-byte characters are 240 bytes.
+    const wide = service.webKeyFor({ id: 7, filename: `${'結婚式の動画ファイル'.repeat(8)}.mov` });
+    expect(Buffer.byteLength(wide.split('/').pop(), 'utf8')).toBeLessThan(140);
+    expect(wide.endsWith('.mp4')).toBe(true);
+    // Never a half character.
+    expect(wide).toBe(Buffer.from(wide, 'utf8').toString('utf8'));
   });
 });
 

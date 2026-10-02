@@ -34,6 +34,16 @@ const { getStorage } = require('./storage');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
 
 const WEB_KEY_BASENAME_MAX = 100;
+
+/** The longest prefix of `str` that fits `max` UTF-8 bytes, on a code point boundary. */
+function capUtf8Bytes(str, max) {
+  let out = '';
+  for (const ch of str) {
+    if (Buffer.byteLength(out + ch, 'utf8') > max) break;
+    out += ch;
+  }
+  return out;
+}
 const SETTING_KEY = 'general_video_web_rendition';
 const CACHE_TTL_MS = 60_000;
 
@@ -73,8 +83,12 @@ function clearCache() {
  * one and skips what already plays. Returns the number of rows queued.
  */
 async function backfillPending({ eventId } = {}) {
+  const { formatBoolean } = require('../utils/dbCompat');
   return db('photos')
     .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
+    // An archived gallery's originals are in its zip, not in storage: queuing
+    // its rows would only fail. The restore route backfills the event again.
+    .whereNotIn('event_id', db('events').select('id').where('is_archived', formatBoolean(true)))
     .whereRaw(IS_VIDEO_SQL)
     .where(function () {
       this.whereNull('web_status').orWhere('web_status', 'failed');
@@ -93,11 +107,13 @@ async function backfillPending({ eventId } = {}) {
 function webKeyFor(photo, claimedAt) {
   const attempt = claimedAt ? `${new Date(claimedAt).getTime().toString(36)}_` : '';
   // The basename is for a human reading the bucket; the id and claim make
-  // the key unique. Capped so a long NAS filename plus prefix, id, claim and
+  // the key unique. Capped in UTF-8 bytes (a filesystem counts bytes, not
+  // characters) so a long NAS filename plus prefix, id, claim and
   // LocalFsStorage's staging suffix stays under the 255-byte name limit.
-  const base = path.basename(photo.external_relpath || photo.filename || `video-${photo.id}`)
-    .replace(/\.[^.]+$/, '')
-    .slice(0, WEB_KEY_BASENAME_MAX);
+  const base = capUtf8Bytes(
+    path.basename(photo.external_relpath || photo.filename || `video-${photo.id}`).replace(/\.[^.]+$/, ''),
+    WEB_KEY_BASENAME_MAX,
+  );
   return path.posix.join('videos', `web_${photo.id}_${attempt}${base}.mp4`);
 }
 
