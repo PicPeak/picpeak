@@ -23,18 +23,19 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # 20, not 10. This job normally finishes in ~3 minutes, but it is the only
-    # one that boots Postgres and runs the full integration suite, so it is the
-    # only one exposed to runner contention — observed spread has reached 9.2
-    # minutes, and a release PR (#1088) was cancelled at 10.3 with every test
-    # passing and jest still running. A cancelled job reads as a red X on a
-    # green branch, which costs a re-run and a diagnosis every time it happens.
+    # Runaway guard for the whole job, not a performance budget. The suite is
+    # the only one that boots Postgres and runs the full integration set, so
+    # it is the only one exposed to runner contention, and it keeps growing:
+    # ~3 minutes when the cap was first raised to 20, 10-11.5 on main now. On
+    # a degraded runner every suite runs several times slower, and at 20 that
+    # cancelled runs with no failing test (twice in a row on PR 1540, and a
+    # push to main on 2026-10-02).
     #
-    # The cap is a runaway guard, not a performance budget; 20 leaves real
-    # headroom over the worst observed run while still killing a hung suite
-    # well inside the hour GitHub would otherwise allow. frontend and ml keep
-    # 10 — they take seconds and have never come close.
-    timeout-minutes: 20
+    # The budget that normally fires is the 35 on the jest step below; this
+    # one sits above it so it only catches a hang outside jest (checkout,
+    # npm ci, the Postgres service). frontend and ml keep 10 — they take
+    # seconds and have never come close.
+    timeout-minutes: 40
 
     # The .picpeak restore suites gate their real-Postgres cases behind
     # PICPEAK_PG_TEST_URL and `describe.skip` themselves out when it is
@@ -76,6 +77,12 @@ jobs:
 
       - name: Run Jest suite
         working-directory: ./backend
+        # On the step, not only on the job: a job that hits its own cap is
+        # reported as "cancelled", which reads like someone cancelled it. A
+        # step that hits its cap FAILS with "The action 'Run Jest suite' has
+        # timed out after 35 minutes", so running out of time is told apart
+        # from a cancellation in the checks list and in the log.
+        timeout-minutes: 35
         env:
           # backupService tests would otherwise try a real S3 round-trip.
           # The S3 path itself is covered separately by the integration
