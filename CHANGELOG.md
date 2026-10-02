@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.158.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.157.0-beta.0...v3.158.0-beta.0) (2026-10-02)
+
+
+### Features
+
+* **photos:** natural filename order, capture-date sort and sortable headers in the event photo list ([#1773](https://github.com/PicPeak/picpeak/issues/1773)) ([09424e1](https://github.com/PicPeak/picpeak/commit/09424e1e96261e2a50c84d19affd6002a52ebaee))
+
 ## [3.157.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.156.1-beta.0...v3.157.0-beta.0) (2026-10-02)
 
 
