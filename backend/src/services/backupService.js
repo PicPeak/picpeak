@@ -756,9 +756,11 @@ async function updateFileState(filePath, checksum, size, modified) {
 async function performLocalBackup(config, files) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   // A bare "EACCES ... mkdir '/home/ubuntu'" did not say that the configured
-  // path is looked up inside the container (issue 1365).
+  // path is looked up inside the container (issue 1365). Resolved first, so
+  // a ".." in it means here what path.join makes of it for the files below,
+  // and what the connection test probed.
   try {
-    await fs.mkdir(destinationRoot, { recursive: true });
+    await fs.mkdir(path.resolve(destinationRoot), { recursive: true });
   } catch (mkdirError) {
     throw new Error(
       `Cannot create the backup directory ${destinationRoot}: ${mkdirError.code || mkdirError.message}. ` +
