@@ -50,8 +50,20 @@ describe('photo engagement counters (#895)', () => {
   );
 
   const getPhoto = async (id) => db('photos').where('id', id).first();
-  // The counter writes are fire-and-forget on purpose — give the event
-  // loop a beat before asserting.
+  // The counter writes are fire-and-forget on purpose, so a response says
+  // nothing about whether they landed. Poll for the expected count instead of
+  // sleeping a fixed beat: 400 ms was not enough on a loaded CI runner and
+  // the assertion read 0 (issue 1617). Gives up quietly at the deadline so
+  // the expect() that follows reports the count it actually found.
+  const settleUntil = async (check, timeout = 5000) => {
+    const deadline = Date.now() + timeout;
+    while (!(await check()) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
+  const downloadsCounted = (...ids) => async () =>
+    (await db('photos').whereIn('id', ids)).every((p) => p.download_count === 1);
+  // "Did NOT count" has no state to poll for; a fixed beat is all there is.
   const settle = () => new Promise((r) => setTimeout(r, 400));
 
   beforeAll(async () => {
@@ -169,7 +181,7 @@ describe('photo engagement counters (#895)', () => {
         .get(`/api/gallery/${SLUG}/download/${photoIds[0]}`)
         .set('Authorization', `Bearer ${galleryToken()}`);
       expect(res.status).toBe(200);
-      await settle();
+      await settleUntil(downloadsCounted(photoIds[0]));
       expect((await getPhoto(photoIds[0])).download_count).toBe(1);
       expect((await getPhoto(photoIds[1])).download_count).toBe(0);
     });
@@ -180,7 +192,7 @@ describe('photo engagement counters (#895)', () => {
         .set('Authorization', `Bearer ${galleryToken()}`)
         .send({ photo_ids: [photoIds[0], photoIds[1]] });
       expect(res.status).toBe(200);
-      await settle();
+      await settleUntil(downloadsCounted(photoIds[0], photoIds[1]));
       expect((await getPhoto(photoIds[0])).download_count).toBe(1);
       expect((await getPhoto(photoIds[1])).download_count).toBe(1);
       expect((await getPhoto(photoIds[2])).download_count).toBe(0);
@@ -191,7 +203,7 @@ describe('photo engagement counters (#895)', () => {
         .get(`/api/gallery/${SLUG}/download-all`)
         .set('Authorization', `Bearer ${galleryToken()}`);
       expect(res.status).toBe(200);
-      await settle();
+      await settleUntil(downloadsCounted(...photoIds));
       for (const id of photoIds) {
         expect((await getPhoto(id)).download_count).toBe(1);
       }
@@ -252,7 +264,7 @@ describe('photo engagement counters (#895)', () => {
         .get(`/api/gallery/${slug2}/download-all`)
         .set('Authorization', `Bearer ${token2}`);
       expect(res.status).toBe(200);
-      await settle();
+      await settleUntil(downloadsCounted(ids2[0]));
       expect((await db('photos').where('id', ids2[0]).first()).download_count).toBe(1);
       // photo-1's source was missing → skipped from the zip → not counted
       expect((await db('photos').where('id', ids2[1]).first()).download_count).toBe(0);
@@ -271,7 +283,7 @@ describe('photo engagement counters (#895)', () => {
       await request(app)
         .get(`/api/gallery/${SLUG}/download/${photoIds[0]}`)
         .set('Authorization', `Bearer ${galleryToken()}`);
-      await settle();
+      await settleUntil(downloadsCounted(photoIds[0]));
 
       const res = await request(app)
         .get(`/api/admin/photos/${eventId}/photos`)
