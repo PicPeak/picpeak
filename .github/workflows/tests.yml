@@ -25,16 +25,17 @@ jobs:
     runs-on: ubuntu-latest
     # Runaway guard for the whole job, not a performance budget. The suite is
     # the only one that boots Postgres and runs the full integration set, so
-    # it is the only one exposed to runner contention, and it keeps growing:
-    # ~3 minutes when the cap was first raised to 20, 10-11.5 on main now. On
-    # a degraded runner every suite runs several times slower, and at 20 that
-    # cancelled runs with no failing test (twice in a row on PR 1540, and a
-    # push to main on 2026-10-02).
+    # it is the only one long enough for runner contention to matter, and it
+    # keeps growing: ~3 minutes when the cap was first raised to 20, 10-11.5
+    # on main now. On a degraded runner every suite runs several times slower,
+    # and at 20 that cancelled runs with no failing test (twice in a row on
+    # PR 1540, and a push to main on 2026-10-02).
     #
-    # The budget that normally fires is the 35 on the jest step below; this
-    # one sits above it so it only catches a hang outside jest (checkout,
-    # npm ci, the Postgres service). frontend and ml keep 10 — they take
-    # seconds and have never come close.
+    # The budget that normally fires is the 35 on the jest step below. This
+    # one sits five minutes above it, and the steps before jest (checkout,
+    # npm ci, the Postgres service) take about one, so it fires first only
+    # when those steps themselves run more than five minutes. frontend and ml
+    # keep 10 — they take a few minutes at most and have never come close.
     timeout-minutes: 40
 
     # The .picpeak restore suites gate their real-Postgres cases behind
