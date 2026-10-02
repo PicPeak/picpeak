@@ -2372,8 +2372,8 @@
       },
       "fields": {
         "destinationPath": "Bestemmingspad",
-        "destinationPathHelp": "Lokaal mappad voor het opslaan van back-ups",
-        "destinationPathPlaceholder": "/pad/naar/back-up/map",
+        "destinationPathHelp": "Map zoals de backend die ziet. Met Docker is dit een pad in de backend-container, niet op de host: gebruik een map die in de container is gemount.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Externe host",
         "rsyncHostPlaceholder": "backup.voorbeeld.nl",
         "rsyncUser": "SSH-gebruiker",

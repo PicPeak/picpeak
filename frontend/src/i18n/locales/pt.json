@@ -2498,8 +2498,8 @@
       },
       "fields": {
         "destinationPath": "Caminho de Destino",
-        "destinationPathHelp": "Diretório local para armazenar os backups",
-        "destinationPathPlaceholder": "/caminho/para/diretorio/de/backup",
+        "destinationPathHelp": "Diretório como o backend o vê. Com Docker, é um caminho dentro do contêiner do backend, não no host: use um diretório montado no contêiner.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Host Remoto",
         "rsyncHostPlaceholder": "backup.exemplo.com",
         "rsyncUser": "Usuário SSH",

@@ -2405,8 +2405,8 @@
       },
       "fields": {
         "destinationPath": "Chemin de destination",
-        "destinationPathHelp": "Chemin du répertoire local pour stocker les sauvegardes",
-        "destinationPathPlaceholder": "/chemin/vers/le/dossier/de/sauvegarde",
+        "destinationPathHelp": "Répertoire tel que le voit le backend. Avec Docker, c'est un chemin dans le conteneur du backend, pas sur l'hôte : utilisez un répertoire monté dans le conteneur.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Hôte distant",
         "rsyncHostPlaceholder": "sauvegarde.exemple.com",
         "rsyncUser": "Utilisateur SSH",

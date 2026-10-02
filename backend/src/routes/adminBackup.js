@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { getStoragePath } = require('../config/storage');
+const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -709,18 +710,34 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
     
     switch (destination_type) {
     case 'local': {
-      // Test local path access
-      const fs = require('fs').promises;
-      try {
-        await fs.access(config.path, fs.constants.W_OK);
-        res.json({ success: true, message: 'Local path is writable' });
-      } catch (error) {
-        logger.warn('Local backup path not writable', {
-          path: config.path,
-          error: error.message
-        });
-        res.json({ success: false, message: 'Cannot write to local path. Check server logs for details.' });
+      // The rule the backup itself applies: writable, or missing below a
+      // writable ancestor, since performLocalBackup creates the directory.
+      // The reason goes into the answer: in production a warn only reaches
+      // logs/combined.log, so "check the server logs" showed nothing in
+      // `docker compose logs` (issue 1365).
+      const target = typeof config.path === 'string' ? config.path.trim() : '';
+      if (!target) {
+        res.json({ success: false, message: 'Local backup requires destination path' });
+        break;
       }
+      const blocker = await findWriteBlocker(target);
+      if (!blocker) {
+        res.json({ success: true, message: 'Local path is writable' });
+        break;
+      }
+      logger.warn('Local backup path not writable', {
+        path: target,
+        blockedAt: blocker.path,
+        error: blocker.code
+      });
+      const reason = blocker.path === path.resolve(target)
+        ? `The backend cannot write to ${target} (${blocker.code}).`
+        : `${target} does not exist and the backend cannot create it: ${blocker.path} is not writable (${blocker.code}).`;
+      res.json({
+        success: false,
+        code: 'LOCAL_PATH_NOT_WRITABLE',
+        message: `${reason} ${localDestinationHint()}`
+      });
       break;
     }
 

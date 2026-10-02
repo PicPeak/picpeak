@@ -2426,8 +2426,8 @@
       },
       "fields": {
         "destinationPath": "Путь назначения",
-        "destinationPathHelp": "Путь к локальной директории для хранения копий",
-        "destinationPathPlaceholder": "/path/to/backup/directory",
+        "destinationPathHelp": "Каталог в том виде, как его видит сервер PicPeak. В Docker это путь внутри контейнера backend, а не на хосте: укажите каталог, смонтированный в контейнер.",
+        "destinationPathPlaceholder": "/app/storage/backups",
         "rsyncHost": "Удалённый хост",
         "rsyncHostPlaceholder": "backup.example.com",
         "rsyncUser": "Пользователь SSH",
