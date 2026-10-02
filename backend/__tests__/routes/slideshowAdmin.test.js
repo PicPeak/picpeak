@@ -26,6 +26,7 @@ const cookieParser = require('cookie-parser');
 const request = require('supertest');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
 const { invalidateFeatureFlagCache } = require('../../src/middleware/requireFeatureFlag');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 async function setFlag(db, key, on) {
   await db('feature_flags').where({ key }).del();
@@ -165,7 +166,7 @@ describe('admin Live Slideshow endpoints', () => {
   describe('PUT /api/admin/settings/slideshow', () => {
     const getSetting = async (key) => {
       const row = await db('app_settings').where({ setting_key: key }).first();
-      return row ? JSON.parse(row.setting_value) : undefined;
+      return row ? decodeSettingValue(db, row.setting_value) : undefined;
     };
 
     it('persists the global preset + watermark + fit, clamping out-of-range values', async () => {

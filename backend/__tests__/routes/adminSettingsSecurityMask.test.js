@@ -23,6 +23,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
 const { clearPermissionCache } = require('../../src/middleware/permissions');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const MASK = '••••••••';
 const KEY = 'security_recaptcha_secret_key';
@@ -32,7 +33,7 @@ describe('PUT /api/admin/settings/security — masked secret round-trip', () => 
   const auth = (req) => req.set('Authorization', `Bearer ${tok}`);
   const stored = async () => {
     const row = await db('app_settings').where({ setting_key: KEY }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
 
   beforeAll(async () => {
@@ -64,7 +65,7 @@ describe('PUT /api/admin/settings/security — masked secret round-trip', () => 
     expect(await stored()).toBe('6Lc-real-secret');
     // The other key in the same save still lands.
     const flag = await db('app_settings').where({ setting_key: 'security_enable_recaptcha' }).first();
-    expect(JSON.parse(flag.setting_value)).toBe(true);
+    expect(decodeSettingValue(db, flag.setting_value)).toBe(true);
   });
 
   it('still replaces the secret when a new value is sent', async () => {

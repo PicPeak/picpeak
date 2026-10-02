@@ -22,6 +22,7 @@ const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 describe('general_video_web_rendition (issue 1430)', () => {
   let db; let cleanup; let app; let token; let eventId;
@@ -95,7 +96,7 @@ describe('general_video_web_rendition (issue 1430)', () => {
     const res = await put({ general_video_web_rendition: 'false' });
     expect(res.status).toBe(200);
     const stored = await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).first();
-    expect(JSON.parse(stored.setting_value)).toBe(false);
+    expect(decodeSettingValue(db, stored.setting_value)).toBe(false);
     expect(await statusOf('never')).toBeNull();
     expect(await statusOf('failed')).toBe('failed');
   });
@@ -104,7 +105,7 @@ describe('general_video_web_rendition (issue 1430)', () => {
     const res = await put({ general_video_web_rendition: true });
     expect(res.status).toBe(200);
     const stored = await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).first();
-    expect(JSON.parse(stored.setting_value)).toBe(true);
+    expect(decodeSettingValue(db, stored.setting_value)).toBe(true);
 
     expect(await statusOf('never')).toBe('pending');
     // The file watcher's shape: media_type 'image', a video MIME type.

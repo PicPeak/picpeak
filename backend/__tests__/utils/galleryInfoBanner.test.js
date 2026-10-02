@@ -25,6 +25,7 @@ process.env.TEST_DATABASE_PATH = path.join(
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'info-banner-test-secret';
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 let db;
 let cleanup;
@@ -74,7 +75,7 @@ describe('migration 176 — schema', () => {
   it('seeds branding_info_markdown empty, so upgrading shows no banner', async () => {
     const row = await db('app_settings').where({ setting_key: 'branding_info_markdown' }).first();
     expect(row).toBeTruthy();
-    expect(JSON.parse(row.setting_value)).toBe('');
+    expect(decodeSettingValue(db, row.setting_value)).toBe('');
     expect(row.setting_type).toBe('branding');
   });
 });

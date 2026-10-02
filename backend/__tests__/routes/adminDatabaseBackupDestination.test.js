@@ -21,6 +21,7 @@ process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-dbdest
 const request = require('supertest');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp } = require('../integration/helpers/crmDb');
 const { clearPermissionCache } = require('../../src/middleware/permissions');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const KEY = 'database_backup_destination_path';
 
@@ -30,7 +31,7 @@ describe('PUT /api/admin/database-backup/config — destination is super-admin o
   const as = (who) => request(app).put('/api/admin/database-backup/config').set('Authorization', `Bearer ${tok[who]}`);
   const stored = async () => {
     const row = await db('app_settings').where({ setting_key: KEY }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
 
   beforeAll(async () => {
@@ -63,7 +64,7 @@ describe('PUT /api/admin/database-backup/config — destination is super-admin o
     const res = await as('admin').send({ [KEY]: '/var/backups/picpeak-db', database_backup_compress: false });
     expect(res.status).toBe(200);
     const compress = await db('app_settings').where({ setting_key: 'database_backup_compress' }).first();
-    expect(JSON.parse(compress.setting_value)).toBe(false);
+    expect(decodeSettingValue(db, compress.setting_value)).toBe(false);
     expect(await stored()).toBe('/var/backups/picpeak-db');
   });
 

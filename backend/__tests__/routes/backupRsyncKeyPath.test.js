@@ -22,6 +22,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const { bootCrmDb } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const PASTED_KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA\n-----END OPENSSH PRIVATE KEY-----';
 
@@ -39,7 +40,7 @@ describe('rsync SSH key is a key file path', () => {
   };
   const stored = async (key) => {
     const row = await db('app_settings').where({ setting_key: key }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
   const as = (req) => req.set('Authorization', `Bearer ${superToken}`);
 

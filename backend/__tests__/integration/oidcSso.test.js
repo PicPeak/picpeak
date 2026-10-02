@@ -26,6 +26,7 @@ const jwt = require('jsonwebtoken');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 const { MockOidcProvider } = require('./helpers/mockOidcProvider');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 describe('OIDC SSO (#798)', () => {
   let db;
@@ -321,7 +322,7 @@ describe('OIDC SSO (#798)', () => {
 
   it('stores the client secret encrypted and survives a config round-trip', async () => {
     const row = await db('app_settings').where({ setting_key: 'oidc_client_secret' }).first();
-    const stored = JSON.parse(row.setting_value);
+    const stored = decodeSettingValue(db, row.setting_value);
     expect(stored).not.toContain(idp.clientSecret);
     expect(oidcService.decryptSecret(stored)).toBe(idp.clientSecret);
 

@@ -22,6 +22,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const { bootCrmDb } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const APPROVAL = 'backup_s3_private_endpoint_approval';
 
@@ -54,7 +55,7 @@ describe('private S3 backup endpoints (issue 1641)', () => {
 
   const stored = async (key) => {
     const row = await db('app_settings').where({ setting_key: key }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
 
   const setBackupSettings = async (settings) => {

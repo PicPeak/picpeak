@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
 const { bootCrmDb, buildRouteApp } = require('./helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 let db;
 let cleanup;
@@ -58,8 +59,7 @@ describe('setupService (first-run bootstrap)', () => {
     // value must be JSON-parseable and round-trip back to the token.
     const token = await setupService.ensureSetupToken();
     const row = await db('app_settings').where({ setting_key: 'setup_token' }).first();
-    expect(() => JSON.parse(row.setting_value)).not.toThrow();
-    expect(JSON.parse(row.setting_value)).toBe(token);
+    expect(decodeSettingValue(db, row.setting_value)).toBe(token);
   });
 
   it('rejects a wrong token', async () => {

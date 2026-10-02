@@ -17,6 +17,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-32-char
 
 const { bootCrmDb } = require('./helpers/crmDb');
 const migration = require('../../migrations/core/257_transfer_send_request_split');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 let db;
 let cleanup;
@@ -266,7 +267,7 @@ describe('257: settings and templates', () => {
   it('carries the legacy MIME list over with usable extensions', async () => {
     const row = await db('app_settings').where('setting_key', 'transfer_upload_allowed_types').first();
     expect(row).toBeDefined();
-    const types = JSON.parse(row.setting_value);
+    const types = decodeSettingValue(db, row.setting_value);
     const zip = types.find((t) => t.mime === 'application/zip');
     // The point of the migration: zip was seeded as allowed but had no
     // extension entry anywhere, so it was rejected on upload.
@@ -279,7 +280,7 @@ describe('257: settings and templates', () => {
     // which is every instance — still refuses a ZIP from a Windows client
     // whenever the extension cannot carry the match on its own.
     const row = await db('app_settings').where('setting_key', 'transfer_upload_allowed_types').first();
-    const types = JSON.parse(row.setting_value);
+    const types = decodeSettingValue(db, row.setting_value);
     expect(types).toEqual(expect.arrayContaining([
       { mime: 'application/zip', extensions: ['.zip'] },
       { mime: 'application/x-zip-compressed', extensions: ['.zip'] },
@@ -288,7 +289,7 @@ describe('257: settings and templates', () => {
 
   it('defaults accept-all to off', async () => {
     const row = await db('app_settings').where('setting_key', 'transfer_upload_accept_all').first();
-    expect(JSON.parse(row.setting_value)).toBe(false);
+    expect(decodeSettingValue(db, row.setting_value)).toBe(false);
   });
 
   it('leaves the legacy key in place for the fallback read', async () => {

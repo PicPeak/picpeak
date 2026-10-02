@@ -10,6 +10,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-32-char
 const fs = require('fs');
 const path = require('path');
 const { bootCrmDb } = require('./helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 let db;
 let cleanup;
@@ -28,7 +29,7 @@ const LIMIT_ENV = [
 
 async function getMarker() {
   const row = await db('app_settings').where({ setting_key: 'limits_marker' }).first();
-  return row ? JSON.parse(row.setting_value) : null;
+  return row ? decodeSettingValue(db, row.setting_value) : null;
 }
 async function setMarker(value) {
   await db('app_settings')

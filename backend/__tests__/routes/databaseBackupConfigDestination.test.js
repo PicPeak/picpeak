@@ -29,6 +29,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 describe('database backup destination-path config guard (GHSA-jw8m class, #1365)', () => {
   let db; let cleanup; let app; let adminToken; let superToken;
@@ -92,7 +93,7 @@ describe('database backup destination-path config guard (GHSA-jw8m class, #1365)
 
     // The seeded default must survive untouched — the rejected value never lands.
     const row = await db('app_settings').where({ setting_key: 'database_backup_destination_path' }).first();
-    expect(JSON.parse(row.setting_value)).toBe('/backup/database');
+    expect(decodeSettingValue(db, row.setting_value)).toBe('/backup/database');
   });
 
   it('rejects a destination inside the public fonts mount', async () => {
@@ -121,7 +122,7 @@ describe('database backup destination-path config guard (GHSA-jw8m class, #1365)
     expect(res.status).toBe(200);
 
     const row = await db('app_settings').where({ setting_key: 'database_backup_destination_path' }).first();
-    expect(JSON.parse(row.setting_value)).toBe(safePath);
+    expect(decodeSettingValue(db, row.setting_value)).toBe(safePath);
   });
 
   // A retention of 0 or less pushes cleanupOldBackups' cutoff to today or
@@ -145,6 +146,6 @@ describe('database backup destination-path config guard (GHSA-jw8m class, #1365)
     expect(res.status).toBe(200);
 
     const row = await db('app_settings').where({ setting_key: 'database_backup_retention_days' }).first();
-    expect(JSON.parse(row.setting_value)).toBe(90);
+    expect(decodeSettingValue(db, row.setting_value)).toBe(90);
   });
 });

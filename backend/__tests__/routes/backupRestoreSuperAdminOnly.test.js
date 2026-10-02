@@ -25,6 +25,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const { bootCrmDb } = require('../integration/helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 describe('backup destinations, restores and portable import are Super Admin only', () => {
   let db;
@@ -59,7 +60,7 @@ describe('backup destinations, restores and portable import are Super Admin only
 
   const storedSetting = async (key) => {
     const row = await db('app_settings').where({ setting_key: key }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
 
   const setBackupSettings = async (settings) => {

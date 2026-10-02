@@ -14,6 +14,7 @@
  */
 
 const { bootCrmDb } = require('./helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 describe('event type deletion during the setup window (#800)', () => {
   let db;
@@ -38,7 +39,7 @@ describe('event type deletion during the setup window (#800)', () => {
   it('migration 161 seeds the flag false on a fresh (admin-less) install', async () => {
     const row = await db('app_settings').where({ setting_key: 'setup_wizard_completed' }).first();
     expect(row).toBeTruthy();
-    expect(JSON.parse(row.setting_value)).toBe(false);
+    expect(decodeSettingValue(db, row.setting_value)).toBe(false);
     expect(await setupService.isSetupWizardCompleted()).toBe(false);
   });
 

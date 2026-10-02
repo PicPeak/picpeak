@@ -12,6 +12,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-32-char
 const fs = require('fs');
 const path = require('path');
 const { bootCrmDb } = require('./helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 let db;
 let cleanup;
@@ -52,7 +53,7 @@ async function setMarker(value) {
 }
 async function getMarker() {
   const row = await db('app_settings').where({ setting_key: 'roundtrip_marker' }).first();
-  return row ? JSON.parse(row.setting_value) : null;
+  return row ? decodeSettingValue(db, row.setting_value) : null;
 }
 
 describe('.picpeak roundtrip (export → import)', () => {

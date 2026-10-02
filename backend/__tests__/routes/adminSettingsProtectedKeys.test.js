@@ -26,6 +26,7 @@ const {
 } = require('../integration/helpers/crmDb');
 const svc = require('../../src/services/userManagementService');
 const { clearPermissionCache } = require('../../src/middleware/permissions');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const STORED_URL = 'https://stored.example';
 
@@ -36,7 +37,7 @@ describe('settings protected-key boundary (/general)', () => {
   const auth = (req, tok) => req.set('Authorization', `Bearer ${tok}`);
   const readSiteUrl = async () => {
     const row = await db('app_settings').where({ setting_key: 'general_site_url' }).first();
-    return row ? JSON.parse(row.setting_value) : null;
+    return row ? decodeSettingValue(db, row.setting_value) : null;
   };
 
   beforeAll(async () => {
@@ -95,7 +96,7 @@ describe('settings protected-key boundary (/general)', () => {
 
   const readSetting = async (key) => {
     const row = await db('app_settings').where({ setting_key: key }).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
 
   it('settings.edit role can save the Analytics tab unchanged on an install with no tracker settings yet', async () => {

@@ -13,6 +13,7 @@ const request = require('supertest');
 const express = require('express');
 
 const { bootCrmDb } = require('./helpers/crmDb');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 jest.mock('../../src/middleware/auth', () => ({
   adminAuth: (req, _res, next) => {
@@ -93,11 +94,11 @@ describe('backup credential masking', () => {
       .expect(200);
 
     const secret = await db('app_settings').where({ setting_key: 'backup_s3_secret_key' }).first();
-    expect(JSON.parse(secret.setting_value)).toBe('super-secret-s3-key');
+    expect(decodeSettingValue(db, secret.setting_value)).toBe('super-secret-s3-key');
     const sshKey = await db('app_settings').where({ setting_key: 'backup_rsync_ssh_key' }).first();
-    expect(JSON.parse(sshKey.setting_value)).toBe('-----BEGIN OPENSSH PRIVATE KEY-----abc');
+    expect(decodeSettingValue(db, sshKey.setting_value)).toBe('-----BEGIN OPENSSH PRIVATE KEY-----abc');
     const bucket = await db('app_settings').where({ setting_key: 'backup_s3_bucket' }).first();
-    expect(JSON.parse(bucket.setting_value)).toBe('renamed-bucket');
+    expect(decodeSettingValue(db, bucket.setting_value)).toBe('renamed-bucket');
   });
 
   it('PUT /admin/backup/config stores a genuinely new secret', async () => {
@@ -107,6 +108,6 @@ describe('backup credential masking', () => {
       .expect(200);
 
     const secret = await db('app_settings').where({ setting_key: 'backup_s3_secret_key' }).first();
-    expect(JSON.parse(secret.setting_value)).toBe('rotated-s3-key');
+    expect(decodeSettingValue(db, secret.setting_value)).toBe('rotated-s3-key');
   });
 });
