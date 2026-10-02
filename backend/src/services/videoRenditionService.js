@@ -84,10 +84,15 @@ async function backfillPending({ eventId } = {}) {
     .update({ web_status: 'pending', web_error: null, web_started_at: null });
 }
 
-/** The storage key of a video's copy. The id keeps NAS basenames apart. */
-function webKeyFor(photo) {
+/**
+ * The storage key of a video's copy. The id keeps NAS basenames apart; the
+ * claim token keeps attempts apart: a worker whose claim was lost deletes
+ * its own object and can never touch the one the current attempt wrote.
+ */
+function webKeyFor(photo, claimedAt) {
+  const attempt = claimedAt ? `${new Date(claimedAt).getTime().toString(36)}_` : '';
   const base = path.basename(photo.external_relpath || photo.filename || `video-${photo.id}`).replace(/\.[^.]+$/, '');
-  return path.posix.join('videos', `web_${photo.id}_${base}.mp4`);
+  return path.posix.join('videos', `web_${photo.id}_${attempt}${base}.mp4`);
 }
 
 /**
@@ -247,7 +252,7 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
       return 'skipped';
     }
 
-    const webKey = webKeyFor(photo);
+    const webKey = webKeyFor(photo, claimedAt);
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
     try {
@@ -263,15 +268,13 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
     // file mid-transcode, a delete removes the row, the janitor may have
     // handed a stuck claim to another worker: writing the copy of the old
     // source over any of those would serve stale content and lose the new
-    // file's queue entry. On a lost claim the object is dropped again —
-    // unless the row meanwhile points at this very key, i.e. another
-    // worker finished the same source first and the object is now its copy.
+    // file's queue entry. On a lost claim the object is dropped again; the
+    // key carries the claim, so it is this attempt's object and no other's.
     const published = await db('photos').where(claim).update({
       web_path: webKey, web_status: 'complete', web_started_at: null, web_error: null,
     });
     if (!published) {
-      const current = await db('photos').where({ id: photoId }).first('web_path');
-      if (current?.web_path !== webKey) await getStorage().delete(webKey).catch(() => {});
+      await getStorage().delete(webKey).catch(() => {});
       logger.info(`videoRendition: photo ${photoId} changed during the transcode, dropped ${webKey}`);
       return 'superseded';
     }

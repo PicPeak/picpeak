@@ -190,9 +190,10 @@ describe('renderWebCopy', () => {
     expect(await service.renderWebCopy(22, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('complete');
     expect(ffmpeg).toHaveBeenCalledWith(atoms);
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions());
-    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_phone.mp4', savedTo, { contentType: 'video/mp4' });
+    // The key carries the claim, so two attempts never share an object.
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4', savedTo, { contentType: 'video/mp4' });
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
-    expect(update.data).toMatchObject({ web_path: 'videos/web_22_phone.mp4', web_status: 'complete', web_error: null });
+    expect(update.data).toMatchObject({ web_path: 'videos/web_22_muqqfmo0_phone.mp4', web_status: 'complete', web_error: null });
     // Published only against the worker's own claim: status and claim time.
     expect(update.where).toEqual({ id: 22, web_status: 'processing', web_started_at: '2026-10-02T09:00:00.000Z' });
     // The temp file is gone once the copy is in storage.
@@ -220,34 +221,11 @@ describe('renderWebCopy', () => {
     ffmpeg.mockImplementation(() => command);
 
     expect(await service.renderWebCopy(22, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('superseded');
-    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_phone.mp4', expect.any(String), { contentType: 'video/mp4' });
-    expect(storage.delete).toHaveBeenCalledWith('videos/web_22_phone.mp4');
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4', expect.any(String), { contentType: 'video/mp4' });
+    // Its own object only: the key is this claim's.
+    expect(storage.delete).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4');
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
     expect(update.where).toEqual({ id: 22, web_status: 'processing', web_started_at: '2026-10-02T09:00:00.000Z' });
-  });
-
-  it('keeps the object when the row already points at it: another worker published the same source first', async () => {
-    // Janitor re-queued a slow claim, a second worker finished the identical
-    // transcode under the same key and published. The first worker's fence
-    // fails; deleting "its" key would take the live copy with it.
-    dbModule.__state.photo = { id: 22, event_id: 9, filename: 'phone.mov', media_type: 'video', mime_type: 'video/quicktime', web_path: 'videos/web_22_phone.mp4' };
-    dbModule.__state.updateResult = 0;
-    mockProbe(
-      [{ codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p', width: 3840, height: 2160 }, { codec_type: 'audio', codec_name: 'aac' }],
-      { format_name: 'mov,mp4,m4a,3gp,3g2,mj2', tags: { major_brand: 'qt  ' } },
-    );
-    const atoms = await writeAtoms(box('ftyp', 16), box('mdat', 100), box('moov', 40));
-    require('../../src/services/imageProcessor').withLocalCopy.mockImplementationOnce(async (_k, fn) => fn(atoms));
-    const command = {
-      outputOptions: jest.fn(function () { return this; }),
-      on: jest.fn(function (event, handler) { if (event === 'end') this._end = handler; return this; }),
-      save: jest.fn(function (out) { fs.writeFileSync(out, 'h264-bytes'); setImmediate(() => this._end()); }),
-      kill: jest.fn(),
-    };
-    ffmpeg.mockImplementation(() => command);
-
-    expect(await service.renderWebCopy(22, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('superseded');
-    expect(storage.delete).not.toHaveBeenCalled();
   });
 
   it('reads an external video off the mount and keys the copy by id and NAS basename', async () => {
