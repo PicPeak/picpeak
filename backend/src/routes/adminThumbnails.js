@@ -191,6 +191,9 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
     let query = db('photos')
       .select(
         'id', 'event_id', 'path', 'media_type', 'mime_type', 'thumbnail_path',
+        // ensureThumbnail keeps a complete video's poster note in step with
+        // the frame it rebuilt (issue 1430); it needs the status to know.
+        'processing_status',
         'source_origin', 'external_relpath', 'filename'
       );
     if (eventId) {
