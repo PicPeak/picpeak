@@ -14,6 +14,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
 import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { useTranslation } from 'react-i18next';
+import { defaultCategoryLabel } from '../../utils/mediaCounts';
 import { useMutationWithToast, useModal } from '../../hooks';
 
 type AdminFeedbackResponse = {
@@ -369,7 +370,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               </button>
             </div>
             <p className="text-white">
-              {currentPhoto.category_name || 'Uncategorized'}
+              {/* The list no longer names the default categories (issue 1430):
+                  derive the label the way the grid badge does. */}
+              {defaultCategoryLabel(t, currentPhoto) || 'Uncategorized'}
             </p>
             
             {categoryMenuModal.isOpen && (

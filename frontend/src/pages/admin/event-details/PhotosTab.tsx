@@ -27,6 +27,8 @@ interface PhotosTabProps {
   initialCategoriesOpen?: boolean;
   /** Settings → Photo source, where the folder is chosen. */
   onChangeFolder: () => void;
+  // From the event's own counts, like showMediaFilter (issue 1430, item 3).
+  hasVideos: boolean;
 }
 
 export const PhotosTab: React.FC<PhotosTabProps> = ({
@@ -45,6 +47,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   showMediaFilter,
   initialCategoriesOpen = false,
   onChangeFolder,
+  hasVideos
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -126,6 +129,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
         onChange={setFeedbackFilters}
         summary={filterSummary || null}
         isLoading={photosLoading}
+        hasVideos={hasVideos}
       />
 
       {/* Actions Bar */}

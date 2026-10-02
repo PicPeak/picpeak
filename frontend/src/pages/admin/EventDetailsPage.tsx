@@ -386,6 +386,7 @@ export const EventDetailsPage: React.FC = () => {
               setFeedbackFilters={setFeedbackFilters}
               filterSummary={filterSummary}
               showMediaFilter={showMediaFilter}
+              hasVideos={eventMedia.hasVideos}
               initialCategoriesOpen={openCategoriesOnMount}
               onChangeFolder={() => openSettings('source')}
             />

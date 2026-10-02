@@ -20,6 +20,10 @@ export interface AdminPhoto {
   // setting has queued it.
   web_status?: 'pending' | 'processing' | 'complete' | 'skipped' | 'failed' | null;
   web_error?: string | null;
+  processing_status?: 'pending' | 'processing' | 'complete' | 'failed';
+  // Set on a complete video that shows the placeholder tile because no
+  // poster frame could be taken (issue 1430, item 6).
+  processing_error?: string | null;
   view_count?: number;
   download_count?: number;
   // Feedback fields

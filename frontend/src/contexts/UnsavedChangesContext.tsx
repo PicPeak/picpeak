@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useConfirm } from '../components/common/ConfirmDialog';
 
@@ -109,6 +110,31 @@ export function useUnsavedChanges(isDirty: boolean, discard?: () => void): void 
     ctx.register(id, { isDirty, discard: () => discardRef.current?.() });
     return () => ctx.unregister(id);
   }, [ctx, isDirty]);
+}
+
+/**
+ * onClick for an in-app link that leaves the page. Lets the link navigate on
+ * its own when nothing is dirty or the click opens another tab (Cmd/Ctrl,
+ * Shift, middle button — this form stays where it is); otherwise asks first.
+ * `after` runs whenever the navigation goes ahead (e.g. close a drawer).
+ */
+export function useGuardedLinkClick(): (
+  e: React.MouseEvent,
+  href: string,
+  opts?: { replace?: boolean; after?: () => void },
+) => void {
+  const { confirmLeave, isAnyDirty } = useLeaveGuard();
+  const navigate = useNavigate();
+  return (e, href, opts = {}) => {
+    const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+    if (!isAnyDirty || modified) { opts.after?.(); return; }
+    e.preventDefault();
+    void confirmLeave().then((ok) => {
+      if (!ok) return;
+      opts.after?.();
+      navigate(href, { replace: !!opts.replace });
+    });
+  };
 }
 
 /** For navigation entry points: `if (await confirmLeave()) navigate(to)`. */

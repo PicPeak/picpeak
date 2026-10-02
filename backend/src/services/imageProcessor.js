@@ -570,6 +570,12 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
 
   let newThumbnailPath;
+  // For a video: the processing note the row should carry afterwards
+  // (undefined = leave it). A placeholder gets the "No poster frame" note the
+  // upload paths write, a real frame clears it — otherwise the admin
+  // "Regenerate thumbnails" button rebuilt the frame and the tile kept the
+  // stale warning and Retry (issue 1430, item 6).
+  let posterNote;
   if (isVideoPhoto(photo)) {
     // A video's thumbnail is a poster frame, not a Sharp resize of the stored
     // file (#1414). Without this branch the generic path below hands the mp4
@@ -578,7 +584,12 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     // fall back to a placeholder, or with its rendition since lost — stayed
     // thumbnail-less forever, however many times it was viewed or the admin
     // pressed regenerate.
-    newThumbnailPath = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
+    const video = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
+    newThumbnailPath = video?.thumbnailKey || null;
+    if (video && photo.processing_status === 'complete') {
+      const { posterFrameError } = require('./videoProcessor');
+      posterNote = video.placeholder ? posterFrameError(video.thumbnailError) : null;
+    }
   } else if (isExternal) {
     // External: source is on a local mount path. No withLocalCopy needed
     // (storage-backend abstraction doesn't apply — this is a direct fs
@@ -617,7 +628,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   if (newThumbnailPath) {
     await db('photos')
       .where({ id: photo.id })
-      .update({ thumbnail_path: newThumbnailPath });
+      .update({
+        thumbnail_path: newThumbnailPath,
+        ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
+      });
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
@@ -664,9 +678,12 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const outputBasename = isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename;
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
 
+  // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
+  // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
     const result = await processUploadedVideo(localPath, thumbnailKey);
-    return result?.thumbnailKey || null;
+    if (!result?.thumbnailKey) return null;
+    return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null };
   };
 
   try {
@@ -691,10 +708,11 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
         // processUploadedVideo's own fallback, so this lands under
         // thumbnailKey and skips the settings lookup.
         const placeholderName = path.basename(thumbnailKey).replace(/^thumb_/, '');
-        return await generateVideoPlaceholder(placeholderName, {
+        const key = await generateVideoPlaceholder(placeholderName, {
           width: DEFAULT_THUMBNAIL_WIDTH,
           height: DEFAULT_THUMBNAIL_HEIGHT
         });
+        return key ? { thumbnailKey: key, placeholder: true, thumbnailError: `source is ${stat.size} bytes, over the ${maxBytes} byte limit` } : null;
       }
     }
     logger.info(`Ensuring thumbnail for video ${photo.id} from key: ${sourceKey}`);

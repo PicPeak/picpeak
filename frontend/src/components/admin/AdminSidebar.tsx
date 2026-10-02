@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useLeaveGuard } from '../../contexts/UnsavedChangesContext';
+import { useGuardedLinkClick, useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsService } from '../../services/settings.service';
 import { VersionInfo } from './VersionInfo';
+import { DashboardHomeLink } from './DashboardHomeLink';
 import { repoUrl } from '../../utils/githubReleaseUrl';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useAdminDarkMode } from '../../contexts/AdminDarkModeContext';
@@ -253,14 +254,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   const { confirmLeave, isAnyDirty } = useLeaveGuard();
   // A settings form with unsaved edits gets to say no before the sidebar
   // navigates away from it (UnsavedChangesProvider).
-  const guardedClick = (e: React.MouseEvent, href: string, replace: boolean | undefined, after: () => void) => {
-    // A modified click (Cmd/Ctrl, Shift, middle button) opens another tab
-    // and leaves this form where it is, so there is nothing to guard.
-    const modified = e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
-    if (!isAnyDirty || modified) { after(); return; }
-    e.preventDefault();
-    void confirmLeave().then((ok) => { if (ok) { after(); navigate(href, { replace: !!replace }); } });
-  };
+  const guardedLinkClick = useGuardedLinkClick();
+  const guardedClick = (e: React.MouseEvent, href: string, replace: boolean | undefined, after: () => void) =>
+    guardedLinkClick(e, href, { replace, after });
   const { t } = useTranslation();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { flags } = useFeatureFlags();
@@ -497,10 +493,16 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             it sits in admins' muscle-memory zone for chrome controls.
             When collapsed on desktop the title hides and the row
             becomes an empty spacer (no rail-width fight). */}
-        <div className={`flex items-center h-16 border-b border-line flex-shrink-0 ${
-          collapsed ? 'lg:justify-center lg:px-2 px-6 justify-between' : 'justify-between px-6'
-        }`}>
-          <div className="flex items-center gap-2 min-w-0">
+        {/* The brand doubles as the home button: the link carries the
+            row's padding so the whole row (minus the mobile close button)
+            goes to the dashboard, asking first if a form is dirty. */}
+        <div className="flex items-stretch h-16 border-b border-line flex-shrink-0">
+          <DashboardHomeLink
+            onNavigate={onClose}
+            className={`flex flex-1 items-center gap-2 min-w-0 hover:bg-hover-soft transition-colors focus-visible:ring-inset ${
+              collapsed ? 'lg:justify-center lg:px-2 px-6' : 'px-6'
+            }`}
+          >
             {showLogoBrand ? (
               <>
                 {/* Logo brand variant — fed by Branding > Logo
@@ -535,12 +537,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                 {collapsed && (
                   <span className="text-xl font-bold text-heading lg:hidden">{t('admin.title')}</span>
                 )}
+                {/* The collapsed desktop rail has no wordmark, and the row is
+                    the home link, so it shows the Dashboard icon rather than
+                    an empty, focusable target. */}
+                {collapsed && (
+                  <LayoutDashboard
+                    role="img"
+                    aria-label={t('navigation.dashboard', 'Dashboard')}
+                    className="hidden lg:block w-5 h-5 text-body"
+                  />
+                )}
               </>
             )}
-          </div>
+          </DashboardHomeLink>
           <button
             onClick={onClose}
-            className="lg:hidden text-neutral-400 hover:text-neutral-600"
+            className="lg:hidden px-6 text-faint hover:text-body"
             aria-label="Close sidebar"
           >
             <X className="w-6 h-6" />

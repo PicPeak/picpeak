@@ -25,7 +25,7 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
     };
     return chain;
   };
-  const trxFn = (table) => builder(table);
+  const trxFn = () => builder();
   trxFn.client = { config: { client: clientName } };
   trxFn.transaction = async (cb) => cb(trxFn);
   return { db: trxFn, queries };

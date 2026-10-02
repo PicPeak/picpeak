@@ -10,6 +10,7 @@ import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
+import { hasVideoItems, selectLabel } from '../../utils/mediaCounts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { isDownloadLimitError, showDownloadLimitReached } from '../../utils/downloadLimit';
@@ -416,7 +417,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
               title={t('gallery.selectPhotosHint')}
               className="text-xs sm:text-sm"
             >
-              {isSelectionMode ? t('gallery.cancelSelection') : t('gallery.selectPhotos')}
+              {isSelectionMode ? t('gallery.cancelSelection') : selectLabel(t, hasVideoItems(photos))}
             </Button>
             {!isSelectionMode && (
               <Button

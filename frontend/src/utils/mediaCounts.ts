@@ -29,6 +29,48 @@ export function mediaSplitLabel(t: TFunction, media: MediaSplit): string {
   return `${photos} · ${videos}`;
 }
 
+/**
+ * The test every grid uses to tell a video from a photo. The admin list
+ * reports a photo as 'image' and the gallery as 'photo', and the file watcher
+ * stores only the MIME type, so all three columns are consulted.
+ */
+export function isVideoItem(item: { media_type?: string | null; mime_type?: string | null; type?: string | null }): boolean {
+  return item.media_type === 'video' || !!item.mime_type?.startsWith('video/') || item.type === 'video';
+}
+
+export function hasVideoItems(items: ReadonlyArray<{ media_type?: string | null; mime_type?: string | null; type?: string | null }>): boolean {
+  return items.some(isVideoItem);
+}
+
+/**
+ * "Select Photos" where everything on screen is a photo, "Select Media" once
+ * a video is among them (issue 1430, item 3). The cancel label has no type.
+ */
+export function selectLabel(t: TFunction, hasVideos: boolean): string {
+  return hasVideos
+    ? t('gallery.selectMedia', 'Select Media')
+    : t('gallery.selectPhotos', 'Select Photos');
+}
+
+/**
+ * The admin grid's category badge for a row without a real category. The
+ * server used to send the English "Individual Photos" / "Collages" for these,
+ * which no locale could translate and which called a video a photo.
+ */
+export function defaultCategoryLabel(
+  t: TFunction,
+  item: { category_name?: string | null; category_slug?: string | null; media_type?: string | null; mime_type?: string | null; type?: string | null },
+): string | null {
+  if (item.category_name) return item.category_name;
+  if (item.category_slug === 'individual') {
+    return isVideoItem(item)
+      ? t('admin.photos.individualVideos', 'Individual Videos')
+      : t('admin.photos.individualPhotos', 'Individual Photos');
+  }
+  if (item.category_slug === 'collage') return t('admin.photos.collages', 'Collages');
+  return null;
+}
+
 /** A runtime in seconds as m:ss, or h:mm:ss from one hour up. */
 export function formatRuntime(totalSeconds?: number | string | null): string {
   const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));

@@ -75,6 +75,8 @@ describe('processUploadedVideo degrades gracefully instead of rejecting the whol
     expect(result.success).toBe(true);
     expect(result.metadata).toBeNull();
     expect(result.thumbnailKey).toBe('thumbnails/thumb_video.jpg');
+    expect(result.placeholder).toBe(false);
+    expect(result.thumbnailError).toBeNull();
     // A real thumbnail already succeeded — never touch the placeholder path.
     expect(generateVideoPlaceholder).not.toHaveBeenCalled();
   });
@@ -94,6 +96,12 @@ describe('processUploadedVideo degrades gracefully instead of rejecting the whol
       }
     }));
 
+    // The placeholder lands under the SAME key a real frame would have — the
+    // filename derivation below exists for that — so "is this the
+    // placeholder" cannot be read off the key. Pinned here because the first
+    // cut of the flag compared keys and never fired on a real install.
+    generateVideoPlaceholder.mockResolvedValue('thumbnails/thumb_wedding_001.jpg');
+
     const result = await processUploadedVideo('/tmp/video.mp4', 'thumbnails/thumb_wedding_001.jpg');
 
     expect(result.success).toBe(true);
@@ -104,8 +112,12 @@ describe('processUploadedVideo degrades gracefully instead of rejecting the whol
     // settings lookup — this can run inside an open per-file SQLite
     // transaction (chunked video upload), where that lookup deadlocks.
     expect(generateVideoPlaceholder).toHaveBeenCalledWith('wedding_001.jpg', { width: 300, height: 300 });
-    expect(result.thumbnailKey).toBe('thumbnails/thumb_placeholder.jpg');
+    expect(result.thumbnailKey).toBe('thumbnails/thumb_wedding_001.jpg');
     expect(storage.putFromFile).not.toHaveBeenCalled();
+    // Says so, with the reason, so the caller can note it on the row
+    // (issue 1430, item 6).
+    expect(result.placeholder).toBe(true);
+    expect(result.thumbnailError).toBe('ffmpeg seek failed');
   });
 
   it('throws when metadata, thumbnail generation, AND the placeholder all fail, so the caller surfaces a retryable failure instead of completing with nothing to show (codex review)', async () => {

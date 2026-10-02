@@ -63,7 +63,22 @@ export function buildActivityParams(activity: Activity): Record<string, unknown>
     count: activity.metadata?.count || 0,
     template: activity.metadata?.template_key || '',
     categoryName: activity.metadata?.category_name || '',
+    // "9 photos · 3 videos" for an upload that carried videos (issue 1430,
+    // item 3); activityMessageKey picks the line that interpolates it.
+    media: mediaSplitLabel(t, splitMediaCount(activity.metadata?.count, activity.metadata?.videoCount)),
   };
+}
+
+/**
+ * The `admin.activities.*` key for an activity. An upload is worded by its
+ * type split: the backend records videoCount next to count, and a line that
+ * says "2 photos uploaded" for two clips is the wording this fixes.
+ */
+export function activityMessageKey(activity: Activity): string {
+  if (activity.type === 'photos_uploaded' && Number(activity.metadata?.videoCount) > 0) {
+    return 'admin.activities.media_uploaded';
+  }
+  return `admin.activities.${activity.type}`;
 }
 
 export const AdminDashboard: React.FC = () => {
@@ -448,10 +463,11 @@ export const AdminDashboard: React.FC = () => {
                 // Format activity message with translations
                 const getActivityMessage = (): string => {
                   const params = buildActivityParams(activity);
-                  const translated = t(`admin.activities.${activity.type}`, params);
+                  const key = activityMessageKey(activity);
+                  const translated = t(key, params);
 
                   // Translate; if key missing i18n returns the key string itself
-                  if (!translated || translated === `admin.activities.${activity.type}`) {
+                  if (!translated || translated === key) {
                     // Fallback: format a readable English message
                     return adminService.formatActivityMessage(activity);
                   }

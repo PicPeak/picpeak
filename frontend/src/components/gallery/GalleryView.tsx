@@ -34,6 +34,7 @@ import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
 import { creditGroups, uploaderRequiresEmail } from '../../utils/photoCredits';
+import { hasVideoItems } from '../../utils/mediaCounts';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
@@ -1371,6 +1372,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onSortDescChange={setSortDesc}
           isSelectionMode={isSelectionMode}
           onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
+          hasVideos={hasVideoItems(scopedPhotos)}
           selectedCount={selectedPhotos.size}
           onDownloadAll={handleDownloadAll}
           onDownloadSelected={handleDownloadSelected}
