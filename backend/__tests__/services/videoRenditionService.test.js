@@ -143,6 +143,18 @@ describe('isEnabled', () => {
   });
 });
 
+describe('webKeyFor', () => {
+  it('caps a long basename so the key stays a legal filename everywhere', () => {
+    const long = `${'a'.repeat(300)}.MOV`;
+    const key = service.webKeyFor({ id: 7, external_relpath: `shoot/${long}` }, '2026-10-02T09:00:00.000Z');
+    expect(key.startsWith('videos/web_7_')).toBe(true);
+    expect(key.endsWith('.mp4')).toBe(true);
+    expect(key.split('/').pop().length).toBeLessThan(140);
+    // A short name is kept whole.
+    expect(service.webKeyFor({ id: 7, external_relpath: 'shoot/Teaser.MOV' })).toBe('videos/web_7_Teaser.mp4');
+  });
+});
+
 describe('renderWebCopy', () => {
   beforeEach(() => {
     dbModule.__state.updates.length = 0;

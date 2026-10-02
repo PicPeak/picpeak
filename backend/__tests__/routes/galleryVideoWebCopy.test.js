@@ -160,6 +160,28 @@ describe('gallery video playback with a web copy (issue 1430)', () => {
     expect(await db('photos').where({ id: failedCopy }).first()).toMatchObject({ web_status: 'failed', web_error: 'ffmpeg exited with code 1' });
   });
 
+  test('a storage error while checking the copy serves the original and keeps the pointer', async () => {
+    // Only "the key is not there" (stat → null) means the copy is gone. A
+    // backend that cannot answer must not cost the row its valid copy.
+    const storage = require('../../src/services/storage').getStorage();
+    const realStat = storage.stat.bind(storage);
+    // The route stats the original first; only the copy's lookup fails here.
+    const spy = jest.spyOn(storage, 'stat').mockImplementation(async (key) => {
+      if (key.startsWith('videos/')) throw new Error('S3 unreachable');
+      return realStat(key);
+    });
+    try {
+      const res = await get(withCopy);
+      expect(res.status).toBe(200);
+      expect(Buffer.from(res.body)).toEqual(ORIGINAL);
+      expect(await db('photos').where({ id: withCopy }).first()).toMatchObject({
+        web_path: `videos/web_${withCopy}_with-copy.mp4`, web_status: 'complete',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('serves the managed copy of an external original, and still the NAS file for download', async () => {
     const res = await request(app).get(`/api/gallery/web-copy-nas/photo/${nasWithCopy}`).buffer().parse(binary);
     expect(res.status).toBe(200);

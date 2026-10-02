@@ -210,14 +210,25 @@ router.get('/:slug/photo/:photoId',
         let videoViaStorage = useStorageBackend;
         let videoContentType = resolvePhotoContentType(photo);
         if (photo.web_path && photo.web_status === 'complete') {
-          const webStat = await storage.stat(photo.web_path).catch(() => null);
+          // stat() answers null for a key the backend does not have and
+          // throws for anything else (network, credentials): only the first
+          // is "the copy is gone". A failing backend serves the original for
+          // this request and keeps the pointer.
+          let webStat = null;
+          let webMissing = false;
+          try {
+            webStat = await storage.stat(photo.web_path);
+            webMissing = !webStat;
+          } catch (statErr) {
+            logger.warn(`Could not stat the web copy of video ${photo.id}: ${statErr.message}`);
+          }
           if (webStat) {
             videoKey = photo.web_path;
             videoPath = null;
             videoSize = webStat.size;
             videoViaStorage = true;
             videoContentType = 'video/mp4';
-          } else {
+          } else if (webMissing) {
             // The row names a copy storage does not have — a backup restored
             // without videos/, or a bucket cleaned by hand. Left at
             // `complete` it would never be rebuilt (the switch-on backfill
