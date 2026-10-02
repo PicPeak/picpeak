@@ -1,6 +1,7 @@
 import { api } from '../config/api';
 import i18n from '../i18n/config';
 import { formatFeatureFlagsChanged } from './admin.service';
+import { mediaSplitLabel, splitMediaCount } from '../utils/mediaCounts';
 
 export interface Notification {
   id: number;
@@ -62,9 +63,17 @@ export const notificationsService = {
           eventName: notification.metadata.event_name 
         });
       case 'photos_uploaded':
-        return t('admin.notificationMessages.photosUploaded', { 
-          count: notification.metadata.count || 0, 
-          eventName: notification.eventName 
+        // Worded by the type split when the upload carried videos (issue
+        // 1430, item 3), same as the dashboard's activity line.
+        if (Number(notification.metadata.videoCount) > 0) {
+          return t('admin.notificationMessages.mediaUploaded', {
+            media: mediaSplitLabel(t, splitMediaCount(notification.metadata.count, notification.metadata.videoCount)),
+            eventName: notification.eventName
+          });
+        }
+        return t('admin.notificationMessages.photosUploaded', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName
         });
       case 'photo_deleted':
         return t('admin.notificationMessages.photoDeleted', { eventName: notification.eventName });

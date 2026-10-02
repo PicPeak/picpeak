@@ -9,6 +9,7 @@ import { CreditFilterChips } from './CreditFilterChips';
 import type { ColorLabel } from '../../services/feedback.service';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import type { QuotaPhoto } from '../../utils/downloadLimit';
+import { selectLabel } from '../../utils/mediaCounts';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 
 interface GallerySidebarProps {
@@ -26,6 +27,9 @@ interface GallerySidebarProps {
   onSortDescChange?: (desc: boolean) => void;
   isSelectionMode: boolean;
   onToggleSelectionMode: () => void;
+  // Whether a video is among the photos on screen: the Select control is
+  // worded for photos until one is (issue 1430, item 3).
+  hasVideos?: boolean;
   selectedCount: number;
   onDownloadAll: () => void;
   onDownloadSelected: () => void;
@@ -84,6 +88,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onSortDescChange,
   isSelectionMode,
   onToggleSelectionMode,
+  hasVideos = false,
   selectedCount,
   onDownloadAll,
   onDownloadSelected,
@@ -249,7 +254,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   onClick={onToggleSelectionMode}
                   className="gallery-btn w-full"
                 >
-                  {isSelectionMode ? t('gallery.cancelSelection') : t('gallery.selectPhotos')}
+                  {isSelectionMode ? t('gallery.cancelSelection') : selectLabel(t, hasVideos)}
                 </Button>
 
                 {isSelectionMode && selectedCount > 0 && (

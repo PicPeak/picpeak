@@ -13,6 +13,7 @@ const NOTIFICATION_ICONS: Record<string, React.ComponentType<{ className?: strin
   Tag, ToggleRight, Trash2, User, UserCog, Webhook,
 };
 import { useTranslation } from 'react-i18next';
+import { DashboardHomeLink } from './DashboardHomeLink';
 import { useLeaveGuard } from '../../contexts/UnsavedChangesContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -133,8 +134,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
     // min-w-0 + truncate on the name span so long company names shrink
     // within the left cluster instead of pushing into the right-side
     // action buttons on narrow mobile widths (#523 regression).
+    // The brand is also the home button (DashboardHomeLink asks before
+    // leaving a form with unsaved edits).
     return (
-      <div className="flex items-center gap-2 min-w-0">
+      <DashboardHomeLink className="flex items-center gap-2 min-w-0 -mx-2 px-2 py-1 rounded-lg hover:bg-hover-soft transition-colors pointer-events-auto">
         {logoEffectivelyVisible && (
           <img
             src={logoImgSrc}
@@ -152,7 +155,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
         {showText && (
           <span className={`${wordmarkVisibilityClass} text-xl sm:text-2xl truncate`} style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, color: '#145346' }}>{companyName}</span>
         )}
-      </div>
+      </DashboardHomeLink>
     );
   };
 
@@ -277,8 +280,8 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
               left/right clusters keep their natural sizing; hidden on
               sub-lg widths to avoid colliding with the right-side
               action cluster on narrow screens. pointer-events-none on
-              the wrapper passes hover/click through (the logo itself
-              has no interactive children today). */}
+              the wrapper passes hover/click through to the header; the
+              brand link inside opts back in with pointer-events-auto. */}
           {!logoInSidebar && logoPosition === 'center' && (
             <div className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
               {renderBrandBlock()}

@@ -13,7 +13,7 @@
  *     already-sent email.
  */
 import React from 'react';
-import { render, renderHook, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, renderHook, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { readFileSync } from 'fs';
@@ -52,9 +52,21 @@ vi.mock('../../../contexts/AdminDarkModeContext', () => ({
 }));
 let isAnyDirty = false;
 const confirmLeave = vi.fn(async () => true);
-vi.mock('../../../contexts/UnsavedChangesContext', () => ({
-  useLeaveGuard: () => ({ confirmLeave, isAnyDirty }),
-}));
+vi.mock('../../../contexts/UnsavedChangesContext', async () => {
+  const { useNavigate } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    useLeaveGuard: () => ({ confirmLeave, isAnyDirty }),
+    // Same contract as the real hook, routed through the mocks above.
+    useGuardedLinkClick: () => {
+      const navigate = useNavigate();
+      return (e: { preventDefault: () => void }, href: string, opts: { replace?: boolean; after?: () => void } = {}) => {
+        if (!isAnyDirty) { opts.after?.(); return; }
+        e.preventDefault();
+        void confirmLeave().then((ok) => { if (ok) { opts.after?.(); navigate(href, { replace: !!opts.replace }); } });
+      };
+    },
+  };
+});
 vi.mock('../../../hooks/usePublicSettings', () => ({
   usePublicSettings: () => ({ data: undefined }),
 }));
@@ -73,12 +85,12 @@ const ALL_PERMISSIONS = [
   'settings.view', 'users.view', 'customers.view', 'newsletters.view', 'accounting.view',
 ];
 
-function renderSidebar(path: string) {
+function renderSidebar(path: string, { collapsed = false } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
-        <AdminSidebar isOpen onClose={() => {}} />
+        <AdminSidebar isOpen onClose={() => {}} collapsed={collapsed} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -175,6 +187,23 @@ describe('an empty section says which kind of empty it is', () => {
     renderAutomation();
     expect(screen.getByText('automation.empty.noAccessTitle')).toBeInTheDocument();
     expect(screen.queryByText('automation.empty.title')).not.toBeInTheDocument();
+  });
+});
+
+describe('the brand row is the home link', () => {
+  const brandLink = () => screen.getAllByRole('link').find((a) => a.getAttribute('title') === 'navigation.dashboard')!;
+
+  it('links the wordmark to the dashboard', () => {
+    renderSidebar('/admin/analytics');
+    expect(brandLink()).toHaveAttribute('href', '/admin/dashboard');
+    expect(within(brandLink()).getAllByText('admin.title').length).toBeGreaterThan(0);
+  });
+
+  it('shows a named icon on the collapsed rail instead of an empty link', () => {
+    // Without a sidebar logo the collapsed desktop rail hides the wordmark,
+    // so the link needs something to show and to be announced by.
+    renderSidebar('/admin/analytics', { collapsed: true });
+    expect(within(brandLink()).getByRole('img', { name: 'navigation.dashboard' })).toBeInTheDocument();
   });
 });
 

@@ -1,5 +1,6 @@
 import { api } from '../config/api';
 import i18n from '../i18n/config';
+import { mediaSplitLabel, splitMediaCount } from '../utils/mediaCounts';
 
 /**
  * Per-flag display labels for activity-log rendering. Values are
@@ -470,7 +471,7 @@ export const adminService = {
     const md = activity.metadata || {};
     const messages: Record<string, string> = {
       'event_created': `New event created: ${activity.eventName || 'Unknown'}`,
-      'photos_uploaded': `${md.count || 0} photos uploaded to ${activity.eventName || 'Unknown'}`,
+      'photos_uploaded': `${md.videoCount > 0 ? mediaSplitLabel(i18n.t, splitMediaCount(md.count, md.videoCount)) : `${md.count || 0} photos`} uploaded to ${activity.eventName || 'Unknown'}`,
       'event_archived': `Event archived: ${activity.eventName || 'Unknown'}`,
       'event_published': `Event published: ${activity.eventName || md.event_name || 'Unknown'}`,
       'event_logo_uploaded': `Event logo uploaded for ${activity.eventName || 'Unknown'}`,

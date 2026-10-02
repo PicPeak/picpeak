@@ -7,6 +7,7 @@ import type { Photo } from '../../../types';
 import { feedbackService } from '../../../services/feedback.service';
 import { galleryService } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
+import { isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount } from '../../../utils/mediaCounts';
 import { toast } from 'react-toastify';
 
 import {
@@ -191,7 +192,13 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // scope, so fall back to the event-wide count rather than announcing 0 Photos
   // directly above folder tiles that hold them.
   const totalPhotos = photos.length || eventPhotoCount || 0;
-  const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
+  // "12 Photos" stays as it was; with a video in scope the hero line becomes
+  // the split ("9 photos · 3 videos"), like the admin grid (issue 1430, item 3).
+  const videoTotal = photos.filter(isVideoItem).length;
+  const hasVideos = videoTotal > 0;
+  const stats = hasVideos
+    ? mediaSplitLabel(t, splitMediaCount(totalPhotos, videoTotal))
+    : `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   // Likes need an identity the server accepts (issue 1716, Codex review):
   // guest identity mode asks the context, which prompts on first use; simple
@@ -429,8 +436,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               className={`story-nav-btn${isSelectionMode ? ' active' : ''}`}
               onClick={handleToggleSelectionMode}
               aria-pressed={isSelectionMode}
-              aria-label={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : t('gallery.selectPhotos', 'Select Photos')}
-              title={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : t('gallery.selectPhotos', 'Select Photos')}
+              aria-label={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
+              title={isSelectionMode ? t('gallery.cancelSelection', 'Cancel Selection') : selectLabel(t, hasVideos)}
               data-testid="story-nav-select"
             >
               <CheckSquare size={20} />
@@ -475,7 +482,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
             resolution picker and the download limit apply exactly as they do
             on every other layout. */}
         {isSelectionMode && selectionAvailable && (
-          <div className="story-selection-bar" role="region" aria-label={t('gallery.selectPhotos', 'Select Photos')}>
+          <div className="story-selection-bar" role="region" aria-label={selectLabel(t, hasVideos)}>
             <span className="story-selection-count" aria-live="polite">
               {t('gallery.photosSelected', { count: selected.size })}
             </span>

@@ -1,6 +1,56 @@
 import { describe, it, expect } from 'vitest';
 import type { TFunction } from 'i18next';
-import { formatRuntime, mediaSplitLabel, splitMediaCount } from '../mediaCounts';
+import {
+  defaultCategoryLabel, formatRuntime, hasVideoItems, isVideoItem, mediaSplitLabel, selectLabel, splitMediaCount,
+} from '../mediaCounts';
+
+// A t() that returns the fallback, so the assertions read as the rendered
+// English.
+const t = ((_key: string, fallback?: unknown, opts?: Record<string, unknown>) => {
+  const o = (typeof fallback === 'object' && fallback !== null ? fallback : opts) as Record<string, unknown> | undefined;
+  const text = typeof fallback === 'string' ? fallback : _key;
+  return o?.count != null ? text.replace('{{count}}', String(o.count)) : text;
+}) as unknown as TFunction;
+
+describe('isVideoItem / hasVideoItems', () => {
+  it('reads every column a row might carry its type in', () => {
+    expect(isVideoItem({ media_type: 'video' })).toBe(true);
+    // The file watcher stores only the MIME type.
+    expect(isVideoItem({ media_type: 'image', mime_type: 'video/quicktime' })).toBe(true);
+    expect(isVideoItem({ type: 'video' })).toBe(true);
+    expect(isVideoItem({ media_type: 'image', mime_type: 'image/jpeg' })).toBe(false);
+    expect(isVideoItem({})).toBe(false);
+  });
+
+  it('says whether a video is among the items', () => {
+    expect(hasVideoItems([{ media_type: 'photo' }, { media_type: 'video' }])).toBe(true);
+    expect(hasVideoItems([{ media_type: 'photo' }])).toBe(false);
+    expect(hasVideoItems([])).toBe(false);
+  });
+});
+
+describe('selectLabel', () => {
+  it('is worded for photos until a video is on screen', () => {
+    expect(selectLabel(t, false)).toBe('Select Photos');
+    expect(selectLabel(t, true)).toBe('Select Media');
+  });
+});
+
+describe('defaultCategoryLabel', () => {
+  it('keeps a real category name', () => {
+    expect(defaultCategoryLabel(t, { category_name: 'Ceremony', category_slug: 'ceremony', media_type: 'video' })).toBe('Ceremony');
+  });
+
+  it('labels an uncategorised row by its media type', () => {
+    expect(defaultCategoryLabel(t, { category_name: null, category_slug: 'individual', media_type: 'image' })).toBe('Individual Photos');
+    expect(defaultCategoryLabel(t, { category_name: null, category_slug: 'individual', media_type: 'video' })).toBe('Individual Videos');
+    expect(defaultCategoryLabel(t, { category_name: null, category_slug: 'collage' })).toBe('Collages');
+  });
+
+  it('has nothing to say for an unknown slug', () => {
+    expect(defaultCategoryLabel(t, { category_name: null, category_slug: null })).toBeNull();
+  });
+});
 
 describe('splitMediaCount', () => {
   it('takes the videos out of the total', () => {

@@ -188,7 +188,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
       const eventId = await seedEvent();
       await seedPhoto(eventId, {
         source_origin: 'managed', media_type: 'video', filename: 'clip.mp4',
-        thumbnail_path: 'thumbnails/thumb_clip.jpg',
+        thumbnail_path: 'thumbnails/thumb_clip.jpg', processing_status: 'complete',
       });
 
       const res = await request(app).post('/admin/thumbnails/regenerate').send({});
@@ -199,6 +199,9 @@ describe('admin thumbnail regeneration (#1129)', () => {
       const [photoArg, options] = imageProcessor.ensureThumbnail.mock.calls[0];
       expect(photoArg.filename).toBe('clip.mp4');
       expect(photoArg.thumbnail_path).toBe('thumbnails/thumb_clip.jpg');
+      // Without the status, ensureThumbnail could not keep the poster note in
+      // step with the rebuilt frame (issue 1430).
+      expect(photoArg.processing_status).toBe('complete');
       expect(options).toEqual({ boundVideoSource: false });
       expect(imageProcessor.deleteThumbnailTiers).not.toHaveBeenCalled();
     });

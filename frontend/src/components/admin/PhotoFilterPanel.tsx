@@ -10,6 +10,8 @@ interface PhotoFilterPanelProps {
   onChange: (filters: FeedbackFilters) => void;
   summary: FilterSummary | null;
   isLoading?: boolean;
+  // The event holds videos: the total is worded for media, not photos.
+  hasVideos?: boolean;
 }
 
 const RATING_OPTIONS = [
@@ -26,7 +28,8 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
   filters,
   onChange,
   summary,
-  isLoading = false
+  isLoading = false,
+  hasVideos = false
 }) => {
   const { t } = useTranslation();
 
@@ -300,7 +303,7 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
         {/* Summary */}
         {summary && (
           <div className="pt-2 border-t border-line text-sm text-soft">
-            {t('filter.showingPhotos', 'Total photos')}: {summary.total}
+            {hasVideos ? t('filter.showingMedia', 'Total media') : t('filter.showingPhotos', 'Total photos')}: {summary.total}
             {summary.withRatings > 0 && (
               <span className="ml-2">
                 | {t('filter.withRatings', 'With ratings')}: {summary.withRatings}
