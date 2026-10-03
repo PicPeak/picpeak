@@ -48,7 +48,9 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     // literal % or _ typed into the search box has to match itself rather
     // than act as a wildcard: escapeLikePattern() backslash-escapes them and
     // likeWithEscape() names that backslash in an explicit ESCAPE clause,
-    // which matters because SQLite has no default escape character.
+    // which matters because SQLite has no default escape character. Case
+    // folding is likeWithEscape()'s job too (ILIKE on Postgres); LOWER() on
+    // both sides is not an option because SQLite's LOWER() is ASCII-only.
     const applyFilters = (query) => {
       // Same visibility as the events list, so the rows, the total and the
       // stat cards never describe another owner's archives to a role limited
@@ -56,8 +58,8 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
       scopeEventsListQuery(query, req.admin, 'events.created_by');
       if (search) {
         query.whereRaw(
-          likeWithEscape('LOWER(events.event_name)'),
-          [`%${escapeLikePattern(search.toLowerCase())}%`]
+          likeWithEscape('events.event_name'),
+          [`%${escapeLikePattern(search)}%`]
         );
       }
       if (type && type !== 'all') {
