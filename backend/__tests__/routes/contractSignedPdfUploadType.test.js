@@ -24,8 +24,12 @@ const {
 } = require('../integration/helpers/crmDb');
 const { validateFileType, ALLOWED_MEDIA_TYPES } = require('../../src/utils/fileSecurityUtils');
 const { EXTENSION_TO_MIME } = require('../../src/services/uploadSettings');
+const { minimalPdf } = require('../integration/helpers/pdfFixture');
 
+// A `%PDF-` prefix is all the admin route checks; the signer routes parse
+// the file, so their fixture is a real document.
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+let REAL_PDF;
 const PNG = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0]);
 
 describe('signed-contract PDF uploads accept PDF files', () => {
@@ -40,6 +44,7 @@ describe('signed-contract PDF uploads accept PDF files', () => {
     await db('feature_flags').where({ key: 'contracts' }).update({ value: true });
     adminApp = buildRouteApp('/api/admin/contracts', require('../../src/routes/adminContracts'));
     publicApp = buildRouteApp('/api/public/contracts', require('../../src/routes/publicContracts'));
+    REAL_PDF = await minimalPdf();
   }, 120000);
 
   afterAll(async () => { await cleanup(); });
@@ -86,7 +91,7 @@ describe('signed-contract PDF uploads accept PDF files', () => {
     const res = await request(publicApp)
       .post(`/api/public/contracts/${linkToken}/upload-signed-pdf`)
       .set('X-Document-Access', await grantFor(linkToken))
-      .attach('file', PDF, { filename: 'signed.pdf', contentType: 'application/pdf' });
+      .attach('file', REAL_PDF, { filename: 'signed.pdf', contentType: 'application/pdf' });
 
     expect(res.status).toBe(200);
     const row = await db('contracts').where({ id }).first();
