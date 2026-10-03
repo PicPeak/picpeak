@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const logger = require('./logger');
 
 /**
@@ -27,6 +28,66 @@ function safePathJoin(basePath, userPath) {
   }
   
   return resolvedPath;
+}
+
+function isCanonicallyUnder(canonicalBase, canonicalTarget) {
+  return canonicalTarget === canonicalBase || canonicalTarget.startsWith(canonicalBase + path.sep);
+}
+
+function realpathEscapeError() {
+  const err = new Error('Path traversal attempt detected');
+  err.code = 'PATH_OUTSIDE_BASE';
+  return err;
+}
+
+/**
+ * safePathJoin's check on the filesystem rather than on the string.
+ *
+ * path.resolve() normalises text, it does not follow symlinks: `base/link/x`
+ * passes the lexical check even when `link` points anywhere the process can
+ * read. This canonicalises both sides with realpath and requires the target
+ * to land under the base. Callers keep using the lexical path they resolved;
+ * only the containment is asserted here.
+ *
+ * A target that does not exist (ENOENT, or a file where a directory was
+ * expected) cannot be opened through any link either, so it passes and the
+ * caller's own missing-path handling applies. Every other filesystem error
+ * is thrown as is.
+ *
+ * @param {string} basePath - The base directory
+ * @param {string} targetPath - A path lexically under it (from safePathJoin)
+ * @throws {Error} - 'Path traversal attempt detected' (code PATH_OUTSIDE_BASE)
+ *   when the canonical target is outside the canonical base
+ */
+async function assertRealpathUnder(basePath, targetPath) {
+  let canonicalBase;
+  let canonicalTarget;
+  try {
+    canonicalBase = await fs.realpath(path.resolve(basePath));
+    canonicalTarget = await fs.realpath(targetPath);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return;
+    throw err;
+  }
+  if (!isCanonicallyUnder(canonicalBase, canonicalTarget)) {
+    throw realpathEscapeError();
+  }
+}
+
+/** Synchronous assertRealpathUnder, for the resolvers that have no async callers. */
+function assertRealpathUnderSync(basePath, targetPath) {
+  let canonicalBase;
+  let canonicalTarget;
+  try {
+    canonicalBase = fsSync.realpathSync(path.resolve(basePath));
+    canonicalTarget = fsSync.realpathSync(targetPath);
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return;
+    throw err;
+  }
+  if (!isCanonicallyUnder(canonicalBase, canonicalTarget)) {
+    throw realpathEscapeError();
+  }
 }
 
 /**
@@ -337,6 +398,8 @@ function normalizeUploadMimeType(filename, mimetype) {
 
 module.exports = {
   safePathJoin,
+  assertRealpathUnder,
+  assertRealpathUnderSync,
   isPathSafe,
   normalizeUploadMimeType,
   validateFileType,

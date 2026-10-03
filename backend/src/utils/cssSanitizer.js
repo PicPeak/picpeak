@@ -66,6 +66,51 @@ const ALLOWED_URL_TARGET = /^data:image\/(?:jpeg|jpg|png|gif|webp)/i;
 const MAX_CSS_SIZE = 100 * 1024;
 
 /**
+ * Make CSS safe to interpolate into a raw-text HTML <style> element.
+ *
+ * The HTML parser ends a <style> element at the first `</style` it sees,
+ * case-insensitively and regardless of CSS structure — a stylesheet is not
+ * parsed as CSS until after that boundary is found. So any `<` reaching the
+ * element can, with the right suffix, turn the rest of the stylesheet into
+ * document markup. CSS has no use for a literal `<` outside a string, and
+ * inside one `\3c ` is the same character spelled as an escape, so every
+ * `<` is rewritten that way. The output contains no `<` at all, which makes
+ * the function idempotent: running it over already-escaped CSS changes
+ * nothing.
+ */
+function escapeCssForStyleElement(css) {
+  if (css === null || css === undefined) return '';
+  return String(css).replace(/</g, '\\3c ');
+}
+
+// A colour that will be interpolated into a <style> element, a style=""
+// attribute or a bgcolor="" attribute. Only hex, the four functional
+// notations with digits/percent/comma/space/slash/dot inside the parens, and
+// a short keyword list pass; anything else — in particular a value carrying
+// `;`, `}`, `"` or `<` — is rejected so the caller keeps its default.
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const FUNCTIONAL_COLOR = /^(?:rgb|rgba|hsl|hsla)\([0-9.%,/ ]{1,64}\)$/i;
+const NAMED_COLORS = new Set([
+  'transparent', 'currentcolor', 'inherit',
+  'black', 'white', 'gray', 'grey', 'silver', 'red', 'maroon', 'yellow', 'olive',
+  'lime', 'green', 'aqua', 'teal', 'blue', 'navy', 'fuchsia', 'purple', 'orange'
+]);
+
+/**
+ * @param {unknown} value
+ * @returns {string|null} the trimmed colour when it matches the grammar, else null
+ */
+function sanitizeCssColor(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 80) return null;
+  if (HEX_COLOR.test(trimmed) || FUNCTIONAL_COLOR.test(trimmed) || NAMED_COLORS.has(trimmed.toLowerCase())) {
+    return trimmed;
+  }
+  return null;
+}
+
+/**
  * Basic CSS sanitization (original function, kept for compatibility)
  */
 function sanitizeCss(css) {
@@ -90,6 +135,11 @@ function sanitizeCss(css) {
 
   // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
   sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  // After the control-character strip, so `<\u0000/style` cannot re-form a
+  // `</style` once the NUL is gone. This value is served inside the public
+  // site's <style> element; see escapeCssForStyleElement.
+  sanitized = escapeCssForStyleElement(sanitized);
 
   const MAX_LENGTH = 100 * 1024;
   if (sanitized.length > MAX_LENGTH) {
@@ -416,6 +466,8 @@ function scopeToGalleryPage(cssContent) {
 module.exports = {
   sanitizeCss,
   sanitizeCSS,
+  sanitizeCssColor,
+  escapeCssForStyleElement,
   stripDisallowedUrls,
   validateCSS,
   scopeToGalleryPage,

@@ -395,9 +395,20 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
         .first();
       if (!guest) return { error: 'guest_missing' };
 
-      await trx('guest_invites')
-        .where({ id: invite.id })
+      // Single use is decided by this UPDATE, not by the reads above. Two
+      // redemptions of the same link, or a redemption racing the admin's
+      // revoke, can both read a pending invite under READ COMMITTED; only
+      // the one whose UPDATE still finds both columns NULL mints a session.
+      const claimed = await trx('guest_invites')
+        .where({ id: invite.id, event_id: event.id })
+        .whereNull('redeemed_at')
+        .whereNull('revoked_at')
         .update({ redeemed_at: trx.fn.now() });
+      if (claimed !== 1) {
+        const current = await trx('guest_invites').where({ id: invite.id }).first('revoked_at');
+        if (current?.revoked_at) return { error: 'revoked', guestId: invite.guest_id };
+        return { error: 'already_redeemed', guestId: invite.guest_id };
+      }
 
       await trx('gallery_guests')
         .where({ id: guest.id })

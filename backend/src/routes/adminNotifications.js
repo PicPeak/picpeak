@@ -2,22 +2,37 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { seesAllEvents } = require('../middleware/ownership');
 const logger = require('../utils/logger');
 // Per-request audit rows that have a summary row of their own in the bell.
 const { BELL_EXCLUDED_ACTIVITY_TYPES } = require('../services/apiDownloadNotifications');
 const router = express.Router();
+
+/**
+ * Restrict an activity_logs query to the rows the caller may see — the same
+ * scope the dashboard activity feed applies (adminDashboard.applyEventScope):
+ * every role except super_admin and the roles that see all events is limited
+ * to its own events plus ownerless ones. `activity_logs.event_id` is NULLABLE;
+ * system-level entries (logins, settings changes) carry no event and are
+ * deliberately excluded for a scoped caller rather than shown.
+ */
+function scopeToVisibleEvents(query, admin) {
+  if (seesAllEvents(admin)) return query;
+  return query.whereIn('activity_logs.event_id', db('events').select('id')
+    .where((q) => q.whereNull('created_by').orWhere('created_by', admin.id)));
+}
 
 // Get notifications (unread activity logs)
 router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.view']), async (req, res) => {
   try {
     const { limit = 20, includeRead = false } = req.query;
 
-    let query = db('activity_logs')
+    let query = scopeToVisibleEvents(db('activity_logs')
       .select(
         'activity_logs.*',
         'events.event_name'
       )
-      .leftJoin('events', 'activity_logs.event_id', 'events.id')
+      .leftJoin('events', 'activity_logs.event_id', 'events.id'), req.admin)
       .whereNotIn('activity_logs.activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
       .orderBy('activity_logs.created_at', 'desc')
       .limit(parseInt(limit));
@@ -53,10 +68,10 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
     }));
 
     // Get unread count
-    const unreadCount = await db('activity_logs')
-      .whereNull('read_at')
-      .whereNotIn('activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
-      .count('id as count')
+    const unreadCount = await scopeToVisibleEvents(db('activity_logs'), req.admin)
+      .whereNull('activity_logs.read_at')
+      .whereNotIn('activity_logs.activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
+      .count('activity_logs.id as count')
       .first();
 
     res.json({
@@ -74,10 +89,11 @@ router.put('/:id/read', adminAuth, requirePermission('notifications.manage'), as
   try {
     const { id } = req.params;
 
-    await db('activity_logs')
-      .where('id', id)
+    // Only a row the caller can see in the bell; a foreign row stays unread.
+    await scopeToVisibleEvents(db('activity_logs'), req.admin)
+      .where('activity_logs.id', id)
       .update({
-        read_at: new Date()
+        read_at: new Date().toISOString()
       });
 
     res.json({ message: 'Notification marked as read' });
@@ -90,10 +106,10 @@ router.put('/:id/read', adminAuth, requirePermission('notifications.manage'), as
 // Mark all notifications as read
 router.put('/read-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    await db('activity_logs')
-      .whereNull('read_at')
+    await scopeToVisibleEvents(db('activity_logs'), req.admin)
+      .whereNull('activity_logs.read_at')
       .update({
-        read_at: new Date()
+        read_at: new Date().toISOString()
       });
 
     res.json({ message: 'All notifications marked as read' });
@@ -107,14 +123,20 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 //
 // The frontend AdminHeader "Clear All" button hits this — its service
 // at `notifications.service.ts` does DELETE /admin/notifications/clear-all.
-// The previous /clear-old route was named for an "older than 30 days
-// and read" semantic but had a fallback that deleted EVERYTHING when
-// nothing matched the date filter, so it was effectively a confusingly
-// named Clear All anyway. Drop the rename and the branching, return
-// the simple deletedCount the existing test (and frontend toast) expect.
+//
+// activity_logs is not a notification inbox: the same rows are the contract
+// audit trail, the customer timelines and every other admin's actions, and
+// the bell has no per-admin state of its own beyond `read_at`. Clearing
+// therefore deletes nothing — it marks the caller's visible unread rows read,
+// which empties the bell without touching anyone's audit evidence.
+// `deletedCount` keeps its name for the frontend toast and carries the number
+// of rows dismissed.
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    const deletedCount = await db('activity_logs').delete();
+    const deletedCount = await scopeToVisibleEvents(db('activity_logs'), req.admin)
+      .whereNull('activity_logs.read_at')
+      .whereNotIn('activity_logs.activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
+      .update({ read_at: new Date().toISOString() });
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);

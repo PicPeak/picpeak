@@ -46,6 +46,23 @@ function assertNotExpired(row) {
   }
 }
 
+// Only while the invoice is still waiting on the customer may a payment-check
+// link decide anything about it.
+const PAYMENT_CHECK_STATUSES = ['sent', 'overdue'];
+
+/**
+ * Withdraw every unused payment-check link of an invoice. Issued links are
+ * independent rows, so without this an older one outlives the decision that
+ * settled the invoice — a newer link, a recorded payment, a Storno — and can
+ * still restore `overdue`, add a late fee and mail the customer a reminder.
+ * `reason` is what the link answers with afterwards ('superseded' by a newer
+ * link, or 'revoked' because the invoice left the actionable state).
+ */
+async function revokePendingPaymentCheckTokens(conn, invoiceId, nowIso, reason) {
+  await conn('invoice_payment_check_tokens').where({ invoice_id: invoiceId }).whereNull('used_at')
+    .update({ used_at: nowIso, used_action: reason });
+}
+
 /**
  * Record a payment against an invoice. Supports partial payments
  * (multiple rows accumulate into `paid_amount_minor`). Status flips
@@ -131,6 +148,8 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
       update.paid_at = paidAt ? new Date(paidAt) : new Date();
     }
     await auditedUpdate(trx, 'invoices', { id }, update, { actor, source: 'invoice.markPaid' });
+    // Settled: no outstanding payment-check link may reopen it.
+    if (isFull) await revokePendingPaymentCheckTokens(trx, id, new Date().toISOString(), 'revoked');
 
     // Pass trx: through the global db this insert waits on the single-
     // connection SQLite pool for the connection this transaction holds.
@@ -286,6 +305,9 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(now.getTime() + PAYMENT_CHECK_TOKEN_TTL_MS);
+  // One live link per invoice: the one in the newest email. Two live links
+  // could each confirm the full payment from the same pre-payment snapshot.
+  await revokePendingPaymentCheckTokens(db, invoiceId, nowIso, 'superseded');
   await db('invoice_payment_check_tokens').insert({
     invoice_id: invoiceId,
     token,
@@ -402,6 +424,13 @@ async function getPaymentCheckByToken(token) {
   assertNotExpired(row);
   const invoice = await db('invoices').where({ id: row.invoice_id }).first();
   if (!invoice) throw new AppError('Invoice not found', 404);
+  // The page offers the decisions, so it refuses what recording them would.
+  if (!PAYMENT_CHECK_STATUSES.includes(invoice.status)) {
+    throw new AppError(
+      `This invoice is no longer awaiting a payment check (status '${invoice.status}').`,
+      409, 'INVOICE_NOT_ACTIONABLE',
+    );
+  }
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
 
   const outstandingMinor = Math.max(0,
@@ -505,41 +534,59 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     throw new AppError('Invalid action', 400);
   }
 
-  const row = await db('invoice_payment_check_tokens').where({ token }).first();
-  if (!row) throw new AppError('Token not found', 404);
-  if (row.used_at) {
-    throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
-  }
-  assertNotExpired(row);
-  const invoice = await db('invoices').where({ id: row.invoice_id }).first();
-  if (!invoice) throw new AppError('Invoice not found', 404);
+  // One transaction decides: the invoice row is locked (PostgreSQL; SQLite
+  // serialises transactions), it must still be waiting on the customer, the
+  // outstanding amount is read under that lock, this link is spent as a
+  // compare-and-set, and every other pending link of the invoice goes with
+  // it. Two links, or two clicks, cannot both confirm the same payment, and
+  // a link that outlived a payment or a Storno cannot reopen the invoice.
+  const nowIso = new Date().toISOString();
+  const { invoice, outstandingMinor } = await db.transaction(async (trx) => {
+    const row = await trx('invoice_payment_check_tokens').where({ token }).first();
+    if (!row) throw new AppError('Token not found', 404);
+    if (row.used_at) {
+      throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
+    }
+    assertNotExpired(row);
+    const invoiceQuery = trx('invoices').where({ id: row.invoice_id });
+    // Compatible with the KEY SHARE lock of foreign-key checks, same as
+    // recordPayment; it still serialises against another redemption.
+    if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
+    const locked = await invoiceQuery.first();
+    if (!locked) throw new AppError('Invoice not found', 404);
+    if (!PAYMENT_CHECK_STATUSES.includes(locked.status)) {
+      throw new AppError(
+        `This invoice is no longer awaiting a payment check (status '${locked.status}').`,
+        409, 'INVOICE_NOT_ACTIONABLE',
+      );
+    }
 
-  const outstandingMinor = Math.max(0,
-    Number(invoice.total_amount_minor || 0) + Number(invoice.late_fee_amount_minor || 0)
-    - Number(invoice.paid_amount_minor || 0));
+    const outstanding = Math.max(0,
+      Number(locked.total_amount_minor || 0) + Number(locked.late_fee_amount_minor || 0)
+      - Number(locked.paid_amount_minor || 0));
 
-  if (action === 'partial') {
-    const amt = ensureInt(amountMinor);
-    if (amt <= 0) throw new AppError('partial amount must be > 0', 400);
-    if (amt > outstandingMinor) throw new AppError('partial amount exceeds outstanding', 400);
-  }
+    if (action === 'partial') {
+      const amt = ensureInt(amountMinor);
+      if (amt <= 0) throw new AppError('partial amount must be > 0', 400);
+      if (amt > outstanding) throw new AppError('partial amount exceeds outstanding', 400);
+    }
 
-  // Consume the token first — atomic with status update so a
-  // double-click can't fire the action twice.
-  const now = new Date();
-  const updated = await db('invoice_payment_check_tokens')
-    .where({ id: row.id })
-    .whereNull('used_at')
-    .update({
-      used_at: now,
-      used_action: action,
-      used_amount_minor: action === 'partial' ? ensureInt(amountMinor) : null,
-      used_ip: ip || null,
-    });
-  if (updated === 0) {
-    // Lost a race with another consumer.
-    throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
-  }
+    const updated = await trx('invoice_payment_check_tokens')
+      .where({ id: row.id })
+      .whereNull('used_at')
+      .update({
+        used_at: nowIso,
+        used_action: action,
+        used_amount_minor: action === 'partial' ? ensureInt(amountMinor) : null,
+        used_ip: ip || null,
+      });
+    if (updated === 0) {
+      // Lost a race with another consumer.
+      throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
+    }
+    await revokePendingPaymentCheckTokens(trx, locked.id, nowIso, 'superseded');
+    return { invoice: locked, outstandingMinor: outstanding };
+  });
 
   try {
     await logActivity('invoice_payment_check_recorded',
@@ -643,4 +690,5 @@ module.exports = {
   queuePaymentCheckEmail,
   getPaymentCheckByToken,
   recordPaymentCheckAction,
+  revokePendingPaymentCheckTokens,
 };

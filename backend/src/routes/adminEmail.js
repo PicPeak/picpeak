@@ -41,10 +41,12 @@ router.get('/config', adminAuth, requirePermission('email.view'), async (req, re
       });
     }
 
-    // Don't send the actual password
+    // Don't send the actual passwords — the row also carries the IMAP
+    // login (migration 128), which /incoming-config masks the same way.
     res.json({
       ...config,
-      smtp_pass: config.smtp_pass ? '********' : ''
+      smtp_pass: config.smtp_pass ? '********' : '',
+      imap_pass: config.imap_pass ? '********' : ''
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch email configuration');
@@ -341,8 +343,10 @@ router.get('/received/:id', adminAuth, messagingGate, requirePermission('email.v
 
 // Move an email between mailbox states: Archive / Delete (soft) or Restore
 // (back to active). kind = 'queue' | 'received'. Delete is a soft move to the
-// trash; the row is only removed for good by the DELETE handler below.
-router.post('/item/:kind/:id/state', adminAuth, messagingGate, requirePermission('email.view'), async (req, res) => {
+// trash; the row is only removed for good by the DELETE handler below. A
+// write to the shared folders, so email.edit like the permanent delete —
+// email.view stays read-only.
+router.post('/item/:kind/:id/state', adminAuth, messagingGate, requirePermission('email.edit'), async (req, res) => {
   try {
     const table = req.params.kind === 'received' ? 'received_emails' : req.params.kind === 'queue' ? 'email_queue' : null;
     if (!table) return res.status(400).json({ error: 'Invalid kind' });

@@ -597,7 +597,7 @@ export const contractsService = {
     id: number,
     file: File,
     coversSignerIds: number[] = [],
-  ): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  ): Promise<{ status: 'fully_signed' }> {
     const form = new FormData();
     form.append('file', file);
     if (coversSignerIds.length) form.append('coversSignerIds', JSON.stringify(coversSignerIds));
@@ -849,7 +849,7 @@ export const publicContractsService = {
     return data.data || data;
   },
 
-  async uploadSignedPdf(token: string, file: File, grant?: string | null): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  async uploadSignedPdf(token: string, file: File, grant?: string | null): Promise<{ status: 'fully_signed' }> {
     const form = new FormData();
     form.append('file', file);
     const { data } = await api.post(`/public/contracts/${token}/upload-signed-pdf`, form, {

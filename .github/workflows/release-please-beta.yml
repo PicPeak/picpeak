@@ -17,7 +17,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Run Release Please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           # A dedicated token (fine-grained PAT) makes the release PR run CI
@@ -49,19 +49,40 @@ jobs:
             echo "RELEASE_PLEASE_TOKEN not set — skipping auto-merge (manual review still required)."
             exit 0
           fi
-          pr=$(gh pr list --head release-please--branches--main --state open --json number --jq '.[0].number // empty')
-          if [ -n "$pr" ]; then
-            # Approve as github-actions[bot] (GITHUB_TOKEN) — a different identity
-            # than the PR author (the PAT) — so it counts as a valid review.
-            gh pr review "$pr" --approve --body "Automated approval — release-please version bump + changelog (#719)." || true
-            # Enable auto-merge as the PAT so the eventual merge commit is
-            # attributed to a real identity. If enabled via GITHUB_TOKEN the merge
-            # push is suppressed by recursion prevention and the follow-up run that
-            # cuts the tag/release never fires (#719).
-            GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
-          else
-            echo "No open release PR to auto-merge."
+          # Strict selection: `gh pr list --head` matches the branch NAME only,
+          # so a fork PR can spoof `release-please--branches--main`. Pin the
+          # base to main AND require a same-repo head (a fork PR is
+          # cross-repository), require exactly one such PR, and check that it
+          # was opened by the identity holding RELEASE_PLEASE_TOKEN (release-
+          # please authors the PR as the PAT owner). Anything else fails
+          # closed — same shape as release-stable-daily.yml.
+          read -r count pr pr_author < <(gh pr list \
+            --base main \
+            --head release-please--branches--main \
+            --state open \
+            --json number,isCrossRepository,author \
+            --jq '[.[] | select(.isCrossRepository == false)] | "\(length) \(.[0].number // "-") \(.[0].author.login // "-")"')
+          if [ "$count" -eq 0 ]; then
+            echo "No open same-repo release PR to auto-merge."
+            exit 0
           fi
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly one same-repo release PR on main, found $count — refusing to approve."
+            exit 1
+          fi
+          pat_login=$(GH_TOKEN="$RELEASE_PAT" gh api user --jq .login)
+          if [ -z "$pat_login" ] || [ "$pr_author" != "$pat_login" ]; then
+            echo "::error::Release PR #$pr was opened by '$pr_author', not by the release token owner — refusing to approve."
+            exit 1
+          fi
+          # Approve as github-actions[bot] (GITHUB_TOKEN) — a different identity
+          # than the PR author (the PAT) — so it counts as a valid review.
+          gh pr review "$pr" --approve --body "Automated approval — release-please version bump + changelog (#719)." || true
+          # Enable auto-merge as the PAT so the eventual merge commit is
+          # attributed to a real identity. If enabled via GITHUB_TOKEN the merge
+          # push is suppressed by recursion prevention and the follow-up run that
+          # cuts the tag/release never fires (#719).
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
 
       - name: Output Release Info
         if: ${{ steps.release.outputs.release_created }}

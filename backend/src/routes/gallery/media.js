@@ -58,6 +58,21 @@ async function admitVideoStream(req, res, photo) {
   return true;
 }
 
+/**
+ * Is this photo outside what the viewer's grant may reach?
+ *
+ * Client-hidden photos are blocked for everyone but the client. A slideshow
+ * session of an event that pins show_category_id sees that category only:
+ * the list is filtered that way server-side (galleryQueryService), and the
+ * media routes must agree, or a link holder could request every other
+ * category's photos by id. Applied by every route below that resolves a photo.
+ */
+function isPhotoOutsideGrant(req, photo) {
+  if (isPhotoHiddenFromViewer(photo, req.accessLevel)) return true;
+  return req.accessLevel === 'slideshow' && req.event?.show_category_id != null
+    && Number(photo.category_id) !== Number(req.event.show_category_id);
+}
+
 router.post('/:slug/photo/:photoId/view',
   verifyGalleryAccess,
   denySlideshowToken,
@@ -66,11 +81,11 @@ router.post('/:slug/photo/:photoId/view',
     try {
       const photo = await db('photos')
         .where({ id: req.params.photoId, event_id: req.event.id })
-        .first('id', 'visibility');
+        .first('id', 'visibility', 'category_id');
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }
-      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
       // Admin preview (#981 review) is excluded from per-photo view analytics.
@@ -86,6 +101,10 @@ router.post('/:slug/photo/:photoId/view',
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',
   verifyGalleryAccess,
+  // This route answers with the stored original (or the source video). A
+  // slideshow session is display-only and the kiosk renders the preview tier
+  // (slideshow_url), so it has no business here.
+  denySlideshowToken,
   blockHiddenGallery,
   async (req, res) => {
     try {
@@ -100,7 +119,7 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -414,7 +433,7 @@ router.get('/:slug/thumbnail/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -530,7 +549,7 @@ router.get('/:slug/hero/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -631,8 +650,10 @@ router.get('/:slug/hero/:photoId',
 // A preview that cannot be served falls back to the original, so the lightbox
 // always renders. Not while a download limit withholds that original (issue
 // 1560): /photo would send the request straight back here.
+// Nor for a slideshow session, which /photo refuses (denySlideshowToken).
 async function fallBackToOriginal(req, res, photo) {
-  if (req.event && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview })) {
+  if (req.accessLevel === 'slideshow'
+    || (req.event && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview }))) {
     return res.status(404).json({ error: 'Preview not available' });
   }
   return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
@@ -653,7 +674,7 @@ router.get('/:slug/preview/:photoId',
         return res.status(404).json({ error: 'Photo not found' });
       }
 
-      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 

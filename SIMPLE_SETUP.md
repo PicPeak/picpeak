@@ -86,15 +86,21 @@ The script will prompt you to choose:
 ### Unattended Installation
 
 #### Docker with full configuration:
+Passwords are read from private files (mode `0600`), never from the command line, so they stay out of the process list and your shell history:
+
 ```bash
+(umask 077
+ read -rsp 'Admin password: ' p; printf '%s\n' "$p" > ~/picpeak-admin.pass; echo
+ read -rsp 'SMTP password: ' p;  printf '%s\n' "$p" > ~/picpeak-smtp.pass; echo)
+
 sudo ./picpeak-setup.sh --docker --unattended \
   --domain photos.example.com \
   --email admin@example.com \
-  --admin-password SecurePass123 \
+  --admin-password-file ~/picpeak-admin.pass \
   --smtp-host smtp.gmail.com \
   --smtp-port 587 \
   --smtp-user your-email@gmail.com \
-  --smtp-pass your-app-password \
+  --smtp-pass-file ~/picpeak-smtp.pass \
   --enable-ssl
 ```
 
@@ -102,7 +108,7 @@ sudo ./picpeak-setup.sh --docker --unattended \
 ```bash
 sudo ./picpeak-setup.sh --native --unattended \
   --email admin@example.com \
-  --admin-password SecurePass123
+  --admin-password-file ~/picpeak-admin.pass
 ```
 
 ### Command Line Options
@@ -114,11 +120,13 @@ sudo ./picpeak-setup.sh --native --unattended \
 | `--unattended` | Run without prompts | `--unattended` |
 | `--domain` | Domain for HTTPS setup | `--domain photos.example.com` |
 | `--email` | Admin email address | `--email admin@example.com` |
-| `--admin-password` | Set admin password | `--admin-password MySecurePass` |
+| `--admin-password-file` | Seed the admin password from a file (regular file, mode `0600` or stricter, first line used) | `--admin-password-file ~/picpeak-admin.pass` |
+| `--admin-password` | Deprecated: admin password on the command line (visible in the process list and shell history) | `--admin-password MySecurePass` |
 | `--smtp-host` | SMTP server hostname | `--smtp-host smtp.gmail.com` |
 | `--smtp-port` | SMTP server port | `--smtp-port 587` |
 | `--smtp-user` | SMTP username | `--smtp-user user@gmail.com` |
-| `--smtp-pass` | SMTP password | `--smtp-pass app-password` |
+| `--smtp-pass-file` | SMTP password from a file (mode `0600` or stricter) | `--smtp-pass-file ~/picpeak-smtp.pass` |
+| `--smtp-pass` | Deprecated: SMTP password on the command line | `--smtp-pass app-password` |
 | `--enable-ssl` | Enable HTTPS with Let's Encrypt | `--enable-ssl` |
 | `--port` | Custom port (native only) | `--port 8080` |
 | `--update` | Update existing installation | `--update` |
@@ -165,7 +173,7 @@ sudo ./picpeak-setup.sh --native --unattended \
 
 ## 🔑 First Login — Create Your Admin
 
-If you installed with `picpeak-setup.sh` and gave an `--admin-password`, your admin account already exists — log in at `/admin` with that email and password.
+If you installed with `picpeak-setup.sh` and gave an `--admin-password-file` (or the deprecated `--admin-password`), your admin account already exists — log in at `/admin` with that email and password.
 
 If you started PicPeak **without** setting `ADMIN_PASSWORD` (e.g. a plain `docker compose up`), there's **no admin yet** and you create it in the browser:
 

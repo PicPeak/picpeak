@@ -35,6 +35,17 @@ function removeUpload(filePath) {
   }
 }
 
+/**
+ * Withdraw the contract's unused emailed links once an admin has finalized
+ * it. A link that outlives the finalization would otherwise still carry a
+ * wet-signed upload over the admin's copy. Marked used rather than deleted:
+ * the view and download routes keep working for the customer.
+ */
+async function revokeUnusedActionTokens(conn, contractId, nowIso) {
+  await conn('contract_action_tokens').where({ contract_id: contractId }).whereNull('used_at')
+    .update({ used_at: nowIso, used_action: 'revoked_admin_final' });
+}
+
 /** The admin id behind an `actor` argument, which callers pass as an id or an object. */
 function adminIdOf(actor) {
   if (typeof actor === 'number') return Number.isFinite(actor) ? actor : null;
@@ -332,6 +343,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
     if (!applied) {
       throw new AppError('The contract changed while it was being counter-signed. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
     }
+    if (newStatus === 'fully_signed') await revokeUnusedActionTokens(db, contract.id, now.toISOString());
   } catch (updateErr) {
     // C.7 — clean up the orphan signature PNG if the contract row
     // update threw. Best-effort; log on cleanup failure and re-throw
@@ -571,6 +583,15 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
  * own upload path refuses a multi-signer contract outright instead. Once any
  * signer has signed in the browser the admin's upload is refused too
  * (ELECTRONIC_SIGNATURE_PRESENT): it would discard that signature.
+ *
+ * `options.actionToken` is the emailed link `{ id, ip }` a customer upload
+ * arrived through. It is spent in the same transaction that moves the
+ * contract, as a compare-and-set on an unused row: two requests holding the
+ * same link, or a request that was admitted before another upload finished,
+ * cannot both complete the contract.
+ *
+ * A customer upload never replaces a finalized contract: `fully_signed` is
+ * refused for everyone but the admin, who may replace their own paper copy.
  */
 async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null, options = {}) {
   // Self-heal contract email templates — same reason as the
@@ -578,12 +599,21 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   await ensureContractEmailTemplatesSeeded(db, logger);
 
   if (!filePath) throw new AppError('No file uploaded', 400);
+  // Every refusal below leaves nothing on disk: multer already wrote the file.
   const contract = await db('contracts').where({ id: contractId }).first();
-  if (!contract) throw new AppError('Contract not found', 404);
+  if (!contract) {
+    removeUpload(filePath);
+    throw new AppError('Contract not found', 404);
+  }
   // Expired is final (#1446), and a contract still collecting details was
   // never frozen: there is nothing a paper copy could be the signed form of.
   if (['cancelled', 'draft', 'expired', 'awaiting_data'].includes(contract.status)) {
+    removeUpload(filePath);
     throw new AppError(`Cannot attach a signed PDF to a contract in status '${contract.status}'`, 409);
+  }
+  if (uploaderRole !== 'admin' && contract.status === 'fully_signed') {
+    removeUpload(filePath);
+    throw new AppError('This contract is already fully signed.', 409, 'CONTRACT_ALREADY_SIGNED');
   }
 
   // Refused before anything is written, and the upload goes with it rather
@@ -627,11 +657,27 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   // landing in between must not have its evidence replaced by this file.
   const historyActor = actor
     || (uploaderRole === 'admin' ? { type: 'admin', id: null, name: 'Admin (PDF upload)' } : CONTRACT_LINK_ACTOR);
-  const applied = await auditedUpdate(db, 'contracts', { id: contractId, status: contract.status }, updates,
-    { actor: historyActor, source: 'contract.upload.signed_pdf' });
-  if (!applied) {
+  const nowIso = now.toISOString();
+  try {
+    await db.transaction(async (trx) => {
+      const applied = await auditedUpdate(trx, 'contracts', { id: contractId, status: contract.status }, updates,
+        { actor: historyActor, source: 'contract.upload.signed_pdf' });
+      if (!applied) {
+        throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+      }
+      if (options.actionToken) {
+        // The route guard checked expiry moments ago; what is claimed here
+        // is the one-shot use, against every other request holding the link.
+        const claimed = await trx('contract_action_tokens')
+          .where({ id: options.actionToken.id }).whereNull('used_at')
+          .update({ used_at: nowIso, used_action: 'uploaded_signed_pdf', used_ip: options.actionToken.ip || null });
+        if (claimed !== 1) throw new AppError('This link has already been used', 409, 'TOKEN_ALREADY_USED');
+      }
+      if (uploaderRole === 'admin') await revokeUnusedActionTokens(trx, contractId, nowIso);
+    });
+  } catch (err) {
     removeUpload(filePath);
-    throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+    throw err;
   }
   // Signatures v2 (#1446): the upload goes into the event log, and every
   // signer's link stops working.

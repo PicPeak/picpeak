@@ -21,7 +21,8 @@ const fs = require('fs').promises;
 const sharp = require('sharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { resolveExternalPath } = require('./externalMediaService');
+const { resolveExternalPath, getExternalMediaRoot } = require('./externalMediaService');
+const { assertRealpathUnder } = require('../utils/fileSecurityUtils');
 const {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -33,6 +34,7 @@ const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('.
 const { processUploadedVideo, posterFrameError } = require('./videoProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { resolveCredit } = require('./photoCredit');
+const { photoCapOf, insertPhotoWithinCap } = require('./photoCap');
 const jobState = require('./maintenanceJobState');
 
 class ImportInProgressError extends Error {
@@ -96,15 +98,35 @@ async function existingRelpaths(eventId, relpaths) {
   return found;
 }
 
-// Helper to recursively collect files under a directory, filtered by extension
-async function walkDir(dir, baseDir, extensions) {
+// Bounds on the recursive walk. An event owner with photos.upload chooses the
+// subtree, and a mount can be arbitrarily deep and wide; the walk stops at
+// these, reports that it did, and imports what it found.
+const MAX_WALK_DEPTH = 16;
+const MAX_WALK_ENTRIES = 100000;
+
+// Helper to recursively collect files under a directory, filtered by extension.
+// `budget` is shared across the recursion: entries left to look at, and
+// whether a bound was hit.
+async function walkDir(dir, baseDir, extensions, budget = { entries: MAX_WALK_ENTRIES, truncated: false }, depth = 0) {
   const results = [];
+  if (depth > MAX_WALK_DEPTH) {
+    budget.truncated = true;
+    return results;
+  }
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
+    if (budget.entries <= 0) {
+      budget.truncated = true;
+      break;
+    }
+    budget.entries -= 1;
     if (e.name.startsWith('.')) continue;
+    // Never follow a link, to a directory or a file: the walk stays inside
+    // the base it was given.
+    if (e.isSymbolicLink()) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      results.push(...await walkDir(full, baseDir, extensions));
+      results.push(...await walkDir(full, baseDir, extensions, budget, depth + 1));
     } else if (e.isFile()) {
       const ext = path.extname(e.name).toLowerCase();
       if (extensions.includes(ext)) {
@@ -135,7 +157,10 @@ async function walkDir(dir, baseDir, extensions) {
  * @param {number} [opts.settleMs=0]  automatic passes: a new file modified
  *   within the last settleMs, or whose size moves during a wait of settleMs,
  *   is left for the next pass instead of being imported half-copied
- * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number}>}
+ * @returns {Promise<{imported:number, skipped:number, deferred:number, excluded:number, thumbnailsGenerated:number, thumbnailsFailed:number, truncated:boolean, capReached:boolean}>}
+ *   `truncated`: the recursive walk hit its depth or entry bound and the
+ *   folder was not read in full. `capReached`: the event's photo cap stopped
+ *   the import; what was not imported is counted in `skipped`.
  * @throws {EventNotFoundError} when the event does not exist
  * @throws {ImportInProgressError} when another run holds the claim for this event
  */
@@ -200,6 +225,10 @@ async function importExternalFolder({
 
   try {
     const baseAbs = resolveExternalPath({ external_path }, '');
+    // resolveExternalPath checks the string; this checks the filesystem. A
+    // symlink inside EXTERNAL_MEDIA_ROOT chosen as the folder would otherwise
+    // import whatever it points at and persist paths that lead back there.
+    await assertRealpathUnder(getExternalMediaRoot(), baseAbs);
 
     // What gets STORED on the row (#1163). `f.rel` stays relative to the
     // imported folder because the type inference below reads its first segment
@@ -212,7 +241,8 @@ async function importExternalFolder({
     // Collect files. Images always; videos only for the types this install
     // accepts as uploads (see importableExtensions).
     const extensions = await importableExtensions();
-    const files = recursive ? await walkDir(baseAbs, baseAbs, extensions) : (await fs.readdir(baseAbs, { withFileTypes: true }))
+    const walkBudget = { entries: MAX_WALK_ENTRIES, truncated: false };
+    const files = recursive ? await walkDir(baseAbs, baseAbs, extensions, walkBudget) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
       .filter(f => extensions.includes(path.extname(f.name).toLowerCase()));
@@ -304,7 +334,7 @@ async function importExternalFolder({
       // The heartbeat tick keeps re-checking during the loop.
       if (!(await stillEligible())) {
         logger.info(`External import for event ${eventId}: event no longer eligible, nothing imported`);
-        const empty = { imported: 0, skipped, deferred, excluded, thumbnailsGenerated: 0, thumbnailsFailed: 0 };
+        const empty = { imported: 0, skipped, deferred, excluded, thumbnailsGenerated: 0, thumbnailsFailed: 0, truncated: walkBudget.truncated, capReached: false };
         await jobState.release(jobName, token, null);
         return empty;
       }
@@ -361,8 +391,17 @@ async function importExternalFolder({
 
     let superseded = false;
 
+    // The event's photo cap (events.photo_cap). The upload routes enforce it;
+    // this path inserted straight into `photos` and never looked. Checked and
+    // inserted in one transaction per row by insertPhotoWithinCap, the same
+    // as every other ingest, so a concurrent upload cannot overshoot with it.
+    const photoCap = photoCapOf(event);
+    let capReached = false;
+    let considered = 0;
+
     // Insert photos
     for (const f of dedupeMap.values()) {
+      considered += 1;
       if (lost) {
         // Either another process took the claim over — it is walking this
         // same folder now, and the unique index makes anything we insert from
@@ -452,36 +491,34 @@ async function importExternalFolder({
 
         let inserted;
         try {
-          inserted = await db('photos')
-            .insert({
-              event_id: eventId,
-              filename: f.name,
-              // The camera-original name (#745). External ingest never sets
-              // original_filename, and NAS-mounted galleries are among the
-              // most likely to be driven from Lightroom — without this the
-              // round-trip has nothing to match a RAW against.
-              source_filename: f.name,
-              // Keep path as a hint for legacy code but not used for resolution in external mode
-              path: path.join(event.slug, f.name),
-              thumbnail_path: null,
-              type,
-              size_bytes: stats.size,
-              width,
-              height,
-              source_origin: 'external',
-              external_relpath: relFromRoot,
-              // .toISOString() rather than the Date: inside jest, Dates handed
-              // to the sqlite3 binding land as the literal string
-              // "[object Object]" (see CLAUDE.md). Strings round-trip on both
-              // engines.
-              captured_at: capturedAt ? capturedAt.toISOString() : null,
-              // Both columns, as the upload pipeline writes them: every
-              // serving route and every image-only job tells a video from a
-              // photo by these two.
-              ...(isVideo ? { media_type: 'video', mime_type: videoMimeType(f.name) } : {}),
-              ...credit
-            })
-            .returning('id');
+          inserted = await insertPhotoWithinCap({
+            event_id: eventId,
+            filename: f.name,
+            // The camera-original name (#745). External ingest never sets
+            // original_filename, and NAS-mounted galleries are among the
+            // most likely to be driven from Lightroom — without this the
+            // round-trip has nothing to match a RAW against.
+            source_filename: f.name,
+            // Keep path as a hint for legacy code but not used for resolution in external mode
+            path: path.join(event.slug, f.name),
+            thumbnail_path: null,
+            type,
+            size_bytes: stats.size,
+            width,
+            height,
+            source_origin: 'external',
+            external_relpath: relFromRoot,
+            // .toISOString() rather than the Date: inside jest, Dates handed
+            // to the sqlite3 binding land as the literal string
+            // "[object Object]" (see CLAUDE.md). Strings round-trip on both
+            // engines.
+            captured_at: capturedAt ? capturedAt.toISOString() : null,
+            // Both columns, as the upload pipeline writes them: every
+            // serving route and every image-only job tells a video from a
+            // photo by these two.
+            ...(isVideo ? { media_type: 'video', mime_type: videoMimeType(f.name) } : {}),
+            ...credit
+          }, photoCap);
         } catch (insertErr) {
           // Another writer inserted this exact path while we were reading
           // metadata. That is the outcome the index exists to produce, and it
@@ -491,6 +528,16 @@ async function importExternalFolder({
           // failure, or (more often) never fired at all and duplicated the row.
           if (isUniqueViolation(insertErr)) { skipped++; continue; }
           throw insertErr;
+        }
+
+        if (inserted === null) {
+          // The cap is reached. Nothing after this file can be inserted
+          // either, so stop here rather than stat and decode the rest; the
+          // files left over are reported as skipped.
+          capReached = true;
+          skipped += dedupeMap.size - considered + 1;
+          logger.info(`External import for event ${eventId}: photo cap of ${photoCap} reached after ${imported} imported`);
+          break;
         }
 
         const photoId = Array.isArray(inserted) && inserted.length
@@ -610,7 +657,10 @@ async function importExternalFolder({
       logger.info(`Queued ${queued} of ${importedPhotoIds.length} imported external photo(s) for face scanning (event ${eventId})`);
     }
 
-    const result = { imported, skipped, deferred, excluded, thumbnailsGenerated, thumbnailsFailed };
+    const result = {
+      imported, skipped, deferred, excluded, thumbnailsGenerated, thumbnailsFailed,
+      truncated: walkBudget.truncated, capReached,
+    };
 
     // Only a run that changed something goes into the activity log. The
     // watcher re-runs this pass on a timer for every watched event, and a
@@ -647,14 +697,14 @@ async function importExternalFolder({
 /** The reason for a failed import, as a code the admin UI translates. */
 function importFailureCode(error) {
   switch (error?.code) {
-    case 'ENOENT':
-    case 'ENOTDIR':
-      return 'folder_missing';
-    case 'EACCES':
-    case 'EPERM':
-      return 'permission_denied';
-    default:
-      return 'import_failed';
+  case 'ENOENT':
+  case 'ENOTDIR':
+    return 'folder_missing';
+  case 'EACCES':
+  case 'EPERM':
+    return 'permission_denied';
+  default:
+    return 'import_failed';
   }
 }
 

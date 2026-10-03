@@ -147,8 +147,8 @@ function AnalyticsBootstrap() {
         // so a page view recorded before a client-side navigation away from
         // them cannot carry the token either.
         maskPatterns: [
-          '/gallery/**', '/invite/**', '/quote/**', '/contract/**', '/payment-check/**',
-          '/transfer/**', '/transfer-upload/**', '/customer/invite/**', '/customer/reset-password/**',
+          '/gallery/**', '/s/**', '/invite/**', '/quote/**', '/contract/**', '/payment-check/**',
+          '/transfer/**', '/transfer-upload/**', '/customer/**',
         ],
       });
       return;

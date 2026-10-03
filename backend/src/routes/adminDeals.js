@@ -20,7 +20,7 @@
 const express = require('express');
 const { param, body } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const dealsService = require('../services/dealsService');
@@ -40,6 +40,18 @@ router.get(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const result = await dealsService.getDealDocuments(req.params.uuid);
+    // Each document class keeps its own view permission (the project
+    // cockpit gates the same way): a deal UUID taken from a quote must not
+    // open the contract titles or invoice amounts to a role that lacks
+    // contracts.view / bills.view.
+    const [quotes, contracts, bills] = await Promise.all([
+      userHasAnyPermission(req.admin.id, ['quotes.view']),
+      userHasAnyPermission(req.admin.id, ['contracts.view']),
+      userHasAnyPermission(req.admin.id, ['bills.view']),
+    ]);
+    if (!quotes) result.quotes = [];
+    if (!contracts) result.contracts = [];
+    if (!bills) result.invoices = [];
     return successResponse(res, result);
   }),
 );

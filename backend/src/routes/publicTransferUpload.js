@@ -131,6 +131,19 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
   });
 }));
 
+// The row as it is NOW. preUploadGuard decided before the body arrived; a slow
+// or large upload can cross the request's expiry, or an admin's disable or
+// delete, while the bytes are still coming in. Lookup by token, which both
+// getters filter to live request rows, then the same eligibility predicate.
+async function reloadUploadTransfer(token) {
+  const isShortCode = !LONG_TOKEN_RE.test(token) && SHORT_TOKEN_RE.test(token);
+  const transfer = isShortCode
+    ? await transferService.getTransferByUploadToken(token)
+    : await transferService.getRequestByToken(token);
+  const gate = transferService.assertUploadable(transfer);
+  return gate.ok ? { transfer } : { gate };
+}
+
 // Pre-multer guard: validates the token + upload eligibility BEFORE any bytes
 // touch disk, and stashes the transfer for the destination/handler.
 async function preUploadGuard(req, res, next) {
@@ -189,7 +202,6 @@ function buildUploader(maxSizeBytes, policy) {
 }
 
 router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, handleAsync(async (req, res) => {
-  const transfer = req.transferRow;
   const policy = await getTransferUploadPolicy();
   const maxSizeMb = policy.maxSizeMb;
   const uploader = buildUploader(maxSizeMb * 1024 * 1024, policy);
@@ -227,6 +239,16 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     }
     return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
   }
+
+  // Nothing becomes permanent on the strength of the pre-body check.
+  const current = await reloadUploadTransfer(req.params.token);
+  if (!current.transfer) {
+    for (const file of req.files) {
+      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+    }
+    return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
+  }
+  const transfer = current.transfer;
 
   const storage = getStorage();
   const ip = clientIpForAudit(req);

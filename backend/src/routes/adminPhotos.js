@@ -100,13 +100,21 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType } =
 // was hardcoded to 10GB here, which meant the advertised "max. 50MB per file"
 // in the dropzone was never enforced anywhere server-side. getMaxFileSizeBytes()
 // clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
-const createUpload = (maxFileSizeBytes) => multer({
+//
+// The handler reads three short text fields (category_id, replace_by_name,
+// match_mode). Busboy buffers every text part in memory before the handler
+// runs, so without `fields`/`fieldSize`/`parts` sized to that a caller with
+// photos.upload could send thousands of multi-megabyte text parts and hold
+// them all on the heap.
+const UPLOAD_TEXT_FIELDS = 5;
+const createUpload = (maxFileSizeBytes, maxFiles) => multer({
   storage: storage,
   limits: {
     fileSize: maxFileSizeBytes,
-    files: 2000, // Hard safety ceiling; actual limit enforced dynamically
-    fieldSize: 10 * 1024 * 1024, // 10MB for non-file fields
-    parts: 10000,
+    files: maxFiles,
+    fields: UPLOAD_TEXT_FIELDS,
+    fieldSize: 1024,
+    parts: maxFiles + UPLOAD_TEXT_FIELDS,
     headerPairs: 2000,
     // CVE-2026-82333: files arrive as repeated `photos` parts via
     // multer's own .array('photos', N) — not bracket-indexed field names
@@ -230,7 +238,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
   const multerLimitBytes = Math.max(maxFileSizeBytes, maxVideoSizeBytes);
   const maxFileSizeMb = Math.floor(multerLimitBytes / (1024 * 1024));
 
-  createUpload(multerLimitBytes).array('photos', maxFilesPerUpload)(req, res, (err) => {
+  createUpload(multerLimitBytes, maxFilesPerUpload).array('photos', maxFilesPerUpload)(req, res, (err) => {
     if (err) {
       logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
@@ -262,7 +270,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     const matchMode = match_mode === 'number_token' ? 'number_token' : 'exact';
 
     logger.info('Upload request received for event:', eventId);
-    logger.info('Body:', req.body);
+    logger.info('Body fields:', Object.keys(req.body || {}));
     logger.info('Files:', req.files ? req.files.length : 'none');
     logger.info('File details:', req.files?.map(f => ({ name: f.originalname, size: f.size, mimetype: f.mimetype })));
     logger.info('Category ID received:', category_id);
@@ -1829,6 +1837,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       fileSize,
       mimeType,
       eventId: parseInt(eventId),
+      adminId: req.admin.id,
       totalChunks,
       // The declared fileSize check above is client-controlled; the service
       // enforces this cap on the bytes it actually receives and merges.
@@ -1837,11 +1846,23 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
 
     res.json(result);
   } catch (error) {
+    // A declared size and chunk count that do not fit together is the
+    // client's mistake, and carries its own status.
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     errorResponse(res, error, 500, 'Failed to initialize upload');
   }
 });
 
 // Upload a chunk
+// Every operation below names the upload by its opaque id. requireEventOwnership
+// only proves access to the :eventId in the URL, so the service is told which
+// event and admin the call is for and answers 404 unless the upload was
+// initialised by that admin for that event — a leaked id must not let a scoped
+// admin touch another event's upload.
+const uploadOwner = (req) => ({ eventId: parseInt(req.params.eventId), adminId: req.admin.id });
+
 router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
   try {
     const { uploadId, chunkIndex } = req.params;
@@ -1855,6 +1876,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     const declaredBytes = Number(req.headers['content-length']);
     const result = await chunkedUpload.uploadChunk(uploadId, parseInt(chunkIndex), req, {
       declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
+      owner: uploadOwner(req),
     });
 
     res.json(result);
@@ -1892,14 +1914,14 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     const rawParsed = category_id ? parseInt(category_id, 10) : NaN;
     const parsedCategoryId = rawParsed > 0 ? rawParsed : null;
     if (parsedCategoryId && !(await findScopedCategory(event.id, parsedCategoryId))) {
-      await chunkedUpload.abortUpload(uploadId).catch(() => {});
+      await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
       return res.status(400).json(outOfScopeCategoryError(parsedCategoryId));
     }
     const photoCap = photoCapOf(event);
     if (photoCap) {
       const currentCount = await countEventPhotos(event.id);
       if (currentCount + 1 > photoCap) {
-        await chunkedUpload.abortUpload(uploadId).catch(() => {});
+        await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
         return res.status(400).json({
           error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload 1 more.`
         });
@@ -1907,7 +1929,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     }
 
     // Complete the chunked upload (merge chunks)
-    const mergedFile = await chunkedUpload.completeUpload(uploadId);
+    const mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
 
     // Process the merged file as a regular upload
     const fileObj = {
@@ -1917,9 +1939,11 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       path: mergedFile.path
     };
 
+    // The event the upload was initialised for. The owner check above makes
+    // it the URL's event too; the stored one is authoritative regardless.
     const uploadedPhotos = await processUploadedPhotos(
       [fileObj],
-      parseInt(eventId),
+      mergedFile.eventId,
       'admin',
       category_id || null
     );
@@ -1957,7 +1981,7 @@ router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermis
   try {
     const { uploadId } = req.params;
 
-    const status = chunkedUpload.getUploadStatus(uploadId);
+    const status = chunkedUpload.getUploadStatus(uploadId, { owner: uploadOwner(req) });
 
     if (!status) {
       return res.status(404).json({ error: 'Upload not found or expired' });
@@ -1974,7 +1998,10 @@ router.delete('/:eventId/chunked-upload/:uploadId', adminAuth, requirePermission
   try {
     const { uploadId } = req.params;
 
-    await chunkedUpload.abortUpload(uploadId);
+    const aborted = await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) });
+    if (!aborted) {
+      return res.status(404).json({ error: 'Upload not found or expired' });
+    }
 
     res.json({ success: true, message: 'Upload aborted' });
   } catch (error) {

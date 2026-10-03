@@ -37,7 +37,7 @@ const {
 } = require('../../services/downloadFilenameService');
 const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
-const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
+const { createArchiveStreamGuard, streamingArchiveAdmission } = require('../../utils/archiveStreamGuard');
 const {
   downloadLimitOf, currentDownloadLimit, grantDownloads, checkDownloads, downloadLimitError,
   settleWhenDone, responseDelivered, refuseDownload, isPreviewOnly, clientOnlyError,
@@ -529,6 +529,30 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
   }
 }
 
+/**
+ * Admission to the synchronous archive routes (archiveStreamGuard). Returns the
+ * release function, or null after answering 429 when the process already has
+ * its share of archives running and waiting. The slot is released when the
+ * response closes, however it ends; a caller that leaves before streaming
+ * releases it itself (the release is idempotent).
+ */
+async function admitStreamingArchive(res) {
+  const release = await streamingArchiveAdmission.acquire();
+  if (!release) {
+    res.set('Retry-After', '10');
+    res.status(429).json({ error: 'Too many downloads are being prepared right now — please try again shortly' });
+    return null;
+  }
+  // A client that left while this request waited in the queue has already
+  // closed; 'close' will not fire again.
+  if (res.destroyed || res.closed) {
+    release();
+    return null;
+  }
+  res.once('close', release);
+  return release;
+}
+
 // finalize() settles on the archive's end or error, and an aborted archive may
 // emit neither; the response closing ends the wait too.
 async function finalizeOrClose(archive, res) {
@@ -557,6 +581,7 @@ async function bumpEventDownloadCounts(eventId) {
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   // Hoisted so the catch can reclaim reads opened before the failure.
   let guard = null;
+  let admission = null;
   // The client hung up. An aborted archive rejects finalize() with ABORTED,
   // and the catch would then try to send JSON over a response whose ZIP
   // headers already went out — ERR_HTTP_HEADERS_SENT, unhandled, on an
@@ -680,6 +705,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${req.event.slug}.zip"` });
       return res.end();
     }
+
+    // One of a bounded number of archives this process builds at once.
+    admission = await admitStreamingArchive(res);
+    if (!admission) return;
 
     // Download limit (issue 1560): the whole archive or nothing, decided
     // before the zip headers go out.
@@ -858,6 +887,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     }
   } catch (error) {
     if (guard) guard.destroyAll();
+    if (admission) admission();
     // Nothing to say to a client that already left, and the headers are gone.
     // A half-sent archive must not be left open or ended as if complete.
     if (cancelled || res.headersSent) {
@@ -873,6 +903,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
   // Hoisted so the catch can reclaim reads opened before the failure.
   let selectedGuard = null;
   let selectedCancelled = false;
+  let selectedAdmission = null;
   try {
     // Check if downloads are allowed for this event
     if (!parseBooleanInput(req.event.allow_downloads, true)) {
@@ -923,6 +954,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       return res.status(400).json({ error: 'Resolution not available for this gallery' });
     }
     const selectedBox = parseResolution(selectedResolution);
+
+    // One of a bounded number of archives this process builds at once.
+    selectedAdmission = await admitStreamingArchive(res);
+    if (!selectedAdmission) return;
 
     // Download limit (issue 1560): the resolved, visibility-filtered set is
     // what gets zipped, so it is what gets granted. All or nothing. A
@@ -1071,6 +1106,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     }
   } catch (error) {
     if (selectedGuard) selectedGuard.destroyAll();
+    if (selectedAdmission) selectedAdmission();
     if (selectedCancelled || res.headersSent) {
       if (!res.destroyed) res.destroy();
       return;

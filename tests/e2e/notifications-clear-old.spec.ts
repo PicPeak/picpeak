@@ -3,7 +3,7 @@ import { adminApiToken } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 
-test('clearing notifications removes read entries @smoke', async ({ request }) => {
+test('clearing notifications dismisses entries from the bell without deleting the audit log @smoke', async ({ request }) => {
   const token = await adminApiToken(request);
 
   const authHeaders = {
@@ -35,10 +35,10 @@ test('clearing notifications removes read entries @smoke', async ({ request }) =
   const createdEvent = await createEventResponse.json();
   const eventId = createdEvent.id;
 
-  const collectedNotifications = async () => {
+  const collectedNotifications = async (includeRead = true) => {
     const notificationsResponse = await request.get('/api/admin/notifications', {
       headers: authHeaders,
-      params: { includeRead: true, limit: 200 },
+      params: { includeRead, limit: 200 },
     });
     expect(notificationsResponse.ok()).toBeTruthy();
     return notificationsResponse.json();
@@ -70,7 +70,9 @@ test('clearing notifications removes read entries @smoke', async ({ request }) =
     .map((notification: any) => notification.id);
   expect(readNotificationIds.length).toBeGreaterThan(0);
 
-  // clear-old was replaced by clear-all (see backend/src/routes/adminNotifications.js).
+  // Clear all marks the caller's visible rows read; activity_logs is also the
+  // audit trail (contract history, customer timelines), so nothing is deleted
+  // (see backend/src/routes/adminNotifications.js).
   const clearResponse = await request.delete('/api/admin/notifications/clear-all', {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -78,10 +80,19 @@ test('clearing notifications removes read entries @smoke', async ({ request }) =
   const clearPayload = await clearResponse.json();
   expect(clearPayload.deletedCount).toBeGreaterThanOrEqual(0);
 
-  const afterClearPayload = await collectedNotifications();
-  expect(Array.isArray(afterClearPayload.notifications)).toBe(true);
-  const remainingIds = new Set(afterClearPayload.notifications.map((notification: any) => notification.id));
+  // Gone from the bell's default (unread) view ...
+  const unreadAfterClear = await collectedNotifications(false);
+  expect(Array.isArray(unreadAfterClear.notifications)).toBe(true);
+  const unreadIds = new Set(unreadAfterClear.notifications.map((notification: any) => notification.id));
   readNotificationIds.forEach((id) => {
-    expect(remainingIds.has(id)).toBe(false);
+    expect(unreadIds.has(id)).toBe(false);
+  });
+
+  // ... but the audit rows themselves survive, marked read.
+  const allAfterClear = await collectedNotifications(true);
+  const survivingById = new Map(allAfterClear.notifications.map((notification: any) => [notification.id, notification]));
+  readNotificationIds.forEach((id) => {
+    expect(survivingById.has(id)).toBe(true);
+    expect(survivingById.get(id).isRead).toBe(true);
   });
 });

@@ -408,6 +408,36 @@ async function assertMayManageSuperAdminTarget(target, actorId) {
   }
 }
 
+async function isSuperAdminActor(actorId) {
+  const actor = await db('admin_users')
+    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    .where('admin_users.id', actorId)
+    .first('roles.name as role_name');
+  return Boolean(actor && actor.role_name === 'super_admin');
+}
+
+/**
+ * A non-super actor only reaches roles whose permissions it holds itself —
+ * the containment createInvitation / updateAdminUser apply when GRANTING a
+ * role, applied here to the accounts and invitations that already carry it
+ * (delete, cancel). super_admin bypasses; a super_admin role is out of reach
+ * for everyone else.
+ */
+async function assertActorReachesRole(actorId, roleId, message) {
+  if (!roleId || await isSuperAdminActor(actorId)) return;
+  const role = await db('roles').where('id', roleId).first();
+  if (!role) return;
+  if (role.name === 'super_admin') throw new ForbiddenError(message);
+  const rolePermissions = await db('role_permissions')
+    .join('permissions', 'permissions.id', 'role_permissions.permission_id')
+    .where('role_permissions.role_id', roleId)
+    .pluck('permissions.name');
+  const { userHasAllPermissions } = require('../middleware/permissions');
+  if (rolePermissions.length > 0 && !(await userHasAllPermissions(actorId, rolePermissions))) {
+    throw new ForbiddenError(message);
+  }
+}
+
 /**
  * Deactivate admin user
  * @param {number} id - User ID to deactivate
@@ -546,6 +576,25 @@ async function deleteAdminUser(id, deletedById) {
   // super_admin, so their specific message survives.
   await assertMayManageSuperAdminTarget(user, deletedById);
 
+  // A delegated users.delete holder only reaches accounts within its own
+  // permissions, and never one that still owns events or projects: the FK
+  // rules below SET NULL the owner column, and ownerless rows are readable
+  // by every admin (middleware/ownership.js), so deleting the owner would
+  // hand their galleries to the deleting admin. A super_admin, who sees
+  // every event anyway, may still delete such an account.
+  await assertActorReachesRole(deletedById, user.role_id,
+    'You can only delete accounts whose role is within your own permissions');
+  if (!(await isSuperAdminActor(deletedById))) {
+    const owned = await db('events').where('created_by', id).count('id as count').first();
+    let ownedProjects = 0;
+    if (await hasColumnCached('projects', 'created_by')) {
+      ownedProjects = Number((await db('projects').where('created_by', id).count('id as count').first())?.count) || 0;
+    }
+    if (Number(owned?.count) > 0 || ownedProjects > 0) {
+      throw new ConflictError('This user still owns events or projects. Only a Super Admin can delete the account.');
+    }
+  }
+
   // Hard delete. FK ON DELETE rules in core migrations handle cascade:
   //   SET NULL on created_by_admin_id everywhere (events, photos,
   //     quotes, invoices, contracts, etc.)
@@ -651,6 +700,16 @@ async function cancelInvitation(id, cancelledById) {
   if (!invitation) {
     throw new NotFoundError('Invitation', id);
   }
+
+  // An accepted invitation is the provenance of an admin account; it stays.
+  if (invitation.accepted_at) {
+    throw new ConflictError('This invitation has already been accepted');
+  }
+
+  // Same ceiling as createInvitation: a non-super actor cannot cancel an
+  // invitation into super_admin or into a role carrying permissions it lacks.
+  await assertActorReachesRole(cancelledById, invitation.role_id,
+    'You can only cancel invitations to roles within your own permissions');
 
   await db('admin_invitations').where('id', id).del();
 

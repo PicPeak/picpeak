@@ -134,3 +134,61 @@ class TestFaces:
             headers={"X-Face-ML-Token": TOKEN},
         )
         assert r.status_code == 413
+
+    def test_oversize_content_length_is_413_before_the_body_is_read(self, client, monkeypatch):
+        # A declared size far beyond the cap is refused by the middleware,
+        # before the multipart parser has spooled anything. The body sent here
+        # is tiny; only the header claims 1 GiB.
+        from app import main
+
+        monkeypatch.setattr(main.config, "MAX_IMAGE_BYTES", 10)
+        r = client.post(
+            "/faces",
+            content=b"not even multipart",
+            headers={
+                "X-Face-ML-Token": TOKEN,
+                "Content-Type": "multipart/form-data; boundary=x",
+                "Content-Length": str(1024 * 1024 * 1024),
+            },
+        )
+        assert r.status_code == 413
+
+    def test_oversize_upload_is_read_in_bounded_chunks(self, client, monkeypatch):
+        # Streaming the part is what keeps peak memory near the cap: the
+        # handler may never request more than MAX_IMAGE_BYTES + 1 bytes from
+        # the spooled upload, and must stop as soon as it passes the cap.
+        from starlette.datastructures import UploadFile as StarletteUploadFile
+
+        from app import main
+
+        cap = 1024
+        monkeypatch.setattr(main.config, "MAX_IMAGE_BYTES", cap)
+        requested: list[int] = []
+        original_read = StarletteUploadFile.read
+
+        async def recording_read(self, size=-1):
+            requested.append(size)
+            return await original_read(self, size)
+
+        monkeypatch.setattr(StarletteUploadFile, "read", recording_read)
+        r = client.post(
+            "/faces",
+            files=_image_file(b"x" * (cap * 50)),
+            headers={"X-Face-ML-Token": TOKEN},
+        )
+        assert r.status_code == 413
+        assert requested, "the upload was never read through UploadFile.read"
+        assert all(0 < size <= cap + 1 for size in requested)
+        assert sum(requested) <= cap + 1
+
+    def test_upload_at_the_cap_is_accepted(self, client, monkeypatch):
+        from app import main
+
+        cap = 1024
+        monkeypatch.setattr(main.config, "MAX_IMAGE_BYTES", cap)
+        r = client.post(
+            "/faces",
+            files=_image_file(b"x" * cap),
+            headers={"X-Face-ML-Token": TOKEN},
+        )
+        assert r.status_code == 200

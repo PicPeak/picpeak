@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { Transform } = require('stream');
-const { createReadStream, createWriteStream } = require('fs');
+const { createReadStream, createWriteStream, constants: fsConstants } = require('fs');
 const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -13,6 +13,7 @@ const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
+const { setSessionsValidAfter } = require('../utils/sessionCutoff');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -109,6 +110,119 @@ async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () 
     );
   }
   return { verified: true };
+}
+
+// Session cutoff for a database just replaced. isTokenBeforeCutoff() rejects
+// `iat < cutoff` and JWT iat is a whole second, so a cutoff of "now" lets a
+// token minted earlier in the same second survive the restore. Stamp the next
+// second: everything issued up to and including this second is out.
+function nextSessionCutoff() {
+  return Math.floor(Date.now() / 1000) + 1;
+}
+
+// `restore_max_file_size_mb` (restore settings, default from migration 032)
+// is the per-object ceiling for everything a restore copies or downloads. A
+// manifest size is only a first filter: the object actually read is measured
+// too, before (stat / HeadObject) and while (byte counter) it is written, so
+// a backup object swapped for a larger one cannot fill the staging or live
+// volume before its checksum is ever compared.
+const DEFAULT_RESTORE_MAX_FILE_MB = 5000;
+async function getRestoreMaxFileBytes() {
+  let mb = DEFAULT_RESTORE_MAX_FILE_MB;
+  try {
+    const row = await db('app_settings')
+      .where({ setting_key: 'restore_max_file_size_mb', setting_type: 'restore' })
+      .first();
+    if (row && row.setting_value != null) {
+      let raw = row.setting_value;
+      try { raw = JSON.parse(raw); } catch (_) { /* plain string */ }
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) mb = n;
+    }
+  } catch (_) {
+    // settings table unavailable (fresh install): keep the default
+  }
+  return Math.floor(mb * 1024 * 1024);
+}
+
+// A manifest is also the only place the restore learns how big an object is
+// supposed to be; a backup store can lie about both. The manifest is read
+// whole into memory by loadManifest(), so bound it separately and tightly.
+const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+
+// Pipe `source` into `targetPath`, failing the moment more than `maxBytes`
+// arrive. pipeline() destroys the source on error; the partial output is
+// removed so nothing oversized is left behind.
+async function writeBounded(source, targetPath, maxBytes, label, onProgress) {
+  let seen = 0;
+  const limiter = new Transform({
+    transform(chunk, _enc, cb) {
+      seen += chunk.length;
+      if (seen > maxBytes) {
+        return cb(new Error(`${label} exceeds the restore size limit of ${maxBytes} bytes`));
+      }
+      if (onProgress) onProgress(seen);
+      cb(null, chunk);
+    },
+  });
+  try {
+    await pipeline(source, limiter, createWriteStream(targetPath));
+  } catch (err) {
+    await fs.unlink(targetPath).catch(() => {});
+    throw err;
+  }
+}
+
+// HeadObject first so an object the store reports as oversized is refused
+// before a byte is fetched; the counter in writeBounded covers a body that
+// is longer than its declared ContentLength.
+async function downloadS3ObjectBounded(s3Client, key, localPath, maxBytes, { label, expectedSize, onProgress } = {}) {
+  const what = label || key;
+  if (Number.isFinite(Number(expectedSize)) && Number(expectedSize) > maxBytes) {
+    throw new Error(`${what} is recorded at ${expectedSize} bytes, above the restore size limit of ${maxBytes} bytes`);
+  }
+  const head = await s3Client.getMetadata(key);
+  const contentLength = Number(head && head.ContentLength);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`${what} is ${contentLength} bytes in the backup store, above the restore size limit of ${maxBytes} bytes`);
+  }
+  await fs.mkdir(path.dirname(localPath), { recursive: true });
+  const body = await s3Client.downloadStream(key);
+  await writeBounded(body, localPath, maxBytes, what,
+    onProgress ? (loaded) => onProgress(loaded, contentLength) : undefined);
+}
+
+// Open a manifest entry under the backup root for copying. A hostile backup
+// tree can place a symlink at a manifest path, and access()/copyFile() would
+// follow it and copy any backend-readable file into managed storage. lstat
+// refuses a link or any non-regular leaf, realpath refuses a linked parent
+// that leaves the (real) backup root, and the copy reads from a descriptor
+// opened O_NOFOLLOW so a swap after the check cannot redirect it.
+async function openRestoreSource(realBackupRoot, relPath, maxBytes) {
+  const sourcePath = path.join(realBackupRoot, relPath);
+  const linkStat = await fs.lstat(sourcePath);
+  if (!linkStat.isFile()) {
+    throw new Error(linkStat.isSymbolicLink() ? 'source is a symbolic link' : 'source is not a regular file');
+  }
+  const realSource = await fs.realpath(sourcePath);
+  if (pathEscapes(realBackupRoot, realSource)) {
+    throw new Error('source resolves outside the backup root');
+  }
+  if (linkStat.size > maxBytes) {
+    throw new Error(`source is ${linkStat.size} bytes, above the restore size limit of ${maxBytes} bytes`);
+  }
+  const noFollow = fsConstants.O_NOFOLLOW || 0;
+  const handle = await fs.open(sourcePath, fsConstants.O_RDONLY | noFollow);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > maxBytes) {
+      throw new Error('source changed while being restored');
+    }
+  } catch (err) {
+    await handle.close().catch(() => {});
+    throw err;
+  }
+  return handle;
 }
 
 // GHSA-xfvx: the layered candidate resolution for `manifest.database.backup_file`
@@ -347,6 +461,15 @@ class RestoreService {
         break;
       default:
         throw new Error(`Unknown restore type: ${options.restoreType}`);
+      }
+
+      // Step 6b: every admin, customer and gallery JWT issued before the
+      // identity tables were replaced must stop authenticating — a numeric
+      // id in an old token may now name a different or re-enabled principal.
+      // Same cutoff the portable import stamps (sessionCutoff.js).
+      if (options.restoreType === 'full' || options.restoreType === 'database') {
+        await setSessionsValidAfter(nextSessionCutoff());
+        this.log('info', 'Sessions issued before the restore invalidated');
       }
 
       // Step 7: Post-restore verification
@@ -877,6 +1000,8 @@ class RestoreService {
         
         if (this.dbType === 'sqlite') {
           const dbPath = knexConfig.connection.filename;
+          // Server-generated path, but it is interpolated into a dot-command.
+          assertSafeSqlitePath(dbBackupPath);
           await spawnAsync('sqlite3', [dbPath, `.backup '${dbBackupPath}'`]);
         } else {
           // PostgreSQL backup
@@ -943,6 +1068,7 @@ class RestoreService {
 
     const localPath = path.join(this.tempDir, 'restore-download');
     await fs.mkdir(localPath, { recursive: true });
+    const maxBytes = await getRestoreMaxFileBytes();
 
     try {
       // Test S3 connection
@@ -953,11 +1079,13 @@ class RestoreService {
         if (manifest.database.backup_file) {
           const dbS3Key = path.posix.join(prefix, 'database', path.basename(manifest.database.backup_file));
           const localDbPath = path.join(localPath, 'database', path.basename(manifest.database.backup_file));
-          
+
           await fs.mkdir(path.dirname(localDbPath), { recursive: true });
-          
+
           this.log('info', 'Downloading database backup from S3...', { key: dbS3Key });
-          await s3Client.download(dbS3Key, localDbPath, {
+          await downloadS3ObjectBounded(s3Client, dbS3Key, localDbPath, maxBytes, {
+            label: 'Database backup',
+            expectedSize: manifest.database.size,
             onProgress: (loaded, total) => {
               const percent = Math.round((loaded / total) * 100);
               this.updateProgress(`Downloading database backup: ${percent}%`);
@@ -985,9 +1113,11 @@ class RestoreService {
           }
 
           await fs.mkdir(path.dirname(localFilePath), { recursive: true });
-          
+
           try {
-            await s3Client.download(s3Key, localFilePath, {
+            await downloadS3ObjectBounded(s3Client, s3Key, localFilePath, maxBytes, {
+              label: file.path,
+              expectedSize: file.size,
               onProgress: (loaded, total) => {
                 const filePercent = Math.round((loaded / total) * 100);
                 const totalPercent = Math.round(((downloaded + (loaded / total)) / filesToDownload.length) * 100);
@@ -1474,6 +1604,10 @@ END $$;`
 
     let restoredCount = 0;
     const errors = [];
+    const maxBytes = await getRestoreMaxFileBytes();
+    // Symlink checks below compare against the REAL root (macOS keeps
+    // /var -> /private/var, for one).
+    const realBackupRoot = await fs.realpath(backupPath);
 
     for (const file of filesToRestore) {
       try {
@@ -1488,11 +1622,21 @@ END $$;`
           continue;
         }
 
-        // Check if source file exists
+        if (Number.isFinite(Number(file.size)) && Number(file.size) > maxBytes) {
+          errors.push(`Refusing ${file.path}: recorded at ${file.size} bytes, above the restore size limit`);
+          continue;
+        }
+
+        // Check that the source exists, is a regular file (no symlinks, no
+        // devices) and really lives under the backup root — then keep the
+        // open descriptor for the copy.
+        let sourceHandle;
         try {
-          await fs.access(sourcePath);
+          sourceHandle = await openRestoreSource(realBackupRoot, file.path, maxBytes);
         } catch (error) {
-          errors.push(`Source file not found: ${file.path}`);
+          errors.push(error.code === 'ENOENT'
+            ? `Source file not found: ${file.path}`
+            : `Refusing source ${file.path}: ${error.message}`);
           continue;
         }
 
@@ -1510,8 +1654,9 @@ END $$;`
         }
 
         try {
-          // Copy file
-          await fs.copyFile(sourcePath, targetPath);
+          // Copy file from the vetted descriptor, bounded by the size limit.
+          // The read stream closes the handle when it ends or is destroyed.
+          await writeBounded(sourceHandle.createReadStream(), targetPath, maxBytes, file.path);
 
           // Verify checksum if available
           if (file.checksum) {
@@ -1558,8 +1703,15 @@ END $$;`
       }
     }
 
-    if (errors.length > 0 && errors.length === filesToRestore.length) {
-      throw new Error('All file restorations failed');
+    // Every entry in the manifest (or in the selection) is required. A single
+    // missing, unsafe or checksum-failing file used to be tolerated as long as
+    // one other file copied, and the run was then recorded as a successful
+    // restore with storage and database out of step. Fail the run instead so
+    // the caller's rollback runs.
+    if (errors.length > 0) {
+      throw new Error(
+        `${errors.length} of ${filesToRestore.length} file restorations failed: ${errors.slice(0, 5).join('; ')}`
+      );
     }
 
     return {
@@ -1650,12 +1802,14 @@ END $$;`
         }
       }
 
-      // Verify files
-      if (options.restoreType === 'full' || options.restoreType === 'files') {
+      // Verify files. The whole required set, not a prefix: the first 100
+      // entries used to be sampled "for performance", so a crafted manifest
+      // only had to order the bad entry after them to pass.
+      if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-        const filesToVerify = options.restoreType === 'selective' 
+        const filesToVerify = options.restoreType === 'selective'
           ? options.selectedItems.filter(item => item.type === 'file')
-          : manifest.files.manifest.slice(0, 100); // Verify first 100 files for performance
+          : manifest.files.manifest;
 
         for (const file of filesToVerify) {
           const filePath = path.join(storagePath, file.path);
@@ -1730,6 +1884,8 @@ END $$;`
         }
 
         await fs.unlink(decompressedPath);
+        // The identity tables changed again; see step 6b in restore().
+        await setSessionsValidAfter(nextSessionCutoff());
       }
 
       // Restore files if backed up
@@ -1891,7 +2047,8 @@ END $$;`
       ...pinnedAgents
     });
 
-    await s3Client.download(key, localPath);
+    // Only the manifest comes through here; it is read whole into memory.
+    await downloadS3ObjectBounded(s3Client, key, localPath, MAX_MANIFEST_BYTES, { label: 'Backup manifest' });
   }
 
   /**
@@ -2072,5 +2229,11 @@ module.exports = {
     pathEscapes,
     resolveContainedDbBackupCandidates,
     verifyDatabaseDumpChecksum,
+    getRestoreMaxFileBytes,
+    nextSessionCutoff,
+    openRestoreSource,
+    writeBounded,
+    downloadS3ObjectBounded,
+    MAX_MANIFEST_BYTES,
   },
 };

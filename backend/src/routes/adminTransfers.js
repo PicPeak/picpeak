@@ -59,13 +59,28 @@ const tempStorage = multer.diskStorage({
   },
 });
 
-function buildAdminUploader(maxSizeBytes, policy) {
+// Text-field budgets per route. Busboy buffers every text part in memory
+// before the handler runs, so the parser has to be told how many fields the
+// handler reads and how large they can be. Create reads nine named fields;
+// `photoIds` is a JSON array of up to 5000 ids, which is what sizes
+// `fieldSize`. Adding files to an existing transfer reads no text at all.
+const CREATE_FIELD_LIMITS = { fields: 10, fieldSize: 64 * 1024 };
+const FILES_ONLY_FIELD_LIMITS = { fields: 0, fieldSize: 1 };
+
+function buildAdminUploader(maxSizeBytes, policy, fieldLimits) {
   return multer({
     storage: tempStorage,
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]` — no legitimate
     // field name uses array-index syntax at all. Reject any that do.
-    limits: { fileSize: maxSizeBytes, files: ADMIN_MAX_FILES, fieldArrayIndexLimit: 0 },
+    limits: {
+      fileSize: maxSizeBytes,
+      files: ADMIN_MAX_FILES,
+      fieldArrayIndexLimit: 0,
+      fields: fieldLimits.fields,
+      fieldSize: fieldLimits.fieldSize,
+      parts: ADMIN_MAX_FILES + fieldLimits.fields,
+    },
     fileFilter: (req, file, cb) => {
       // The transfer policy, not the media registry: these bytes are stored and
       // handed back untouched, never decoded, so `validateFileType`'s "can the
@@ -84,9 +99,9 @@ function buildAdminUploader(maxSizeBytes, policy) {
  * Run multer for a transfer request, reading the size/type limits from settings.
  * Resolves { ok:true } or sends a 4xx and resolves { ok:false }.
  */
-async function runAdminUpload(req, res) {
+async function runAdminUpload(req, res, fieldLimits) {
   const policy = await getTransferUploadPolicy();
-  const uploader = buildAdminUploader(policy.maxSizeMb * 1024 * 1024, policy);
+  const uploader = buildAdminUploader(policy.maxSizeMb * 1024 * 1024, policy, fieldLimits);
   try {
     await new Promise((resolve, reject) => uploader(req, res, (err) => (err ? reject(err) : resolve())));
     return { ok: true };
@@ -184,7 +199,7 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
 router.post('/',
   requirePermission('events.edit'),
   handleAsync(async (req, res) => {
-    const up = await runAdminUpload(req, res);
+    const up = await runAdminUpload(req, res, CREATE_FIELD_LIMITS);
     if (!up.ok) return; // 4xx already sent
 
     const b = req.body || {};
@@ -375,7 +390,7 @@ router.post('/:id/upload-files',
         error: 'A file request does not send files out', code: 'NOT_A_SEND',
       });
     }
-    const up = await runAdminUpload(req, res);
+    const up = await runAdminUpload(req, res, FILES_ONLY_FIELD_LIMITS);
     if (!up.ok) return;
     const rejected = req.rejectedFiles || [];
     if (!req.files || !req.files.length) {

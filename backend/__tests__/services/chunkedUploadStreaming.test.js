@@ -11,6 +11,12 @@
  * The contract these tests pin: uploadChunk consumes NOTHING until every check
  * has passed, and once it does start reading it stops at the remaining
  * allowance rather than trusting the sender.
+ *
+ * The chunk geometry is fixed by fileSize since the follow-up (every chunk
+ * but the last is CHUNK_SIZE, the last is the remainder), so each case
+ * declares a size that matches the chunks it sends. The default is a
+ * one-chunk file exactly as large as the 1 MB cap, so a sender that
+ * overshoots trips the cap first.
  */
 const path = require('path');
 const os = require('os');
@@ -22,13 +28,13 @@ process.env.STORAGE_PATH = path.join(os.tmpdir(), `picpeak-chunk-stream-test-${p
 const chunkedUpload = require('../../src/services/chunkedUploadService');
 
 const MB = 1024 * 1024;
+const { CHUNK_SIZE } = chunkedUpload;
 
 const init = (overrides = {}) => chunkedUpload.initializeUpload({
   filename: 'clip.mp4',
-  fileSize: 1,
+  fileSize: 1 * MB,
   mimeType: 'video/mp4',
   eventId: 1,
-  totalChunks: 2,
   maxFileSizeBytes: 1 * MB,
   ...overrides,
 });
@@ -83,11 +89,11 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
     });
 
     it('counts what earlier chunks already banked when checking Content-Length', async () => {
-      const { uploadId } = await init();
-      await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(0.75 * MB));
-      const source = countingSource(0.5 * MB);
-      // 0.75MB banked + 0.5MB declared > the 1MB cap.
-      await expect(chunkedUpload.uploadChunk(uploadId, 1, source, { declaredBytes: 0.5 * MB }))
+      const { uploadId } = await init({ fileSize: 2 * CHUNK_SIZE, maxFileSizeBytes: 15 * MB });
+      await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(CHUNK_SIZE));
+      const source = countingSource(CHUNK_SIZE);
+      // 10MB banked + 10MB declared > the 15MB cap.
+      await expect(chunkedUpload.uploadChunk(uploadId, 1, source, { declaredBytes: CHUNK_SIZE }))
         .rejects.toMatchObject({ code: 'FILE_TOO_LARGE', statusCode: 413 });
       expect(source.bytesRead).toBe(0);
     });
@@ -136,7 +142,7 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
     });
 
     it('leaves a previously banked chunk intact when a re-send fails', async () => {
-      const { uploadId } = await init();
+      const { uploadId } = await init({ fileSize: 1000 });
       await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(1000));
       const chunkPath = path.join(process.env.STORAGE_PATH, 'chunks', uploadId, 'chunk_000000');
       expect((await fs.stat(chunkPath)).size).toBe(1000);
@@ -158,7 +164,7 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
     });
 
     it('keeps two in-flight sends of the same chunk off each other\'s staging file', async () => {
-      const { uploadId } = await init();
+      const { uploadId } = await init({ fileSize: 10 });
       const chunkPath = path.join(process.env.STORAGE_PATH, 'chunks', uploadId, 'chunk_000000');
 
       // Two requests for the same index, overlapping. A shared .part path let
@@ -193,25 +199,25 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
     });
 
     it('counts chunks that landed while another was still streaming', async () => {
-      const { uploadId } = await init({ totalChunks: 3 });
+      const { uploadId } = await init({ fileSize: 3 * CHUNK_SIZE, maxFileSizeBytes: 15 * MB });
 
-      // Start a slow 0.75MB chunk. Its allowance is computed now, when nothing
+      // Start a slow 10MB chunk. Its allowance is computed now, when nothing
       // else is banked.
       const slow = new Readable({ read() {} });
       const slowDone = chunkedUpload.uploadChunk(uploadId, 0, slow);
 
-      // A second 0.75MB chunk completes in the meantime.
-      await chunkedUpload.uploadChunk(uploadId, 1, Buffer.alloc(0.75 * MB));
+      // A second 10MB chunk completes in the meantime.
+      await chunkedUpload.uploadChunk(uploadId, 1, Buffer.alloc(CHUNK_SIZE));
 
-      // Finishing the first must not publish: 1.5MB against a 1MB cap.
-      slow.push(Buffer.alloc(0.75 * MB));
+      // Finishing the first must not publish: 20MB against a 15MB cap.
+      slow.push(Buffer.alloc(CHUNK_SIZE));
       slow.push(null);
       await expect(slowDone).rejects.toMatchObject({ code: 'FILE_TOO_LARGE', statusCode: 413 });
       expect(chunkedUpload.getUploadStatus(uploadId)).toBeNull();
     });
 
     it('removes the staging file when publishing it fails', async () => {
-      const { uploadId } = await init();
+      const { uploadId } = await init({ fileSize: 1024 });
       const dir = path.join(process.env.STORAGE_PATH, 'chunks', uploadId);
       // Make the rename fail by putting a directory where the chunk goes.
       await fs.mkdir(path.join(dir, 'chunk_000000'), { recursive: true });
@@ -257,8 +263,8 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
     });
 
     it('400s completing an upload that is missing chunks', async () => {
-      const { uploadId } = await init();
-      await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(10));
+      const { uploadId } = await init({ fileSize: 2 * CHUNK_SIZE, maxFileSizeBytes: 25 * MB });
+      await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(CHUNK_SIZE));
       await expect(chunkedUpload.completeUpload(uploadId))
         .rejects.toMatchObject({ statusCode: 400 });
     });
@@ -266,28 +272,30 @@ describe('chunked upload streams the body under a cap (#1403)', () => {
 
   describe('the happy path still works', () => {
     it('writes a streamed chunk and reports progress', async () => {
-      const { uploadId } = await init();
-      const result = await chunkedUpload.uploadChunk(uploadId, 0, countingSource(0.25 * MB), {
+      // Two chunks; the streamed one is the 0.25MB tail.
+      const { uploadId } = await init({ fileSize: CHUNK_SIZE + 0.25 * MB, maxFileSizeBytes: 25 * MB });
+      const result = await chunkedUpload.uploadChunk(uploadId, 1, countingSource(0.25 * MB), {
         declaredBytes: 0.25 * MB,
       });
-      expect(result).toMatchObject({ chunkIndex: 0, received: 1, expected: 2, complete: false });
+      expect(result).toMatchObject({ chunkIndex: 1, received: 1, expected: 2, complete: false });
 
-      const chunkPath = path.join(process.env.STORAGE_PATH, 'chunks', uploadId, 'chunk_000000');
+      const chunkPath = path.join(process.env.STORAGE_PATH, 'chunks', uploadId, 'chunk_000001');
       expect((await fs.stat(chunkPath)).size).toBe(0.25 * MB);
     });
 
     it('still accepts a Buffer, the shape the service was written for', async () => {
-      const { uploadId } = await init();
+      const { uploadId } = await init({ fileSize: 0.25 * MB });
       const result = await chunkedUpload.uploadChunk(uploadId, 0, Buffer.alloc(0.25 * MB));
       expect(result).toMatchObject({ chunkIndex: 0, received: 1 });
     });
 
     it('lets a re-sent chunk replace itself without double-counting', async () => {
-      const { uploadId } = await init();
-      await chunkedUpload.uploadChunk(uploadId, 0, countingSource(0.6 * MB), { declaredBytes: 0.6 * MB });
-      // Same index again: the first copy's 0.6MB must not count toward the cap.
+      const size = 600 * 1024;
+      const { uploadId } = await init({ fileSize: size });
+      await chunkedUpload.uploadChunk(uploadId, 0, countingSource(size), { declaredBytes: size });
+      // Same index again: the first copy's 600KB must not count toward the cap.
       await expect(
-        chunkedUpload.uploadChunk(uploadId, 0, countingSource(0.6 * MB), { declaredBytes: 0.6 * MB }),
+        chunkedUpload.uploadChunk(uploadId, 0, countingSource(size), { declaredBytes: size }),
       ).resolves.toBeTruthy();
     });
   });

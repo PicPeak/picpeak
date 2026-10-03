@@ -147,8 +147,10 @@ router.post('/admin/login', [
       return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
     }
 
-    // Check account lockout first
-    const lockoutStatus = await checkAccountLockout(username);
+    // Check account lockout first. Scoped to identifier + source IP like the
+    // gallery/client paths: anonymous failures from one address must not
+    // deny a correct login from every other address.
+    const lockoutStatus = await checkAccountLockout(username, ipAddress);
     if (lockoutStatus.isLocked) {
       logger.warn('Login attempt on locked account', { username, ipAddress });
       return res.status(423).json({ 
@@ -275,7 +277,7 @@ router.post('/admin/login/mfa', [
     }
 
     const lockoutKey = decoded.loginId || decoded.username;
-    const lockoutStatus = await checkAccountLockout(lockoutKey);
+    const lockoutStatus = await checkAccountLockout(lockoutKey, ipAddress);
     if (lockoutStatus.isLocked) {
       return res.status(423).json({
         error: 'Account temporarily locked due to too many failed attempts',

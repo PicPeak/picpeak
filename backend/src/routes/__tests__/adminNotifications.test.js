@@ -2,7 +2,9 @@ const request = require('supertest');
 const express = require('express');
 
 jest.mock('../../database/db', () => {
-  const deleteMock = jest.fn().mockResolvedValue(5);
+  // clear-all marks the caller's visible rows read (it never deletes
+  // activity_logs any more); the terminal call is update().
+  const updateMock = jest.fn().mockResolvedValue(5);
   const chain = {
     select: jest.fn().mockReturnThis(),
     leftJoin: jest.fn().mockReturnThis(),
@@ -12,8 +14,9 @@ jest.mock('../../database/db', () => {
     whereNotNull: jest.fn().mockReturnThis(),
     whereNotIn: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
-    update: jest.fn().mockReturnThis(),
-    delete: deleteMock,
+    whereIn: jest.fn().mockReturnThis(),
+    update: updateMock,
+    delete: jest.fn().mockResolvedValue(0),
     count: jest.fn().mockReturnThis(),
     first: jest.fn().mockResolvedValue({ count: 0 }),
   };
@@ -21,12 +24,12 @@ jest.mock('../../database/db', () => {
   const dbMock = jest.fn(() => chain);
   dbMock.raw = jest.fn();
   dbMock.__chain = chain;
-  dbMock.__deleteMock = deleteMock;
+  dbMock.__updateMock = updateMock;
   return { db: dbMock };
 });
 
 jest.mock('../../middleware/auth', () => ({
-  adminAuth: (_req, _res, next) => next(),
+  adminAuth: (req, _res, next) => { req.admin = { id: 1, roleName: 'super_admin' }; next(); },
 }));
 
 // requirePermission is its own module — without this mock the real
@@ -49,14 +52,16 @@ describe('adminNotifications routes', () => {
   });
 
   it('clears all notifications', async () => {
-    db.__deleteMock.mockResolvedValueOnce(8);
+    db.__updateMock.mockResolvedValueOnce(8);
 
     const response = await request(app)
       .delete('/admin/notifications/clear-all')
       .expect(200);
 
     expect(db).toHaveBeenCalledWith('activity_logs');
-    expect(db.__deleteMock).toHaveBeenCalledTimes(1);
+    expect(db.__updateMock).toHaveBeenCalledTimes(1);
+    expect(db.__chain.delete).not.toHaveBeenCalled();
+    expect(db.__updateMock.mock.calls[0][0]).toHaveProperty('read_at');
     expect(response.body).toEqual({
       message: 'All notifications cleared',
       deletedCount: 8,
@@ -64,7 +69,7 @@ describe('adminNotifications routes', () => {
   });
 
   it('handles database errors when clearing notifications', async () => {
-    db.__deleteMock.mockRejectedValueOnce(new Error('boom'));
+    db.__updateMock.mockRejectedValueOnce(new Error('boom'));
 
     const response = await request(app)
       .delete('/admin/notifications/clear-all')

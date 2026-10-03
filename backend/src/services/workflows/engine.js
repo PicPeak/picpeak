@@ -60,6 +60,20 @@ function computeWakeAt(config = {}, vars = {}) {
   return new Date(base.getTime() + ms).toISOString();
 }
 
+/**
+ * Master kill-switch, read fail-closed: an unreadable flag counts as off.
+ * Shared by every path that creates or moves a run.
+ */
+async function workflowsEnabled() {
+  try {
+    const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
+    return await isFeatureEnabled('workflows');
+  } catch (e) {
+    logger.warn('[workflow] flag check failed — treating workflows as disabled', { error: e.message });
+    return false;
+  }
+}
+
 function gateTimeout(config = {}) {
   const days = Number((config || {}).timeoutDays || 0);
   return days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
@@ -234,6 +248,10 @@ async function startRun(runId) {
  * pass decisionHandle = 'confirm' | 'deny' so the matching edge is taken.
  */
 async function resumeRun(runId, { decisionHandle = null } = {}) {
+  // The scheduler and recovery sweeps check the flag before calling in, but a
+  // gate decision from the public approval link does not pass through them;
+  // the kill-switch has to hold at the one transition every resume shares.
+  if (!(await workflowsEnabled())) return;
   const run = await db('workflow_runs').where({ id: runId }).first();
   if (!run || run.status !== 'waiting') return;
   const { edges } = await loadGraph(run.workflow_id, run.version);
@@ -616,6 +634,7 @@ module.exports = {
   resumeRun,
   finishRun,
   failRun,
+  workflowsEnabled,
   // exported for tests / introspection
   loadGraph,
   outEdge,

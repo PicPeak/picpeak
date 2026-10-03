@@ -92,16 +92,25 @@ declare global {
 // The admin UI, including its login page. Matched the way the router matches
 // routes: case-insensitively, on the percent-decoded path, so `/ADMIN` or
 // `/%61dmin` counts too. A path that cannot be decoded counts as admin.
-// Pages whose URL carries a bearer secret: invitation, reset, quote, contract,
-// payment-check and transfer tokens. A tracker that auto-collects page views
-// would ship the token to the analytics host, where anyone with access to the
-// events could redeem it first. These pages get no tracker and no custom head
-// scripts, admin-style (Codex security audit 2026-09-30). Keep in sync with
-// the maskPatterns list in App.tsx, which is the second line of defence for
-// the gallery paths the tracker does run on.
+// Pages whose URL carries a bearer secret, or whose session holds one:
+//   - the /s/ short links (the slug redeems to a gallery share URL);
+//   - the customer portal tree (/customer/*): login, invite/reset tokens and
+//     the cookie-authenticated portal pages behind them;
+//   - invitation, quote, contract, payment-check and transfer tokens.
+// A tracker that auto-collects page views would ship the token to the
+// analytics host, where anyone with access to the events could redeem it
+// first; and the tracker script (vendor code re-served through our origin, or
+// the admin-pasted custom head HTML) runs with whatever that page can do —
+// act as the signed-in customer. These pages get no tracker and no custom
+// head scripts, admin-style (Codex security audit 2026-09-30; customer tree
+// and short links added 2026-10-03). Gallery pages (/gallery/:slug/:token)
+// stay tracked by maintainer decision: their share token is redacted by
+// trackPageView and by the maskPatterns list in App.tsx (GHSA-7m6c), which is
+// also the second line of defence for a page view recorded just before a
+// client-side navigation onto one of the paths below.
 const CREDENTIAL_PATH_PREFIXES = [
-  '/invite/', '/quote/', '/contract/', '/payment-check/', '/transfer/',
-  '/transfer-upload/', '/customer/invite/', '/customer/reset-password/',
+  '/s/', '/customer/', '/invite/', '/quote/', '/contract/', '/payment-check/',
+  '/transfer/', '/transfer-upload/',
 ];
 const isCredentialPath = (pathname: string) => {
   let decoded: string;
@@ -110,8 +119,9 @@ const isCredentialPath = (pathname: string) => {
   } catch {
     return true;
   }
-  const lower = decoded.toLowerCase();
-  return CREDENTIAL_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix));
+  const lower = decoded.toLowerCase().replace(/\/{2,}/g, '/');
+  // `/customer` (the portal index) counts like `/customer/…`.
+  return CREDENTIAL_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix) || lower === prefix.slice(0, -1));
 };
 
 /** No tracker and no third-party head scripts here. */
@@ -313,11 +323,17 @@ class AnalyticsService {
     // data-mask-patterns doing the redaction, so a manual call would
     // double-count — skip it. 'none'/'custom' have no page-view API.
     if (this.provider !== 'umami' || typeof window === 'undefined') return;
+    const raw = url ?? window.location.pathname;
+    // Untracked pages record nothing, even while the tracker is still loaded:
+    // useAnalytics calls handleRouteChange (which schedules the reload that
+    // unloads it) and then trackPageView in the same effect, so without this
+    // the first view of a portal or token page would still reach the
+    // collector from the old document.
+    if (isUntrackedPath(raw.split('?')[0].split('#')[0])) return;
     // The script tag is injected async, so `window.umami` is absent until it
     // has loaded; a route change before that is simply not recorded.
     const umami = window.umami;
     if (!umami) return;
-    const raw = url ?? window.location.pathname;
     const safe = this.sanitizeTrackedUrl(raw);
     try {
       if (typeof umami.track === 'function') {

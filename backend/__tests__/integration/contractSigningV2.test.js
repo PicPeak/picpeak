@@ -27,6 +27,7 @@ const {
 
 // Stored paths are relative to the storage root (storedPath.js).
 const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+const { minimalPdf, javascriptPdf } = require('./helpers/pdfFixture');
 
 jest.setTimeout(120000);
 
@@ -389,8 +390,24 @@ test('a wet-signed upload is refused unless its bytes are a PDF and the signer i
   expect((await db('contracts').where({ id: single }).first()).status).toBe('sent');
   expect(count()).toBe(before);
 
-  // A real PDF from the only signer completes it.
-  const good = await upload(singleSession, Buffer.from('%PDF-1.4\n%%EOF\n'));
+  // A PDF carrying JavaScript is refused by the content check, and a text
+  // field next to the file by the multipart limits — the route reads none.
+  // Neither moves the contract or leaves a file.
+  const active = await upload(singleSession, await javascriptPdf());
+  expect(active.status).toBe(400);
+  expect(active.body.code).toBe('PDF_ACTIVE_CONTENT');
+  const extraField = await request(signingApp)
+    .post('/api/public/contract-signing/session/upload-signed-pdf')
+    .set('X-Signing-Session', singleSession)
+    .field('note', 'x')
+    .attach('file', await minimalPdf(), { filename: 'signed.pdf', contentType: 'application/pdf' });
+  expect(extraField.status).toBe(400);
+  expect((await db('contracts').where({ id: single }).first()).status).toBe('sent');
+  expect(count()).toBe(before);
+
+  // A real PDF from the only signer completes it. The route parses the
+  // file, so the fixture has to be a document, not just the signature.
+  const good = await upload(singleSession, await minimalPdf());
   expect(good.status).toBe(200);
   expect((await db('contracts').where({ id: single }).first()).status).toBe('fully_signed');
 });

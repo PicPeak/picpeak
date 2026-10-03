@@ -301,6 +301,13 @@ app.get(['/health', '/api/health'], async (req, res) => {
 
 // Initialize rate limiters (they will be created dynamically)
 
+// The stylesheet below is interpolated into a raw-text <style> element, where
+// the HTML parser ends the element at the first `</style` regardless of CSS
+// structure. Every segment — palette, base CSS, operator CSS — is settings
+// data, so the whole thing is escaped at the sink rather than trusting each
+// producer. `<` → `\3c ` is the same character to a CSS parser.
+const { escapeCssForStyleElement } = require('./src/utils/cssSanitizer');
+
 function composeInlineStyles(payload) {
   const { branding } = payload;
   const cssSegments = [];
@@ -324,7 +331,7 @@ function composeInlineStyles(payload) {
     cssSegments.push(`/* Custom styles */\n${payload.css}`);
   }
 
-  return cssSegments.join('\n\n');
+  return escapeCssForStyleElement(cssSegments.join('\n\n'));
 }
 
 function escapeHtml(str) {
@@ -630,7 +637,17 @@ app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath,
 // (set by express.static from file mtime), browsers send If-Modified-Since
 // after expiry and pick up the new version automatically. See https://docs.picpeak.app/guides/custom-fonts
 // "Replacing an existing font" for the documented rollout strategy.
-const fontStaticOpts = { maxAge: '7d' };
+//
+// Only font formats leave these mounts (isPublicFontFile): the storage tree is
+// admin-writable and a restored backup can populate it, so anything else in
+// it must not be served from the app origin. nosniff keeps a browser from
+// promoting a font response to another type.
+const { isPublicFontFile } = require('./src/middleware/secureStatic');
+const fontStaticOpts = {
+  maxAge: '7d',
+  onlyServe: isPublicFontFile,
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+};
 app.use(
   '/fonts',
   setCorsHeaders,
