@@ -63,7 +63,7 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     const track = vi.fn();
     setUmami({ track });
 
-    expect(() => umamiService().trackPageView('/admin/events?page=2')).not.toThrow();
+    expect(() => umamiService().trackPageView('/impressum?page=2')).not.toThrow();
 
     expect(track).toHaveBeenCalledTimes(1);
     const [payloadFn] = track.mock.calls[0];
@@ -72,7 +72,7 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     const payload = payloadFn(DEFAULT_PAYLOAD);
     // Tracker defaults are preserved, only the URL is overridden — and the
     // query string is dropped by the sanitizer.
-    expect(payload).toMatchObject({ ...DEFAULT_PAYLOAD, url: '/admin/events' });
+    expect(payload).toMatchObject({ ...DEFAULT_PAYLOAD, url: '/impressum' });
     // No `name` → Umami records a page view, not a custom event.
     expect(payload).not.toHaveProperty('name');
   });
@@ -82,15 +82,17 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     setUmami({ track });
     const service = umamiService();
 
-    service.trackPageView('/admin/dashboard');
+    service.trackPageView('/impressum');
     expect(track.mock.calls[0][0](DEFAULT_PAYLOAD).referrer).toBe(DEFAULT_PAYLOAD.referrer);
 
-    service.trackPageView('/admin/dashboard', 'https://picpeak.example.com/admin/events');
+    service.trackPageView('/impressum', 'https://picpeak.example.com/datenschutz');
     expect(track.mock.calls[1][0](DEFAULT_PAYLOAD).referrer).toBe(
-      'https://picpeak.example.com/admin/events'
+      'https://picpeak.example.com/datenschutz'
     );
   });
 
+  // Gallery pages stay tracked (maintainer decision 2026-10-03): the share
+  // token is redacted here and masked by Rybbit's maskPatterns (GHSA-7m6c).
   it('still redacts the gallery share token on the track() path (GHSA-7m6c)', () => {
     const track = vi.fn();
     setUmami({ track });
@@ -100,14 +102,25 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     expect(track.mock.calls[0][0](DEFAULT_PAYLOAD).url).toBe('/gallery/summer-wedding/[redacted]');
   });
 
+  it('records nothing for a customer-portal or short-link page view, even while the tracker is loaded', () => {
+    const track = vi.fn();
+    setUmami({ track });
+
+    umamiService().trackPageView('/customer/dashboard?tab=bills');
+    umamiService().trackPageView('/customer');
+    umamiService().trackPageView('/s/ab12cd');
+
+    expect(track).not.toHaveBeenCalled();
+  });
+
   it('falls back to the legacy trackView() when that is all the script offers', () => {
     const trackView = vi.fn();
     setUmami({ trackView });
 
-    expect(() => umamiService().trackPageView('/admin/events?page=2')).not.toThrow();
+    expect(() => umamiService().trackPageView('/impressum?page=2')).not.toThrow();
 
     expect(trackView).toHaveBeenCalledTimes(1);
-    expect(trackView).toHaveBeenCalledWith('/admin/events', undefined, 'site-123');
+    expect(trackView).toHaveBeenCalledWith('/impressum', undefined, 'site-123');
   });
 
   it('prefers track() over trackView() when a script exposes both', () => {
@@ -115,7 +128,7 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     const trackView = vi.fn();
     setUmami({ track, trackView });
 
-    umamiService().trackPageView('/admin/events');
+    umamiService().trackPageView('/impressum');
 
     expect(track).toHaveBeenCalledTimes(1);
     expect(trackView).not.toHaveBeenCalled();
@@ -124,13 +137,13 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
   it('is a no-op while the script has not loaded yet', () => {
     setUmami(undefined);
 
-    expect(() => umamiService().trackPageView('/admin/events')).not.toThrow();
+    expect(() => umamiService().trackPageView('/impressum')).not.toThrow();
   });
 
   it('is a no-op when the global has neither page-view API', () => {
     setUmami({ identify: vi.fn() } as unknown as Partial<UmamiGlobal>);
 
-    expect(() => umamiService().trackPageView('/admin/events')).not.toThrow();
+    expect(() => umamiService().trackPageView('/impressum')).not.toThrow();
   });
 
   it('does not let a throwing tracker break navigation', () => {
@@ -141,7 +154,7 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
       },
     });
 
-    expect(() => umamiService().trackPageView('/admin/events')).not.toThrow();
+    expect(() => umamiService().trackPageView('/impressum')).not.toThrow();
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
