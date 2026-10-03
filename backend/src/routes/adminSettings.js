@@ -166,14 +166,19 @@ const effectiveMissingSetting = async (key) => {
   if (key === 'analytics_umami_enabled') return false;
   return null;
 };
+// A rule names either the owning `perm`, or `superAdmin: true` when the key is
+// a super-admin decision that no delegable permission can grant.
 const PROTECTED_SETTING_KEY_PERMS = [
   { match: (k) => k === 'general_site_url', perm: 'settings.domains' },
   { match: (k) => k.startsWith('security_'), perm: 'settings.security' },
   { match: (k) => k.startsWith('accounting_'), perm: 'settings.banking' },
   // The tracker provider/URL and the custom head HTML decide which JavaScript
   // the app serves from its own origin (the tracker proxy re-serves the
-  // configured script same-origin), so they need more than settings.edit.
-  { match: (k) => TRACKER_CODE_KEYS.has(k), perm: 'settings.integrations' },
+  // configured script same-origin) and runs in every visitor's session,
+  // including a super admin's. Whoever picks that code can act as any account
+  // that loads it, so no delegable permission (settings.integrations
+  // included) may grant it — super admins only, like the SSO provider.
+  { match: (k) => TRACKER_CODE_KEYS.has(k), superAdmin: true },
 ];
 // Returns the list of {key, perm} the caller tried to CHANGE without the owning
 // permission. Callers 403 when it's non-empty rather than silently no-op'ing a
@@ -188,14 +193,17 @@ const collectUnauthorizedProtectedKeys = async (settings, adminId) => {
   for (const key of Object.keys(settings)) {
     const rule = PROTECTED_SETTING_KEY_PERMS.find((r) => r.match(key));
     if (!rule) continue;
-    if (await userHasAnyPermission(adminId, [rule.perm])) continue;
+    const allowed = rule.superAdmin
+      ? await isSuperAdminUser(adminId)
+      : await userHasAnyPermission(adminId, [rule.perm]);
+    if (allowed) continue;
     const row = await db('app_settings').where({ setting_key: key }).first();
     const stored = row ? parseStoredSetting(row) : await effectiveMissingSetting(key);
     if (String(stored ?? '') === String(settings[key] ?? '')) {
       delete settings[key]; // unchanged — let the rest of the save through
       continue;
     }
-    denied.push({ key, perm: rule.perm });
+    denied.push({ key, perm: rule.superAdmin ? 'super_admin' : rule.perm });
   }
   return denied;
 };

@@ -32,7 +32,7 @@ const STORED_URL = 'https://stored.example';
 
 describe('settings protected-key boundary (/general)', () => {
   let db; let cleanup; let app;
-  let superTok; let mgrTok;
+  let superTok; let mgrTok; let integrationsTok;
 
   const auth = (req, tok) => req.set('Authorization', `Bearer ${tok}`);
   const readSiteUrl = async () => {
@@ -56,6 +56,18 @@ describe('settings protected-key boundary (/general)', () => {
       role_id: mgrRole.id, must_change_password: false, created_at: new Date(),
     }).returning('id');
     mgrTok = mintAdminToken(ins[0]?.id ?? ins[0]);
+
+    // Delegated integrations editor: settings.edit + settings.integrations,
+    // NOT super_admin. The tracker-code keys must stay out of its reach.
+    const integrationsRole = await svc.createRole(
+      { name: 'integrations_mgr', permissions: ['settings.view', 'settings.edit', 'settings.integrations'] },
+      superId,
+    );
+    const integrationsIns = await db('admin_users').insert({
+      username: 'integrations', email: 'integrations@example.com', password_hash: 'x',
+      role_id: integrationsRole.id, must_change_password: false, created_at: new Date(),
+    }).returning('id');
+    integrationsTok = mintAdminToken(integrationsIns[0]?.id ?? integrationsIns[0]);
 
     await db('app_settings').insert({
       setting_key: 'general_site_url', setting_value: JSON.stringify(STORED_URL), setting_type: 'general',
@@ -151,6 +163,36 @@ describe('settings protected-key boundary (/general)', () => {
       .send({ analytics_umami_website_id: 'site-1' });
     expect(res.status).toBe(200);
     expect(await readSetting('analytics_umami_website_id')).toBe('site-1');
+  });
+
+  // The tracker code runs in every visitor's session on this origin, a
+  // visiting super admin's included, so choosing it is a super-admin decision:
+  // the delegable settings.integrations permission must not reach it either.
+  it('settings.integrations holder is 403d when it changes any tracker-code key', async () => {
+    const attempts = [
+      { analytics_tracker_provider: 'umami', analytics_umami_url: 'https://tracker.evil.example' },
+      { analytics_tracker_provider: 'rybbit', analytics_rybbit_url: 'https://rybbit.evil.example' },
+      { analytics_tracker_provider: 'custom', analytics_custom_head_html: '<script>fetch("/api/admin/users")</script>' },
+      { analytics_umami_enabled: true },
+    ];
+    for (const payload of attempts) {
+      const res = await auth(request(app).put('/api/admin/settings/analytics'), integrationsTok).send(payload);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+      expect(res.body.keys.map((k) => k.key)).toEqual(expect.arrayContaining(Object.keys(payload)));
+      expect(res.body.keys.every((k) => k.perm === 'super_admin')).toBe(true);
+    }
+    expect(await readSetting('analytics_umami_url')).toBeUndefined();
+    expect(await readSetting('analytics_rybbit_url')).toBeUndefined();
+    expect(await readSetting('analytics_custom_head_html')).toBeUndefined();
+    expect(await readSetting('analytics_tracker_provider')).toBeUndefined();
+  });
+
+  it('settings.integrations holder can still save the non-code analytics keys', async () => {
+    const res = await auth(request(app).put('/api/admin/settings/analytics'), integrationsTok)
+      .send({ analytics_umami_website_id: 'site-2', analytics_umami_share_url: 'https://share.example' });
+    expect(res.status).toBe(200);
+    expect(await readSetting('analytics_umami_website_id')).toBe('site-2');
   });
 
   it('super_admin can change the tracker URL', async () => {
