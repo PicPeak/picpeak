@@ -97,4 +97,64 @@ function createArchiveStreamGuard({ maxInFlight = DEFAULT_MAX_IN_FLIGHT, onFatal
   };
 }
 
-module.exports = { createArchiveStreamGuard, DEFAULT_MAX_IN_FLIGHT };
+/**
+ * Process-wide admission for the synchronous ZIP routes (download-all's
+ * streaming fallback and download-selected). The guard above bounds the
+ * reads of ONE archive; nothing bounded how many archives ran at once, so a
+ * gallery-link holder could start 25 and hold the whole S3 agent pool with
+ * two reads each, plus the resize, deflate and disk work behind every one.
+ * Same numbers as downloadJobService, which builds the same archives in the
+ * background: two running, eight waiting, the rest refused straight away.
+ */
+const DEFAULT_MAX_ACTIVE = 2;
+const DEFAULT_MAX_WAITING = 8;
+
+function createArchiveAdmission({ maxActive = DEFAULT_MAX_ACTIVE, maxWaiting = DEFAULT_MAX_WAITING } = {}) {
+  let active = 0;
+  const waiting = [];
+
+  const release = () => {
+    const next = waiting.shift();
+    // The slot passes straight to the next waiter; active stays as it is.
+    if (next) next();
+    else active -= 1;
+  };
+
+  return {
+    /**
+     * Resolves to a release function once a slot is free, or to null when the
+     * queue is full. Call release when the response is done, however it ends;
+     * calling it more than once is harmless.
+     */
+    async acquire() {
+      if (active < maxActive) {
+        active += 1;
+      } else if (waiting.length >= maxWaiting) {
+        return null;
+      } else {
+        await new Promise((resolve) => { waiting.push(resolve); });
+      }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        release();
+      };
+    },
+
+    get active() {
+      return active;
+    },
+
+    get waiting() {
+      return waiting.length;
+    },
+  };
+}
+
+// One instance per process, shared by every synchronous archive route.
+const streamingArchiveAdmission = createArchiveAdmission();
+
+module.exports = {
+  createArchiveStreamGuard, DEFAULT_MAX_IN_FLIGHT, createArchiveAdmission, streamingArchiveAdmission,
+};
