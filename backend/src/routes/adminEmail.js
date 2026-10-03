@@ -41,10 +41,12 @@ router.get('/config', adminAuth, requirePermission('email.view'), async (req, re
       });
     }
 
-    // Don't send the actual password
+    // Don't send the actual passwords — the row also carries the IMAP
+    // login (migration 128), which /incoming-config masks the same way.
     res.json({
       ...config,
-      smtp_pass: config.smtp_pass ? '********' : ''
+      smtp_pass: config.smtp_pass ? '********' : '',
+      imap_pass: config.imap_pass ? '********' : ''
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch email configuration');
