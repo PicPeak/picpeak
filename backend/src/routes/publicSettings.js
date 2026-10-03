@@ -179,7 +179,9 @@ router.get('/', async (req, res) => {
       umami_enabled: settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true',
       umami_url: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_url || null) : null,
       umami_website_id: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_website_id || null) : null,
-      umami_share_url: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_share_url || null) : null,
+      // The share URL is the bearer link to the whole Umami dashboard, not
+      // tracker bootstrap; the admin analytics page reads it from
+      // /admin/settings, so it never leaves the authenticated API.
       // Tracker-provider switch (#663 Phase 1). Drives which provider's
       // script gets injected into the gallery <head>. 'none' / unset =
       // no tracker. The frontend tracker service picks the right shape
