@@ -57,7 +57,7 @@ beforeAll(async () => {
       }
 
       service.recordHit(row.id).catch(() => {});
-      return res.redirect(302, row.target_path);
+      return res.redirect(302, service.redirectTarget(row.target_path, req.originalUrl));
     } catch (err) {
       return res.status(500).type('text/plain').send(err.message);
     }
@@ -105,6 +105,29 @@ describe('GET /s/:shortSlug — browser (302 redirect)', () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe(shortUrl.target_path);
     expect(res.headers.location).toMatch(/^\/gallery\//);
+  });
+
+  // Issue 1733: a link to one photo goes through the shortener too.
+  it('carries the query string through to the target, re-encoded', async () => {
+    const { shortUrl } = await seedEventAndShortUrl({
+      slug: 'query-passthrough', shortSlug: 'with-query',
+    });
+    const res = await request(app)
+      .get('/s/with-query?photo=42&folder=ceremony-1&x=a%20b%3Cc')
+      .set('User-Agent', BROWSER_UA);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(`${shortUrl.target_path}?photo=42&folder=ceremony-1&x=a+b%3Cc`);
+  });
+
+  it('redirects to the bare target when there is no query', async () => {
+    const { shortUrl } = await seedEventAndShortUrl({
+      slug: 'no-query', shortSlug: 'without-query',
+    });
+    const res = await request(app)
+      .get('/s/without-query?')
+      .set('User-Agent', BROWSER_UA);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(shortUrl.target_path);
   });
 
   it('increments hit_count on a browser hit (fire-and-forget — wait briefly)', async () => {
