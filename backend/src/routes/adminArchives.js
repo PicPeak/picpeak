@@ -866,26 +866,44 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
       }
     }
 
-    // Face data (#1074, #1132). This route deletes the event row directly and
-    // relies on the FK cascade, but SQLite only honours ON DELETE CASCADE with
-    // `PRAGMA foreign_keys = ON`, which PicPeak does not set — and
-    // event_people_merge_dismissals has no event FK at all, on either engine.
-    // archiveEvent's purge step is deliberately nonfatal, so an event can
-    // still be carrying face data when it reaches this permanent delete.
-    // Delete explicitly, the same way deleteEventCascade does.
-    await db('photo_faces').where('event_id', req.params.id).del();
-    await db('event_people').where('event_id', req.params.id).del();
-    if (await db.schema.hasTable('event_people_merge_dismissals')) {
-      await db('event_people_merge_dismissals').where('event_id', req.params.id).del();
-    }
-    // Download-limit grants (issue 1560), for the same SQLite reason.
-    if (await db.schema.hasTable('event_download_grants')) {
-      await db('event_download_grants').where('event_id', req.params.id).del();
-    }
-
-    // Delete from database (cascade will delete photos and logs)
-    await deleteWithAccountingHistory(db, 'events', { id: req.params.id },
-      { actor: req.admin.id, source: 'archive.delete' });
+    // The child rows, explicitly, then the event. This used to delete the
+    // event row alone and rely on the FK cascade, but activity_logs,
+    // access_logs and email_queue reference events WITHOUT ON DELETE CASCADE
+    // (db.js), so on PostgreSQL the delete failed on the foreign key. SQLite
+    // never enforces the keys (PicPeak does not set `PRAGMA foreign_keys =
+    // ON`), which is why it went unnoticed there — and why the declared
+    // cascades on photo_faces, event_download_grants and feedback_rate_limits
+    // are inert there too. Same table list and order as deleteEventCascade
+    // (adminEvents/helpers.js), which carries the reasons for each one; not
+    // reused because it sweeps and audits as an event delete, and this is an
+    // archive delete.
+    const hasMergeDismissals = await db.schema.hasTable('event_people_merge_dismissals');
+    const hasDownloadGrants = await db.schema.hasTable('event_download_grants');
+    await db.transaction(async (trx) => {
+      // Event row first (issue 1560): the download-limit grants lock the
+      // event row and then grant/photo rows, so taking them here in the
+      // opposite order could deadlock on PostgreSQL.
+      if (trx.client.config.client === 'pg') {
+        await trx('events').where({ id: req.params.id }).forUpdate().first();
+      }
+      await trx('activity_logs').where('event_id', req.params.id).del();
+      await trx('access_logs').where('event_id', req.params.id).del();
+      await trx('email_queue').where('event_id', req.params.id).del();
+      // Face data (#1074, #1132): archiveEvent's purge step is deliberately
+      // nonfatal, so an event can still be carrying it here.
+      await trx('photo_faces').where('event_id', req.params.id).del();
+      await trx('event_people').where('event_id', req.params.id).del();
+      if (hasMergeDismissals) {
+        await trx('event_people_merge_dismissals').where('event_id', req.params.id).del();
+      }
+      if (hasDownloadGrants) {
+        await trx('event_download_grants').where('event_id', req.params.id).del();
+      }
+      await trx('feedback_rate_limits').where('event_id', req.params.id).del();
+      await trx('photos').where('event_id', req.params.id).del();
+      await deleteWithAccountingHistory(trx, 'events', { id: req.params.id },
+        { actor: req.admin.id, source: 'archive.delete' });
+    });
 
     // Log activity
     await db('activity_logs').insert({
