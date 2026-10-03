@@ -3,10 +3,13 @@
  *
  * Guest sessions come from the gallery password (or the share link of a gallery
  * without one), client sessions from the client password or the client link.
- * Portal sessions (`via: 'customer'`) are bound to the customer account and
- * slideshow sessions to the slideshow link, so neither is cut off here.
+ * Slideshow sessions come from the slideshow link: the session carries a digest
+ * of the link it was opened with, and rotating or disabling the link ends every
+ * session opened with the old one. Portal sessions (`via: 'customer'`) are bound
+ * to the customer account, so they are not cut off here.
  */
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const { hasColumnCached } = require('./schemaCache');
 const { toTimestamp } = require('./dateNormalize');
 const { AppError } = require('./errors');
@@ -41,8 +44,30 @@ async function sameAsStored(plain, storedHash) {
   }
 }
 
+function slideshowLinkDigest(showShareToken) {
+  return crypto.createHash('sha256').update(String(showShareToken)).digest('hex').slice(0, 16);
+}
+
+/**
+ * Claim for a slideshow session JWT naming the link it was opened with. Not
+ * the link itself: the JWT is sent on every image request.
+ */
+function slideshowCredentialClaim(event) {
+  return { showLink: slideshowLinkDigest(event.show_share_token) };
+}
+
 function assertGalleryCredentialCurrent(event, session) {
-  if (!event || !session || session.via === 'customer' || session.accessLevel === 'slideshow') return;
+  if (!event || !session || session.via === 'customer') return;
+  if (session.accessLevel === 'slideshow') {
+    // A session without the claim predates it. It lives 12 hours at most and
+    // is left to expire rather than blanking every running projector at the
+    // deploy that introduced the claim.
+    if (session.showLink === undefined) return;
+    if (!event.show_share_token || session.showLink !== slideshowLinkDigest(event.show_share_token)) {
+      throw new AppError('Slideshow link changed', 401, 'SLIDESHOW_LINK_CHANGED');
+    }
+    return;
+  }
   const changedAt = event[session.accessLevel === 'client' ? COLUMN.client : COLUMN.gallery];
   if (changedAt == null) return;
   const changed = toTimestamp(changedAt);
@@ -53,4 +78,4 @@ function assertGalleryCredentialCurrent(event, session) {
   }
 }
 
-module.exports = { credentialChangeColumns, sameAsStored, assertGalleryCredentialCurrent };
+module.exports = { credentialChangeColumns, sameAsStored, slideshowCredentialClaim, assertGalleryCredentialCurrent };
