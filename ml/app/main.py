@@ -13,7 +13,7 @@ the backend, where the data already is.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from . import config
@@ -66,6 +66,28 @@ app = FastAPI(
 )
 
 
+# Room for the multipart framing (boundary lines, part headers) around an
+# image that is exactly at the cap.
+_MULTIPART_SLACK = 64 * 1024
+_READ_CHUNK = 1024 * 1024
+
+
+@app.middleware("http")
+async def reject_oversized_body(request: Request, call_next):
+    """Refuse an upload by its declared size before the multipart parser runs.
+
+    Starlette parses the form before the endpoint and its dependencies run,
+    so a Content-Length far beyond the image cap would otherwise be parsed in
+    full first. Answer 413 straight away; the bounded read in /faces covers
+    bodies that arrive without a usable Content-Length.
+    """
+    if request.method == "POST":
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > config.MAX_IMAGE_BYTES + _MULTIPART_SLACK:
+            return JSONResponse(status_code=413, content={"detail": "Image too large"})
+    return await call_next(request)
+
+
 def require_token(x_face_ml_token: str = Header(default="")) -> None:
     """Constant-time-ish shared-secret check.
 
@@ -105,11 +127,23 @@ def info() -> InfoResponse:
 async def faces(image: UploadFile = File(...)) -> FacesResponse:
     assert _pipeline is not None
 
-    data = await image.read()
+    # Read in bounded chunks and stop at the first byte past the cap, so an
+    # oversized upload is never materialised as one bytes object: at most
+    # MAX_IMAGE_BYTES + 1 bytes are ever requested from the spooled part.
+    limit = config.MAX_IMAGE_BYTES
+    chunks: list[bytes] = []
+    received = 0
+    while received <= limit:
+        chunk = await image.read(min(_READ_CHUNK, limit + 1 - received))
+        if not chunk:
+            break
+        received += len(chunk)
+        chunks.append(chunk)
+    if received > limit:
+        raise HTTPException(status_code=413, detail="Image too large")
+    data = b"".join(chunks)
     if not data:
         raise HTTPException(status_code=400, detail="Empty upload")
-    if len(data) > config.MAX_IMAGE_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large")
 
     try:
         detected = _pipeline.process(data)
