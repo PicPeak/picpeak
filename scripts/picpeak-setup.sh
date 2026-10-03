@@ -159,7 +159,7 @@ review_and_confirm() {
     echo "  Domain         : ${DOMAIN_NAME:-（none — local IP over HTTP）}"
     echo "  HTTPS          : ${HTTPS_MODE}"
     echo "  Admin email    : ${ADMIN_EMAIL}"
-    echo "  Admin account  : $([[ -n "$ADMIN_PASSWORD" ]] && echo "seeded from --admin-password" || echo "created in browser (one-time /setup token)")"
+    echo "  Admin account  : $([[ -n "$ADMIN_PASSWORD" ]] && echo "seeded with the supplied password" || echo "created in browser (one-time /setup token)")"
     echo "  Email/SMTP     : ${SMTP_HOST:-not configured}"
     echo "  Access URL     : $(base_url)"
     echo
@@ -311,6 +311,21 @@ print_secret_line() {
     if ! { echo -e "$line" > /dev/tty; } 2>/dev/null; then
         echo -e "$fallback"
     fi
+}
+
+# Read a secret for --admin-password-file / --smtp-pass-file. The file must be a
+# regular file with no group/other permission bits; only its first line is
+# used. Keeps the value out of argv (process list) and shell history. Called
+# inside $(...), so diagnostics go to stderr instead of the captured stdout.
+read_secret_file() {
+    local path="$1" flag="$2" mode value=""
+    [[ -f "$path" && ! -L "$path" ]] || die "$flag: $path is not a regular file" >&2
+    mode=$(stat -c '%a' "$path" 2>/dev/null) || die "$flag: cannot stat $path" >&2
+    (( (8#$mode & 8#077) == 0 )) || die "$flag: $path must be mode 0600 or stricter (is $mode)" >&2
+    IFS= read -r value < "$path" || true
+    value="${value%$'\r'}"
+    [[ -n "$value" ]] || die "$flag: $path is empty" >&2
+    printf '%s' "$value"
 }
 
 ensure_storage_layout() {
@@ -1595,7 +1610,12 @@ parse_arguments() {
                 shift 2
                 ;;
             --admin-password)
+                log_warn "--admin-password puts the password in the process list and shell history; use --admin-password-file instead."
                 ADMIN_PASSWORD="$2"
+                shift 2
+                ;;
+            --admin-password-file)
+                ADMIN_PASSWORD="$(read_secret_file "$2" --admin-password-file)"
                 shift 2
                 ;;
             --install-dir)
@@ -1619,7 +1639,12 @@ parse_arguments() {
                 shift 2
                 ;;
             --smtp-pass)
+                log_warn "--smtp-pass puts the password in the process list and shell history; use --smtp-pass-file instead."
                 SMTP_PASS="$2"
+                shift 2
+                ;;
+            --smtp-pass-file)
+                SMTP_PASS="$(read_secret_file "$2" --smtp-pass-file)"
                 shift 2
                 ;;
             --force-admin-password-reset)
@@ -1670,15 +1695,22 @@ Options:
   --unattended        Run without prompts (uses defaults + the flags below)
   --domain DOMAIN     Domain name (enables HTTPS URLs)
   --email EMAIL       Admin email address (default: admin@example.com)
-  --admin-password P  Seed the admin account with this password (headless).
-                      Omit to create the admin in the browser via a one-time
-                      /setup token (recommended).
+  --admin-password-file FILE
+                      Seed the admin account with the password in FILE
+                      (headless). FILE must be a regular file with mode 0600
+                      or stricter; its first line is used. Omit to create the
+                      admin in the browser via a one-time /setup token
+                      (recommended).
+  --admin-password P  Deprecated: same as above but the password is visible
+                      in the process list and shell history.
   --install-dir DIR   Install directory (Docker; default: ~/picpeak)
   --channel CHANNEL   Image channel for Docker: stable (default) or beta
   --smtp-host HOST    SMTP server hostname
   --smtp-port PORT    SMTP server port
   --smtp-user USER    SMTP username
-  --smtp-pass PASS    SMTP password
+  --smtp-pass-file FILE
+                      SMTP password read from FILE (mode 0600 or stricter)
+  --smtp-pass PASS    Deprecated: SMTP password on the command line
   --force-admin-password-reset  Regenerate admin credentials after setup
   --enable-ssl        Native only: provision HTTPS via Caddy (needs --domain)
   --port PORT         Custom user-facing port
@@ -1693,9 +1725,11 @@ Examples:
   # Unattended Docker install, admin created in the browser afterwards
   sudo $0 --docker --unattended --email admin@example.com
 
-  # Unattended Docker install behind your own reverse proxy, seeded admin
+  # Unattended Docker install behind your own reverse proxy, seeded admin.
+  # The password comes from a private file, never from the command line:
+  (umask 077; read -rsp 'Admin password: ' p; printf '%s\\n' "\$p" > ~/picpeak-admin.pass; echo)
   sudo $0 --docker --unattended --domain photos.example.com \\
-    --email admin@example.com --admin-password 'S0me-Str0ng-Pass'
+    --email admin@example.com --admin-password-file ~/picpeak-admin.pass
 
   # Native install on a Raspberry Pi with automatic HTTPS via Caddy
   sudo $0 --native --domain photos.example.com --enable-ssl
