@@ -12,6 +12,7 @@ const feedbackService = require('./feedbackService');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { getUseOriginalFilenames } = require('./downloadFilenameService');
+const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 const {
   sanitizeForZipEntry,
   uniquifyZipNames,
@@ -136,20 +137,29 @@ async function archiveEvent(event) {
     await new Promise((resolve, reject) => {
       const output = fs.createWriteStream(tmpArchive);
       const archive = archiver('zip', { zlib: { level: 9 } });
+      // Bound and reclaim the storage reads, as the download builders do:
+      // archiver drains one source at a time, so opening a read per photo in
+      // the loop parked every other body on an S3 socket until its turn,
+      // and a large event held most of the shared agent pool. Two in flight;
+      // every open read is destroyed on any failure.
+      const guard = createArchiveStreamGuard({
+        onFatalError: (err) => { guard.destroyAll(); archive.abort(); reject(err); },
+      });
 
       output.on('close', () => {
         totalBytes = archive.pointer();
         resolve();
       });
-      archive.on('error', reject);
+      output.on('error', (err) => { guard.destroyAll(); archive.abort(); reject(err); });
+      archive.on('error', (err) => { guard.destroyAll(); reject(err); });
       archive.pipe(output);
 
       const append = async () => {
         for (let i = 0; i < photoEntries.length; i += 1) {
           const entry = photoEntries[i];
           const nameInZip = dedupedNames[i];
-          const stream = await storage.get(entry.key);
-          archive.append(stream, { name: nameInZip });
+          if (!await guard.acquire()) return;
+          archive.append(guard.track(await storage.get(entry.key)), { name: nameInZip });
         }
         for (const f of feedbackEntries) {
           archive.append(f.buffer, { name: f.name });
@@ -160,7 +170,7 @@ async function archiveEvent(event) {
         archive.finalize();
       };
 
-      append().catch(reject);
+      append().catch((err) => { guard.destroyAll(); reject(err); });
     });
 
     // Upload the finalized zip to the storage backend.

@@ -18,6 +18,22 @@ const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
+const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
+
+/**
+ * Is this photo outside what the viewer's grant may reach?
+ *
+ * Client-hidden photos are blocked for everyone but the client. A slideshow
+ * session of an event that pins show_category_id sees that category only:
+ * the list is filtered that way server-side (galleryQueryService), and the
+ * media routes must agree, or a link holder could request every other
+ * category's photos by id. Applied by every route below that resolves a photo.
+ */
+function isPhotoOutsideGrant(req, photo) {
+  if (isPhotoHiddenFromViewer(photo, req.accessLevel)) return true;
+  return req.accessLevel === 'slideshow' && req.event?.show_category_id != null
+    && Number(photo.category_id) !== Number(req.event.show_category_id);
+}
 
 router.post('/:slug/photo/:photoId/view',
   verifyGalleryAccess,
@@ -27,11 +43,11 @@ router.post('/:slug/photo/:photoId/view',
     try {
       const photo = await db('photos')
         .where({ id: req.params.photoId, event_id: req.event.id })
-        .first('id', 'visibility');
+        .first('id', 'visibility', 'category_id');
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
       }
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
       // Admin preview (#981 review) is excluded from per-photo view analytics.
@@ -47,6 +63,10 @@ router.post('/:slug/photo/:photoId/view',
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',
   verifyGalleryAccess,
+  // This route answers with the stored original (or the source video). A
+  // slideshow session is display-only and the kiosk renders the preview tier
+  // (slideshow_url), so it has no business here.
+  denySlideshowToken,
   blockHiddenGallery,
   async (req, res) => {
     try {
@@ -61,7 +81,7 @@ router.get('/:slug/photo/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -319,7 +339,7 @@ router.get('/:slug/thumbnail/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -435,7 +455,7 @@ router.get('/:slug/hero/:photoId',
       }
 
       // Block guest access to hidden photos
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -530,6 +550,16 @@ router.get('/:slug/hero/:photoId',
 // broken image. The watermark application path is preserved so a
 // preview surfaced in the lightbox carries the same protection a
 // guest would see on the full original.
+// A preview that cannot be served falls back to the original, so the lightbox
+// always renders. Not for a slideshow session, which /photo refuses
+// (denySlideshowToken): it would send the request straight back here.
+function fallBackToOriginal(req, res) {
+  if (req.accessLevel === 'slideshow') {
+    return res.status(404).json({ error: 'Preview not available' });
+  }
+  return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
+}
+
 router.get('/:slug/preview/:photoId',
   verifyGalleryAccess,
   blockHiddenGallery,
@@ -545,7 +575,7 @@ router.get('/:slug/preview/:photoId',
         return res.status(404).json({ error: 'Photo not found' });
       }
 
-      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+      if (isPhotoOutsideGrant(req, photo)) {
         return res.status(403).json({ error: 'Photo not available' });
       }
 
@@ -555,7 +585,7 @@ router.get('/:slug/preview/:photoId',
       // belt-and-braces in case a stale tab does.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return fallBackToOriginal(req, res);
       }
 
       // Responsive tier (#1095). Whitelisted only — an open ?w= would let
@@ -574,7 +604,7 @@ router.get('/:slug/preview/:photoId',
         : await ensurePreviewImage(photo);
       if (!previewPath) {
         logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return fallBackToOriginal(req, res);
       }
 
       const storage = getStorage();
@@ -583,7 +613,7 @@ router.get('/:slug/preview/:photoId',
         logger.error('Preview file does not exist in storage backend', {
           slug: req.params.slug, photoId, eventId: req.event.id, previewPath,
         });
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return fallBackToOriginal(req, res);
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
@@ -642,7 +672,7 @@ router.get('/:slug/preview/:photoId',
         photoId: req.params.photoId,
         eventId: req.event?.id,
       });
-      res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
+      fallBackToOriginal(req, res);
     }
   }
 );

@@ -8,7 +8,7 @@ const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 const {
   validatePhotoId,
   validateFeedbackSubmission,
@@ -416,8 +416,10 @@ router.get('/:slug/feedback-summary',
         });
       }
       
-      const summary = await feedbackService.getEventFeedbackSummary(event.id);
-      
+      // Totals scoped like the list below: feedback on photos this viewer
+      // cannot see is not counted either.
+      const summary = await feedbackService.getEventFeedbackSummary(event.id, { viewerAccessLevel: req.accessLevel });
+
       // Filter data based on what guests should see
       const guestSummary = {
         stats: summary.stats,
@@ -469,16 +471,21 @@ router.get('/:slug/my-feedback',
         return res.json([]);
       }
 
-      const query = db('photo_feedback')
-        .join('photos', 'photo_feedback.photo_id', 'photos.id')
-        .where('photo_feedback.event_id', event.id)
-        // Hidden rows are absent for the guest who left them too (#1150). In
-        // guest identity mode GalleryView builds its Liked/Favorited/Rated
-        // chips and their filters from THIS array rather than from is_liked,
-        // so without this a hidden like left an empty heart while the Liked
-        // chip still counted it and still surfaced the photo. Unapproved rows
-        // stay: a comment in the moderation queue is still the guest's own.
-        .where('photo_feedback.is_hidden', false);
+      const query = applyPhotoVisibilityFilter(
+        db('photo_feedback')
+          .join('photos', 'photo_feedback.photo_id', 'photos.id')
+          .where('photo_feedback.event_id', event.id)
+          // Hidden rows are absent for the guest who left them too (#1150). In
+          // guest identity mode GalleryView builds its Liked/Favorited/Rated
+          // chips and their filters from THIS array rather than from is_liked,
+          // so without this a hidden like left an empty heart while the Liked
+          // chip still counted it and still surfaced the photo. Unapproved rows
+          // stay: a comment in the moderation queue is still the guest's own.
+          .where('photo_feedback.is_hidden', false),
+        // A photo the client has since hidden is gone for this viewer, its id
+        // and filename included.
+        req.accessLevel
+      );
 
       // Prefer guest_id lookup when a verified guest token is present
       // (per-person identity). Fall back to the device hash otherwise.

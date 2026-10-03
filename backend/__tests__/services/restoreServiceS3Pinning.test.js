@@ -35,12 +35,20 @@ jest.mock('dns', () => {
 });
 
 let capturedConfig;
+// Restore downloads go through getMetadata() (HeadObject size check) and
+// downloadStream() (bounded body); download() is no longer called.
 jest.mock('../../src/services/storage/s3Storage', () =>
   jest.fn().mockImplementation((config) => {
     capturedConfig = config;
-    return { download: jest.fn().mockResolvedValue(undefined), testConnection: jest.fn().mockResolvedValue(true) };
+    const { Readable } = require('stream');
+    return {
+      getMetadata: jest.fn().mockResolvedValue({ ContentLength: 2 }),
+      downloadStream: jest.fn().mockImplementation(async () => Readable.from([Buffer.from('{}')])),
+      testConnection: jest.fn().mockResolvedValue(true),
+    };
   })
 );
+const manifestScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-restores3pin-manifest-'));
 
 const dns = require('dns');
 const promiseLookup = dns.promises.lookup;
@@ -72,7 +80,7 @@ describe('downloadFileFromS3 DNS-rebinding pinning', () => {
 
     await restoreService.downloadFileFromS3(
       's3://backups/manifest.json',
-      '/tmp/whatever/manifest.json',
+      path.join(manifestScratch, 'manifest.json'),
       { endpoint: 'rebind.example.com', accessKeyId: 'k', secretAccessKey: 's' }
     );
 
@@ -93,7 +101,7 @@ describe('downloadFileFromS3 DNS-rebinding pinning', () => {
 
     await restoreService.downloadFileFromS3(
       's3://backups/manifest.json',
-      '/tmp/whatever/manifest.json',
+      path.join(manifestScratch, 'manifest.json'),
       { endpoint: 'rebind.example.com', accessKeyId: 'k', secretAccessKey: 's' }
     );
 
@@ -118,7 +126,7 @@ describe('downloadFileFromS3 DNS-rebinding pinning', () => {
 
     await restoreService.downloadFileFromS3(
       's3://backups/manifest.json',
-      '/tmp/whatever/manifest.json',
+      path.join(manifestScratch, 'manifest.json'),
       { endpoint: 'rebind.example.com', accessKeyId: 'k', secretAccessKey: 's' }
     );
 
@@ -135,7 +143,7 @@ describe('downloadFileFromS3 DNS-rebinding pinning', () => {
   it('does not pin agents when no custom endpoint is configured (default AWS, no rebinding surface)', async () => {
     await restoreService.downloadFileFromS3(
       's3://backups/manifest.json',
-      '/tmp/whatever/manifest.json',
+      path.join(manifestScratch, 'manifest.json'),
       { accessKeyId: 'k', secretAccessKey: 's' }
     );
 

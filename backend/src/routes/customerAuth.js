@@ -84,8 +84,10 @@ router.post('/login', [
     // attempt counters don't share a bucket — an attacker hitting an
     // admin login with the same email should not lock out the customer
     // account or vice versa.
+    // Scoped to identifier + source IP like the gallery paths, so failures
+    // from one address do not lock the customer out from every other one.
     const lockoutKey = `customer:${email}`;
-    const lockoutStatus = await checkAccountLockout(lockoutKey);
+    const lockoutStatus = await checkAccountLockout(lockoutKey, ipAddress);
     if (lockoutStatus.isLocked) {
       logger.warn('Customer login attempt on locked account', { email, ipAddress });
       return res.status(423).json({

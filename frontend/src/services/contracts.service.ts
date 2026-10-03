@@ -340,7 +340,7 @@ export const contractsService = {
     return data.data || data;
   },
 
-  async uploadSignedPdf(id: number, file: File): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  async uploadSignedPdf(id: number, file: File): Promise<{ status: 'fully_signed' }> {
     const form = new FormData();
     form.append('file', file);
     const { data } = await api.post(`/admin/contracts/${id}/upload-signed-pdf`, form, {
@@ -515,7 +515,7 @@ export const publicContractsService = {
     return data.data || data;
   },
 
-  async uploadSignedPdf(token: string, file: File, grant?: string | null): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  async uploadSignedPdf(token: string, file: File, grant?: string | null): Promise<{ status: 'fully_signed' }> {
     const form = new FormData();
     form.append('file', file);
     const { data } = await api.post(`/public/contracts/${token}/upload-signed-pdf`, form, {

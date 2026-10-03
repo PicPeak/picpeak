@@ -43,6 +43,33 @@ async function assertCascadePermitted(req, docTable, docId, otherTable, otherPer
 }
 router.use(adminAuth);
 
+// A project's customer is customers.view data: the roster (ids, emails) is
+// guarded by that permission everywhere else (adminCustomers /search). Linking
+// a customer therefore needs it too — otherwise the FK write is an existence
+// oracle and the reloaded project returns the address — and project payloads
+// drop the customer fields for a caller without it.
+async function mayViewCustomers(req) {
+  return userHasAnyPermission(req.admin.id, ['customers.view']);
+}
+
+async function assertMayLinkCustomer(req) {
+  if (req.body.customerAccountId && !(await mayViewCustomers(req))) {
+    throw new ForbiddenError('The customers.view permission is required to link a customer to a project');
+  }
+}
+
+function withoutCustomer(project) {
+  if (!project) return project;
+  const copy = { ...project };
+  delete copy.customerAccountId;
+  delete copy.customerEmail;
+  return copy;
+}
+
+async function projectForCaller(req, project) {
+  return (await mayViewCustomers(req)) ? project : withoutCustomer(project);
+}
+
 // Projects is feature-flagged like bills/quotes — when off, the whole cockpit
 // (and the "book to project" hours control) is hidden, and the API 403s.
 async function requireProjectsFlag(req, res, next) {
@@ -76,7 +103,8 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
     perms,
     projectIds,
   });
-  return successResponse(res, { projects });
+  const visible = (await mayViewCustomers(req)) ? projects : projects.map(withoutCustomer);
+  return successResponse(res, { projects: visible });
 }));
 
 // Create
@@ -85,11 +113,12 @@ router.post('/',
   [body('name').isString().trim().isLength({ min: 1, max: 255 }), body('customerAccountId').optional({ values: 'falsy' }).isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
+    await assertMayLinkCustomer(req);
     const project = await projectService.createProject(
       { name: req.body.name, customerAccountId: req.body.customerAccountId || null },
       req.admin.id,
     );
-    return successResponse(res, { project }, 201, 'Project created');
+    return successResponse(res, { project: await projectForCaller(req, project) }, 201, 'Project created');
   }),
 );
 
@@ -98,7 +127,7 @@ router.get('/:id', requirePermission('events.view'), requireProjectOwnership, [p
   validateRequest(req);
   const project = await projectService.getProjectById(parseInt(req.params.id, 10));
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  return successResponse(res, { project });
+  return successResponse(res, { project: await projectForCaller(req, project) });
 }));
 
 // Update
@@ -114,12 +143,13 @@ router.put('/:id',
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
+    await assertMayLinkCustomer(req);
     const project = await projectService.updateProject(parseInt(req.params.id, 10), {
       name: req.body.name,
       customerAccountId: req.body.customerAccountId,
       status: req.body.status,
     });
-    return successResponse(res, { project }, 200, 'Project updated');
+    return successResponse(res, { project: await projectForCaller(req, project) }, 200, 'Project updated');
   }),
 );
 
@@ -184,6 +214,12 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
     contracts: await userHasAnyPermission(req.admin.id, ['contracts.view']),
   };
   const overview = await projectService.getProjectOverview(parseInt(req.params.id, 10), perms, req.admin);
+  // The project's customer fields are customers.view data: this route is
+  // guarded by events.view alone, so without that permission they leave the
+  // payload altogether.
+  if (overview?.project && !(await mayViewCustomers(req))) {
+    overview.project = withoutCustomer(overview.project);
+  }
   return successResponse(res, overview);
 }));
 

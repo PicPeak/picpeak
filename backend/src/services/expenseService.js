@@ -16,11 +16,11 @@
  */
 const crypto = require('crypto');
 const fsp = require('fs').promises;
-const { PDFDocument } = require('pdf-lib');
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const logger = require('../utils/logger');
 const { toStoredPath } = require('../utils/storedPath');
+const { validatePdf } = require('../utils/pdfValidation');
 const invoiceService = require('./invoiceService');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
 // Tri-state proof-attach resolver — single source of truth lives with the
@@ -160,29 +160,54 @@ function clampPage(page, pageSize) {
   return { p, ps };
 }
 
+// The intake caps a mail's attachments at 25 MB in total (emailIntakeService);
+// a PDF up to that size is checked, anything larger is refused as too large.
+const MAX_INBOUND_PDF_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Hash the file and, for a PDF, parse it in the PDF worker
+ * (utils/pdfValidation): heap, time and inflate budgets, active content and
+ * encryption refused. Anyone who can mail the accounting mailbox reaches this
+ * unauthenticated, and pdf-lib in this process inflated every object stream
+ * of whatever arrived — a small crafted file could take the backend down,
+ * and the retained message was ingested again after the restart.
+ *
+ * A refused PDF is reported as `pdfError`, not thrown: the caller records
+ * the document as failed so the message is finished with, not retried.
+ */
 async function inspectFile(filePath, mimeType) {
   const buf = await fsp.readFile(filePath);
   const sha = crypto.createHash('sha256').update(buf).digest('hex');
   let pageCount = null;
+  let pdfError = null;
   if ((mimeType || '').includes('pdf')) {
     try {
-      const pdf = await PDFDocument.load(buf, { updateMetadata: false });
-      pageCount = pdf.getPageCount();
+      const info = await validatePdf(buf, { maxBytes: MAX_INBOUND_PDF_BYTES });
+      pageCount = info.pages == null ? null : Number(info.pages);
     } catch (e) {
-      logger.warn?.(`expenseService: PDF page count failed for ${filePath}: ${e.message}`);
+      logger.warn?.(`expenseService: PDF refused for ${filePath}: ${e.code || ''} ${e.message}`);
+      pdfError = e;
     }
   }
-  return { sha, pageCount };
+  return { sha, pageCount, pdfError };
 }
 
 async function recordInboundDocument({ source, filePath, originalFilename, mimeType }, adminId) {
   let fileSha256 = null;
   let pageCount = null;
+  let pdfError = null;
   try {
     const info = await inspectFile(filePath, mimeType);
-    fileSha256 = info.sha; pageCount = info.pageCount;
+    fileSha256 = info.sha; pageCount = info.pageCount; pdfError = info.pdfError;
   } catch (e) {
     logger.warn?.(`expenseService: could not inspect ${filePath}: ${e.message}`);
+  }
+  // An admin's upload is answered like every other PDF upload: refused, and
+  // the file does not stay. The mailbox has nobody to answer, so its refused
+  // attachment is recorded below as a failed, declined document instead.
+  if (pdfError && source !== 'email') {
+    await fsp.unlink(filePath).catch(() => {});
+    throw new AppError(pdfError.message, pdfError.statusCode || 400, pdfError.code || 'PDF_MALFORMED');
   }
 
   let duplicateOfId = null;
@@ -198,8 +223,11 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
     file_path: toStoredPath(filePath),
     mime_type: mimeType || null,
     file_sha256: fileSha256,
-    status: duplicateOfId ? 'duplicate' : 'unsorted',
-    parse_status: 'pending',
+    // A refused PDF is terminal: declined and failed, with the reason, so
+    // neither the parsers nor the next poll pick it up again.
+    status: pdfError ? 'declined' : (duplicateOfId ? 'duplicate' : 'unsorted'),
+    parse_status: pdfError ? 'failed' : 'pending',
+    parse_error: pdfError ? `${pdfError.code || 'PDF_MALFORMED'}: ${pdfError.message}`.slice(0, 2000) : null,
     parse_method: 'none',
     // Cap stored page_count to the renderable max (rasterizeService
     // MAX_RENDERABLE_PAGES) so a hostile high-page PDF can't drive an

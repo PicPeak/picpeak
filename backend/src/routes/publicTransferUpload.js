@@ -93,6 +93,16 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
   });
 }));
 
+// The row as it is NOW. preUploadGuard decided before the body arrived; a slow
+// or large upload can cross the transfer's upload expiry, or an admin's disable
+// or delete, while the bytes are still coming in. Lookup by token, which
+// filters to live rows, then the same eligibility predicate.
+async function reloadUploadTransfer(token) {
+  const transfer = await transferService.getTransferByUploadToken(token);
+  const gate = transferService.assertUploadable(transfer);
+  return gate.ok ? { transfer } : { gate };
+}
+
 // Pre-multer guard: validates the token + upload eligibility BEFORE any bytes
 // touch disk, and stashes the transfer for the destination/handler.
 async function preUploadGuard(req, res, next) {
@@ -144,7 +154,6 @@ function buildUploader(maxSizeBytes, allowed) {
 }
 
 router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, handleAsync(async (req, res) => {
-  const transfer = req.transferRow;
   const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
   const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
@@ -166,6 +175,16 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
   if (!req.files || !req.files.length) {
     return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
   }
+
+  // Nothing becomes permanent on the strength of the pre-body check.
+  const current = await reloadUploadTransfer(req.params.token);
+  if (!current.transfer) {
+    for (const file of req.files) {
+      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+    }
+    return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
+  }
+  const transfer = current.transfer;
 
   const storage = getStorage();
   const ip = clientIpForAudit(req);

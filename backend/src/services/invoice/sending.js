@@ -228,8 +228,22 @@ async function releaseRebillsForCancelledInvoice(conn, invoiceId, adminId) {
   }
 }
 
+/** The original row, locked for the rest of the transaction on PostgreSQL. */
+async function lockInvoiceRow(trx, id) {
+  const query = trx('invoices').where({ id });
+  // Compatible with the KEY SHARE lock of foreign-key checks on child rows
+  // (see accountingHistory.auditedUpdate); it still serialises two
+  // transactions that both want to decide about this row.
+  if (trx.client.config.client === 'pg') query.forNoKeyUpdate();
+  return query.first();
+}
+
 async function createStorno(originalId, adminId, trx = db) {
-  const original = await trx('invoices').where({ id: originalId }).first();
+  // Read under the row lock and flip the original with a compare-and-set
+  // below: two cancellations (or a cancellation and a reissue) that both
+  // saw a live status used to each insert a Storno, and the later one took
+  // over cancellation_storno_id, leaving the other Storno orphaned.
+  const original = await lockInvoiceRow(trx, originalId);
   if (!original) throw new AppError('Invoice not found', 404);
   if (original.kind === 'storno') {
     throw new AppError('Cannot Storno a Storno', 409, 'IS_STORNO');
@@ -343,12 +357,18 @@ async function createStorno(originalId, adminId, trx = db) {
       { actor: adminId, source: 'invoice.storno.create' });
   }
 
-  // Flip the original to cancelled + link the Storno.
-  await auditedUpdate(trx, 'invoices', { id: originalId }, {
+  // Flip the original to cancelled + link the Storno — only from the status
+  // read above. A loser rolls back with its Storno row and sequence claim.
+  const flipped = await auditedUpdate(trx, 'invoices', { id: originalId, status: original.status }, {
     status: 'cancelled',
     cancellation_storno_id: stornoId,
     updated_at: now,
   }, { actor: adminId, source: 'invoice.storno.cancelOriginal' });
+  if (flipped !== 1) {
+    throw new AppError('The invoice changed while it was being cancelled. Reload and try again.', 409, 'INVOICE_STATE_CHANGED');
+  }
+  // Cancelled: no outstanding payment-check link may act on it any more.
+  await require('./payments').revokePendingPaymentCheckTokens(trx, originalId, now.toISOString(), 'revoked');
   // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
   await releaseRebillsForCancelledInvoice(trx, originalId, adminId);
 
@@ -495,6 +515,19 @@ async function reissueInvoice(id, adminId) {
   // getAppSetting, bank resolution, audit) all accept the trx now, so
   // the round-1 SQLite deadlock is gone the right way.
   return await db.transaction(async (trx) => {
+    // One live replacement per original. Two reissues that both found the
+    // original already cancelled (or one that lost the Storno race above and
+    // was retried) must not each create a replacement: the original is
+    // locked here, and a replacement that is not itself cancelled refuses
+    // another.
+    if (!(await lockInvoiceRow(trx, id))) throw new AppError('Invoice not found', 404);
+    const [existing] = await trx('invoices').where({ replaces_invoice_id: id }).whereNot('status', 'cancelled')
+      .select('id', 'invoice_number').limit(1);
+    if (existing) {
+      throw new AppError(
+        `This invoice was already reissued as ${existing.invoice_number}.`, 409, 'ALREADY_REISSUED',
+      );
+    }
     const lineItems = await trx('invoice_line_items as li')
       .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
       .where('li.invoice_id', id)

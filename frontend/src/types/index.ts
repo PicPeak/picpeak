@@ -332,9 +332,6 @@ export interface GalleryData {
 
 export interface GalleryStats {
   total_photos: number;
-  total_views: number;
-  total_downloads: number;
-  unique_visitors: number;
 }
 
 export interface ResolvedGalleryIdentifier {

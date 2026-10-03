@@ -400,6 +400,20 @@ function renderEmailSignatureText(signature, { brandingCompanyName, language } =
   return `\n\n--\n${lines.join('\n')}`;
 }
 
+// The branding rows below are written by `settings.edit`, a permission the
+// email templates themselves are NOT in (email.edit). So the wrapper has to
+// treat them as text, not markup: the company name is HTML-escaped where it
+// is rendered, the logo URL is escaped inside src="" and may not carry a
+// scheme other than http(s), and each colour has to match a colour grammar
+// before it is interpolated into <style>, style="" and bgcolor="".
+const { sanitizeCssColor } = require('../utils/cssSanitizer');
+
+function isUsableLogoUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const scheme = value.match(/^\s*([a-z][a-z0-9+.-]*)\s*:/i);
+  return !scheme || ['http', 'https'].includes(scheme[1].toLowerCase());
+}
+
 // Wrap HTML body in the styled email template with header, footer, and logo
 async function wrapEmailHtml(htmlBody, subject, language = 'en') {
   // Email colour palette. The two original settings (email_primary_color and
@@ -433,20 +447,22 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
       if (!val) return fallback;
       try { return JSON.parse(val); } catch (e) { return val; }
     };
+    // A stored value that is not a colour keeps the default.
+    const readColor = (val, fallback) => sanitizeCssColor(readSetting(val, fallback)) || fallback;
 
     brandingSettings.forEach(setting => {
       const val = setting.setting_value;
       switch (setting.setting_key) {
       case 'branding_logo_url':       logoUrl = readSetting(val, logoUrl); break;
       case 'branding_company_name':   companyName = readSetting(val, companyName); break;
-      case 'email_primary_color':     primaryColor = readSetting(val, primaryColor); break;
-      case 'email_secondary_color':   secondaryColor = readSetting(val, secondaryColor); break;
-      case 'email_body_bg_color':     bodyBgColor = readSetting(val, bodyBgColor); break;
-      case 'email_container_bg_color': containerBgColor = readSetting(val, containerBgColor); break;
-      case 'email_list_bg_color':     listBgColor = readSetting(val, listBgColor); break;
-      case 'email_body_text_color':   bodyTextColor = readSetting(val, bodyTextColor); break;
-      case 'email_muted_text_color':  mutedTextColor = readSetting(val, mutedTextColor); break;
-      case 'email_button_text_color': buttonTextColor = readSetting(val, buttonTextColor); break;
+      case 'email_primary_color':     primaryColor = readColor(val, primaryColor); break;
+      case 'email_secondary_color':   secondaryColor = readColor(val, secondaryColor); break;
+      case 'email_body_bg_color':     bodyBgColor = readColor(val, bodyBgColor); break;
+      case 'email_container_bg_color': containerBgColor = readColor(val, containerBgColor); break;
+      case 'email_list_bg_color':     listBgColor = readColor(val, listBgColor); break;
+      case 'email_body_text_color':   bodyTextColor = readColor(val, bodyTextColor); break;
+      case 'email_muted_text_color':  mutedTextColor = readColor(val, mutedTextColor); break;
+      case 'email_button_text_color': buttonTextColor = readColor(val, buttonTextColor); break;
       default: break;
       }
     });
@@ -458,9 +474,13 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
 
   // Build full logo URL - ensure logoUrl is a valid non-empty string
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';
-  const logoPath = (typeof logoUrl === 'string' && logoUrl.trim()) ? logoUrl : '/picpeak-logo-transparent.png';
+  const logoPath = isUsableLogoUrl(logoUrl) ? logoUrl : '/picpeak-logo-transparent.png';
   const logoFullUrl = `${frontendUrl}${logoPath.startsWith('/') ? '' : '/'}${logoPath}`;
   logger.debug('Email logo URL:', { frontendUrl, logoPath, logoFullUrl });
+  // Attribute-context encodings. companyName stays raw for the signature
+  // comparison below; these are what the markup gets.
+  const logoSrc = escapeHtml(logoFullUrl);
+  const companyNameHtml = escapeHtml(companyName);
 
   // Migration 198 — global footer signature from the business profile.
   // Memoised for 60 s in the service, so a queue tick sending ten mails
@@ -605,7 +625,7 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:100%;max-width:600px;background-color:${containerBgColor};border-radius:8px;overflow:hidden;">
           <tr>
             <td align="center" bgcolor="${primaryColor}" class="email-header" style="background-color:${primaryColor};padding:30px;text-align:center;">
-              <img src="${logoFullUrl}" alt="${companyName}" width="180" class="logo" style="max-width:180px;height:auto;display:inline-block;border:0;">
+              <img src="${logoSrc}" alt="${companyNameHtml}" width="180" class="logo" style="max-width:180px;height:auto;display:inline-block;border:0;">
             </td>
           </tr>
           <tr>
@@ -615,9 +635,9 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
           </tr>
           <tr>
             <td align="center" bgcolor="${secondaryColor}" class="email-footer" style="background-color:${secondaryColor};padding:30px;text-align:center;border-top:1px solid #eeeeee;">
-              <img src="${logoFullUrl}" alt="${companyName}" width="120" style="max-width:120px;height:auto;opacity:0.8;margin-bottom:15px;border:0;">
-              <p style="color:${mutedTextColor};font-size:14px;margin:5px 0;">${companyName}</p>${signatureHtml}
-              <p style="font-size:12px;color:#999999;margin:5px 0;">© ${year} ${companyName}. All rights reserved.</p>
+              <img src="${logoSrc}" alt="${companyNameHtml}" width="120" style="max-width:120px;height:auto;opacity:0.8;margin-bottom:15px;border:0;">
+              <p style="color:${mutedTextColor};font-size:14px;margin:5px 0;">${companyNameHtml}</p>${signatureHtml}
+              <p style="font-size:12px;color:#999999;margin:5px 0;">© ${year} ${companyNameHtml}. All rights reserved.</p>
             </td>
           </tr>
         </table>

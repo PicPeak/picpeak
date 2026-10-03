@@ -182,4 +182,59 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('File content does not match declared type: shot.jpg');
   });
+
+  // The multipart parser used to allow 10,000 parts with 10 MB per text field
+  // and the handler then logged the whole parsed body. The handler reads three
+  // short fields, so the parser budget is sized to that.
+  describe('text-field budget on the multipart parser', () => {
+    const withFields = (fields) => {
+      let req = request(app)
+        .post(`/api/admin/photos/${eventId}/upload`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      for (const [name, value] of fields) req = req.field(name, value);
+      return req.attach('photos', Buffer.alloc(1024, 0x41), { filename: 'shot.jpg', contentType: 'image/jpeg' });
+    };
+
+    it('rejects more text fields than the handler reads', async () => {
+      await setLimitMb(10);
+      const res = await withFields(Array.from({ length: 6 }, (_, i) => [`extra_${i}`, 'x']));
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Upload error: Too many fields');
+    });
+
+    it('rejects a text field above kilobyte scale', async () => {
+      await setLimitMb(10);
+      const res = await withFields([['category_id', 'a'.repeat(2048)]]);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Upload error: Field value too long');
+    });
+
+    it('still accepts the documented fields, and logs their names rather than their values', async () => {
+      await setLimitMb(10);
+      const logger = require('../../src/utils/logger');
+      const infoSpy = jest.spyOn(logger, 'info');
+      const marker = 'do-not-log-this-value-7f3a';
+      // A real JPEG so the request gets past the content check and into the
+      // handler, where the body used to be logged; the unknown category then
+      // stops it before any processing.
+      const jpeg = await require('sharp')({
+        create: { width: 4, height: 4, channels: 3, background: { r: 10, g: 20, b: 30 } },
+      }).jpeg().toBuffer();
+
+      const res = await request(app)
+        .post(`/api/admin/photos/${eventId}/upload`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .field('category_id', '999999')
+        .field('replace_by_name', 'false')
+        .field('match_mode', marker)
+        .attach('photos', jpeg, { filename: 'shot.jpg', contentType: 'image/jpeg' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).not.toMatch(/Upload error/);
+      const logged = infoSpy.mock.calls.map((args) => JSON.stringify(args)).join('\n');
+      expect(logged).toContain('match_mode');
+      expect(logged).not.toContain(marker);
+      infoSpy.mockRestore();
+    });
+  });
 });

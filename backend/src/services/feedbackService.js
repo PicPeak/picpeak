@@ -4,6 +4,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -750,24 +751,36 @@ class FeedbackService {
   }
 
   /**
-   * Get feedback summary for an event
+   * Get feedback summary for an event.
+   *
+   * `viewerAccessLevel` scopes the totals to the photos that viewer may see
+   * (photoVisibility): the guest /feedback-summary passes req.accessLevel so
+   * feedback on client-hidden photos does not show in its counts. Omitted,
+   * the totals cover every photo — the admin analytics and the archive.
    */
-  async getEventFeedbackSummary(eventId) {
+  async getEventFeedbackSummary(eventId, { viewerAccessLevel } = {}) {
     try {
       const photos = await db('photos')
         .where('event_id', eventId)
         .select('id', 'filename', 'visibility', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count')
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
-      
+
       const sharedColors = (await this.getEventFeedbackSettings(eventId)).identity_mode === 'shared';
-      const totalStats = await db('photo_feedback')
-        .where('event_id', eventId)
+      let statsQuery = db('photo_feedback')
+        .where('photo_feedback.event_id', eventId)
         // Hidden rows do not count, the same rule the photo counters above
         // already apply — without this the two halves of THIS response
         // disagreed, and a hidden row preserved beside its replacement (#1150)
         // is counted twice.
-        .where('is_hidden', false)
+        .where('photo_feedback.is_hidden', false);
+      if (viewerAccessLevel !== undefined && !canSeeHiddenPhotos(viewerAccessLevel)) {
+        statsQuery = applyPhotoVisibilityFilter(
+          statsQuery.join('photos', 'photo_feedback.photo_id', 'photos.id'),
+          viewerAccessLevel
+        );
+      }
+      const totalStats = await statsQuery
         .select(
           db.raw('COUNT(DISTINCT CASE WHEN feedback_type = ? THEN guest_identifier END) as unique_raters', ['rating']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_ratings', ['rating']),

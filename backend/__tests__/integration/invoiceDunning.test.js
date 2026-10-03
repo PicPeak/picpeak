@@ -89,6 +89,10 @@ describe('applyReminder — dunning-document model', () => {
       lineItems: [{ description: 'Service', quantity: 1, unit_price_minor: 100000 }],
     }, ids.adminId);
     invoiceId = res.invoiceIds[0];
+    // A reminder is only ever applied to an invoice the customer owes
+    // (payment-check decisions run under a sent/overdue lock); applyReminder
+    // now refuses anything else, so the fixture leaves draft first.
+    await db('invoices').where({ id: invoiceId }).update({ status: 'sent' });
     originalTotal = Number((await db('invoices').where({ id: invoiceId }).first()).total_amount_minor);
   });
 
