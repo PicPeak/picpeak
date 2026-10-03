@@ -36,13 +36,25 @@ export function photoFilenameStem(name: string): string {
  * for search fields that split on whitespace.
  */
 export function joinFilenameStems(
-  photos: ReadonlyArray<Pick<Photo, 'filename' | 'original_filename'>>,
+  photos: ReadonlyArray<FilenameListPhoto>,
   separator: FilenameListSeparator
 ): string {
   return [...photos]
     .sort((a, b) => (a.filename < b.filename ? -1 : a.filename > b.filename ? 1 : 0))
-    .map((photo) => photoFilenameStem(photoDisplayFilename(photo)))
+    .map((photo) => photoFilenameStem(photoExportName(photo)))
     .join(separator === 'comma' ? ',' : ' ');
+}
+
+/** `source_filename` is on the payload once the backend ships it; optional here so either side can land first. */
+type FilenameListPhoto = Pick<Photo, 'filename' | 'original_filename'> & { source_filename?: string | null };
+
+/**
+ * The name the admin export matches the master on (photoExportService
+ * `cameraName`): `source_filename` is written once at ingest and survives a
+ * replace, `original_filename` is overwritten by an edited render.
+ */
+function photoExportName(photo: FilenameListPhoto): string {
+  return photo.source_filename || photoDisplayFilename(photo);
 }
 
 export type FilenameListSource = 'selection' | 'favorites';

@@ -45,3 +45,14 @@ describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
     expect(favourites.photos.map((p) => p.id)).toEqual([1, 3]);
   });
 });
+
+describe('joinFilenameStems prefers the ingest-time camera name', () => {
+  it('uses source_filename over an original_filename overwritten by a render', () => {
+    const photos = [
+      { filename: 'a.jpg', original_filename: 'render-edit.jpg', source_filename: 'DSC_0001.NEF' },
+      { filename: 'b.jpg', original_filename: 'IMG_0002.JPG', source_filename: null },
+      { filename: 'c.jpg', original_filename: null },
+    ];
+    expect(joinFilenameStems(photos, 'comma')).toBe('DSC_0001,IMG_0002,c');
+  });
+});
