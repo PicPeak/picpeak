@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera } from 'lucide-react';
+import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera, ClipboardList } from 'lucide-react';
 import { Button } from '../common';
 import { PhotoCategory, type Photo } from '../../types';
 import { useTranslation } from 'react-i18next';
@@ -72,6 +72,11 @@ interface GallerySidebarProps {
   creditPhotos?: Photo[];
   selectedCreditKey?: string | null;
   onCreditChange?: (key: string | null) => void;
+  // Copyable filename list (issue 1733, A3d). `copyFilenamesCount` is how many
+  // photos the dialog would list — the selection, or the viewer's favourites
+  // when nothing is selected; the control is hidden at zero.
+  onCopyFilenames?: () => void;
+  copyFilenamesCount?: number;
 }
 
 export const GallerySidebar: React.FC<GallerySidebarProps> = ({
@@ -119,6 +124,8 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   creditPhotos,
   selectedCreditKey = null,
   onCreditChange,
+  onCopyFilenames,
+  copyFilenamesCount = 0,
 }) => {
   const { t } = useTranslation();
   const downloadQuota = useDownloadQuota();
@@ -273,6 +280,26 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   <DownloadQuotaNotice photos={selectedPhotosForQuota} />
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Filename list (issue 1733, A3d). Its own section rather than part
+              of Download: a proofing gallery often has downloads off, and the
+              list is for the RAW editor, not for downloading. */}
+          {onCopyFilenames && copyFilenamesCount > 0 && (
+            <div className="gallery-sidebar-section gallery-sidebar-filenames p-4 border-b border-surface">
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<ClipboardList className="w-4 h-4" />}
+                onClick={() => {
+                  onCopyFilenames();
+                  if (isMobile) onClose();
+                }}
+                className="gallery-btn w-full"
+              >
+                {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+              </Button>
             </div>
           )}
 
