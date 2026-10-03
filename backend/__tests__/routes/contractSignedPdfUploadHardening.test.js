@@ -294,4 +294,29 @@ describe('signed-contract PDF upload hardening', () => {
     });
   });
 
+  describe('the signer learns the status, not the storage path', () => {
+    const noPathIn = (body) => {
+      expect(body).toEqual({ status: 'fully_signed' });
+      expect(JSON.stringify(body)).not.toContain(process.env.STORAGE_PATH);
+      expect(JSON.stringify(body)).not.toMatch(/uploads\/contracts/);
+    };
+
+    it('on the public link', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const res = await publicUpload(link, await grantFor(link)).attach('file', ...asPdf(REAL_PDF));
+      expect(res.status).toBe(200);
+      noPathIn(res.body);
+      // The row keeps a path relative to the storage root.
+      expect((await contractRow(id)).signed_pdf_path).toMatch(/^uploads\/contracts\/signed\/contract-\d+-/);
+    });
+
+    it('in the customer portal', async () => {
+      const id = await insertContract();
+      await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const res = await portalUpload(id).attach('file', ...asPdf(REAL_PDF));
+      expect(res.status).toBe(200);
+      noPathIn(res.body);
+    });
+  });
 });
