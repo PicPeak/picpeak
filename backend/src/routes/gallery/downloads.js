@@ -477,14 +477,29 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       'Content-Disposition': contentDisposition,
     });
     res.sendFile(filePath, (downloadError) => {
-      if (downloadError) {
-        logger.error('Error streaming gallery download', {
-          slug: req.params.slug,
-          photoId,
-          eventId: req.event.id,
-          error: downloadError.message,
-        });
+      if (!downloadError) return;
+      logger.error('Error streaming gallery download', {
+        slug: req.params.slug,
+        photoId,
+        eventId: req.event.id,
+        error: downloadError.message,
+      });
+      // With a callback, sendFile leaves the response to us. Unanswered, the
+      // request stayed open until the client or proxy gave up. The existsSync
+      // above already caught a missing file; what lands here is EACCES/EISDIR
+      // or a file removed between the check and the send.
+      if (!res.headersSent) {
+        // Drop the staged attachment headers, or the browser saves a .jpg
+        // containing JSON.
+        res.removeHeader('Content-Type');
+        res.removeHeader('Content-Disposition');
+        const gone = downloadError.code === 'ENOENT' || downloadError.status === 404;
+        return gone
+          ? res.status(404).json({ error: 'Photo file not found' })
+          : res.status(500).json({ error: 'Failed to download photo' });
       }
+      // Headers are out: a broken transfer, not a hang.
+      res.destroy();
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download photo');
