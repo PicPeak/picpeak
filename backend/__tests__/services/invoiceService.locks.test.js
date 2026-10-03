@@ -315,7 +315,7 @@ describe('invoiceService.recordPaymentCheckAction', () => {
       expires_at: new Date(Date.now() + 86400000),
     };
     pickChainFor('invoices')._firstValue = {
-      id: 5, total_amount_minor: 10000, paid_amount_minor: 0, late_fee_amount_minor: 0,
+      id: 5, status: 'sent', total_amount_minor: 10000, paid_amount_minor: 0, late_fee_amount_minor: 0,
     };
     await expect(invoiceService.recordPaymentCheckAction({
       token: 'a'.repeat(64), action: 'partial', amountMinor: 0,
@@ -328,7 +328,7 @@ describe('invoiceService.recordPaymentCheckAction', () => {
       expires_at: new Date(Date.now() + 86400000),
     };
     pickChainFor('invoices')._firstValue = {
-      id: 5, total_amount_minor: 5000, paid_amount_minor: 0, late_fee_amount_minor: 0,
+      id: 5, status: 'sent', total_amount_minor: 5000, paid_amount_minor: 0, late_fee_amount_minor: 0,
     };
     await expect(invoiceService.recordPaymentCheckAction({
       token: 'a'.repeat(64), action: 'partial', amountMinor: 9999,
@@ -395,8 +395,10 @@ describe('invoiceService.recordPaymentCheckAction', () => {
     // Token was actually consumed (the real assertion that the write
     // committed): the mock chain's .update() ran with used_at set.
     const tokenChain = pickChainFor('invoice_payment_check_tokens');
+    // used_at is an ISO string: a Date written through node-sqlite3 under
+    // jest lands as "[object Object]".
     expect(tokenChain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ used_at: expect.any(Date), used_action: 'paid_full' }),
+      expect.objectContaining({ used_at: expect.any(String), used_action: 'paid_full' }),
     );
   });
 });

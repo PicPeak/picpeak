@@ -99,7 +99,15 @@ async function applyReminder(invoice, lineItems, level, adminId, actor = adminId
     updated_at: new Date(),
   };
   if (await hasColumnCached('invoices', 'late_fee_vat_minor')) update.late_fee_vat_minor = lateFeeVat;
-  await auditedUpdate(db, 'invoices', { id: invoice.id }, update, { actor, source: 'invoice.reminder' });
+  // Conditional on the row still waiting on the customer: every caller
+  // checked that, but from a snapshot. A payment or a Storno landing in
+  // between must not be overwritten with `overdue`, a fee and a Mahnung.
+  const applied = await auditedUpdate(db, 'invoices',
+    (q) => q.where({ id: invoice.id }).whereIn('status', ['sent', 'overdue']),
+    update, { actor, source: 'invoice.reminder' });
+  if (!applied) {
+    throw new AppError('The invoice is no longer awaiting payment; no reminder was sent.', 409, 'INVOICE_NOT_ACTIONABLE');
+  }
 
   // Fire invoice.overdue at the status→overdue flip. Deduped per (workflow,
   // invoice), so across the reminder ladder it triggers a flow at most once.
