@@ -8,6 +8,10 @@
  * settled invoice revokes its pending links, and the redemption decides in one
  * transaction: lock, state check, outstanding amount, claim of every pending
  * link.
+ *
+ * Cancellation read the original unlocked, so two cancellations could each
+ * insert a Storno; the flip to `cancelled` is a compare-and-set now, and a
+ * reissue refuses to create a second live replacement.
  */
 const request = require('supertest');
 const {
@@ -17,7 +21,7 @@ const {
 jest.setTimeout(120000);
 
 let db; let cleanup; let tmpDir; let adminId; let customerId; let token;
-let invoiceApp; let invoiceService; let payments; let reminders;
+let invoiceApp; let invoiceService; let payments; let sending; let reminders;
 const prevCwd = process.cwd();
 
 const auth = () => ({ Authorization: `Bearer ${token}` });
@@ -85,6 +89,7 @@ beforeAll(async () => {
 
   invoiceService = require('../../src/services/invoiceService');
   payments = require('../../src/services/invoice/payments');
+  sending = require('../../src/services/invoice/sending');
   reminders = require('../../src/services/invoice/reminders');
   invoiceApp = buildRouteApp('/api/admin/invoices', require('../../src/routes/adminInvoices'));
 });
@@ -193,5 +198,62 @@ describe('payment-check links', () => {
     const row = await invoiceRow(id);
     expect(row.status).toBe('paid');
     expect(row.reminder_level).toBe(0);
+  });
+});
+
+describe('cancellation and reissue', () => {
+  // The read saw a live invoice, but by the time the Storno flips it the row
+  // has been cancelled by someone else: what a second concurrent cancellation
+  // sees on PostgreSQL once the first commits and its lock is released. The
+  // stale read is injected, since SQLite serialises the transactions outright.
+  async function withStaleFirstRead(trx, staleRow) {
+    let served = false;
+    return new Proxy(trx, {
+      apply(target, thisArg, args) {
+        const query = target(...args);
+        if (args[0] === 'invoices' && !served) {
+          served = true;
+          query.first = async () => staleRow;
+        }
+        return query;
+      },
+      get(target, prop) {
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  }
+
+  it('a Storno is only created from the status the original was read in', async () => {
+    const id = await sentInvoice();
+    const live = await invoiceRow(id);
+    await invoiceService.cancelInvoice(id, adminId);
+    const stornoCount = async () => (await db('invoices').where({ cancels_invoice_id: id })).length;
+    expect(await stornoCount()).toBe(1);
+    const sequenceBefore = await db('document_sequences').select('*');
+
+    const code = await codeOf(db.transaction(async (trx) => sending.createStorno(id, adminId, await withStaleFirstRead(trx, live))));
+
+    expect(code).toBe('INVOICE_STATE_CHANGED');
+    expect(await stornoCount()).toBe(1);
+    const row = await invoiceRow(id);
+    expect(row.status).toBe('cancelled');
+    expect(row.cancellation_storno_id).toBe((await db('invoices').where({ cancels_invoice_id: id }).first()).id);
+    // The loser's sequence claim rolled back with it: the series stays gap-free.
+    expect(await db('document_sequences').select('*')).toEqual(sequenceBefore);
+  });
+
+  it('a second reissue of the same original is refused instead of creating another replacement', async () => {
+    const id = await sentInvoice();
+
+    const first = await invoiceService.reissueInvoice(id, adminId);
+    expect(first.replaces).toBe(id);
+    expect((await invoiceRow(id)).status).toBe('cancelled');
+
+    const code = await codeOf(invoiceService.reissueInvoice(id, adminId));
+
+    expect(code).toBe('ALREADY_REISSUED');
+    expect(await db('invoices').where({ replaces_invoice_id: id })).toHaveLength(1);
+    expect(await db('invoices').where({ cancels_invoice_id: id })).toHaveLength(1);
   });
 });
