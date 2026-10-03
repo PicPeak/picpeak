@@ -20,6 +20,28 @@ function hashToken(raw) {
   return crypto.createHash('sha256').update(String(raw)).digest('hex');
 }
 
+// The emailed link is a bearer capability, so its lifetime is bounded on the
+// server. The editor treats timeoutDays as optional and the shipped seeds omit
+// it; a missing, zero or invalid value used to persist a NULL expiry and the
+// link stayed valid for as long as the run waited.
+const DEFAULT_APPROVAL_LIFETIME_DAYS = 14;
+const MAX_APPROVAL_LIFETIME_DAYS = 90;
+
+function approvalLifetimeDays(cfg) {
+  const days = Number((cfg || {}).timeoutDays);
+  if (!Number.isFinite(days) || days <= 0) return DEFAULT_APPROVAL_LIFETIME_DAYS;
+  return Math.min(days, MAX_APPROVAL_LIFETIME_DAYS);
+}
+
+// A NULL or unreadable expiry fails closed: rows created before the lifetime
+// became mandatory are refused instead of being valid forever (same rule as
+// publicTokenGuards for quote/contract links).
+function isExpired(approval) {
+  if (!approval.expires_at) return true;
+  const at = new Date(approval.expires_at).getTime();
+  return !Number.isFinite(at) || at < Date.now();
+}
+
 /**
  * gate_setup action — create the approval + email the admin. Called by the
  * engine when a gate node is reached. Best-effort on the email; the approval
@@ -29,9 +51,7 @@ async function createApproval(ctx) {
   const { run, node } = ctx;
   const cfg = node.config || {};
   const raw = crypto.randomBytes(32).toString('hex');
-  const expiresAt = cfg.timeoutDays
-    ? new Date(Date.now() + Number(cfg.timeoutDays) * 86400000).toISOString()
-    : null;
+  const expiresAt = new Date(Date.now() + approvalLifetimeDays(cfg) * 86400000).toISOString();
 
   await db('workflow_approvals').insert({
     run_id: run.id,
@@ -95,7 +115,7 @@ async function alreadyDecided(approvalId) {
 async function finalizeApproval(approval, decision, actorPatch) {
   if (!approval) return { ok: false, reason: 'not_found' };
   if (approval.status !== 'pending') return { ok: true, already: true, status: approval.status };
-  if (approval.expires_at && new Date(approval.expires_at).getTime() < Date.now()) {
+  if (isExpired(approval)) {
     const expired = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
       .update({ status: 'expired' });
     if (!expired) return alreadyDecided(approval.id);
@@ -130,8 +150,7 @@ async function peekApproval(rawToken) {
   if (!a) return { found: false };
   let prompt = null;
   try { prompt = (JSON.parse(a.payload || '{}') || {}).prompt || null; } catch (_) { /* ignore */ }
-  const expired = !!(a.expires_at && new Date(a.expires_at).getTime() < Date.now());
-  return { found: true, status: a.status, prompt, expired };
+  return { found: true, status: a.status, prompt, expired: isExpired(a) };
 }
 
 /** Act on an approval from the admin webview inbox. */

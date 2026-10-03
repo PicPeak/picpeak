@@ -269,7 +269,8 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
             <textarea className={field} rows={2} value={config.prompt || ''} onChange={(e) => set({ prompt: e.target.value })} placeholder={t('workflows.editor.gatePromptPh', 'e.g. No payment received — send a reminder?') as string} />
           </Row>
           <Row label={t('workflows.editor.gateTimeout', 'Auto-expire after (days, optional)')}>
-            <input type="number" min={0} className={field} value={config.timeoutDays ?? ''} onChange={(e) => set({ timeoutDays: num(e.target.value) })} />
+            {/* Server default 14 days, cap 90 (approvals.js); the empty field means the default. */}
+            <input type="number" min={1} max={90} placeholder="14" className={field} value={config.timeoutDays ?? ''} onChange={(e) => set({ timeoutDays: num(e.target.value) })} />
           </Row>
           <p className="text-xs text-muted">
             {t('workflows.editor.gateHint', 'Emails the admin a confirm/deny link; routes to the “confirm” or “deny” edge.')}
