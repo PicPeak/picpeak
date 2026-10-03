@@ -127,10 +127,46 @@ const rejectDedicatedRouteOwnedKeys = (settings, res) => {
 // the caller isn't permitted to write is stripped before the upsert. The
 // dedicated routes still work because their caller holds the matching perm
 // (e.g. PUT /accounting is gated by settings.banking, so accounting_* survives).
+// analytics_umami_enabled belongs here too: publicSettings gates umami_url and
+// umami_website_id on it and App.tsx ORs it into the provider check, so it is
+// the on/off switch for the whole Umami path, not a selector. The Analytics
+// tab derives it from the provider dropdown, which is protected by the same
+// permission, so a legitimate save never newly 403s on it.
+const TRACKER_CODE_KEYS = new Set([
+  'analytics_tracker_provider',
+  'analytics_umami_enabled',
+  'analytics_umami_url',
+  'analytics_rybbit_url',
+  'analytics_custom_head_html',
+]);
+const parseStoredSetting = (row) => {
+  if (!row) return undefined;
+  try { return JSON.parse(row.setting_value); } catch (_) { return row.setting_value; }
+};
+// What a protected key reads as when it has no row yet, so a save that sends
+// the effective value back unchanged is not treated as a change. The provider
+// falls back to the legacy umami flag exactly like the Analytics tab does.
+const effectiveMissingSetting = async (key) => {
+  if (key === 'analytics_tracker_provider') {
+    const umami = parseStoredSetting(await db('app_settings').where({ setting_key: 'analytics_umami_enabled' }).first());
+    return umami === true || umami === 'true' ? 'umami' : 'none';
+  }
+  if (key === 'analytics_umami_enabled') return false;
+  return null;
+};
+// A rule names either the owning `perm`, or `superAdmin: true` when the key is
+// a super-admin decision that no delegable permission can grant.
 const PROTECTED_SETTING_KEY_PERMS = [
   { match: (k) => k === 'general_site_url', perm: 'settings.domains' },
   { match: (k) => k.startsWith('security_'), perm: 'settings.security' },
   { match: (k) => k.startsWith('accounting_'), perm: 'settings.banking' },
+  // The tracker provider/URL and the custom head HTML decide which JavaScript
+  // the app serves from its own origin (the tracker proxy re-serves the
+  // configured script same-origin) and runs in every visitor's session,
+  // including a super admin's. Whoever picks that code can act as any account
+  // that loads it, so no delegable permission (settings.integrations
+  // included) may grant it — super admins only, like the SSO provider.
+  { match: (k) => TRACKER_CODE_KEYS.has(k), superAdmin: true },
 ];
 // Returns the list of {key, perm} the caller tried to CHANGE without the owning
 // permission. Callers 403 when it's non-empty rather than silently no-op'ing a
@@ -145,17 +181,17 @@ const collectUnauthorizedProtectedKeys = async (settings, adminId) => {
   for (const key of Object.keys(settings)) {
     const rule = PROTECTED_SETTING_KEY_PERMS.find((r) => r.match(key));
     if (!rule) continue;
-    if (await userHasAnyPermission(adminId, [rule.perm])) continue;
+    const allowed = rule.superAdmin
+      ? await isSuperAdminUser(adminId)
+      : await userHasAnyPermission(adminId, [rule.perm]);
+    if (allowed) continue;
     const row = await db('app_settings').where({ setting_key: key }).first();
-    let stored = null;
-    if (row) {
-      try { stored = JSON.parse(row.setting_value); } catch (_) { stored = row.setting_value; }
-    }
+    const stored = row ? parseStoredSetting(row) : await effectiveMissingSetting(key);
     if (String(stored ?? '') === String(settings[key] ?? '')) {
       delete settings[key]; // unchanged — let the rest of the save through
       continue;
     }
-    denied.push({ key, perm: rule.perm });
+    denied.push({ key, perm: rule.superAdmin ? 'super_admin' : rule.perm });
   }
   return denied;
 };
