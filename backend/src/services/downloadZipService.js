@@ -424,8 +424,13 @@ class DownloadZipService {
       const events = await db('events')
         .whereNotNull('download_zip_path')
         .select('id');
-      for (const event of events) {
-        this.invalidate(event.id);
+      // A first build still in flight has no download_zip_path yet, so the
+      // query misses it — and it read its settings when it started. Left
+      // alone, its version checks pass and it publishes a zip built under
+      // the old settings.
+      const ids = new Set([...events.map((event) => event.id), ...this.activeBuilds.keys()]);
+      for (const id of ids) {
+        this.invalidate(id);
       }
     } catch (err) {
       logger.error('downloadZipService.invalidateAll error', { error: err.message });
