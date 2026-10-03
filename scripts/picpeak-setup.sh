@@ -35,8 +35,12 @@ readonly PURPLE='\033[0;35m'
 readonly CYAN='\033[0;36m'
 readonly NC='\033[0m' # No Color
 
-# Logging
-readonly LOG_FILE="/tmp/picpeak-setup-$(date +%Y%m%d-%H%M%S).log"
+# Logging. mktemp creates the transcript exclusively with mode 0600, so the
+# path cannot be pre-created or symlinked by another local user and the file
+# is never group/world-readable. Bootstrap secrets are additionally kept out
+# of it — see print_secret_line.
+LOG_FILE="$(mktemp /tmp/picpeak-setup-XXXXXXXX.log)" || { echo "Cannot create a log file in /tmp" >&2; exit 1; }
+readonly LOG_FILE
 exec 1> >(tee -a "$LOG_FILE")
 exec 2>&1
 
@@ -296,6 +300,17 @@ write_private_file() {
 copy_private_file() {
     local src="$1" dst="$2"
     ( umask 077; cp "$src" "$dst" ) && chmod 600 "$dst"
+}
+
+# Show a bootstrap secret (seeded admin password, one-time setup token) on the
+# terminal only. stdout is duplicated into the transcript in LOG_FILE, so the
+# line goes straight to /dev/tty; without a terminal the fallback is printed
+# instead, pointing at the protected file that holds the value.
+print_secret_line() {
+    local line="$1" fallback="$2"
+    if ! { echo -e "$line" > /dev/tty; } 2>/dev/null; then
+        echo -e "$fallback"
+    fi
 }
 
 ensure_storage_layout() {
@@ -1280,7 +1295,9 @@ print_success_message() {
         email_line=$(grep -m1 '^Email:' "$cred_file" || true)
         pass_line=$(grep -m1 '^Password:' "$cred_file" || true)
         echo -e "Email:    ${CYAN}${email_line#Email: }${NC}"
-        echo -e "Password: ${CYAN}${pass_line#Password: }${NC}"
+        # Terminal only — the transcript in LOG_FILE must not hold the password.
+        print_secret_line "Password: ${CYAN}${pass_line#Password: }${NC}" \
+            "Password: (not shown without a terminal — read it from ${cred_file})"
         echo -e "Saved to: ${cred_file} ${YELLOW}(delete after recording)${NC}"
         echo -e "${YELLOW}⚠️  Change this password on first login.${NC}"
     else
@@ -1294,7 +1311,9 @@ print_success_message() {
         echo "  2. Enter your email and a password."
         if [[ -n "$token" ]]; then
             echo "  3. When prompted, paste this one-time setup token:"
-            echo -e "     ${CYAN}${token}${NC}"
+            # Terminal only — the transcript in LOG_FILE must not hold the token.
+            print_secret_line "     ${CYAN}${token}${NC}" \
+                "     (not shown without a terminal — read it from ${token_file})"
         elif [[ "$INSTALL_METHOD" == "docker" ]]; then
             echo "  3. Get the one-time setup token from the logs:"
             echo -e "     ${CYAN}cd $app_dir && docker compose logs backend | grep -i 'setup token'${NC}"
