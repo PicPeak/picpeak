@@ -8,14 +8,18 @@
  * the general rate limiter (security review 2026-09-29).
  *
  * This middleware parses at the large limit only when the request carries an
- * admin JWT whose signature verifies, or an API token that exists. Anything
+ * admin JWT adminAuth would accept right now (liveAdminSession: signature,
+ * revocation, cutoff, active account, password change, idle timeout), or an
+ * API token that exists, is not revoked or expired, and whose owner is still
+ * active. A signature alone was not enough: a token invalidated by logout or
+ * a password change kept the 50 MB parser until its signed expiry. Anything
  * else falls through untouched to the ordinary 2 MB parser registered after
  * it, so an unauthenticated oversized body is refused with 413 before it is
  * ever parsed. Presence of a header is not enough — a forged cookie or a
  * made-up Bearer token must cost the attacker the same as no token at all.
  *
- * The full authentication (revocation, is_active, must_change_password) still
- * happens in adminAuth / apiTokenAuth afterwards; this only decides the body
+ * The full authentication still happens in adminAuth / apiTokenAuth
+ * afterwards; this only decides the body
  * limit — and it decides it only when the decision matters. A body that
  * cannot exceed the ordinary limit (an uncompressed JSON body whose
  * Content-Length is within it, or no JSON body at all) goes straight to the
@@ -25,33 +29,36 @@
  * it also claims a body the small parser would refuse.
  */
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { db } = require('../database/db');
+const { formatBoolean } = require('../utils/dbCompat');
 const { getAdminTokenFromRequest } = require('../utils/tokenUtils');
+const { verifyLiveAdminJwt } = require('../utils/liveAdminSession');
 
 const API_TOKEN_PREFIX = 'pp_live_';
 
-function hasVerifiedAdminJwt(req) {
+async function hasVerifiedAdminJwt(req) {
   const token = getAdminTokenFromRequest(req);
   if (!token || token.startsWith(API_TOKEN_PREFIX)) return false;
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
-      algorithms: ['HS256'],
-      issuer: 'picpeak-auth',
-    });
-    return !!decoded && decoded.type === 'admin';
-  } catch {
-    return false;
-  }
+  return !!(await verifyLiveAdminJwt(token));
 }
 
+// The same refusals apiTokenAuth applies: a revoked or expired token, or one
+// whose owner is deactivated or must change their password, stays on the
+// small parser.
 async function hasKnownApiToken(req) {
   const header = req.headers?.authorization || '';
   if (!header.startsWith(`Bearer ${API_TOKEN_PREFIX}`)) return false;
   const hashed = crypto.createHash('sha256').update(header.slice(7).trim()).digest('hex');
-  const row = await db('api_tokens').where({ hashed_token: hashed }).whereNull('revoked_at').select('id').first();
-  return !!row;
+  const row = await db('api_tokens')
+    .join('admin_users', 'admin_users.id', 'api_tokens.created_by')
+    .where({ 'api_tokens.hashed_token': hashed, 'admin_users.is_active': formatBoolean(true) })
+    .whereNull('api_tokens.revoked_at')
+    .select('api_tokens.expires_at', 'admin_users.must_change_password')
+    .first();
+  if (!row) return false;
+  if ([true, 1, '1', 'true'].includes(row.must_change_password)) return false;
+  return !(row.expires_at && new Date(row.expires_at) <= new Date());
 }
 
 /**
@@ -75,7 +82,7 @@ function createLargeJsonBody({ limit = '50mb', fallbackLimitBytes = 2 * 1024 * 1
   return async function largeJsonBody(req, res, next) {
     try {
       if (!mightExceed(req, fallbackLimitBytes)) return next();
-      if (hasVerifiedAdminJwt(req) || await hasKnownApiToken(req)) {
+      if (await hasVerifiedAdminJwt(req) || await hasKnownApiToken(req)) {
         return parser(req, res, next);
       }
       return next();

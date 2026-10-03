@@ -16,6 +16,9 @@ process.env.JWT_SECRET = 'gallery-image-skip-secret';
 
 jest.mock('../../src/database/db', () => ({ db: jest.fn(), withRetry: (fn) => fn() }));
 jest.mock('../../src/utils/logger', () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
+// The admin skip also requires a live session; that is pinned elsewhere. Here
+// the admin token only serves as the contrast to the gallery-image exemption.
+jest.mock('../../src/services/sessionAccessService', () => ({ admin: async () => ({ id: 1, must_change_password: false }) }));
 
 const { isOwnGalleryImageRequest, shouldSkipRateLimit } = require('../../src/services/rateLimitService');
 
@@ -28,10 +31,10 @@ const req = (path, token, method = 'GET') => ({
 const config = { enabled: true, skipAuthenticated: true, publicEndpointsOnly: false };
 
 describe('a gallery viewer fetching its own images', () => {
-  it.each(['thumbnail', 'preview', 'hero', 'photo'])('skips the budget on /%s', (route) => {
+  it.each(['thumbnail', 'preview', 'hero', 'photo'])('skips the budget on /%s', async (route) => {
     const r = req(`/api/gallery/wedding-2026/${route}/42`, galleryToken('wedding-2026'));
     expect(isOwnGalleryImageRequest(r)).toBe(true);
-    expect(shouldSkipRateLimit(r, config)).toBe(true);
+    expect(await shouldSkipRateLimit(r, config)).toBe(true);
   });
 
   it('also reads the per-slug gallery cookie, as the browser sends it', () => {
@@ -42,19 +45,19 @@ describe('a gallery viewer fetching its own images', () => {
 });
 
 describe('everything else stays on the budget', () => {
-  it('the photo list, downloads and feedback', () => {
+  it('the photo list, downloads and feedback', async () => {
     const token = galleryToken('wedding-2026');
     for (const path of ['/api/gallery/wedding-2026/photos', '/api/gallery/wedding-2026/download/42',
       '/api/gallery/wedding-2026/download-all', '/api/gallery/wedding-2026/info', '/api/gallery/wedding-2026/feedback/42']) {
       expect(isOwnGalleryImageRequest(req(path, token))).toBe(false);
-      expect(shouldSkipRateLimit(req(path, token), config)).toBe(false);
+      expect(await shouldSkipRateLimit(req(path, token), config)).toBe(false);
     }
   });
 
-  it('a token minted for a different gallery', () => {
+  it('a token minted for a different gallery', async () => {
     const r = req('/api/gallery/wedding-2026/thumbnail/42', galleryToken('other-gallery'));
     expect(isOwnGalleryImageRequest(r)).toBe(false);
-    expect(shouldSkipRateLimit(r, config)).toBe(false);
+    expect(await shouldSkipRateLimit(r, config)).toBe(false);
   });
 
   it('no token, a garbage token, a token under another secret, a token without a slug', () => {
@@ -70,14 +73,14 @@ describe('everything else stays on the budget', () => {
     expect(isOwnGalleryImageRequest(req('/api/gallery/wedding-2026/photo/42', galleryToken('wedding-2026'), 'DELETE'))).toBe(false);
   });
 
-  it('an admin token still skips everywhere, and is not what this checks', () => {
+  it('an admin token still skips everywhere, and is not what this checks', async () => {
     const r = req('/api/gallery/wedding-2026/thumbnail/42', adminToken());
     expect(isOwnGalleryImageRequest(r)).toBe(false);
-    expect(shouldSkipRateLimit(r, config)).toBe(true);
+    expect(await shouldSkipRateLimit(r, config)).toBe(true);
   });
 
-  it('the operator switch skip_authenticated=false counts guests too', () => {
+  it('the operator switch skip_authenticated=false counts guests too', async () => {
     const r = req('/api/gallery/wedding-2026/thumbnail/42', galleryToken('wedding-2026'));
-    expect(shouldSkipRateLimit(r, { ...config, skipAuthenticated: false })).toBe(false);
+    expect(await shouldSkipRateLimit(r, { ...config, skipAuthenticated: false })).toBe(false);
   });
 });

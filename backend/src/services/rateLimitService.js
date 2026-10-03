@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest, getGalleryTokenFromRequest } = require('../utils/tokenUtils');
+const { verifyLiveAdminJwt } = require('../utils/liveAdminSession');
 
 // What applies when app_settings has no row for a key — a fresh install has
 // none. Keyed by setting name so the admin settings read can surface the
@@ -118,29 +119,27 @@ function clearSettingsCache() {
 /**
  * Check if request has valid authentication
  */
-function isAuthenticated(req) {
+async function isAuthenticated(req) {
   try {
     const slugMatch = req.path.match(/\/api\/(?:gallery|secure-images)\/([^/]+)/);
     const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
     const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Check if token is valid
-    if (!decoded || typeof decoded !== 'object') {
-      return false;
-    }
-
+    // Same checks the auth middleware applies — signature, revocation,
+    // cutoff, active account, password change, idle timeout: a token that
+    // would not pass adminAuth must not buy an unlimited budget either.
+    //
     // Only an admin session earns the skip. A gallery token is minted for
     // free on password-less galleries and slideshow links, so treating it as
     // "authenticated" handed anyone an unlimited budget on every /api route.
     // The one thing a gallery token does buy is its own gallery's images —
     // see isOwnGalleryImageRequest below.
-    if (decoded.type !== 'admin') {
+    const decoded = await verifyLiveAdminJwt(token);
+    if (!decoded) {
       return false;
     }
     req.tokenType = decoded.type;
     req.tokenPayload = decoded;
-    
+
     return true;
   } catch (error) {
     return false;
@@ -190,7 +189,7 @@ function isOwnGalleryImageRequest(req) {
 /**
  * Determine if rate limiting should be applied to this request
  */
-function shouldSkipRateLimit(req, config) {
+async function shouldSkipRateLimit(req, config) {
   // If rate limiting is disabled globally
   if (!config.enabled) {
     return true;
@@ -205,7 +204,7 @@ function shouldSkipRateLimit(req, config) {
   // Check if we should skip authenticated requests. A gallery viewer's own
   // image fetches ride on the same switch: an operator who turns the skip
   // off gets every request counted, guests included.
-  if (config.skipAuthenticated && (isAuthenticated(req) || isOwnGalleryImageRequest(req))) {
+  if (config.skipAuthenticated && (isOwnGalleryImageRequest(req) || await isAuthenticated(req))) {
     return true;
   }
 
@@ -243,7 +242,7 @@ async function createRateLimiter(store = new MemoryStore()) {
     keyGenerator: (req) => req.ip,
     skip: async (req) => {
       const currentConfig = await getRateLimitSettings();
-      return shouldSkipRateLimit(req, currentConfig);
+      return await shouldSkipRateLimit(req, currentConfig);
     },
     handler: (req, res) => {
       const clientIp = req.ip;
@@ -253,7 +252,9 @@ async function createRateLimiter(store = new MemoryStore()) {
         ip: clientIp,
         path: requestLogPath(req.originalUrl || req.path),
         method: req.method,
-        authenticated: isAuthenticated(req),
+        // Set by isAuthenticated during the skip check; a limited request
+        // never carried a live admin session.
+        authenticated: req.tokenType === 'admin',
         tokenType: req.tokenType,
         userAgent: req.headers['user-agent'],
         origin: req.headers['origin'],

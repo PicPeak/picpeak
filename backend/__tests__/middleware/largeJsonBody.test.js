@@ -128,4 +128,74 @@ describe('largeJsonBody — the 50 MB parser is for authenticated callers only',
     const token = mintAdminToken(adminId);
     expect((await post('/api/other/echo').set('Authorization', `Bearer ${token}`).send(bigBody)).status).toBe(413);
   });
+
+  // Scanner finding 4020ee96: a signature-valid admin JWT that adminAuth would
+  // refuse must not select the large parser either. Each case mints its own
+  // token (distinct jti) so the per-token eligibility cache cannot carry a
+  // verdict across cases.
+  describe('a stale admin JWT stays on the small parser', () => {
+    // 24h like a real login, so a backdated iat still leaves the signature valid.
+    const fresh = (extra = {}) => mintAdminToken(adminId, { expiresIn: '24h', extraClaims: { jti: crypto.randomUUID(), ...extra } });
+    const sendBig = (token) => post('/api/admin/echo').set('Authorization', `Bearer ${token}`).send(bigBody);
+    afterEach(async () => {
+      await db('admin_users').where({ id: adminId }).update({ is_active: 1, password_changed_at: null, must_change_password: 0 });
+      await require('../../src/utils/sessionCutoff').setSessionsValidAfter(0);
+    });
+
+    it('after logout (token revoked)', async () => {
+      const token = fresh();
+      await require('../../src/utils/tokenRevocation').revokeToken(token, 'test');
+      expect((await sendBig(token)).status).toBe(413);
+    });
+    it('after the account is deactivated', async () => {
+      await db('admin_users').where({ id: adminId }).update({ is_active: 0 });
+      expect((await sendBig(fresh())).status).toBe(413);
+    });
+    it('after a password change', async () => {
+      const token = fresh({ iat: Math.floor(Date.now() / 1000) - 120 });
+      await db('admin_users').where({ id: adminId }).update({ password_changed_at: new Date().toISOString() });
+      expect((await sendBig(token)).status).toBe(413);
+    });
+    it('after a global session cutoff', async () => {
+      const token = fresh({ iat: Math.floor(Date.now() / 1000) - 120 });
+      await require('../../src/utils/sessionCutoff').setSessionsValidAfter(Math.floor(Date.now() / 1000));
+      expect((await sendBig(token)).status).toBe(413);
+    });
+    it('while a password change is mandatory', async () => {
+      await db('admin_users').where({ id: adminId }).update({ must_change_password: 1 });
+      expect((await sendBig(fresh())).status).toBe(413);
+    });
+    it('after the idle timeout', async () => {
+      // Default idle timeout is 60 minutes; a token issued two hours ago with
+      // no recorded activity is idle-expired.
+      expect((await sendBig(fresh({ iat: Math.floor(Date.now() / 1000) - 7200 }))).status).toBe(413);
+    });
+  });
+
+  describe('a stale API token stays on the small parser', () => {
+    const sendBig = (token) => post('/api/v1/echo').set('Authorization', `Bearer ${token}`).send(bigBody);
+    const insert = (name, extra = {}) => {
+      const token = 'pp_live_' + crypto.randomBytes(24).toString('hex');
+      return db('api_tokens').insert({ name, hashed_token: sha(token), scopes: 'read', created_by: adminId, ...extra }).then(() => token);
+    };
+
+    it('when it has expired', async () => {
+      const expired = await insert('expired', { expires_at: new Date(Date.now() - 60000).toISOString() });
+      expect((await sendBig(expired)).status).toBe(413);
+      const live = await insert('future', { expires_at: new Date(Date.now() + 3600000).toISOString() });
+      expect((await sendBig(live)).status).toBe(200);
+    });
+    it('when its owner is deactivated or must change their password', async () => {
+      const token = await insert('owner-state');
+      try {
+        await db('admin_users').where({ id: adminId }).update({ is_active: 0 });
+        expect((await sendBig(token)).status).toBe(413);
+        await db('admin_users').where({ id: adminId }).update({ is_active: 1, must_change_password: 1 });
+        expect((await sendBig(token)).status).toBe(413);
+      } finally {
+        await db('admin_users').where({ id: adminId }).update({ is_active: 1, must_change_password: 0 });
+      }
+      expect((await sendBig(token)).status).toBe(200);
+    });
+  });
 });
