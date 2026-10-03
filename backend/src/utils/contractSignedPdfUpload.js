@@ -140,7 +140,8 @@ async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
   const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer', actor, {
     actionToken: { id: tokenRow.id, ip: storeIpEnabled ? clientIpForAudit(req) : null },
   });
-  return res.json(result);
+  // The status only: where the server keeps the file is not the signer's business.
+  return res.json({ status: result.status });
 }
 
 module.exports = {
