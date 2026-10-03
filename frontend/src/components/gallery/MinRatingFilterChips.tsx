@@ -66,7 +66,8 @@ export const MinRatingFilterChips: React.FC<MinRatingFilterChipsProps> = ({
             >
               <Star className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'fill-yellow-500' : ''}`} aria-hidden="true" />
               <span className="font-medium">{min}{min < 5 ? '+' : ''}</span>
-              {count > 0 && <span>{count}</span>}
+              {/* Bracketed like the category chips: "3+ 1" reads as one number. */}
+              {count > 0 && <span>({count})</span>}
             </button>
           );
         })}
