@@ -13,6 +13,7 @@ const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
+const { setSessionsValidAfter } = require('../utils/sessionCutoff');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -109,6 +110,14 @@ async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () 
     );
   }
   return { verified: true };
+}
+
+// Session cutoff for a database just replaced. isTokenBeforeCutoff() rejects
+// `iat < cutoff` and JWT iat is a whole second, so a cutoff of "now" lets a
+// token minted earlier in the same second survive the restore. Stamp the next
+// second: everything issued up to and including this second is out.
+function nextSessionCutoff() {
+  return Math.floor(Date.now() / 1000) + 1;
 }
 
 // `restore_max_file_size_mb` (restore settings, default from migration 032)
@@ -452,6 +461,15 @@ class RestoreService {
         break;
       default:
         throw new Error(`Unknown restore type: ${options.restoreType}`);
+      }
+
+      // Step 6b: every admin, customer and gallery JWT issued before the
+      // identity tables were replaced must stop authenticating — a numeric
+      // id in an old token may now name a different or re-enabled principal.
+      // Same cutoff the portable import stamps (sessionCutoff.js).
+      if (options.restoreType === 'full' || options.restoreType === 'database') {
+        await setSessionsValidAfter(nextSessionCutoff());
+        this.log('info', 'Sessions issued before the restore invalidated');
       }
 
       // Step 7: Post-restore verification
@@ -1850,6 +1868,8 @@ END $$;`
         }
 
         await fs.unlink(decompressedPath);
+        // The identity tables changed again; see step 6b in restore().
+        await setSessionsValidAfter(nextSessionCutoff());
       }
 
       // Restore files if backed up
@@ -2194,6 +2214,7 @@ module.exports = {
     resolveContainedDbBackupCandidates,
     verifyDatabaseDumpChecksum,
     getRestoreMaxFileBytes,
+    nextSessionCutoff,
     openRestoreSource,
     writeBounded,
     downloadS3ObjectBounded,
