@@ -91,30 +91,26 @@ describe('analyticsService.trackPageView against the loaded Umami API', () => {
     );
   });
 
-  // Deliberately flipped on 2026-10-03: this used to assert that a gallery
-  // page view IS recorded (with the share token redacted). Gallery routes are
-  // now untracked outright — the share token is the gallery credential and
-  // the tracker runs with the page's privileges — so even a loaded tracker
-  // must record nothing for them. The redaction itself is still covered by
-  // the next test.
-  it('records nothing for a gallery page view, even while the tracker is loaded', () => {
+  // Gallery pages stay tracked (maintainer decision 2026-10-03): the share
+  // token is redacted here and masked by Rybbit's maskPatterns (GHSA-7m6c).
+  it('still redacts the gallery share token on the track() path (GHSA-7m6c)', () => {
     const track = vi.fn();
     setUmami({ track });
 
     umamiService().trackPageView('/gallery/summer-wedding/0123456789abcdef0123456789abcdef?x=1');
-    umamiService().trackPageView('/gallery/summer-wedding');
-    umamiService().trackPageView('/gallery/summer-wedding/show/0123456789abcdef0123456789abcdef');
 
-    expect(track).not.toHaveBeenCalled();
+    expect(track.mock.calls[0][0](DEFAULT_PAYLOAD).url).toBe('/gallery/summer-wedding/[redacted]');
   });
 
-  it('still redacts token-looking segments on the track() path (GHSA-7m6c)', () => {
+  it('records nothing for a customer-portal or short-link page view, even while the tracker is loaded', () => {
     const track = vi.fn();
     setUmami({ track });
 
-    umamiService().trackPageView('/impressum/0123456789abcdef0123456789abcdef?x=1');
+    umamiService().trackPageView('/customer/dashboard?tab=bills');
+    umamiService().trackPageView('/customer');
+    umamiService().trackPageView('/s/ab12cd');
 
-    expect(track.mock.calls[0][0](DEFAULT_PAYLOAD).url).toBe('/impressum/[redacted]');
+    expect(track).not.toHaveBeenCalled();
   });
 
   it('falls back to the legacy trackView() when that is all the script offers', () => {

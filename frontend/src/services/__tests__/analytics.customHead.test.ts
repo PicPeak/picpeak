@@ -31,7 +31,7 @@ describe('custom head HTML and the admin UI', () => {
   });
 
   it('injects the HTML on a public route', () => {
-    window.history.pushState({}, '', '/impressum');
+    window.history.pushState({}, '', '/gallery/summer-party');
     const service = freshService();
 
     service.initialize({ provider: 'custom', customHeadHtml: HTML });
@@ -51,7 +51,7 @@ describe('custom head HTML and the admin UI', () => {
   it('treats a doubled leading slash as the admin UI when navigating', () => {
     // pushState reads '//admin/...' as a protocol-relative URL, so this
     // variant is only reachable here through the router's pathname.
-    window.history.pushState({}, '', '/impressum');
+    window.history.pushState({}, '', '/gallery/summer-party');
     const service = freshService();
     service.initialize({ provider: 'custom', customHeadHtml: HTML });
 
@@ -71,7 +71,7 @@ describe('custom head HTML and the admin UI', () => {
     expect(injected()).toBe(0);
 
     const afterPublic = freshService();
-    window.history.pushState({}, '', '/impressum');
+    window.history.pushState({}, '', '/gallery/summer-party');
     afterPublic.initialize({ provider: 'custom', customHeadHtml: HTML });
     afterPublic.handleRouteChange(variant);
     expect(afterPublic.reloadPage).toHaveBeenCalledTimes(1);
@@ -82,8 +82,8 @@ describe('custom head HTML and the admin UI', () => {
     const service = freshService();
     service.initialize({ provider: 'custom', customHeadHtml: HTML });
 
-    service.handleRouteChange('/impressum');
-    service.handleRouteChange('/datenschutz');
+    service.handleRouteChange('/gallery/summer-party');
+    service.handleRouteChange('/gallery/summer-party/photo/3');
 
     expect(injected()).toBe(1);
     expect(service.reloadPage).not.toHaveBeenCalled();
