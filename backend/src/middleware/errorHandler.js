@@ -103,6 +103,16 @@ const handleKnownErrors = (err) => {
     return new ValidationError('Field name array index too large');
   }
 
+  // The multipart routes now size their parsers to the fields they read
+  // (`fields`, `parts`, `files`, `fieldSize`); a request that exceeds one of
+  // those budgets is a bad request, not a server fault.
+  if (err.code === 'LIMIT_FIELD_COUNT' || err.code === 'LIMIT_PART_COUNT'
+    || err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_FIELD_VALUE'
+    || err.code === 'LIMIT_FIELD_KEY') {
+    const { ValidationError } = require('../utils/errors');
+    return new ValidationError('Multipart request exceeds the allowed number or size of parts');
+  }
+
   return err;
 };
 
