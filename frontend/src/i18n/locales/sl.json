@@ -824,6 +824,7 @@
     "noCategory": "Brez kategorije",
     "eventSpecific": "(specifično za dogodek)",
     "clickToUpload": "Kliknite za nalaganje ali povlecite in spustite",
+    "clickToUploadOrDropFolder": "Kliknite za nalaganje ali povlecite in spustite datoteke ali mapo",
     "takePhoto": "Posnemi fotografijo",
     "fileRequirements": "{{formats}} (največ {{sizeLimit}} MB na datoteko, {{limit}} datotek na nalaganje)",
     "videoSizeLimit": "Videi: največ {{sizeLimit}} MB na datoteko",
