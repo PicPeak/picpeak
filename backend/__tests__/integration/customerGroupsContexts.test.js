@@ -92,11 +92,11 @@ it('carries the groups on the event detail, only with customers.view', async () 
   expect(withView.status).toBe(200);
   expectVip(withView.body.customer_accounts.find((c) => c.id === customerId).groups);
 
+  // Without customers.view the assigned customers themselves stay out of the
+  // detail, groups included.
   const without = await request(app).get(`/api/admin/events/${eventId}`).set(auth(eventsOnlyToken));
   expect(without.status).toBe(200);
-  const assigned = without.body.customer_accounts.find((c) => c.id === customerId);
-  expect(assigned).toBeDefined();
-  expect(assigned).not.toHaveProperty('groups');
+  expect(without.body.customer_accounts).toEqual([]);
 });
 
 it('still answers the event detail, without groups, when the group lookup fails', async () => {
@@ -116,8 +116,10 @@ it('carries the customer\'s groups on the project cockpit, only with customers.v
   expect(withView.status).toBe(200);
   expectVip(bodyOf(withView).project.customerGroups);
 
+  // Without customers.view the project's customer fields leave the payload
+  // altogether, groups included.
   const without = await request(app).get(`/api/admin/projects/${projectId}/overview`).set(auth(eventsOnlyToken));
   expect(without.status).toBe(200);
-  expect(bodyOf(without).project.customerAccountId).toBe(customerId);
+  expect(bodyOf(without).project).not.toHaveProperty('customerAccountId');
   expect(bodyOf(without).project).not.toHaveProperty('customerGroups');
 });
