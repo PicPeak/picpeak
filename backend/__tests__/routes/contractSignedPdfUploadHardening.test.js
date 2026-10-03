@@ -30,7 +30,7 @@ const request = require('supertest');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp, createPublicToken,
 } = require('../integration/helpers/crmDb');
-const { minimalPdf } = require('../integration/helpers/pdfFixture');
+const { minimalPdf, javascriptPdf } = require('../integration/helpers/pdfFixture');
 
 describe('signed-contract PDF upload hardening', () => {
   let db; let cleanup; let adminApp; let publicApp; let portalApp; let adminToken; let customerId; let cookie;
@@ -95,6 +95,60 @@ describe('signed-contract PDF upload hardening', () => {
   const adminUpload = (id) => request(adminApp)
     .post(`/api/admin/contracts/${id}/upload-signed-pdf`).set('Authorization', `Bearer ${adminToken}`);
   const asPdf = (buffer) => [buffer, { filename: 'signed.pdf', contentType: 'application/pdf' }];
+
+  describe('content checks on the signer uploads', () => {
+    it('refuses a PDF with JavaScript on the public link, keeping the link and writing no file', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const before = signedFiles();
+
+      const res = await publicUpload(link, await grantFor(link)).attach('file', ...asPdf(await javascriptPdf()));
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PDF_ACTIVE_CONTENT');
+      expect((await contractRow(id)).status).toBe('sent');
+      expect((await tokenRow(link)).used_at).toBeNull();
+      expect(signedFiles()).toEqual(before);
+    });
+
+    it('refuses a PDF with JavaScript in the customer portal', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const before = signedFiles();
+
+      const res = await portalUpload(id).attach('file', ...asPdf(await javascriptPdf()));
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PDF_ACTIVE_CONTENT');
+      expect((await contractRow(id)).status).toBe('sent');
+      expect((await tokenRow(link)).used_at).toBeNull();
+      expect(signedFiles()).toEqual(before);
+    });
+
+    it('refuses a file that is only a PDF signature, not a document', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+
+      const res = await publicUpload(link, await grantFor(link)).attach('file', ...asPdf(Buffer.from('%PDF-1.4 signed')));
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PDF_MALFORMED');
+      expect((await contractRow(id)).status).toBe('sent');
+    });
+
+    it('keeps the original bytes of an accepted PDF', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const bytes = await minimalPdf({ label: 'original bytes' });
+
+      const res = await publicUpload(link, await grantFor(link)).attach('file', ...asPdf(bytes));
+
+      expect(res.status).toBe(200);
+      const row = await contractRow(id);
+      const onDisk = fs.readFileSync(path.join(process.env.STORAGE_PATH, row.signed_pdf_path));
+      expect(onDisk.equals(bytes)).toBe(true);
+    });
+  });
 
   // Refused as a 400 (not a 500: a bare MulterError has no statusCode), and
   // nothing changed.

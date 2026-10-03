@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { validateFileType, validateFileContent } = require('./fileSecurityUtils');
+const { validatePdf } = require('./pdfValidation');
 const { ValidationError } = require('./errors');
 const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
@@ -86,22 +87,48 @@ async function uploadSignedPdfSettingGuard(req, res, next) {
 }
 
 /**
+ * The content checks every signer-uploaded PDF goes through before it can
+ * become the authoritative signed contract. Responds and removes the file on
+ * refusal; resolves `true` when the upload may proceed.
+ *
+ * The filter only saw the reported type and the file name, so the bytes are
+ * checked on disk: first the signature, then a full parse in a worker thread
+ * (utils/pdfValidation) that refuses active content — JavaScript, launch and
+ * submit actions, embedded files, XFA, rich media — encryption, and files
+ * that expand past the inflate budget. The upload is mailed to both parties
+ * and rendered inline in the admin's browser, so it must be a plain document.
+ * The original bytes are kept: a paper copy may carry a digital signature
+ * that re-serialising would break. Checked before the token is spent, so the
+ * customer can retry.
+ */
+async function checkSignedPdfUpload(req, res) {
+  if (!req.file) {
+    res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
+    return false;
+  }
+  if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
+    return false;
+  }
+  try {
+    await validatePdf(await fs.promises.readFile(req.file.path), { maxBytes: MAX_SIGNED_PDF_BYTES });
+  } catch (err) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    res.status(err.statusCode || 400).json({ error: err.message, code: err.code || 'INVALID_PDF' });
+    return false;
+  }
+  return true;
+}
+
+/**
  * Attach the uploaded file and spend the token. Responds itself. `actor` is
  * the uploader the accounting change history records: the customer portal
  * passes the signed-in customer, the public link leaves it to the service.
  */
 async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
   const tokenRow = req.publicTokenRow;
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
-  }
-  // The filter only saw the reported type and the file name. The upload
-  // becomes the authoritative signed contract, so its bytes must be a PDF.
-  // Checked before the token is spent, so the customer can retry.
-  if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
-    await fs.promises.unlink(req.file.path).catch(() => {});
-    return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
-  }
+  if (!(await checkSignedPdfUpload(req, res))) return undefined;
   const contractService = require('../services/contractService');
   const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer', actor);
   // Mark the token as used so the link can't be re-played.
@@ -119,5 +146,5 @@ async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
 }
 
 module.exports = {
-  signedPdfUpload, signedPdfSingle, singlePdf, uploadSignedPdfSettingGuard, finishSignedPdfUpload,
+  signedPdfUpload, signedPdfSingle, singlePdf, uploadSignedPdfSettingGuard, checkSignedPdfUpload, finishSignedPdfUpload,
 };

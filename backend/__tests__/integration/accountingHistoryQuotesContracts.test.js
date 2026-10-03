@@ -17,6 +17,7 @@ const jwt = require('jsonwebtoken');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
+const { minimalPdf } = require('./helpers/pdfFixture');
 
 jest.setTimeout(120000);
 
@@ -318,7 +319,8 @@ describe('contracts', () => {
     const { id } = await sentContract();
     const res = await request(portal).post(`/api/customer/contracts/${id}/upload-signed-pdf`)
       .set('Cookie', cookie)
-      .attach('file', Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n'), {
+      // The portal upload parses the file, so the fixture is a real document.
+      .attach('file', await minimalPdf(), {
         filename: 'signed.pdf', contentType: 'application/pdf',
       });
     expect(res.status).toBe(200);

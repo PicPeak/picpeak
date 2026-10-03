@@ -29,6 +29,8 @@ const {
 
 // Stored paths are relative to the storage root (storedPath.js).
 const { resolveStoredPath: onDisk } = require('../../src/utils/storedPath');
+// The customer upload parses the file, so its fixture is a real document.
+const { minimalPdf } = require('../integration/helpers/pdfFixture');
 
 describe('signed-PDF upload file names', () => {
   let db; let cleanup; let customerId; let token;
@@ -98,7 +100,7 @@ describe('signed-PDF upload file names', () => {
       const res = await request(app)
         .post(`/api/public/contracts/${link}/upload-signed-pdf`)
         .set('X-Document-Access', verification.issueGrant('contract', tokenRow, link))
-        .attach('file', Buffer.from(`%PDF-1.4 ${link.slice(-4)}`), 'signed.pdf');
+        .attach('file', await minimalPdf({ label: link.slice(-4) }), 'signed.pdf');
       statuses.push(res.status);
     }
 

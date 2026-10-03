@@ -29,8 +29,8 @@ const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
-const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
-const { singlePdf } = require('../utils/contractSignedPdfUpload');
+const { validateFileType } = require('../utils/fileSecurityUtils');
+const { checkSignedPdfUpload, singlePdf } = require('../utils/contractSignedPdfUpload');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { clientIpForAudit } = require('../utils/clientIp');
 const { getAppSetting } = require('../utils/appSettings');
@@ -217,14 +217,9 @@ async function uploadGuards(req, res, next) {
 }
 
 router.post('/session/upload-signed-pdf', signLimiter, uploadGuards, singlePdf(signedPdfUpload), handleAsync(async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
-  // The filter only saw the reported type and the file name. This upload
-  // becomes the authoritative signed contract and is mailed to both parties,
-  // so its bytes have to be a PDF — same check as the legacy link's upload.
-  if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
-    await fs.promises.unlink(req.file.path).catch(() => {});
-    return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
-  }
+  // This upload becomes the authoritative signed contract and is mailed to
+  // both parties — the same content checks as the legacy link's upload.
+  if (!(await checkSignedPdfUpload(req, res))) return undefined;
   const contractService = require('../services/contractService');
   const result = await contractService.attachSignedPdfUpload(req.signing.contract.id, req.file.path, 'customer');
   return successResponse(res, { status: result.status });
