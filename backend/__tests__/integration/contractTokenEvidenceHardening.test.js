@@ -461,7 +461,10 @@ describe('countersignature stamping', () => {
     expect(contract.signed_pdf_path).toBe(customerStamped);
   });
 
-  it('does not replace a wet-signed upload that landed right after the countersignature took the status', async () => {
+  it('refuses a customer wet-signed upload that lands right after the countersignature took the status', async () => {
+    // fully_signed is final for a customer upload: once the countersignature
+    // has flipped the status, a late wet-signed copy no longer replaces the
+    // authoritative PDF (it used to, and the render then raced it).
     const { id, token } = await sentContract('Upload before countersign stamp');
     await contractService.recordCustomerSignature({
       token, name: 'Maria Meier', accepted: true, ip: '198.51.100.14', signatureDataUrl: SIGNATURE_DATA_URL,
@@ -471,7 +474,11 @@ describe('countersignature stamping', () => {
     const wet = path.join(uploadDir, `wet-countersign-${Date.now()}.pdf`);
     fs.writeFileSync(wet, '%PDF-1.4 authoritative wet-signed copy');
 
-    mockBeforeContractRead = { contractId: id, run: () => contractService.attachSignedPdfUpload(id, wet, 'customer') };
+    let refused = null;
+    mockBeforeContractRead = {
+      contractId: id,
+      run: () => contractService.attachSignedPdfUpload(id, wet, 'customer').catch((err) => { refused = err; }),
+    };
     try {
       await contractService.recordAdminCountersignature(
         id, { name: 'Admin', ip: '203.0.113.32', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
@@ -480,10 +487,12 @@ describe('countersignature stamping', () => {
       mockBeforeContractRead = null;
     }
 
+    expect(refused?.code).toBe('CONTRACT_ALREADY_SIGNED');
+    expect(fs.existsSync(wet)).toBe(false);
     const contract = await db('contracts').where({ id }).first();
     expect(contract.status).toBe('fully_signed');
     expect(contract.signed_admin_name).toBe('Admin');
-    expect(contract.signed_pdf_path).toBe(storedAs(wet));
+    expect(contract.signed_pdf_path).not.toBe(storedAs(wet));
   });
 });
 
