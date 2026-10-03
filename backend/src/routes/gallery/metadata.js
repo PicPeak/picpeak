@@ -14,6 +14,7 @@ const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = r
 const { handleAsync, errorResponse } = require('../../utils/routeHelpers');
 const { isGalleryHidden } = require('../../utils/revealMode');
 const { NotFoundError } = require('../../utils/errors');
+const { toDateOnly } = require('../../utils/dateOnly');
 async function checkSlugRedirect(slug) {
   try {
     const hasTable = await db.schema.hasTable('slug_redirects');
@@ -254,7 +255,7 @@ router.get('/:slug/info', async (req, res) => {
     res.json({
       event_name: event.event_name,
       event_type: event.event_type,
-      event_date: event.event_date,
+      event_date: toDateOnly(event.event_date),
       expires_at: event.expires_at,
       is_active: event.is_active,
       is_expired: !event.is_active || isGalleryExpired(event),
