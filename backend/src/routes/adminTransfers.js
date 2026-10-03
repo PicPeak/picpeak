@@ -47,13 +47,28 @@ const tempStorage = multer.diskStorage({
   },
 });
 
-function buildAdminUploader(maxSizeBytes, allowed) {
+// Text-field budgets per route. Busboy buffers every text part in memory
+// before the handler runs, so the parser has to be told how many fields the
+// handler reads and how large they can be. Create reads ten named fields;
+// `photoIds` is a JSON array of up to 5000 ids, which is what sizes
+// `fieldSize`. Adding files to an existing transfer reads no text at all.
+const CREATE_FIELD_LIMITS = { fields: 10, fieldSize: 64 * 1024 };
+const FILES_ONLY_FIELD_LIMITS = { fields: 0, fieldSize: 1 };
+
+function buildAdminUploader(maxSizeBytes, allowed, fieldLimits) {
   return multer({
     storage: tempStorage,
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]` — no legitimate
     // field name uses array-index syntax at all. Reject any that do.
-    limits: { fileSize: maxSizeBytes, files: ADMIN_MAX_FILES, fieldArrayIndexLimit: 0 },
+    limits: {
+      fileSize: maxSizeBytes,
+      files: ADMIN_MAX_FILES,
+      fieldArrayIndexLimit: 0,
+      fields: fieldLimits.fields,
+      fieldSize: fieldLimits.fieldSize,
+      parts: ADMIN_MAX_FILES + fieldLimits.fields,
+    },
     fileFilter: (req, file, cb) => {
       if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
       return cb(new Error('This file type is not allowed'));
@@ -65,11 +80,11 @@ function buildAdminUploader(maxSizeBytes, allowed) {
  * Run multer for a transfer request, reading the size/type limits from settings.
  * Resolves { ok:true } or sends a 4xx and resolves { ok:false }.
  */
-async function runAdminUpload(req, res) {
+async function runAdminUpload(req, res, fieldLimits) {
   const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
   const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
-  const uploader = buildAdminUploader(maxSizeMb * 1024 * 1024, allowed);
+  const uploader = buildAdminUploader(maxSizeMb * 1024 * 1024, allowed, fieldLimits);
   try {
     await new Promise((resolve, reject) => uploader(req, res, (err) => (err ? reject(err) : resolve())));
     return { ok: true };
@@ -161,7 +176,7 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
 router.post('/',
   requirePermission('events.edit'),
   handleAsync(async (req, res) => {
-    const up = await runAdminUpload(req, res);
+    const up = await runAdminUpload(req, res, CREATE_FIELD_LIMITS);
     if (!up.ok) return; // 4xx already sent
 
     const b = req.body || {};
@@ -291,7 +306,7 @@ router.post('/:id/upload-files',
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id' });
     const existing = await transferService.getTransfer(id);
     if (!existing) return res.status(404).json({ error: 'Transfer not found' });
-    const up = await runAdminUpload(req, res);
+    const up = await runAdminUpload(req, res, FILES_ONLY_FIELD_LIMITS);
     if (!up.ok) return;
     if (!req.files || !req.files.length) {
       return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });

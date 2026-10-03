@@ -94,13 +94,21 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType } =
 // was hardcoded to 10GB here, which meant the advertised "max. 50MB per file"
 // in the dropzone was never enforced anywhere server-side. getMaxFileSizeBytes()
 // clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
-const createUpload = (maxFileSizeBytes) => multer({
+//
+// The handler reads three short text fields (category_id, replace_by_name,
+// match_mode). Busboy buffers every text part in memory before the handler
+// runs, so without `fields`/`fieldSize`/`parts` sized to that a caller with
+// photos.upload could send thousands of multi-megabyte text parts and hold
+// them all on the heap.
+const UPLOAD_TEXT_FIELDS = 5;
+const createUpload = (maxFileSizeBytes, maxFiles) => multer({
   storage: storage,
   limits: {
     fileSize: maxFileSizeBytes,
-    files: 2000, // Hard safety ceiling; actual limit enforced dynamically
-    fieldSize: 10 * 1024 * 1024, // 10MB for non-file fields
-    parts: 10000,
+    files: maxFiles,
+    fields: UPLOAD_TEXT_FIELDS,
+    fieldSize: 1024,
+    parts: maxFiles + UPLOAD_TEXT_FIELDS,
     headerPairs: 2000,
     // CVE-2026-82333: files arrive as repeated `photos` parts via
     // multer's own .array('photos', N) — not bracket-indexed field names
@@ -224,7 +232,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
   const multerLimitBytes = Math.max(maxFileSizeBytes, maxVideoSizeBytes);
   const maxFileSizeMb = Math.floor(multerLimitBytes / (1024 * 1024));
 
-  createUpload(multerLimitBytes).array('photos', maxFilesPerUpload)(req, res, (err) => {
+  createUpload(multerLimitBytes, maxFilesPerUpload).array('photos', maxFilesPerUpload)(req, res, (err) => {
     if (err) {
       logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
@@ -256,7 +264,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     const matchMode = match_mode === 'number_token' ? 'number_token' : 'exact';
 
     logger.info('Upload request received for event:', eventId);
-    logger.info('Body:', req.body);
+    logger.info('Body fields:', Object.keys(req.body || {}));
     logger.info('Files:', req.files ? req.files.length : 'none');
     logger.info('File details:', req.files?.map(f => ({ name: f.originalname, size: f.size, mimetype: f.mimetype })));
     logger.info('Category ID received:', category_id);
