@@ -21,7 +21,8 @@ const fs = require('fs').promises;
 const sharp = require('sharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { resolveExternalPath } = require('./externalMediaService');
+const { resolveExternalPath, getExternalMediaRoot } = require('./externalMediaService');
+const { assertRealpathUnder } = require('../utils/fileSecurityUtils');
 const {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -102,6 +103,9 @@ async function walkDir(dir, baseDir, extensions) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const e of entries) {
     if (e.name.startsWith('.')) continue;
+    // Never follow a link, to a directory or a file: the walk stays inside
+    // the base it was given.
+    if (e.isSymbolicLink()) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       results.push(...await walkDir(full, baseDir, extensions));
@@ -200,6 +204,10 @@ async function importExternalFolder({
 
   try {
     const baseAbs = resolveExternalPath({ external_path }, '');
+    // resolveExternalPath checks the string; this checks the filesystem. A
+    // symlink inside EXTERNAL_MEDIA_ROOT chosen as the folder would otherwise
+    // import whatever it points at and persist paths that lead back there.
+    await assertRealpathUnder(getExternalMediaRoot(), baseAbs);
 
     // What gets STORED on the row (#1163). `f.rel` stays relative to the
     // imported folder because the type inference below reads its first segment
