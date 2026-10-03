@@ -1,7 +1,24 @@
 import { useTranslation } from 'react-i18next';
 import { format as dateFnsFormat, formatDistanceToNow as dateFnsFormatDistanceToNow, isValid } from 'date-fns';
-import { de, enUS, ptBR, fr } from 'date-fns/locale';
+import { de, enUS, es, fr, nl, ptBR, ru, sl } from 'date-fns/locale';
+import type { Locale } from 'date-fns';
 import { usePublicSettings } from './usePublicSettings';
+
+// One entry per shipped UI locale (src/i18n/locales). Keyed by base
+// language so a regional tag like `de-DE` or `fr-CH` resolves too.
+const DATE_LOCALES: Record<string, Locale> = {
+  de,
+  en: enUS,
+  es,
+  fr,
+  nl,
+  pt: ptBR,
+  ru,
+  sl,
+};
+
+export const resolveDateLocale = (language: string | undefined): Locale =>
+  DATE_LOCALES[(language || '').toLowerCase().split('-')[0]] || enUS;
 
 // Convert old date format strings to new date-fns format
 const convertDateFormat = (format: string): string => {
@@ -16,19 +33,7 @@ export const useLocalizedDate = () => {
   
   const { data: settings } = usePublicSettings();
   
-  const getLocale = () => {
-    switch (i18n.language) {
-      case 'de':
-        return de;
-      case 'pt':
-      case 'pt-BR':
-        return ptBR;
-      case 'fr':
-        return fr;
-      default:
-        return enUS;
-    }
-  };
+  const getLocale = () => resolveDateLocale(i18n.language);
   
   const format = (date: Date | string, formatStr?: string) => {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
