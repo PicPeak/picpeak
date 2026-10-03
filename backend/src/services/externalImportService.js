@@ -697,14 +697,14 @@ async function importExternalFolder({
 /** The reason for a failed import, as a code the admin UI translates. */
 function importFailureCode(error) {
   switch (error?.code) {
-    case 'ENOENT':
-    case 'ENOTDIR':
-      return 'folder_missing';
-    case 'EACCES':
-    case 'EPERM':
-      return 'permission_denied';
-    default:
-      return 'import_failed';
+  case 'ENOENT':
+  case 'ENOTDIR':
+    return 'folder_missing';
+  case 'EACCES':
+  case 'EPERM':
+    return 'permission_denied';
+  default:
+    return 'import_failed';
   }
 }
 

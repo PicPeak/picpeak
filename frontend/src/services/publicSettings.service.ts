@@ -69,7 +69,6 @@ export interface PublicSettings {
   umami_enabled: boolean;
   umami_url: string | null;
   umami_website_id: string | null;
-  umami_share_url: string | null;
   // Pluggable trackers (#663 Phase 1). The backend always surfaces these;
   // missing fields fall back via the existing umami_* shape so older
   // builds keep working.
