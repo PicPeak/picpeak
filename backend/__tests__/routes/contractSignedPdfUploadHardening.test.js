@@ -267,4 +267,31 @@ describe('signed-contract PDF upload hardening', () => {
     });
   });
 
+  describe('admin uploads the service refuses leave no file behind', () => {
+    it('a contract that does not exist', async () => {
+      const before = signedFiles();
+      const res = await adminUpload(999999).attach('file', ...asPdf(REAL_PDF));
+      expect(res.status).toBe(404);
+      expect(signedFiles()).toEqual(before);
+    });
+
+    // Stable has no 'expired' or 'awaiting_data' contract status.
+    it.each(['draft', 'cancelled'])('a contract in status %s', async (status) => {
+      const id = await insertContract(status);
+      const before = signedFiles();
+      const res = await adminUpload(id).attach('file', ...asPdf(REAL_PDF));
+      expect(res.status).toBe(409);
+      expect((await contractRow(id)).status).toBe(status);
+      expect(signedFiles()).toEqual(before);
+    });
+
+    it('a committed upload is kept', async () => {
+      const id = await insertContract();
+      const res = await adminUpload(id).attach('file', ...asPdf(REAL_PDF));
+      expect(res.status).toBe(200);
+      const row = await contractRow(id);
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.signed_pdf_path))).toBe(true);
+    });
+  });
+
 });
