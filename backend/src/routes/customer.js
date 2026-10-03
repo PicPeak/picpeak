@@ -1026,7 +1026,7 @@ router.post(
       return next(error);
     }
   },
-  contractSignedPdfUpload.signedPdfUpload.single('file'),
+  contractSignedPdfUpload.signedPdfSingle,
   async (req, res) => {
     try {
       await contractSignedPdfUpload.finishSignedPdfUpload(req, res, { actor: portalActor(req) });

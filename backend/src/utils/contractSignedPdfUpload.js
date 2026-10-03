@@ -13,11 +13,15 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { validateFileType, validateFileContent } = require('./fileSecurityUtils');
+const { ValidationError } = require('./errors');
 const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
 const { db } = require('../database/db');
 
 const { getStoragePath } = require('../config/storage');
+
+// Multer's cap and the content check's cap are one number.
+const MAX_SIGNED_PDF_BYTES = 10 * 1024 * 1024;
 
 const signedPdfUpload = multer({
   storage: multer.diskStorage({
@@ -38,12 +42,32 @@ const signedPdfUpload = multer({
   }),
   // CVE-2026-82333: single unnamed `file` field only — no legitimate
   // array-indexed field names, so reject any bracket-index field name.
-  limits: { fileSize: 10 * 1024 * 1024, fieldArrayIndexLimit: 0 }, // 10 MB
+  // The route reads no text fields. Without fields/parts caps busboy accepts
+  // an unbounded number of ~1 MiB text parts and multer keeps every one in
+  // memory before the handler runs — one part, the PDF, and nothing else.
+  limits: {
+    fileSize: MAX_SIGNED_PDF_BYTES, files: 1, fields: 0, fieldSize: 1024, parts: 1, fieldArrayIndexLimit: 0,
+  },
   fileFilter: (req, file, cb) => {
     if (validateFileType(file.originalname, file.mimetype, ['application/pdf'])) return cb(null, true);
     return cb(new Error('Only PDF files are allowed'));
   },
 });
+
+/**
+ * `upload.single('file')` with multer's limit errors answered as 400s. A
+ * MulterError carries no statusCode, and middleware/errorHandler maps only
+ * the size and array-index limits, so a refused extra field or part would
+ * otherwise surface as a 500.
+ */
+function singlePdf(upload) {
+  const single = upload.single('file');
+  return (req, res, next) => single(req, res, (err) => {
+    if (err instanceof multer.MulterError) return next(new ValidationError(err.message));
+    return next(err);
+  });
+}
+const signedPdfSingle = singlePdf(signedPdfUpload);
 
 // Server-side guard for the "allow PDF upload" toggle. When the admin
 // turns it off in Settings → CRM behaviour → Contracts the sign page
@@ -94,4 +118,6 @@ async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
   return res.json(result);
 }
 
-module.exports = { signedPdfUpload, uploadSignedPdfSettingGuard, finishSignedPdfUpload };
+module.exports = {
+  signedPdfUpload, signedPdfSingle, singlePdf, uploadSignedPdfSettingGuard, finishSignedPdfUpload,
+};

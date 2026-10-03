@@ -32,7 +32,7 @@ const verification = require('../services/publicDocumentVerificationService');
 const { clientIpForAudit } = require('../utils/clientIp');
 const { loadActionToken, preMulterTokenGuard } = require('../utils/publicTokenGuards');
 const {
-  signedPdfUpload,
+  signedPdfSingle,
   uploadSignedPdfSettingGuard,
   finishSignedPdfUpload,
 } = require('../utils/contractSignedPdfUpload');
@@ -163,7 +163,7 @@ router.post(
   uploadSignedPdfSettingGuard,
   preMulterTokenGuard(TABLE),
   requireGrant(KIND),
-  signedPdfUpload.single('file'),
+  signedPdfSingle,
   handleAsync(async (req, res) => finishSignedPdfUpload(req, res)),
 );
 

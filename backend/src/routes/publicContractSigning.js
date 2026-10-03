@@ -30,6 +30,7 @@ const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
+const { singlePdf } = require('../utils/contractSignedPdfUpload');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { clientIpForAudit } = require('../utils/clientIp');
 const { getAppSetting } = require('../utils/appSettings');
@@ -186,7 +187,11 @@ const signedPdfUpload = multer({
     },
     filename: (req, file, cb) => cb(null, `contract-signer-${req.signing.signer.id}-${Date.now()}.pdf`),
   }),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fieldArrayIndexLimit: 0 },
+  // The route reads no text fields: one part, the PDF, and nothing else (see
+  // utils/contractSignedPdfUpload for why the fields/parts caps matter).
+  limits: {
+    fileSize: 10 * 1024 * 1024, files: 1, fields: 0, fieldSize: 1024, parts: 1, fieldArrayIndexLimit: 0,
+  },
   fileFilter: (req, file, cb) => {
     if (validateFileType(file.originalname, file.mimetype, ['application/pdf'])) return cb(null, true);
     return cb(new Error('Only PDF files are allowed'));
@@ -211,7 +216,7 @@ async function uploadGuards(req, res, next) {
   }
 }
 
-router.post('/session/upload-signed-pdf', signLimiter, uploadGuards, signedPdfUpload.single('file'), handleAsync(async (req, res) => {
+router.post('/session/upload-signed-pdf', signLimiter, uploadGuards, singlePdf(signedPdfUpload), handleAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
   // The filter only saw the reported type and the file name. This upload
   // becomes the authoritative signed contract and is mailed to both parties,
