@@ -83,6 +83,16 @@ describe('event settings draft', () => {
     }
   });
 
+  it('sends an emptied customer name and email as the clearing values', () => {
+    // issue 1733 — the email went out as undefined, which the payload loop
+    // skips, so the stored address survived the save.
+    const base = eventFieldsFromEvent(EVENT, branding);
+    const payload = eventUpdatePayload({ ...base, customer_name: '', customer_email: '  ' }, base, t);
+    expect(payload).toEqual({ customer_name: '', customer_email: null });
+    const draft: EventSettingsDraft = { event: { ...base, customer_email: '' }, feedback: null, downloads: null, slideshow: null };
+    expect([...dirtySections(draft, { ...draft, event: base })]).toEqual(['general']);
+  });
+
   it('sends a new password and never keeps it in the comparison', () => {
     const base = eventFieldsFromEvent(EVENT, branding);
     const payload = eventUpdatePayload({ ...base, new_password: 'secret12', confirm_new_password: 'secret12' }, base, t);
