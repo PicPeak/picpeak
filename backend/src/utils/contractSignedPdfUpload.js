@@ -17,7 +17,6 @@ const { validatePdf } = require('./pdfValidation');
 const { ValidationError } = require('./errors');
 const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
-const { db } = require('../database/db');
 
 const { getStoragePath } = require('../config/storage');
 
@@ -129,18 +128,17 @@ async function checkSignedPdfUpload(req, res) {
 async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
   const tokenRow = req.publicTokenRow;
   if (!(await checkSignedPdfUpload(req, res))) return undefined;
-  const contractService = require('../services/contractService');
-  const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer', actor);
-  // Mark the token as used so the link can't be re-played.
+  // The token is spent by the service, in the transaction that moves the
+  // contract, so the link can't be re-played and two requests holding it
+  // can't both complete the contract.
   // IP storage is gated by the crm_contracts_store_ip setting so
   // privacy-strict operators can opt out — same toggle that gates
   // the in-browser-sign IP captures. See utils/clientIp.js for
   // why we trust req.ip only.
   const storeIpEnabled = (await getAppSetting('crm_contracts_store_ip')) !== false;
-  await db('contract_action_tokens').where({ id: tokenRow.id }).update({
-    used_at: new Date().toISOString(),
-    used_action: 'uploaded_signed_pdf',
-    used_ip: storeIpEnabled ? clientIpForAudit(req) : null,
+  const contractService = require('../services/contractService');
+  const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer', actor, {
+    actionToken: { id: tokenRow.id, ip: storeIpEnabled ? clientIpForAudit(req) : null },
   });
   return res.json(result);
 }

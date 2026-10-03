@@ -194,4 +194,77 @@ describe('signed-contract PDF upload hardening', () => {
     });
   });
 
+  describe('a finalized contract is immutable for a signer', () => {
+    it('refuses a second link once the first upload finalized the contract, keeping the file on record', async () => {
+      const id = await insertContract();
+      const first = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const second = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+
+      expect((await publicUpload(first, await grantFor(first)).attach('file', ...asPdf(REAL_PDF))).status).toBe(200);
+      const after = await contractRow(id);
+      const before = signedFiles();
+
+      const res = await publicUpload(second, await grantFor(second)).attach('file', ...asPdf(await minimalPdf({ label: 'second' })));
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('CONTRACT_ALREADY_SIGNED');
+      const row = await contractRow(id);
+      expect(row.signed_pdf_path).toBe(after.signed_pdf_path);
+      expect(row.signed_pdf_sha256).toBe(after.signed_pdf_sha256);
+      expect(signedFiles()).toEqual(before);
+      expect((await tokenRow(second)).used_at).toBeNull();
+    });
+
+    it('refuses a customer upload after an admin finalized the contract with a paper copy', async () => {
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+
+      expect((await adminUpload(id).attach('file', ...asPdf(REAL_PDF))).status).toBe(200);
+      const after = await contractRow(id);
+      expect(after.status).toBe('fully_signed');
+      // The admin's finalization withdrew the customer's link.
+      expect((await tokenRow(link)).used_at).not.toBeNull();
+
+      // Through the portal: no live link, so not signable.
+      const portal = await portalUpload(id).attach('file', ...asPdf(REAL_PDF));
+      expect(portal.status).toBe(409);
+      expect((await contractRow(id)).signed_pdf_path).toBe(after.signed_pdf_path);
+    });
+
+    it('an admin countersignature that completes the contract withdraws the unused links', async () => {
+      const id = await insertContract('signed_by_customer');
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+
+      const res = await request(adminApp)
+        .post(`/api/admin/contracts/${id}/countersign`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Studio Owner' });
+
+      expect(res.status).toBe(200);
+      expect((await contractRow(id)).status).toBe('fully_signed');
+      expect((await tokenRow(link)).used_at).not.toBeNull();
+    });
+
+    it('the link is spent in the transaction that moves the contract: a spent link rolls the contract back', async () => {
+      // A request admitted by the pre-multer guard, whose link another
+      // request spent while its body was still being read.
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const row = await tokenRow(link);
+      await db('contract_action_tokens').where({ id: row.id }).update({ used_at: nowIso(), used_action: 'uploaded_signed_pdf' });
+      fs.mkdirSync(signedDir(), { recursive: true });
+      const file = path.join(signedDir(), `contract-${id}-race.pdf`);
+      fs.writeFileSync(file, REAL_PDF);
+
+      const contractService = require('../../src/services/contractService');
+      await expect(contractService.attachSignedPdfUpload(id, file, 'customer', null, { actionToken: { id: row.id, ip: null } }))
+        .rejects.toMatchObject({ code: 'TOKEN_ALREADY_USED' });
+
+      const contract = await contractRow(id);
+      expect(contract.status).toBe('sent');
+      expect(contract.signed_pdf_path).toBeNull();
+      expect(fs.existsSync(file)).toBe(false);
+    });
+  });
+
 });
