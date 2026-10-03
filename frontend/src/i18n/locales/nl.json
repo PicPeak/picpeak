@@ -359,6 +359,8 @@
     "photosCount_other": "{{count}} foto's",
     "colorFilter": "Kleur",
     "filterByColor": "Alleen {{color}} tonen",
+    "minRatingFilter": "Mijn beoordeling",
+    "filterByMinRating": "Mijn beoordeling: {{min}} sterren of meer",
     "folders": "Mappen",
     "openFolder": "Map {{name}} openen",
     "folderPhotoCount": "{{count}} foto's",

@@ -337,6 +337,8 @@
     "commented": "Comentado",
     "colorFilter": "Color",
     "filterByColor": "Mostrar solo {{color}}",
+    "minRatingFilter": "Mi valoración",
+    "filterByMinRating": "Mi valoración: {{min}} estrellas o más",
     "folders": "Carpetas",
     "openFolder": "Abrir carpeta {{name}}",
     "folderPhotoCount": "{{count}} fotos",

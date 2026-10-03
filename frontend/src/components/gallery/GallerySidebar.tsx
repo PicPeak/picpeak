@@ -5,6 +5,7 @@ import { PhotoCategory, type Photo } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { GalleryFilter, type FilterType, type FeedbackFilterType } from './GalleryFilter';
 import { ColorLabelFilterChips } from './ColorLabelFilterChips';
+import { MinRatingFilterChips } from './MinRatingFilterChips';
 import { CreditFilterChips } from './CreditFilterChips';
 import type { ColorLabel } from '../../services/feedback.service';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
@@ -31,6 +32,11 @@ interface GallerySidebarProps {
   // worded for photos until one is (issue 1430, item 3).
   hasVideos?: boolean;
   selectedCount: number;
+  // "Select all" over the photos currently on screen under the active filters
+  // (issue 1733, A3c), and its clear. `visibleCount` labels the button.
+  onSelectAll?: () => void;
+  onDeselectAll?: () => void;
+  visibleCount?: number;
   onDownloadAll: () => void;
   onDownloadSelected: () => void;
   isDownloading: boolean;
@@ -64,6 +70,11 @@ interface GallerySidebarProps {
   activeColorFilters?: ColorLabel[];
   onColorFilterChange?: (color: ColorLabel) => void;
   colorLabelCounts?: Partial<Record<ColorLabel, number>>;
+  // Minimum own-rating filter (issue 1733, A3c).
+  ratingsEnabled?: boolean;
+  minRating?: number | null;
+  onMinRatingChange?: (minRating: number | null) => void;
+  minRatingCounts?: Partial<Record<number, number>>;
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
@@ -95,6 +106,9 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onToggleSelectionMode,
   hasVideos = false,
   selectedCount,
+  onSelectAll,
+  onDeselectAll,
+  visibleCount = 0,
   onDownloadAll,
   onDownloadSelected,
   isDownloading,
@@ -118,6 +132,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   activeColorFilters = [],
   onColorFilterChange,
   colorLabelCounts = {},
+  ratingsEnabled = false,
+  minRating = null,
+  onMinRatingChange,
+  minRatingCounts = {},
   mediaFilter = 'all',
   onMediaFilterChange,
   showMediaFilter = false,
@@ -264,6 +282,32 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   {isSelectionMode ? t('gallery.cancelSelection') : selectLabel(t, hasVideos)}
                 </Button>
 
+                {/* Select what the active filters leave on screen (issue 1733,
+                    A3c) — the inline grid toolbar has had this pair all along,
+                    the sidebar offered only tile-by-tile picking. */}
+                {isSelectionMode && onSelectAll && onDeselectAll && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onSelectAll}
+                      disabled={visibleCount === 0}
+                      className="gallery-btn flex-1"
+                    >
+                      {t('gallery.selectAll')} ({visibleCount})
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onDeselectAll}
+                      disabled={selectedCount === 0}
+                      className="gallery-btn flex-1"
+                    >
+                      {t('gallery.deselectAll')}
+                    </Button>
+                  </div>
+                )}
+
                 {isSelectionMode && selectedCount > 0 && (
                   <Button
                     variant="primary"
@@ -326,6 +370,15 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   activeColors={activeColorFilters}
                   onToggle={onColorFilterChange}
                   counts={colorLabelCounts}
+                />
+              )}
+              {/* Own-rating filter (issue 1733) */}
+              {ratingsEnabled && onMinRatingChange && (
+                <MinRatingFilterChips
+                  className="mt-3"
+                  minRating={minRating}
+                  onChange={onMinRatingChange}
+                  counts={minRatingCounts}
                 />
               )}
             </div>

@@ -1932,6 +1932,8 @@
     },
     "colorFilter": "Farbe",
     "filterByColor": "Nur {{color}} anzeigen",
+    "minRatingFilter": "Meine Bewertung",
+    "filterByMinRating": "Meine Bewertung: mindestens {{min}} Sterne",
     "folders": "Ordner",
     "openFolder": "Ordner {{name}} öffnen",
     "folderPhotoCount": "{{count}} Fotos",

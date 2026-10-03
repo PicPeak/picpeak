@@ -375,6 +375,8 @@
     "photosCount_other": "{{count}} фото",
     "colorFilter": "Цвет",
     "filterByColor": "Показать только «{{color}}»",
+    "minRatingFilter": "Моя оценка",
+    "filterByMinRating": "Моя оценка: {{min}} звёзд и больше",
     "folders": "Папки",
     "openFolder": "Открыть папку {{name}}",
     "folderPhotoCount": "{{count}} фото",

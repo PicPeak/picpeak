@@ -1394,6 +1394,8 @@
     },
     "colorFilter": "Color",
     "filterByColor": "Show only {{color}}",
+    "minRatingFilter": "My rating",
+    "filterByMinRating": "My rating: {{min}} stars or more",
     "folders": "Folders",
     "openFolder": "Open folder {{name}}",
     "folderPhotoCount": "{{count}} photos",

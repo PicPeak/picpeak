@@ -1323,6 +1323,8 @@
     },
     "colorFilter": "Barva",
     "filterByColor": "Prikaži samo {{color}}",
+    "minRatingFilter": "Moja ocena",
+    "filterByMinRating": "Moja ocena: {{min}} zvezdic ali več",
     "folders": "Mape",
     "openFolder": "Odpri mapo {{name}}",
     "folderPhotoCount": "{{count}} fotografij",

@@ -152,6 +152,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Record<FeedbackFilterType, …> in this file and the chip components would
   // otherwise have to grow to ten keys.
   const [activeColorFilters, setActiveColorFilters] = useState<ColorLabel[]>([]);
+  // Minimum own-rating filter (issue 1733, A3c): 1-5, null = off. Its own
+  // slice for the same reason as the colour filters.
+  const [minRating, setMinRating] = useState<number | null>(null);
 
   // People filter (#1074). Multi-select, AND by default — see the filter
   // block below. `peopleMatchAny` only becomes reachable once a second
@@ -703,6 +706,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // Only while names are visible: a stale key must not keep filtering a
     // gallery whose host has just switched names off.
     selectedCreditKey: data?.event?.credits_visible ? selectedCreditKey : null,
+    // Only while ratings are on: the chips hide with the switch, and a stale
+    // threshold would otherwise keep emptying the grid with no way to clear it.
+    minRating: feedbackSettings?.allow_ratings ? minRating : null,
   });
   const creditsVisible = data?.event?.credits_visible === true;
 
@@ -753,6 +759,29 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       prev.includes(color) ? prev.filter(c => c !== color) : [...prev, color]
     );
   }, []);
+
+  // Per-threshold chip counts (issue 1733, A3c): how many photos in scope the
+  // viewer rated at or above each threshold, matching what the filter selects.
+  const minRatingCounts = useMemo(() => {
+    const counts: Partial<Record<number, number>> = {};
+    for (const photo of scopedPhotos) {
+      const rating = photo.my_rating || 0;
+      for (let min = 1; min <= rating; min++) {
+        counts[min] = (counts[min] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [scopedPhotos]);
+
+  // "Select all" over the photos the active filters leave on screen (issue
+  // 1733, A3c), for the sidebar — the inline grid toolbar's own Select All
+  // already works on the filtered list it is handed.
+  const selectAllVisible = useCallback(() => {
+    setSelectedPhotos(new Set(filteredPhotos.map((photo) => photo.id)));
+  }, [filteredPhotos, setSelectedPhotos]);
+  const deselectAll = useCallback(() => {
+    setSelectedPhotos(new Set());
+  }, [setSelectedPhotos]);
 
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
@@ -1435,6 +1464,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
           hasVideos={hasVideoItems(scopedPhotos)}
           selectedCount={selectedPhotos.size}
+          onSelectAll={selectAllVisible}
+          onDeselectAll={deselectAll}
+          visibleCount={filteredPhotos.length}
           onDownloadAll={handleDownloadAll}
           onDownloadSelected={handleDownloadSelected}
           isDownloading={downloadAllMutation.isPending}
@@ -1464,6 +1496,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           activeColorFilters={activeColorFilters}
           onColorFilterChange={handleColorFilterToggle}
           colorLabelCounts={colorLabelCounts}
+          ratingsEnabled={!!feedbackSettings?.allow_ratings}
+          minRating={minRating}
+          onMinRatingChange={setMinRating}
+          minRatingCounts={minRatingCounts}
           creditPhotos={creditsVisible ? scopedPhotos : undefined}
           selectedCreditKey={selectedCreditKey}
           onCreditChange={setSelectedCreditKey}
@@ -1625,6 +1661,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             activeColorFilters={activeColorFilters}
             onColorFilterChange={handleColorFilterToggle}
             colorLabelCounts={colorLabelCounts}
+            ratingsEnabled={!!feedbackSettings?.allow_ratings}
+            minRating={minRating}
+            onMinRatingChange={setMinRating}
+            minRatingCounts={minRatingCounts}
           />
           {creditsVisible && (
             <CreditFilterChips

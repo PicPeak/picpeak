@@ -460,6 +460,8 @@
     "photosCount_other": "{{count}} fotos",
     "colorFilter": "Cor",
     "filterByColor": "Mostrar apenas {{color}}",
+    "minRatingFilter": "Minha avaliação",
+    "filterByMinRating": "Minha avaliação: {{min}} estrelas ou mais",
     "folders": "Pastas",
     "openFolder": "Abrir pasta {{name}}",
     "folderPhotoCount": "{{count}} fotos",
