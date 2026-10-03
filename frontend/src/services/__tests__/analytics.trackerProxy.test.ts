@@ -117,13 +117,13 @@ describe('tracker script and the admin UI', () => {
     // Nothing ran yet, so staying in the admin UI must not reload.
     expect(service.reloadPage).not.toHaveBeenCalled();
 
-    service.handleRouteChange('/gallery/summer-party');
-    service.handleRouteChange('/gallery/summer-party/photo/3');
+    service.handleRouteChange('/impressum');
+    service.handleRouteChange('/datenschutz');
     expect(scripts()).toBe(1);
   });
 
   it('reloads when the admin UI is entered after the tracker ran', () => {
-    window.history.pushState({}, '', '/gallery/summer-party');
+    window.history.pushState({}, '', '/impressum');
     const service = serviceWithReload();
 
     service.initialize({ provider: 'rybbit', hostUrl: 'https://rybbit.example.com', websiteId: 'site-456' });
