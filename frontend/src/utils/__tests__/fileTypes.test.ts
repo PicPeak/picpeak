@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString } from '../fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, buildUploadAcceptString, normalizeFileMimeType, isAllowedUploadFile } from '../fileTypes';
 
 describe('fileTypes', () => {
   describe('extensionsToMimeTypes', () => {
@@ -33,6 +33,50 @@ describe('fileTypes', () => {
   describe('extensionsToAcceptString', () => {
     it('joins MIME types for the input accept attribute', () => {
       expect(extensionsToAcceptString('jpg,heic')).toBe('image/jpeg,image/heic');
+    });
+
+    it('also lists RAW extensions in dotted form', () => {
+      // A MIME-only accept list greys .arw out in the picker: the OS has no
+      // MIME for it, so there is nothing for the list to match.
+      expect(extensionsToAcceptString('jpg,arw')).toBe('image/jpeg,image/x-sony-arw,.arw');
+    });
+
+    it('leaves an ordinary accept string untouched', () => {
+      // Non-MIME tokens reroute the Android picker, so nothing gets one unless
+      // the format actually needs it.
+      expect(extensionsToAcceptString('jpg,jpeg,png,webp'))
+        .toBe('image/jpeg,image/png,image/webp');
+    });
+  });
+
+  describe('untyped uploads (camera RAW)', () => {
+    const file = (name: string, type = '') => ({ name, type });
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/x-sony-arw'];
+
+    it('names a RAW type from the extension when the browser gives none', () => {
+      expect(normalizeFileMimeType('DSC01234.ARW', '')).toBe('image/x-sony-arw');
+      expect(normalizeFileMimeType('DSC01234.arw', 'application/octet-stream'))
+        .toBe('image/x-sony-arw');
+      // A TIFF container is what a RAW is, so image/tiff is honest and still
+      // tells the vendor formats apart not at all.
+      expect(normalizeFileMimeType('DSC01234.arw', 'image/tiff')).toBe('image/x-sony-arw');
+    });
+
+    it('leaves anything else exactly as the browser typed it', () => {
+      expect(normalizeFileMimeType('holiday.jpg', '')).toBe('');
+      expect(normalizeFileMimeType('payload.exe', 'application/octet-stream'))
+        .toBe('application/octet-stream');
+    });
+
+    it('accepts a RAW file only where the settings allow it', () => {
+      expect(isAllowedUploadFile(file('DSC01234.ARW'), allowed)).toBe(true);
+      expect(isAllowedUploadFile(file('DSC01234.ARW'), ['image/jpeg'])).toBe(false);
+    });
+
+    it('does not loosen anything else', () => {
+      expect(isAllowedUploadFile(file('payload.exe'), allowed)).toBe(false);
+      expect(isAllowedUploadFile(file('holiday.jpg'), allowed)).toBe(false);
+      expect(isAllowedUploadFile(file('holiday.jpg', 'image/jpeg'), allowed)).toBe(true);
     });
   });
 

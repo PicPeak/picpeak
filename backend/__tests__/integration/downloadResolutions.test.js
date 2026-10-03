@@ -252,5 +252,20 @@ describe('Download resolutions (#858)', () => {
       const junk = Buffer.from('not an image');
       expect(await resizeToBox(junk, box)).toBe(junk);
     });
+
+    it('never re-encodes a RAW original, even one sharp can open', async () => {
+      // Most RAW makes sharp throw, and the case above already covers that.
+      // The dangerous one is a RAW whose TIFF container libvips happens to
+      // read: without the name check it would come back as JPEG bytes under a
+      // .arw filename, which no converter will open.
+      const decodableTiff = await sharp({
+        create: { width: 4000, height: 3000, channels: 3, background: { r: 1, g: 2, b: 3 } },
+      }).tiff().toBuffer();
+      expect(await resizeToBox(decodableTiff, box, { sourceName: 'DSC01234.ARW' }))
+        .toBe(decodableTiff);
+      // Same bytes without the RAW name still resize, so the guard is the name.
+      expect(await resizeToBox(decodableTiff, box, { sourceName: 'scan.tif' }))
+        .not.toBe(decodableTiff);
+    });
   });
 });

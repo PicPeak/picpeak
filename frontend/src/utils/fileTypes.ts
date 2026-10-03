@@ -16,8 +16,39 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   heic: 'image/heic',
   heif: 'image/heif',
   // Camera RAW / Apple ProRAW — backend extracts the embedded JPEG preview.
+  // Browsers report no type at all for most of these, so the upload components
+  // fall back to matching on the extension. Kept in sync with the backend map.
   dng: 'image/x-adobe-dng',
+  arw: 'image/x-sony-arw',
+  sr2: 'image/x-sony-sr2',
+  srf: 'image/x-sony-srf',
+  cr2: 'image/x-canon-cr2',
+  nef: 'image/x-nikon-nef',
+  nrw: 'image/x-nikon-nrw',
+  orf: 'image/x-olympus-orf',
+  pef: 'image/x-pentax-pef',
+  srw: 'image/x-samsung-srw',
 };
+
+/**
+ * Extensions no browser puts a type on.
+ *
+ * macOS and Windows register no MIME for camera RAW, so `file.type` is an
+ * empty string for a .arw the user just picked, and some Linux desktops report
+ * application/octet-stream. Matching on `file.type` alone drops those files
+ * before they are ever uploaded.
+ *
+ * Kept in step with the backend's RAW set by
+ * backend/__tests__/services/uploadSettingsFileTypes.test.js. Widening it here
+ * without widening it there would let the picker accept a file the server then
+ * rejects, which is a worse experience than the greyed-out picker.
+ */
+const UNTYPED_EXTENSIONS = new Set([
+  'dng', 'arw', 'sr2', 'srf', 'cr2', 'nef', 'nrw', 'orf', 'pef', 'srw',
+]);
+
+const extensionOf = (filename: string): string =>
+  filename.toLowerCase().split('.').pop() || '';
 
 const DEFAULT_ALLOWED = 'jpg,jpeg,png,webp';
 
@@ -44,35 +75,57 @@ export function extensionsToMimeTypes(extString?: string | null): string[] {
   return Array.from(mimeSet);
 }
 
-// Extensions that also go into `accept` by name. A file chooser matches accept
-// MIME types against the operating system's own type table, and macOS, iOS and
-// Windows do not map .dng to image/x-adobe-dng, so the MIME type alone hid
-// every DNG from the chooser (issue 821).
-const ACCEPT_BY_EXTENSION = new Set(['dng']);
-
 /**
  * Convert a comma-separated extension string to an HTML `accept` attribute
- * value, e.g. "image/jpeg,image/png,video/mp4" (plus ".dng" when DNG is on).
+ * value, e.g. "image/jpeg,image/png,video/mp4".
+ *
+ * The untyped extensions are also listed in their dotted form. A file chooser
+ * matches accept MIME types against the operating system's own type table,
+ * and macOS, iOS and Windows map none of the RAW extensions, so the MIME type
+ * alone hid every DNG from the chooser (issue 821) and greys out a .arw. Only
+ * those extensions get a token, so a default install's accept string is
+ * unchanged - which matters on Android, where a non-MIME token reroutes the
+ * system picker (see buildUploadAcceptString).
  */
 export function extensionsToAcceptString(extString?: string | null): string {
   const mimeTypes = extensionsToMimeTypes(extString);
-  const byName = Array.from(ACCEPT_BY_EXTENSION)
-    .filter((ext) => mimeTypes.includes(EXTENSION_TO_MIME[ext]))
-    .map((ext) => `.${ext}`);
-  return [...mimeTypes, ...byName].join(',');
+  const dotted = (extString?.trim() || DEFAULT_ALLOWED)
+    .split(',')
+    .map(ext => ext.trim().toLowerCase().replace(/^\./, ''))
+    .filter(ext => UNTYPED_EXTENSIONS.has(ext) && EXTENSION_TO_MIME[ext])
+    .map(ext => `.${ext}`);
+  return [...mimeTypes, ...Array.from(new Set(dotted))].join(',');
 }
 
-// What browsers report for a .dng besides image/x-adobe-dng: which one depends
-// on the OS type table, and a machine without a RAW codec reports nothing.
-const DNG_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+// What a browser reports for a RAW file when it reports anything at all. The
+// OS type table decides, so a DNG can arrive as image/dng or image/tiff, and a
+// machine with no RAW codec reports nothing.
+const GENERIC_RAW_TYPES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
 
 /**
- * The MIME type to validate a picked file against. Mirrors the backend's
- * normalizeUploadMimeType, which the server applies before its own checks.
+ * The MIME type an upload should be judged as.
+ *
+ * Mirrors normalizeUploadMimeType in backend/src/utils/fileSecurityUtils.js,
+ * and has to keep mirroring it: if this is looser, the picker accepts files
+ * the server then rejects with a message about system settings.
  */
 export function normalizeFileMimeType(name: string, type: string): string {
-  if (/\.dng$/i.test(name) && DNG_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME.dng;
+  const ext = extensionOf(name);
+  if (UNTYPED_EXTENSIONS.has(ext) && GENERIC_RAW_TYPES.has((type || '').trim())) {
+    return EXTENSION_TO_MIME[ext] || type;
+  }
   return type;
+}
+
+/**
+ * Is this file one the configured settings accept?
+ */
+export function isAllowedUploadFile(
+  file: { name: string; type: string },
+  allowedMimeTypes: string[]
+): boolean {
+  const mime = normalizeFileMimeType(file.name, file.type);
+  return !!mime && allowedMimeTypes.includes(mime);
 }
 
 /**
@@ -102,8 +155,8 @@ export function normalizeFileMimeType(name: string, type: string): string {
  * accept token the browser ignores.
  *
  * Neither token widens what is actually accepted: `addFiles` validates every
- * file against `extensionsToMimeTypes`, which only ever emits types it has a
- * mapping for, so nothing new can get past it.
+ * file through `isAllowedUploadFile`, which only ever resolves to a type the
+ * map has, so nothing new can get past it.
  */
 export function buildUploadAcceptString(extString?: string | null, userAgent?: string): string {
   const accept = extensionsToAcceptString(extString);

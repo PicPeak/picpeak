@@ -218,7 +218,11 @@ location /api {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    client_max_body_size 100M;
+    # A single camera RAW is 55-120 MB and videos are larger again. The
+    # limit that bites is the smallest one in the chain, and a 413 here
+    # never reaches the app, so this must be at least as large as the
+    # "Max File Size" you set in Settings.
+    client_max_body_size 1G;
 }
 location ~ ^/(photos|thumbnails|uploads) {
     proxy_pass http://localhost:3001;
