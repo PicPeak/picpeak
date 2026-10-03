@@ -26,6 +26,25 @@ const contractFile = (stored) => resolveStoredPathStrict(stored, contractPdfRoot
 // link. The token row names only the contract, not who holds the link.
 const CONTRACT_LINK_ACTOR = { type: 'public', id: null, name: 'contract-link' };
 
+/** Remove an upload that never became the contract's signed copy. */
+function removeUpload(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (cleanupErr) {
+    logger.warn('Orphan signed PDF upload cleanup failed', { path: filePath, message: cleanupErr.message });
+  }
+}
+
+/**
+ * Withdraw the contract's unused emailed links once an admin has finalized
+ * it. A link that outlives the finalization would otherwise still carry a
+ * wet-signed upload over the admin's copy. Marked used rather than deleted:
+ * the view and download routes keep working for the customer.
+ */
+async function revokeUnusedActionTokens(conn, contractId, nowIso) {
+  await conn('contract_action_tokens').where({ contract_id: contractId }).whereNull('used_at')
+    .update({ used_at: nowIso, used_action: 'revoked_admin_final' });
+}
 
 /**
  * Record a customer's in-browser signature (canvas + typed name +
@@ -302,6 +321,7 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
     if (!applied) {
       throw new AppError('The contract changed while it was being counter-signed. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
     }
+    if (newStatus === 'fully_signed') await revokeUnusedActionTokens(db, contract.id, now.toISOString());
   } catch (updateErr) {
     // C.7 — clean up the orphan signature PNG if the contract row
     // update threw. Best-effort; log on cleanup failure and re-throw
@@ -533,8 +553,17 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
  * `actor` names the uploader in the accounting change history. Without one,
  * an admin upload is recorded as an unnamed admin and a customer upload as
  * the public link.
+ *
+ * `options.actionToken` is the emailed link `{ id, ip }` a customer upload
+ * arrived through. It is spent in the same transaction that moves the
+ * contract, as a compare-and-set on an unused row: two requests holding the
+ * same link, or a request that was admitted before another upload finished,
+ * cannot both complete the contract.
+ *
+ * A customer upload never replaces a finalized contract: `fully_signed` is
+ * refused for everyone but the admin, who may replace their own paper copy.
  */
-async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null) {
+async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null, options = {}) {
   // Self-heal contract email templates — same reason as the
   // sendContract + recordAdminCountersignature paths.
   await ensureContractEmailTemplatesSeeded(db, logger);
@@ -544,6 +573,10 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   if (!contract) throw new AppError('Contract not found', 404);
   if (['cancelled', 'draft'].includes(contract.status)) {
     throw new AppError(`Cannot attach a signed PDF to a contract in status '${contract.status}'`, 409);
+  }
+  if (uploaderRole !== 'admin' && contract.status === 'fully_signed') {
+    removeUpload(filePath);
+    throw new AppError('This contract is already fully signed.', 409, 'CONTRACT_ALREADY_SIGNED');
   }
 
   const now = new Date();
@@ -575,15 +608,27 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   // landing in between must not have its evidence replaced by this file.
   const historyActor = actor
     || (uploaderRole === 'admin' ? { type: 'admin', id: null, name: 'Admin (PDF upload)' } : CONTRACT_LINK_ACTOR);
-  const applied = await auditedUpdate(db, 'contracts', { id: contractId, status: contract.status }, updates,
-    { actor: historyActor, source: 'contract.upload.signed_pdf' });
-  if (!applied) {
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (cleanupErr) {
-      logger.warn('Orphan signed PDF upload cleanup failed', { path: filePath, message: cleanupErr.message });
-    }
-    throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+  const nowIso = now.toISOString();
+  try {
+    await db.transaction(async (trx) => {
+      const applied = await auditedUpdate(trx, 'contracts', { id: contractId, status: contract.status }, updates,
+        { actor: historyActor, source: 'contract.upload.signed_pdf' });
+      if (!applied) {
+        throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+      }
+      if (options.actionToken) {
+        // The route guard checked expiry moments ago; what is claimed here
+        // is the one-shot use, against every other request holding the link.
+        const claimed = await trx('contract_action_tokens')
+          .where({ id: options.actionToken.id }).whereNull('used_at')
+          .update({ used_at: nowIso, used_action: 'uploaded_signed_pdf', used_ip: options.actionToken.ip || null });
+        if (claimed !== 1) throw new AppError('This link has already been used', 409, 'TOKEN_ALREADY_USED');
+      }
+      if (uploaderRole === 'admin') await revokeUnusedActionTokens(trx, contractId, nowIso);
+    });
+  } catch (err) {
+    removeUpload(filePath);
+    throw err;
   }
 
   // attachSignedPdfUpload always transitions to fully_signed (see
