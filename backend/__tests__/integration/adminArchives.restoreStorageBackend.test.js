@@ -362,9 +362,21 @@ describe('archive routes read and write through the storage backend', () => {
     expect(await storage.exists(key)).toBe(true);
   });
 
-  it('deletes the zip from the backend on permanent delete', async () => {
+  it('deletes the zip from the backend on permanent delete, and every row the event owns', async () => {
     const { key } = await putArchive('delete-event', { 'individual/a.jpg': BYTES });
     const eventId = await seedArchivedEvent(key, 'delete-event');
+    // activity_logs, access_logs and email_queue reference events without
+    // ON DELETE CASCADE, so on PostgreSQL the events row cannot go while
+    // they exist; SQLite never enforces the keys, so this asserts the
+    // explicit deletes instead.
+    await db('activity_logs').insert({ activity_type: 'event_archived', event_id: eventId });
+    await db('access_logs').insert({ event_id: eventId, action: 'view' });
+    await db('email_queue').insert({
+      event_id: eventId, recipient_email: 'h@example.com', email_type: 'archive_complete', status: 'sent',
+    });
+    await db('photos').insert({
+      event_id: eventId, filename: 'a.jpg', path: 'events/archived/x/a.jpg', type: 'individual',
+    });
     expect(await storage.exists(key)).toBe(true);
 
     const res = await request(app).delete(`/admin/archives/${eventId}`);
@@ -372,5 +384,11 @@ describe('archive routes read and write through the storage backend', () => {
 
     expect(await storage.exists(key)).toBe(false);
     expect(await db('events').where('id', eventId)).toEqual([]);
+    for (const table of ['activity_logs', 'access_logs', 'email_queue', 'photos']) {
+      expect(await db(table).where('event_id', eventId)).toEqual([]);
+    }
+    // The route's own audit row is written after the delete and carries no
+    // event_id, so it survives the cascade.
+    expect(await db('activity_logs').where('activity_type', 'archive_deleted')).toHaveLength(1);
   });
 });
