@@ -17,7 +17,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
     steps:
       - name: Run Release Please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: release
         with:
           # A dedicated token (fine-grained PAT) makes the release PR run CI
