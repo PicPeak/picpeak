@@ -41,8 +41,9 @@ export interface PhotoCardProps {
    * Outer band, in `rootMargin` form. When set, a tile that leaves it is
    * unmounted again rather than kept for the life of the page (#1287). Opt-in
    * per layout: only a layout whose skeleton holds the tile's box can release
-   * without reflowing, which today is Grid (`aspect-square`) and Mosaic (an
-   * explicit `aspectRatio` on the tile).
+   * without reflowing. Since issue 1733 that is every grid layout — each one
+   * sizes its tile from the stored dimensions (`aspect-square`, an explicit
+   * `aspectRatio`, or a computed px box) rather than from the image.
    */
   releaseRootMargin?: string;
   skeletonClassName?: string;
@@ -209,9 +210,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const inView = !lazy || (releases ? rendered : withinLoadBand);
 
   // Tile width for the responsive tier (#1095), measured rather than inferred.
-  // The observer entry only exists for `lazy` cards, and Masonry and
-  // Timeline do not pass it — those are exactly the layouts a breakpoint
-  // guess gets most wrong.
+  // Measured for lazy and eager cards alike: Masonry and Timeline were eager
+  // when this landed, and those are exactly the layouts a breakpoint guess
+  // gets most wrong.
   //
   // Gated: the image is not rendered until this has run, so AuthenticatedImage
   // never mounts with a src it would have to replace. Attaching the observer

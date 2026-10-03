@@ -662,9 +662,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         <MasonryPhotoAlbum
           photos={albumPhotos}
           render={{
-            photo: (_props, { photo, width, height }) => {
+            photo: (_props, { photo, index: photoIndex, width, height }) => {
+              // `index` is the position in `albumPhotos`, a 1:1 map of
+              // `filteredPhotos`, so it is the lightbox index too — no
+              // per-tile `findIndex` (issue 1733).
               const originalPhoto = (photo as any)._photo as Photo;
-              const photoIndex = filteredPhotos.findIndex(p => p.id === originalPhoto.id);
 
               return (
                 <PhotoCard
