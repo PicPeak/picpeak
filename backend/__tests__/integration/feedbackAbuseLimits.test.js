@@ -165,3 +165,11 @@ test('IPv6 address rotation shares one event IP budget while another /64 stays i
   expect((await consumeFeedbackLimit({ event: { id: eventId }, guest: { identifier: randomUUID() },
     ip: '2001:db8:1:3::1' }, 'comment')).limited).toBe(false);
 });
+
+test('ratings get the proofing budget of colour labels, not the lightbox-era 100/h', () => {
+  const { DEFAULT_RATE_LIMITS } = require('../../src/middleware/feedbackRateLimit');
+  // One click per tile (issue 1733, A3a): a 300-photo proofing session must
+  // not hit the cap mid-way.
+  expect(DEFAULT_RATE_LIMITS.rating).toEqual(DEFAULT_RATE_LIMITS.color_label);
+  expect(DEFAULT_RATE_LIMITS.rating.max).toBeGreaterThanOrEqual(2000);
+});
