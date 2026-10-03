@@ -26,6 +26,12 @@ vi.mock('../../../common', () => ({
   PoweredBy: () => null,
 }));
 
+// Columns mode is lazy since issue 1733; jsdom has no IntersectionObserver,
+// so every tile is reported in view and the mount count is what it was.
+vi.mock('react-intersection-observer', () => ({
+  useInView: () => ({ ref: () => {}, inView: true }),
+}));
+
 vi.mock('../../../../contexts/ThemeContext', () => ({
   useTheme: () => ({ theme: { gallerySettings: { masonryMode: 'columns' } } }),
 }));

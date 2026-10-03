@@ -29,6 +29,15 @@ const read = (f: string) => readFileSync(resolve(layouts, f), 'utf8');
 /** Only px and % are legal rootMargin units. */
 const LEGAL_ROOT_MARGIN = /^(-?\d+(px|%)|0)(\s+(-?\d+(px|%)|0)){0,3}$/;
 
+/** Every layout that funnels its tiles through PhotoCard. */
+const PHOTO_CARD_LAYOUTS = [
+  'GridGalleryLayout.tsx',
+  'JustifiedGalleryLayout.tsx',
+  'MosaicGalleryLayout.tsx',
+  'MasonryGalleryLayout.tsx',
+  'TimelineGalleryLayout.tsx',
+];
+
 describe('grid lazy pre-load band', () => {
   it('Grid passes an inViewRootMargin', () => {
     expect(read('GridGalleryLayout.tsx')).toMatch(/inViewRootMargin=/);
@@ -37,9 +46,9 @@ describe('grid lazy pre-load band', () => {
   it('every inViewRootMargin in every layout uses a legal unit', () => {
     // A vh value throws at IntersectionObserver construction and takes the
     // whole gallery down with it, so this guards the unit, not just presence.
-    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx', 'MosaicGalleryLayout.tsx']) {
+    for (const file of PHOTO_CARD_LAYOUTS) {
       const src = read(file);
-      for (const [, value] of src.matchAll(/inViewRootMargin="([^"]+)"/g)) {
+      for (const [, value] of src.matchAll(/(?:inView|release)RootMargin="([^"]+)"/g)) {
         expect(value, `${file}: "${value}"`).toMatch(LEGAL_ROOT_MARGIN);
       }
     }
@@ -83,12 +92,55 @@ describe('grid lazy pre-load band', () => {
   it('every layout that lazy-renders also declares a pre-load band', () => {
     // The defect was Grid being lazy with no margin. Any future layout that
     // opts into `lazy` and forgets the margin reintroduces it.
-    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx', 'MosaicGalleryLayout.tsx']) {
+    for (const file of PHOTO_CARD_LAYOUTS) {
       const src = read(file);
       const isLazy = /^\s*lazy\s*$/m.test(src) || /\slazy=\{?true/.test(src);
       if (!isLazy) continue;
       expect(src, `${file} is lazy but declares no inViewRootMargin`)
         .toMatch(/inViewRootMargin=/);
     }
+  });
+
+  it('Masonry, Timeline and Justified are lazy and release too (issue 1733)', () => {
+    // These three mounted every tile on first render, so a 500-photo gallery
+    // put 500 fetches in the queue before the first row was on screen, and
+    // kept all 500 for the life of the page. Each sizes its tile from the
+    // stored dimensions, so releasing cannot reflow. Masonry has four modes
+    // and every one of them renders a PhotoCard; all four must opt in.
+    const grid = read('GridGalleryLayout.tsx');
+    const release = grid.match(/releaseRootMargin="([^"]+)"/)![1];
+    for (const file of ['MasonryGalleryLayout.tsx', 'TimelineGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
+      const src = read(file);
+      const cards = src.match(/<(?:PhotoCard|MasonryPhoto|JustifiedPhoto)\b/g)!.length;
+      const lazies = src.match(/^\s*lazy\s*$/mg)?.length ?? 0;
+      const releases = src.match(/releaseRootMargin="([^"]+)"/g) ?? [];
+      // Every card site in the file, less the one inner component that
+      // forwards to PhotoCard (MasonryPhoto, JustifiedPhoto) declares both.
+      const sites = cards - (/\b(?:MasonryPhoto|JustifiedPhoto)\b/.test(src) ? 1 : 0);
+      expect(lazies, `${file}: lazy on ${lazies} of ${sites} card sites`).toBe(sites);
+      expect(releases.length, `${file}: releaseRootMargin on ${releases.length} of ${sites} card sites`).toBe(sites);
+      for (const r of releases) expect(r).toBe(`releaseRootMargin="${release}"`);
+    }
+  });
+
+  it('content-visibility goes on explicit boxes outside CSS columns only', () => {
+    // Issue 1733: a released tile still costs style, layout and paint on
+    // every scroll frame; `content-visibility: auto` skips all three for
+    // far-off tiles. Only safe where the box does not depend on the
+    // contents, which every PhotoCard layout but one guarantees. Mosaic
+    // stays out because Safari mis-balances CSS columns of skipped content,
+    // and Masonry's columns mode because its tile owns a `position: fixed`
+    // modal that layout containment would trap inside the tile.
+    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx', 'TimelineGalleryLayout.tsx']) {
+      expect(read(file), `${file} declares no contentVisibility`).toMatch(/contentVisibility: 'auto'/);
+    }
+    expect(read('MosaicGalleryLayout.tsx')).not.toMatch(/contentVisibility/);
+
+    // Masonry: three of four modes (rows, flickr, quilted); the columns-mode
+    // card (`MasonryPhoto`) must not.
+    const masonry = read('MasonryGalleryLayout.tsx');
+    expect(masonry.match(/contentVisibility: 'auto'/g)).toHaveLength(3);
+    const masonryPhoto = masonry.slice(masonry.indexOf('const MasonryPhoto'), masonry.indexOf('export const MasonryGalleryLayout'));
+    expect(masonryPhoto).not.toMatch(/contentVisibility/);
   });
 });

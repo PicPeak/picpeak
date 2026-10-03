@@ -22,8 +22,10 @@ vi.mock('../../common', async () => ({
 // Only stub the masonry geometry. Both YARL (including Zoom/Thumbnails) and
 // AuthenticatedImage are real, so opening a tile exercises the integration.
 vi.mock('react-photo-album', () => ({
-  MasonryPhotoAlbum: ({ photos, render: renderer }: any) => <>{photos.map((photo: any) =>
-    <React.Fragment key={photo.key}>{renderer.photo({}, { photo, width: 300, height: 200 })}</React.Fragment>
+  // The real render context carries `index` (the position in `photos`), which
+  // the layout uses as the lightbox index.
+  MasonryPhotoAlbum: ({ photos, render: renderer }: any) => <>{photos.map((photo: any, index: number) =>
+    <React.Fragment key={photo.key}>{renderer.photo({}, { photo, index, width: 300, height: 200 })}</React.Fragment>
   )}</>,
 }));
 

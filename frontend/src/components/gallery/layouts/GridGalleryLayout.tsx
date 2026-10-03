@@ -112,12 +112,25 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        * Thumbnails are served `private, max-age=1800`, so coming back costs a
        * cache hit rather than a round trip.
        *
-       * Grid and Mosaic only, and deliberately so: the skeleton here is
-       * `aspect-square`, Mosaic's tile carries an explicit `aspectRatio`, and
-       * either holds the tile's box exactly, so releasing shifts nothing. The
-       * measured layouts have no such guarantee.
+       * Safe because the skeleton here is `aspect-square`, which holds the
+       * tile's box exactly whether or not the image is mounted, so releasing
+       * shifts nothing. Every other grid layout sizes its tile the same way,
+       * from the stored dimensions, and releases with the same bands
+       * (issue 1733).
        */
       releaseRootMargin="300% 0px"
+      /*
+       * Issue 1733: a released tile still costs style, layout and paint on
+       * every scroll frame — 500 skeletons are still 500 boxes. With
+       * `content-visibility: auto` the browser skips all three for tiles
+       * outside its own (viewport-sized) proximity band and treats them as
+       * empty. That is only safe when the box does not depend on the
+       * contents, which `aspect-square` with the grid's column width
+       * guarantees; no `contain-intrinsic-size` is needed because width and
+       * aspect ratio already give a definite height. Not on Mosaic: inside
+       * CSS columns Safari mis-balances the columns of skipped content.
+       */
+      style={{ contentVisibility: 'auto' }}
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton aspect-square w-full rounded-lg"
       imageProps={{

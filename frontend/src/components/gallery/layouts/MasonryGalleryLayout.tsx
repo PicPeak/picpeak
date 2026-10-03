@@ -114,6 +114,21 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
         height: `${imageHeight}px`,
         breakInside: 'avoid'
       }}
+      /*
+       * Lazy, with Grid's bands (issue 1733). AuthenticatedImage fetches in an
+       * effect the moment it mounts, so `loading: 'lazy'` below deferred
+       * nothing: every tile entered the fetch queue on first render. The
+       * explicit px height above holds the box with or without the image, so
+       * a far-off tile can be released without reflowing the column.
+       *
+       * No `content-visibility` here, unlike the other masonry modes: this
+       * card owns its FeedbackIdentityModal (`identityMode="self"`), and the
+       * layout containment that comes with it would make the tile the
+       * containing block of that `position: fixed` modal.
+       */
+      lazy
+      inViewRootMargin="100% 0px"
+      releaseRootMargin="300% 0px"
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
@@ -320,6 +335,15 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     return cols;
   }, [mode, photos, scaledColumns, containerWidth, gutter]);
 
+  // Position of each photo in `photos`, which is what the lightbox indexes
+  // by. Columns mode renders out of order, and a `findIndex` per tile made
+  // every render of an N-photo gallery O(N²) (issue 1733).
+  const photoIndexById = useMemo(() => {
+    const map = new Map<number, number>();
+    photos.forEach((photo, index) => map.set(photo.id, index));
+    return map;
+  }, [photos]);
+
   // Calculate approximate column width for aspect ratio calculations
   const columnWidth = useMemo(() => {
     if (containerWidth <= 0 || scaledColumns <= 0) return 300;
@@ -368,7 +392,16 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 top: layoutItem.y,
                 width: layoutItem.width,
                 height: layoutItem.height,
+                // Issue 1733: the box is the layout's own px result, so a
+                // skipped tile occupies exactly what a rendered one would.
+                contentVisibility: 'auto',
+                containIntrinsicSize: `${layoutItem.width}px ${layoutItem.height}px`,
               }}
+              // Lazy mount + release with Grid's bands (issue 1733); the
+              // absolute px box holds the tile either way.
+              lazy
+              inViewRootMargin="100% 0px"
+              releaseRootMargin="300% 0px"
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
@@ -425,7 +458,13 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 top: box.top,
                 width: box.width,
                 height: box.height,
+                // Issue 1733, as in rows mode above.
+                contentVisibility: 'auto',
+                containIntrinsicSize: `${box.width}px ${box.height}px`,
               }}
+              lazy
+              inViewRootMargin="100% 0px"
+              releaseRootMargin="300% 0px"
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
@@ -492,6 +531,13 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               onDownload={(e) => onDownload(photo, e)}
               onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
               className={`photo-card group cursor-pointer relative overflow-hidden rounded-lg bg-neutral-100 ${spanClasses}`}
+              // Issue 1733: the grid's 200px rows and the span classes size
+              // the cell, not the image, so the box survives both a skipped
+              // tile and a released one. No intrinsic size, as in Grid.
+              style={{ contentVisibility: 'auto' }}
+              lazy
+              inViewRootMargin="100% 0px"
+              releaseRootMargin="300% 0px"
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
@@ -544,7 +590,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           style={{ gap: `${gutter}px` }}
         >
           {column.map((photo) => {
-            const originalIndex = photos.findIndex(p => p.id === photo.id);
+            const originalIndex = photoIndexById.get(photo.id) ?? -1;
             return (
               <MasonryPhoto
                 key={photo.id}
