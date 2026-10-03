@@ -1091,8 +1091,10 @@ router.post('/manifests/validate', adminAuth, requirePermission('backup.view'), 
   }
 });
 
-// List S3 buckets
-router.get('/s3/buckets', adminAuth, requirePermission('backup.view'), async (req, res) => {
+// List S3 buckets. An account-wide ListBuckets with the stored backup
+// credential — provider inventory beyond the configured bucket, so Super
+// Admin only, like /test-connection. The Owner object is not returned.
+router.get('/s3/buckets', adminAuth, requireSuperAdmin(), async (req, res) => {
   try {
     const config = await getBackupConfig();
     
@@ -1116,8 +1118,7 @@ router.get('/s3/buckets', adminAuth, requirePermission('backup.view'), async (re
     const result = await s3Adapter.s3Client.send(new ListBucketsCommand({}));
     
     res.json({
-      buckets: result.Buckets || [],
-      owner: result.Owner || null
+      buckets: result.Buckets || []
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to list S3 buckets');
