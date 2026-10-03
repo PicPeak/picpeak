@@ -31,6 +31,7 @@ interface MosaicPhotoProps {
   feedbackEnabled?: boolean;
   feedbackOptions?: {
     allowLikes?: boolean;
+    allowRatings?: boolean;
     allowComments?: boolean;
     requireNameEmail?: boolean;
   };

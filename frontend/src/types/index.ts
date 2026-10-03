@@ -239,6 +239,10 @@ export interface Photo {
   // (guest_id when a guest token is present, else IP+UA hash fallback).
   // Used to seed the lifted likedPhotoIds Set in grid layouts on mount.
   is_liked?: boolean;
+  // The requesting viewer's own star rating, 1-5 (issue 1733). Same identity
+  // model and hidden-row rule as `is_liked`; null when unrated and whenever
+  // ratings are switched off for the event. Drives the tile rating control.
+  my_rating?: number | null;
   favorite_count?: number;
   // Colour labels (#1044). `color_label_count` is aggregate data and follows
   // show_feedback_to_guests; `my_color_label` is the requesting viewer's own

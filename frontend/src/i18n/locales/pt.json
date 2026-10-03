@@ -2923,6 +2923,7 @@
     "rateStar_many": "Avaliar {{count}} estrelas",
     "rateStar_one": "Avaliar {{count}} estrela",
     "rateStar_other": "Avaliar {{count}} estrelas",
+    "removeRating": "Remover a avaliação",
     "ratingsCount_many": "{{count}} avaliações",
     "ratingsCount_one": "{{count}} avaliação",
     "ratingsCount_other": "{{count}} avaliações",

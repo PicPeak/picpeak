@@ -5161,6 +5161,7 @@
     "ratingError": "Ocene ni bilo mogoče oddati",
     "rateStar_one": "Oceni z {{count}} zvezdico",
     "rateStar_other": "Oceni z {{count}} zvezdicami",
+    "removeRating": "Odstrani oceno",
     "ratingsCount_one": "{{count}} ocena",
     "ratingsCount_other": "{{count}} ocen",
     "likeError": "Všečka ni bilo mogoče posodobiti",

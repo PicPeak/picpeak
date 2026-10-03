@@ -55,6 +55,7 @@ interface MasonryPhotoProps {
   slug?: string;
   feedbackOptions?: {
     allowLikes?: boolean;
+    allowRatings?: boolean;
     allowComments?: boolean;
     requireNameEmail?: boolean;
   };

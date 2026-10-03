@@ -16,7 +16,10 @@ async function generateGuestIdentifier(req) {
  * missed every action type added after it was written.
  */
 const DEFAULT_RATE_LIMITS = {
-  rating: { max: 100, window: 3600 }, // 100 ratings per hour
+  // Ratings are one click on the grid tile (issue 1733, A3a), so a client
+  // proofing a 300-photo shoot rates far more than the 100/h the lightbox
+  // flow was sized for. Same budget as colour labels below.
+  rating: { max: 2000, window: 3600 },
   comment: { max: 20, window: 3600 }, // 20 comments per hour
   like: { max: 200, window: 3600 }, // 200 likes per hour
   favorite: { max: 100, window: 3600 }, // 100 favorites per hour
@@ -221,6 +224,7 @@ function strictRateLimit(options = {}) {
 
 module.exports = {
   dispose() { cleanupTimers.forEach(clearInterval); cleanupTimers.clear(); },
+  DEFAULT_RATE_LIMITS,
   feedbackRateLimit,
   strictRateLimit,
   generateGuestIdentifier,
