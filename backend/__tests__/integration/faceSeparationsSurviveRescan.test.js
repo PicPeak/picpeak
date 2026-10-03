@@ -405,16 +405,16 @@ describe('separations survive re-derivation (#1132)', () => {
     });
 
     it('permanent archive deletion clears the face data too', () => {
-      // Same contract, second door. This route deletes the event row directly
-      // and leans on the FK cascade, which is inert on SQLite — and no FK
-      // reaches the dismissals table on either engine. archiveEvent's purge is
-      // nonfatal, so an event really can arrive here still holding embeddings.
+      // Same contract, second door. The FK cascade is inert on SQLite — and no
+      // FK reaches the dismissals table on either engine. archiveEvent's purge
+      // is nonfatal, so an event really can arrive here still holding
+      // embeddings. The deletes run inside the route's transaction (issue 1733).
       const src = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'routes', 'adminArchives.js'), 'utf8'
       );
       expect(src).toContain('event_people_merge_dismissals');
-      expect(src).toContain('db(\'photo_faces\').where(\'event_id\', req.params.id).del()');
-      expect(src).toContain('db(\'event_people\').where(\'event_id\', req.params.id).del()');
+      expect(src).toContain('trx(\'photo_faces\').where(\'event_id\', req.params.id).del()');
+      expect(src).toContain('trx(\'event_people\').where(\'event_id\', req.params.id).del()');
     });
   });
 
