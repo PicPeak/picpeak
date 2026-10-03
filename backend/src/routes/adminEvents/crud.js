@@ -326,6 +326,15 @@ module.exports = (router) => {
         return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
+      // Assigning customers is customers.events, not events.create (the
+      // dedicated /customers/:id/events route holds that line). The create
+      // form always sends the array, empty when nothing was picked, so only
+      // a non-empty list needs the permission.
+      if (Array.isArray(req.body.customer_account_ids) && req.body.customer_account_ids.length > 0
+        && !(await userHasAnyPermission(req.admin.id, ['customers.events']))) {
+        return res.status(403).json({ error: 'The customers.events permission is required to assign customers to an event' });
+      }
+
       const created = await require('../../services/eventCreationService').createEvent(req.body, {
         actor: req.admin,
         frontendUrl: await getAbsoluteFrontendUrl(req, { override: process.env.APP_URL }),
@@ -510,19 +519,23 @@ module.exports = (router) => {
       // Customer accounts assigned to this event (#354). Hydrates the
       // CustomerAccountPicker on the EventDetailsPage admin form. Returns
       // an empty array on installs missing the table (e.g. pre-migrate).
+      // Customer identities are customers.view data — this route is guarded
+      // by events.view alone, so an admin without it gets an empty list.
       let customerAccounts = [];
-      try {
-        const customerAccountsService = require('../../services/customerAccountsService');
-        customerAccounts = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
-      } catch (e) {
-        logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
+      const mayViewCustomers = await userHasAnyPermission(req.admin.id, ['customers.view']);
+      if (mayViewCustomers) {
+        try {
+          const customerAccountsService = require('../../services/customerAccountsService');
+          customerAccounts = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
+        } catch (e) {
+          logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
+        }
       }
-      // Their customer groups (#1443) — only for an admin who may read
-      // customers; this route is guarded by events.view alone. Decoration:
-      // a failure here leaves the groups out rather than failing the page.
+      // Their customer groups (#1443). Decoration: a failure here leaves the
+      // groups out rather than failing the page.
       let groupsByCustomer = null;
       try {
-        if (customerAccounts.length > 0 && await userHasAnyPermission(req.admin.id, ['customers.view'])) {
+        if (customerAccounts.length > 0) {
           groupsByCustomer = await require('../../services/customerGroupsService')
             .groupsForCustomers(customerAccounts.map((c) => c.id));
         }
@@ -1211,6 +1224,14 @@ module.exports = (router) => {
 
       const { id } = req.params;
       const updates = { ...req.body };
+
+      // Replacing the assignment set (also with an empty list) is a
+      // customers.events change, not an events.edit one; the settings form
+      // sends customer_account_ids only when the admin changed it.
+      if (Array.isArray(req.body.customer_account_ids)
+        && !(await userHasAnyPermission(req.admin.id, ['customers.events']))) {
+        return res.status(403).json({ error: 'The customers.events permission is required to change the customers assigned to an event' });
+      }
 
       // express-validator applies isInt/isIn/isBoolean element-wise to
       // arrays, so `image_quality: [72]` satisfies its validator and stays
