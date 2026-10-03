@@ -304,9 +304,11 @@ function requestFields(f: EventFields): Record<string, unknown> {
   const body: Record<string, unknown> = {
     welcome_message: f.welcome_message,
     customer_name: f.customer_name,
-    customer_email: f.customer_email.trim() || undefined,
-    // '' as null so an admin can clear it; the backend drops it when the
-    // global phone field is off.
+    // '' as null so an admin can clear them (issue 1733; the email used to
+    // go out as undefined, which the payload loop skips, so it could never be
+    // cleared). The backend refuses the clear where Settings require the
+    // field, and drops the phone when the global phone field is off.
+    customer_email: f.customer_email.trim() || null,
     customer_phone: f.customer_phone.trim() || null,
     customer_account_ids: f.customer_accounts.map((c) => c.id),
     expires_at: f.expires_at || null,
