@@ -84,14 +84,11 @@ module.exports = (router) => {
       }
       await dropCopiesIfStorageOff(id);
 
-      // Log activity
-      await logActivity('password_reset',
-        { eventName: event.event_name, emailSent: sendEmail },
-        id,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
-      );
-
-      // Queue email notification if requested
+      // Queue email notification if requested. The event may have no address
+      // (optional at creation, clearable since issue 1733): then nothing is
+      // queued and the response says so, instead of reporting a mail that
+      // never existed.
+      let emailSent = false;
       if (sendEmail) {
         const recipientEmail = event.customer_email || event.host_email;
         const recipientName = event.customer_name || event.host_name || (recipientEmail ? recipientEmail.split('@')[0] : null);
@@ -99,7 +96,7 @@ module.exports = (router) => {
         // Use the full URL so customers can click straight from the email.
         const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
 
-        await queueEmail(id, recipientEmail, 'gallery_created', {
+        emailSent = await queueEmail(id, recipientEmail, 'gallery_created', {
           customer_name: recipientName,
           customer_email: recipientEmail,
           host_name: recipientName,
@@ -108,13 +105,20 @@ module.exports = (router) => {
           gallery_link: shareUrl,
           gallery_password: newPassword,
           expiry_date: event.expires_at  // Pass raw date - will be formatted by email processor
-        });
+        }) === true;
       }
+
+      // Log activity
+      await logActivity('password_reset',
+        { eventName: event.event_name, emailSent },
+        id,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
 
       res.json({
         message: 'Password reset successfully',
         newPassword: newPassword,
-        emailSent: sendEmail
+        emailSent
       });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to reset password');
