@@ -567,6 +567,16 @@ async function cancelInvitation(id, cancelledById) {
     throw new NotFoundError('Invitation', id);
   }
 
+  // An accepted invitation is the provenance of an admin account; it stays.
+  if (invitation.accepted_at) {
+    throw new ConflictError('This invitation has already been accepted');
+  }
+
+  // Same ceiling as createInvitation: a non-super actor cannot cancel an
+  // invitation into super_admin or into a role carrying permissions it lacks.
+  await assertActorReachesRole(cancelledById, invitation.role_id,
+    'You can only cancel invitations to roles within your own permissions');
+
   await db('admin_invitations').where('id', id).del();
 
   await logActivity('admin_invitation_cancelled',
