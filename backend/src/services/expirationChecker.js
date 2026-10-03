@@ -4,7 +4,7 @@ const { archiveEvent } = require('./archiveService');
 const { queueEmail, getSupportEmail } = require('./emailProcessor');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const logger = require('../utils/logger');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 
 const task = scheduledTask(checkExpirations, { schedule: '0 * * * *' });
 function startExpirationChecker() { task.start(); }
@@ -32,12 +32,14 @@ async function checkExpirations() {
 
     // Check for events needing warning emails
     // Skip events with null expires_at (they never expire)
+    // whereTimestamp: on SQLite expires_at is ISO text from creation but epoch
+    // ms from the extend path, and a plain `<= Date` matched neither (issue 1733).
     const eventsNeedingWarning = await db('events')
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
       .whereNotNull('expires_at')
-      .where('expires_at', '<=', warningDate)
-      .where('expires_at', '>', now);
+      .modify(whereTimestamp, 'expires_at', '<=', warningDate)
+      .modify(whereTimestamp, 'expires_at', '>', now);
 
     for (const event of eventsNeedingWarning) {
       await emitGalleryExpiring(event); // always — for the built-in + any custom flows
@@ -52,7 +54,7 @@ async function checkExpirations() {
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
       .whereNotNull('expires_at')
-      .where('expires_at', '<=', now);
+      .modify(whereTimestamp, 'expires_at', '<=', now);
 
     for (const event of expiredEvents) {
       await handleExpiredEvent(event, { sendLegacyEmails: !expiredFlowOwns });
@@ -245,6 +247,8 @@ async function handleExpiredEvent(event, { sendLegacyEmails = true } = {}) {
 module.exports = {
   stopExpirationChecker,
   startExpirationChecker,
+  // One hourly pass — exported for tests.
+  checkExpirations,
   // Reused by the workflow notify_gallery_* actions so the engine path sends the
   // exact same emails as the legacy hourly checker.
   queueExpirationWarning,

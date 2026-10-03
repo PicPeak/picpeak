@@ -4,7 +4,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
-const { formatBoolean } = require('../../utils/dbCompat');
+const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
 
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission, userHasAllPermissions, userHasAnyPermission } = require('../../middleware/permissions');
@@ -392,11 +392,14 @@ module.exports = (router) => {
       } else if (status === 'expiring') {
         const sevenDaysFromNow = new Date();
         sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+        // whereTimestamp: ISO-string binds compared the extend path's epoch-ms
+        // rows lexicographically on SQLite, the mirror image of the checker's
+        // bug (issue 1733).
         query = query
           .where('is_active', formatBoolean(true))
           .where('is_archived', formatBoolean(false))
-          .where('expires_at', '<=', sevenDaysFromNow.toISOString())
-          .where('expires_at', '>', new Date().toISOString());
+          .modify(whereTimestamp, 'expires_at', '<=', sevenDaysFromNow)
+          .modify(whereTimestamp, 'expires_at', '>', new Date());
       }
 
       // Get total count for pagination
