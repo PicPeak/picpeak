@@ -121,6 +121,10 @@ async function finalizeApproval(approval, decision, actorPatch) {
     if (!expired) return alreadyDecided(approval.id);
     return { ok: false, reason: 'expired' };
   }
+  // Master kill-switch: a decision must not record itself or resume a run
+  // while workflows is off (the public link is reachable without the flag).
+  // Fails closed when the flag cannot be read; the approval stays pending.
+  if (!(await engine.workflowsEnabled())) return { ok: false, reason: 'disabled' };
   const status = decision === 'confirm' ? 'confirmed' : 'denied';
   // Compare-and-set on the pending status read above. The emailed link, the
   // inbox and a double click can all act at once; without the condition two

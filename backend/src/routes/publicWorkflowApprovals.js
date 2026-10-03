@@ -85,6 +85,9 @@ router.post('/:token/:action', async (req, res) => {
     if (!result.ok && result.reason === 'expired') {
       return res.status(410).send(page('Link expired', 'This confirmation link has expired. Use the workflow inbox in the admin panel instead.'));
     }
+    if (!result.ok && result.reason === 'disabled') {
+      return res.status(403).send(page('Workflows are disabled', 'Workflows are turned off in this installation, so this request was not recorded.'));
+    }
     if (result.already) {
       return res.send(page('Already recorded', `This request was already ${esc(result.status)}.`));
     }
