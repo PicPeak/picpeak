@@ -32,7 +32,7 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
-const { resolveStoredPath } = require('../utils/storedPath');
+const { resolveStoredPath, toStoredPath } = require('../utils/storedPath');
 const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -748,24 +748,40 @@ router.post(
   [param('id').isInt({ min: 1 })],
   signedPdfUpload.single('file'),
   handleAsync(async (req, res) => {
-    validateRequest(req);
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
+    // Multer has written the file by now. Whatever refuses the upload from
+    // here on — validation, a missing or unsignable contract, a failed
+    // write — the file must not stay behind under the storage root.
+    try {
+      validateRequest(req);
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
+      }
+      // The filter above only saw the reported type and the file name. The upload
+      // becomes the authoritative signed contract, so its bytes must be a PDF.
+      if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
+        return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
+      }
+      const result = await contractService.attachSignedPdfUpload(
+        parseInt(req.params.id, 10),
+        req.file.path,
+        'admin',
+        req.admin.id,
+        { coversSignerIds: parseCoversSignerIds(req.body && req.body.coversSignerIds) },
+      );
+      return successResponse(res, result);
+    } catch (err) {
+      // The service removes the file on the refusals it knows; this covers
+      // everything else — unless the contract already points at the file,
+      // which means the upload committed and something after it failed.
+      if (req.file && req.file.path) {
+        const committed = await db('contracts')
+          .where({ id: parseInt(req.params.id, 10), signed_pdf_path: toStoredPath(req.file.path) })
+          .first().catch(() => null);
+        if (!committed) await fs.promises.unlink(req.file.path).catch(() => {});
+      }
+      throw err;
     }
-    // The filter above only saw the reported type and the file name. The upload
-    // becomes the authoritative signed contract, so its bytes must be a PDF.
-    if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
-      await fs.promises.unlink(req.file.path).catch(() => {});
-      return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
-    }
-    const result = await contractService.attachSignedPdfUpload(
-      parseInt(req.params.id, 10),
-      req.file.path,
-      'admin',
-      req.admin.id,
-      { coversSignerIds: parseCoversSignerIds(req.body && req.body.coversSignerIds) },
-    );
-    return successResponse(res, result);
   }),
 );
 

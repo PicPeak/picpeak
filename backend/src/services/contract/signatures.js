@@ -599,11 +599,16 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   await ensureContractEmailTemplatesSeeded(db, logger);
 
   if (!filePath) throw new AppError('No file uploaded', 400);
+  // Every refusal below leaves nothing on disk: multer already wrote the file.
   const contract = await db('contracts').where({ id: contractId }).first();
-  if (!contract) throw new AppError('Contract not found', 404);
+  if (!contract) {
+    removeUpload(filePath);
+    throw new AppError('Contract not found', 404);
+  }
   // Expired is final (#1446), and a contract still collecting details was
   // never frozen: there is nothing a paper copy could be the signed form of.
   if (['cancelled', 'draft', 'expired', 'awaiting_data'].includes(contract.status)) {
+    removeUpload(filePath);
     throw new AppError(`Cannot attach a signed PDF to a contract in status '${contract.status}'`, 409);
   }
   if (uploaderRole !== 'admin' && contract.status === 'fully_signed') {
