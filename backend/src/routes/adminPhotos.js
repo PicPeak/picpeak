@@ -1679,6 +1679,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       fileSize,
       mimeType,
       eventId: parseInt(eventId),
+      adminId: req.admin.id,
       totalChunks,
       // The declared fileSize check above is client-controlled; the service
       // enforces this cap on the bytes it actually receives and merges.
@@ -1692,6 +1693,13 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
 });
 
 // Upload a chunk
+// Every operation below names the upload by its opaque id. requireEventOwnership
+// only proves access to the :eventId in the URL, so the service is told which
+// event and admin the call is for and answers 404 unless the upload was
+// initialised by that admin for that event — a leaked id must not let a scoped
+// admin touch another event's upload.
+const uploadOwner = (req) => ({ eventId: parseInt(req.params.eventId), adminId: req.admin.id });
+
 router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
   try {
     const { uploadId, chunkIndex } = req.params;
@@ -1705,6 +1713,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     const declaredBytes = Number(req.headers['content-length']);
     const result = await chunkedUpload.uploadChunk(uploadId, parseInt(chunkIndex), req, {
       declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
+      owner: uploadOwner(req),
     });
 
     res.json(result);
@@ -1742,14 +1751,14 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     const rawParsed = category_id ? parseInt(category_id, 10) : NaN;
     const parsedCategoryId = rawParsed > 0 ? rawParsed : null;
     if (parsedCategoryId && !(await findScopedCategory(event.id, parsedCategoryId))) {
-      await chunkedUpload.abortUpload(uploadId).catch(() => {});
+      await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
       return res.status(400).json(outOfScopeCategoryError(parsedCategoryId));
     }
     const photoCap = photoCapOf(event);
     if (photoCap) {
       const currentCount = await countEventPhotos(event.id);
       if (currentCount + 1 > photoCap) {
-        await chunkedUpload.abortUpload(uploadId).catch(() => {});
+        await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) }).catch(() => {});
         return res.status(400).json({
           error: `Photo cap exceeded. This event allows a maximum of ${photoCap} photos. Currently ${currentCount} photos exist, and you are trying to upload 1 more.`
         });
@@ -1757,7 +1766,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     }
 
     // Complete the chunked upload (merge chunks)
-    const mergedFile = await chunkedUpload.completeUpload(uploadId);
+    const mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
 
     // Process the merged file as a regular upload
     const fileObj = {
@@ -1767,9 +1776,11 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       path: mergedFile.path
     };
 
+    // The event the upload was initialised for. The owner check above makes
+    // it the URL's event too; the stored one is authoritative regardless.
     const uploadedPhotos = await processUploadedPhotos(
       [fileObj],
-      parseInt(eventId),
+      mergedFile.eventId,
       'admin',
       category_id || null
     );
@@ -1807,7 +1818,7 @@ router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermis
   try {
     const { uploadId } = req.params;
 
-    const status = chunkedUpload.getUploadStatus(uploadId);
+    const status = chunkedUpload.getUploadStatus(uploadId, { owner: uploadOwner(req) });
 
     if (!status) {
       return res.status(404).json({ error: 'Upload not found or expired' });
@@ -1824,7 +1835,10 @@ router.delete('/:eventId/chunked-upload/:uploadId', adminAuth, requirePermission
   try {
     const { uploadId } = req.params;
 
-    await chunkedUpload.abortUpload(uploadId);
+    const aborted = await chunkedUpload.abortUpload(uploadId, { owner: uploadOwner(req) });
+    if (!aborted) {
+      return res.status(404).json({ error: 'Upload not found or expired' });
+    }
 
     res.json({ success: true, message: 'Upload aborted' });
   } catch (error) {

@@ -72,7 +72,7 @@ describe('admin chunked upload /complete limits', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCompleteUpload.mockResolvedValue({
-      filename: 'big.jpg', mimeType: 'image/jpeg', size: 3, path: '/tmp/not-used', tempDir: '/tmp/not-used-dir',
+      filename: 'big.jpg', mimeType: 'image/jpeg', size: 3, path: '/tmp/not-used', tempDir: '/tmp/not-used-dir', eventId: 1,
     });
   });
 
@@ -87,7 +87,7 @@ describe('admin chunked upload /complete limits', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/photo cap/i);
     expect(mockCompleteUpload).not.toHaveBeenCalled();
-    expect(mockAbortUpload).toHaveBeenCalledWith('upload-abc');
+    expect(mockAbortUpload).toHaveBeenCalledWith('upload-abc', { owner: { eventId, adminId: expect.any(Number) } });
   });
 
   it('refuses another event\'s category, and merges nothing', async () => {
@@ -112,7 +112,7 @@ describe('admin chunked upload /complete limits', () => {
     const res = await complete(eventId, { category_id: String(own) });
 
     expect(res.status).toBe(200);
-    expect(mockCompleteUpload).toHaveBeenCalledWith('upload-abc');
+    expect(mockCompleteUpload).toHaveBeenCalledWith('upload-abc', { owner: { eventId, adminId: expect.any(Number) } });
     expect(mockProcessUploadedPhotos).toHaveBeenCalled();
   });
 });

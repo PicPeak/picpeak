@@ -60,6 +60,30 @@ function invalidChunkError(message) {
 }
 
 /**
+ * The upload behind `uploadId`, if it belongs to `owner`.
+ *
+ * Every operation after init is addressed by the opaque upload id, and the
+ * route can only authorise the event in its own URL. The id is therefore
+ * bound to the event and the admin that initialised it, and each later call
+ * has to present both: a scoped admin who learned another upload's id could
+ * otherwise read its progress, overwrite its chunks, abort it, or complete
+ * its bytes into an event of their own. A mismatch is reported exactly like
+ * an unknown id, so a guessed id confirms nothing.
+ *
+ * `owner` is optional for callers that hold no principal (the expiry sweep,
+ * the service's own abort on a tripped cap); the routes always pass one.
+ */
+function findOwnedUpload(uploadId, owner) {
+  const uploadMeta = activeUploads.get(uploadId);
+  if (!uploadMeta) return null;
+  if (owner) {
+    if (Number(owner.eventId) !== Number(uploadMeta.eventId)) return null;
+    if (Number(owner.adminId) !== Number(uploadMeta.adminId)) return null;
+  }
+  return uploadMeta;
+}
+
+/**
  * Initialize a new chunked upload
  * @param {Object} options - Upload options
  * @returns {Promise<Object>} - Upload metadata
@@ -70,6 +94,7 @@ async function initializeUpload(options) {
     fileSize,
     mimeType,
     eventId,
+    adminId,
     totalChunks,
     maxFileSizeBytes
   } = options;
@@ -108,6 +133,8 @@ async function initializeUpload(options) {
     fileSize,
     mimeType,
     eventId,
+    // Who started it; see findOwnedUpload.
+    adminId,
     expectedChunks,
     receivedChunks: new Set(),
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
@@ -214,10 +241,12 @@ function writeChunkStream(source, partPath, allowance) {
  * @param {Object} [options]
  * @param {number} [options.declaredBytes] - Content-Length, when the caller
  *   has one. Checked against the remaining allowance before the body is read.
+ * @param {{eventId: number, adminId: number}} [options.owner] - The event the
+ *   route authorised and the acting admin; see findOwnedUpload.
  * @returns {Promise<Object>} - Chunk upload result
  */
-async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes } = {}) {
-  const uploadMeta = activeUploads.get(uploadId);
+async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner } = {}) {
+  const uploadMeta = findOwnedUpload(uploadId, owner);
 
   if (!uploadMeta) {
     throw uploadStateError('Upload not found or expired', 404);
@@ -332,10 +361,12 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes } = {})
 /**
  * Complete the upload by merging all chunks
  * @param {string} uploadId - Upload ID
+ * @param {Object} [options]
+ * @param {{eventId: number, adminId: number}} [options.owner] - see findOwnedUpload
  * @returns {Promise<Object>} - Merged file info
  */
-async function completeUpload(uploadId) {
-  const uploadMeta = activeUploads.get(uploadId);
+async function completeUpload(uploadId, { owner } = {}) {
+  const uploadMeta = findOwnedUpload(uploadId, owner);
 
   if (!uploadMeta) {
     throw uploadStateError('Upload not found or expired', 404);
@@ -421,30 +452,36 @@ async function completeUpload(uploadId) {
 /**
  * Abort and clean up an upload
  * @param {string} uploadId - Upload ID
+ * @param {Object} [options]
+ * @param {{eventId: number, adminId: number}} [options.owner] - see findOwnedUpload
+ * @returns {Promise<boolean>} whether there was an upload of the caller's to abort
  */
-async function abortUpload(uploadId) {
-  const uploadMeta = activeUploads.get(uploadId);
+async function abortUpload(uploadId, { owner } = {}) {
+  const uploadMeta = findOwnedUpload(uploadId, owner);
 
-  if (uploadMeta) {
-    try {
-      await fs.rm(uploadMeta.uploadDir, { recursive: true, force: true });
-    } catch (err) {
-      logger.warn('Failed to clean up upload directory', { uploadId, error: err.message });
-    }
+  if (!uploadMeta) return false;
 
-    activeUploads.delete(uploadId);
-
-    logger.info('Chunked upload aborted', { uploadId });
+  try {
+    await fs.rm(uploadMeta.uploadDir, { recursive: true, force: true });
+  } catch (err) {
+    logger.warn('Failed to clean up upload directory', { uploadId, error: err.message });
   }
+
+  activeUploads.delete(uploadId);
+
+  logger.info('Chunked upload aborted', { uploadId });
+  return true;
 }
 
 /**
  * Get upload status
  * @param {string} uploadId - Upload ID
+ * @param {Object} [options]
+ * @param {{eventId: number, adminId: number}} [options.owner] - see findOwnedUpload
  * @returns {Object|null} - Upload status or null if not found
  */
-function getUploadStatus(uploadId) {
-  const uploadMeta = activeUploads.get(uploadId);
+function getUploadStatus(uploadId, { owner } = {}) {
+  const uploadMeta = findOwnedUpload(uploadId, owner);
 
   if (!uploadMeta) {
     return null;
