@@ -45,6 +45,9 @@ interface PhotoLightboxProps {
   // behind it, so the guest lands on the result rather than paging through
   // the old set.
   onSelectPerson?: (personId: number) => void;
+  // The photo on screen, on open and after every step — the host mirrors it
+  // to `?photo=` (issue 1733, photoLink.ts).
+  onCurrentPhotoChange?: (photoId: number) => void;
 }
 
 // Finger travel before a single-finger touch starts moving the carousel.
@@ -72,6 +75,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   showOriginalFilename = false,
   people,
   onSelectPerson,
+  onCurrentPhotoChange,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -173,6 +177,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       galleryService.trackPhotoView(slug, currentPhotoId);
     }
   }, [slug, currentPhotoId]);
+
+  // Mirror the visible photo to the URL (issue 1733). Through a ref so an
+  // inline callback from the host does not re-fire this — and rewrite the
+  // address bar — on every render.
+  const onCurrentPhotoChangeRef = useRef(onCurrentPhotoChange);
+  onCurrentPhotoChangeRef.current = onCurrentPhotoChange;
+  useEffect(() => {
+    if (currentPhotoId !== undefined) {
+      onCurrentPhotoChangeRef.current?.(currentPhotoId);
+    }
+  }, [currentPhotoId]);
 
 
   // Save-aware download. On mobile (where Web Share + files is supported)
