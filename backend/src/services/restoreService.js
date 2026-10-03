@@ -1544,8 +1544,15 @@ END $$;`
       }
     }
 
-    if (errors.length > 0 && errors.length === filesToRestore.length) {
-      throw new Error('All file restorations failed');
+    // Every entry in the manifest (or in the selection) is required. A single
+    // missing, unsafe or checksum-failing file used to be tolerated as long as
+    // one other file copied, and the run was then recorded as a successful
+    // restore with storage and database out of step. Fail the run instead so
+    // the caller's rollback runs.
+    if (errors.length > 0) {
+      throw new Error(
+        `${errors.length} of ${filesToRestore.length} file restorations failed: ${errors.slice(0, 5).join('; ')}`
+      );
     }
 
     return {
@@ -1636,12 +1643,14 @@ END $$;`
         }
       }
 
-      // Verify files
-      if (options.restoreType === 'full' || options.restoreType === 'files') {
+      // Verify files. The whole required set, not a prefix: the first 100
+      // entries used to be sampled "for performance", so a crafted manifest
+      // only had to order the bad entry after them to pass.
+      if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-        const filesToVerify = options.restoreType === 'selective' 
+        const filesToVerify = options.restoreType === 'selective'
           ? options.selectedItems.filter(item => item.type === 'file')
-          : manifest.files.manifest.slice(0, 100); // Verify first 100 files for performance
+          : manifest.files.manifest;
 
         for (const file of filesToVerify) {
           const filePath = path.join(storagePath, file.path);
