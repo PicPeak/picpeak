@@ -1533,6 +1533,14 @@ async function getScheduledEmailConfig() {
 // Attachments + cc travel inside `emailData` (keys: attachments, cc)
 // so callers don't need a new signature for every email shape.
 async function queueEmail(eventId, recipientEmail, emailType, emailData, options = {}) {
+  // Callers pass `customer_email || host_email`, and an event may have
+  // neither (issue 1733). A row without a recipient can never be sent, so
+  // nothing is queued; this is not thrown because the automated callers
+  // (expiry warnings, reminders) run inside loops that must carry on.
+  if (typeof recipientEmail !== 'string' || !recipientEmail.trim()) {
+    logger.warn(`Email not queued: ${emailType} has no recipient`, { eventId });
+    return false;
+  }
   try {
     // Add eventId to emailData for language detection
     emailData.eventId = eventId;
@@ -1585,6 +1593,7 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
         snappedFrom ? `, floored from ${snappedFrom.toISOString()}` : ''
       })` : ''
     }`);
+    return true;
   } catch (error) {
     logger.error('Error queueing email:', error);
     throw error;

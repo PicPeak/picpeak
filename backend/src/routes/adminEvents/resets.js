@@ -137,7 +137,14 @@ module.exports = (router) => {
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
-    
+
+      // The email is optional at creation and can be cleared later (issue
+      // 1733), so there may be nobody to send to. Say so instead of
+      // answering "queued" for a row the processor could never deliver.
+      if (!(event.customer_email || event.host_email)) {
+        return res.status(400).json({ error: 'The event has no customer email to send to' });
+      }
+
       // The email processor will determine the language based on:
       // 1. Event language setting
       // 2. App settings general_default_language  
