@@ -353,6 +353,8 @@ async function createStorno(originalId, adminId, trx = db) {
     cancellation_storno_id: stornoId,
     updated_at: now,
   }, { actor: adminId, source: 'invoice.storno.cancelOriginal' });
+  // Cancelled: no outstanding payment-check link may act on it any more.
+  await require('./payments').revokePendingPaymentCheckTokens(trx, originalId, now.toISOString(), 'revoked');
   // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
   await releaseRebillsForCancelledInvoice(trx, originalId, adminId);
 
