@@ -192,8 +192,9 @@ function validateExternalUrl(urlString) {
  * HTTP clients for admin-configured URLs (webhook delivery, the email webhook
  * transport) must use the returned addresses from validateExternalUrlAsync
  * with pinnedRequestOptions; a separate preflight alone cannot stop rebinding.
- * The analytics proxy uses a preflight. Tracker adapters and OIDC use
- * integrationHttp to validate addresses at connection time.
+ * Tracker adapters, OIDC and the analytics tracker proxy use integrationHttp
+ * to validate addresses at connection time (the proxy keeps isHostAllowed as
+ * a config-load preflight on top).
  *
  * @param {string} hostname
  * @returns {Promise<boolean>} true when safe to connect

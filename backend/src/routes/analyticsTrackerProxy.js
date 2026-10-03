@@ -31,11 +31,18 @@
  *   - scheme restricted to http/https; userinfo (`https://u:p@host`) dropped
  *     by rebuilding from `origin` + `pathname`;
  *   - a DNS-resolving private/internal-address check (`isHostAllowed`) in
- *     production, matching the `s3Storage` precedent — development keeps
- *     working against a localhost tracker;
+ *     production when the config is (re)loaded, matching the `s3Storage`
+ *     precedent — development keeps working against a localhost tracker;
+ *   - connection pinning on every outbound request: the socket goes through
+ *     `integrationHttp`, whose lookup validates every DNS answer at connect
+ *     time and hands only vetted addresses to the connector (no agent, no
+ *     socket reuse), so a host whose DNS flips to an internal address after
+ *     the preflight (rebinding) is refused rather than reached. Outside
+ *     production private answers are admitted for the dev tracker; the
+ *     metadata and link-local ranges never are;
  *   - a per-provider allowlist of the exact paths each tracker's script
  *     actually calls, so this is not an open relay to the tracker host;
- *   - `redirect: 'error'`, a request timeout, a request-body cap and a
+ *   - no redirect following, a request timeout, a request-body cap and a
  *     streamed response-body cap;
  *   - a fixed forwarded-header set (never cookies, Authorization or
  *     arbitrary client headers);
@@ -43,21 +50,15 @@
  *     cannot serve HTML/SVG through PicPeak's origin and get it rendered.
  *
  * The threat model is a TRUSTED admin and a possibly hostile tracker host or
- * visitor — not a hostile admin. Two consequences worth knowing:
- *   - the host check is resolve-then-fetch: the hostname is vetted when the
- *     config is (re)loaded and `fetch` resolves it again, so a host whose DNS
- *     is flipped between the two (rebinding) could reach an internal address
- *     for up to CONFIG_TTL_MS. Only the admin can set that hostname, and the
- *     request is still confined to the allowlisted paths with no PicPeak
- *     credentials attached. Same posture as the S3/MinIO client.
- *   - the check runs in production only, so a development install can point
- *     at a tracker on localhost.
+ * visitor — not a hostile admin. The request is confined to the allowlisted
+ * paths with no PicPeak credentials attached.
  */
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { getAppSetting } = require('../utils/appSettings');
 const { isHostAllowed } = require('../utils/networkValidation');
+const { integrationRelay } = require('../utils/integrationHttp');
 const { clientIpForAudit } = require('../utils/clientIp');
 const logger = require('../utils/logger');
 
@@ -191,31 +192,6 @@ async function resolveUpstream() {
   return value;
 }
 
-/**
- * Drain an upstream response body, aborting once it exceeds `max` bytes so a
- * hostile or broken tracker can't stream us out of memory.
- */
-async function readBounded(response, max) {
-  const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > max) return null;
-
-  if (!response.body) return Buffer.alloc(0);
-  const chunks = [];
-  let total = 0;
-  const reader = response.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    if (total > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks);
-}
-
 function safeContentType(raw) {
   const base = String(raw || '').split(';')[0].trim().toLowerCase();
   return SAFE_CONTENT_TYPES.has(base)
@@ -270,23 +246,22 @@ router.all('*', async (req, res) => {
 
   let buffer;
   try {
-    const response = await fetch(`${upstream.base}${upstream.spec.prefix}${path}`, {
+    // integrationRelay pins the socket to DNS answers vetted at connect time
+    // (see SECURITY MODEL), never follows a redirect — an upstream 30x would
+    // move the request (and the visitor's forwarded IP) to a host that never
+    // passed the checks above — and drains the body under MAX_RESPONSE_BYTES
+    // so a hostile or broken tracker can't stream us out of memory.
+    const response = await integrationRelay(`${upstream.base}${upstream.spec.prefix}${path}`, {
       method: req.method,
       headers,
       body,
-      // Never follow a redirect: an upstream 30x would move the request (and
-      // the visitor's forwarded IP) to a host that never passed the checks
-      // above.
-      redirect: 'error',
       signal: controller.signal,
+      maxBytes: MAX_RESPONSE_BYTES,
+      allowPrivate: process.env.NODE_ENV !== 'production',
     });
-    buffer = await readBounded(response, MAX_RESPONSE_BYTES);
-    if (buffer === null) {
-      logger.warn('Analytics tracker proxy: upstream response exceeds the size cap', { path });
-      return res.sendStatus(502);
-    }
+    buffer = response.body;
     res.status(response.status);
-    res.setHeader('Content-Type', safeContentType(response.headers.get('content-type')));
+    res.setHeader('Content-Type', safeContentType(response.headers['content-type']));
   } catch (err) {
     logger.debug('Analytics tracker proxy: upstream request failed', {
       path,
