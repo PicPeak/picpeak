@@ -259,23 +259,25 @@ export const CustomerLoginPage: React.FC = () => {
           </form>
         </Card>
 
-        {/* Footer — mirrors AdminLoginPage. Support email links to
-            mailto: with the address from Branding settings; falls back
-            to a placeholder so the link is never broken. The
-            "admin hint" line that used to live here is gone — admins
-            who land here on purpose can navigate to /admin/login on
-            their own. */}
+        {/* Footer — mirrors AdminLoginPage. The support line only
+            renders once Branding has a support email (publicSettings
+            returns '' until then); a placeholder address would send
+            visitors nowhere. The "admin hint" line that used to live
+            here is gone — admins who land here on purpose can navigate
+            to /admin/login on their own. */}
         <div className="text-center mt-8">
-          <p className="text-sm" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>
-            {t('customer.login.needHelp', 'Need help?')}{' '}
-            <a
-              href={`mailto:${settingsData?.branding_support_email || 'support@example.com'}`}
-              className="hover:underline"
-              style={{ color: 'var(--color-primary, #5C8762)' }}
-            >
-              {settingsData?.branding_support_email || 'support@example.com'}
-            </a>
-          </p>
+          {settingsData?.branding_support_email && (
+            <p className="text-sm" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>
+              {t('customer.login.needHelp', 'Need help?')}{' '}
+              <a
+                href={`mailto:${settingsData.branding_support_email}`}
+                className="hover:underline"
+                style={{ color: 'var(--color-primary, #5C8762)' }}
+              >
+                {settingsData.branding_support_email}
+              </a>
+            </p>
+          )}
           <PoweredBy className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }} />
         </div>
       </div>
