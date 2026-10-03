@@ -5606,6 +5606,7 @@
     "ratingError": "Failed to submit rating",
     "rateStar_one": "Rate {{count}} stars",
     "rateStar_other": "Rate {{count}} stars",
+    "removeRating": "Remove rating",
     "ratingsCount_one": "{{count}} ratings",
     "ratingsCount_other": "{{count}} ratings",
     "likeError": "Failed to update like",

@@ -5551,6 +5551,7 @@
     "ratingError": "Bewertung konnte nicht abgegeben werden",
     "rateStar_one": "{{count}} Stern bewerten",
     "rateStar_other": "{{count}} Sterne bewerten",
+    "removeRating": "Bewertung entfernen",
     "ratingsCount_one": "{{count}} Bewertungen",
     "ratingsCount_other": "{{count}} Bewertungen",
     "likeError": "Like konnte nicht aktualisiert werden",

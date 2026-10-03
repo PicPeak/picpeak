@@ -2844,6 +2844,7 @@
     "rateStar_many": "Оценить {{count}} звёзд",
     "rateStar_one": "Оценить {{count}} звезду",
     "rateStar_other": "Оценить {{count}} звёзд",
+    "removeRating": "Убрать оценку",
     "ratingsCount_few": "{{count}} оценки",
     "ratingsCount_many": "{{count}} оценок",
     "ratingsCount_one": "{{count}} оценка",

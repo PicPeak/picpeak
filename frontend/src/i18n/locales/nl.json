@@ -2784,6 +2784,7 @@
     "ratingError": "Indienen beoordeling mislukt",
     "rateStar_one": "{{count}} ster beoordelen",
     "rateStar_other": "{{count}} sterren beoordelen",
+    "removeRating": "Beoordeling verwijderen",
     "ratingsCount_one": "{{count}} beoordeling",
     "ratingsCount_other": "{{count}} beoordelingen",
     "likeError": "Bijwerken like mislukt",

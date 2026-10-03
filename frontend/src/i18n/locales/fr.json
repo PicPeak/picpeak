@@ -2817,6 +2817,7 @@
     "ratingError": "Échec de l'envoi de la note",
     "rateStar_one": "Noter {{count}} étoile",
     "rateStar_other": "Noter {{count}} étoiles",
+    "removeRating": "Retirer la note",
     "ratingsCount_one": "{{count}} note",
     "ratingsCount_other": "{{count}} notes",
     "likeError": "Échec de la mise à jour du j'aime",

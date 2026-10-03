@@ -6,6 +6,7 @@ import { thumbnailUrlForTile } from './imageTiers';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
 import { ColorLabelBadge } from './ColorLabelBadge';
+import { TileRating } from './TileRating';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
@@ -371,6 +372,25 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       </button>
     ) : null;
 
+  // Star rating on the tile (issue 1733, A3a). Its own row under the action
+  // buttons rather than in them: five stars beside three or four round
+  // buttons overflow a two-column phone tile, and the corners are already
+  // taken (badge, checkbox, indicators, video chip). Absolute inside the
+  // overlay, so it reveals and hides with it and inherits its hit-testing.
+  const ratingRow =
+    showFeedbackActions && feedbackOptions?.allowRatings && slug ? (
+      <div className="absolute inset-x-0 top-1/2 mt-6 flex justify-center">
+        <TileRating
+          photo={photo}
+          slug={slug}
+          variant={actionVariant}
+          requireNameEmail={feedbackOptions.requireNameEmail}
+          savedIdentity={savedIdentityValue}
+          onDone={hideOverlay}
+        />
+      </div>
+    ) : null;
+
   // Responsive grid tier (#1095). Applied here rather than in each layout
   // because six of the seven funnel their tile through this one image; the
   // seventh, Carousel, renders 80px filmstrip thumbs that the canonical 300
@@ -452,6 +472,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
                     {likeButton}
                   </>
                 )}
+                {ratingRow}
               </>
             )}
           </div>

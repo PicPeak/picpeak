@@ -368,6 +368,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Load my feedback for the current photo
   useEffect(() => {
     let mounted = true;
+    // Seed from the list payload (issue 1733): a rating given on the tile is
+    // already in the gallery-photos cache, so the stars are right before the
+    // per-photo fetch below confirms them instead of flashing empty.
+    setMyRating(currentPhoto?.my_rating ?? 0);
     (async () => {
       try {
         if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;

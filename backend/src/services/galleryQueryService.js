@@ -158,6 +158,31 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     likedRows.forEach(row => likedPhotoIds.add(row.photo_id));
   }
 
+  // Per-viewer star rating (issue 1733, A3a), same identity resolution and
+  // the same hidden-row rule as the likes above. The tile renders a rating
+  // control from this, so it has to know the viewer's own stars without
+  // opening the lightbox. Only read when ratings are switched on for the
+  // event — the control is not rendered otherwise, so there is nothing to
+  // seed. Not gated on showFeedbackToGuests: it is the viewer's own
+  // selection, like is_liked and my_color_label.
+  const ratingsOn = parseBooleanInput(feedbackSettings.feedback_enabled, false)
+    && parseBooleanInput(feedbackSettings.allow_ratings, false);
+  const myRatingByPhoto = {};
+  if (photos.length > 0 && ratingsOn) {
+    const ratingQuery = db('photo_feedback')
+      .where({ event_id: event.id, feedback_type: 'rating', is_hidden: formatBoolean(false) })
+      .whereIn('photo_id', photos.map(p => p.id));
+    if (identity.guestId) {
+      ratingQuery.where('guest_id', identity.guestId);
+    } else {
+      ratingQuery.where('guest_identifier', identity.guestIdentifier);
+    }
+    const ratingRows = await ratingQuery.select('photo_id', 'rating');
+    ratingRows.forEach(row => {
+      if (row.rating) myRatingByPhoto[row.photo_id] = Number(row.rating);
+    });
+  }
+
   // Per-viewer colour label (#1044), same identity resolution as the likes
   // above. NOT gated on showFeedbackToGuests: a guest's own label is their
   // own selection, not shared aggregate data, and hiding it would blank the
@@ -578,6 +603,9 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Survives show_feedback_to_guests being off (#1286): the viewer's
         // own heart is theirs, and the like_count beside it stays hidden.
         is_liked: likedPhotoIds.has(photo.id),
+        // The viewer's own star rating (issue 1733), 1-5 or null. Null
+        // whenever ratings are off for the event, not just when unrated.
+        my_rating: myRatingByPhoto[photo.id] || null,
         favorite_count: showFeedbackToGuests ? (photo.favorite_count || 0) : 0,
         // Colour labels (#1044). The COUNT is aggregate data and follows
         // show_feedback_to_guests like its siblings; the viewer's OWN label
