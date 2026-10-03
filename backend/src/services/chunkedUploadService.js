@@ -1,5 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
+const { pipeline } = require('stream/promises');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 
@@ -12,6 +14,10 @@ const activeUploads = new Map();
 
 // Chunk size: 10MB
 const CHUNK_SIZE = 10 * 1024 * 1024;
+
+// The most chunks a single upload may announce: the 10 GB hard ceiling on the
+// per-file cap (uploadSettings.MAX_ALLOWED_FILE_SIZE_MB) in CHUNK_SIZE pieces.
+const MAX_EXPECTED_CHUNKS = Math.ceil((10 * 1024 * 1024 * 1024) / CHUNK_SIZE);
 
 // Upload expiration: 24 hours
 const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
@@ -109,15 +115,30 @@ async function initializeUpload(options) {
     throw new Error('Invalid filename');
   }
 
+  // The chunk geometry is fixed by the declared size: every chunk but the
+  // last is exactly CHUNK_SIZE and the last is the remainder, so totalChunks
+  // has to be ceil(fileSize / CHUNK_SIZE). It used to be taken from the
+  // client as given — `totalChunks: 1` for any fileSize — which let one chunk
+  // carry the whole per-file allowance and made the merge below read it into
+  // memory in one piece.
+  const size = Number(fileSize);
+  if (!Number.isInteger(size) || size <= 0) {
+    throw invalidChunkError('fileSize must be a positive integer');
+  }
+  const expectedChunks = Math.ceil(size / CHUNK_SIZE);
+  if (expectedChunks > MAX_EXPECTED_CHUNKS) {
+    throw invalidChunkError(`fileSize exceeds the ${MAX_EXPECTED_CHUNKS} chunk limit`);
+  }
+  if (totalChunks !== undefined && totalChunks !== null && Number(totalChunks) !== expectedChunks) {
+    throw invalidChunkError(`totalChunks must be ${expectedChunks} for a ${size} byte file in ${CHUNK_SIZE} byte chunks`);
+  }
+
   // Generate unique upload ID
   const uploadId = crypto.randomUUID();
 
   // Create chunks directory for this upload
   const uploadDir = path.join(getChunksPath(), uploadId);
   await fs.mkdir(uploadDir, { recursive: true });
-
-  // Calculate expected chunks
-  const expectedChunks = totalChunks || Math.ceil(fileSize / CHUNK_SIZE);
 
   // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
   // client-declared fileSize the init route checks: a client can declare
@@ -130,7 +151,7 @@ async function initializeUpload(options) {
   const uploadMeta = {
     uploadId,
     filename: safeFilename,
-    fileSize,
+    fileSize: size,
     mimeType,
     eventId,
     // Who started it; see findOwnedUpload.
@@ -151,7 +172,7 @@ async function initializeUpload(options) {
   logger.info('Initialized chunked upload', {
     uploadId,
     filename: safeFilename,
-    fileSize,
+    fileSize: size,
     expectedChunks,
     eventId
   });
@@ -164,6 +185,12 @@ async function initializeUpload(options) {
   };
 }
 
+/** The exact number of bytes chunk `chunkIndex` of this upload must carry. */
+function chunkBytesFor(uploadMeta, chunkIndex) {
+  if (chunkIndex < uploadMeta.expectedChunks - 1) return CHUNK_SIZE;
+  return uploadMeta.fileSize - (uploadMeta.expectedChunks - 1) * CHUNK_SIZE;
+}
+
 /**
  * Stream `source` into `partPath`, refusing to write more than `allowance`
  * bytes (#1403). The cap is the backstop for a request that lies about its
@@ -172,7 +199,6 @@ async function initializeUpload(options) {
  * body costs the allowance rather than its own size.
  */
 function writeChunkStream(source, partPath, allowance) {
-  const fsSync = require('fs');
   return new Promise((resolve, reject) => {
     // A client that hung up while auth and ownership were awaiting the database
     // hands us an already-dead stream. pipe() would then emit neither `end` nor
@@ -284,6 +310,19 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
     throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
   }
 
+  // The chunk's size is fixed by its index (see initializeUpload): CHUNK_SIZE
+  // for every chunk but the last, the remainder for the last. Anything else is
+  // a client that is not speaking the protocol, and is refused before the body
+  // is read when it announces itself, or as soon as it overshoots when it
+  // doesn't. Unlike the cap this does not abort the upload: the client can
+  // re-send the chunk at the right size.
+  const expectedBytes = chunkBytesFor(uploadMeta, chunkIndex);
+  const wrongSizeError = () => invalidChunkError(`Chunk ${chunkIndex} must be ${expectedBytes} bytes`);
+
+  if (Number.isFinite(declaredBytes) && declaredBytes !== expectedBytes) {
+    throw wrongSizeError();
+  }
+
   const chunkPath = path.join(uploadMeta.uploadDir, `chunk_${String(chunkIndex).padStart(6, '0')}`);
   let chunkLength;
 
@@ -291,6 +330,9 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
     if (bankedBytes + source.length > uploadMeta.maxFileSizeBytes) {
       await abortUpload(uploadId);
       throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
+    }
+    if (source.length !== expectedBytes) {
+      throw wrongSizeError();
     }
     await fs.writeFile(chunkPath, source);
     chunkLength = source.length;
@@ -305,7 +347,13 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
     // first would publish bytes the other had already truncated.
     const partPath = `${chunkPath}.${crypto.randomBytes(6).toString('hex')}.part`;
     try {
-      chunkLength = await writeChunkStream(source, partPath, allowance);
+      // Read no further than the smaller of the two bounds; which one tripped
+      // decides the answer below.
+      chunkLength = await writeChunkStream(source, partPath, Math.min(allowance, expectedBytes));
+      if (chunkLength !== expectedBytes) {
+        await fs.rm(partPath, { force: true }).catch(() => {});
+        throw wrongSizeError();
+      }
       // Re-check the aggregate before publishing. `allowance` was computed
       // before the body arrived, so a chunk that completed while this one was
       // still streaming is not counted in it — two overlapping 0.75MB chunks
@@ -328,6 +376,9 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
       });
     } catch (err) {
       if (err.overAllowance) {
+        // Past the chunk's own size but still inside the per-file allowance
+        // is a protocol error, not a cap violation.
+        if (expectedBytes < allowance) throw wrongSizeError();
         await abortUpload(uploadId);
         throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
       }
@@ -372,6 +423,15 @@ async function completeUpload(uploadId, { owner } = {}) {
     throw uploadStateError('Upload not found or expired', 404);
   }
 
+  // Only an in-progress upload can start merging, and the transition happens
+  // right here with nothing awaited in between, so of several concurrent
+  // completions exactly one merges and the rest are told the upload is
+  // already merging (or done, or failed). Without this each call merged its
+  // own full copy of the file.
+  if (uploadMeta.status !== 'in_progress') {
+    throw uploadStateError(`Upload is ${uploadMeta.status}`, 409);
+  }
+
   // Verify all chunks received
   if (uploadMeta.receivedChunks.size !== uploadMeta.expectedChunks) {
     throw uploadStateError(
@@ -385,40 +445,29 @@ async function completeUpload(uploadId, { owner } = {}) {
   await fs.mkdir(tempDir, { recursive: true });
 
   const mergedFilePath = path.join(tempDir, uploadMeta.filename);
-  const writeStream = require('fs').createWriteStream(mergedFilePath);
 
   try {
-    // Merge chunks in order
+    // Merge chunks in order, each streamed onto the end of the merged file.
+    // readFile() held a whole chunk on the heap at a time, which was the whole
+    // file when the client announced a single chunk.
     for (let i = 0; i < uploadMeta.expectedChunks; i++) {
       const chunkPath = path.join(uploadMeta.uploadDir, `chunk_${String(i).padStart(6, '0')}`);
-      const chunkData = await fs.readFile(chunkPath);
-
-      await new Promise((resolve, reject) => {
-        writeStream.write(chunkData, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await pipeline(
+        fsSync.createReadStream(chunkPath),
+        fsSync.createWriteStream(mergedFilePath, { flags: 'a' })
+      );
     }
 
-    await new Promise((resolve) => writeStream.end(resolve));
-
-    // Verify file size
+    // The merged file has to be the file that was declared. The chunk
+    // geometry makes this hold for any client that got here; it is the
+    // backstop for one that did not.
     const stats = await fs.stat(mergedFilePath);
-    if (stats.size !== uploadMeta.fileSize) {
-      logger.warn('Merged file size mismatch', {
-        expected: uploadMeta.fileSize,
-        actual: stats.size
-      });
-    }
-
-    // Backstop for the per-chunk running total above: the merged file is
-    // the number that matters, so it is the number that is checked last.
-    if (stats.size > uploadMeta.maxFileSizeBytes) {
+    if (stats.size !== uploadMeta.fileSize || stats.size > uploadMeta.maxFileSizeBytes) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       await fs.rm(uploadMeta.uploadDir, { recursive: true, force: true }).catch(() => {});
       activeUploads.delete(uploadId);
-      throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
+      if (stats.size > uploadMeta.maxFileSizeBytes) throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
+      throw invalidChunkError(`Merged file is ${stats.size} bytes, ${uploadMeta.fileSize} were declared`);
     }
 
     // Clean up chunks
@@ -443,7 +492,6 @@ async function completeUpload(uploadId, { owner } = {}) {
       tempDir
     };
   } catch (error) {
-    writeStream.destroy();
     uploadMeta.status = 'failed';
     throw error;
   }

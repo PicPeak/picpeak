@@ -1846,6 +1846,11 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
 
     res.json(result);
   } catch (error) {
+    // A declared size and chunk count that do not fit together is the
+    // client's mistake, and carries its own status.
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     errorResponse(res, error, 500, 'Failed to initialize upload');
   }
 });
