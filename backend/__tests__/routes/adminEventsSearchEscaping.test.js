@@ -25,7 +25,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const request = require('supertest');
 const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
-const { escapeLikePattern } = require('../../src/utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape } = require('../../src/utils/sqlSecurity');
 
 async function insertEvent(db, adminId, eventName) {
   const rand = Math.random().toString(16).slice(2);
@@ -58,6 +58,7 @@ describe('GET /api/admin/events search — LIKE metacharacters and quotes', () =
     'Summer 100X Sale',
     'Gala_Night',
     'GalaXNight',
+    'Olivia & Tom',
   ];
 
   const search = async (term) => {
@@ -105,6 +106,27 @@ describe('GET /api/admin/events search — LIKE metacharacters and quotes', () =
 
   it('still does substring matching for ordinary terms', async () => {
     expect(await search('Summer')).toEqual(['Summer 100% Sale', 'Summer 100X Sale']);
+  });
+
+  it('ignores case, so a lower-case term finds a capitalised name', async () => {
+    expect(await search('olivia')).toEqual(['Olivia & Tom']);
+    expect(await search('OLIVIA')).toEqual(['Olivia & Tom']);
+  });
+
+  // SQLite's LIKE already ignores ASCII case; Postgres' LIKE does not, so the
+  // fragment has to switch to ILIKE there or "olivia" misses "Olivia" after a
+  // move to Postgres. isPostgreSQL() reads DATABASE_CLIENT at call time.
+  it('emits LIKE on SQLite and ILIKE on Postgres, keeping the ESCAPE clause on both', () => {
+    const previous = process.env.DATABASE_CLIENT;
+    try {
+      process.env.DATABASE_CLIENT = 'sqlite3';
+      expect(likeWithEscape('event_name')).toBe('event_name LIKE ? ESCAPE \'\\\'');
+      process.env.DATABASE_CLIENT = 'pg';
+      expect(likeWithEscape('events.event_name')).toBe('events.event_name ILIKE ? ESCAPE \'\\\'');
+    } finally {
+      if (previous === undefined) delete process.env.DATABASE_CLIENT;
+      else process.env.DATABASE_CLIENT = previous;
+    }
   });
 
   it('escapes only the LIKE metacharacters, leaving quotes untouched', () => {

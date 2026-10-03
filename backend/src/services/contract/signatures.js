@@ -1099,12 +1099,14 @@ async function getAuditTrail(contractId) {
   // Push the metadata.contractId filter into SQL instead of fetching
   // every contract_* row and filtering in JS. The previous shape
   // scanned the entire history every time the detail page loaded —
-  // O(rows-since-CRM-launch) per request. Both Postgres and SQLite
-  // store metadata as a JSON-encoded string here, so we match on
-  // a literal substring that covers either compact or whitespaced
-  // JSON encodings — `"contractId":<n>` or `"contractId": <n>` —
-  // bounded by the activity_type prefix so the search hits the
-  // contract_* slice of the index.
+  // O(rows-since-CRM-launch) per request. logActivity writes metadata
+  // as a JSON-encoded string, so we match on a literal substring that
+  // covers either compact or whitespaced JSON encodings —
+  // `"contractId":<n>` or `"contractId": <n>` — bounded by the
+  // activity_type prefix so the search hits the contract_* slice of
+  // the index. The column is `json` on Postgres, which has no LIKE
+  // operator, hence the CAST to TEXT (a no-op on SQLite's TEXT
+  // affinity); migration 216 matches the same column the same way.
   //
   // The substring patterns intentionally don't anchor on word
   // boundaries; activity_logs.metadata never contains a contractId
@@ -1115,8 +1117,8 @@ async function getAuditTrail(contractId) {
   const rows = await db('activity_logs')
     .where('activity_type', 'like', 'contract_%')
     .andWhere(function () {
-      this.where('metadata', 'like', `%"contractId":${id}%`)
-        .orWhere('metadata', 'like', `%"contractId": ${id}%`);
+      this.whereRaw('CAST(metadata AS TEXT) LIKE ?', [`%"contractId":${id}%`])
+        .orWhereRaw('CAST(metadata AS TEXT) LIKE ?', [`%"contractId": ${id}%`]);
     })
     .orderBy('created_at', 'asc')
     .select('id', 'activity_type', 'actor_type', 'actor_id', 'actor_name', 'metadata', 'created_at');

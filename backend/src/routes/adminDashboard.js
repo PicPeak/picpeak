@@ -402,11 +402,13 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       if (dateObj) dateObj.uniqueVisitors = Number(row.count) || 0;
     });
 
-    // Get top galleries by views with additional metrics
+    // Get top galleries by views with additional metrics. The camelCase
+    // alias is quoted because Postgres folds an unquoted identifier to
+    // lower case, and the frontend reads `uniqueVisitors`, not `uniquevisitors`.
     const topGalleries = await applyEventScope(db('access_logs'), req.admin, 'access_logs.event_id')
       .select('events.id', 'events.event_name', 'events.slug')
       .select(db.raw('COUNT(CASE WHEN action = \'view\' THEN 1 END) as views'))
-      .select(db.raw('COUNT(DISTINCT CASE WHEN action = \'view\' THEN ip_address END) as uniqueVisitors'))
+      .select(db.raw('COUNT(DISTINCT CASE WHEN action = \'view\' THEN ip_address END) as "uniqueVisitors"'))
       .select(db.raw('COUNT(CASE WHEN action IN (\'download\', \'download_all\', \'download_all_presigned\', \'download_selected\') THEN 1 END) as downloads'))
       .join('events', 'access_logs.event_id', 'events.id')
       .where('access_logs.timestamp', '>=', startDateStr)

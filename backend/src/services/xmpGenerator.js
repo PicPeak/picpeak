@@ -89,16 +89,19 @@ class XmpGenerator {
 
   /**
    * The pre-#1044 mapping: infer a colour from the average star rating.
-   * @param {number} avgRating - Average rating
+   * @param {number|string} avgRating - Average rating (a decimal string on Postgres)
    * @returns {string|null} XMP label color
    */
   mapRatingToLabel(avgRating) {
-    if (!avgRating || avgRating === 0) return null;
-    if (avgRating >= 4.5) return 'Red';      // Top picks
-    if (avgRating >= 3.5) return 'Yellow';   // Good
-    if (avgRating >= 2.5) return 'Green';    // Average
-    if (avgRating >= 1.5) return 'Blue';     // Below average
-    return 'Purple';                          // Low
+    // Postgres returns the decimal average as a string, and "0.00" is
+    // truthy — without the coercion every unrated photo got a label.
+    const value = parseFloat(avgRating);
+    if (!value || Number.isNaN(value)) return null;
+    if (value >= 4.5) return 'Red';      // Top picks
+    if (value >= 3.5) return 'Yellow';   // Good
+    if (value >= 2.5) return 'Green';    // Average
+    if (value >= 1.5) return 'Blue';     // Below average
+    return 'Purple';                      // Low
   }
 
   /**
