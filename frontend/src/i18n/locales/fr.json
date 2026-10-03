@@ -132,6 +132,7 @@
     "noCategory": "Aucune catégorie",
     "eventSpecific": "(Spécifique à l'événement)",
     "clickToUpload": "Cliquez pour téléverser ou glissez-déposez",
+    "clickToUploadOrDropFolder": "Cliquez pour téléverser ou glissez-déposez des fichiers ou un dossier",
     "takePhoto": "Prendre une photo",
     "fileRequirements": "{{formats}} (max {{sizeLimit}} Mo par fichier, {{limit}} fichiers par téléversement)",
     "selectedFiles": "Fichiers sélectionnés",

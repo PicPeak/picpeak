@@ -9,6 +9,7 @@ import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
 import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 import { useUploadSession } from '../../contexts/UploadSessionContext';
+import { collectDroppedFiles } from '../../utils/droppedFiles';
 
 interface PhotoUploadProps {
   eventId: number;
@@ -149,8 +150,9 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    addFiles(files);
+    // Dropped folders are walked recursively (issue 1733, C1); the result
+    // goes through the same filter and per-upload cap as picked files.
+    void collectDroppedFiles(e.dataTransfer).then(addFiles);
   };
 
   const removeFile = (index: number) => {
@@ -263,7 +265,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
       >
         <Upload className="w-12 h-12 mx-auto text-faint mb-4" />
         <p className="text-body font-medium mb-1">
-          {t('upload.clickToUpload')}
+          {t('upload.clickToUploadOrDropFolder')}
         </p>
         <p className="text-sm text-muted">
           {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
