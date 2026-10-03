@@ -628,8 +628,10 @@ export const EventDetailsPage: React.FC = () => {
     if (editForm.customer_name !== undefined && editForm.customer_name !== null) {
       updateData.customer_name = editForm.customer_name;
     }
-    if (editForm.customer_email !== undefined && editForm.customer_email !== null && editForm.customer_email.trim()) {
-      updateData.customer_email = editForm.customer_email;
+    if (editForm.customer_email !== undefined && editForm.customer_email !== null) {
+      // Empty as null so an admin can clear the address (issue 1733); the
+      // backend refuses the clear where Settings require the field.
+      updateData.customer_email = editForm.customer_email.trim() || null;
     }
     if (editForm.customer_phone !== undefined) {
       // Send empty string as null so an admin can clear the field. Backend

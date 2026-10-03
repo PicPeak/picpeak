@@ -32,7 +32,7 @@ const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCr
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
-const { validateHeroImageAnchor, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
+const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 /**
  * `events.slug` is UNIQUE, and both routes that mint one do a read-then-insert
@@ -1042,7 +1042,9 @@ module.exports = (router) => {
     body('event_reminder_body_override').optional({ nullable: true, checkFalsy: true })
       .isString().isLength({ max: 10_000 }),
     body('customer_name').optional({ nullable: true, checkFalsy: true }).trim(),
-    body('customer_email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+    // '' / null skip the format check and reach the handler, which clears
+    // the address (issue 1733).
+    body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
     body('customer_phone').optional({ nullable: true, checkFalsy: true })
       .isString().trim()
       .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
@@ -1219,32 +1221,44 @@ module.exports = (router) => {
         return res.status(400).json({ error: 'host_name and host_email are no longer supported. Use customer_name and customer_email instead.' });
       }
 
-      if (Object.prototype.hasOwnProperty.call(updates, 'customer_name')) {
-        const nextName = getCustomerNameFromPayload(updates);
-        if (nextName) {
-          if (customerColumnsAvailable) {
-            updates.customer_name = nextName;
-          } else {
-            delete updates.customer_name;
-          }
-          updates.host_name = nextName;
-        } else {
-          delete updates.customer_name;
+      // An empty name or email clears the field (issue 1733) — it used to be
+      // dropped from the update, so the stored value survived a save that
+      // reported success. Clearing is refused where Settings require the
+      // field, with the same error shape the create path answers.
+      const clearedFieldErrors = [];
+      const hasNameUpdate = Object.prototype.hasOwnProperty.call(updates, 'customer_name');
+      const hasEmailUpdate = Object.prototype.hasOwnProperty.call(updates, 'customer_email');
+      const nextName = hasNameUpdate ? getCustomerNameFromPayload(updates) : undefined;
+      const nextEmail = hasEmailUpdate ? getCustomerEmailFromPayload(updates) : undefined;
+      if ((hasNameUpdate && !nextName) || (hasEmailUpdate && !nextEmail)) {
+        const fieldRequirements = await getEventFieldRequirements();
+        if (hasNameUpdate && !nextName && fieldRequirements.require_customer_name) {
+          clearedFieldErrors.push({ path: 'customer_name', msg: 'Customer name is required' });
+        }
+        if (hasEmailUpdate && !nextEmail && fieldRequirements.require_customer_email) {
+          clearedFieldErrors.push({ path: 'customer_email', msg: 'Customer email is required' });
+        }
+        if (clearedFieldErrors.length > 0) {
+          return res.status(400).json({ errors: clearedFieldErrors });
         }
       }
 
-      if (Object.prototype.hasOwnProperty.call(updates, 'customer_email')) {
-        const nextEmail = getCustomerEmailFromPayload(updates);
-        if (nextEmail) {
-          if (customerColumnsAvailable) {
-            updates.customer_email = nextEmail;
-          } else {
-            delete updates.customer_email;
-          }
-          updates.host_email = nextEmail;
+      if (hasNameUpdate) {
+        if (customerColumnsAvailable) {
+          updates.customer_name = nextName || null;
+        } else {
+          delete updates.customer_name;
+        }
+        updates.host_name = nextName || null;
+      }
+
+      if (hasEmailUpdate) {
+        if (customerColumnsAvailable) {
+          updates.customer_email = nextEmail || null;
         } else {
           delete updates.customer_email;
         }
+        updates.host_email = nextEmail || null;
       }
 
       // Phone is gated on the global toggle (#322). Strip from the update

@@ -285,27 +285,33 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           >
             {t('events.resetGalleryPassword')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<Mail className="w-4 h-4" />}
-            onClick={async () => {
-              try {
-                await eventsService.resendCreationEmail(event.id);
-                // #1262 — "queued" was being read as "delivered". Queueing only
-                // writes an email_queue row; say where to look when it doesn't
-                // turn up, because a queue nobody is working raises no failure.
-                toast.success(`${t('events.creationEmailResent')} ${t('events.emailQueuedHint', 'The queue processor sends it — check System health if it does not arrive.')}`);
-              } catch {
-                toast.error(t('events.failedToResendEmail'));
-              }
-            }}
-            className="w-full justify-center"
-          >
-            {t('events.resendCreationEmail')}
-          </Button>
-          {passwordRecoverable && hasSecret && (
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">{t('events.resendWithStoredPasswordHint')}</p>
+          {/* No customer email (optional at creation, clearable since issue
+              1733) means nobody to resend to; the server would answer 400. */}
+          {event.customer_email && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Mail className="w-4 h-4" />}
+                onClick={async () => {
+                  try {
+                    await eventsService.resendCreationEmail(event.id);
+                    // #1262 — "queued" was being read as "delivered". Queueing only
+                    // writes an email_queue row; say where to look when it doesn't
+                    // turn up, because a queue nobody is working raises no failure.
+                    toast.success(`${t('events.creationEmailResent')} ${t('events.emailQueuedHint', 'The queue processor sends it — check System health if it does not arrive.')}`);
+                  } catch {
+                    toast.error(t('events.failedToResendEmail'));
+                  }
+                }}
+                className="w-full justify-center"
+              >
+                {t('events.resendCreationEmail')}
+              </Button>
+              {passwordRecoverable && hasSecret && (
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">{t('events.resendWithStoredPasswordHint')}</p>
+              )}
+            </>
           )}
         </div>
       )}
