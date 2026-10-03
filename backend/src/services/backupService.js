@@ -4,6 +4,8 @@ const fsSync = require('fs');
 const crypto = require('crypto');
 const childProcess = require('child_process');
 const os = require('os');
+const { Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 
 const cron = require('node-cron');
 const cronParser = require('cron-parser');
@@ -1646,6 +1648,39 @@ async function loadManifestFromAnywhere(manifestPath, config) {
   }
 }
 
+// A manifest stored in S3 is fetched into a temp dir for every status
+// request and read whole into memory by loadManifest(). Bound it: HeadObject
+// first, then a byte counter on the body, and remove whatever landed on
+// disk whether or not the download or the parse succeeded.
+const MAX_S3_MANIFEST_BYTES = 16 * 1024 * 1024;
+
+async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
+  const tempPath = path.join(tempDir, `manifest-${backupRunLabel}.json`);
+  try {
+    const head = await s3Client.getMetadata(key);
+    const contentLength = Number(head && head.ContentLength);
+    if (Number.isFinite(contentLength) && contentLength > MAX_S3_MANIFEST_BYTES) {
+      throw new Error(`Backup manifest is ${contentLength} bytes, above the ${MAX_S3_MANIFEST_BYTES}-byte limit`);
+    }
+    let seen = 0;
+    const limiter = new Transform({
+      transform(chunk, _enc, cb) {
+        seen += chunk.length;
+        if (seen > MAX_S3_MANIFEST_BYTES) {
+          return cb(new Error(`Backup manifest exceeds the ${MAX_S3_MANIFEST_BYTES}-byte limit`));
+        }
+        cb(null, chunk);
+      },
+    });
+    const body = await s3Client.downloadStream(key);
+    await pipeline(body, limiter, fsSync.createWriteStream(tempPath));
+    return await backupManifest.loadManifest(tempPath);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function getBackupManifest(backupRunId) {
   const run = await db('backup_runs')
     .where('id', backupRunId)
@@ -1688,8 +1723,6 @@ async function getBackupManifest(backupRunId) {
   }
 
   const [, bucket, key] = match;
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
-  const tempPath = path.join(tempDir, `manifest-${backupRunId}.json`);
 
   const s3Client = new S3StorageAdapter({
     bucket,
@@ -1704,10 +1737,7 @@ async function getBackupManifest(backupRunId) {
     ...backupS3Access(config)
   });
 
-  await s3Client.download(key, tempPath);
-  const manifest = await backupManifest.loadManifest(tempPath);
-  await fs.unlink(tempPath).catch(() => {});
-  await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId);
 
   return {
     manifest,
@@ -1733,9 +1763,6 @@ async function validateBackupManifest(manifestPath) {
         throw new Error('S3 credentials not configured for manifest validation');
       }
 
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
-      const tempPath = path.join(tempDir, `validate-${Date.now()}.json`);
-
       const s3Client = new S3StorageAdapter({
         bucket,
         region: config.backup_s3_region || 'us-east-1',
@@ -1747,10 +1774,7 @@ async function validateBackupManifest(manifestPath) {
         ...backupS3Access(config)
       });
 
-      await s3Client.download(key, tempPath);
-      manifest = await backupManifest.loadManifest(tempPath);
-      await fs.unlink(tempPath).catch(() => {});
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`);
     } else {
       manifest = await backupManifest.loadManifest(manifestPath);
     }
@@ -1776,6 +1800,8 @@ service.getBackupStatus = getBackupStatus;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;
+service.loadManifestFromS3Bounded = loadManifestFromS3Bounded;
+service.MAX_S3_MANIFEST_BYTES = MAX_S3_MANIFEST_BYTES;
 service.resolveBackupPaths = resolveBackupPaths;
 service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
 service.backupPathIncluded = backupPathIncluded;
