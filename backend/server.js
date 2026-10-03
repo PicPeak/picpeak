@@ -303,6 +303,13 @@ app.get(['/health', '/api/health'], async (req, res) => {
 
 // Initialize rate limiters (they will be created dynamically)
 
+// The stylesheet below is interpolated into a raw-text <style> element, where
+// the HTML parser ends the element at the first `</style` regardless of CSS
+// structure. Every segment — palette, base CSS, operator CSS — is settings
+// data, so the whole thing is escaped at the sink rather than trusting each
+// producer. `<` → `\3c ` is the same character to a CSS parser.
+const { escapeCssForStyleElement } = require('./src/utils/cssSanitizer');
+
 function composeInlineStyles(payload) {
   const { branding } = payload;
   const cssSegments = [];
@@ -326,7 +333,7 @@ function composeInlineStyles(payload) {
     cssSegments.push(`/* Custom styles */\n${payload.css}`);
   }
 
-  return cssSegments.join('\n\n');
+  return escapeCssForStyleElement(cssSegments.join('\n\n'));
 }
 
 function escapeHtml(str) {
