@@ -28,14 +28,23 @@ function assertAddress(address, allowPrivate) {
 /** Native HTTP options used by both trackers and every openid-client request.
  * Validate literals immediately; validate DNS inside the socket lookup itself,
  * passing only vetted answers to the connector (no second DNS lookup).
+ * openid-client calls this as its `http_options(url, options)` hook, so the
+ * public signature takes the URL only; `alwaysAllowPrivate` (the tracker proxy
+ * outside production) admits private/loopback/ULA answers for this one
+ * destination without an INTEGRATION_PRIVATE_ORIGINS entry — metadata,
+ * link-local and the other special ranges stay refused regardless.
  */
 function integrationRequestOptions(value) {
+  return buildRequestOptions(value, false);
+}
+
+function buildRequestOptions(value, alwaysAllowPrivate) {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
     throw new Error('Integration URL must use HTTP(S) without embedded credentials');
   }
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
-  const allowPrivate = privateOrigins().has(url.origin);
+  const allowPrivate = alwaysAllowPrivate || privateOrigins().has(url.origin);
   if (['metadata.google.internal', 'metadata.google'].includes(hostname.toLowerCase().replace(/\.$/, ''))) {
     throw new Error('Metadata destinations are not permitted');
   }
@@ -88,4 +97,41 @@ async function integrationFetch(value, options = {}) {
   });
 }
 
-module.exports = { integrationFetch, integrationRequestOptions };
+/** Raw bounded relay for the analytics tracker proxy: the same pinned lookup
+ * as integrationFetch, but with the caller's method, headers, body and
+ * AbortSignal, a configurable byte cap, and the upstream status, headers and
+ * body bytes returned untouched. Never follows redirects.
+ */
+async function integrationRelay(value, {
+  method = 'GET', headers = {}, body, signal, maxBytes = 1024 * 1024, allowPrivate = false,
+} = {}) {
+  const connection = buildRequestOptions(value, allowPrivate);
+  const url = new URL(value);
+  const requestHeaders = body ? { ...headers, 'content-length': String(body.length) } : headers;
+  return new Promise((resolve, reject) => {
+    const req = (url.protocol === 'https:' ? https : http).request(url, {
+      ...connection, method, headers: requestHeaders, signal,
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400) {
+        res.destroy(); reject(new Error('Integration redirects are not permitted')); return;
+      }
+      const declared = Number(res.headers['content-length']);
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        res.destroy(); reject(new Error(`Integration response exceeded ${maxBytes} bytes`)); return;
+      }
+      const parts = []; let bytes = 0;
+      res.on('data', part => {
+        bytes += part.length;
+        if (bytes > maxBytes) { res.destroy(new Error(`Integration response exceeded ${maxBytes} bytes`)); return; }
+        parts.push(part);
+      });
+      res.on('error', reject);
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(parts) }));
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+module.exports = { integrationFetch, integrationRequestOptions, integrationRelay };
