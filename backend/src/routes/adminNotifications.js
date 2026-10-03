@@ -103,14 +103,20 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 //
 // The frontend AdminHeader "Clear All" button hits this — its service
 // at `notifications.service.ts` does DELETE /admin/notifications/clear-all.
-// The previous /clear-old route was named for an "older than 30 days
-// and read" semantic but had a fallback that deleted EVERYTHING when
-// nothing matched the date filter, so it was effectively a confusingly
-// named Clear All anyway. Drop the rename and the branching, return
-// the simple deletedCount the existing test (and frontend toast) expect.
+//
+// activity_logs is not a notification inbox: the same rows are the contract
+// audit trail, the customer timelines and every other admin's actions, and
+// the bell has no per-admin state of its own beyond `read_at`. Clearing
+// therefore deletes nothing — it marks the caller's visible unread rows read,
+// which empties the bell without touching anyone's audit evidence.
+// `deletedCount` keeps its name for the frontend toast and carries the number
+// of rows dismissed.
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    const deletedCount = await db('activity_logs').delete();
+    const deletedCount = await scopeToVisibleEvents(db('activity_logs'), req.admin)
+      .whereNull('activity_logs.read_at')
+      .whereNotIn('activity_logs.activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
+      .update({ read_at: new Date().toISOString() });
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);
