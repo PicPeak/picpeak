@@ -3,6 +3,8 @@
  * Provides safe methods for handling user input in SQL queries
  */
 
+const { isPostgreSQL } = require('./dbCompat');
+
 /**
  * Validate and sanitize days parameter for date range queries
  * @param {any} days - The days parameter from user input
@@ -57,12 +59,17 @@ function escapeLikePattern(input) {
 }
 
 /**
- * Build a `LIKE ? ESCAPE '\'` comparison for a column.
+ * Build a case-insensitive `LIKE ? ESCAPE '\'` comparison for a column.
  *
  * The ESCAPE clause is load-bearing rather than decorative: Postgres treats a
  * backslash in a LIKE pattern as an escape character by default, SQLite has no
  * default escape character at all and would match the backslash literally. Naming
  * it makes escapeLikePattern()'s output mean the same thing on both engines.
+ *
+ * SQLite's LIKE ignores ASCII case; Postgres' LIKE does not, so it gets ILIKE
+ * or "olivia" would miss "Olivia" after a move to Postgres. Not LOWER() on both
+ * sides: SQLite's LOWER() is ASCII-only while JS toLowerCase() is not, so a
+ * search for "Ärger" would stop matching the event called "Ärger".
  *
  * `column` is interpolated into the SQL text, so callers must pass a literal
  * column name — never user input. The search term stays bound.
@@ -71,7 +78,8 @@ function escapeLikePattern(input) {
  * @returns {string} Raw SQL fragment with a single `?` binding placeholder
  */
 function likeWithEscape(column) {
-  return `${column} LIKE ? ESCAPE '\\'`;
+  const operator = isPostgreSQL() ? 'ILIKE' : 'LIKE';
+  return `${column} ${operator} ? ESCAPE '\\'`;
 }
 
 /**
