@@ -57,6 +57,11 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       // replica mid-pass. Say so rather than walking the tree a second time.
       return res.status(409).json({ error: error.message });
     }
+    if (error.code === 'PATH_OUTSIDE_BASE') {
+      // A folder that is a symlink out of EXTERNAL_MEDIA_ROOT: the caller's
+      // choice, not a server fault.
+      return res.status(400).json({ error: 'Invalid external media path' });
+    }
     logger.error('External media import failed', {
       eventId: req.params.id,
       externalPath: req.body?.external_path,

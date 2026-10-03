@@ -1,7 +1,7 @@
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
-const { safePathJoin } = require('../utils/fileSecurityUtils');
+const { safePathJoin, assertRealpathUnder, assertRealpathUnderSync } = require('../utils/fileSecurityUtils');
 
 let cachedRoot = null;
 
@@ -59,13 +59,17 @@ async function list(relativePath = '') {
   const root = getExternalMediaRoot();
   // Normalize and ensure safe join under root
   const targetDir = safePathJoin(root, relativePath || '.');
+  // The lexical check above does not follow symlinks; a link inside the root
+  // would otherwise list whatever it points at.
+  await assertRealpathUnder(root, targetDir);
 
   const entries = [];
   // Errors propagate to the caller to handle (e.g. invalid path).
   const dirents = await fs.readdir(targetDir, { withFileTypes: true });
   for (const d of dirents) {
-    // Skip hidden files and directories
-    if (d.name.startsWith('.')) continue;
+    // Skip hidden files and directories, and symlinks: a link is never
+    // listed, so it can never be chosen.
+    if (d.name.startsWith('.') || d.isSymbolicLink()) continue;
     const full = path.join(targetDir, d.name);
     const stat = await fs.stat(full).catch(() => null);
     if (!stat) continue;
@@ -121,7 +125,11 @@ function resolveExternalPath(event, relpath) {
  */
 function resolveExternalPhotoPath(photo) {
   const root = getExternalMediaRoot();
-  return safePathJoin(root, photo?.external_relpath || '');
+  const resolved = safePathJoin(root, photo?.external_relpath || '');
+  // Imports never follow a symlink (see externalImportService), but the row
+  // is read long after the import, and the tree can have changed under it.
+  assertRealpathUnderSync(root, resolved);
+  return resolved;
 }
 
 module.exports = {
