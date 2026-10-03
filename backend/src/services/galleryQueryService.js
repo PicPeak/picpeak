@@ -506,6 +506,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // Raw camera filename (or null for pre-migration-062 uploads).
         // The lightbox renders it when `use_original_filenames` is on.
         original_filename: photo.original_filename || null,
+        // The name the camera gave the file, written once at ingest and kept
+        // across a replace (migration 193) — what the admin export uses to
+        // find the master, so the guest filename list can use it too
+        // (issue 1733, A3d).
+        source_filename: photo.source_filename || null,
         url: photoUrl,
         // Videos are offered the thumbnail route even with no thumbnail_path
         // recorded yet (#1414). The route regenerates lazily, and for a video

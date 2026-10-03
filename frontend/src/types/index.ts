@@ -174,6 +174,9 @@ export interface Photo {
   // post migration 062. Null for legacy rows. Surfaced in the lightbox
   // when the admin toggles `use_original_filenames` on (#508).
   original_filename?: string | null;
+  // The camera name written once at ingest; survives a replace, unlike
+  // original_filename (migration 193). What the admin export matches on.
+  source_filename?: string | null;
   url: string;
   thumbnail_url?: string;
   hero_url?: string; // Hero-optimized image URL (1920x1080) for full-width hero sections
