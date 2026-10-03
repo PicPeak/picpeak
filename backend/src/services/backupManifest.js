@@ -6,6 +6,22 @@ const os = require('os');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 
+// Backup settings that are credentials. The manifest is readable by every
+// `backup.view` admin and travels with the backup, so these never go in —
+// the same set the GET /config endpoint in adminBackup.js masks (the SSH key
+// setting may hold a pasted private key instead of a path). Nothing in
+// restore reads `metadata.backup_settings`; it is informational only.
+const MANIFEST_SECRET_SETTING_KEYS = new Set([
+  'backup_s3_access_key',
+  'backup_s3_secret_key',
+  'backup_rsync_ssh_key',
+]);
+const MANIFEST_SECRET_SETTING_RE = /(secret|password|passwd|token|credential|private_key|ssh_key|access_key)/i;
+
+function isManifestSecretSetting(key) {
+  return MANIFEST_SECRET_SETTING_KEYS.has(key) || MANIFEST_SECRET_SETTING_RE.test(String(key));
+}
+
 /**
  * Backup Manifest Generator
  * 
@@ -399,13 +415,14 @@ class BackupManifestGenerator {
       
       const config = {};
       settings.forEach(setting => {
+        if (isManifestSecretSetting(setting.setting_key)) return;
         try {
           config[setting.setting_key] = JSON.parse(setting.setting_value);
         } catch (e) {
           config[setting.setting_key] = setting.setting_value;
         }
       });
-      
+
       return config;
     } catch (error) {
       return {};
