@@ -81,4 +81,25 @@ describe('email.view — read-only and password-free', () => {
     expect(JSON.stringify(res.body)).not.toContain(SMTP_SECRET);
     expect(JSON.stringify(res.body)).not.toContain(IMAP_SECRET);
   });
+
+  it('refuses email.view every mailbox-state transition', async () => {
+    for (const [kind, id] of [['received', receivedId], ['queue', queueId]]) {
+      for (const state of ['archived', 'deleted', 'active']) {
+        const res = await auth(request(app).post(`/api/admin/email/item/${kind}/${id}/state`), viewerToken).send({ state });
+        expect(res.status).toBe(403);
+      }
+    }
+    expect((await db('received_emails').where({ id: receivedId }).first()).mailbox_state).toBe('active');
+    expect((await db('email_queue').where({ id: queueId }).first()).mailbox_state).toBe('active');
+  });
+
+  it('lets email.edit archive, trash and restore both kinds', async () => {
+    for (const [kind, table, id] of [['received', 'received_emails', receivedId], ['queue', 'email_queue', queueId]]) {
+      for (const state of ['archived', 'deleted', 'active']) {
+        const res = await auth(request(app).post(`/api/admin/email/item/${kind}/${id}/state`), editorToken).send({ state });
+        expect(res.status).toBe(200);
+        expect((await db(table).where({ id }).first()).mailbox_state).toBe(state);
+      }
+    }
+  });
 });
