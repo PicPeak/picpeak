@@ -10,7 +10,7 @@
  *     the stored value is already inert.
  */
 const {
-  sanitizeCss, escapeCssForStyleElement,
+  sanitizeCss, sanitizeCssColor, escapeCssForStyleElement,
 } = require('../../src/utils/cssSanitizer');
 
 describe('escapeCssForStyleElement', () => {
@@ -36,6 +36,54 @@ describe('escapeCssForStyleElement', () => {
   it('returns an empty string for nullish input', () => {
     expect(escapeCssForStyleElement(null)).toBe('');
     expect(escapeCssForStyleElement(undefined)).toBe('');
+  });
+});
+
+describe('sanitizeCssColor', () => {
+  it.each([
+    '#fff', '#FFF', '#ffff', '#16a34a', '#16A34A', '#16a34a80',
+    'rgb(22, 163, 74)', 'rgba(22,163,74,0.5)', 'rgb(22 163 74 / 50%)',
+    'hsl(142, 76%, 36%)', 'hsla(142 76% 36% / .5)',
+    'transparent', 'currentColor', 'white', 'Black',
+  ])('accepts %s', (value) => {
+    expect(sanitizeCssColor(value)).toBe(value);
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(sanitizeCssColor('  #fff  ')).toBe('#fff');
+  });
+
+  it.each([
+    ['closing style tag', 'red;}</style><meta http-equiv="refresh" content="0">'],
+    ['statement injection', '#fff; background: url(https://evil.example/x)'],
+    ['brace', '#fff}'],
+    ['double quote', '#fff" onload="alert(1)'],
+    ['single quote', '#fff\' onload=\'alert(1)'],
+    ['control character', '#ff\u0000f'],
+    ['bare word that is not a colour', 'url(x)'],
+    ['css variable', 'var(--x)'],
+    ['five hex digits', '#fffff'],
+    ['hex with trailing text', '#fff foo'],
+    ['functional with letters inside', 'rgb(1,2,3)</style>'],
+    ['unknown keyword', 'evil'],
+    ['empty', ''],
+    ['whitespace only', '   '],
+  ])('rejects %s', (_label, value) => {
+    expect(sanitizeCssColor(value)).toBeNull();
+  });
+
+  it.each([
+    ['array', ['#fff']],
+    ['object', { toString: () => '#fff' }],
+    ['number', 0xffffff],
+    ['null', null],
+    ['undefined', undefined],
+  ])('rejects a non-string (%s)', (_label, value) => {
+    expect(sanitizeCssColor(value)).toBeNull();
+  });
+
+  it('rejects an over-long functional value', () => {
+    expect(sanitizeCssColor(`rgb(${'1,'.repeat(60)}1)`)).toBeNull();
   });
 });
 

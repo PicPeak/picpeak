@@ -83,6 +83,33 @@ function escapeCssForStyleElement(css) {
   return String(css).replace(/</g, '\\3c ');
 }
 
+// A colour that will be interpolated into a <style> element, a style=""
+// attribute or a bgcolor="" attribute. Only hex, the four functional
+// notations with digits/percent/comma/space/slash/dot inside the parens, and
+// a short keyword list pass; anything else — in particular a value carrying
+// `;`, `}`, `"` or `<` — is rejected so the caller keeps its default.
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const FUNCTIONAL_COLOR = /^(?:rgb|rgba|hsl|hsla)\([0-9.%,/ ]{1,64}\)$/i;
+const NAMED_COLORS = new Set([
+  'transparent', 'currentcolor', 'inherit',
+  'black', 'white', 'gray', 'grey', 'silver', 'red', 'maroon', 'yellow', 'olive',
+  'lime', 'green', 'aqua', 'teal', 'blue', 'navy', 'fuchsia', 'purple', 'orange'
+]);
+
+/**
+ * @param {unknown} value
+ * @returns {string|null} the trimmed colour when it matches the grammar, else null
+ */
+function sanitizeCssColor(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 80) return null;
+  if (HEX_COLOR.test(trimmed) || FUNCTIONAL_COLOR.test(trimmed) || NAMED_COLORS.has(trimmed.toLowerCase())) {
+    return trimmed;
+  }
+  return null;
+}
+
 /**
  * Basic CSS sanitization (original function, kept for compatibility)
  */
@@ -439,6 +466,7 @@ function scopeToGalleryPage(cssContent) {
 module.exports = {
   sanitizeCss,
   sanitizeCSS,
+  sanitizeCssColor,
   escapeCssForStyleElement,
   stripDisallowedUrls,
   validateCSS,

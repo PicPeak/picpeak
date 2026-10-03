@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { sanitizeCss } = require('../utils/cssSanitizer');
+const { sanitizeCss, sanitizeCssColor } = require('../utils/cssSanitizer');
 const {
   DEFAULT_PUBLIC_SITE_TITLE,
   DEFAULT_PUBLIC_SITE_HTML,
@@ -97,6 +97,14 @@ function escapeTokenValue(value) {
     .replace(/'/g, '&#039;');
 }
 
+// theme_config is written by `settings.edit` without a schema, and its
+// palette is interpolated into the public site's <style> element by
+// server.js. Only a value that is actually a colour may replace a default;
+// anything else (a `</style>`, a stray `;}`) keeps the default.
+function pickColor(value, fallback) {
+  return sanitizeCssColor(value) || fallback;
+}
+
 async function fetchBrandingContext() {
   const rows = await db('app_settings')
     .whereIn('setting_key', [
@@ -153,16 +161,16 @@ async function fetchBrandingContext() {
         const themeConfig = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
         if (themeConfig && typeof themeConfig === 'object') {
           // Legacy 4 colors
-          context.colors.primary = themeConfig.primaryColor || context.colors.primary;
-          context.colors.accent = themeConfig.accentColor || context.colors.accent;
-          context.colors.background = themeConfig.backgroundColor || context.colors.background;
-          context.colors.text = themeConfig.textColor || context.colors.text;
+          context.colors.primary = pickColor(themeConfig.primaryColor, context.colors.primary);
+          context.colors.accent = pickColor(themeConfig.accentColor, context.colors.accent);
+          context.colors.background = pickColor(themeConfig.backgroundColor, context.colors.background);
+          context.colors.text = pickColor(themeConfig.textColor, context.colors.text);
           // 8-token CI palette additions
-          context.colors.accentDark = themeConfig.accentDarkColor || themeConfig.primaryColor || context.colors.accentDark;
-          context.colors.surface = themeConfig.surfaceColor || context.colors.surface;
-          context.colors.elevated = themeConfig.elevatedColor || context.colors.elevated;
-          context.colors.border = themeConfig.surfaceBorderColor || context.colors.border;
-          context.colors.mutedText = themeConfig.mutedTextColor || context.colors.mutedText;
+          context.colors.accentDark = pickColor(themeConfig.accentDarkColor, pickColor(themeConfig.primaryColor, context.colors.accentDark));
+          context.colors.surface = pickColor(themeConfig.surfaceColor, context.colors.surface);
+          context.colors.elevated = pickColor(themeConfig.elevatedColor, context.colors.elevated);
+          context.colors.border = pickColor(themeConfig.surfaceBorderColor, context.colors.border);
+          context.colors.mutedText = pickColor(themeConfig.mutedTextColor, context.colors.mutedText);
         }
       } catch (error) {
         logger.warn('Failed to parse theme configuration for public site', { error: error.message });
