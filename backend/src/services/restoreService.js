@@ -982,6 +982,8 @@ class RestoreService {
         
         if (this.dbType === 'sqlite') {
           const dbPath = knexConfig.connection.filename;
+          // Server-generated path, but it is interpolated into a dot-command.
+          assertSafeSqlitePath(dbBackupPath);
           await spawnAsync('sqlite3', [dbPath, `.backup '${dbBackupPath}'`]);
         } else {
           // PostgreSQL backup

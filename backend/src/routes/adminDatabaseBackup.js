@@ -7,6 +7,7 @@ const {
   databaseBackupService,
   isUnderPubliclyServableRoot,
   resolveDatabaseBackupDestination,
+  destinationPathProblem,
 } = require('../services/databaseBackup');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
@@ -75,6 +76,14 @@ router.put('/config', requirePermission('backup.create'), async (req, res) => {
       && isUnderPubliclyServableRoot(req.body.database_backup_destination_path)
     ) {
       return res.status(400).json({ error: 'Destination path must not be inside a publicly served directory' });
+    }
+
+    // Quotes and line breaks would let the path end a sqlite3 dot-command and
+    // start another one. createSQLiteBackup no longer interpolates the
+    // destination, but such a path should never be saved in the first place.
+    const pathProblem = destinationPathProblem(req.body.database_backup_destination_path);
+    if (pathProblem) {
+      return res.status(400).json({ error: pathProblem });
     }
 
     // A retention of 0 or less pushes cleanupOldBackups' cutoff to today or
