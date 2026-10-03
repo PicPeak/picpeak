@@ -363,6 +363,20 @@ async function acceptInvitation({ token, name, password, profile }) {
   const preferredLanguage = merged.preferred_language || defaultPreferredLanguage;
 
   const customerId = await db.transaction(async (trx) => {
+    // Claim the invitation first. Two submissions of the same link both
+    // pass the read above before either commits; only the one whose
+    // conditional update affects the row may go on to set credentials.
+    // A concurrent cancellation (which deletes the row) also lands here
+    // as zero rows.
+    const claimed = await trx('customer_invitations')
+      .where('id', invitation.id)
+      .whereNull('accepted_at')
+      .where('expires_at', '>', new Date())
+      .update({ accepted_at: new Date().toISOString() });
+    if (claimed !== 1) {
+      throw new ValidationError('Invalid or expired invitation');
+    }
+
     let id;
     if (promoting) {
       // Promotion path: passive customer being claimed by the
@@ -400,9 +414,14 @@ async function acceptInvitation({ token, name, password, profile }) {
       overwriteIfSet('state');
       overwriteIfSet('country_code');
       if (merged.preferred_language) updates.preferred_language = merged.preferred_language;
-      await auditedUpdate(trx, 'customer_accounts', { id }, updates, {
+      // Still passive: a concurrent acceptance or an admin-set password
+      // since the read above must not be overwritten.
+      const promoted = await auditedUpdate(trx, 'customer_accounts', { id, password_hash: null }, updates, {
         actor: { type: 'customer', id }, source: 'customer.invitation.accept',
       });
+      if (promoted !== 1) {
+        throw new ConflictError('Email already registered', 'email');
+      }
     } else {
       const [inserted] = await auditedInsert(trx, 'customer_accounts', {
         email: invitation.email,
@@ -449,7 +468,7 @@ async function acceptInvitation({ token, name, password, profile }) {
 
     await trx('customer_invitations')
       .where('id', invitation.id)
-      .update({ accepted_at: new Date(), accepted_customer_id: id });
+      .update({ accepted_customer_id: id });
 
     return id;
   });
@@ -1500,7 +1519,13 @@ async function cancelInvitation(id, cancelledByAdminId) {
   if (!invitation) {
     throw new NotFoundError('Invitation', id);
   }
-  await db('customer_invitations').where('id', id).del();
+  // Complement of the claim in acceptInvitation: only a still-pending
+  // invitation can be cancelled. An acceptance that committed in between
+  // keeps its record instead of being deleted underneath the new account.
+  const cancelled = await db('customer_invitations').where('id', id).whereNull('accepted_at').del();
+  if (cancelled !== 1) {
+    throw new ConflictError('Invitation has already been accepted');
+  }
 
   await logActivity('customer_invitation_cancelled',
     { invitationId: id, email: invitation.email },
@@ -1744,13 +1769,27 @@ async function applyPasswordReset({ token, password }) {
 
   const passwordHash = await bcrypt.hash(password, getBcryptRounds());
   await db.transaction(async (trx) => {
-    await auditedUpdate(trx, 'customer_accounts', { id: customer.id }, {
+    // Claim the token first. Two submissions of the same link both pass the
+    // read above before either commits; only the one whose conditional
+    // update affects the row may change the password, so the later
+    // submission cannot overwrite the password the first one set.
+    const claimed = await trx('customer_password_resets')
+      .where('id', row.id)
+      .whereNull('used_at')
+      .where('expires_at', '>', new Date())
+      .update({ used_at: new Date().toISOString() });
+    if (claimed !== 1) {
+      throw new ValidationError('Invalid or expired reset link');
+    }
+    const updated = await auditedUpdate(trx, 'customer_accounts', { id: customer.id, is_active: formatBoolean(true) }, {
       password_hash: passwordHash,
       password_changed_at: new Date(),
       must_change_password: formatBoolean(false),
       updated_at: new Date(),
     }, { actor: { type: 'customer', id: customer.id }, source: 'customer.password_reset' });
-    await trx('customer_password_resets').where('id', row.id).update({ used_at: new Date() });
+    if (updated !== 1) {
+      throw new ValidationError('Invalid or expired reset link');
+    }
   });
 
   await logActivity('customer_password_reset_applied',
