@@ -5,6 +5,11 @@
 
 set -e
 
+# The archive holds the database, every photo and .env (JWT secret, DB and
+# mail passwords). Nothing created from here on may be readable by other
+# local users, whatever umask the caller inherited.
+umask 077
+
 # Configuration
 BACKUP_DIR="./backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -17,8 +22,10 @@ NC='\033[0m'
 
 echo "🔄 Starting PicPeak backup..."
 
-# Create backup directory
-mkdir -p "${BACKUP_DIR}/${BACKUP_NAME}"
+# Create backup directory (private: 0700 on the backup root and the staging dir)
+mkdir -p -m 0700 "${BACKUP_DIR}"
+chmod 0700 "${BACKUP_DIR}"
+mkdir -p -m 0700 "${BACKUP_DIR}/${BACKUP_NAME}"
 
 # Backup database
 echo "📊 Backing up database..."
@@ -59,6 +66,12 @@ EOF
 echo "📦 Compressing backup..."
 cd "${BACKUP_DIR}"
 tar -czf "${BACKUP_NAME}.tar.gz" "${BACKUP_NAME}"
+# Owner-only, and fail the run rather than leave a readable archive behind.
+chmod 0600 "${BACKUP_NAME}.tar.gz" || {
+    echo -e "${RED}⚠ Could not restrict permissions on ${BACKUP_NAME}.tar.gz${NC}"
+    rm -f "${BACKUP_NAME}.tar.gz"
+    exit 1
+}
 rm -rf "${BACKUP_NAME}"
 
 # Cleanup old backups (keep last 7)
