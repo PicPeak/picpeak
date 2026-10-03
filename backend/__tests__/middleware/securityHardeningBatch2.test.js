@@ -77,11 +77,11 @@ describe('maintenance gate is case-insensitive', () => {
 
 describe('general rate limiter skip', () => {
   const req = (token) => ({ path: '/api/gallery/x/photos', headers: { authorization: `Bearer ${token}` }, cookies: {} });
-  it('is granted to an admin session', () => {
-    expect(isAuthenticated(req(adminToken()))).toBe(true);
+  it('is granted to an admin session', async () => {
+    expect(await isAuthenticated(req(adminToken()))).toBe(true);
   });
-  it('is NOT granted to a gallery token', () => {
-    expect(isAuthenticated(req(galleryToken()))).toBe(false);
+  it('is NOT granted to a gallery token', async () => {
+    expect(await isAuthenticated(req(galleryToken()))).toBe(false);
   });
 });
 
