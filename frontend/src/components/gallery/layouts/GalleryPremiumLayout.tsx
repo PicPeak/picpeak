@@ -217,6 +217,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   heroPhotoOverride,
   onLogout,
   showOriginalFilename = false,
+  openPhotoId,
+  onLightboxPhotoChange,
 }) => {
   // These props are passed by parent but we use our own lightbox, so mark as intentionally unused
   void _onPhotoClick;
@@ -278,6 +280,25 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [photos, activeCategory]);
 
   const currentLightboxPhoto = lightboxIndex >= 0 ? filteredPhotos[lightboxIndex] : null;
+
+  // Link to a single photo (issue 1733): open on the photo the URL asks for,
+  // close on null. This layout filters by category on its own, so a linked
+  // photo hidden by that chip clears it first; an id not in `photos` opens
+  // nothing.
+  useEffect(() => {
+    if (openPhotoId === undefined) return;
+    if (openPhotoId === null) {
+      setLightboxIndex(-1);
+      return;
+    }
+    const index = filteredPhotos.findIndex((photo) => photo.id === openPhotoId);
+    if (index >= 0) {
+      setLightboxIndex(index);
+    } else if (photos.some((photo) => photo.id === openPhotoId)) {
+      setActiveCategory(null);
+    }
+  }, [openPhotoId, filteredPhotos, photos]);
+
   const reactionsActive = feedbackEnabled && !!feedbackOptions?.allowReactions;
 
   // Fetch the current photo's reaction tallies + my selection when the
@@ -673,7 +694,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                   photo={originalPhoto}
                   width={width}
                   height={height}
-                  onClick={() => setLightboxIndex(photoIndex)}
+                  onClick={() => {
+                    setLightboxIndex(photoIndex);
+                    onLightboxPhotoChange?.(originalPhoto.id, 'open');
+                  }}
                   onLike={(e) => handleLike(originalPhoto, e)}
                   onSelect={(e) => {
                     e.stopPropagation();
@@ -713,7 +737,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       {/* Lightbox */}
       <Lightbox
         open={lightboxIndex >= 0}
-        close={() => setLightboxIndex(-1)}
+        close={() => {
+          setLightboxIndex(-1);
+          onLightboxPhotoChange?.(null, 'close');
+        }}
         index={lightboxIndex}
         slides={slides}
         // View beacon (#895): yarl fires `view` on open and on every
@@ -724,7 +751,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             // the slides array; otherwise YARL jumps back to the opening photo.
             setLightboxIndex(index);
             const photo = filteredPhotos[index];
-            if (photo) galleryService.trackPhotoView(slug, photo.id);
+            if (photo) {
+              galleryService.trackPhotoView(slug, photo.id);
+              onLightboxPhotoChange?.(photo.id, 'step');
+            }
           },
         }}
         plugins={[

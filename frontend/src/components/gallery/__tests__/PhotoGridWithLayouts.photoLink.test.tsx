@@ -1,0 +1,94 @@
+/**
+ * Link to a single photo (issue 1733) — the host side of the contract.
+ * PhotoGridWithLayouts opens its lightbox on the photo the URL asks for
+ * (`openPhotoId`), closes it on null, ignores an id that is not in its list,
+ * and reports the lightbox's own moves (`open` / `step` / `close`) so the
+ * container can mirror them to `?photo=`.
+ */
+import React from 'react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+
+import type { Photo } from '../../../types';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) }),
+}));
+vi.mock('react-toastify', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('../../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { galleryLayout: 'grid' } }) }));
+vi.mock('../../../contexts/DownloadQuotaContext', () => ({
+  useDownloadQuota: () => ({ allows: () => true, canDownload: () => true, remaining: null }),
+}));
+vi.mock('../../../hooks/useGallery', () => ({ useDownloadPhoto: () => ({ mutate: vi.fn() }) }));
+vi.mock('../../../services/gallery.service', () => ({ galleryService: {} }));
+vi.mock('../../../services/analytics.service', () => ({ analyticsService: { trackDownload: vi.fn() } }));
+vi.mock('../../common', () => ({ Button: ({ children, ...rest }: React.ComponentProps<'button'>) => <button {...rest}>{children}</button> }));
+vi.mock('../DownloadQuotaNotice', () => ({ DownloadQuotaNotice: () => null }));
+vi.mock('../DownloadResolutionModal', () => ({ DownloadResolutionModal: () => null }));
+vi.mock('../HeroHeader', () => ({ HeroHeader: () => null }));
+vi.mock('../layouts', () => ({
+  GridGalleryLayout: ({ photos, onPhotoClick }: { photos: Photo[]; onPhotoClick: (i: number) => void }) => (
+    <div>
+      {photos.map((photo, index) => (
+        <button key={photo.id} data-testid={`tile-${photo.id}`} onClick={() => onPhotoClick(index)} />
+      ))}
+    </div>
+  ),
+}));
+vi.mock('../PhotoLightbox', () => ({
+  PhotoLightbox: ({ photos, initialIndex, onClose, onCurrentPhotoChange }: {
+    photos: Photo[]; initialIndex: number; onClose: () => void; onCurrentPhotoChange?: (id: number) => void;
+  }) => {
+    const [index, setIndex] = React.useState(initialIndex);
+    React.useEffect(() => { onCurrentPhotoChange?.(photos[index].id); }, [index, photos, onCurrentPhotoChange]);
+    return (
+      <div data-testid="lightbox" data-photo={photos[index].id}>
+        <button data-testid="next" onClick={() => setIndex((i) => i + 1)} />
+        <button data-testid="close" onClick={onClose} />
+      </div>
+    );
+  },
+}));
+
+import { PhotoGridWithLayouts } from '../PhotoGridWithLayouts';
+
+const photos = [10, 11, 12].map((id) => ({ id, filename: `${id}.jpg` } as Photo));
+
+describe('PhotoGridWithLayouts — link to a single photo (issue 1733)', () => {
+  it('reports open, step and close from the lightbox', () => {
+    const onChange = vi.fn();
+    render(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={null} onLightboxPhotoChange={onChange} />);
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('tile-11'));
+    expect(onChange).toHaveBeenCalledWith(11, 'open');
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('11');
+
+    fireEvent.click(screen.getByTestId('next'));
+    expect(onChange).toHaveBeenLastCalledWith(12, 'step');
+
+    fireEvent.click(screen.getByTestId('close'));
+    expect(onChange).toHaveBeenLastCalledWith(null, 'close');
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+  });
+
+  it('opens on the photo the URL asks for and closes on null', () => {
+    const { rerender } = render(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={12} />);
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+
+    rerender(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={null} />);
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+  });
+
+  it('opens nothing for an id that is not in the list it shows', () => {
+    render(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={999} />);
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+  });
+
+  it('resolves once the list it shows contains the photo', () => {
+    const { rerender } = render(<PhotoGridWithLayouts photos={photos.slice(0, 1)} slug="g" openPhotoId={12} />);
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+    rerender(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={12} />);
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+  });
+});

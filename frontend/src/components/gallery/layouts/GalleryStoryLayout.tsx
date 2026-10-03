@@ -89,6 +89,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
   people,
   onSelectPerson,
+  openPhotoId,
+  onLightboxPhotoChange,
 }) => {
   // These props are passed by parent but we use our own feedback system, so mark as intentionally unused
   void _onPhotoClick;
@@ -303,7 +305,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const handleOpenLightbox = useCallback((photo: Photo) => {
     const index = photos.findIndex(p => p.id === photo.id);
     setLightboxIndex(index >= 0 ? index : 0);
-  }, [photos]);
+    onLightboxPhotoChange?.(photo.id, 'open');
+  }, [photos, onLightboxPhotoChange]);
+
+  // Link to a single photo (issue 1733): open on the photo the URL asks for,
+  // close on null. Only against `photos`; an id not in it opens nothing.
+  useEffect(() => {
+    if (openPhotoId === undefined) return;
+    if (openPhotoId === null) {
+      setLightboxIndex(null);
+      return;
+    }
+    const index = photos.findIndex((photo) => photo.id === openPhotoId);
+    if (index >= 0) setLightboxIndex(index);
+  }, [openPhotoId, photos]);
 
   const downloadQuota = useDownloadQuota();
 
@@ -657,7 +672,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         <PhotoLightbox
           photos={photos}
           initialIndex={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
+          onClose={() => {
+            setLightboxIndex(null);
+            onLightboxPhotoChange?.(null, 'close');
+          }}
           slug={slug}
           feedbackEnabled={feedbackEnabled}
           allowDownloads={allowDownloads}
@@ -671,6 +689,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           // chips silently disappear on the Story theme.
           people={people}
           onSelectPerson={onSelectPerson}
+          onCurrentPhotoChange={(photoId) => onLightboxPhotoChange?.(photoId, 'step')}
         />
       )}
 

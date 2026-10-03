@@ -1,8 +1,19 @@
 import React from 'react';
 import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../../types';
+import type { LightboxPhotoChangeHandler } from '../photoLink';
 
 export interface BaseGalleryLayoutProps {
   photos: Photo[];
+  /**
+   * Link to a single photo (issue 1733). `openPhotoId` is the photo the URL
+   * asks for (a deep link, or Back/Forward): a layout that mounts its own
+   * lightbox opens it on that photo once it is in `photos`, and closes it on
+   * null. `onLightboxPhotoChange` reports the lightbox's own moves back so
+   * the container can mirror them to `?photo=`. Layouts that use the shared
+   * lightbox in PhotoGridWithLayouts ignore both.
+   */
+  openPhotoId?: number | null;
+  onLightboxPhotoChange?: LightboxPhotoChangeHandler;
   // People in this gallery (#1074) — forwarded by PhotoGridWithLayouts so
   // full-page layouts, which render their OWN lightbox, can still show the
   // "In this photo" chips.

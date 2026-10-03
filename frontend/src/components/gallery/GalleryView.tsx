@@ -22,9 +22,18 @@ import {
   peopleInScope,
   photosInScope,
   SELECTED_DOWNLOAD_LIMIT,
+  folderKey,
   readFolderParam,
   writeFolderParam,
 } from './folders';
+import {
+  leavePhotoParam,
+  pushPhotoParam,
+  readPhotoParam,
+  replacePhotoParam,
+  resolvePhotoLink,
+  type LightboxPhotoChangeReason,
+} from './photoLink';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { CopyFilenamesDialog } from './CopyFilenamesDialog';
 import { ExpirationBanner } from './ExpirationBanner';
@@ -123,6 +132,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Open folder (#1160), mirrored to `?folder=<slug>` so it is linkable and the
   // browser back button walks out of it. Seeded from the URL on first render.
   const [openFolderSlug, setOpenFolderSlug] = useState<string | null>(() => readFolderParam());
+  // Link to a single photo (issue 1733). `pendingPhotoLink` is a `?photo=`
+  // still to be checked against the loaded list — the deep link on arrival,
+  // or a Back/Forward step; `linkedPhotoId` is the photo the lightbox is
+  // asked to show, and is kept in step with the lightbox's own moves.
+  const [pendingPhotoLink, setPendingPhotoLink] = useState<number | null>(() => readPhotoParam());
+  const [linkedPhotoId, setLinkedPhotoId] = useState<number | null>(null);
   // Download size picker (#858). `showResolutionPicker` covers "download all";
   // `resolutionPickerIds` covers a selection (sidebar / full-page layouts).
   const [showResolutionPicker, setShowResolutionPicker] = useState(false);
@@ -684,16 +699,29 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // folders instead of leaving the gallery.
   useEffect(() => {
     const onPop = () => {
-      setOpenFolderSlug(readFolderParam());
-      setSelectedCategoryId(null);
-      setSelectedPhotos(new Set());
-      setSelectedPersonIds([]);
-      setPeopleMatchAny(false);
-      setSelectedCreditKey(null);
+      const folderParam = readFolderParam();
+      // Only a folder change is a scope change. Back out of a photo (issue
+      // 1733) lands on the same grid, filters included.
+      if (folderParam !== openFolderSlug) {
+        setOpenFolderSlug(folderParam);
+        setSelectedCategoryId(null);
+        setSelectedPhotos(new Set());
+        setSelectedPersonIds([]);
+        setPeopleMatchAny(false);
+        setSelectedCreditKey(null);
+      }
+      // Back closes the lightbox, Forward reopens it. An id is checked against
+      // the loaded list like a deep link, so it can switch folders too.
+      const photoParam = readPhotoParam();
+      if (photoParam === null) {
+        setLinkedPhotoId(null);
+      } else {
+        setPendingPhotoLink(photoParam);
+      }
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, [setSelectedPhotos]);
+  }, [setSelectedPhotos, openFolderSlug]);
 
   const filteredPhotos = useGalleryFiltering({
     sourcePhotos: data?.photos, categories: data?.categories, folderId: openFolder?.id ?? null,
@@ -705,6 +733,53 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     selectedCreditKey: data?.event?.credits_visible ? selectedCreditKey : null,
   });
   const creditsVisible = data?.event?.credits_visible === true;
+
+  // Resolve a `?photo=` against the photos this viewer has loaded (issue
+  // 1733) — never by fetching the id. A photo in another folder switches the
+  // folder (replace, not push: Back must not land on a root the visitor never
+  // saw); one hidden by a filter clears the filters; an unknown id is dropped
+  // from the URL without a word. Waits for the reveal (#838): the list is
+  // empty until then and the link would be lost for nothing.
+  useEffect(() => {
+    if (pendingPhotoLink === null || !data?.photos || hiddenUntilReveal) return;
+    setPendingPhotoLink(null);
+    const resolved = resolvePhotoLink(data.photos, data.categories, pendingPhotoLink);
+    if (!resolved) {
+      replacePhotoParam(null);
+      return;
+    }
+    const targetFolderId = resolved.folder?.id ?? null;
+    if (targetFolderId !== (openFolder?.id ?? null)) {
+      const key = resolved.folder ? folderKey(resolved.folder) : null;
+      setOpenFolderSlug(key);
+      writeFolderParam(key, { replace: true });
+      setSelectedPhotos(new Set());
+    }
+    if (!filteredPhotos.some((photo) => photo.id === resolved.photo.id)) {
+      setSelectedCategoryId(null);
+      setSearchTerm('');
+      setActiveFilters([]);
+      setActiveColorFilters([]);
+      setMediaFilter('all');
+      setSelectedPersonIds([]);
+      setPeopleMatchAny(false);
+      setSelectedCreditKey(null);
+    }
+    setLinkedPhotoId(resolved.photo.id);
+  }, [pendingPhotoLink, data?.photos, data?.categories, hiddenUntilReveal, openFolder, filteredPhotos, setSelectedPhotos]);
+
+  // The lightbox's own moves, mirrored to the URL (photoLink.ts): one pushed
+  // entry per opening, rewritten while stepping, left on close.
+  const handleLightboxPhotoChange = useCallback((photoId: number | null, reason: LightboxPhotoChangeReason) => {
+    setLinkedPhotoId(photoId);
+    if (reason === 'open' && photoId !== null) {
+      pushPhotoParam(photoId);
+    } else if (reason === 'step' && photoId !== null) {
+      replacePhotoParam(photoId);
+    } else if (reason === 'close') {
+      leavePhotoParam();
+    }
+  }, []);
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -1300,6 +1375,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // the end of a smaller folder.
           key={openFolder ? `folder-${openFolder.id}` : 'root'}
           photos={filteredPhotos}
+          openPhotoId={linkedPhotoId}
+          onLightboxPhotoChange={handleLightboxPhotoChange}
           // The hero, title, logout and download controls live inside this
           // component for the full-bleed layouts, so a folder-only root must
           // silence the empty message without unmounting the shell (#1160).
@@ -1759,6 +1836,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <PhotoGridWithLayouts
             key={openFolder ? `folder-${openFolder.id}` : 'root'}
             photos={filteredPhotos}
+            openPhotoId={linkedPhotoId}
+            onLightboxPhotoChange={handleLightboxPhotoChange}
             suppressEmptyState={rootIsFoldersOnly}
             slug={slug}
             people={peopleEnabled ? people : undefined}

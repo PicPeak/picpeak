@@ -771,9 +771,10 @@ app.get('/s/:shortSlug', async (req, res) => {
       return res.status(410).type('text/plain').send('Short URL points at a deleted event');
     }
 
-    // Browser path: redirect. Hit accounting is fire-and-forget.
+    // Browser path: redirect, carrying the query along (issue 1733: a
+    // `?photo=` link through the shortener). Hit accounting is fire-and-forget.
     galleryShortUrlService.recordHit(row.id).catch(() => {});
-    return res.redirect(302, row.target_path);
+    return res.redirect(302, galleryShortUrlService.redirectTarget(row.target_path, req.originalUrl));
   } catch (err) {
     logger.error('Short URL resolver failed', { slug: req.params.shortSlug, error: err.message });
     return res.status(500).type('text/plain').send('Internal server error');
