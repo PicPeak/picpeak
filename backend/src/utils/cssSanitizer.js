@@ -66,6 +66,24 @@ const ALLOWED_URL_TARGET = /^data:image\/(?:jpeg|jpg|png|gif|webp)/i;
 const MAX_CSS_SIZE = 100 * 1024;
 
 /**
+ * Make CSS safe to interpolate into a raw-text HTML <style> element.
+ *
+ * The HTML parser ends a <style> element at the first `</style` it sees,
+ * case-insensitively and regardless of CSS structure — a stylesheet is not
+ * parsed as CSS until after that boundary is found. So any `<` reaching the
+ * element can, with the right suffix, turn the rest of the stylesheet into
+ * document markup. CSS has no use for a literal `<` outside a string, and
+ * inside one `\3c ` is the same character spelled as an escape, so every
+ * `<` is rewritten that way. The output contains no `<` at all, which makes
+ * the function idempotent: running it over already-escaped CSS changes
+ * nothing.
+ */
+function escapeCssForStyleElement(css) {
+  if (css === null || css === undefined) return '';
+  return String(css).replace(/</g, '\\3c ');
+}
+
+/**
  * Basic CSS sanitization (original function, kept for compatibility)
  */
 function sanitizeCss(css) {
@@ -90,6 +108,11 @@ function sanitizeCss(css) {
 
   // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
   sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  // After the control-character strip, so `<\u0000/style` cannot re-form a
+  // `</style` once the NUL is gone. This value is served inside the public
+  // site's <style> element; see escapeCssForStyleElement.
+  sanitized = escapeCssForStyleElement(sanitized);
 
   const MAX_LENGTH = 100 * 1024;
   if (sanitized.length > MAX_LENGTH) {
@@ -416,6 +439,7 @@ function scopeToGalleryPage(cssContent) {
 module.exports = {
   sanitizeCss,
   sanitizeCSS,
+  escapeCssForStyleElement,
   stripDisallowedUrls,
   validateCSS,
   scopeToGalleryPage,
