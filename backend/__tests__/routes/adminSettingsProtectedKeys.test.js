@@ -170,10 +170,60 @@ describe('settings protected-key boundary (/general)', () => {
       const res = await auth(request(app).put('/api/admin/settings/general'), tok)
         .send({ backup_manifest_path: '/data/db', backup_destination_type: 's3', general_max_file_size_mb: 60 });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('BACKUP_SETTINGS_ELSEWHERE');
+      expect(res.body.code).toBe('SETTINGS_OWNED_ELSEWHERE');
       expect(res.body.keys).toEqual(expect.arrayContaining(['backup_manifest_path', 'backup_destination_type']));
     }
     expect(await readSetting('backup_manifest_path')).toBe(manifestBefore);
     expect(await readSetting('backup_destination_type')).toBe(destinationBefore);
+  });
+
+  // Rate limits (settings.security, range-validated), image-request caps
+  // (image_security.manage), ledger mappings (accounting.manage) and the
+  // restore safety switches (backup.restore) each have a dedicated writer.
+  // The generic writers must refuse them for every caller — a settings.edit
+  // holder could otherwise switch the limiter off or allow a forced restore,
+  // and even a permitted caller would skip the dedicated route's validation.
+  const ROUTE_OWNED = {
+    rate_limit_enabled: false,
+    rate_limit_max_requests: 999999,
+    max_image_requests_per_minute: 100000,
+    ledger_account_debitoren: '9999',
+    restore_allow_force: true,
+    restore_require_pre_backup: false,
+  };
+
+  it('generic writers refuse rate_limit_*, max_image_requests_*, ledger_* and restore_* keys for every caller', async () => {
+    // Migration 032 seeds restore_allow_force; pin it to the safe value so the
+    // attack payload is a real change. Every value stored for these keys must
+    // survive unchanged.
+    await db('app_settings').where({ setting_key: 'restore_allow_force' })
+      .update({ setting_value: JSON.stringify(false) });
+    const before = {};
+    for (const key of Object.keys(ROUTE_OWNED)) before[key] = await readSetting(key);
+    expect(before.restore_allow_force).toBe(false);
+    const writers = [
+      ['general', mgrTok], ['general', superTok],
+      ['analytics', mgrTok], ['analytics', superTok],
+      ['seo', mgrTok], ['seo', superTok],
+      ['security', superTok],
+    ];
+    for (const [endpoint, tok] of writers) {
+      for (const [key, value] of Object.entries(ROUTE_OWNED)) {
+        const res = await auth(request(app).put(`/api/admin/settings/${endpoint}`), tok)
+          .send({ [key]: value, general_max_file_size_mb: 70 });
+        expect([endpoint, key, res.status]).toEqual([endpoint, key, 400]);
+        expect(res.body.code).toBe('SETTINGS_OWNED_ELSEWHERE');
+        expect(res.body.keys).toEqual([key]);
+      }
+    }
+    for (const key of Object.keys(ROUTE_OWNED)) {
+      expect([key, await readSetting(key)]).toEqual([key, before[key]]);
+    }
+  });
+
+  it('settings.edit role can still save an ordinary general setting next to the refusal', async () => {
+    const res = await auth(request(app).put('/api/admin/settings/general'), mgrTok)
+      .send({ general_max_file_size_mb: 70 });
+    expect(res.status).toBe(200);
   });
 });
