@@ -111,13 +111,13 @@ jobs:
         echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -136,7 +136,7 @@ jobs:
 
     - name: Extract metadata for Backend (labels only)
       id: meta-backend
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
         labels: |
@@ -147,7 +147,7 @@ jobs:
 
     - name: Build Backend image (push by digest)
       id: build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: ./backend
         file: ./backend/Dockerfile
@@ -195,7 +195,7 @@ jobs:
     # audit pass first so the next beta build doesn't surprise red.
     - name: Run Trivy vulnerability scanner (per-arch, by digest)
       if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@v0.36.0
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       env:
         # docker/build-push-action wraps every push in an OCI index
         # (carries the SLSA provenance attestation alongside the
@@ -268,12 +268,12 @@ jobs:
         merge-multiple: true
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -294,7 +294,7 @@ jobs:
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: docker.io
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -302,7 +302,7 @@ jobs:
 
     - name: Extract metadata for Backend
       id: meta-backend
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         # GHCR always; Docker Hub (picpeak/backend) added on the canonical repo so
         # the same tag scheme is mirrored to both registries. metadata-action drops
@@ -404,13 +404,13 @@ jobs:
         echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -429,7 +429,7 @@ jobs:
 
     - name: Extract metadata for Frontend (labels only)
       id: meta-frontend
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
         labels: |
@@ -440,7 +440,7 @@ jobs:
 
     - name: Build Frontend image (push by digest)
       id: build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: ./frontend
         file: ./frontend/Dockerfile
@@ -479,7 +479,7 @@ jobs:
     # SARIF filename + category change.
     - name: Run Trivy vulnerability scanner (per-arch, by digest)
       if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@v0.36.0
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       env:
         # See build-backend for the rationale — pin Trivy's platform
         # to the matrix arch so its remote-index resolver picks the
@@ -542,12 +542,12 @@ jobs:
         merge-multiple: true
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -568,7 +568,7 @@ jobs:
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: docker.io
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -576,7 +576,7 @@ jobs:
 
     - name: Extract metadata for Frontend
       id: meta-frontend
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         # GHCR always; Docker Hub (picpeak/frontend) added on the canonical repo so
         # the same tag scheme is mirrored to both registries. metadata-action drops
@@ -669,13 +669,13 @@ jobs:
         echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -694,7 +694,7 @@ jobs:
 
     - name: Extract metadata for AIO (labels only)
       id: meta-aio
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
         labels: |
@@ -705,7 +705,7 @@ jobs:
 
     - name: Build AIO image (push by digest)
       id: build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
         file: ./Dockerfile.aio
@@ -740,7 +740,7 @@ jobs:
 
     - name: Run Trivy vulnerability scanner (per-arch, by digest)
       if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@v0.36.0
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       env:
         # See build-backend — pin Trivy's platform to the matrix arch so its
         # remote-index resolver picks the right child.
@@ -798,12 +798,12 @@ jobs:
         merge-multiple: true
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -822,7 +822,7 @@ jobs:
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: docker.io
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -833,7 +833,7 @@ jobs:
     # (docker.io/picpeak/aio) on the canonical org repo (#1042).
     - name: Extract metadata for AIO
       id: meta-aio
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: |
           ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
@@ -895,10 +895,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Build AIO image (single arch)
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
         file: ./Dockerfile.aio
@@ -1157,13 +1157,13 @@ jobs:
         echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -1182,7 +1182,7 @@ jobs:
 
     - name: Extract metadata for ML (labels only)
       id: meta-ml
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
         labels: |
@@ -1193,7 +1193,7 @@ jobs:
 
     - name: Build ML image (push by digest)
       id: build
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: ./ml
         file: ./ml/Dockerfile
@@ -1231,7 +1231,7 @@ jobs:
     # don't, so it gets its own Security-tab category.
     - name: Run Trivy vulnerability scanner (per-arch, by digest)
       if: steps.push-decision.outputs.push == 'true'
-      uses: aquasecurity/trivy-action@v0.36.0
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       env:
         TRIVY_PLATFORM: ${{ matrix.platform }}
       with:
@@ -1283,12 +1283,12 @@ jobs:
         merge-multiple: true
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
       id: login-ghcr
       continue-on-error: true
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -1307,7 +1307,7 @@ jobs:
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: docker.io
         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -1315,7 +1315,7 @@ jobs:
 
     - name: Extract metadata for ML
       id: meta-ml
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: |
           ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
@@ -1390,7 +1390,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Update picpeak/aio description
-      uses: peter-evans/dockerhub-description@v4
+      uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4.0.2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -1402,7 +1402,7 @@ jobs:
     # since the Hub repository only exists once something has been pushed to it.
     - name: Update picpeak/ml description
       if: needs.merge-ml.result == 'success'
-      uses: peter-evans/dockerhub-description@v4
+      uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4.0.2
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
