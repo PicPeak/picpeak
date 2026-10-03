@@ -637,7 +637,17 @@ app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath,
 // (set by express.static from file mtime), browsers send If-Modified-Since
 // after expiry and pick up the new version automatically. See https://docs.picpeak.app/guides/custom-fonts
 // "Replacing an existing font" for the documented rollout strategy.
-const fontStaticOpts = { maxAge: '7d' };
+//
+// Only font formats leave these mounts (isPublicFontFile): the storage tree is
+// admin-writable and a restored backup can populate it, so anything else in
+// it must not be served from the app origin. nosniff keeps a browser from
+// promoting a font response to another type.
+const { isPublicFontFile } = require('./src/middleware/secureStatic');
+const fontStaticOpts = {
+  maxAge: '7d',
+  onlyServe: isPublicFontFile,
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+};
 app.use(
   '/fonts',
   setCorsHeaders,
