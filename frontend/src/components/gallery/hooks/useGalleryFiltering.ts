@@ -14,10 +14,12 @@ export interface GalleryFilterOptions {
   myFeedbackPhotoIds: Record<FeedbackFilterType, Set<number>>; selectedPersonIds: number[]; peopleMatchAny: boolean;
   // "By" filter (#1561): a key from utils/photoCredits, null = everyone.
   selectedCreditKey?: string | null;
+  // Minimum own star rating (issue 1733, A3c), 1-5; null = no rating filter.
+  minRating?: number | null;
 }
 export const resolveMediaType = (photo: Photo): 'photo' | 'video' =>
   photo.media_type === 'video' || photo.mime_type?.startsWith('video/') || photo.type === 'video' ? 'video' : 'photo';
-export function useGalleryFiltering({ sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null }: GalleryFilterOptions) {
+export function useGalleryFiltering({ sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey = null, minRating = null }: GalleryFilterOptions) {
   return useMemo(() => {
     if (!sourcePhotos) return [];
 
@@ -101,6 +103,14 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
       );
     }
 
+    // Apply the minimum own-rating filter (issue 1733, A3c). `my_rating` is
+    // the viewer's own stars (null when unrated or ratings are off), so this
+    // is guest-scoped like the colour chips and ANDs against everything above:
+    // "Saved" + "3+" is "saved photos I rated three stars or more".
+    if (minRating) {
+      photos = photos.filter(photo => (photo.my_rating || 0) >= minRating);
+    }
+
     // Apply sorting
     // Each comparator defaults to its natural order (desc for dates/size/rating, asc for name).
     // The flip multiplier reverses that when sortDesc differs from the natural order.
@@ -141,5 +151,5 @@ export function useGalleryFiltering({ sourcePhotos, categories, folderId, select
     }
     
     return photos;
-  }, [sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey]);
+  }, [sourcePhotos, categories, folderId, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny, selectedCreditKey, minRating]);
 }
