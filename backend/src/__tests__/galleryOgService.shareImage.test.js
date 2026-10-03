@@ -65,8 +65,11 @@ function chain(result) {
 }
 
 function mockResolveSlug(event) {
-  // events table query → return event row (or null + no redirects).
-  db.mockImplementationOnce(() => chain({ first: event || null }));
+  // events table query → return event row (or null + no redirects). A real
+  // row always carries is_active (column default true); the OG service now
+  // applies the shared isGalleryAvailable predicate, which requires it.
+  const row = event ? { is_active: true, ...event } : null;
+  db.mockImplementationOnce(() => chain({ first: row }));
   if (!event) {
     // event_slug_redirects fallback — unused here, return null.
     db.schema = db.schema || {};
@@ -250,6 +253,7 @@ describe('buildOgMetadata — share-token fallback', () => {
     const token = '00000000000000000000000000000001';
     const event = {
       id: 10,
+      is_active: true,
       slug: 'senior-2026-06-05',
       share_token: token,
       event_name: 'Senior Photo Gallery',
