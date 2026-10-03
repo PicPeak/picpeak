@@ -13,7 +13,7 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, logActivity } = require('../database/db');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const { queueEmail } = require('./emailProcessor');
 const { auditedInsert, auditedUpdate, redactCustomerHistory } = require('./accountingHistory');
@@ -1169,13 +1169,14 @@ async function notifyCustomerOfNewAssignments(customerId, addedEventIds) {
   // Archived events are hard-skipped; expired ones (expires_at in the
   // past) would render as "Expired DD MMM" in the dashboard and lead
   // to a confusing "I clicked the link in the email and got a 410"
-  // experience — drop those too.
+  // experience — drop those too. whereTimestamp: a plain `> Date` let every
+  // text-dated row through on SQLite (issue 1733).
   const now = new Date();
   const events = await db('events')
     .whereIn('id', addedEventIds)
     .where('is_archived', formatBoolean(false))
     .andWhere(function() {
-      this.whereNull('expires_at').orWhere('expires_at', '>', now);
+      this.whereNull('expires_at').orWhere((q) => q.modify(whereTimestamp, 'expires_at', '>', now));
     })
     .orderBy('event_date', 'desc')
     .select('id', 'slug', 'event_name', 'event_date');

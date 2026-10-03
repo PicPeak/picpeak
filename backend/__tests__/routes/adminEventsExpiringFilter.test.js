@@ -1,0 +1,61 @@
+/**
+ * GET /api/admin/events?status=expiring on SQLite, whatever shape expires_at
+ * was stored in (issue 1733). The filter used to bind ISO strings, which
+ * compared the extend path's epoch-ms rows lexicographically — the mirror
+ * image of the expiry checker's bug.
+ */
+process.env.JWT_SECRET = 'expiring-filter-secret-at-least-32-characters-long';
+process.env.NODE_ENV = 'test';
+
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const request = require('supertest');
+const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
+
+let db, cleanup, app, adminId, token;
+const DAY = 24 * 60 * 60 * 1000;
+const now = Date.now();
+const naive = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+
+// Plain numbers and strings only: a Date written from inside jest lands as
+// "[object Object]" (CLAUDE.md).
+const FIXTURES = [
+  ['iso-soon', new Date(now + 3 * DAY).toISOString(), true],
+  ['ms-soon', now + 3 * DAY, true],
+  ['naive-soon', naive(now + 3 * DAY), true],
+  ['iso-far', new Date(now + 30 * DAY).toISOString(), false],
+  ['ms-far', now + 30 * DAY, false],
+  ['iso-past', new Date(now - DAY).toISOString(), false],
+  ['ms-past', now - DAY, false],
+  ['never', null, false],
+];
+
+beforeAll(async () => {
+  ({ db, cleanup } = await bootCrmDb());
+  ({ adminId } = await seedMinimal(db));
+  await assignAdminRole(db, adminId, 'super_admin');
+  token = mintAdminToken(adminId);
+  app = express(); app.use(express.json()); app.use(cookieParser());
+  app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+  await db('events').del();
+  for (const [slug, expires_at] of FIXTURES) {
+    await db('events').insert({
+      slug, event_type: 'other', event_name: slug, event_date: '2026-09-01',
+      customer_name: 'A', customer_email: 'a@example.com', host_name: 'A', host_email: 'a@example.com',
+      admin_email: 'admin@example.com', password_hash: 'x',
+      share_link: `/gallery/${slug}/tok`, share_token: `tok-${slug}`,
+      expires_at, is_active: 1, is_archived: 0, is_draft: 0, created_by: adminId,
+      created_at: new Date().toISOString(),
+    });
+  }
+}, 120000);
+
+afterAll(async () => { await cleanup(); });
+
+test('status=expiring lists every gallery expiring within seven days, in any stored shape', async () => {
+  const res = await request(app).get('/api/admin/events?status=expiring&limit=50')
+    .set('Authorization', `Bearer ${token}`);
+  expect(res.status).toBe(200);
+  const slugs = (res.body.events || res.body).map((e) => e.slug).sort();
+  expect(slugs).toEqual(FIXTURES.filter(([, , soon]) => soon).map(([slug]) => slug).sort());
+});
