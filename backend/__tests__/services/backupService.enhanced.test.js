@@ -87,6 +87,8 @@ describe('Enhanced Backup Service Tests', () => {
       upload: jest.fn().mockResolvedValue({ Location: 's3://bucket/key' }),
       uploadStream: jest.fn().mockResolvedValue({ Location: 's3://bucket/key' }),
       download: jest.fn().mockResolvedValue(),
+      getMetadata: jest.fn().mockResolvedValue({ ContentLength: 2 }),
+      downloadStream: jest.fn().mockImplementation(async () => require('stream').Readable.from([Buffer.from('{}')])),
       exists: jest.fn().mockResolvedValue(false),
       delete: jest.fn().mockResolvedValue(),
       list: jest.fn().mockResolvedValue({ Contents: [] })
@@ -824,10 +826,10 @@ describe('Enhanced Backup Service Tests', () => {
       await backupService.getBackupManifest(1);
       
       expect(S3StorageAdapter).toHaveBeenCalled();
-      expect(mockS3Client.download).toHaveBeenCalledWith(
-        'backups/manifests/backup-123.json',
-        expect.any(String)
-      );
+      // Bounded fetch: size check first, then the body stream (finding 19f1f5df).
+      expect(mockS3Client.getMetadata).toHaveBeenCalledWith('backups/manifests/backup-123.json');
+      expect(mockS3Client.downloadStream).toHaveBeenCalledWith('backups/manifests/backup-123.json');
+      expect(mockS3Client.download).not.toHaveBeenCalled();
     });
   });
 });
