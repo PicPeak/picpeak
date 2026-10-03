@@ -315,7 +315,7 @@ export const customerService = {
     return data.data || data;
   },
 
-  async uploadSignedContractPdf(id: number, file: File): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  async uploadSignedContractPdf(id: number, file: File): Promise<{ status: 'fully_signed' }> {
     const form = new FormData();
     form.append('file', file);
     const { data } = await api.post(`/customer/contracts/${id}/upload-signed-pdf`, form, {
