@@ -22,6 +22,7 @@ let db, cleanup, app, adminId, token;
 const auth = (req) => req.set('Authorization', `Bearer ${token}`);
 const put = (id, body) => auth(request(app).put(`/api/admin/events/${id}`)).send(body);
 const resend = (id) => auth(request(app).post(`/api/admin/events/${id}/resend-email`)).send({});
+const resetPassword = (id, body) => auth(request(app).post(`/api/admin/events/${id}/reset-password`)).send(body);
 const row = (id) => db('events').where({ id }).first('customer_name', 'customer_email', 'host_name', 'host_email');
 const setRequirement = (key, value) => db('app_settings')
   .insert({ setting_key: key, setting_value: JSON.stringify(value), setting_type: 'boolean' })
@@ -152,5 +153,23 @@ describe('POST /api/admin/events/:id/resend-email', () => {
     expect(res.status).toBe(200);
     const mail = await db('email_queue').where({ event_id: id, email_type: 'gallery_created' }).first();
     expect(mail.recipient_email).toBe('anna@example.com');
+  });
+});
+
+describe('POST /api/admin/events/:id/reset-password — emailSent tells the truth', () => {
+  it('reports emailSent: false and queues nothing when the event has no address', async () => {
+    const id = await insertEvent({ customer_email: null, host_email: null });
+    const res = await resetPassword(id, { sendEmail: true });
+    expect(res.status).toBe(200);
+    expect(res.body.emailSent).toBe(false);
+    expect(await db('email_queue').where({ event_id: id }).count('* as n').first()).toMatchObject({ n: 0 });
+  });
+
+  it('reports emailSent: true once the mail is queued', async () => {
+    const id = await insertEvent();
+    const res = await resetPassword(id, { sendEmail: true });
+    expect(res.status).toBe(200);
+    expect(res.body.emailSent).toBe(true);
+    expect(await db('email_queue').where({ event_id: id }).count('* as n').first()).toMatchObject({ n: 1 });
   });
 });
