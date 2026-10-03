@@ -5,13 +5,15 @@ const { assertGalleryAvailable, requiresGalleryPassword } = require('../utils/ga
 const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 const { AppError } = require('../utils/errors');
 const { assertGalleryCredentialCurrent } = require('../utils/galleryCredentialCutoff');
+const { isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const sessions = require('./sessionAccessService');
 
 // These claims identify a session for revocation; no raw JWT, IP or password
 // enters a media URL. Only use grants from this service or a verified signature.
 // parentIat/parentJti identify the portal session a gallery token was minted from.
+// showLink names the slideshow link a slideshow session was opened with.
 const CLAIMS = ['type', 'id', 'customerId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
-  'parentIat', 'parentJti'];
+  'parentIat', 'parentJti', 'showLink'];
 
 class GalleryAccessService {
   grant(event, kind, decoded) {
@@ -60,6 +62,13 @@ class GalleryAccessService {
         throw new AppError('Token does not match requested gallery', 403, 'INVALID_GALLERY_GRANT');
       }
       assertGalleryCredentialCurrent(event, session);
+      // The slideshow feature flag is a master kill-switch for /show/ links;
+      // a session derived from one dies with it. Same carve-out as the link
+      // check for a session minted before the claim existed.
+      if (session.accessLevel === 'slideshow' && session.showLink !== undefined
+        && !(await isFeatureEnabled('slideshow'))) {
+        throw new AppError('Slideshow disabled', 401, 'SLIDESHOW_DISABLED');
+      }
       if (session.via === 'customer') {
         await sessions.customer(session, { derived: true });
         const assignment = await db('event_customer_assignments')
