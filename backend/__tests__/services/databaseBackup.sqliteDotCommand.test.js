@@ -78,6 +78,35 @@ describe('createSQLiteBackup — the .backup dot-command never carries the desti
     expect(fs.readFileSync(outputPath, 'utf8')).toBe('sqlite-copy');
   });
 
+  it('stages a copy that cannot sit beside the output in a private directory, 0600, and removes it', async () => {
+    destDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sqlitedot-dest-'));
+    const outputDir = path.join(destDir, 'with space');
+    fs.mkdirSync(outputDir);
+    const outputPath = path.join(outputDir, 'picpeak-db-sqlite-2026.sqlite');
+    const seen = {};
+    spawnAsync.mockImplementation(async (cmd, args) => {
+      if (cmd === 'sqlite3' && typeof args[1] === 'string' && args[1].startsWith('.backup ')) {
+        const m = args[1].match(/^\.backup '(.*)'$/s);
+        fs.writeFileSync(m[1], 'sqlite-copy', { mode: 0o644 });
+        seen.tempPath = m[1];
+      } else if (cmd === 'sqlite3' && args[1] === 'VACUUM;') {
+        // While the copy is being scrubbed: private dir, private file.
+        seen.dirMode = fs.statSync(path.dirname(args[0])).mode & 0o777;
+        seen.fileMode = fs.statSync(args[0]).mode & 0o777;
+      }
+      return { stdout: 'ok', stderr: '' };
+    });
+
+    await service.createSQLiteBackup(outputPath);
+
+    expect(path.dirname(seen.tempPath)).not.toBe(os.tmpdir());
+    expect(path.dirname(seen.tempPath).startsWith(os.tmpdir())).toBe(true);
+    expect(seen.dirMode).toBe(0o700);
+    expect(seen.fileMode).toBe(0o600);
+    expect(fs.existsSync(path.dirname(seen.tempPath))).toBe(false);
+    expect(fs.readFileSync(outputPath, 'utf8')).toBe('sqlite-copy');
+  });
+
   it('writes the temp copy next to the output when that directory is already safe', async () => {
     destDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sqlitedot-safe-'));
     const outputPath = path.join(destDir, 'picpeak-db-sqlite-2026.sqlite');
