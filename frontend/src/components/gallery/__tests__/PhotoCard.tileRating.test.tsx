@@ -24,8 +24,10 @@ vi.mock('../../common', () => ({
   Input: ({ label: _label, error: _error, ...rest }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; error?: string }) => <input {...rest} />,
 }));
 
+// Switchable per test: null = simple/shared mode, 'guest' = guest identity mode.
+let guestIdentityContext: null | { identityMode: 'guest'; ensureIdentity: () => Promise<void> } = null;
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
-  useGuestIdentityOptional: () => null,
+  useGuestIdentityOptional: () => guestIdentityContext,
 }));
 
 vi.mock('../../../services/feedback.service', () => ({
@@ -122,6 +124,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  guestIdentityContext = null;
   vi.clearAllMocks();
 });
 
@@ -198,6 +201,23 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(cachedPhoto(7).average_rating).toBe(4);
     // The neighbour (seeded from the same row) is left alone.
     expect(cachedPhoto(8).total_ratings).toBe(0);
+  });
+
+  it('refreshes the aggregates in guest identity mode as well', async () => {
+    // The badges on Grid/Justified/Masonry tiles read the aggregates in every
+    // identity mode; only the Rated chip switches to /my-feedback in guest mode.
+    guestIdentityContext = { identityMode: 'guest', ensureIdentity: vi.fn().mockResolvedValue(undefined) };
+    seedCache({ ...PHOTO, average_rating: 0, total_ratings: 0 });
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledWith(
+      SLUG, '7', expect.objectContaining({ rating: 4 }),
+    ));
+    await waitFor(() => expect(cachedPhoto(7).total_ratings).toBe(1));
+    expect(cachedPhoto(7).average_rating).toBe(4);
+    expect(cachedPhoto(7).my_rating).toBe(4);
   });
 
   it('keeps the star when the summary request fails', async () => {

@@ -75,21 +75,19 @@ export const TileRating: React.FC<TileRatingProps> = ({
       patchPhoto({ my_rating: data.rating || null });
       // Guest-mode Rated chip + filter are built from /my-feedback (#538).
       queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
-      // Outside guest mode the Rated chip, its filter and the tile's rating
-      // badge read average_rating / total_ratings off the list row. One
-      // per-photo summary request (what the lightbox fetches too) keeps them
-      // in step without re-hydrating the whole list.
-      if (guestIdentity?.identityMode !== 'guest') {
-        try {
-          const fresh = await feedbackService.getPhotoFeedback(slug, String(photo.id));
-          patchPhoto({
-            average_rating: Number(fresh.summary?.average_rating) || 0,
-            total_ratings: Number(fresh.summary?.total_ratings) || 0,
-          });
-        } catch {
-          // The star itself is already right; the aggregates catch up on the
-          // next list fetch.
-        }
+      // The tile badges in every layout, and outside guest mode the Rated
+      // chip and its filter too, read average_rating / total_ratings off the
+      // list row. One per-photo summary request (what the lightbox fetches
+      // too) keeps them in step without re-hydrating the whole list.
+      try {
+        const fresh = await feedbackService.getPhotoFeedback(slug, String(photo.id));
+        patchPhoto({
+          average_rating: Number(fresh.summary?.average_rating) || 0,
+          total_ratings: Number(fresh.summary?.total_ratings) || 0,
+        });
+      } catch {
+        // The star itself is already right; the aggregates catch up on the
+        // next list fetch.
       }
     },
     onError: (error: any) => {
