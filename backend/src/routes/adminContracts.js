@@ -774,11 +774,22 @@ router.post(
       // The service removes the file on the refusals it knows; this covers
       // everything else — unless the contract already points at the file,
       // which means the upload committed and something after it failed.
+      // A lookup that fails says nothing either way; the file stays, as an
+      // orphan at worst, rather than deleting the PDF a fully_signed contract
+      // may point at.
       if (req.file && req.file.path) {
-        const committed = await db('contracts')
-          .where({ id: parseInt(req.params.id, 10), signed_pdf_path: toStoredPath(req.file.path) })
-          .first().catch(() => null);
-        if (!committed) await fs.promises.unlink(req.file.path).catch(() => {});
+        let verdict = 'unknown';
+        try {
+          const committed = await db('contracts')
+            .where({ id: parseInt(req.params.id, 10), signed_pdf_path: toStoredPath(req.file.path) })
+            .first();
+          verdict = committed ? 'committed' : 'not_committed';
+        } catch (lookupErr) {
+          require('../utils/logger').warn('Signed PDF upload: could not verify whether the upload committed; keeping the file', {
+            contractId: req.params.id, path: req.file.path, error: lookupErr.message,
+          });
+        }
+        if (verdict === 'not_committed') await fs.promises.unlink(req.file.path).catch(() => {});
       }
       throw err;
     }
