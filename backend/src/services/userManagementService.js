@@ -601,6 +601,10 @@ async function deleteAdminUser(id, deletedById) {
   //   CASCADE on api_tokens.user_id, admin_invitations.invited_by,
   //     customer_invitations.invited_by (drops pending tokens + invites
   //     this user issued)
+  // The bell dismissals this admin recorded (migration 261): CASCADE on
+  // PostgreSQL, explicit here for SQLite, which runs without PRAGMA
+  // foreign_keys.
+  await db('notification_dismissals').where('admin_id', id).del();
   await deleteWithAccountingHistory(db, 'admin_users', { id },
     { actor: deletedById, source: 'admin_user.delete' });
 
