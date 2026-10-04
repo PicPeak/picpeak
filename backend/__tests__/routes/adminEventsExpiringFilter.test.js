@@ -71,3 +71,12 @@ test('PUT stores a client-supplied expires_at in the canonical ISO form', async 
   const row = await db('events').where({ id }).first('expires_at');
   expect(row.expires_at).toBe('2026-10-06T10:00:00.000Z');
 });
+
+test('PUT refuses an ISO 8601 form the stored shape could not carry', async () => {
+  const { id } = await db('events').where({ slug: 'iso-far' }).first('id');
+  const res = await request(app).put(`/api/admin/events/${id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ expires_at: '20261006T120000Z' });
+  expect(res.status).toBe(400);
+  expect(JSON.stringify(res.body)).toContain('expires_at');
+});

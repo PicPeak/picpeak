@@ -254,4 +254,31 @@ describe('admin events list — ordering and type filter', () => {
       await expectSameOrder({ sortBy: 'capture_date' }, {});
     });
   });
+
+  describe('mixed expires_at shapes on SQLite (issue 1733)', () => {
+    // The extend endpoint bound a Date, which SQLite stored as epoch ms,
+    // next to the ISO text normal creation writes. Numbers sort below every
+    // text, so the raw column put a later epoch-ms expiry ahead of an
+    // earlier ISO one and ranked it wrongly in the status sort.
+    beforeAll(async () => {
+      await mkEvent({ slug: 'mx-iso-2d', event_name: 'M Iso2d', expires_at: inDays(2) });
+      await mkEvent({ slug: 'mx-ms-5d', event_name: 'M Ms5d', expires_at: Date.now() + 5 * DAY });
+      await mkEvent({ slug: 'mx-iso-9d', event_name: 'M Iso9d', expires_at: inDays(9) });
+      await mkEvent({ slug: 'mx-ms-past', event_name: 'M MsPast', expires_at: Date.now() - DAY });
+    });
+
+    it('orders expires_at by the point in time, not by the stored type', async () => {
+      const names = (await listNames({ sortBy: 'expires_at', sortOrder: 'asc' }))
+        .filter((n) => n.startsWith('M '));
+      expect(names).toEqual(['M MsPast', 'M Iso2d', 'M Ms5d', 'M Iso9d']);
+    });
+
+    it('ranks an epoch-ms expiry in the status sort like an ISO one', async () => {
+      const names = (await listNames({ sortBy: 'status', sortOrder: 'asc' }))
+        .filter((n) => n.startsWith('M '));
+      // active → expiring (within 7 days, ties by id desc) → expired: the
+      // epoch-ms rows land in the same ranks as their ISO neighbours.
+      expect(names).toEqual(['M Iso9d', 'M Ms5d', 'M Iso2d', 'M MsPast']);
+    });
+  });
 });
