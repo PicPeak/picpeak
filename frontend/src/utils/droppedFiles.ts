@@ -25,7 +25,15 @@
  * the limit bounds is the expensive part: resolving `entry.file()` and
  * recursing into subfolders, both done in sorted order until it is reached.
  * Plain files (no entry API) are returned unfiltered; the caller filters.
+ *
+ * Rejected files do not count toward `limit`, so a tree of nothing but
+ * unsupported files would still resolve every one of them. A second budget
+ * bounds the files examined: EXAMINED_PER_COLLECTED times the limit, enough
+ * for RAW + sidecar + JPEG sets several times over. The walk stops when
+ * either budget is spent.
  */
+export const EXAMINED_PER_COLLECTED = 5;
+
 export interface CollectOptions {
   limit?: number;
   accept?: (file: File) => boolean;
@@ -50,9 +58,9 @@ export async function collectDroppedFiles(
     .filter((entry): entry is FileSystemEntry => entry !== null);
   if (entries.length === 0) return plainFiles;
 
-  const walk = { out: [] as File[], limit, accept };
+  const walk: Walk = { out: [], limit, accept, examined: 0, maxExamined: limit * EXAMINED_PER_COLLECTED };
   for (const entry of entries) {
-    if (walk.out.length >= limit) break;
+    if (spent(walk)) break;
     await walkEntry(entry, walk);
   }
   return walk.out;
@@ -62,11 +70,16 @@ interface Walk {
   out: File[];
   limit: number;
   accept: (file: File) => boolean;
+  examined: number;
+  maxExamined: number;
 }
 
+const spent = (walk: Walk) => walk.out.length >= walk.limit || walk.examined >= walk.maxExamined;
+
 async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
-  if (walk.out.length >= walk.limit) return;
+  if (spent(walk)) return;
   if (entry.isFile) {
+    walk.examined += 1;
     const file = await fileOf(entry as FileSystemFileEntry);
     if (file && walk.accept(file)) walk.out.push(file);
     return;
@@ -76,7 +89,7 @@ async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
     .filter((child) => !child.name.startsWith('.'))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   for (const child of children) {
-    if (walk.out.length >= walk.limit) return;
+    if (spent(walk)) return;
     await walkEntry(child, walk);
   }
 }

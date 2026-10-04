@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { collectDroppedFiles } from '../droppedFiles';
+import { collectDroppedFiles, EXAMINED_PER_COLLECTED } from '../droppedFiles';
 
 type Entry = FileSystemFileEntry | FileSystemDirectoryEntry;
 
@@ -149,6 +149,25 @@ describe('collectDroppedFiles', () => {
 
     expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg']);
     expect(resolved).toBe(3);
+  });
+
+  it('stops examining a tree of rejected files once the examined budget is spent', async () => {
+    let resolved = 0;
+    const txt = (name: string): FileSystemFileEntry =>
+      ({
+        isFile: true, isDirectory: false, name,
+        file: (ok: (f: File) => void) => { resolved += 1; ok(new File(['x'], name, { type: 'text/plain' })); },
+      }) as unknown as FileSystemFileEntry;
+    const names = Array.from({ length: 100 }, (_, i) => `${i + 1}.txt`);
+    const dt = dataTransferFrom([
+      dirEntry('notes', names.slice(0, 60).map(txt)),
+      dirEntry('more', names.slice(60).map(txt)),
+    ]);
+
+    const files = await collectDroppedFiles(dt, { limit: 3, accept: (f) => f.type === 'image/jpeg' });
+
+    expect(files).toEqual([]);
+    expect(resolved).toBe(3 * EXAMINED_PER_COLLECTED);
   });
 
   it('sorts a directory as a whole, across readEntries batches', async () => {
