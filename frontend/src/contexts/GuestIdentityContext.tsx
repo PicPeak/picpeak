@@ -176,19 +176,25 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
     redeemedInviteRef.current = inviteToken;
 
-    // Strip the invite from the address bar NOW, before the request goes
-    // out, keeping the rest of the query and the current history state. The
-    // token is held in `inviteToken`; redemption is async, and any history
-    // entry the lightbox pushes meanwhile (`?photo=`) is built from the
-    // current URL — cleaning only after the response would leave the spent
-    // token on the grid entry underneath, where Back and a reload find it.
-    params.delete('invite');
-    const cleanedSearch = params.toString();
-    window.history.replaceState(
-      window.history.state ?? {},
-      '',
-      window.location.pathname + (cleanedSearch ? `?${cleanedSearch}` : '') + window.location.hash,
-    );
+    // The token leaves the address bar NOW, before the request goes out,
+    // keeping the rest of the query and the current history state. Any
+    // history entry the lightbox pushes meanwhile (`?photo=`) is built from
+    // the current URL, so cleaning only after the response would leave the
+    // spent token on the grid entry underneath, where Back and a reload find
+    // it. A retryable failure (no response, 5xx) puts it back below: a
+    // reload then redeems again, where a stripped URL would have lost the
+    // only copy of the token.
+    const rewriteInvite = (token: string | null) => {
+      const current = new URLSearchParams(window.location.search);
+      if (token === null) current.delete('invite'); else current.set('invite', token);
+      const search = current.toString();
+      window.history.replaceState(
+        window.history.state ?? {},
+        '',
+        window.location.pathname + (search ? `?${search}` : '') + window.location.hash,
+      );
+    };
+    rewriteInvite(null);
 
     invitePromiseRef.current = (async () => {
       try {
@@ -215,6 +221,15 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
             clearGuestIdentity(slug);
             setIdentity(null);
           }
+        }
+        // A terminal answer (any 4xx: used, revoked, expired, unknown) keeps
+        // the token out of the URL. Anything else — network, timeout, 5xx —
+        // may well succeed next time, so the token goes back where a reload
+        // picks it up and the ref no longer counts it as redeemed.
+        const httpStatus = status?.status ?? 0;
+        if (!(httpStatus >= 400 && httpStatus < 500)) {
+          redeemedInviteRef.current = null;
+          rewriteInvite(inviteToken);
         }
         // Otherwise fail silently; the visitor falls back to the normal prompt.
         // eslint-disable-next-line no-console
