@@ -87,14 +87,22 @@ async function targetPathForEvent(event) {
  * itself always comes from the stored row.
  */
 function redirectTarget(targetPath, originalUrl) {
-  const query = String(originalUrl || '').split('?')[1];
+  // Everything after the first `?`: a value may itself contain one
+  // (`?next=/a?photo=42`), which split('?')[1] would cut off.
+  const original = String(originalUrl || '');
+  const qmark = original.indexOf('?');
+  const query = qmark === -1 ? '' : original.slice(qmark + 1);
   if (!query) return targetPath;
-  const params = new URLSearchParams(query);
-  // Params already on the stored path keep precedence over the incoming ones.
-  const [path, existing] = String(targetPath).split('?');
-  const merged = new URLSearchParams(existing || '');
-  for (const [key, value] of params) {
-    if (!merged.has(key)) merged.append(key, value);
+  const target = String(targetPath);
+  const targetQmark = target.indexOf('?');
+  const path = targetQmark === -1 ? target : target.slice(0, targetQmark);
+  const merged = new URLSearchParams(targetQmark === -1 ? '' : target.slice(targetQmark + 1));
+  // Params already on the stored path keep precedence over the incoming ones;
+  // the check is against the stored set only, so a repeated incoming key
+  // (`?tag=a&tag=b`) keeps every value instead of the first one.
+  const reserved = new Set(merged.keys());
+  for (const [key, value] of new URLSearchParams(query)) {
+    if (!reserved.has(key)) merged.append(key, value);
   }
   const serialized = merged.toString();
   return serialized ? `${path}?${serialized}` : path;
