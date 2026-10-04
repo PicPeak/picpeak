@@ -18,6 +18,17 @@ describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
     expect(joinFilenameStems(photos, 'comma')).toBe('IMG_0009,c3d4');
   });
 
+  it('ignores a selection that is no longer in selection mode', () => {
+    // Cancel only flips the mode flag; the set survives for re-entry.
+    const photos = [{ id: 1, favorite_count: 1 }, { id: 2, favorite_count: 0 }];
+    const selected = new Set([2]);
+    const isFav = (p: { favorite_count: number }) => p.favorite_count > 0;
+    expect(photosForFilenameList(photos, selected, isFav, true))
+      .toEqual({ photos: [photos[1]], source: 'selection' });
+    expect(photosForFilenameList(photos, selected, isFav, false))
+      .toEqual({ photos: [photos[0]], source: 'favorites' });
+  });
+
   it('joins with a bare comma or a space, ordered by stored filename', () => {
     const photos = [
       { filename: 'b.jpg', original_filename: 'IMG_2.JPG' },

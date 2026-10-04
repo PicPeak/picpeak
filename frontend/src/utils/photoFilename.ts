@@ -61,14 +61,18 @@ export type FilenameListSource = 'selection' | 'favorites';
 
 /**
  * Which photos the guest's filename list covers: the selection, or the
- * viewer's favourites when nothing is selected.
+ * viewer's favourites when nothing is selected. Cancelling selection mode
+ * keeps the set (re-entering restores it), so it only counts while
+ * `selectionActive`; a cancelled selection must not be copied as
+ * "Selected photos" in place of the favourites.
  */
 export function photosForFilenameList<P extends Pick<Photo, 'id'>>(
   photos: ReadonlyArray<P>,
   selectedIds: ReadonlySet<number>,
-  isFavorited: (photo: P) => boolean
+  isFavorited: (photo: P) => boolean,
+  selectionActive = true
 ): { photos: P[]; source: FilenameListSource } {
-  if (selectedIds.size > 0) {
+  if (selectionActive && selectedIds.size > 0) {
     return { photos: photos.filter((photo) => selectedIds.has(photo.id)), source: 'selection' };
   }
   return { photos: photos.filter(isFavorited), source: 'favorites' };
