@@ -91,6 +91,20 @@ describe('whereTimestamp on SQLite', () => {
     expect(rows.map((r) => r.id)).toEqual([...FUTURE, 10]);
   });
 
+  test('keeps the milliseconds of an ISO value, like the epoch-ms rows do', async () => {
+    // strftime('%s') would truncate .900 to the second and read it as past.
+    const point = new Date('2026-10-06T12:00:00.500Z');
+    await knex('events').insert([
+      { id: 11, expires_at: '2026-10-06T12:00:00.900Z' },
+      { id: 12, expires_at: '2026-10-06T12:00:00.100Z' },
+      { id: 13, expires_at: new Date('2026-10-06T12:00:00.900Z').getTime() },
+    ]);
+    const after = (await knex('events').whereIn('id', [11, 12, 13])
+      .modify(whereTimestamp, 'expires_at', '>', point).orderBy('id')).map((r) => r.id);
+    expect(after).toEqual([11, 13]);
+    await knex('events').whereIn('id', [11, 12, 13]).del();
+  });
+
   test('refuses an operator it would otherwise splice into SQL', () => {
     expect(() => whereTimestamp(knex('events'), 'expires_at', '= 1 OR 1', new Date(NOW)))
       .toThrow(/operator/);

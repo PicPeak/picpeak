@@ -90,8 +90,11 @@ function whereTimestamp(query, column, operator, date) {
  * @returns {{ sql: string, bindings: string[] }} fragment for a raw clause
  */
 function sqliteTimestampMs(column) {
+  // julianday() keeps the fractional second that strftime('%s') truncates,
+  // so an ISO value with milliseconds compares like the epoch-ms rows and
+  // like PostgreSQL. 2440587.5 is the Julian day of the Unix epoch.
   return {
-    sql: '(CASE WHEN typeof(??) IN (\'integer\', \'real\') THEN ?? ELSE CAST(strftime(\'%s\', ??) AS INTEGER) * 1000 END)',
+    sql: '(CASE WHEN typeof(??) IN (\'integer\', \'real\') THEN ?? ELSE CAST(round((julianday(??) - 2440587.5) * 86400000) AS INTEGER) END)',
     bindings: [column, column, column],
   };
 }

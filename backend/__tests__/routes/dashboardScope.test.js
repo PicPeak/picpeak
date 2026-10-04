@@ -132,6 +132,20 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(Number(res.body.catalogedBytes)).toBe(1000);
   });
 
+  it('/stats counts an epoch-ms expiry as expiring, like the events list does (issue 1733)', async () => {
+    // The extend endpoint bound a Date, which SQLite stored as a number; the
+    // tile compared it to ISO text and left it out while status=expiring
+    // listed it next to the tile.
+    const before = await request(app).get('/api/admin/dashboard/stats')
+      .set('Authorization', `Bearer ${superToken}`);
+    const extended = await mkEvent('ms-expiring', null);
+    await db('events').where({ id: extended }).update({ expires_at: Date.now() + 3 * 864e5 });
+    const after = await request(app).get('/api/admin/dashboard/stats')
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(Number(after.body.expiringEvents)).toBe(Number(before.body.expiringEvents) + 1);
+    await db('events').where({ id: extended }).del();
+  });
+
   it('/stats reports disk usage unscoped, because disk is not per-event', async () => {
     // storageUsed is a measurement of the storage root (#1164), so it is the
     // same number for every admin by design. Pinned so a future reviewer
