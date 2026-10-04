@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
-const { minimalPdf, javascriptPdf } = require('./helpers/pdfFixture');
+const { minimalPdf, javascriptPdf, duplicateObjectPdf } = require('./helpers/pdfFixture');
 
 jest.setTimeout(120000);
 
@@ -63,6 +63,19 @@ test('a plain PDF from the mailbox is captured with its page count', async () =>
   expect(doc.status).toBe('unsorted');
   expect(doc.parseStatus).toBe('pending');
   expect(doc.pageCount).toBe(1);
+});
+
+test('what is stored is what was checked: the normalised bytes, and their hash', async () => {
+  // The xref points at a catalog with JavaScript; the scan kept the harmless
+  // last one. Keeping the upload would hand a viewer the active definition.
+  const crypto = require('crypto');
+  const filePath = await fileWith(duplicateObjectPdf());
+  const doc = await record(filePath, 'email', null);
+  expect(doc.status).toBe('unsorted');
+  const stored = await fs.promises.readFile(filePath);
+  expect(stored.toString('latin1')).not.toContain('/JavaScript');
+  const row = await db('inbound_documents').where({ id: doc.id }).first();
+  expect(row.file_sha256).toBe(crypto.createHash('sha256').update(stored).digest('hex'));
 });
 
 test('a mail attachment the PDF check refuses is recorded as failed and declined, once', async () => {
