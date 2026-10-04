@@ -88,6 +88,22 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     expect(result).toEqual({ success: true });
   });
 
+  it('starts nothing when the service stopped while it waited for the stale build', async () => {
+    service.versions.set(9, 2);
+    let settleStale;
+    const stale = new Promise((resolve) => { settleStale = resolve; });
+    service.activeBuilds.set(9, { promise: stale, version: 1 });
+    const build = jest.spyOn(service, '_build').mockResolvedValue({ success: true });
+
+    const pending = service.generateZip(9);
+    service.stopped = true;
+    settleStale({ success: false, error: 'Build invalidated' });
+
+    expect(await pending).toEqual({ success: false, error: 'Service stopped' });
+    expect(build).not.toHaveBeenCalled();
+    expect(service.activeBuilds.has(9)).toBe(false);
+  });
+
   it('still shares one in-flight build while its version is current', async () => {
     service.versions.set(6, 1);
     const current = Promise.resolve({ success: true, key: 'k' });
