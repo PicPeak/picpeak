@@ -97,6 +97,26 @@ describe('restoreService — file restore integrity', () => {
     });
   });
 
+  describe('descriptor ownership', () => {
+    it('closes the vetted source handle when the target cannot be prepared', async () => {
+      // A regular file where the target directory should be: mkdir throws
+      // after openRestoreSource handed the loop an open descriptor.
+      const entries = [];
+      for (let i = 0; i < 40; i += 1) entries.push(writeFixture(`blocked/sub/f${i}.jpg`, `bytes-${i}`));
+      fs.writeFileSync(path.join(storageRoot, 'blocked'), 'not a directory');
+      const fdDir = '/dev/fd';
+      if (!fs.existsSync(fdDir)) return;
+      const openBefore = fs.readdirSync(fdDir).length;
+
+      await expect(restoreService.performFilesRestore(backupRoot, { files: { manifest: entries } }, { restoreType: 'files' }))
+        .rejects.toThrow();
+
+      const openAfter = fs.readdirSync(fdDir).length;
+      // Descriptor count may wobble by the readdir itself, never by 40 leaked handles.
+      expect(openAfter - openBefore).toBeLessThan(5);
+    });
+  });
+
   describe('restore_max_file_size_mb is enforced (4266a14b)', () => {
     it('reads the configured limit', async () => {
       await db('app_settings').where({ setting_key: 'restore_max_file_size_mb' }).update({ setting_value: '1' });

@@ -1640,17 +1640,26 @@ END $$;`
           continue;
         }
 
-        // Create target directory
-        await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-        // Check if target exists and create backup
+        // Until the read stream takes the descriptor over, this loop owns
+        // it: a failure preparing the target (mkdir on a path blocked by a
+        // file, a full disk) must close it, or a manifest full of such
+        // entries runs the process out of descriptors.
         let targetBackup = null;
         try {
-          await fs.access(targetPath);
-          targetBackup = `${targetPath}.restore-backup`;
-          await fs.copyFile(targetPath, targetBackup);
+          // Create target directory
+          await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+          // Check if target exists and create backup
+          try {
+            await fs.access(targetPath);
+            targetBackup = `${targetPath}.restore-backup`;
+            await fs.copyFile(targetPath, targetBackup);
+          } catch (error) {
+            // Target doesn't exist, no backup needed
+          }
         } catch (error) {
-          // Target doesn't exist, no backup needed
+          await sourceHandle.close().catch(() => {});
+          throw error;
         }
 
         try {
