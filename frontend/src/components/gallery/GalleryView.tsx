@@ -715,6 +715,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       const photoParam = readPhotoParam();
       if (photoParam === null) {
         setLinkedPhotoId(null);
+        // A link still queued for resolution (its folder or filter not yet
+        // settled) must not reopen the lightbox on the grid we just came back to.
+        setPendingPhotoLink(null);
       } else {
         setPendingPhotoLink(photoParam);
       }
