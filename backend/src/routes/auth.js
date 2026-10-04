@@ -208,9 +208,10 @@ router.post('/admin/login', [
     // Second factor: if this admin has TOTP enabled, do NOT complete the login
     // yet. Issue a short-lived, single-purpose mfa_pending token and require the
     // code via /admin/login/mfa. We deliberately don't reset the lockout counter
-    // (trackSuccessfulLogin) or stamp last_login until the second factor passes,
-    // so MFA brute-force is still gated by the account lockout. `loginId` carries
-    // the typed identifier so the verify step tracks the same lockout bucket.
+    // (trackSuccessfulLogin) or stamp last_login until the second factor passes.
+    // MFA guessing is gated by the verify step's own account-wide bucket
+    // (`mfa:<id>`); `loginId` carries the typed identifier for the success
+    // record once the second factor passes.
     if (mfaService.isEnrolled(admin)) {
       const mfaToken = jwt.sign({
         id: admin.id,
@@ -277,7 +278,14 @@ router.post('/admin/login/mfa', [
     }
 
     const lockoutKey = decoded.loginId || decoded.username;
-    const lockoutStatus = await checkAccountLockout(lockoutKey, ipAddress);
+    // The second factor has a bucket of its own, counted across every source
+    // address. Per-IP (like the password step) would hand a holder of the
+    // mfa_pending token a fresh batch of six-digit guesses for each address
+    // they rotate to; sharing the password step's bucket would let anonymous
+    // password failures lock the owner out of this step. Only someone who
+    // already passed the password can add to it.
+    const mfaLockoutKey = `mfa:${decoded.id}`;
+    const lockoutStatus = await checkAccountLockout(mfaLockoutKey);
     if (lockoutStatus.isLocked) {
       return res.status(423).json({
         error: 'Account temporarily locked due to too many failed attempts',
@@ -328,7 +336,7 @@ router.post('/admin/login/mfa', [
     }
 
     if (!ok) {
-      await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
+      await trackFailedAttempt(mfaLockoutKey, ipAddress, userAgent);
       return res.status(401).json({ error: 'Invalid verification code', code: 'MFA_INVALID' });
     }
 
@@ -348,7 +356,7 @@ router.post('/admin/login/mfa', [
           updated_at: new Date()
         });
       if (consumed !== 1) {
-        await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
+        await trackFailedAttempt(mfaLockoutKey, ipAddress, userAgent);
         return res.status(401).json({ error: 'Invalid verification code', code: 'MFA_INVALID' });
       }
       await logActivity('admin_mfa_recovery_used',
