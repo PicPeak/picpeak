@@ -30,13 +30,17 @@
  * unsupported files would still resolve every one of them. A second budget
  * bounds the files examined: EXAMINED_PER_COLLECTED times the limit, enough
  * for RAW + sidecar + JPEG sets several times over. The walk stops when
- * either budget is spent.
+ * either budget is spent. When it is the examined budget that ends the walk
+ * with entries still unread, `onTruncated` is called once, so the caller can
+ * say so instead of omitting files silently (running into `limit` is the
+ * caller's own cap and has its own notice).
  */
 export const EXAMINED_PER_COLLECTED = 5;
 
 export interface CollectOptions {
   limit?: number;
   accept?: (file: File) => boolean;
+  onTruncated?: () => void;
 }
 
 export async function collectDroppedFiles(
@@ -58,11 +62,13 @@ export async function collectDroppedFiles(
     .filter((entry): entry is FileSystemEntry => entry !== null);
   if (entries.length === 0) return plainFiles;
 
-  const walk: Walk = { out: [], limit, accept, examined: 0, maxExamined: limit * EXAMINED_PER_COLLECTED };
+  const walk: Walk = {
+    out: [], limit, accept, examined: 0, maxExamined: limit * EXAMINED_PER_COLLECTED, truncated: false,
+  };
   for (const entry of entries) {
-    if (spent(walk)) break;
     await walkEntry(entry, walk);
   }
+  if (walk.truncated) options.onTruncated?.();
   return walk.out;
 }
 
@@ -72,9 +78,18 @@ interface Walk {
   accept: (file: File) => boolean;
   examined: number;
   maxExamined: number;
+  truncated: boolean;
 }
 
-const spent = (walk: Walk) => walk.out.length >= walk.limit || walk.examined >= walk.maxExamined;
+// Called with an entry still to be walked: true once either budget is spent.
+// Running out of the examined budget short of the limit is what leaves
+// entries unread without the caller's cap being the reason.
+const spent = (walk: Walk) => {
+  if (walk.out.length >= walk.limit) return true;
+  if (walk.examined < walk.maxExamined) return false;
+  walk.truncated = true;
+  return true;
+};
 
 async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
   if (spent(walk)) return;

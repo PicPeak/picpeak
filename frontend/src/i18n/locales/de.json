@@ -862,6 +862,7 @@
     "uploadMedia": "Fotos & Videos hochladen",
     "maxFilesReached": "Maximal {{limit}} Dateien erlaubt",
     "someFilesSkipped": "Nur {{allowed}} weitere Dateien erlaubt (Limit {{limit}})",
+    "folderTooLarge": "Der Ordner ist zu groß, um ihn vollständig zu durchsuchen. Es wurde nur ein Teil hinzugefügt; ziehe Unterordner einzeln hinein.",
     "tooManyFiles": "Maximal {{limit}} Dateien können gleichzeitig hochgeladen werden",
     "limitInfo": "{{selected}} von {{limit}} Dateien ausgewählt ({{remaining}} verbleibend)",
     "limitReached": "Upload-Limit erreicht ({{limit}} Dateien pro Vorgang)",

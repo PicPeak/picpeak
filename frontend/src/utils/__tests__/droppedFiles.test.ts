@@ -13,7 +13,7 @@
  *  - hidden entries inside a folder are skipped
  *  - no `items` / no `webkitGetAsEntry` falls back to `dataTransfer.files`
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { collectDroppedFiles, EXAMINED_PER_COLLECTED } from '../droppedFiles';
 
@@ -164,10 +164,34 @@ describe('collectDroppedFiles', () => {
       dirEntry('more', names.slice(60).map(txt)),
     ]);
 
-    const files = await collectDroppedFiles(dt, { limit: 3, accept: (f) => f.type === 'image/jpeg' });
+    const onTruncated = vi.fn();
+    const files = await collectDroppedFiles(dt, { limit: 3, accept: (f) => f.type === 'image/jpeg', onTruncated });
 
     expect(files).toEqual([]);
     expect(resolved).toBe(3 * EXAMINED_PER_COLLECTED);
+    expect(onTruncated).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports truncation only when the examined budget left entries unread', async () => {
+    const onTruncated = vi.fn();
+    // Stopped by the limit: the caller's own cap, not a truncated scan.
+    await collectDroppedFiles(
+      dataTransferFrom([dirEntry('d', ['1.jpg', '2.jpg', '3.jpg', '4.jpg'].map(fileEntry))]),
+      { limit: 2, onTruncated },
+    );
+    // Budget spent on exactly the last entry: nothing was left unread.
+    const txt = (name: string): FileSystemFileEntry =>
+      ({
+        isFile: true, isDirectory: false, name,
+        file: (ok: (f: File) => void) => ok(new File(['x'], name, { type: 'text/plain' })),
+      }) as unknown as FileSystemFileEntry;
+    const exact = Array.from({ length: EXAMINED_PER_COLLECTED }, (_, i) => txt(`${i}.txt`));
+    await collectDroppedFiles(
+      dataTransferFrom([dirEntry('d', exact)]),
+      { limit: 1, accept: (f) => f.type === 'image/jpeg', onTruncated },
+    );
+
+    expect(onTruncated).not.toHaveBeenCalled();
   });
 
   it('sorts a directory as a whole, across readEntries batches', async () => {

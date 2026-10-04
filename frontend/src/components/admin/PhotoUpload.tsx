@@ -215,7 +215,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // addFiles when the walk lands. A file it rejects is not collected, so
     // its size toast fires here or in addFiles, never in both.
     const accept = (file: File) => !settingsLoadedRef.current || admitFileRef.current(file);
-    void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept })
+    // The walk also stops after examining a multiple of the ceiling (a tree
+    // of mostly unsupported files); say so rather than omit the rest silently.
+    const onTruncated = () => toast.warning(t('upload.folderTooLarge'));
+    void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept, onTruncated })
       .then(async (files) => {
         await whenSettingsSettled();
         addFilesRef.current(files);

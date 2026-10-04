@@ -862,6 +862,7 @@
     "uploadMedia": "Upload Photos & Videos",
     "maxFilesReached": "Maximum {{limit}} files allowed",
     "someFilesSkipped": "Only {{allowed}} more files can be added (limit {{limit}})",
+    "folderTooLarge": "The folder is too large to scan completely. Only part of it was added; drop sub-folders separately.",
     "tooManyFiles": "Maximum {{limit}} files can be uploaded at once",
     "limitInfo": "{{selected}} of {{limit}} files selected ({{remaining}} remaining)",
     "limitReached": "Upload limit reached ({{limit}} files per batch)",

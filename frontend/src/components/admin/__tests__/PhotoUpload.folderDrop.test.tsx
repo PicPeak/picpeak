@@ -296,6 +296,27 @@ describe('PhotoUpload folder drop', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /common\.upload/ })).not.toBeDisabled());
   });
 
+  it('says so when a folder is too large to scan completely', async () => {
+    // More unsupported files than the examined budget (five times the walk
+    // ceiling of 2001) before the one photo at the end of the tree.
+    const txt = (name: string) => ({
+      isFile: true, isDirectory: false, name,
+      file: (ok: (f: File) => void) => ok(new File(['x'], name, { type: 'text/plain' })),
+    });
+    const notes = Array.from({ length: 10010 }, (_, i) => txt(`n${i}.txt`));
+    await dropOnZone({
+      files: [],
+      items: [
+        { kind: 'file', webkitGetAsEntry: () => dirEntry('notes', notes) },
+        { kind: 'file', webkitGetAsEntry: () => dirEntry('photos', [fileEntry('unreached.jpg')]) },
+      ],
+    });
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.folderTooLarge'), { timeout: 10000 });
+    expect(toastWarning).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('unreached.jpg')).not.toBeInTheDocument();
+  }, 20000);
+
   it('reports an oversized file in a folder once', async () => {
     const big = new File(['x'], 'huge.jpg', { type: 'image/jpeg' });
     Object.defineProperty(big, 'size', { value: 60 * 1024 * 1024 });
