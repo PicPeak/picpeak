@@ -93,16 +93,23 @@ module.exports = (router) => {
         // Use the full URL so customers can click straight from the email.
         const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken: event.share_token });
 
-        emailSent = await queueEmail(id, recipientEmail, 'gallery_created', {
-          customer_name: recipientName,
-          customer_email: recipientEmail,
-          host_name: recipientName,
-          event_name: event.event_name,
-          event_date: event.event_date,  // Pass raw date - will be formatted by email processor
-          gallery_link: shareUrl,
-          gallery_password: newPassword,
-          expiry_date: event.expires_at  // Pass raw date - will be formatted by email processor
-        }) === true;
+        // The password is already changed above; a queue failure must not
+        // turn that into a 500 without the audit row below.
+        try {
+          emailSent = await queueEmail(id, recipientEmail, 'gallery_created', {
+            customer_name: recipientName,
+            customer_email: recipientEmail,
+            host_name: recipientName,
+            event_name: event.event_name,
+            event_date: event.event_date,  // Pass raw date - will be formatted by email processor
+            gallery_link: shareUrl,
+            gallery_password: newPassword,
+            expiry_date: event.expires_at  // Pass raw date - will be formatted by email processor
+          }) === true;
+        } catch (queueError) {
+          logger.error('Password reset: could not queue the notification email', { eventId: id, error: queueError.message });
+          emailSent = false;
+        }
       }
 
       // Log activity
