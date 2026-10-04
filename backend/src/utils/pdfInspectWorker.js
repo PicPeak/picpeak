@@ -25,6 +25,7 @@ const { inspectPdf } = require('./pdfInspect');
         bytes: info.bytes,
         sha256: info.sha256,
         normalised: info.normalised,
+        ambiguousObjects: info.ambiguousObjects === true,
       },
     });
   } catch (err) {

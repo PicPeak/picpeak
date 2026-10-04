@@ -38,6 +38,40 @@ test('a plain PDF passes and is described', async () => {
   expect(info.sha256).toBe(crypto.createHash('sha256').update(info.normalised).digest('hex'));
 });
 
+test('a file whose xref points at a definition the scan did not keep is flagged, and normalised drops it', async () => {
+  const { duplicateObjectPdf } = require('../integration/helpers/pdfFixture');
+  const buffer = duplicateObjectPdf();
+  const info = await validatePdf(buffer);
+  // The scan kept the harmless last catalog, so the check passes …
+  expect(info.pages).toBe(1);
+  expect(buffer.toString('latin1')).toContain('/JavaScript');
+  expect(info.normalised.toString('latin1')).not.toContain('/JavaScript');
+  // … and the caller that cannot store `normalised` is told the two disagree.
+  expect(info.ambiguousObjects).toBe(true);
+  expect((await validatePdf(await makePdf({ pages: 1 }))).ambiguousObjects).toBe(false);
+});
+
+test('an incremental update whose newest xref points at the last definition is not ambiguous', async () => {
+  const { minimalPdf } = require('../integration/helpers/pdfFixture');
+  const { _internal } = require('../../src/utils/pdfInspect');
+  const base = (await minimalPdf({ label: 'inc' })).toString('latin1');
+  const prevXref = Number(/startxref\s+(\d+)/.exec(base)[1]);
+  const root = Number(/\/Root (\d+) 0 R/.exec(base)[1]);
+  const catalog = new RegExp(`${root} 0 obj\\n([\\s\\S]*?)endobj`).exec(base)[1];
+  const append = (pointAtNew) => {
+    let out = `${base}\n`;
+    const newAt = out.length;
+    out += `${root} 0 obj\n${catalog.replace(/>>\s*$/, '/Lang (de) >>\n')}endobj\n`;
+    const oldAt = base.indexOf(`\n${root} 0 obj`) + 1;
+    const xrefAt = out.length;
+    out += `xref\n${root} 1\n${String(pointAtNew ? newAt : oldAt).padStart(10, '0')} 00000 n \n`
+      + `trailer\n<< /Size 99 /Root ${root} 0 R /Prev ${prevXref} >>\nstartxref\n${xrefAt}\n%%EOF\n`;
+    return Buffer.from(out, 'latin1');
+  };
+  expect(_internal.findAmbiguousObjects(append(true))).toBe(false);
+  expect(_internal.findAmbiguousObjects(append(false))).toBe(true);
+});
+
 // One page whose single FlateDecode stream inflates to `mb` megabytes of
 // zeros — the shape a decompression bomb actually has. A few hundred KB of
 // upload; the damage is all on the other side of the inflate.

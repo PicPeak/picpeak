@@ -125,6 +125,24 @@ describe('signed-contract PDF upload hardening', () => {
       expect(signedFiles()).toEqual(before);
     });
 
+    it('refuses a PDF whose xref resolves an object the scan did not keep', async () => {
+      // The last definition of the catalog is harmless and is what pdf-lib
+      // scans; the xref points at the first, which carries JavaScript. The
+      // original bytes are kept for signer uploads, so the file is refused.
+      const { duplicateObjectPdf } = require('../integration/helpers/pdfFixture');
+      const id = await insertContract();
+      const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+      const before = signedFiles();
+
+      const res = await publicUpload(link, await grantFor(link)).attach('file', ...asPdf(duplicateObjectPdf()));
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('PDF_AMBIGUOUS_OBJECTS');
+      expect((await contractRow(id)).status).toBe('sent');
+      expect((await tokenRow(link)).used_at).toBeNull();
+      expect(signedFiles()).toEqual(before);
+    });
+
     it('refuses a file that is only a PDF signature, not a document', async () => {
       const id = await insertContract();
       const link = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });

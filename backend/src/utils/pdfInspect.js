@@ -73,6 +73,82 @@ function hasPdfSignature(buffer) {
 }
 
 /**
+ * Does a viewer resolve some object to a definition this scan did not keep?
+ *
+ * pdf-lib reads the file front to back and keeps the LAST definition of each
+ * object number; a viewer follows the cross-reference table, which may point
+ * at an EARLIER one. `normalised` closes that gap for callers that store it,
+ * but a signed paper copy has to be kept byte for byte, so for that caller
+ * the disagreement itself has to be found.
+ *
+ * Only files that define an object number more than once can disagree.
+ * Those are legitimate too — an incremental update (a digital signature
+ * appended by a viewer) redefines objects — and there the newest xref
+ * section points at the last definition, which is the one the scan kept.
+ * So: collect every `N G obj` offset, and where a number repeats, walk the
+ * classic xref chain (startxref, then /Prev) and require the entry to point
+ * at the final definition. A cross-reference stream cannot be read here
+ * without decoding it, so a file with duplicates and no readable table is
+ * reported as ambiguous as well — a refusal, never a false pass.
+ *
+ * @returns {boolean} true when the file is ambiguous
+ */
+function findAmbiguousObjects(buffer) {
+  const text = buffer.toString('latin1');
+  const defs = new Map(); // "num gen" -> [offsets]
+  const objRe = /(?:^|[^0-9])(\d+)\s+(\d+)\s+obj\b/g;
+  let m;
+  while ((m = objRe.exec(text)) !== null) {
+    const key = `${Number(m[1])} ${Number(m[2])}`;
+    // Offset of the object number itself, not of the separator the match
+    // may have consumed in front of it — that is what an xref entry holds.
+    const start = m.index + (m[0].length - m[0].replace(/^[^0-9]/, '').length);
+    (defs.get(key) || defs.set(key, []).get(key)).push(start);
+  }
+  const repeated = [...defs.entries()].filter(([, offsets]) => offsets.length > 1);
+  if (repeated.length === 0) return false;
+
+  // Latest xref section first; an entry seen earlier in the chain wins.
+  const resolved = new Map(); // num -> offset
+  const startRe = /startxref\s+(\d+)\s*%%EOF\s*$/;
+  const sx = startRe.exec(text.slice(-2048));
+  if (!sx) return true;
+  let at = Number(sx[1]);
+  const seen = new Set();
+  while (Number.isFinite(at) && at >= 0 && at < text.length && !seen.has(at)) {
+    seen.add(at);
+    const section = text.slice(at, at + 1024 * 1024);
+    if (!/^\s*xref\b/.test(section)) return true; // a cross-reference stream
+    let cursor = section.indexOf('xref') + 4;
+    for (;;) {
+      const sub = /^\s*(\d+)\s+(\d+)\s*\n/.exec(section.slice(cursor));
+      if (!sub) break;
+      cursor += sub[0].length;
+      const first = Number(sub[1]); const count = Number(sub[2]);
+      for (let i = 0; i < count; i += 1) {
+        const entry = section.slice(cursor, cursor + 20);
+        const e = /^(\d{10}) (\d{5}) ([nf])/.exec(entry);
+        if (!e) return true;
+        cursor += 20;
+        const num = first + i;
+        if (e[3] === 'n' && !resolved.has(num)) resolved.set(num, Number(e[1]));
+      }
+    }
+    const trailer = /trailer\s*<<([\s\S]*?)>>/.exec(section.slice(cursor));
+    const prev = trailer && /\/Prev\s+(\d+)/.exec(trailer[1]);
+    at = prev ? Number(prev[1]) : -1;
+  }
+
+  for (const [key, offsets] of repeated) {
+    const num = Number(key.split(' ')[0]);
+    const want = resolved.get(num);
+    if (want === undefined) return true;
+    if (want !== offsets[offsets.length - 1]) return true;
+  }
+  return false;
+}
+
+/**
  * Walk a value's direct dictionaries and arrays. Actions, name trees and
  * form dictionaries are often nested directly inside another object (an
  * annotation's /A, the catalog's /Names or /AcroForm), so looking at
@@ -209,7 +285,11 @@ async function assertInflateWithinBudget(buffer, budget) {
  * saw, and `bytes` / `sha256` describe those bytes: store them, never the
  * upload.
  *
- * @returns {Promise<{ pages: number, bytes: number, sha256: string, normalised: Buffer }>}
+ * `ambiguousObjects` says whether a viewer would resolve some object to a
+ * definition the scan did not keep (see findAmbiguousObjects); a caller
+ * that stores the original bytes rather than `normalised` must refuse it.
+ *
+ * @returns {Promise<{ pages: number, bytes: number, sha256: string, normalised: Buffer, ambiguousObjects: boolean }>}
  */
 async function inspectPdf(buffer, {
   maxBytes = DEFAULT_MAX_BYTES,
@@ -291,6 +371,7 @@ async function inspectPdf(buffer, {
     bytes: normalised.length,
     sha256: crypto.createHash('sha256').update(normalised).digest('hex'),
     normalised,
+    ambiguousObjects: findAmbiguousObjects(buffer),
   };
 }
 
@@ -299,5 +380,5 @@ module.exports = {
   DEFAULT_MAX_PAGES,
   DEFAULT_MAX_INFLATE_BYTES,
   inspectPdf,
-  _internal: { hasPdfSignature, findActiveContent, assertInflateWithinBudget },
+  _internal: { hasPdfSignature, findActiveContent, assertInflateWithinBudget, findAmbiguousObjects },
 };
