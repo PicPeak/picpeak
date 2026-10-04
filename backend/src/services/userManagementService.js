@@ -518,11 +518,14 @@ async function deleteAdminUser(id, deletedById) {
   //     customer_invitations.invited_by (drops pending tokens + invites
   //     this user issued)
   // The bell dismissals this admin recorded (migration 261): CASCADE on
-  // PostgreSQL, explicit here for SQLite, which runs without PRAGMA
-  // foreign_keys.
-  await db('notification_dismissals').where('admin_id', id).del();
-  await deleteWithAccountingHistory(db, 'admin_users', { id },
-    { actor: deletedById, source: 'admin_user.delete' });
+  // PostgreSQL, explicit for SQLite, which runs without PRAGMA foreign_keys —
+  // in the same transaction as the account, so a refused delete (a NO ACTION
+  // FK still pointing at the user) leaves their bell state intact.
+  await db.transaction(async (trx) => {
+    await trx('notification_dismissals').where('admin_id', id).del();
+    await deleteWithAccountingHistory(trx, 'admin_users', { id },
+      { actor: deletedById, source: 'admin_user.delete' });
+  });
 
   await logActivity('admin_user_deleted',
     { userId: id, username: user.username, email: user.email },
