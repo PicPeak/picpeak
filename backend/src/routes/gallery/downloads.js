@@ -396,6 +396,10 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         // A 416 keeps the Content-Range send staged: that is what tells a
         // resuming client to start over, where a 500 would not.
         if (status !== 416) res.removeHeader('Content-Range');
+        // The file's caching policy went with its headers; an error answer
+        // must not be cached in its place (the storage-stream error path
+        // does the same).
+        res.setHeader('Cache-Control', 'no-store');
         if (gone) return res.status(404).json({ error: 'Photo file not found' });
         return res.status(status).json({ error: status === 416 ? 'Requested range not satisfiable' : 'Failed to download photo' });
       }

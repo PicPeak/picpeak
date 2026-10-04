@@ -110,6 +110,7 @@ describe('single-photo download when res.sendFile fails (issue 1733)', () => {
 
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.headers['cache-control']).toBe('no-store');
     // Not the staged attachment headers, or the browser saves a .jpg of JSON.
     expect(res.headers['content-disposition']).toBeUndefined();
     expect(res.body).toEqual({ error: 'Photo file not found' });
@@ -140,6 +141,7 @@ describe('single-photo download when res.sendFile fails (issue 1733)', () => {
     for (const h of ['last-modified', 'accept-ranges', 'content-range']) {
       expect(res.headers[h]).toBeUndefined();
     }
+    expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body).toEqual({ error: 'Failed to download photo' });
   });
 

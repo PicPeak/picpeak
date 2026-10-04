@@ -159,6 +159,9 @@ class DownloadZipService {
       if (existing.version === (this.versions.get(eventId) || 0)) return existing.promise;
       await existing.promise.catch(() => {});
       if (this.activeBuilds.get(eventId) === existing) this.activeBuilds.delete(eventId);
+      // stop() may have drained everything while we waited: a build started
+      // now would never be awaited by anyone.
+      if (this.stopped) return { success: false, error: 'Service stopped' };
     }
 
     const version = (this.versions.get(eventId) || 0) + 1;
