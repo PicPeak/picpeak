@@ -67,15 +67,22 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     expect(service.versions.get(3)).toBe(5);
   });
 
-  it('starts a fresh build when the active one was invalidated mid-flight', async () => {
+  it('starts a fresh build once the invalidated one has settled, never alongside it', async () => {
     // The debounced regeneration lands while the stale build is still
-    // uploading; reusing that promise would publish nothing new.
+    // uploading; reusing that promise would publish nothing new, and
+    // overlapping it would let its discard delete the replacement's zip.
     service.versions.set(5, 2);
-    const stale = new Promise(() => {});
+    let settleStale;
+    const stale = new Promise((resolve) => { settleStale = resolve; });
     service.activeBuilds.set(5, { promise: stale, version: 1 });
     const build = jest.spyOn(service, '_build').mockResolvedValue({ success: true });
 
-    const result = await service.generateZip(5);
+    const pending = service.generateZip(5);
+    await Promise.resolve();
+    expect(build).not.toHaveBeenCalled();
+
+    settleStale({ success: false, error: 'Build invalidated' });
+    const result = await pending;
 
     expect(build).toHaveBeenCalledWith(5, 3);
     expect(result).toEqual({ success: true });
