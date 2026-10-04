@@ -146,9 +146,13 @@ class DownloadZipService {
    * Concurrent calls for the same eventId share one in-flight build.
    */
   async generateZip(eventId) {
-    // If already building, return the existing promise
+    // If already building, return the existing promise — unless an
+    // invalidate() has moved the version on since that build started: its
+    // result is going to be discarded, and the debounced regeneration that
+    // lands while it is still uploading must start a fresh build instead of
+    // waiting on it.
     const existing = this.activeBuilds.get(eventId);
-    if (existing) return existing.promise;
+    if (existing && existing.version === (this.versions.get(eventId) || 0)) return existing.promise;
 
     const version = (this.versions.get(eventId) || 0) + 1;
     this.versions.set(eventId, version);
@@ -354,6 +358,14 @@ class DownloadZipService {
       // to a tmp file/object first then commits in LocalFs; in S3 the key only
       // exists after the multipart upload completes).
       await storage.putFromFile(finalKey, tmpPath, { contentType: 'application/zip' });
+
+      // An invalidate() that arrived during the upload has already run its
+      // cleanup; publishing now would put a zip built under the old settings
+      // back into the row. Drop the object instead.
+      if (this.versions.get(eventId) !== version) {
+        await storage.delete(finalKey).catch(() => {});
+        return { success: false, error: 'Build invalidated' };
+      }
 
       const stat = await storage.stat(finalKey);
 

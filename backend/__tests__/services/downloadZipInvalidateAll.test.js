@@ -66,4 +66,28 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     expect(service.invalidate).toHaveBeenCalledTimes(1);
     expect(service.versions.get(3)).toBe(5);
   });
+
+  it('starts a fresh build when the active one was invalidated mid-flight', async () => {
+    // The debounced regeneration lands while the stale build is still
+    // uploading; reusing that promise would publish nothing new.
+    service.versions.set(5, 2);
+    const stale = new Promise(() => {});
+    service.activeBuilds.set(5, { promise: stale, version: 1 });
+    const build = jest.spyOn(service, '_build').mockResolvedValue({ success: true });
+
+    const result = await service.generateZip(5);
+
+    expect(build).toHaveBeenCalledWith(5, 3);
+    expect(result).toEqual({ success: true });
+  });
+
+  it('still shares one in-flight build while its version is current', async () => {
+    service.versions.set(6, 1);
+    const current = Promise.resolve({ success: true, key: 'k' });
+    service.activeBuilds.set(6, { promise: current, version: 1 });
+    const build = jest.spyOn(service, '_build');
+
+    expect(await service.generateZip(6)).toEqual({ success: true, key: 'k' });
+    expect(build).not.toHaveBeenCalled();
+  });
 });

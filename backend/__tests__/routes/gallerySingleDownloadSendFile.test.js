@@ -115,8 +115,15 @@ describe('single-photo download when res.sendFile fails (issue 1733)', () => {
     expect(res.body).toEqual({ error: 'Photo file not found' });
   });
 
-  it('answers 500 when the file cannot be read', async () => {
+  it('answers 500 when the file cannot be read, without the file\'s staged metadata', async () => {
     sendFileBehaviour = (res, cb) => {
+      // send stats the file and stages its metadata before the read stream
+      // fails; none of it belongs on the JSON answer.
+      res.setHeader('ETag', 'W/"abc-123"');
+      res.setHeader('Last-Modified', 'Wed, 01 Oct 2026 10:00:00 GMT');
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Cache-Control', 'public, max-age=0');
+      res.setHeader('Content-Range', 'bytes 0-99/1024');
       const err = new Error('EACCES: permission denied');
       err.code = 'EACCES';
       cb(err);
@@ -127,6 +134,12 @@ describe('single-photo download when res.sendFile fails (issue 1733)', () => {
     expect(res.status).toBe(500);
     expect(res.headers['content-type']).toMatch(/json/);
     expect(res.headers['content-disposition']).toBeUndefined();
+    // Express computes a fresh weak ETag for the JSON body; the file's own
+    // validator must not survive into it.
+    expect(res.headers.etag).not.toBe('W/"abc-123"');
+    for (const h of ['last-modified', 'accept-ranges', 'content-range']) {
+      expect(res.headers[h]).toBeUndefined();
+    }
     expect(res.body).toEqual({ error: 'Failed to download photo' });
   });
 
