@@ -60,6 +60,11 @@ export const TileRating: React.FC<TileRatingProps> = ({
         guest_email: data.guest_email,
       }),
     onSuccess: async (_result, data) => {
+      // A list request still in flight (guest mode: ensureIdentity()
+      // invalidates gallery-photos right before the rating POST) would land
+      // after the patch below and put the unrated row back. Cancel it; the
+      // query refetches on its own next trigger with the rating included.
+      await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
       // In place, not a refetch: a 500-photo list re-hydrated per star is
       // what the lightbox path already costs, and the tile is meant to be
       // the fast route. The key prefix matches every filter/guest variant.

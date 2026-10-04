@@ -240,6 +240,29 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(cachedPhoto(7).my_rating).toBe(4);
   });
 
+  it('is not overwritten by a list request that was already in flight', async () => {
+    // Guest mode: ensureIdentity() invalidates gallery-photos just before the
+    // rating POST; the refetch it starts carries the unrated row.
+    guestIdentityContext = { identityMode: 'guest', ensureIdentity: vi.fn().mockResolvedValue(undefined) };
+    seedCache(PHOTO);
+    let resolveList: (v: GalleryData) => void = () => {};
+    const stale = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: null }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
+    // A fetch that completes only after the patch has been written.
+    void queryClient.fetchQuery({
+      queryKey: ['gallery-photos', SLUG, 'all', undefined],
+      queryFn: () => new Promise<GalleryData>((resolve) => { resolveList = resolve; }),
+      staleTime: 0,
+    }).catch(() => {});
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
+    resolveList(stale);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(cachedPhoto(7).my_rating).toBe(5);
+  });
+
   it('keeps the star when the summary request fails', async () => {
     vi.mocked(feedbackService.getPhotoFeedback).mockRejectedValue(new Error('offline'));
     seedCache(PHOTO);
