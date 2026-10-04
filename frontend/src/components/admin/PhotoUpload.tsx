@@ -155,6 +155,11 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   addFilesRef.current = addFiles;
   const admitFileRef = useRef(admitFile);
   admitFileRef.current = admitFile;
+  // Whether the limits above come from the server yet. Until admin-settings
+  // has resolved, admitFile judges by the defaults (no video, 50 MB), which
+  // must not decide what a folder walk keeps.
+  const settingsLoadedRef = useRef(false);
+  settingsLoadedRef.current = settings !== undefined;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     addFiles(Array.from(e.target.files || []));
@@ -191,7 +196,13 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // The walk stops at a fixed ceiling instead of reading a whole archive;
     // the cap itself is applied by addFiles against the selection and the
     // settings as they are when the walk lands.
-    void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept: (file) => admitFileRef.current(file) })
+    // The prefilter only keeps sidecars and oversized files from using up
+    // the ceiling, and only once the real limits are known: a file read
+    // before admin-settings resolved is collected as it is and judged by
+    // addFiles when the walk lands. A file it rejects is not collected, so
+    // its size toast fires here or in addFiles, never in both.
+    const accept = (file: File) => !settingsLoadedRef.current || admitFileRef.current(file);
+    void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept })
       .then((files) => addFilesRef.current(files))
       .finally(() => setPendingWalks((n) => n - 1));
   };

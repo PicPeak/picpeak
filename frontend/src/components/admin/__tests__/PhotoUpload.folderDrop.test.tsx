@@ -214,6 +214,66 @@ describe('PhotoUpload folder drop', () => {
     await waitFor(() => expect(uploadButton()).not.toBeDisabled());
   });
 
+  it('keeps files read before the settings resolved when the resolved limits allow them', async () => {
+    // The whole walk finishes while admin-settings is still loading: under
+    // the defaults the video (type) and the 60 MB image (size) would be
+    // dropped during the walk, with nothing left for addFiles to recover.
+    let releaseSettings: (() => void) | null = null;
+    settingsMock.mockImplementation(() => new Promise((ok) => {
+      releaseSettings = () => ok({
+        ...DEFAULT_SETTINGS,
+        general_allowed_file_types: 'jpg,mp4',
+        general_max_file_size_mb: 100,
+      });
+    }));
+    const sized = (name: string, type: string, mb: number) => {
+      const file = new File(['x'], name, { type });
+      Object.defineProperty(file, 'size', { value: mb * 1024 * 1024 });
+      return { isFile: true, isDirectory: false, name, file: (ok: (f: File) => void) => ok(file) };
+    };
+    // The walk waits on its last file, so addFiles runs after the settings.
+    let releaseLast: (() => void) | null = null;
+    const last = {
+      isFile: true, isDirectory: false, name: 'z.jpg',
+      file: (ok: (f: File) => void) => { releaseLast = () => ok(jpg('z.jpg')); },
+    };
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    fireEvent.drop(zone, {
+      dataTransfer: {
+        files: [],
+        items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('mixed', [sized('big.jpg', 'image/jpeg', 60), sized('clip.mp4', 'video/mp4', 1), last]) }],
+      },
+    });
+    // big.jpg and clip.mp4 have been read by now, under the default limits.
+    await waitFor(() => expect(releaseLast).not.toBeNull());
+
+    releaseSettings!();
+    await waitFor(() => expect(screen.getByText('upload.videoSizeLimit')).toBeInTheDocument());
+    releaseLast!();
+
+    await waitFor(() => expect(screen.getByText('z.jpg')).toBeInTheDocument());
+    expect(screen.getByText('big.jpg')).toBeInTheDocument();
+    expect(screen.getByText('clip.mp4')).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('reports an oversized file in a folder once', async () => {
+    const big = new File(['x'], 'huge.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(big, 'size', { value: 60 * 1024 * 1024 });
+    await dropOnZone({
+      files: [],
+      items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('d', [
+        { isFile: true, isDirectory: false, name: 'huge.jpg', file: (ok: (f: File) => void) => ok(big) },
+        fileEntry('ok.jpg'),
+      ]) }],
+    });
+
+    await waitFor(() => expect(screen.getByText('ok.jpg')).toBeInTheDocument());
+    expect(screen.queryByText('huge.jpg')).not.toBeInTheDocument();
+    expect(toastError).toHaveBeenCalledTimes(1);
+  });
+
   it('applies the cap as it is when the walk lands, not as it was at the drop', async () => {
     // Cap 3, three files selected: no capacity at drop time. Two are removed
     // while the folder is still being walked, so both of its files must fit.
