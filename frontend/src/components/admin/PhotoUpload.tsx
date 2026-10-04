@@ -135,6 +135,12 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     commitSelection([...current, ...imageFiles]);
   };
 
+  // A folder walk settles in a later render; it must validate with the
+  // limits of that render (admin-settings may have resolved or refreshed
+  // meanwhile), not with the addFiles closure of the drop.
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     addFiles(Array.from(e.target.files || []));
     // Reset the input so picking the same files again still fires onChange.
@@ -168,7 +174,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // goes through the same filter and per-upload cap as picked files.
     setPendingWalks((n) => n + 1);
     void collectDroppedFiles(e.dataTransfer)
-      .then(addFiles)
+      .then((files) => addFilesRef.current(files))
       .finally(() => setPendingWalks((n) => n - 1));
   };
 

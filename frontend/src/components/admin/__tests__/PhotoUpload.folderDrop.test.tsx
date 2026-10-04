@@ -52,14 +52,14 @@ vi.mock('../../../hooks/useUploadProgress', () => ({
 vi.mock('../../../services/categories.service', () => ({
   categoriesService: { getEventCategories: vi.fn().mockResolvedValue([]) },
 }));
+const settingsMock = vi.fn();
 vi.mock('../../../services/settings.service', () => ({
-  settingsService: {
-    getAllSettings: vi.fn().mockResolvedValue({
-      general_allowed_file_types: 'jpg,jpeg,png,webp,mp4',
-      general_max_files_per_upload: 3,
-    }),
-  },
+  settingsService: { getAllSettings: (...a: any[]) => settingsMock(...a) },
 }));
+const DEFAULT_SETTINGS = {
+  general_allowed_file_types: 'jpg,jpeg,png,webp,mp4',
+  general_max_files_per_upload: 3,
+};
 
 const jpg = (name: string) => new File(['x'], name, { type: 'image/jpeg' });
 
@@ -97,6 +97,44 @@ describe('PhotoUpload folder drop', () => {
   beforeEach(() => {
     toastWarning.mockReset();
     toastError.mockReset();
+    settingsMock.mockReset();
+    settingsMock.mockResolvedValue(DEFAULT_SETTINGS);
+  });
+
+  it('validates a walk that lands after the settings resolved with the resolved limits', async () => {
+    // Settings resolve only when released; the walk is dropped before that.
+    // The defaults (no mp4) would reject the video; the resolved list keeps it.
+    let releaseSettings: (() => void) | null = null;
+    settingsMock.mockImplementation(() => new Promise((ok) => {
+      releaseSettings = () => ok({ ...DEFAULT_SETTINGS, general_allowed_file_types: 'mp4' });
+    }));
+    let releaseWalk: (() => void) | null = null;
+    const slowDir = {
+      isFile: false, isDirectory: true, name: 'clips',
+      createReader: () => {
+        let done = false;
+        return {
+          readEntries: (ok: (entries: object[]) => void) => {
+            const answer = () => {
+              ok(done ? [] : [{ isFile: true, isDirectory: false, name: 'clip.mp4',
+                file: (cb: (f: File) => void) => cb(new File(['x'], 'clip.mp4', { type: 'video/mp4' })) }]);
+              done = true;
+            };
+            if (done) answer(); else releaseWalk = answer;
+          },
+        };
+      },
+    };
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [], items: [{ kind: 'file', webkitGetAsEntry: () => slowDir }] } });
+
+    releaseSettings!();
+    await waitFor(() => expect(screen.getByText('upload.videoSizeLimit')).toBeInTheDocument());
+    releaseWalk!();
+
+    await waitFor(() => expect(screen.getByText('clip.mp4')).toBeInTheDocument());
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it('selects the files inside a dropped folder', async () => {
