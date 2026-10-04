@@ -123,6 +123,25 @@ describe('PhotoUpload folder drop', () => {
     expect(screen.queryByText('4.jpg')).not.toBeInTheDocument();
   });
 
+  it('holds the cap across two drops whose folder walks are still pending', async () => {
+    // Both walks resolve against the selection as it is when they land, not
+    // as it was when the drop happened; otherwise 2 + 2 files passed a cap of 3.
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    await waitFor(() => expect(screen.getByText('upload.videoSizeLimit')).toBeInTheDocument());
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    const drop = (names: string[]) => fireEvent.drop(zone, {
+      dataTransfer: { files: [], items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('d', names.map(fileEntry)) }] },
+    });
+    drop(['a1.jpg', 'a2.jpg']);
+    drop(['b1.jpg', 'b2.jpg']);
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:1:3'));
+    await waitFor(() => expect(screen.getByText('b1.jpg')).toBeInTheDocument());
+    expect(screen.getByText('a1.jpg')).toBeInTheDocument();
+    expect(screen.getByText('a2.jpg')).toBeInTheDocument();
+    expect(screen.queryByText('b2.jpg')).not.toBeInTheDocument();
+  });
+
   it('falls back to dataTransfer.files without the entry API', async () => {
     await dropOnZone({ files: [jpg('plain.jpg')] });
 

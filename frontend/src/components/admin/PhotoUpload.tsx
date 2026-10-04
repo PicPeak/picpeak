@@ -25,6 +25,15 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   const { t } = useTranslation();
   const { startUpload, isUploading } = useUploadSession();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // The selection as of the last add/remove, written synchronously. A folder
+  // walk resolves asynchronously, so `addFiles` may run from a render that
+  // predates another drop or pick; reading the cap against `selectedFiles`
+  // from that render let two concurrent additions exceed maxFilesPerUpload.
+  const selectedFilesRef = useRef<File[]>([]);
+  const commitSelection = (next: File[]) => {
+    selectedFilesRef.current = next;
+    setSelectedFiles(next);
+  };
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [replaceByName, setReplaceByName] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -100,9 +109,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     });
     if (imageFiles.length === 0) return;
 
-    const totalFiles = selectedFiles.length + imageFiles.length;
+    const current = selectedFilesRef.current;
+    const totalFiles = current.length + imageFiles.length;
     if (totalFiles > maxFilesPerUpload) {
-      const allowedNewFiles = maxFilesPerUpload - selectedFiles.length;
+      const allowedNewFiles = maxFilesPerUpload - current.length;
       if (allowedNewFiles <= 0) {
         toast.error(
           t('upload.maxFilesReached', { limit: maxFilesPerUpload }) ||
@@ -114,11 +124,11 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
         t('upload.someFilesSkipped', { allowed: allowedNewFiles, limit: maxFilesPerUpload }) ||
         `Only ${allowedNewFiles} more files can be added (limit ${maxFilesPerUpload})`
       );
-      setSelectedFiles((prev) => [...prev, ...imageFiles.slice(0, allowedNewFiles)]);
+      commitSelection([...current, ...imageFiles.slice(0, allowedNewFiles)]);
       return;
     }
 
-    setSelectedFiles((prev) => [...prev, ...imageFiles]);
+    commitSelection([...current, ...imageFiles]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,7 +166,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   };
 
   const removeFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    commitSelection(selectedFilesRef.current.filter((_, i) => i !== index));
   };
 
   const handleUpload = () => {
@@ -186,7 +196,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
       maxBytesPerChunk: maxBatchSizeMb * 1024 * 1024,
     });
 
-    setSelectedFiles([]);
+    commitSelection([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
