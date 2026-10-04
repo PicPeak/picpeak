@@ -2149,6 +2149,7 @@
       "submit": "Passwort zurücksetzen",
       "successHeading": "Passwort erfolgreich zurückgesetzt!",
       "emailSentNote": "Eine E-Mail-Benachrichtigung wurde an den Host gesendet.",
+      "emailNotSentNote": "Es wurde keine E-Mail gesendet: Die Galerie hat keine Kundenadresse, oder die E-Mail konnte nicht eingereiht werden. Teile das neue Passwort selbst mit.",
       "generatedLabel": "Automatisch generiertes Galerie-Passwort",
       "saveSecurelyNote": "Wichtig: Speichern Sie dieses Passwort sicher. Es kann nicht wiederhergestellt werden, sobald Sie dieses Fenster schließen.",
       "done": "Fertig",

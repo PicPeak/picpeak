@@ -28,6 +28,9 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
   const [errors, setErrors] = useState<{ password?: string; confirmPassword?: string }>({});
   const [resultPassword, setResultPassword] = useState<string | null>(null);
   const [resultWasGenerated, setResultWasGenerated] = useState(false);
+  // What the server did, not what was asked: the event may have no address,
+  // or the queue write may have failed after the password changed.
+  const [resultEmailSent, setResultEmailSent] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const validate = (): boolean => {
@@ -53,6 +56,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
       const result = await onConfirm(sendEmail, supplied);
       setResultPassword(result.newPassword);
       setResultWasGenerated(!supplied);
+      setResultEmailSent(result.emailSent === true);
       if (supplied) {
         toast.success(t('events.passwordReset.toastSuccess'));
       }
@@ -213,9 +217,14 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                 <CheckCircle className="w-5 h-5 text-green-600" />
                 <p className="font-medium text-green-900">{t('events.passwordReset.successHeading')}</p>
               </div>
-              {sendEmail && (
+              {sendEmail && resultEmailSent && (
                 <p className="text-sm text-green-700">
                   {t('events.passwordReset.emailSentNote')}
+                </p>
+              )}
+              {sendEmail && !resultEmailSent && (
+                <p className="text-sm text-amber-700" role="status">
+                  {t('events.passwordReset.emailNotSentNote')}
                 </p>
               )}
             </div>
