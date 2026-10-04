@@ -23,3 +23,21 @@ describe('toDateOnly', () => {
     expect(toDateOnly(new Date('nope'))).toBeNull();
   });
 });
+
+describe('every gallery payload that carries event_date goes through toDateOnly', () => {
+  // GalleryAuthContext caches the event from whichever of these answered
+  // last; one raw pg Date among them brings the previous-day shift back.
+  const fs = require('fs');
+  const path = require('path');
+  const read = (rel) => fs.readFileSync(path.join(__dirname, '../../src', rel), 'utf8');
+
+  test.each([
+    ['routes/auth.js', 3],
+    ['routes/gallery/metadata.js', 1],
+    ['services/galleryQueryService.js', 1],
+  ])('%s', (rel, count) => {
+    const src = read(rel);
+    expect(src.match(/toDateOnly\(event\.event_date\)/g) || []).toHaveLength(count);
+    expect(src).not.toMatch(/event_date: event\.event_date,/);
+  });
+});
