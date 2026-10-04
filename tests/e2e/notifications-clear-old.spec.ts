@@ -3,7 +3,7 @@ import { adminApiToken } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 
-test('clearing notifications dismisses entries from the bell without deleting the audit log @smoke', async ({ request }) => {
+test('clearing notifications dismisses entries from this admin\'s bell without deleting the audit log @smoke', async ({ request }) => {
   const token = await adminApiToken(request);
 
   const authHeaders = {
@@ -70,29 +70,23 @@ test('clearing notifications dismisses entries from the bell without deleting th
     .map((notification: any) => notification.id);
   expect(readNotificationIds.length).toBeGreaterThan(0);
 
-  // Clear all marks the caller's visible rows read; activity_logs is also the
-  // audit trail (contract history, customer timelines), so nothing is deleted
-  // (see backend/src/routes/adminNotifications.js).
+  // Clear all records a dismissal per visible row for this admin; the
+  // activity_logs rows themselves (the audit trail) are never deleted, see
+  // backend/src/routes/adminNotifications.js and migration 261.
   const clearResponse = await request.delete('/api/admin/notifications/clear-all', {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(clearResponse.ok()).toBeTruthy();
   const clearPayload = await clearResponse.json();
-  expect(clearPayload.deletedCount).toBeGreaterThanOrEqual(0);
+  expect(clearPayload.deletedCount).toBeGreaterThanOrEqual(readNotificationIds.length);
 
-  // Gone from the bell's default (unread) view ...
-  const unreadAfterClear = await collectedNotifications(false);
-  expect(Array.isArray(unreadAfterClear.notifications)).toBe(true);
-  const unreadIds = new Set(unreadAfterClear.notifications.map((notification: any) => notification.id));
-  readNotificationIds.forEach((id) => {
-    expect(unreadIds.has(id)).toBe(false);
-  });
-
-  // ... but the audit rows themselves survive, marked read.
-  const allAfterClear = await collectedNotifications(true);
-  const survivingById = new Map(allAfterClear.notifications.map((notification: any) => [notification.id, notification]));
-  readNotificationIds.forEach((id) => {
-    expect(survivingById.has(id)).toBe(true);
-    expect(survivingById.get(id).isRead).toBe(true);
-  });
+  // Gone from this admin's bell, in both the unread and the includeRead view.
+  for (const includeRead of [false, true]) {
+    const afterClear = await collectedNotifications(includeRead);
+    expect(Array.isArray(afterClear.notifications)).toBe(true);
+    const remainingIds = new Set(afterClear.notifications.map((notification: any) => notification.id));
+    readNotificationIds.forEach((id) => {
+      expect(remainingIds.has(id)).toBe(false);
+    });
+  }
 });

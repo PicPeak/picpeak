@@ -21,17 +21,33 @@ function scopeToVisibleEvents(query, admin) {
     .where((q) => q.whereNull('created_by').orWhere('created_by', admin.id)));
 }
 
+/**
+ * Leave out the rows this admin has cleared from their bell
+ * (notification_dismissals, migration 261). Dismissal is per admin and
+ * touches neither the activity_logs row nor its read_at, so the audit trail
+ * and every other admin's bell are unaffected.
+ */
+function withoutDismissed(query, admin) {
+  return query.whereNotIn('activity_logs.id', db('notification_dismissals')
+    .select('activity_log_id').where('admin_id', admin.id));
+}
+
+// The rows that make up this admin's bell: visible and not dismissed.
+function bellRows(admin) {
+  return withoutDismissed(scopeToVisibleEvents(db('activity_logs'), admin), admin);
+}
+
 // Get notifications (unread activity logs)
 router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.view']), async (req, res) => {
   try {
     const { limit = 20, includeRead = false } = req.query;
 
-    let query = scopeToVisibleEvents(db('activity_logs')
+    let query = bellRows(req.admin)
       .select(
         'activity_logs.*',
         'events.event_name'
       )
-      .leftJoin('events', 'activity_logs.event_id', 'events.id'), req.admin)
+      .leftJoin('events', 'activity_logs.event_id', 'events.id')
       .orderBy('activity_logs.created_at', 'desc')
       .limit(parseInt(limit));
     
@@ -68,7 +84,7 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
     }));
 
     // Get unread count
-    const unreadCount = await scopeToVisibleEvents(db('activity_logs'), req.admin)
+    const unreadCount = await bellRows(req.admin)
       .whereNull('activity_logs.read_at')
       .count('activity_logs.id as count')
       .first();
@@ -124,17 +140,27 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 // at `notifications.service.ts` does DELETE /admin/notifications/clear-all.
 //
 // activity_logs is not a notification inbox: the same rows are the contract
-// audit trail, the customer timelines and every other admin's actions, and
-// the bell has no per-admin state of its own beyond `read_at`. Clearing
-// therefore deletes nothing — it marks the caller's visible unread rows read,
-// which empties the bell without touching anyone's audit evidence.
-// `deletedCount` keeps its name for the frontend toast and carries the number
-// of rows dismissed.
+// audit trail, the customer timelines and every other admin's actions, so
+// clearing deletes nothing. It records a dismissal per visible row for the
+// calling admin (notification_dismissals); the bell then leaves those rows
+// out for this admin only, read or unread, while read_at and every other
+// admin's bell stay as they are. `deletedCount` keeps its name for the
+// frontend toast and carries the number of rows dismissed.
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    const deletedCount = await scopeToVisibleEvents(db('activity_logs'), req.admin)
-      .whereNull('activity_logs.read_at')
-      .update({ read_at: new Date().toISOString() });
+    const rows = await bellRows(req.admin).select('activity_logs.id');
+    const dismissedAt = new Date().toISOString();
+    let deletedCount = 0;
+    // Chunked so a long-lived install's first "Clear all" does not build one
+    // giant statement; a dismissal written by a concurrent click is ignored.
+    for (let i = 0; i < rows.length; i += 500) {
+      const batch = rows.slice(i, i + 500).map((r) => ({
+        admin_id: req.admin.id, activity_log_id: r.id, dismissed_at: dismissedAt,
+      }));
+      await db('notification_dismissals').insert(batch)
+        .onConflict(['admin_id', 'activity_log_id']).ignore();
+      deletedCount += batch.length;
+    }
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);
