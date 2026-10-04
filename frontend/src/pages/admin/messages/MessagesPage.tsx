@@ -16,6 +16,7 @@ import { MessageComposer, type ComposerInit } from './MessageComposer';
 import { DocumentActionModal, type DocType } from './DocumentActionModal';
 import { EmailBodyFrame } from './EmailBodyFrame';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
+import { usePermission } from '../../../hooks/usePermission';
 
 /**
  * Admin "Messages" — read-only viewer over the mail picpeak already
@@ -83,6 +84,9 @@ const STATUS_STYLES: Record<string, string> = {
 export const MessagesPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Archive / Restore / Delete write the shared folders, which the backend
+  // guards with email.edit; email.view alone reads the page.
+  const canEditMailbox = usePermission('email.edit');
   const [activeFolder, setActiveFolder] = useState('auto-sent');
   const [selection, setSelection] = useState<Selection>(null);
   const [pdfDocId, setPdfDocId] = useState<number | null>(null);
@@ -386,6 +390,7 @@ export const MessagesPage: React.FC = () => {
             onCompose={(init, title) => setComposer({ init, title, accountKey: 'customers' })}
             onOpenDoc={(docType, senderEmail) => setDocAction({ docType, senderEmail })}
             onItemAction={doItemAction}
+            canEdit={canEditMailbox}
             t={t}
           />
         </section>
@@ -517,8 +522,9 @@ const ReadingPane: React.FC<{
   onCompose: (init: ComposerInit, title?: string) => void;
   onOpenDoc: (docType: DocType, senderEmail: string) => void;
   onItemAction: (action: 'archive' | 'delete' | 'restore') => void;
+  canEdit: boolean;
   t: TFunction;
-}> = ({ selection, account, identities, flags, folderState, onViewDoc, onOpenAccounting, onCompose, onOpenDoc, onItemAction, t }) => {
+}> = ({ selection, account, identities, flags, folderState, onViewDoc, onOpenAccounting, onCompose, onOpenDoc, onItemAction, canEdit, t }) => {
   const detailQuery = useQuery({
     queryKey: ['messages', 'queue', selection?.kind === 'queue' ? selection.id : null],
     queryFn: () => emailService.getQueueItem((selection as { kind: 'queue'; id: number }).id),
@@ -564,7 +570,7 @@ const ReadingPane: React.FC<{
 
   return (
     <div className="flex flex-col min-h-0 flex-1">
-      <Toolbar isAcct={isAcct} flags={flags} folderState={folderState} onReply={onReply} onDoc={onDoc} onItemAction={onItemAction} t={t} />
+      <Toolbar isAcct={isAcct} flags={flags} folderState={folderState} onReply={onReply} onDoc={onDoc} onItemAction={onItemAction} canEdit={canEdit} t={t} />
       <div className="flex-1 overflow-y-auto p-6">
         {selection.kind === 'queue' ? (
           detailQuery.isLoading ? <Loading /> : detailQuery.data ? (
@@ -703,8 +709,9 @@ const Toolbar: React.FC<{
   onReply?: () => void;
   onDoc?: (docType: DocType) => void;
   onItemAction: (action: 'archive' | 'delete' | 'restore') => void;
+  canEdit: boolean;
   t: TFunction;
-}> = ({ isAcct, flags, folderState, onReply, onDoc, onItemAction, t }) => {
+}> = ({ isAcct, flags, folderState, onReply, onDoc, onItemAction, canEdit, t }) => {
   const Tb: React.FC<{ icon: LucideIcon; label: string; accent?: boolean; onClick?: () => void }> = ({ icon: Icon, label, accent, onClick }) => {
     const enabled = !!onClick;
     return (
@@ -741,13 +748,15 @@ const Toolbar: React.FC<{
         </>
       )}
       <span className="flex-1" />
-      {folderState && <Tb icon={RotateCcw} label={t('messages.restore', 'Restore')} onClick={() => onItemAction('restore')} />}
-      {folderState !== 'archived' && <Tb icon={Archive} label={t('messages.archive', 'Archive')} onClick={() => onItemAction('archive')} />}
-      <Tb
-        icon={Trash2}
-        label={folderState === 'deleted' ? t('messages.deleteForever', 'Delete permanently') : t('messages.delete', 'Delete')}
-        onClick={() => onItemAction('delete')}
-      />
+      {canEdit && folderState && <Tb icon={RotateCcw} label={t('messages.restore', 'Restore')} onClick={() => onItemAction('restore')} />}
+      {canEdit && folderState !== 'archived' && <Tb icon={Archive} label={t('messages.archive', 'Archive')} onClick={() => onItemAction('archive')} />}
+      {canEdit && (
+        <Tb
+          icon={Trash2}
+          label={folderState === 'deleted' ? t('messages.deleteForever', 'Delete permanently') : t('messages.delete', 'Delete')}
+          onClick={() => onItemAction('delete')}
+        />
+      )}
     </div>
   );
 };
