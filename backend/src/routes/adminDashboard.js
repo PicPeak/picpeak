@@ -4,7 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { seesAllEvents } = require('../middleware/ownership');
 const { sanitizeDays } = require('../utils/sqlSecurity');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
@@ -79,11 +79,13 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
     const now = new Date();
     
+    // Same mixed-shape comparison as the events list's status=expiring
+    // (issue 1733): the tile and the list it sits next to must agree.
     const expiringEvents = await applyEventScope(db('events'), req.admin, 'id')
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
-      .where('expires_at', '<=', sevenDaysFromNow.toISOString())
-      .where('expires_at', '>', now.toISOString())
+      .modify(whereTimestamp, 'expires_at', '<=', sevenDaysFromNow)
+      .modify(whereTimestamp, 'expires_at', '>', now)
       .count('id as count')
       .first();
 
