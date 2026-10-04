@@ -5,6 +5,7 @@
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
 const { formatBoolean, whereTimestamp, isPostgreSQL, sqliteTimestampMs } = require('../../utils/dbCompat');
+const { parseExpiresAtText } = require('../../utils/expiresAtText');
 
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission, userHasAllPermissions } = require('../../middleware/permissions');
@@ -1043,7 +1044,7 @@ module.exports = (router) => {
     // cannot read either, so such a value was accepted and then silently
     // dropped out of every expiry comparison.
     body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601()
-      .custom((value) => !Number.isNaN(new Date(value).getTime()))
+      .custom((value) => parseExpiresAtText(value) !== null)
       .withMessage('expires_at must be an ISO 8601 date-time such as 2026-10-06T12:00:00Z'),
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
@@ -1471,10 +1472,11 @@ module.exports = (router) => {
         updates.expires_at = null;
       } else if (typeof updates.expires_at === 'string') {
         // Store the canonical toISOString() form. isISO8601() also accepts
-        // shapes SQLite's strftime() cannot read (`+0200` offsets, the basic
+        // shapes SQLite's date parser cannot read (`+0200` offsets, the basic
         // format without separators), and whereTimestamp drops such a row
-        // from every expiry comparison rather than guess.
-        updates.expires_at = new Date(updates.expires_at).toISOString();
+        // from every expiry comparison rather than guess. A zone-less value
+        // is read as UTC, as julianday() reads the stored ones.
+        updates.expires_at = parseExpiresAtText(updates.expires_at).toISOString();
       }
 
       // Format hero logo settings if provided. null = inherit the global

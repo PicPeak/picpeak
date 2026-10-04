@@ -6,6 +6,9 @@
  */
 process.env.JWT_SECRET = 'expiring-filter-secret-at-least-32-characters-long';
 process.env.NODE_ENV = 'test';
+// A non-UTC server zone: a zone-less expires_at must still be stored as the
+// UTC instant julianday() reads it as.
+process.env.TZ = 'America/New_York';
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -91,4 +94,13 @@ test('sortBy=expires_at orders by the point in time, not by the stored type', as
     .filter((s) => ['iso-past', 'ms-past', 'iso-soon', 'ms-soon', 'ms-far'].includes(s));
   const rank = (s) => (s.endsWith('past') ? 0 : s.endsWith('soon') ? 1 : 2);
   expect(slugs.map(rank)).toEqual([0, 0, 1, 1, 2]);
+});
+
+test('PUT reads a zone-less expires_at as UTC, like julianday() reads the stored rows', async () => {
+  const { id } = await db('events').where({ slug: 'iso-far' }).first('id');
+  const res = await request(app).put(`/api/admin/events/${id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ expires_at: '2026-10-06T12:00:00' });
+  expect(res.status).toBe(200);
+  expect((await db('events').where({ id }).first('expires_at')).expires_at).toBe('2026-10-06T12:00:00.000Z');
 });
