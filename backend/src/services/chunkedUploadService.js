@@ -440,9 +440,17 @@ async function completeUpload(uploadId, { owner } = {}) {
 
   uploadMeta.status = 'merging';
 
-  // Create temp file for merged result
+  // Create temp file for merged result. Nothing of the upload has been
+  // touched yet, so a failure here (disk full, permissions) hands the upload
+  // back as in_progress for another completion attempt instead of leaving it
+  // in 'merging', where every later completion would be told 409.
   const tempDir = path.join(getStoragePath(), 'temp', `merge_${Date.now()}_${Math.random().toString(36).substring(7)}`);
-  await fs.mkdir(tempDir, { recursive: true });
+  try {
+    await fs.mkdir(tempDir, { recursive: true });
+  } catch (error) {
+    uploadMeta.status = 'in_progress';
+    throw error;
+  }
 
   const mergedFilePath = path.join(tempDir, uploadMeta.filename);
 
