@@ -60,17 +60,19 @@ export const TileRating: React.FC<TileRatingProps> = ({
         guest_email: data.guest_email,
       }),
     onSuccess: async (_result, data) => {
-      // Only when this very rating established or switched the guest
-      // identity: GuestIdentityProvider then invalidates gallery-photos, and
-      // that refetch (started before the POST) would land after the patch
-      // below and put the unrated row back. It is cancelled here and asked
-      // for again once the patch is in, because it also carries the other
-      // photos' is_liked / my_rating for the new identity. An already
-      // registered guest — every rating after the first — touches neither:
-      // proofing a 300-photo shoot must not refetch the gallery per star,
-      // and nothing may abort an unrelated background refresh.
-      const identityRefreshedList = data.identityChanged === true;
-      if (identityRefreshedList) {
+      // A list request that is out while the rating settles carries the row
+      // from before it, and would land after the patch below and put the old
+      // stars and aggregates back. Two ways to be in that state: a refresh
+      // was already in flight (any identity mode), or this very rating
+      // established or switched the guest identity, which makes
+      // GuestIdentityProvider invalidate gallery-photos. Exactly then the
+      // request is cancelled and, once the patch is in, asked for again —
+      // it may also carry other photos' changes. In the common case, nothing
+      // in flight and a known identity, neither happens: proofing a
+      // 300-photo shoot must not refetch the gallery per star.
+      const listMustRestart = data.identityChanged === true
+        || queryClient.isFetching({ queryKey: ['gallery-photos', slug] }) > 0;
+      if (listMustRestart) {
         await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
       }
       // In place, not a refetch: a 500-photo list re-hydrated per star is
@@ -102,7 +104,7 @@ export const TileRating: React.FC<TileRatingProps> = ({
         // The star itself is already right; the aggregates catch up on the
         // next list fetch.
       }
-      if (identityRefreshedList) {
+      if (listMustRestart) {
         // Last, because setQueryData clears the invalidated flag: a background
         // refetch while the patched row stays on screen.
         void queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });

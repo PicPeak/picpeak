@@ -272,27 +272,20 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(true);
   });
 
-  it('neither cancels nor refetches the list for an already registered guest', async () => {
+  it('neither cancels nor refetches the list for a registered guest with nothing in flight', async () => {
     // Every rating after the first: proofing 300 photos must not refetch
-    // the gallery 300 times, nor abort a refresh that is under way.
+    // the gallery 300 times.
     guestIdentityContext = { identityMode: 'guest', identity: { id: 3 }, ensureIdentity: vi.fn().mockResolvedValue({ id: 3 }) };
     seedCache(PHOTO);
-    let resolveList: (v: GalleryData) => void = () => {};
-    const refreshed = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: 5, like_count: 9 }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
-    const inflight = queryClient.fetchQuery({
-      queryKey: ['gallery-photos', SLUG, 'all', undefined],
-      queryFn: () => new Promise<GalleryData>((resolve) => { resolveList = resolve; }),
-      staleTime: 0,
-    });
+    const cancel = vi.spyOn(queryClient, 'cancelQueries');
     renderCard();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
     await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
     await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
-    resolveList(refreshed);
-    await expect(inflight).resolves.toBeTruthy();
+    await waitFor(() => expect(cachedPhoto(7).total_ratings).toBe(1));
 
-    expect(cachedPhoto(7).like_count).toBe(9);
+    expect(cancel).not.toHaveBeenCalled();
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(false);
   });
 
@@ -309,24 +302,39 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     ).toBe(true));
   });
 
-  it('leaves a simple-mode background refresh alone and refetches nothing extra', async () => {
+  it('does not let a simple-mode refresh that was already in flight win, and restarts it once', async () => {
     seedCache(PHOTO);
-    // An unrelated refresh already running; cancelling it would drop its
-    // result for good, since nothing re-invalidates in simple mode.
+    // A refresh started before the rating: it carries the unrated row.
     let resolveList: (v: GalleryData) => void = () => {};
-    const refreshed = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: 5, like_count: 9 }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
-    const inflight = queryClient.fetchQuery({
+    const stale = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: null, total_ratings: 0 }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
+    void queryClient.fetchQuery({
       queryKey: ['gallery-photos', SLUG, 'all', undefined],
       queryFn: () => new Promise<GalleryData>((resolve) => { resolveList = resolve; }),
       staleTime: 0,
-    });
+    }).catch(() => {});
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
     renderCard();
+
     fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
     await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
-    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
-    resolveList(refreshed);
-    await expect(inflight).resolves.toBeTruthy();
-    expect(cachedPhoto(7).like_count).toBe(9);
+    await waitFor(() => expect(cachedPhoto(7).total_ratings).toBe(1));
+    resolveList(stale);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(cachedPhoto(7).my_rating).toBe(5);
+    expect(cachedPhoto(7).total_ratings).toBe(1);
+    // The cancelled refresh is asked for again — once.
+    expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(true);
+    expect(invalidate.mock.calls.filter(([f]) => (f as { queryKey: unknown[] }).queryKey[0] === 'gallery-photos')).toHaveLength(1);
+  });
+
+  it('refetches nothing in simple mode when no list request is in flight', async () => {
+    seedCache(PHOTO);
+    const cancel = vi.spyOn(queryClient, 'cancelQueries');
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(cachedPhoto(7).total_ratings).toBe(1));
+    expect(cancel).not.toHaveBeenCalled();
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(false);
   });
 
