@@ -592,10 +592,21 @@ export const EventDetailsPage: React.FC = () => {
       promo_markdown: editForm.promo_mode === 'custom' ? editForm.promo_markdown : null,
       info_mode: editForm.info_mode,
       info_markdown: editForm.info_mode === 'custom' ? editForm.info_markdown : null,
-      // Customer accounts (#354) — flat array of ids. Backend diffs
-      // against existing assignments in one transaction.
-      customer_account_ids: editForm.customer_accounts.map((c) => c.id),
     };
+
+    // Customer accounts (#354) — flat array of ids; the backend diffs it
+    // against the existing assignments in one transaction. Sent only when
+    // the admin changed the assignment: replacing it needs customers.events,
+    // and an editor without customers.view is shown an empty list, so
+    // echoing it on every save would 403 a name-only edit (or try to clear
+    // assignments they cannot see).
+    const loadedCustomerIds = ((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || [])
+      .map((c) => c.id).sort((a, b) => a - b);
+    const editedCustomerIds = editForm.customer_accounts.map((c) => c.id).sort((a, b) => a - b);
+    if (loadedCustomerIds.length !== editedCustomerIds.length
+      || loadedCustomerIds.some((id, i) => id !== editedCustomerIds[i])) {
+      updateData.customer_account_ids = editedCustomerIds;
+    }
 
     // Only include fields that have defined values
     if (editForm.welcome_message !== undefined && editForm.welcome_message !== null) {
