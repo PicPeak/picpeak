@@ -12,32 +12,16 @@
  * comparison — the expiring filter, the dashboard tile, the checker — so
  * they are canonicalised to toISOString() once here. Values Date cannot
  * parse either (the jest/sqlite3 "[object Object]" landmine, free text) are
- * left as they are and logged; they were unreadable before as well.
+ * left as they are and logged; they were unreadable before as well. The
+ * .picpeak import runs the same helper on the event rows it brings back.
  *
  * PostgreSQL has a timestamp column and nothing to rewrite.
  */
 
+const { canonicaliseSqliteExpiresAt } = require('../../src/utils/expiresAtText');
+
 exports.up = async function up(knex) {
-  if (knex.client.config.client === 'pg') return;
-  if (!(await knex.schema.hasTable('events'))) return;
-  if (!(await knex.schema.hasColumn('events', 'expires_at'))) return;
-
-  const rows = await knex('events')
-    .select('id', 'expires_at')
-    .whereRaw('typeof(expires_at) = \'text\' AND julianday(expires_at) IS NULL');
-
-  let rewritten = 0;
-  const unreadable = [];
-  for (const row of rows) {
-    const parsed = new Date(row.expires_at);
-    if (Number.isNaN(parsed.getTime())) {
-      unreadable.push(row.id);
-      continue;
-    }
-    await knex('events').where({ id: row.id }).update({ expires_at: parsed.toISOString() });
-    rewritten += 1;
-  }
-
+  const { rewritten, unreadable } = await canonicaliseSqliteExpiresAt(knex);
   if (rewritten || unreadable.length) {
     // eslint-disable-next-line no-console -- migration output, as in the other core migrations
     console.log(`Migration 263: ${rewritten} expires_at value(s) rewritten in canonical ISO form`

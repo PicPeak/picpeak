@@ -6,6 +6,9 @@
  */
 process.env.JWT_SECRET = 'expiring-filter-secret-at-least-32-characters-long';
 process.env.NODE_ENV = 'test';
+// A non-UTC server zone: a zone-less expires_at must still be stored as the
+// UTC instant julianday() reads it as.
+process.env.TZ = 'America/New_York';
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
@@ -79,4 +82,13 @@ test('PUT refuses an ISO 8601 form the stored shape could not carry', async () =
     .send({ expires_at: '20261006T120000Z' });
   expect(res.status).toBe(400);
   expect(JSON.stringify(res.body)).toContain('expires_at');
+});
+
+test('PUT reads a zone-less expires_at as UTC, like julianday() reads the stored rows', async () => {
+  const { id } = await db('events').where({ slug: 'iso-far' }).first('id');
+  const res = await request(app).put(`/api/admin/events/${id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ expires_at: '2026-10-06T12:00:00' });
+  expect(res.status).toBe(200);
+  expect((await db('events').where({ id }).first('expires_at')).expires_at).toBe('2026-10-06T12:00:00.000Z');
 });
