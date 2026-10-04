@@ -77,10 +77,23 @@ function whereTimestamp(query, column, operator, date) {
   if (isPostgreSQL()) {
     return query.where(column, operator, date);
   }
-  return query.whereRaw(
-    `(CASE WHEN typeof(??) IN ('integer', 'real') THEN ?? ELSE CAST(strftime('%s', ??) AS INTEGER) * 1000 END) ${operator} ?`,
-    [column, column, column, date.getTime()]
-  );
+  const ms = sqliteTimestampMs(column);
+  return query.whereRaw(`${ms.sql} ${operator} ?`, [...ms.bindings, date.getTime()]);
+}
+
+/**
+ * SQLite only: the column read as epoch ms whatever shape it was stored in
+ * (see whereTimestamp). For ORDER BY and CASE expressions that otherwise
+ * compare the raw column, where numbers sort below every text.
+ *
+ * @param {string} column
+ * @returns {{ sql: string, bindings: string[] }} fragment for a raw clause
+ */
+function sqliteTimestampMs(column) {
+  return {
+    sql: '(CASE WHEN typeof(??) IN (\'integer\', \'real\') THEN ?? ELSE CAST(strftime(\'%s\', ??) AS INTEGER) * 1000 END)',
+    bindings: [column, column, column],
+  };
 }
 
 /**
@@ -164,6 +177,7 @@ module.exports = {
   insertAndGetId,
   formatDateForDB,
   whereTimestamp,
+  sqliteTimestampMs,
   addDays,
   dateExtractSQL,
   getDatabaseSize,

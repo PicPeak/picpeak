@@ -4,7 +4,7 @@
 
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
-const { formatBoolean, whereTimestamp } = require('../../utils/dbCompat');
+const { formatBoolean, whereTimestamp, isPostgreSQL, sqliteTimestampMs } = require('../../utils/dbCompat');
 
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission, userHasAllPermissions } = require('../../middleware/permissions');
@@ -371,8 +371,17 @@ module.exports = (router) => {
       const [{ count }] = await countQuery.count('* as count');
 
       // Apply sorting and pagination
+      // SQLite holds expires_at as ISO text or as epoch ms (the extend path
+      // bound a Date) and orders every number below every text; sort the
+      // value as a timestamp, like the status filter compares it. sortOrder
+      // is the literal 'asc' / 'desc' from the allowlist above.
+      if (sortBy === 'expires_at' && !isPostgreSQL()) {
+        const ms = sqliteTimestampMs('expires_at');
+        query = query.orderByRaw(`${ms.sql} ${sortOrder}`, ms.bindings);
+      } else {
+        query = query.orderBy(sortBy, sortOrder);
+      }
       const events = await query
-        .orderBy(sortBy, sortOrder)
         .limit(limit)
         .offset(offset);
 
@@ -1028,7 +1037,14 @@ module.exports = (router) => {
     body('is_full_day').optional().isBoolean().toBoolean(),
     body('admin_email').optional().isEmail(),
     body('is_active').optional().isBoolean(),
-    body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+    // The forms Date.parse reads, which is what the handler stores (it writes
+    // toISOString()); isISO8601() alone also admits the basic format
+    // (20261006T120000Z), which Node cannot parse and SQLite's strftime
+    // cannot read either, so such a value was accepted and then silently
+    // dropped out of every expiry comparison.
+    body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601()
+      .custom((value) => !Number.isNaN(new Date(value).getTime()))
+      .withMessage('expires_at must be an ISO 8601 date-time such as 2026-10-06T12:00:00Z'),
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
@@ -1458,11 +1474,7 @@ module.exports = (router) => {
         // shapes SQLite's strftime() cannot read (`+0200` offsets, the basic
         // format without separators), and whereTimestamp drops such a row
         // from every expiry comparison rather than guess.
-        const parsed = new Date(updates.expires_at);
-        if (Number.isNaN(parsed.getTime())) {
-          return res.status(400).json({ error: 'expires_at is not a date' });
-        }
-        updates.expires_at = parsed.toISOString();
+        updates.expires_at = new Date(updates.expires_at).toISOString();
       }
 
       // Format hero logo settings if provided. null = inherit the global
