@@ -494,6 +494,35 @@ describe('countersignature stamping', () => {
     expect(contract.signed_admin_name).toBe('Admin');
     expect(contract.signed_pdf_path).not.toBe(storedAs(wet));
   });
+
+  it('rolls the status back when the token revocation fails, so the signature file is not orphaned', async () => {
+    const { id, token } = await sentContract('Countersign with a failing revoke');
+    await contractService.recordCustomerSignature({
+      token, name: 'Maria Meier', accepted: true, ip: '198.51.100.15', signatureDataUrl: SIGNATURE_DATA_URL,
+    });
+    const before = await db('contracts').where({ id }).first();
+
+    // The revoke runs in the same transaction as the status flip; a failure
+    // there used to leave a fully_signed contract pointing at the PNG the
+    // catch block had just deleted.
+    await db.schema.renameTable('contract_action_tokens', 'contract_action_tokens_offline');
+    let err;
+    try {
+      await contractService.recordAdminCountersignature(
+        id, { name: 'Admin', ip: '203.0.113.33', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
+      );
+    } catch (e) {
+      err = e;
+    } finally {
+      await db.schema.renameTable('contract_action_tokens_offline', 'contract_action_tokens');
+    }
+    expect(err).toBeTruthy();
+
+    const after = await db('contracts').where({ id }).first();
+    expect(after.status).toBe('signed_by_customer');
+    expect(after.signed_admin_signature_path).toBe(before.signed_admin_signature_path);
+    expect(after.signed_admin_name).toBe(before.signed_admin_name);
+  });
 });
 
 describe('admin PDF repair actions under concurrent requests', () => {
