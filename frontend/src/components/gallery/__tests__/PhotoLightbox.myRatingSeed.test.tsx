@@ -42,8 +42,11 @@ const ui = (p: Photo) => (
 
 describe('PhotoLightbox — my_rating seed follows the list row', () => {
   it('reseeds the stars when the same photo\'s my_rating changes under an open lightbox', async () => {
-    // The per-photo fetch answers before the tile POST has settled.
-    vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({ feedback: [], my_feedback: { rating: 0 }, summary: {} } as never);
+    // The first per-photo fetch answers before the tile POST has settled;
+    // the one the reseed triggers sees the stored rating.
+    vi.mocked(feedbackService.getPhotoFeedback)
+      .mockResolvedValueOnce({ feedback: [], my_feedback: { rating: 0 }, summary: {} } as never)
+      .mockResolvedValue({ feedback: [], my_feedback: { rating: 4 }, summary: {} } as never);
     const { rerender } = render(ui(photo(null)));
     await waitFor(() => expect(screen.getByTitle('Rate 4')).toBeInTheDocument());
     expect(screen.queryByTitle('Remove rating')).toBeNull();
@@ -55,23 +58,32 @@ describe('PhotoLightbox — my_rating seed follows the list row', () => {
     expect(screen.queryByTitle('Rate 4')).toBeNull();
   });
 
-  it('ignores a per-photo GET that started before the reseed and resolves after it', async () => {
-    let resolveGet: (v: unknown) => void = () => {};
+  it('drops a per-photo GET from before the rating whole — stars and summary — and shows the fresh one', async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    vi.mocked(feedbackService.getPhotoFeedback).mockReset();
     vi.mocked(feedbackService.getPhotoFeedback).mockImplementation(
-      () => new Promise((resolve) => { resolveGet = resolve; }) as never,
+      () => new Promise((resolve) => { resolvers.push(resolve); }) as never,
     );
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValue({
+      feedback_enabled: true, allow_ratings: true, allow_likes: false, allow_comments: false, show_feedback_to_guests: true,
+    } as never);
     const { rerender } = render(ui(photo(null)));
-    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
+    await waitFor(() => expect(resolvers).toHaveLength(1));
 
-    // Tile POST settles: the list row now says 4.
+    // Tile POST settles: the list row now says 4, and a fresh GET goes out.
     rerender(ui(photo(4)));
     await waitFor(() => expect(screen.getByTitle('Remove rating')).toBeInTheDocument());
+    await waitFor(() => expect(resolvers).toHaveLength(2));
 
-    // The GET from before the rating comes back with the old value.
-    resolveGet({ feedback: [], my_feedback: { rating: 0 }, summary: {} });
+    // The GET from before the rating comes back last, with the old values.
+    resolvers[1]({ feedback: [], my_feedback: { rating: 4 }, summary: { average_rating: 4, total_ratings: 1 } });
+    await waitFor(() => expect(screen.getByText('4.0 (1)')).toBeInTheDocument());
+    resolvers[0]({ feedback: [], my_feedback: { rating: 0 }, summary: { average_rating: 0, total_ratings: 0 } });
     await new Promise((r) => setTimeout(r, 20));
 
     expect(screen.getByTitle('Remove rating')).toBeInTheDocument();
     expect(screen.queryByTitle('Rate 4')).toBeNull();
+    expect(screen.getByText('4.0 (1)')).toBeInTheDocument();
+    expect(screen.queryByText('0.0 (0)')).toBeNull();
   });
 });
