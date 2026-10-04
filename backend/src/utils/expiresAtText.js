@@ -12,8 +12,8 @@
  *     server would shift the value by hours against what julianday() and the
  *     already stored zone-less rows mean; the zone is stamped as UTC first.
  *   - canonicaliseSqliteExpiresAt: rewrites the rows julianday() cannot read.
- *     Run once by migration 263 and again by the .picpeak import, which
- *     re-inserts archived rows verbatim on a target where 263 already ran.
+ *     Run once by migration 238 and again by the .picpeak import, which
+ *     re-inserts archived rows verbatim on a target where 238 already ran.
  */
 
 // 'YYYY-MM-DD HH:MM[:SS[.sss]]' or with a 'T', no zone.

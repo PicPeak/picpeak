@@ -1,5 +1,5 @@
 /**
- * Migration 263: expires_at text SQLite's date parser cannot read is
+ * Migration 238: expires_at text SQLite's date parser cannot read is
  * rewritten in canonical ISO form once, so whereTimestamp's julianday()
  * expression keeps seeing the row (issue 1733).
  */
@@ -7,9 +7,9 @@
 process.env.TZ = 'America/New_York';
 
 const knex = require('knex');
-const migration = require('../../migrations/core/263_sqlite_expires_at_canonical_text');
+const migration = require('../../migrations/core/238_sqlite_expires_at_canonical_text');
 
-describe('migration 263 on SQLite', () => {
+describe('migration 238 on SQLite', () => {
   let db;
   const NOW = Date.now();
   const DAY = 24 * 60 * 60 * 1000;

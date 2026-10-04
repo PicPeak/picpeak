@@ -563,7 +563,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // and migration 236 will not run again on this target (issue 1670).
       if (table === 'email_queue') await normaliseSqliteEmailQueue(trx);
       // Likewise events.expires_at text that julianday() cannot read, which
-      // migration 263 rewrote once on this target (issue 1733).
+      // migration 238 rewrote once on this target (issue 1733).
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
     }
 

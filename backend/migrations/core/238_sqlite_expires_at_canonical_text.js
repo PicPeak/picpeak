@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 263: rewrite SQLite expires_at text that julianday() cannot read
+ * Migration 238: rewrite SQLite expires_at text that julianday() cannot read
  * (issue 1733).
  *
  * whereTimestamp / sqliteTimestampMs read expires_at as epoch ms whatever
@@ -29,7 +29,7 @@ exports.up = async function up(knex) {
   const { rewritten, unreadable } = await canonicaliseSqliteExpiresAt(knex);
   if (rewritten || unreadable.length) {
     // eslint-disable-next-line no-console -- migration output, as in the other core migrations
-    console.log(`Migration 263: ${rewritten} expires_at value(s) rewritten in canonical ISO form`
+    console.log(`Migration 238: ${rewritten} expires_at value(s) rewritten in canonical ISO form`
       + (unreadable.length ? `; left unreadable on events ${unreadable.join(', ')}` : ''));
   }
 };

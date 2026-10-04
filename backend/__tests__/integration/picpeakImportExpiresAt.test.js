@@ -2,7 +2,7 @@
  * A .picpeak import canonicalises the events.expires_at text it brings back
  * (issue 1733), the way it already normalises the email queue.
  *
- * Archived rows are batch-inserted as they were, and migration 263 does not
+ * Archived rows are batch-inserted as they were, and migration 238 does not
  * run again on a target that already recorded it; without the hook an
  * expiry stored as `…+0200` by an older install would come back unreadable
  * to julianday() and fall out of every expiry comparison.
