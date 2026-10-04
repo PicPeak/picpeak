@@ -26,7 +26,7 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({
 }));
 
 vi.mock('../../../services/feedback.service', () => ({
-  feedbackService: { submitFeedback: vi.fn() },
+  feedbackService: { submitFeedback: vi.fn(), getPhotoFeedback: vi.fn() },
 }));
 
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -113,6 +113,9 @@ beforeEach(() => {
   stubPointerDevice();
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   vi.mocked(feedbackService.submitFeedback).mockResolvedValue({ success: true });
+  vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({
+    feedback: [], my_feedback: {}, summary: { average_rating: 4, total_ratings: 1 },
+  } as any);
 });
 
 afterEach(() => {
@@ -164,6 +167,33 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(4));
     // Neighbour untouched; nothing refetched (no queryFn exists to run).
     expect(cachedPhoto(8).my_rating).toBe(2);
+  });
+
+  it('refreshes the photo\'s aggregate rating fields from the per-photo summary', async () => {
+    // Outside guest mode the Rated chip and the tile badge read these off
+    // the list row; a stale 0 kept a freshly rated photo out of the filter.
+    seedCache({ ...PHOTO, average_rating: 0, total_ratings: 0 });
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledWith(SLUG, '7'));
+    await waitFor(() => expect(cachedPhoto(7).total_ratings).toBe(1));
+    expect(cachedPhoto(7).average_rating).toBe(4);
+    // The neighbour (seeded from the same row) is left alone.
+    expect(cachedPhoto(8).total_ratings).toBe(0);
+  });
+
+  it('keeps the star when the summary request fails', async () => {
+    vi.mocked(feedbackService.getPhotoFeedback).mockRejectedValue(new Error('offline'));
+    seedCache(PHOTO);
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 3 stars' }));
+
+    await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(3));
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledTimes(1));
+    expect(cachedPhoto(7).average_rating).toBeUndefined();
   });
 
   it('clears the rating when the current star is pressed again', async () => {

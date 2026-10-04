@@ -53,22 +53,38 @@ export const TileRating: React.FC<TileRatingProps> = ({
         guest_name: data.guest_name,
         guest_email: data.guest_email,
       }),
-    onSuccess: (_result, data) => {
+    onSuccess: async (_result, data) => {
       // In place, not a refetch: a 500-photo list re-hydrated per star is
       // what the lightbox path already costs, and the tile is meant to be
       // the fast route. The key prefix matches every filter/guest variant.
-      queryClient.setQueriesData<GalleryData>({ queryKey: ['gallery-photos', slug] }, (old) =>
-        old
-          ? {
-            ...old,
-            photos: old.photos.map((p) =>
-              p.id === photo.id ? { ...p, my_rating: data.rating || null } : p,
-            ),
-          }
-          : old,
-      );
+      const patchPhoto = (patch: Partial<Photo>) =>
+        queryClient.setQueriesData<GalleryData>({ queryKey: ['gallery-photos', slug] }, (old) =>
+          old
+            ? {
+              ...old,
+              photos: old.photos.map((p) => (p.id === photo.id ? { ...p, ...patch } : p)),
+            }
+            : old,
+        );
+      patchPhoto({ my_rating: data.rating || null });
       // Guest-mode Rated chip + filter are built from /my-feedback (#538).
       queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+      // Outside guest mode the Rated chip, its filter and the tile's rating
+      // badge read average_rating / total_ratings off the list row. One
+      // per-photo summary request (what the lightbox fetches too) keeps them
+      // in step without re-hydrating the whole list.
+      if (guestIdentity?.identityMode !== 'guest') {
+        try {
+          const fresh = await feedbackService.getPhotoFeedback(slug, String(photo.id));
+          patchPhoto({
+            average_rating: Number(fresh.summary?.average_rating) || 0,
+            total_ratings: Number(fresh.summary?.total_ratings) || 0,
+          });
+        } catch {
+          // The star itself is already right; the aggregates catch up on the
+          // next list fetch.
+        }
+      }
     },
     onError: (error: any) => {
       if (error?.response?.status === 429) {
