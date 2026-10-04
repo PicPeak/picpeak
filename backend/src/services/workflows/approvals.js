@@ -133,8 +133,15 @@ async function finalizeApproval(approval, decision, actorPatch) {
   const decided = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
     .update({ status, acted_at: db.fn.now(), ...actorPatch });
   if (!decided) return alreadyDecided(approval.id);
-  // Resume down the matching edge (handles 'confirm' | 'deny').
-  await engine.resumeRun(approval.run_id, { decisionHandle: decision });
+  // Resume down the matching edge (handles 'confirm' | 'deny'). The flag is
+  // read again inside resumeRun; when it flipped between the two reads the
+  // decision is taken back, so the approval stays pending and usable rather
+  // than decided on a run nothing will ever resume.
+  if (await engine.resumeRun(approval.run_id, { decisionHandle: decision }) === 'disabled') {
+    await db('workflow_approvals').where({ id: approval.id, status })
+      .update({ status: 'pending', acted_at: null, acted_via: null, acted_by: null });
+    return { ok: false, reason: 'disabled' };
+  }
   return { ok: true, status };
 }
 

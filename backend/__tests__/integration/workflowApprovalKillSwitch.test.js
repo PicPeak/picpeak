@@ -97,6 +97,24 @@ describe('workflows kill-switch holds for pending approvals', () => {
     expect(await state(runId, approval.id)).toEqual({ run: 'waiting', approval: 'pending' });
   });
 
+  test('a flag that flips between the decision and the resume leaves the approval pending', async () => {
+    const { runId, approval, raw } = await pendingGate('kill.flip');
+    // finalizeApproval reads the flag, records the decision, then resumeRun
+    // reads it again: on, then off. The decision used to stay recorded on a
+    // run nothing would ever resume.
+    const spy = jest.spyOn(flags, 'isFeatureEnabled');
+    spy.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    expect(await engine.actByToken(raw, 'confirm')).toEqual({ ok: false, reason: 'disabled' });
+    expect(calls.confirm).toBe(0);
+    expect(await state(runId, approval.id)).toEqual({ run: 'waiting', approval: 'pending' });
+
+    spy.mockRestore();
+    await setFlag(true);
+    expect(await engine.actByToken(raw, 'confirm')).toEqual({ ok: true, status: 'confirmed' });
+    expect(await state(runId, approval.id)).toEqual({ run: 'done', approval: 'confirmed' });
+  });
+
   test('a flag lookup failure fails closed', async () => {
     const { runId, approval, raw } = await pendingGate('kill.failure');
     jest.spyOn(flags, 'isFeatureEnabled').mockRejectedValue(new Error('db gone'));
