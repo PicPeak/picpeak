@@ -177,15 +177,15 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     } else {
       ratingQuery.where('guest_identifier', identity.guestIdentifier);
     }
-    // Oldest first, so the newest row per photo is the one left in the map:
-    // submitFeedback's check-then-insert is not atomic, and two rating rows
-    // for one viewer and photo must resolve to the same value here as in
-    // the lightbox, which reads newest-first.
-    const ratingRows = await ratingQuery
-      .select('photo_id', 'rating')
-      .orderBy([{ column: 'created_at', order: 'asc' }, { column: 'id', order: 'asc' }]);
-    ratingRows.forEach(row => {
-      if (row.rating) myRatingByPhoto[row.photo_id] = Number(row.rating);
+    // submitFeedback's check-then-insert is not atomic, so one viewer can own
+    // two rating rows for a photo. The row mutated last wins (updated_at,
+    // created_at, id) — the same rule getPhotoFeedback applies for the
+    // lightbox, so the tile and the lightbox never show different stars.
+    const ratingRows = await ratingQuery.select('id', 'photo_id', 'rating', 'created_at', 'updated_at');
+    Array.from(ratingRows).sort(feedbackService.lastMutatedFirst).forEach(row => {
+      if (row.rating && myRatingByPhoto[row.photo_id] === undefined) {
+        myRatingByPhoto[row.photo_id] = Number(row.rating);
+      }
     });
   }
 

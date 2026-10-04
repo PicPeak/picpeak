@@ -524,12 +524,27 @@ class FeedbackService {
           }
 
           if (feedback_type === 'rating' && rating !== existing.rating) {
+            // Converge to exactly one row, like the reaction / colour-label
+            // path below: the check-then-insert above can race into
+            // duplicates, `existing` is whichever of them the lookup found,
+            // and updating only that one left the other — the newer row by
+            // created_at — for the tile and the lightbox to keep reading.
+            // Visible rows only (#1150): a hidden one is the admin's record.
+            const otherRatings = db('photo_feedback').where({
+              photo_id: photoId,
+              event_id: eventId,
+              feedback_type: 'rating',
+              is_hidden: false,
+            }).whereNot('id', existing.id);
+            if (guest_id) otherRatings.where('guest_id', guest_id);
+            else otherRatings.where('guest_identifier', guestIdentifier);
+            await otherRatings.delete();
             // Update existing rating
             await db('photo_feedback')
               .where('id', existing.id)
               .update({
                 rating,
-                updated_at: new Date()
+                updated_at: new Date().toISOString()
               });
 
             await this.updatePhotoFeedbackStats(photoId);
@@ -738,14 +753,24 @@ class FeedbackService {
         query.where('guest_identifier', options.guest_identifier);
       }
       
-      // Newest first; the id breaks a same-second tie so the viewer's own
-      // rating here agrees with the list's my_rating (galleryQueryService)
-      // when submitFeedback's check-then-insert left two rows behind.
+      // Newest first; the id breaks a same-second tie.
       const feedback = await query
         .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
-      
-      return feedback;
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden');
+
+      // Rating rows are re-ranked among themselves by last mutation, so the
+      // viewer's own rating (the first rating row the route finds) is the
+      // same row the list's my_rating picks (galleryQueryService) when
+      // duplicates exist and one of them was changed later. Every other
+      // type, comments above all, keeps the created_at order; updated_at is
+      // only the sort key and does not leave this method.
+      const rows = Array.from(feedback);
+      const ratings = rows.filter((row) => row.feedback_type === 'rating').sort(lastMutatedFirst);
+      let nextRating = 0;
+      return rows.map((row) => {
+        const { updated_at: _updatedAt, ...rest } = row.feedback_type === 'rating' ? ratings[nextRating++] : row;
+        return rest;
+      });
     } catch (error) {
       logger.error('Error getting photo feedback:', error);
       throw error;
@@ -1428,4 +1453,29 @@ class FeedbackService {
   }
 }
 
+/**
+ * When a feedback row last changed, in ms. SQLite holds epoch ms where a
+ * Date was bound and SQL / ISO text otherwise (the column default); PostgreSQL
+ * returns Dates. A zone-less SQL timestamp is UTC, as CURRENT_TIMESTAMP writes it.
+ */
+function feedbackTime(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  const text = typeof value === 'string' && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value)
+    ? `${value.replace(' ', 'T')}Z` : value;
+  return new Date(text).getTime() || 0;
+}
+
+/**
+ * Sort comparator: the row mutated last first — updated_at, then created_at,
+ * then id. Done in JS rather than ORDER BY because of the mixed SQLite
+ * shapes above (every number sorts below every text there).
+ */
+function lastMutatedFirst(a, b) {
+  return (feedbackTime(b.updated_at) || feedbackTime(b.created_at)) - (feedbackTime(a.updated_at) || feedbackTime(a.created_at))
+    || feedbackTime(b.created_at) - feedbackTime(a.created_at)
+    || Number(b.id) - Number(a.id);
+}
+
 module.exports = new FeedbackService();
+module.exports.lastMutatedFirst = lastMutatedFirst;

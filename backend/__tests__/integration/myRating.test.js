@@ -137,6 +137,44 @@ describe('my_rating on the photo list (issue 1733)', () => {
     expect((await getPhoto()).my_rating).toBe(1);
   });
 
+  it('lets the row that was changed last win over a newer untouched duplicate', async () => {
+    // A duplicate pair where the OLDER row was updated afterwards: by
+    // created_at alone both readers would keep showing the stale newer row.
+    const feedbackService = require('../../src/services/feedbackService');
+    await rate('me', 4, { created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T12:00:00.000Z' });
+    await rate('me', 2, { created_at: '2026-01-01T11:00:00.000Z', updated_at: '2026-01-01T11:00:00.000Z' });
+
+    expect((await getPhoto()).my_rating).toBe(4);
+    const rows = await feedbackService.getPhotoFeedback(photoId, { guest_id: myGuestRowId });
+    expect(rows.find((r) => r.feedback_type === 'rating').rating).toBe(4);
+    // The sort key stays inside the service.
+    expect(rows.every((r) => !('updated_at' in r))).toBe(true);
+  });
+
+  it('reads epoch-ms and SQL-text timestamps as the same clock', () => {
+    // SQLite holds ms where a Date was bound and text where the default ran.
+    const { lastMutatedFirst } = require('../../src/services/feedbackService');
+    const older = { id: 1, created_at: '2026-01-01 10:00:00', updated_at: '2026-01-01 10:00:00' };
+    const newer = { id: 2, created_at: '2026-01-01 09:00:00', updated_at: Date.parse('2026-01-01T10:00:01Z') };
+    expect([older, newer].sort(lastMutatedFirst).map((r) => r.id)).toEqual([2, 1]);
+  });
+
+  it('changing a rating collapses duplicate rows to the one that was changed', async () => {
+    const feedbackService = require('../../src/services/feedbackService');
+    await rate('me', 2, { created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' });
+    await rate('me', 5, { created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' });
+    await rate('other', 1);
+
+    await feedbackService.submitFeedback(photoId, eventId, { feedback_type: 'rating', rating: 3, guest_id: myGuestRowId }, ME);
+
+    const mine = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'rating', guest_id: myGuestRowId });
+    expect(Array.from(mine).map((r) => Number(r.rating))).toEqual([3]);
+    // Another viewer's rating is not part of the collapse.
+    expect(await db('photo_feedback').where({ photo_id: photoId, guest_id: otherGuestRowId }).count('id as c').first())
+      .toMatchObject({ c: 1 });
+    expect((await getPhoto()).my_rating).toBe(3);
+  });
+
   it('does not report another viewer\'s rating as mine', async () => {
     await rate('other', 5);
     expect((await getPhoto()).my_rating).toBeNull();
