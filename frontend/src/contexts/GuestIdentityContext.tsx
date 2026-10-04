@@ -187,39 +187,46 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // identity and be filed under the wrong guest, permanently. ensureIdentity()
   // waits on this instead.
   const invitePromiseRef = useRef<Promise<void> | null>(null);
+  // The invite leaves the address bar on mount, whatever the identity mode.
+  // The provider can mount in `simple` mode and switch to `guest` once the
+  // feedback settings land; tiles are clickable in between, and any history
+  // entry the lightbox pushes (`?photo=`) is built from the current URL — it
+  // would carry the token, and cleaning up later reaches only the top entry.
+  // The rest of the query and the current history state are kept. The token
+  // waits in sessionStorage, keyed by slug, until redemption succeeds or is
+  // refused, so a reload on whichever entry redeems it again after a network
+  // error or 5xx. The ref covers a browser that blocks sessionStorage.
+  const parkedInviteRef = useRef<{ slug: string; token: string } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('invite');
+    if (!token) return;
+    parkedInviteRef.current = { slug, token };
+    writePendingInvite(slug, token);
+    params.delete('invite');
+    const search = params.toString();
+    window.history.replaceState(
+      window.history.state ?? {},
+      '',
+      window.location.pathname + (search ? `?${search}` : '') + window.location.hash,
+    );
+  }, [slug]);
+
   useEffect(() => {
     if (identityMode !== 'guest') return;
-    const params = new URLSearchParams(window.location.search);
-    // The token comes from the URL on first contact and from the per-slug
-    // pending slot after a failed attempt; see below.
-    const inviteToken = params.get('invite') || readPendingInvite(slug);
+    const parked = parkedInviteRef.current;
+    const inviteToken = (parked && parked.slug === slug ? parked.token : null) || readPendingInvite(slug);
     if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
     redeemedInviteRef.current = inviteToken;
-
-    // The token leaves the address bar NOW, before the request goes out,
-    // keeping the rest of the query and the current history state. Any
-    // history entry the lightbox pushes meanwhile (`?photo=`) is built from
-    // the current URL, so cleaning only after the response would leave the
-    // spent token on the grid entry underneath, where Back and a reload find
-    // it. Until the outcome is known the token lives in sessionStorage,
-    // keyed by slug, so a reload — on whichever history entry — redeems it
-    // again after a network error or 5xx, and it is dropped on success or a
-    // terminal answer.
-    if (params.has('invite')) {
-      params.delete('invite');
-      const search = params.toString();
-      window.history.replaceState(
-        window.history.state ?? {},
-        '',
-        window.location.pathname + (search ? `?${search}` : '') + window.location.hash,
-      );
-    }
-    writePendingInvite(slug, inviteToken);
+    const settleInvite = () => {
+      parkedInviteRef.current = null;
+      writePendingInvite(slug, null);
+    };
 
     invitePromiseRef.current = (async () => {
       try {
         const response = await guestsService.redeemInvite(slug, inviteToken);
-        writePendingInvite(slug, null);
+        settleInvite();
         storeGuestIdentity(slug, response.guest, response.token);
         setIdentity(response.guest);
       } catch (error) {
@@ -249,7 +256,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         // timeout, 408/429, 5xx — may well succeed next time, so the token
         // stays pending and the ref no longer counts it as redeemed.
         if (TERMINAL_INVITE_STATUSES.has(status?.status ?? 0)) {
-          writePendingInvite(slug, null);
+          settleInvite();
         } else {
           redeemedInviteRef.current = null;
         }
@@ -280,6 +287,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       // The visitor now has an identity of their own: a still-pending invite
       // from an earlier failed redemption must not be retried on a reload
       // and replace it (or, answered 409, clear it).
+      parkedInviteRef.current = null;
       writePendingInvite(slug, null);
       storeGuestIdentity(slug, response.guest, response.token);
       setIdentity(response.guest);
@@ -304,6 +312,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     async (email: string, code: string): Promise<GuestIdentity> => {
       // Same as register: the recovered identity wins over a pending invite.
       const response = await guestsService.verifyRecoveryCode(slug, email, code);
+      parkedInviteRef.current = null;
       writePendingInvite(slug, null);
       storeGuestIdentity(slug, response.guest, response.token);
       setIdentity(response.guest);

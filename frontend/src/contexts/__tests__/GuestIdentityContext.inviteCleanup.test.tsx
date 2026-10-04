@@ -45,6 +45,7 @@ const mount = (slug = 'wedding') => {
 describe('GuestIdentityProvider invite cleanup', () => {
   beforeEach(() => {
     redeemInvite.mockClear();
+    vi.mocked(storeGuestIdentity).mockClear();
     sessionStorage.clear();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -73,6 +74,53 @@ describe('GuestIdentityProvider invite cleanup', () => {
     rejectRedeem(Object.assign(new Error('Too Many Requests'), { response: { status: 429 } }));
     await waitFor(() => expect(console.warn).toHaveBeenCalledTimes(2));
     expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('tok123');
+  });
+
+  it('takes the invite out of the URL before the identity mode is known', async () => {
+    // The provider mounts in `simple` mode until the feedback settings land;
+    // a photo opened in that window must not copy the token into its entry.
+    window.history.replaceState({}, '', '/gallery/wedding?invite=tok123');
+    const client = new QueryClient();
+    const tree = (mode: 'simple' | 'guest') => (
+      <QueryClientProvider client={client}>
+        <GuestIdentityProvider slug="wedding" identityMode={mode}><Probe /></GuestIdentityProvider>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tree('simple'));
+    expect(window.location.search).toBe('');
+    expect(redeemInvite).not.toHaveBeenCalled();
+
+    const photoUrl = new URL(window.location.href);
+    photoUrl.searchParams.set('photo', '42');
+    window.history.pushState({ photo: '42', photoPushed: true }, '', photoUrl.pathname + photoUrl.search);
+    expect(window.location.search).toBe('?photo=42');
+
+    // The settings arrive: guest mode redeems the parked token.
+    rerender(tree('guest'));
+    await waitFor(() => expect(redeemInvite).toHaveBeenCalledWith('wedding', 'tok123'));
+    resolveRedeem({ guest: { id: 1, name: 'A' }, token: 't' });
+    await waitFor(() => expect(storeGuestIdentity).toHaveBeenCalled());
+    expect(window.location.search).toBe('?photo=42');
+
+    await new Promise<void>((resolve) => {
+      window.addEventListener('popstate', () => resolve(), { once: true });
+      window.history.back();
+    });
+    expect(window.location.search).toBe('');
+  });
+
+  it('still redeems when sessionStorage refuses the token', async () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    try {
+      window.history.replaceState({}, '', '/gallery/wedding?invite=tok123');
+      mount();
+      await waitFor(() => expect(redeemInvite).toHaveBeenCalledWith('wedding', 'tok123'));
+      expect(window.location.search).toBe('');
+      resolveRedeem({ guest: { id: 1, name: 'A' }, token: 't' });
+      await waitFor(() => expect(storeGuestIdentity).toHaveBeenCalled());
+    } finally {
+      setItem.mockRestore();
+    }
   });
 
   it('drops the pending token when the visitor registers or recovers instead', async () => {
