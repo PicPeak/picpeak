@@ -110,6 +110,19 @@ describe('event routes — customer assignments need customers.* permissions', (
     expect(await assignments(eventId)).toEqual([customerId]);
   });
 
+  it('the echo writes no assignments at all, so it cannot undo a change made in between', async () => {
+    const service = require('../../src/services/customerAccountsService');
+    const spy = jest.spyOn(service, 'setAssignmentsForEvent');
+    try {
+      const res = await auth(request(app).put(`/api/admin/events/${eventId}`), editorTok)
+        .send({ event_name: 'Echo again', customer_account_ids: [customerId] });
+      expect(res.status).toBe(200);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('event update without the field still works for events.edit', async () => {
     const res = await auth(request(app).put(`/api/admin/events/${eventId}`), editorTok)
       .send({ event_name: 'Renamed by editor' });

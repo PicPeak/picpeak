@@ -1245,7 +1245,11 @@ module.exports = (router) => {
         if (!same) {
           return res.status(403).json({ error: 'The customers.events permission is required to change the customers assigned to an event' });
         }
+        // A real no-op: without this the assignment write further down
+        // would still replace the set with this echo, undoing a change an
+        // authorized admin made since the caller loaded the page.
         delete updates.customer_account_ids;
+        delete req.body.customer_account_ids;
       }
 
       // express-validator applies isInt/isIn/isBoolean element-wise to
