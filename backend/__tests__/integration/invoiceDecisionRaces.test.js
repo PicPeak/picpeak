@@ -171,6 +171,31 @@ describe('payment-check links', () => {
     expect(await codeOf(payments.recordPaymentCheckAction({ token, action: 'unpaid' }))).toBeNull();
   });
 
+  it('keeps the claims spent once a business write has committed, so a retry cannot pay twice', async () => {
+    const id = await sentInvoice();
+    const sibling = await liveToken(id);
+    const { token } = await payments.queuePaymentCheckEmail(id, { skipThrottle: true });
+    await db('invoice_payment_check_tokens').where({ token: sibling }).update({ used_at: null, used_action: null });
+    const before = await invoiceRow(id);
+
+    // partial: recordPayment commits, then the reminder's PDF render fails.
+    const pdfService = require('../../src/services/pdfService');
+    const spy = jest.spyOn(pdfService, 'renderInvoiceToBuffer').mockRejectedValueOnce(new Error('renderer down'));
+    await expect(payments.recordPaymentCheckAction({ token, action: 'partial', amountMinor: 1000 }))
+      .rejects.toThrow('renderer down');
+    spy.mockRestore();
+
+    const after = await invoiceRow(id);
+    expect(Number(after.paid_amount_minor)).toBe(Number(before.paid_amount_minor || 0) + 1000);
+    const rows = await tokensOf(id);
+    expect(rows.find((r) => r.token === token).used_at).not.toBeNull();
+    expect(rows.find((r) => r.token === sibling)).toMatchObject({ used_action: 'superseded' });
+    // A retry through either link is refused and records nothing again.
+    expect(await codeOf(payments.recordPaymentCheckAction({ token, action: 'partial', amountMinor: 1000 }))).toBe('TOKEN_ALREADY_USED');
+    expect(await codeOf(payments.recordPaymentCheckAction({ token: sibling, action: 'partial', amountMinor: 1000 }))).toBe('TOKEN_ALREADY_USED');
+    expect(Number((await invoiceRow(id)).paid_amount_minor)).toBe(Number(after.paid_amount_minor));
+  });
+
   it('a recorded payment revokes the pending links', async () => {
     const id = await sentInvoice();
     const link = await liveToken(id);
