@@ -314,7 +314,7 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   // started. Captured before the insert so an overlapping resend's fresh
   // link — queued in its own email — is not retired by this one.
   const priorMaxId = (await db('invoice_payment_check_tokens')
-    .where({ invoice_id: invoiceId }).whereNull('used_at').max('id as m').first())?.m;
+    .where({ invoice_id: invoiceId }).whereNull('used_at').orderBy('id', 'desc').first('id'))?.id;
   await db('invoice_payment_check_tokens').insert({
     invoice_id: invoiceId,
     token,
