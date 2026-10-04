@@ -115,6 +115,19 @@ describe('my_rating on the photo list (issue 1733)', () => {
     expect((await getPhoto()).my_rating).toBe(4);
   });
 
+  it('shows the newest of two rows for the same viewer and photo', async () => {
+    // submitFeedback's check-then-insert can leave two rating rows behind;
+    // the tile must agree with the lightbox, which reads newest-first.
+    await rate('me', 2, { created_at: '2026-01-01T10:00:00.000Z' });
+    await rate('me', 5, { created_at: '2026-01-01T10:00:01.000Z' });
+    expect((await getPhoto()).my_rating).toBe(5);
+    // Same second: the later id wins.
+    await db('photo_feedback').where({ photo_id: photoId }).del();
+    await rate('me', 3, { created_at: '2026-01-01T11:00:00.000Z' });
+    await rate('me', 1, { created_at: '2026-01-01T11:00:00.000Z' });
+    expect((await getPhoto()).my_rating).toBe(1);
+  });
+
   it('does not report another viewer\'s rating as mine', async () => {
     await rate('other', 5);
     expect((await getPhoto()).my_rating).toBeNull();

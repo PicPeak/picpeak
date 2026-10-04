@@ -177,7 +177,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     } else {
       ratingQuery.where('guest_identifier', identity.guestIdentifier);
     }
-    const ratingRows = await ratingQuery.select('photo_id', 'rating');
+    // Oldest first, so the newest row per photo is the one left in the map:
+    // submitFeedback's check-then-insert is not atomic, and two rating rows
+    // for one viewer and photo must resolve to the same value here as in
+    // the lightbox, which reads newest-first.
+    const ratingRows = await ratingQuery
+      .select('photo_id', 'rating')
+      .orderBy([{ column: 'created_at', order: 'asc' }, { column: 'id', order: 'asc' }]);
     ratingRows.forEach(row => {
       if (row.rating) myRatingByPhoto[row.photo_id] = Number(row.rating);
     });
