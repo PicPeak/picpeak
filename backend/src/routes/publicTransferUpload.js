@@ -240,12 +240,24 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
   }
 
-  // Nothing becomes permanent on the strength of the pre-body check.
-  const current = await reloadUploadTransfer(req.params.token);
-  if (!current.transfer) {
+  // Nothing becomes permanent on the strength of the pre-body check. The
+  // body is on disk already, so a refusal — or a database error while
+  // re-reading the row — removes it; otherwise every request during an
+  // outage leaves its temporary files behind.
+  const dropTempFiles = () => {
     for (const file of req.files) {
       try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
     }
+  };
+  let current;
+  try {
+    current = await reloadUploadTransfer(req.params.token);
+  } catch (error) {
+    dropTempFiles();
+    throw error;
+  }
+  if (!current.transfer) {
+    dropTempFiles();
     return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
   }
   const transfer = current.transfer;
