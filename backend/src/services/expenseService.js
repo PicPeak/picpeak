@@ -177,24 +177,24 @@ const MAX_INBOUND_PDF_BYTES = 25 * 1024 * 1024;
  */
 async function inspectFile(filePath, mimeType) {
   const buf = await fsp.readFile(filePath);
-  let sha = crypto.createHash('sha256').update(buf).digest('hex');
+  // The ORIGINAL bytes are what is kept and hashed: a supplier invoice may
+  // carry a digital signature (PAdES /ByteRange) that re-serialising would
+  // break, and the received file is the accounting evidence.
+  const sha = crypto.createHash('sha256').update(buf).digest('hex');
   let pageCount = null;
   let pdfError = null;
   if ((mimeType || '').includes('pdf')) {
     try {
       const info = await validatePdf(buf, { maxBytes: MAX_INBOUND_PDF_BYTES });
-      pageCount = info.pages == null ? null : Number(info.pages);
-      // What is kept is what was checked (pdfInspect.js): the bytes pdf-lib
-      // wrote back carry only the objects the scan saw, so a duplicate
-      // object id cannot show a viewer an active definition the scan did
-      // not. The upload is replaced in place, and the hash describes the
-      // stored file.
-      if (Buffer.isBuffer(info.normalised) && !info.normalised.equals(buf)) {
-        const tmp = `${filePath}.normalised-${process.pid}-${Date.now()}`;
-        await fsp.writeFile(tmp, info.normalised);
-        await fsp.rename(tmp, filePath);
-        sha = info.sha256 || crypto.createHash('sha256').update(info.normalised).digest('hex');
+      // Because the upload is kept rather than `normalised`, the scan has to
+      // agree with what a viewer resolves (pdfInspect.findAmbiguousObjects):
+      // a file whose xref points at a definition the scan did not keep could
+      // carry active content the check never saw. Refused, like the signed
+      // contract upload refuses it.
+      if (info.ambiguousObjects) {
+        throw new AppError('The PDF defines objects ambiguously and cannot be verified.', 400, 'PDF_AMBIGUOUS_OBJECTS');
       }
+      pageCount = info.pages == null ? null : Number(info.pages);
     } catch (e) {
       logger.warn?.(`expenseService: PDF refused for ${filePath}: ${e.code || ''} ${e.message}`);
       pdfError = e;
