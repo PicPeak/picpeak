@@ -2,6 +2,8 @@
  * Minimum own-rating filter (issue 1733, A3c): `minRating` keeps only photos
  * whose `my_rating` reaches the threshold and ANDs with the feedback chips.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
@@ -94,8 +96,6 @@ describe('GalleryView hands the threshold to the hook only while ratings are rea
   // allow_ratings as it was, so gating on allow_ratings alone kept a stale
   // threshold emptying the grid with nothing left to clear it.
   it('gates minRating on feedback_enabled and allow_ratings', () => {
-    const fs = require('fs');
-    const path = require('path');
     const src = fs.readFileSync(path.join(__dirname, '../../GalleryView.tsx'), 'utf8');
     expect(src).toContain('minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null');
   });

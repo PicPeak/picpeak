@@ -224,7 +224,10 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             no feedback filter at all on desktop (#802 — the lg:hidden
             fallback block below only covers mobile/tablet). */}
         {((categories && categories.length > 0) || (feedbackEnabled && !!onFilterChange)) && (
-          <div className="flex items-start lg:items-center justify-between flex-col lg:flex-row gap-3">
+          // lg:flex-wrap: with feedback, colour labels and five rating chips
+          // all on, the fixed-width groups exceed the container at 1024px, and
+          // the global overflow-x: hidden would clip them off-screen.
+          <div className="flex items-start lg:items-center justify-between flex-col lg:flex-row lg:flex-wrap gap-3">
             {/* Categories: keep in a horizontal scroll container */}
             {categories && categories.length > 0 && (
               <div className="w-full overflow-x-auto pb-2 lg:pb-0">
@@ -327,7 +330,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             {/* Own-rating filter (issue 1733), desktop */}
             {feedbackEnabled && ratingsEnabled && onMinRatingChange && (
               <MinRatingFilterChips
-                className="hidden lg:flex flex-shrink-0"
+                className="hidden lg:flex"
                 minRating={minRating}
                 onChange={onMinRatingChange}
                 counts={minRatingCounts}
