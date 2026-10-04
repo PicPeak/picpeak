@@ -12,13 +12,18 @@
  * items themselves are taken as the user chose them.
  *
  * `limit` stops the walk once that many files are collected, so a drop of a
- * whole archive does not read every entry of it before the uploader's cap
- * truncates the result. Pass the remaining capacity plus one: the extra
- * file lets the uploader still raise its "some files skipped" notice. Only
- * files passing `accept` are collected and counted, so sidecars and
- * oversized files inside the folder do not use up the budget. Directories
- * are read batch by batch and the walk stops between batches once the limit
- * is reached, so a flat folder of thousands of entries is not drained first.
+ * whole archive is not turned into File objects before the uploader's cap
+ * truncates the result. It is a ceiling for the walk, not the cap: pass a
+ * value that does not depend on the selection at drop time, since that can
+ * change while the walk is pending. Only files passing `accept` are
+ * collected and counted, so sidecars and oversized files inside the folder
+ * do not use up the budget.
+ *
+ * A directory's entry list is always drained and sorted as a whole — names
+ * only, which is cheap — because `readEntries` batches come in unspecified
+ * order and stopping between them could drop a name that sorts first. What
+ * the limit bounds is the expensive part: resolving `entry.file()` and
+ * recursing into subfolders, both done in sorted order until it is reached.
  * Plain files (no entry API) are returned unfiltered; the caller filters.
  */
 export interface CollectOptions {
@@ -67,23 +72,25 @@ async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
     return;
   }
   if (!entry.isDirectory) return;
-  // readEntries returns at most ~100 entries per call and an empty batch once
-  // the directory is exhausted. Each batch is sorted and walked on its own,
-  // so the walk can stop before the next read.
-  const reader = (entry as FileSystemDirectoryEntry).createReader();
-  for (;;) {
+  const children = (await readAllEntries((entry as FileSystemDirectoryEntry).createReader()))
+    .filter((child) => !child.name.startsWith('.'))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  for (const child of children) {
     if (walk.out.length >= walk.limit) return;
+    await walkEntry(child, walk);
+  }
+}
+
+// readEntries returns at most ~100 entries per call and an empty batch once
+// the directory is exhausted.
+async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  const all: FileSystemEntry[] = [];
+  for (;;) {
     const batch = await new Promise<FileSystemEntry[]>((resolve) =>
       reader.readEntries(resolve, () => resolve([]))
     );
-    if (batch.length === 0) return;
-    const children = batch
-      .filter((child) => !child.name.startsWith('.'))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    for (const child of children) {
-      if (walk.out.length >= walk.limit) return;
-      await walkEntry(child, walk);
-    }
+    if (batch.length === 0) return all;
+    all.push(...batch);
   }
 }
 

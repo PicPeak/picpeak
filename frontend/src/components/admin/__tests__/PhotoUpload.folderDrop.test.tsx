@@ -214,25 +214,53 @@ describe('PhotoUpload folder drop', () => {
     await waitFor(() => expect(uploadButton()).not.toBeDisabled());
   });
 
-  it('reads no further than the cap plus one and still raises the skipped notice', async () => {
-    const reads: string[] = [];
-    const counting = (name: string, children: object[]) => {
-      const inner = dirEntry(name, children);
-      return { ...inner, createReader: () => { reads.push(name); return inner.createReader(); } };
+  it('applies the cap as it is when the walk lands, not as it was at the drop', async () => {
+    // Cap 3, three files selected: no capacity at drop time. Two are removed
+    // while the folder is still being walked, so both of its files must fit.
+    let release: (() => void) | null = null;
+    const slowDir = {
+      isFile: false, isDirectory: true, name: 'slow',
+      createReader: () => {
+        let done = false;
+        return {
+          readEntries: (ok: (entries: object[]) => void) => {
+            const answer = () => { ok(done ? [] : [fileEntry('late1.jpg'), fileEntry('late2.jpg')]); done = true; };
+            if (done) answer(); else release = answer;
+          },
+        };
+      },
     };
-    // Ten files, cap 3: at most four are collected and folder 'late' is never opened.
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    await waitFor(() => expect(screen.getByText('upload.videoSizeLimit')).toBeInTheDocument());
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [jpg('e1.jpg'), jpg('e2.jpg'), jpg('e3.jpg')] } });
+    await waitFor(() => expect(screen.getByText('e3.jpg')).toBeInTheDocument());
+
+    fireEvent.drop(zone, { dataTransfer: { files: [], items: [{ kind: 'file', webkitGetAsEntry: () => slowDir }] } });
+    const removeButton = (name: string) =>
+      screen.getByText(name).closest('.justify-between')!.querySelector('button')!;
+    fireEvent.click(removeButton('e3.jpg'));
+    fireEvent.click(removeButton('e2.jpg'));
+    release!();
+
+    await waitFor(() => expect(screen.getByText('late2.jpg')).toBeInTheDocument());
+    expect(screen.getByText('late1.jpg')).toBeInTheDocument();
+    expect(toastWarning).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('truncates a tree over the cap across folders and raises the skipped notice', async () => {
     await dropOnZone({
       files: [],
       items: [
-        { kind: 'file', webkitGetAsEntry: () => counting('first', ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg'].map(fileEntry)) },
-        { kind: 'file', webkitGetAsEntry: () => counting('late', ['7.jpg', '8.jpg', '9.jpg', '10.jpg'].map(fileEntry)) },
+        { kind: 'file', webkitGetAsEntry: () => dirEntry('first', ['1.jpg', '2.jpg'].map(fileEntry)) },
+        { kind: 'file', webkitGetAsEntry: () => dirEntry('second', ['3.jpg', '4.jpg', '5.jpg'].map(fileEntry)) },
       ],
     });
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:3:3'));
     expect(screen.getByText('3.jpg')).toBeInTheDocument();
     expect(screen.queryByText('4.jpg')).not.toBeInTheDocument();
-    expect(reads).toEqual(['first']);
   });
 
   it('keeps every JPEG up to the cap when sidecars sit between them', async () => {

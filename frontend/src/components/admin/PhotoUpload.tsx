@@ -19,7 +19,15 @@ interface PhotoUploadProps {
 }
 
 const DEFAULT_MAX_FILES_PER_UPLOAD = 500;
+// Largest value general_max_files_per_upload can take; mirrors
+// MAX_ALLOWED_FILES_PER_UPLOAD in backend/src/services/uploadSettings.js.
 const MAX_FILES_PER_UPLOAD_LIMIT = 2000;
+// How many admissible files a folder walk collects at most. Fixed, not the
+// capacity at drop time: the cap can be raised and files can be removed
+// while a walk is pending, and addFiles applies the live cap when it lands.
+// One above the largest possible cap, so its "some files skipped" notice
+// still fires for a tree that exceeds even that.
+const FOLDER_WALK_CEILING = MAX_FILES_PER_UPLOAD_LIMIT + 1;
 
 export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStarted }) => {
   const { t } = useTranslation();
@@ -180,11 +188,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // Dropped folders are walked recursively (issue 1733, C1); the result
     // goes through the same filter and per-upload cap as picked files.
     setPendingWalks((n) => n + 1);
-    // Stop the walk at the remaining capacity plus one (the extra file keeps
-    // addFiles' "some files skipped" notice) instead of reading a whole
-    // archive first; the pick-time selection is what the ref holds.
-    const remaining = Math.max(maxFilesPerUpload - selectedFilesRef.current.length, 0);
-    void collectDroppedFiles(e.dataTransfer, { limit: remaining + 1, accept: (file) => admitFileRef.current(file) })
+    // The walk stops at a fixed ceiling instead of reading a whole archive;
+    // the cap itself is applied by addFiles against the selection and the
+    // settings as they are when the walk lands.
+    void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept: (file) => admitFileRef.current(file) })
       .then((files) => addFilesRef.current(files))
       .finally(() => setPendingWalks((n) => n - 1));
   };

@@ -135,24 +135,28 @@ describe('collectDroppedFiles', () => {
     expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg']);
   });
 
-  it('stops calling readEntries once the limit is reached inside a large flat folder', async () => {
-    let reads = 0;
+  it('resolves no more File objects than the limit inside a large flat folder', async () => {
+    // The entry list is drained (names only); entry.file() is the bounded part.
+    let resolved = 0;
+    const counted = (name: string): FileSystemFileEntry =>
+      ({
+        isFile: true, isDirectory: false, name,
+        file: (ok: (f: File) => void) => { resolved += 1; ok(new File(['x'], name, { type: 'image/jpeg' })); },
+      }) as unknown as FileSystemFileEntry;
     const names = Array.from({ length: 1000 }, (_, i) => `${i + 1}.jpg`);
-    const big = dirEntry('big', names.map(fileEntry), 100);
-    const inner = big.createReader.bind(big);
-    const counted = {
-      ...big,
-      createReader: () => {
-        const r = inner();
-        return { readEntries: (ok: any, err?: any) => { reads += 1; r.readEntries(ok, err); } };
-      },
-    } as unknown as FileSystemDirectoryEntry;
 
-    const files = await collectDroppedFiles(dataTransferFrom([counted]), { limit: 3 });
+    const files = await collectDroppedFiles(dataTransferFrom([dirEntry('big', names.map(counted), 100)]), { limit: 3 });
 
-    expect(files).toHaveLength(3);
-    // One batch of 100 is enough for three files; the other nine are never read.
-    expect(reads).toBe(1);
+    expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg']);
+    expect(resolved).toBe(3);
+  });
+
+  it('sorts a directory as a whole, across readEntries batches', async () => {
+    // The alphabetically first name arrives in the second batch; a limit hit
+    // inside the first batch must not drop it.
+    const dt = dataTransferFrom([dirEntry('d', [fileEntry('b.jpg'), fileEntry('c.jpg'), fileEntry('a.jpg')], 2)]);
+
+    expect((await collectDroppedFiles(dt, { limit: 2 })).map((f) => f.name)).toEqual(['a.jpg', 'b.jpg']);
   });
 
   it('falls back to dataTransfer.files without the entry API', async () => {
