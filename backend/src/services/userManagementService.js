@@ -517,7 +517,7 @@ async function deleteAdminUser(id, deletedById) {
   //   CASCADE on api_tokens.user_id, admin_invitations.invited_by,
   //     customer_invitations.invited_by (drops pending tokens + invites
   //     this user issued)
-  // The bell dismissals this admin recorded (migration 261): CASCADE on
+  // The bell dismissals this admin recorded (migration 239): CASCADE on
   // PostgreSQL, explicit for SQLite, which runs without PRAGMA foreign_keys —
   // in the same transaction as the account, so a refused delete (a NO ACTION
   // FK still pointing at the user) leaves their bell state intact.

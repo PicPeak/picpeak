@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 261: per-admin dismissal state for the notification bell.
+ * Migration 239: per-admin dismissal state for the notification bell.
  *
  * The bell reads activity_logs, which is also the audit trail (contract
  * history, customer timelines, every admin's actions). "Clear all" used to

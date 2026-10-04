@@ -23,7 +23,7 @@ function scopeToVisibleEvents(query, admin) {
 
 /**
  * Leave out the rows this admin has cleared from their bell
- * (notification_dismissals, migration 261). Dismissal is per admin and
+ * (notification_dismissals, migration 239). Dismissal is per admin and
  * touches neither the activity_logs row nor its read_at, so the audit trail
  * and every other admin's bell are unaffected.
  */

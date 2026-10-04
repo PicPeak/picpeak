@@ -72,7 +72,7 @@ test('clearing notifications dismisses entries from this admin\'s bell without d
 
   // Clear all records a dismissal per visible row for this admin; the
   // activity_logs rows themselves (the audit trail) are never deleted, see
-  // backend/src/routes/adminNotifications.js and migration 261.
+  // backend/src/routes/adminNotifications.js and migration 239.
   const clearResponse = await request.delete('/api/admin/notifications/clear-all', {
     headers: { Authorization: `Bearer ${token}` },
   });
