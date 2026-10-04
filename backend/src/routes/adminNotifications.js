@@ -104,8 +104,10 @@ router.put('/:id/read', adminAuth, requirePermission('notifications.manage'), as
   try {
     const { id } = req.params;
 
-    // Only a row the caller can see in the bell; a foreign row stays unread.
-    await scopeToVisibleEvents(db('activity_logs'), req.admin)
+    // Only a row the caller's bell shows: a foreign row stays unread, and so
+    // does one this admin has dismissed — read_at is shared with every
+    // other admin, so an id kept from before a Clear all must not move it.
+    await bellRows(req.admin)
       .where('activity_logs.id', id)
       .update({
         read_at: new Date().toISOString()

@@ -180,6 +180,13 @@ describe('admin notifications — owner scope and audit retention', () => {
     expect(fresh).toBeGreaterThan(dismissed);
   });
 
+  it('marking a single dismissed row read does nothing', async () => {
+    const dismissed = await mkLog('photos_uploaded', ownEventId);
+    await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);
+    await auth(request(app).put(`/api/admin/notifications/${dismissed}/read`), scopedTok).expect(200);
+    expect(await unreadIds()).toEqual([dismissed]);
+  });
+
   it('clear-all dismisses more than one chunk in one go', async () => {
     const ids = [];
     for (let i = 0; i < 503; i += 1) ids.push(await mkLog('photos_uploaded', ownEventId));
