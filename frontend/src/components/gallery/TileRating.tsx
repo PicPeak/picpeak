@@ -16,6 +16,11 @@ interface TileRatingProps {
   variant?: 'light' | 'dark';
   requireNameEmail?: boolean;
   savedIdentity?: { name: string; email: string } | null;
+  /**
+   * Called with the name/email the viewer typed into this tile's identity
+   * modal, so the card and the layout can reuse it for every other tile.
+   */
+  onIdentitySaved?: (identity: { name: string; email: string }) => void;
   /** Called after a star was pressed, so the tile can drop its tap-to-reveal overlay. */
   onDone?: () => void;
 }
@@ -34,6 +39,7 @@ export const TileRating: React.FC<TileRatingProps> = ({
   variant = 'light',
   requireNameEmail = false,
   savedIdentity,
+  onIdentitySaved,
   onDone,
 }) => {
   const { t } = useTranslation();
@@ -162,6 +168,7 @@ export const TileRating: React.FC<TileRatingProps> = ({
             onClose={() => setShowIdentityModal(false)}
             onSubmit={(name, email) => {
               setOwnIdentity({ name, email });
+              onIdentitySaved?.({ name, email });
               setShowIdentityModal(false);
               mutation.mutate({ rating: pendingRating, guest_name: name, guest_email: email });
               onDone?.();

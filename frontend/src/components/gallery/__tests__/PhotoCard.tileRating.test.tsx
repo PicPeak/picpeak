@@ -19,6 +19,9 @@ vi.mock('../../common', () => ({
   AuthenticatedImage: ({ src, alt }: { src: string; alt?: string }) => (
     <img data-testid="tile" src={src} alt={alt} />
   ),
+  // The identity modal's form controls, plain enough to type into.
+  Button: ({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...rest}>{children}</button>,
+  Input: ({ label: _label, error: _error, ...rest }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; error?: string }) => <input {...rest} />,
 }));
 
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
@@ -194,6 +197,54 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(3));
     await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalledTimes(1));
     expect(cachedPhoto(7).average_rating).toBeUndefined();
+  });
+
+  it('hands the identity typed on one tile to the layout, so the next tile does not ask again', async () => {
+    // require_name_email outside guest mode: the layout stores the identity
+    // (its own modal path does the same) and passes it back as savedIdentity.
+    const onIdentitySaved = vi.fn();
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <PhotoCard
+          photo={PHOTO} isSelected={false} isSelectionMode={false} onClick={() => {}} onDownload={() => {}}
+          onToggleSelect={() => {}} className="group tile" slug={SLUG} feedbackEnabled
+          overlayBaseClassName="absolute inset-0 flex items-center justify-center gap-2"
+          imageProps={{ src: PHOTO.thumbnail_url!, alt: PHOTO.filename }}
+          feedbackOptions={{ allowLikes: true, allowRatings: true, requireNameEmail: true }}
+          identityMode="parent" savedIdentity={null} onIdentitySaved={onIdentitySaved}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 4 stars' }));
+    expect(feedbackService.submitFeedback).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText('Enter your name'), { target: { value: 'Maria' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'maria@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
+
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledWith(
+      SLUG, '7', expect.objectContaining({ rating: 4, guest_name: 'Maria', guest_email: 'maria@example.com' }),
+    ));
+    expect(onIdentitySaved).toHaveBeenCalledWith({ name: 'Maria', email: 'maria@example.com' });
+
+    // The layout feeds it back: another photo rates straight away.
+    const other = { ...PHOTO, id: 9 } as Photo;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PhotoCard
+          photo={other} isSelected={false} isSelectionMode={false} onClick={() => {}} onDownload={() => {}}
+          onToggleSelect={() => {}} className="group tile" slug={SLUG} feedbackEnabled
+          overlayBaseClassName="absolute inset-0 flex items-center justify-center gap-2"
+          imageProps={{ src: PHOTO.thumbnail_url!, alt: PHOTO.filename }}
+          feedbackOptions={{ allowLikes: true, allowRatings: true, requireNameEmail: true }}
+          identityMode="parent" savedIdentity={{ name: 'Maria', email: 'maria@example.com' }} onIdentitySaved={onIdentitySaved}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    await waitFor(() => expect(feedbackService.submitFeedback).toHaveBeenCalledWith(
+      SLUG, '9', expect.objectContaining({ rating: 2, guest_name: 'Maria' }),
+    ));
+    expect(screen.queryByPlaceholderText('Enter your name')).not.toBeInTheDocument();
   });
 
   it('clears the rating when the current star is pressed again', async () => {

@@ -50,6 +50,7 @@ interface JustifiedPhotoProps {
   };
   savedIdentity?: { name: string; email: string } | null;
   onRequireIdentity?: (action: 'like', photoId: number) => void;
+  onIdentitySaved?: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
   onFeedbackChange?: () => void;
   liked?: boolean;
@@ -71,6 +72,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
   feedbackOptions,
   savedIdentity,
   onRequireIdentity,
+  onIdentitySaved,
   onQuickComment,
   onFeedbackChange,
   liked = false,
@@ -144,6 +146,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
       onLikeSuccess={onLikeSuccess}
       savedIdentity={savedIdentity}
       onRequireIdentity={onRequireIdentity}
+      onIdentitySaved={onIdentitySaved}
       checkboxTestId
     >
       {/* Feedback Indicators */}
@@ -519,6 +522,7 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
               feedbackEnabled={feedbackEnabled}
               feedbackOptions={feedbackOptions}
               savedIdentity={savedIdentity}
+              onIdentitySaved={setSavedIdentity}
               onRequireIdentity={(action, photoId) => {
                 setPendingAction({ type: action, photoId });
                 setShowIdentityModal(true);

@@ -69,6 +69,8 @@ export interface PhotoCardProps {
   identityMode?: 'self' | 'parent';
   savedIdentity?: { name: string; email: string } | null;
   onRequireIdentity?: (action: 'like', photoId: number) => void;
+  /** Identity collected by the tile's rating control; the layout stores it as savedIdentity. */
+  onIdentitySaved?: (identity: { name: string; email: string }) => void;
   /** Use Like/Unlike toggle labels on the like button (Masonry columns). */
   likeToggleLabels?: boolean;
   /** Render the Like button before the Comment button (Mosaic/Timeline). */
@@ -112,6 +114,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   identityMode = 'parent',
   savedIdentity,
   onRequireIdentity,
+  onIdentitySaved,
   likeToggleLabels = false,
   likeBeforeComment = false,
   checkboxTestId = false,
@@ -386,6 +389,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           variant={actionVariant}
           requireNameEmail={feedbackOptions.requireNameEmail}
           savedIdentity={savedIdentityValue}
+          onIdentitySaved={(identity) => {
+            // One identity per viewer, not per tile: the like button on this
+            // card and every other tile (through the layout) reuse it.
+            if (identityMode === 'self') setSelfIdentity(identity);
+            onIdentitySaved?.(identity);
+          }}
           onDone={hideOverlay}
         />
       </div>

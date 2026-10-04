@@ -111,6 +111,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
           setLikedLocal(prev => !prev);
         }}
         savedIdentity={savedIdentity}
+        onIdentitySaved={setSavedIdentity}
         onRequireIdentity={(action, photoId) => {
           setPendingAction({ type: action, photoId });
           setShowIdentityModal(true);
