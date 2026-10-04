@@ -122,6 +122,27 @@ describe('.picpeak import — files/ roots and content types', () => {
     expect(await getMarker()).toBe('current');
   });
 
+  it('imports a genuine export whose transfer attachments are named like web content', async () => {
+    // The exporter takes all of uploads/, and a transfer keeps the client's
+    // filename; those objects are attachments, never served as pages.
+    await setMarker('in_backup');
+    const { filePath } = await createPicpeak({ includePhotos: false });
+    await setMarker('current');
+    const withTransfer = await withExtraEntries(filePath, {
+      'files/uploads/transfers/7/payload.js': 'console.log(1)',
+      'files/uploads/transfers/7/page.html': '<p>client file</p>',
+    });
+    try {
+      await importFromPicpeak({ picpeakPath: withTransfer, currentAdminId: adminId });
+    } finally {
+      fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
+      fs.rmSync(path.dirname(withTransfer), { recursive: true, force: true });
+    }
+    expect(await getMarker()).toBe('in_backup');
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'uploads', 'transfers', '7', 'payload.js'))).toBe(true);
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'uploads', 'transfers', '7', 'page.html'))).toBe(true);
+  });
+
   it('still imports a genuine export with business documents and an SVG logo', async () => {
     await setMarker('in_backup');
     const { filePath } = await createPicpeak({ includePhotos: false });
@@ -147,6 +168,12 @@ describe('importFilePathProblem', () => {
     'uploads/contracts/signed/c-1.pdf',
     'events/active/wedding/individual/a.jpg',
     'events/archived/old.zip',
+    // Attachment-only trees keep whatever name the client gave the file.
+    'uploads/transfers/12/payload.js',
+    'uploads/transfers/12/page.html',
+    'uploads/contracts/signed/notes.htm',
+    'business-docs/inbound/report.html',
+    'events/active/wedding/script.mjs',
   ])('accepts %s', (rel) => {
     expect(importFilePathProblem(rel)).toBeNull();
   });
@@ -165,6 +192,9 @@ describe('importFilePathProblem', () => {
     ['uploads/logos/x.shtml', /active web content/],
     ['uploads/logos/x.js', /active web content/],
     ['uploads/logos/x.mjs', /active web content/],
+    ['uploads/favicons/x.html', /active web content/],
+    ['uploads/favicons/deep/x.js', /active web content/],
+    ['uploads/Logos/x.HTML', /active web content/],
     ['business-docs/../fonts/x.woff2', /malformed/],
     ['uploads//x.jpg', /malformed/],
   ])('refuses %s', (rel, reason) => {
