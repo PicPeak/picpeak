@@ -463,15 +463,6 @@ class RestoreService {
         throw new Error(`Unknown restore type: ${options.restoreType}`);
       }
 
-      // Step 6b: every admin, customer and gallery JWT issued before the
-      // identity tables were replaced must stop authenticating — a numeric
-      // id in an old token may now name a different or re-enabled principal.
-      // Same cutoff the portable import stamps (sessionCutoff.js).
-      if (options.restoreType === 'full' || options.restoreType === 'database') {
-        await setSessionsValidAfter(nextSessionCutoff());
-        this.log('info', 'Sessions issued before the restore invalidated');
-      }
-
       // Step 7: Post-restore verification
       this.updateProgress('Performing post-restore verification...');
       const verification = await this.performPostRestoreVerification(manifest, options);
@@ -483,6 +474,20 @@ class RestoreService {
           await this.attemptRollback(this.preRestoreBackupPath);
         }
         throw new Error(`Post-restore verification failed: ${verification.errors.join(', ')}`);
+      }
+
+      // Step 7a: every admin, customer and gallery JWT issued before the
+      // identity tables were replaced must stop authenticating — a numeric
+      // id in an old token may now name a different or re-enabled principal.
+      // Same cutoff the portable import stamps (sessionCutoff.js). Written
+      // AFTER verification, like the meta replay below: on a backup that
+      // predates the setting the upsert inserts an app_settings row, which
+      // would put the table one over the manifest's row count and fail a
+      // valid restore. A failed verification rolls back, and attemptRollback
+      // stamps the cutoff itself.
+      if (options.restoreType === 'full' || options.restoreType === 'database') {
+        await setSessionsValidAfter(nextSessionCutoff());
+        this.log('info', 'Sessions issued before the restore invalidated');
       }
 
       // Step 7b: Replay operator-meta settings AFTER verification.
