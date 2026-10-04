@@ -786,4 +786,6 @@ module.exports = {
   getPaymentCheckByToken,
   recordPaymentCheckAction,
   revokePendingPaymentCheckTokens,
+  // For the gated PostgreSQL test of the cross-replica lock.
+  _internal: { withPaymentCheckIssuanceLock, PAYMENT_CHECK_ISSUANCE_LOCK },
 };
