@@ -177,27 +177,24 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     setSelectedPhotos(new Set());
   }, [categoryId, setSelectedPhotos]);
 
-  // The photo the lightbox is on, by id: `selectedPhotoIndex` is a position
-  // in `photos`, which a filter change can shift or empty under it.
+  // The photo a layout-owned lightbox (Gallery Premium / Story) is on, as it
+  // reports it; null while that lightbox is closed.
   const lightboxPhotoIdRef = useRef<number | null>(null);
 
   const handlePhotoClick = (index: number) => {
     setOpenFeedbackInitially(false);
     setSelectedPhotoIndex(index);
-    lightboxPhotoIdRef.current = photos[index]?.id ?? null;
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
 
   const handleOpenWithFeedback = (index: number) => {
     setOpenFeedbackInitially(true);
     setSelectedPhotoIndex(index);
-    lightboxPhotoIdRef.current = photos[index]?.id ?? null;
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
 
   const handleLightboxClose = () => {
     setSelectedPhotoIndex(null);
-    lightboxPhotoIdRef.current = null;
     onLightboxPhotoChange?.(null, 'close');
   };
 
@@ -209,22 +206,22 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onLightboxPhotoChange?.(photoId, reason);
   };
 
-  // The open photo left the list (unliking the last Liked photo, a filter
-  // change): the lightbox would simply unmount — or the component return its
-  // empty state — without a close, leaving `?photo=` and the pushed history
-  // entry behind. Close it properly instead. A layout-owned lightbox keeps
-  // its own index while the list is non-empty; only the empty list, which
-  // unmounts the layout and its lightbox outright, is closed from here.
+  // The list emptied under an open lightbox (unliking the last Liked photo,
+  // a filter change): this component returns its empty state and the
+  // lightbox — its own or the layout's — unmounts without a close, leaving
+  // `?photo=` and the pushed history entry behind. Report the close here.
+  // Only the EMPTY list: while photos remain, the lightbox clamps onto a
+  // neighbour in an effect of its own and reports that step a render later;
+  // closing from here first would shut it on a list that still has photos.
   useEffect(() => {
-    if (lightboxPhotoIdRef.current === null) return;
+    if (photos.length > 0) return;
     if (layoutOwnsLightbox) {
-      if (photos.length > 0) return;
+      if (lightboxPhotoIdRef.current === null) return;
       lightboxPhotoIdRef.current = null;
       onLightboxPhotoChange?.(null, 'close');
       return;
     }
     if (selectedPhotoIndex === null) return;
-    if (photos.some((photo) => photo.id === lightboxPhotoIdRef.current)) return;
     handleLightboxClose();
     // handleLightboxClose is recreated every render; the inputs that matter
     // are the list and whether a lightbox is open.
@@ -245,7 +242,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     if (index >= 0) {
       setOpenFeedbackInitially(false);
       setSelectedPhotoIndex(index);
-      lightboxPhotoIdRef.current = openPhotoId;
     }
   }, [openPhotoId, photos]);
 
@@ -610,10 +606,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           showOriginalFilename={showOriginalFilename}
           people={people}
           onSelectPerson={onSelectPerson}
-          onCurrentPhotoChange={(photoId) => {
-            lightboxPhotoIdRef.current = photoId;
-            onLightboxPhotoChange?.(photoId, 'step');
-          }}
+          onCurrentPhotoChange={(photoId) => onLightboxPhotoChange?.(photoId, 'step')}
         />
       )}
 

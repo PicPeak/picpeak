@@ -52,10 +52,14 @@ vi.mock('../PhotoLightbox', () => ({
     photos: Photo[]; initialIndex: number; onClose: () => void; onCurrentPhotoChange?: (id: number) => void;
   }) => {
     const [index, setIndex] = React.useState(initialIndex);
-    // The real lightbox clamps its index when the list shrinks under it; the
-    // stub only has to survive that render.
+    // As the real lightbox does: an index past the end is clamped in an
+    // effect (so one render later), and only a photo that exists is reported.
+    React.useEffect(() => {
+      if (photos.length > 0 && index > photos.length - 1) setIndex(photos.length - 1);
+    }, [photos.length, index]);
+    const currentId = photos[index]?.id;
+    React.useEffect(() => { if (currentId !== undefined) onCurrentPhotoChange?.(currentId); }, [currentId, onCurrentPhotoChange]);
     const current = photos[index] ?? photos[photos.length - 1];
-    React.useEffect(() => { if (current) onCurrentPhotoChange?.(current.id); }, [current, onCurrentPhotoChange]);
     return (
       <div data-testid="lightbox" data-photo={current?.id}>
         <button data-testid="next" onClick={() => setIndex((i) => i + 1)} />
@@ -110,6 +114,23 @@ describe('PhotoGridWithLayouts — link to a single photo (issue 1733)', () => {
     expect(onChange).toHaveBeenLastCalledWith(12, 'step');
     expect(onChange).not.toHaveBeenCalledWith(null, 'close');
     expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+  });
+
+  it('stays open on the previous photo when the last one is removed and others remain', () => {
+    // The lightbox's clamp lands a render after the list changed; the host
+    // must not close in between.
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />,
+    );
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+
+    rerender(
+      <PhotoGridWithLayouts photos={photos.filter((p) => p.id !== 12)} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />,
+    );
+    expect(onChange).not.toHaveBeenCalledWith(null, 'close');
+    expect(onChange).toHaveBeenLastCalledWith(11, 'step');
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('11');
   });
 
   it('closes, reporting it, when the filtered list empties under the open photo', () => {
