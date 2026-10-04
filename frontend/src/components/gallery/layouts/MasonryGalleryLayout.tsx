@@ -131,6 +131,11 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       lazy
       inViewRootMargin={bands.load}
       releaseRootMargin={bands.keep}
+      // A released tile in this mode is not skipped by content-visibility
+      // (see above), so its placeholder must not animate: the default
+      // `.skeleton` is `animate-pulse`, and hundreds of far-off tiles would
+      // keep the compositor busy for the life of the page (issue 1733).
+      skeletonClassName="w-full h-full rounded-lg bg-neutral-200"
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
