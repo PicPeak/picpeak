@@ -14,7 +14,7 @@ const path = require('path');
 const multer = require('multer');
 const { validateFileType, validateFileContent } = require('./fileSecurityUtils');
 const { validatePdf } = require('./pdfValidation');
-const { ValidationError } = require('./errors');
+const { AppError, ValidationError } = require('./errors');
 const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
 
@@ -111,7 +111,14 @@ async function checkSignedPdfUpload(req, res) {
     return false;
   }
   try {
-    await validatePdf(await fs.promises.readFile(req.file.path), { maxBytes: MAX_SIGNED_PDF_BYTES });
+    const info = await validatePdf(await fs.promises.readFile(req.file.path), { maxBytes: MAX_SIGNED_PDF_BYTES });
+    // Because the original bytes are kept, the scan has to agree with what
+    // a viewer resolves: a file that defines an object twice, with the
+    // cross-reference table pointing at a definition the scan did not keep,
+    // could carry active content the check never saw (pdfInspect.js).
+    if (info.ambiguousObjects) {
+      throw new AppError('The PDF defines objects ambiguously and cannot be verified. Please export it again.', 400, 'PDF_AMBIGUOUS_OBJECTS');
+    }
   } catch (err) {
     await fs.promises.unlink(req.file.path).catch(() => {});
     res.status(err.statusCode || 400).json({ error: err.message, code: err.code || 'INVALID_PDF' });
