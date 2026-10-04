@@ -84,6 +84,24 @@ describe('restoreService — pre-restore sessions are invalidated', () => {
     expect(await cutoff.isTokenBeforeCutoff({ iat: minted })).toBe(true);
   });
 
+  it('stamps the cutoff only after verification has counted the restored rows', async () => {
+    // A backup that predates the setting has no security_sessions_valid_after
+    // row; stamping before verification inserted one and put app_settings one
+    // over the manifest's row count, failing a valid restore.
+    const { svc, options } = stubbedService('database');
+    let cutoffAtVerification = null;
+    svc.performPostRestoreVerification = async () => {
+      cutoff._resetCache();
+      cutoffAtVerification = await cutoff.getSessionsValidAfter();
+      return { isValid: true, errors: [], checksums: {} };
+    };
+    const result = await svc.restore(options);
+    expect(result.success).toBe(true);
+    expect(cutoffAtVerification).toBe(0);
+    cutoff._resetCache();
+    expect(await cutoff.getSessionsValidAfter()).toBeGreaterThan(0);
+  });
+
   it('a files-only restore leaves sessions alone', async () => {
     const { svc, options } = stubbedService('files');
     const result = await svc.restore(options);
