@@ -89,3 +89,34 @@ describe('customer login lockout is scoped to identifier + IP', () => {
     expect(res.body.customer).toMatchObject({ email: 'scope-customer@example.com' });
   });
 });
+
+describe('the second-factor step has its own account-wide bucket', () => {
+  const jwt = require('jsonwebtoken');
+  let adminId; let mfaToken;
+  const failure = (identifier, ip) => db('login_attempts').insert({
+    identifier, ip_address: ip, user_agent: 'jest', attempt_time: new Date().toISOString(), success: false,
+  });
+  const verify = (ip) => post('/api/auth/admin/login/mfa', ip, { mfaToken, code: '000000' });
+
+  beforeAll(async () => {
+    adminId = (await db('admin_users').where({ username: 'scope-admin' }).first()).id;
+    mfaToken = jwt.sign(
+      { id: adminId, username: 'scope-admin', type: 'mfa_pending', loginId: 'scope-admin' },
+      process.env.JWT_SECRET, { algorithm: 'HS256', issuer: 'picpeak-auth', expiresIn: '5m' },
+    );
+  });
+
+  it('five wrong codes lock the step for every address, not only the guessing ones', async () => {
+    // A holder of the mfa_pending token rotating addresses must not get a
+    // fresh batch of guesses per address.
+    for (let i = 1; i <= 5; i += 1) await failure(`mfa:${adminId}`, `198.51.100.${i}`);
+    expect((await verify('203.0.113.77')).status).toBe(423);
+  });
+
+  it('anonymous password failures do not lock the second factor', async () => {
+    for (let i = 0; i < 5; i += 1) await failure('scope-admin', ATTACKER_IP);
+    expect((await verify(OWNER_IP)).status).not.toBe(423);
+    expect((await verify(ATTACKER_IP)).status).not.toBe(423);
+  });
+
+});

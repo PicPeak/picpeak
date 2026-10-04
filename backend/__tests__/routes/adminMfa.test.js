@@ -513,6 +513,11 @@ describe('Admin login challenge — /api/auth/admin/login[/mfa]', () => {
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('MFA_INVALID');
     expect(res.body.user).toBeUndefined();
+    // Counted in the second factor's own account-wide bucket, not in the
+    // password step's (which anonymous callers can fill).
+    const failed = await db('login_attempts').where({ success: false })
+      .whereIn('identifier', [`mfa:${admin.id}`, admin.username]).select('identifier');
+    expect(Array.from(failed).map((r) => r.identifier)).toEqual([`mfa:${admin.id}`]);
   });
 
   it('a recovery code logs in and is then single-use (second use fails)', async () => {
