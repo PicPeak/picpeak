@@ -25,7 +25,12 @@ vi.mock('../../common', () => ({
 }));
 
 // Switchable per test: null = simple/shared mode, 'guest' = guest identity mode.
-let guestIdentityContext: null | { identityMode: 'guest'; ensureIdentity: () => Promise<void> } = null;
+let guestIdentityContext: null | {
+  identityMode: 'guest';
+  /** The identity the provider holds before the call; null = not registered yet. */
+  identity: { id: number } | null;
+  ensureIdentity: () => Promise<{ id: number }>;
+} = null;
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
   useGuestIdentityOptional: () => guestIdentityContext,
 }));
@@ -226,7 +231,7 @@ describe('PhotoCard tile rating (issue 1733)', () => {
   it('refreshes the aggregates in guest identity mode as well', async () => {
     // The badges on Grid/Justified/Masonry tiles read the aggregates in every
     // identity mode; only the Rated chip switches to /my-feedback in guest mode.
-    guestIdentityContext = { identityMode: 'guest', ensureIdentity: vi.fn().mockResolvedValue(undefined) };
+    guestIdentityContext = { identityMode: 'guest', identity: { id: 3 }, ensureIdentity: vi.fn().mockResolvedValue({ id: 3 }) };
     seedCache({ ...PHOTO, average_rating: 0, total_ratings: 0 });
     renderCard();
 
@@ -241,9 +246,10 @@ describe('PhotoCard tile rating (issue 1733)', () => {
   });
 
   it('is not overwritten by a list request that was already in flight', async () => {
-    // Guest mode: ensureIdentity() invalidates gallery-photos just before the
-    // rating POST; the refetch it starts carries the unrated row.
-    guestIdentityContext = { identityMode: 'guest', ensureIdentity: vi.fn().mockResolvedValue(undefined) };
+    // The rating that registers the guest: ensureIdentity() establishes the
+    // identity, the provider invalidates gallery-photos just before the
+    // rating POST, and the refetch it starts carries the unrated row.
+    guestIdentityContext = { identityMode: 'guest', identity: null, ensureIdentity: vi.fn().mockResolvedValue({ id: 3 }) };
     seedCache(PHOTO);
     let resolveList: (v: GalleryData) => void = () => {};
     const stale = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: null }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
@@ -264,6 +270,43 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     // The cancelled request also carried the other photos' identity-bound
     // fields; the list is marked for a refetch (background, patch stays).
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(true);
+  });
+
+  it('neither cancels nor refetches the list for an already registered guest', async () => {
+    // Every rating after the first: proofing 300 photos must not refetch
+    // the gallery 300 times, nor abort a refresh that is under way.
+    guestIdentityContext = { identityMode: 'guest', identity: { id: 3 }, ensureIdentity: vi.fn().mockResolvedValue({ id: 3 }) };
+    seedCache(PHOTO);
+    let resolveList: (v: GalleryData) => void = () => {};
+    const refreshed = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: 5, like_count: 9 }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
+    const inflight = queryClient.fetchQuery({
+      queryKey: ['gallery-photos', SLUG, 'all', undefined],
+      queryFn: () => new Promise<GalleryData>((resolve) => { resolveList = resolve; }),
+      staleTime: 0,
+    });
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
+    resolveList(refreshed);
+    await expect(inflight).resolves.toBeTruthy();
+
+    expect(cachedPhoto(7).like_count).toBe(9);
+    expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(false);
+  });
+
+  it('refetches once when an invite or a guest switch changed the identity under the rating', async () => {
+    // ensureIdentity() answers with a different guest than the provider held.
+    guestIdentityContext = { identityMode: 'guest', identity: { id: 3 }, ensureIdentity: vi.fn().mockResolvedValue({ id: 4 }) };
+    seedCache(PHOTO);
+    renderCard();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 2 stars' }));
+    await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(2));
+    await waitFor(() => expect(
+      queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated,
+    ).toBe(true));
   });
 
   it('leaves a simple-mode background refresh alone and refetches nothing extra', async () => {

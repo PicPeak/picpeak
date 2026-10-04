@@ -52,7 +52,7 @@ export const TileRating: React.FC<TileRatingProps> = ({
   const current = photo.my_rating ?? 0;
 
   const mutation = useMutation({
-    mutationFn: (data: { rating: number; guest_name?: string; guest_email?: string }) =>
+    mutationFn: (data: { rating: number; guest_name?: string; guest_email?: string; identityChanged?: boolean }) =>
       feedbackService.submitFeedback(slug, String(photo.id), {
         feedback_type: 'rating',
         rating: data.rating,
@@ -60,16 +60,16 @@ export const TileRating: React.FC<TileRatingProps> = ({
         guest_email: data.guest_email,
       }),
     onSuccess: async (_result, data) => {
-      // A list request still in flight (guest mode: ensureIdentity()
-      // invalidates gallery-photos right before the rating POST) would land
-      // after the patch below and put the unrated row back. Cancel it, and
-      // ask for a fresh list once the patch is in (below): the cancelled
-      // request was also what brought the other photos' is_liked /
-      // my_rating for the new identity, and the refetch now includes this
-      // rating, so nothing is lost either way.
-      // Only there: in simple/shared mode nothing invalidated the list, so
-      // cancelling would abort an unrelated background refresh for good.
-      const identityRefreshedList = guestIdentity?.identityMode === 'guest';
+      // Only when this very rating established or switched the guest
+      // identity: GuestIdentityProvider then invalidates gallery-photos, and
+      // that refetch (started before the POST) would land after the patch
+      // below and put the unrated row back. It is cancelled here and asked
+      // for again once the patch is in, because it also carries the other
+      // photos' is_liked / my_rating for the new identity. An already
+      // registered guest — every rating after the first — touches neither:
+      // proofing a 300-photo shoot must not refetch the gallery per star,
+      // and nothing may abort an unrelated background refresh.
+      const identityRefreshedList = data.identityChanged === true;
       if (identityRefreshedList) {
         await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
       }
@@ -122,13 +122,15 @@ export const TileRating: React.FC<TileRatingProps> = ({
     // Pressing the current rating again clears it (#884).
     const next = star === current ? 0 : star;
     if (guestIdentity?.identityMode === 'guest') {
+      const identityBefore = guestIdentity.identity?.id ?? null;
+      let ensured;
       try {
-        await guestIdentity.ensureIdentity();
+        ensured = await guestIdentity.ensureIdentity();
       } catch {
         onDone?.();
         return;
       }
-      mutation.mutate({ rating: next });
+      mutation.mutate({ rating: next, identityChanged: (ensured?.id ?? null) !== identityBefore });
     } else if (requireNameEmail && !identity) {
       setPendingRating(next);
       setShowIdentityModal(true);
