@@ -100,6 +100,16 @@ describe('event routes — customer assignments need customers.* permissions', (
     expect((await db('events').where({ id: eventId }).first()).event_name).toBe('Perm Event');
   });
 
+  it('event update that echoes the current assignments unchanged works for events.edit', async () => {
+    // Older clients sent customer_account_ids on every save; an unchanged
+    // set changes nothing and must not need customers.events.
+    const res = await auth(request(app).put(`/api/admin/events/${eventId}`), editorTok)
+      .send({ event_name: 'Renamed with echo', customer_account_ids: [String(customerId)] });
+    expect(res.status).toBe(200);
+    expect((await db('events').where({ id: eventId }).first()).event_name).toBe('Renamed with echo');
+    expect(await assignments(eventId)).toEqual([customerId]);
+  });
+
   it('event update without the field still works for events.edit', async () => {
     const res = await auth(request(app).put(`/api/admin/events/${eventId}`), editorTok)
       .send({ event_name: 'Renamed by editor' });

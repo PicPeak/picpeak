@@ -1148,10 +1148,25 @@ module.exports = (router) => {
 
       // Replacing the assignment set (also with an empty list) is a
       // customers.events change, not an events.edit one; the settings form
-      // sends customer_account_ids only when the admin changed it.
+      // sends customer_account_ids only when the admin changed it. A client
+      // that echoes the current set unchanged (older builds sent it on
+      // every save) is not changing anything and is let through.
       if (Array.isArray(req.body.customer_account_ids)
         && !(await userHasAnyPermission(req.admin.id, ['customers.events']))) {
-        return res.status(403).json({ error: 'The customers.events permission is required to change the customers assigned to an event' });
+        let current = [];
+        try {
+          current = (await require('../../services/customerAccountsService').getAssignmentsForEvent(parseInt(id, 10)))
+            .map((c) => Number(c.id));
+        } catch (e) {
+          logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
+        }
+        const submitted = req.body.customer_account_ids.map((v) => Number(v));
+        const same = submitted.length === current.length
+          && [...submitted].sort((a, b) => a - b).every((v, i) => v === [...current].sort((a, b) => a - b)[i]);
+        if (!same) {
+          return res.status(403).json({ error: 'The customers.events permission is required to change the customers assigned to an event' });
+        }
+        delete updates.customer_account_ids;
       }
 
       // express-validator applies isInt/isIn/isBoolean element-wise to
