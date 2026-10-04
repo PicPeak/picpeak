@@ -99,18 +99,23 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   // change handler and the drop handler. #504 — without the drop handler
   // the dashed-border zone looked draggable but silently fell through to
   // the browser's default "open the file in a new tab" behaviour.
+  // One admission rule for picked and dropped files: allowed type, and the
+  // pre-flight size check mirroring the guest uploader (without it the admin
+  // streams the whole oversized file before the backend 400s it). The folder
+  // walk applies it too, so sidecars and oversized files do not use up the
+  // per-upload budget before the photos behind them are reached.
+  const admitFile = (file: File): boolean => {
+    if (!allowedMimeTypes.includes(normalizeFileMimeType(file.name, file.type))) return false;
+    const limitMb = sizeLimitMbFor(file);
+    if (file.size > limitMb * 1024 * 1024) {
+      toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
+      return false;
+    }
+    return true;
+  };
+
   const addFiles = (incoming: File[]) => {
-    const imageFiles = incoming.filter((file) => {
-      if (!allowedMimeTypes.includes(normalizeFileMimeType(file.name, file.type))) return false;
-      // Pre-flight size check, mirroring the guest uploader: without it the
-      // admin streams the whole oversized file before the backend 400s it.
-      const limitMb = sizeLimitMbFor(file);
-      if (file.size > limitMb * 1024 * 1024) {
-        toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
-        return false;
-      }
-      return true;
-    });
+    const imageFiles = incoming.filter(admitFile);
     if (imageFiles.length === 0) return;
 
     const current = selectedFilesRef.current;
@@ -140,6 +145,8 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   // meanwhile), not with the addFiles closure of the drop.
   const addFilesRef = useRef(addFiles);
   addFilesRef.current = addFiles;
+  const admitFileRef = useRef(admitFile);
+  admitFileRef.current = admitFile;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     addFiles(Array.from(e.target.files || []));
@@ -177,7 +184,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // addFiles' "some files skipped" notice) instead of reading a whole
     // archive first; the pick-time selection is what the ref holds.
     const remaining = Math.max(maxFilesPerUpload - selectedFilesRef.current.length, 0);
-    void collectDroppedFiles(e.dataTransfer, remaining + 1)
+    void collectDroppedFiles(e.dataTransfer, { limit: remaining + 1, accept: (file) => admitFileRef.current(file) })
       .then((files) => addFilesRef.current(files))
       .finally(() => setPendingWalks((n) => n - 1));
   };

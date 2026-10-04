@@ -14,9 +14,24 @@
  * `limit` stops the walk once that many files are collected, so a drop of a
  * whole archive does not read every entry of it before the uploader's cap
  * truncates the result. Pass the remaining capacity plus one: the extra
- * file lets the uploader still raise its "some files skipped" notice.
+ * file lets the uploader still raise its "some files skipped" notice. Only
+ * files passing `accept` are collected and counted, so sidecars and
+ * oversized files inside the folder do not use up the budget. Directories
+ * are read batch by batch and the walk stops between batches once the limit
+ * is reached, so a flat folder of thousands of entries is not drained first.
+ * Plain files (no entry API) are returned unfiltered; the caller filters.
  */
-export async function collectDroppedFiles(dataTransfer: DataTransfer, limit = Infinity): Promise<File[]> {
+export interface CollectOptions {
+  limit?: number;
+  accept?: (file: File) => boolean;
+}
+
+export async function collectDroppedFiles(
+  dataTransfer: DataTransfer,
+  options: CollectOptions = {},
+): Promise<File[]> {
+  const limit = options.limit ?? Infinity;
+  const accept = options.accept ?? (() => true);
   // Both lists are emptied once the drop event has returned, so read them
   // synchronously before the first await.
   const plainFiles = Array.from(dataTransfer.files || []);
@@ -30,44 +45,48 @@ export async function collectDroppedFiles(dataTransfer: DataTransfer, limit = In
     .filter((entry): entry is FileSystemEntry => entry !== null);
   if (entries.length === 0) return plainFiles;
 
-  const files: File[] = [];
+  const walk = { out: [] as File[], limit, accept };
   for (const entry of entries) {
-    if (files.length >= limit) break;
-    await walkEntry(entry, files, limit);
+    if (walk.out.length >= limit) break;
+    await walkEntry(entry, walk);
   }
-  return files;
+  return walk.out;
 }
 
-async function walkEntry(entry: FileSystemEntry, out: File[], limit: number): Promise<void> {
-  if (out.length >= limit) return;
+interface Walk {
+  out: File[];
+  limit: number;
+  accept: (file: File) => boolean;
+}
+
+async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
+  if (walk.out.length >= walk.limit) return;
   if (entry.isFile) {
     const file = await fileOf(entry as FileSystemFileEntry);
-    if (file) out.push(file);
+    if (file && walk.accept(file)) walk.out.push(file);
     return;
   }
   if (!entry.isDirectory) return;
-  const children = (await readAllEntries((entry as FileSystemDirectoryEntry).createReader()))
-    .filter((child) => !child.name.startsWith('.'))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  for (const child of children) {
-    if (out.length >= limit) return;
-    await walkEntry(child, out, limit);
+  // readEntries returns at most ~100 entries per call and an empty batch once
+  // the directory is exhausted. Each batch is sorted and walked on its own,
+  // so the walk can stop before the next read.
+  const reader = (entry as FileSystemDirectoryEntry).createReader();
+  for (;;) {
+    if (walk.out.length >= walk.limit) return;
+    const batch = await new Promise<FileSystemEntry[]>((resolve) =>
+      reader.readEntries(resolve, () => resolve([]))
+    );
+    if (batch.length === 0) return;
+    const children = batch
+      .filter((child) => !child.name.startsWith('.'))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    for (const child of children) {
+      if (walk.out.length >= walk.limit) return;
+      await walkEntry(child, walk);
+    }
   }
 }
 
 // An entry that cannot be read any more (moved away mid-drop) is skipped.
 const fileOf = (entry: FileSystemFileEntry) =>
   new Promise<File | null>((resolve) => entry.file(resolve, () => resolve(null)));
-
-// readEntries returns at most ~100 entries per call and an empty batch once
-// the directory is exhausted.
-async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
-  const all: FileSystemEntry[] = [];
-  for (;;) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve) =>
-      reader.readEntries(resolve, () => resolve([]))
-    );
-    if (batch.length === 0) return all;
-    all.push(...batch);
-  }
-}

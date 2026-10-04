@@ -113,10 +113,46 @@ describe('collectDroppedFiles', () => {
       countingDir('c', ['9.jpg', '10.jpg'].map(fileEntry)),
     ]);
 
-    const files = await collectDroppedFiles(dt, 4);
+    const files = await collectDroppedFiles(dt, { limit: 4 });
 
     expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg', '4.jpg']);
     expect(reads).toEqual(['a']);
+  });
+
+  it('counts only accepted files toward the limit', async () => {
+    // RAW sidecars between the JPEGs must not use up the budget.
+    const xmp = (name: string): FileSystemFileEntry =>
+      ({
+        isFile: true, isDirectory: false, name,
+        file: (ok: (f: File) => void) => ok(new File(['x'], name, { type: 'application/xml' })),
+      }) as unknown as FileSystemFileEntry;
+    const dt = dataTransferFrom([
+      dirEntry('shoot', [xmp('1.xmp'), fileEntry('1.jpg'), xmp('2.xmp'), fileEntry('2.jpg'), xmp('3.xmp'), fileEntry('3.jpg'), fileEntry('4.jpg')]),
+    ]);
+
+    const files = await collectDroppedFiles(dt, { limit: 3, accept: (f) => f.type === 'image/jpeg' });
+
+    expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg']);
+  });
+
+  it('stops calling readEntries once the limit is reached inside a large flat folder', async () => {
+    let reads = 0;
+    const names = Array.from({ length: 1000 }, (_, i) => `${i + 1}.jpg`);
+    const big = dirEntry('big', names.map(fileEntry), 100);
+    const inner = big.createReader.bind(big);
+    const counted = {
+      ...big,
+      createReader: () => {
+        const r = inner();
+        return { readEntries: (ok: any, err?: any) => { reads += 1; r.readEntries(ok, err); } };
+      },
+    } as unknown as FileSystemDirectoryEntry;
+
+    const files = await collectDroppedFiles(dataTransferFrom([counted]), { limit: 3 });
+
+    expect(files).toHaveLength(3);
+    // One batch of 100 is enough for three files; the other nine are never read.
+    expect(reads).toBe(1);
   });
 
   it('falls back to dataTransfer.files without the entry API', async () => {

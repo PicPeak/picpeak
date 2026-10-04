@@ -235,6 +235,22 @@ describe('PhotoUpload folder drop', () => {
     expect(reads).toEqual(['first']);
   });
 
+  it('keeps every JPEG up to the cap when sidecars sit between them', async () => {
+    const xmp = (name: string) => ({
+      isFile: true, isDirectory: false, name,
+      file: (ok: (f: File) => void) => ok(new File(['x'], name, { type: 'application/xml' })),
+    });
+    await dropOnZone({
+      files: [],
+      items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('raw', [xmp('1.xmp'), fileEntry('1.jpg'), xmp('2.xmp'), fileEntry('2.jpg'), xmp('3.xmp'), fileEntry('3.jpg')]) }],
+    });
+
+    await waitFor(() => expect(screen.getByText('3.jpg')).toBeInTheDocument());
+    expect(screen.getByText('1.jpg')).toBeInTheDocument();
+    expect(screen.getByText('2.jpg')).toBeInTheDocument();
+    expect(toastWarning).not.toHaveBeenCalled();
+  });
+
   it('falls back to dataTransfer.files without the entry API', async () => {
     await dropOnZone({ files: [jpg('plain.jpg')] });
 
