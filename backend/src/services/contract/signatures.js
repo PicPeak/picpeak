@@ -310,18 +310,23 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
     // Compare-and-set on the status read above: two countersignatures, or a
     // countersignature racing an upload, used to both write and the later
     // one replaced the evidence. The loser throws and its PNG is removed.
-    const applied = await auditedUpdate(db, 'contracts', { id: contract.id, status: contract.status }, {
-      status: newStatus,
-      signed_by_admin_at: now,
-      signed_admin_name: String(name).trim(),
-      signed_admin_ip: persistedAdminIp,
-      signed_admin_signature_path: toStoredPath(signaturePath),
-      updated_at: now,
-    }, history);
-    if (!applied) {
-      throw new AppError('The contract changed while it was being counter-signed. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
-    }
-    if (newStatus === 'fully_signed') await revokeUnusedActionTokens(db, contract.id, now.toISOString());
+    // One transaction with the token revocation below: were the revoke to
+    // fail after the status had committed, the catch would delete the PNG
+    // a fully_signed contract already points at.
+    await db.transaction(async (trx) => {
+      const applied = await auditedUpdate(trx, 'contracts', { id: contract.id, status: contract.status }, {
+        status: newStatus,
+        signed_by_admin_at: now,
+        signed_admin_name: String(name).trim(),
+        signed_admin_ip: persistedAdminIp,
+        signed_admin_signature_path: toStoredPath(signaturePath),
+        updated_at: now,
+      }, history);
+      if (!applied) {
+        throw new AppError('The contract changed while it was being counter-signed. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+      }
+      if (newStatus === 'fully_signed') await revokeUnusedActionTokens(trx, contract.id, now.toISOString());
+    });
   } catch (updateErr) {
     // C.7 — clean up the orphan signature PNG if the contract row
     // update threw. Best-effort; log on cleanup failure and re-throw
