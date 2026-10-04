@@ -465,11 +465,6 @@ async function handlePublicSiteRequest(req, res, next) {
       return;
     }
 
-    if (payload.etag && req.headers['if-none-match'] === payload.etag) {
-      res.status(304).end();
-      return;
-    }
-
     // Inject SEO meta settings into payload
     try {
       const seoRows = await db('app_settings')
@@ -487,9 +482,20 @@ async function handlePublicSiteRequest(req, res, next) {
 
     const document = buildPublicSiteDocument(payload);
 
+    // The validator covers the whole document, not only the settings behind
+    // payload.etag: a template change (this PR swapped the Google Fonts
+    // link for self-hosted faces) or a SEO toggle must stop answering 304 to
+    // clients that cached the previous HTML, or they keep it until a
+    // settings change happens to move the payload hash.
+    const etag = `W/"${require('crypto').createHash('sha1').update(document).digest('hex')}"`;
+    if (req.headers['if-none-match'] === etag) {
+      res.status(304).end();
+      return;
+    }
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
-    res.setHeader('ETag', payload.etag);
+    res.setHeader('ETag', etag);
     res.setHeader('Vary', 'Accept-Encoding');
     res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' https: data:; object-src 'none'; script-src 'self'; form-action 'self'");
 
