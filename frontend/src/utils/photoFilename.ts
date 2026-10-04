@@ -74,8 +74,15 @@ export function isFilenameListFavourite(
     guestIdentity: boolean;
     myLiked: ReadonlySet<number>;
     myFavorited: ReadonlySet<number>;
+    /**
+     * False while the gallery's feedback settings are still loading: the
+     * identity mode is unknown then, and the aggregate fallback would offer
+     * other guests' favourites in a guest-identity gallery.
+     */
+    settingsResolved?: boolean;
   }
 ): boolean {
+  if (mode.settingsResolved === false) return false;
   if (mode.likeBacked) {
     return Boolean(photo.is_liked) || mode.myLiked.has(photo.id);
   }

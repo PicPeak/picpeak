@@ -43,6 +43,16 @@ describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
     expect([liked, faved, neither].filter((p) => isFilenameListFavourite(p, { ...standard, guestIdentity: true })).map((p) => p.id)).toEqual([3]);
   });
 
+  it('offers no favourites while the feedback settings are still loading', () => {
+    // The identity mode is unknown then; the aggregate fallback would list
+    // other guests' favourites in a guest-identity gallery.
+    const photo = { id: 1, favorite_count: 5, is_liked: true };
+    const sets = { myLiked: new Set([1]), myFavorited: new Set([1]) };
+    expect(isFilenameListFavourite(photo, { likeBacked: false, guestIdentity: false, ...sets, settingsResolved: false })).toBe(false);
+    expect(isFilenameListFavourite(photo, { likeBacked: true, guestIdentity: true, ...sets, settingsResolved: false })).toBe(false);
+    expect(isFilenameListFavourite(photo, { likeBacked: false, guestIdentity: false, ...sets, settingsResolved: true })).toBe(true);
+  });
+
   it('joins with a bare comma or a space, ordered by stored filename', () => {
     const photos = [
       { filename: 'b.jpg', original_filename: 'IMG_2.JPG' },

@@ -805,9 +805,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       guestIdentity: isGuestIdentityMode,
       myLiked: myFeedbackPhotoIds.liked,
       myFavorited: myFeedbackPhotoIds.favorited,
+      // Until the settings have resolved the identity mode is unknown (the
+      // query falls back to a disabled object on error, so undefined only
+      // means loading); no favourites are offered meanwhile.
+      settingsResolved: feedbackSettings !== undefined,
     }),
     isSelectionMode,
-  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes]);
+  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
