@@ -196,6 +196,10 @@ module.exports = (router) => {
     body('is_full_day').optional().isBoolean().toBoolean(),
     body('customer_name').optional().trim(),
     body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+    // `values: 'falsy'` would also wave `false` and `0` through, which the
+    // handler would store as the strings "false" / "0".
+    body('customer_email').custom((value) => value === undefined || value === null || typeof value === 'string')
+      .withMessage('customer_email must be an address, an empty string or null'),
     body('customer_phone').optional({ nullable: true, checkFalsy: true })
       .isString().trim()
       .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
@@ -1043,8 +1047,11 @@ module.exports = (router) => {
       .isString().isLength({ max: 10_000 }),
     body('customer_name').optional({ nullable: true, checkFalsy: true }).trim(),
     // '' / null skip the format check and reach the handler, which clears
-    // the address (issue 1733).
+    // the address (issue 1733). `values: 'falsy'` would also wave `false`
+    // and `0` through, which the handler would store as "false" / "0".
     body('customer_email').optional({ values: 'falsy' }).isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+    body('customer_email').custom((value) => value === undefined || value === null || typeof value === 'string')
+      .withMessage('customer_email must be an address, an empty string or null'),
     body('customer_phone').optional({ nullable: true, checkFalsy: true })
       .isString().trim()
       .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),

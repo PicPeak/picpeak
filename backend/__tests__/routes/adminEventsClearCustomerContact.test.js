@@ -104,6 +104,14 @@ describe('PUT /api/admin/events/:id — clearing the customer contact', () => {
       expect((await put(id, { customer_email: 'not-an-address' })).status).toBe(400);
       expect((await row(id)).customer_email).toBe('anna@example.com');
     });
+
+    it('rejects false and 0, which the clearing exception must not wave through', async () => {
+      const id = await insertEvent();
+      for (const value of [false, 0]) {
+        expect((await put(id, { customer_email: value })).status).toBe(400);
+      }
+      expect((await row(id)).customer_email).toBe('anna@example.com');
+    });
   });
 
   describe('when Settings require the fields', () => {
@@ -163,6 +171,26 @@ describe('POST /api/admin/events/:id/reset-password — emailSent tells the trut
     expect(res.status).toBe(200);
     expect(res.body.emailSent).toBe(false);
     expect(await db('email_queue').where({ event_id: id }).count('* as n').first()).toMatchObject({ n: 0 });
+  });
+
+  it('keeps the reset and its audit row when the queue write fails', async () => {
+    const id = await insertEvent();
+    const before = (await db('events').where({ id }).first()).password_hash;
+    // email_queue gone for one request: the insert throws after the new
+    // password is already persisted.
+    await db.schema.renameTable('email_queue', 'email_queue_offline');
+    let res;
+    try {
+      res = await resetPassword(id, { sendEmail: true });
+    } finally {
+      await db.schema.renameTable('email_queue_offline', 'email_queue');
+    }
+    expect(res.status).toBe(200);
+    expect(res.body.emailSent).toBe(false);
+    expect((await db('events').where({ id }).first()).password_hash).not.toBe(before);
+    const audit = await db('activity_logs').where({ event_id: id, activity_type: 'password_reset' });
+    expect(audit).toHaveLength(1);
+    expect(JSON.parse(audit[0].metadata).emailSent).toBe(false);
   });
 
   it('reports emailSent: true once the mail is queued', async () => {
