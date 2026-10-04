@@ -608,14 +608,19 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
   });
 
   // The claim above is final only once the action below has been applied.
-  // A refusal there (Skonto not configured, reminder level exhausted the
-  // wrong way, a write that fails) used to leave this link and every
-  // fallback link dead while nothing had changed on the invoice; the
-  // claims are undone — exactly the rows this request stamped at nowIso.
+  // A refusal before anything is written (Skonto not configured on the
+  // invoice, already paid past the threshold) used to leave this link and
+  // every fallback link dead while nothing had changed: those claims are
+  // undone — exactly the rows this request stamped at nowIso. Once a
+  // business write has started the claims stay spent whatever happens
+  // next (the payment may be in the ledger while its mail failed); a retry
+  // through a reopened link would record it twice.
+  const progress = { writeStarted: false };
   let result;
   try {
-    result = await applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId });
+    result = await applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId }, progress);
   } catch (actionErr) {
+    if (progress.writeStarted) throw actionErr;
     await db('invoice_payment_check_tokens')
       .where({ id: tokenRowId, used_at: nowIso })
       .update({ used_at: null, used_action: null, used_amount_minor: null, used_ip: null });
@@ -650,10 +655,13 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
 
 // The ledger side of recordPaymentCheckAction: payment, Skonto payment,
 // partial payment plus reminder, or reminder. Throws before writing when the
-// action does not apply to this invoice.
-async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId }) {
+// action does not apply to this invoice; `progress.writeStarted` is set
+// right before the first business write, so the caller can tell a refusal
+// from a failure with committed state behind it.
+async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId }, progress = {}) {
   const actor = adminId || 'public:payment-check';
   if (action === 'paid_full') {
+    progress.writeStarted = true;
     await recordPayment(invoice.id, {
       amountMinor: outstandingMinor,
       paymentMethod: invoice.payment_method || 'bank_transfer',
@@ -683,6 +691,7 @@ async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amou
     if (remainingMinor <= 0) {
       throw new AppError('Invoice already paid past the Skonto threshold', 409);
     }
+    progress.writeStarted = true;
     await recordPayment(invoice.id, {
       amountMinor: remainingMinor,
       paymentMethod: invoice.payment_method || 'bank_transfer',
@@ -695,6 +704,7 @@ async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amou
 
   if (action === 'partial') {
     const amt = ensureInt(amountMinor);
+    progress.writeStarted = true;
     await recordPayment(invoice.id, {
       amountMinor: amt,
       paymentMethod: invoice.payment_method || 'bank_transfer',
@@ -724,6 +734,7 @@ async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amou
   }
   const lineItems = await db('invoice_line_items')
     .where({ invoice_id: invoice.id }).orderBy('position', 'asc');
+  progress.writeStarted = true;
   await applyReminder(invoice, lineItems, nextLevel, adminId, actor);
   return { applied: 'unpaid', reminderLevel: nextLevel };
 }
