@@ -13,7 +13,10 @@ import { downloadLimitReachedMessage } from '../../utils/downloadLimit';
 import { useInputMode } from '../../hooks/useInputMode';
 import type { Photo } from '../../types';
 
-export interface PhotoCardFeedbackOptions {
+export /** Action buttons (36px) + gap + rating pill (28px); below this the row would overlap the buttons. */
+const MIN_TILE_HEIGHT_FOR_RATING_ROW = 104;
+
+interface PhotoCardFeedbackOptions {
   allowLikes?: boolean;
   allowFavorites?: boolean;
   allowRatings?: boolean;
@@ -246,6 +249,27 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 
   const showFeedbackActions = feedbackEnabled && Boolean(feedbackOptions);
 
+  // The rating row needs its own band under the centred action buttons:
+  // 36px of buttons, a gap, and a 28px pill. On a panoramic Mosaic/Masonry
+  // tile shorter than that the row would sit on the buttons and take their
+  // clicks, so it is withheld there (the lightbox still rates). Measured
+  // with a ResizeObserver; where none exists (old WebView, jsdom) the row
+  // stays, as it did before the measurement existed.
+  const wantsRatingRow = showFeedbackActions && Boolean(feedbackOptions?.allowRatings) && Boolean(slug);
+  const [tooShortForRating, setTooShortForRating] = useState(false);
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!wantsRatingRow || !node || typeof ResizeObserver === 'undefined') return undefined;
+    const check = (height: number) => setTooShortForRating(height > 0 && height < MIN_TILE_HEIGHT_FOR_RATING_ROW);
+    check(node.offsetHeight);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      check(entry?.contentRect?.height ?? node.offsetHeight);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [wantsRatingRow, inView]);
+
   // #1263 - opacity hides pixels, not hit-testing. An `opacity-0` control is
   // still tappable, and on a touchscreen (no hover) it is invisible for good,
   // so a tap in the middle of a tile silently downloaded or liked instead of
@@ -386,7 +410,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // a panoramic Mosaic tile can be ~50px high and clips with overflow-hidden,
   // so the row stops one pill height above the bottom.
   const ratingRow =
-    showFeedbackActions && feedbackOptions?.allowRatings && slug ? (
+    wantsRatingRow && !tooShortForRating && feedbackOptions?.allowRatings && slug ? (
       <div
         className="absolute inset-x-0 flex justify-center"
         style={{ top: 'min(calc(50% + 1.5rem), calc(100% - 1.75rem))' }}

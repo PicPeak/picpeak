@@ -7,7 +7,7 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { PhotoCard } from '../PhotoCard';
@@ -145,6 +145,26 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(top).toContain('calc(50% + 1.5rem)');
     expect(top).toContain('calc(100% - 1.75rem)');
     expect(row.className).not.toMatch(/top-1\/2|mt-6/);
+  });
+
+  it('withholds the row on a tile too short for the buttons and the stars', async () => {
+    // A panoramic Mosaic/Masonry tile (~50-100px) has no room under the
+    // centred 36px action band; the clamped row would sit on the buttons.
+    const observers: Array<(entries: Array<{ contentRect: { height: number } }>) => void> = [];
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: (entries: Array<{ contentRect: { height: number } }>) => void) { observers.push(cb); }
+      observe() {} unobserve() {} disconnect() {}
+    });
+    try {
+      renderCard();
+      expect(stars()).toHaveLength(5);
+      act(() => observers.forEach((cb) => cb([{ contentRect: { height: 60 } }])));
+      await waitFor(() => expect(stars()).toHaveLength(0));
+      act(() => observers.forEach((cb) => cb([{ contentRect: { height: 200 } }])));
+      await waitFor(() => expect(stars()).toHaveLength(5));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('renders nothing when ratings are off, or feedback is off', () => {
