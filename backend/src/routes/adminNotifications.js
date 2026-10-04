@@ -155,25 +155,26 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
     const dismissedAt = new Date().toISOString();
+    // What the admin is clearing from their view; a concurrent click that
+    // wins the insert race changes nothing the toast needs to know.
+    const pending = await bellRows(req.admin).count('activity_logs.id as count').first();
+    const deletedCount = Number(pending?.count) || 0;
     // One INSERT … SELECT: the database walks the caller's bell rows itself,
     // so a long-lived install's first "Clear all" never materialises every
     // activity_logs id on the Node heap. ON CONFLICT DO NOTHING (PostgreSQL
     // and SQLite alike) ignores a dismissal a concurrent click wrote first.
+    // toSQL() keeps knex's `?` placeholders — toNative() would hand back
+    // `$1…` on PostgreSQL, which db.raw cannot bind.
     const select = bellRows(req.admin).select(
       db.raw('? as admin_id', [req.admin.id]),
       'activity_logs.id as activity_log_id',
       db.raw('? as dismissed_at', [dismissedAt]),
     );
-    const { sql, bindings } = select.toSQL().toNative();
+    const { sql, bindings } = select.toSQL();
     await db.raw(
       `INSERT INTO notification_dismissals (admin_id, activity_log_id, dismissed_at) ${sql} ON CONFLICT (admin_id, activity_log_id) DO NOTHING`,
       bindings,
     );
-    // The rows this call wrote: the stamp is unique to it.
-    const written = await db('notification_dismissals')
-      .where({ admin_id: req.admin.id, dismissed_at: dismissedAt })
-      .count('id as count').first();
-    const deletedCount = Number(written?.count) || 0;
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);

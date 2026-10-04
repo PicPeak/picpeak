@@ -28,7 +28,8 @@ jest.mock('../../database/db', () => {
   // the bell rows; sub-queries passed to whereNotIn are never awaited.
   chain.then = (resolve) => resolve(rows);
 
-  chain.toSQL = () => ({ toNative: () => ({ sql: 'SELECT … FROM activity_logs …', bindings: [1, 'stamp'] }) });
+  // toSQL() (not toNative()): knex placeholders stay `?` for db.raw.
+  chain.toSQL = () => ({ sql: 'SELECT ? as admin_id, … FROM activity_logs …', bindings: [1, 'stamp'] });
   chain.count = jest.fn().mockReturnThis();
   chain.first = jest.fn().mockResolvedValue({ count: rows.length });
 

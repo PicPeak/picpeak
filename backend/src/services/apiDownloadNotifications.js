@@ -90,6 +90,13 @@ async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
       return;
     }
 
+    // The per-admin dismissals (migration 261) go first, for the same
+    // reason read_at is reset below: an admin who cleared the bell during
+    // this hour's window must see the row again once it grows. Deleting
+    // them before the count moves means a crash in between only shows the
+    // row once more; the other order could leave a grown count hidden.
+    await db('notification_dismissals').where({ activity_log_id: open.id }).del();
+
     // Compare-and-set: the in-process chain serialises one replica, this
     // keeps a second replica's increment of the same row from being lost.
     const updated = await db('activity_logs')
@@ -100,13 +107,7 @@ async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
         // Back to unread, so the bell shows the grown count.
         read_at: null
       });
-    if (updated) {
-      // Same reason for the per-admin dismissals (migration 261): an admin
-      // who cleared the bell during this hour's window must see the row
-      // again once it grows, like read_at above.
-      await db('notification_dismissals').where({ activity_log_id: open.id }).del();
-      return;
-    }
+    if (updated) return;
   }
   logger.warn('API download notification lost an increment under contention', { eventId });
 }
