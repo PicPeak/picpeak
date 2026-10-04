@@ -426,6 +426,14 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         </div>
       )}
 
+      {/* The filename list is still reachable where the selection toolbar is
+          not (a carousel, or a single visible photo): the favourites that
+          feed it do not depend on either. Full-page layouts get the button
+          from GalleryView's own band. */}
+      {showSelectionControls && !isFullPageLayout && !(photos.length > 1 && galleryLayout !== 'carousel') && copyFilenamesButton && (
+        <div className="mb-4 flex items-center gap-2">{copyFilenamesButton}</div>
+      )}
+
       {/* Selection Mode Controls - Not shown for carousel, full-page layouts, or when controls are hidden */}
       {showSelectionControls && photos.length > 1 && galleryLayout !== 'carousel' && !isFullPageLayout && (
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

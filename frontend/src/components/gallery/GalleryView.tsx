@@ -48,7 +48,7 @@ import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ChevronLeft } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ChevronLeft, ClipboardList } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -798,7 +798,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     (photo) => (isGuestIdentityMode
       ? myFeedbackPhotoIds.favorited.has(photo.id)
       : (photo.favorite_count || 0) > 0),
-  ), [data?.photos, selectedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
+    isSelectionMode,
+  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
@@ -1220,7 +1221,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {hasFolderNav && (
+        {(hasFolderNav || copyFilenames.photos.length > 0) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -1228,9 +1229,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // search/favourites/logout underneath. Only the real controls opt back
           // in via pointer-events-auto.
           <div className="relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
-            <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
-              {buildFolderNav(true)}
-            </div>
+            {hasFolderNav && (
+              <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
+                {buildFolderNav(true)}
+              </div>
+            )}
             {/* Hidden when a category opts out of downloads (#640): this routes
                 to the whole-gallery zip, which contains every event photo with
                 no per-category filter, so offering it here would hand a guest
@@ -1243,7 +1246,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 folders exist that leaves no single way to get everything, so
                 surface the event-wide zip here. Root only: inside a folder the
                 breadcrumb already offers that folder's download. */}
-            {!openFolder && allowDownloads && !hasRestrictedCategory && (
+            {hasFolderNav && !openFolder && allowDownloads && !hasRestrictedCategory && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1256,6 +1259,20 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 className="pointer-events-auto"
               >
                 {t('gallery.downloadEverything', 'Download all photos')}
+              </Button>
+            )}
+            {/* Filename list (issue 1733, A3d). These layouts have no
+                selection toolbar and no sidebar, so this band is the only
+                chrome of ours above their full-bleed grid. */}
+            {copyFilenames.photos.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCopyFilenames(true)}
+                leftIcon={<ClipboardList className="w-4 h-4" />}
+                className="pointer-events-auto"
+              >
+                {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenames.photos.length})
               </Button>
             )}
           </div>
@@ -1359,6 +1376,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
             }}
+          />
+        )}
+
+        {/* Filename list for a RAW editor search (issue 1733, A3d). */}
+        {showCopyFilenames && (
+          <CopyFilenamesDialog
+            photos={copyFilenames.photos}
+            source={copyFilenames.source}
+            onClose={() => setShowCopyFilenames(false)}
           />
         )}
       </DownloadQuotaProvider>
