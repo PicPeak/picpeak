@@ -362,14 +362,27 @@ class DatabaseBackupService {
     // safe charset (same filesystem, plain rename), else in the OS temp dir.
     const stamp = `picpeak-sqlite-backup-${crypto.randomBytes(8).toString('hex')}.tmp`;
     const outputDir = path.dirname(outputPath);
-    const tempPath = SAFE_SQLITE_PATH_RE.test(path.join(outputDir, stamp))
-      ? path.join(outputDir, stamp)
-      : path.join(require('os').tmpdir(), stamp);
+    let tempPath;
+    let stagingDir = null;
+    if (SAFE_SQLITE_PATH_RE.test(path.join(outputDir, stamp))) {
+      tempPath = path.join(outputDir, stamp);
+    } else {
+      // A whole copy of the database must not sit readable in a shared
+      // /tmp while it is scrubbed and verified: a private 0700 directory,
+      // not the bare tmpdir. mkdtemp's name is in the safe charset.
+      stagingDir = await fs.mkdtemp(path.join(require('os').tmpdir(), 'picpeak-sqlite-'));
+      tempPath = path.join(stagingDir, stamp);
+    }
     assertSafeSqlitePath(tempPath);
-    
+    const dropStaging = async () => {
+      if (stagingDir) await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+    };
+
     try {
       // Use SQLite's backup API for consistency
       await spawnAsync('sqlite3', [dbPath, `.backup '${tempPath}'`]);
+      // sqlite3 creates the copy with the process umask (commonly 0644).
+      await fs.chmod(tempPath, 0o600);
 
       // Strip face data from the COPY (#1074). `.backup` is a whole-file
       // binary copy with no way to exclude a table, so the rows come out and
@@ -429,6 +442,7 @@ class DatabaseBackupService {
         await fs.unlink(tempPath);
       }
       
+      await dropStaging();
       return { success: true };
     } catch (error) {
       // Cleanup temp file if exists
@@ -437,6 +451,7 @@ class DatabaseBackupService {
       } catch (e) {
         // Ignore
       }
+      await dropStaging();
       throw error;
     }
   }
