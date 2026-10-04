@@ -28,11 +28,21 @@ jest.mock('../../database/db', () => {
   // the bell rows; sub-queries passed to whereNotIn are never awaited.
   chain.then = (resolve) => resolve(rows);
 
+  chain.toSQL = () => ({ toNative: () => ({ sql: 'SELECT … FROM activity_logs …', bindings: [1, 'stamp'] }) });
+  chain.count = jest.fn().mockReturnThis();
+  chain.first = jest.fn().mockResolvedValue({ count: rows.length });
+
   const dbMock = jest.fn(() => chain);
-  dbMock.raw = jest.fn();
-  // The clear-all handler runs inside db.transaction(trx => …); the stub
-  // hands the same builder out as `trx`.
-  dbMock.transaction = jest.fn(async (work) => work(dbMock));
+  // db.raw builds the select fragments (`? as admin_id`) and runs the
+  // INSERT … SELECT; only the latter is awaited.
+  const state = { insertError: null };
+  const rawMock = jest.fn((sql) => {
+    if (!/^INSERT/.test(sql)) return { sql };
+    return state.insertError ? Promise.reject(state.insertError) : Promise.resolve();
+  });
+  dbMock.raw = rawMock;
+  dbMock.__rawMock = rawMock;
+  dbMock.__state = state;
   dbMock.__chain = chain;
   dbMock.__insertMock = insertMock;
   dbMock.__ignoreMock = ignoreMock;
@@ -58,6 +68,7 @@ describe('adminNotifications routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    db.__state.insertError = null;
   });
 
   it('clears all notifications by dismissing them for the caller', async () => {
@@ -67,10 +78,11 @@ describe('adminNotifications routes', () => {
 
     expect(db).toHaveBeenCalledWith('activity_logs');
     expect(db).toHaveBeenCalledWith('notification_dismissals');
-    expect(db.__insertMock).toHaveBeenCalledTimes(1);
-    const batch = db.__insertMock.mock.calls[0][0];
-    expect(batch.map((r) => r.activity_log_id)).toEqual([11, 12, 13]);
-    expect(batch.every((r) => r.admin_id === 1 && typeof r.dismissed_at === 'string')).toBe(true);
+    const insert = db.__rawMock.mock.calls.find(([sql]) => /^INSERT/.test(sql));
+    expect(insert[0]).toMatch(/^INSERT INTO notification_dismissals \(admin_id, activity_log_id, dismissed_at\) SELECT/);
+    expect(insert[0]).toMatch(/ON CONFLICT \(admin_id, activity_log_id\) DO NOTHING$/);
+    expect(insert[1]).toEqual([1, 'stamp']);
+    expect(db.__insertMock).not.toHaveBeenCalled();
     expect(db.__chain.delete).not.toHaveBeenCalled();
     expect(db.__chain.del).not.toHaveBeenCalled();
     expect(db.__chain.update).not.toHaveBeenCalled();
@@ -81,7 +93,7 @@ describe('adminNotifications routes', () => {
   });
 
   it('handles database errors when clearing notifications', async () => {
-    db.__ignoreMock.mockRejectedValueOnce(new Error('boom'));
+    db.__state.insertError = new Error('boom');
 
     const response = await request(app)
       .delete('/admin/notifications/clear-all')

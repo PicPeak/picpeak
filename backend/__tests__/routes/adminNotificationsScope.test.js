@@ -201,4 +201,36 @@ describe('admin notifications — owner scope and audit retention', () => {
     const sup = await auth(request(app).get('/api/admin/notifications?includeRead=true'), superTok);
     expect(sup.body.notifications).toEqual([]);
   });
+
+  describe('cleanup without PRAGMA foreign_keys (SQLite)', () => {
+    // The FKs cascade on PostgreSQL only; these paths delete explicitly.
+    it('deleting an event removes the dismissals of its audit rows', async () => {
+      const victimEvent = await mkEvent('victim-ev', scopedId);
+      const row = await mkLog('photos_uploaded', victimEvent);
+      await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);
+      expect(Number((await db('notification_dismissals').where({ activity_log_id: row }).count('id as c').first()).c)).toBe(1);
+
+      const { deleteEventCascade } = require('../../src/routes/adminEvents/helpers');
+      await deleteEventCascade(victimEvent, { type: 'admin', id: superId, name: 'tester' });
+
+      expect(Number((await db('notification_dismissals').where({ activity_log_id: row }).count('id as c').first()).c)).toBe(0);
+    });
+
+    it('deleting an admin removes the dismissals they recorded', async () => {
+      // A disposable admin with the same role, so the scoped one survives
+      // for the other tests.
+      const role = await db('roles').where({ name: 'bell_manager' }).first();
+      const goneId = await insertId('admin_users', {
+        username: 'bell-gone', email: 'bell-gone@example.com', password_hash: 'x',
+        role_id: role.id, must_change_password: false, created_at: new Date().toISOString(),
+      });
+      await db('notification_dismissals').insert({
+        admin_id: goneId, activity_log_id: await mkLog('photos_uploaded', ownEventId), dismissed_at: new Date().toISOString(),
+      });
+
+      await svc.deleteAdminUser(goneId, superId);
+
+      expect(Number((await db('notification_dismissals').where({ admin_id: goneId }).count('id as c').first()).c)).toBe(0);
+    });
+  });
 });

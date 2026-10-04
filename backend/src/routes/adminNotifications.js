@@ -151,23 +151,25 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
     const dismissedAt = new Date().toISOString();
-    // One transaction: either every visible row is dismissed or none is, so
-    // a failed chunk cannot leave the bell half cleared behind a 500. Chunked
-    // so a long-lived install's first "Clear all" does not build one giant
-    // statement; a dismissal written by a concurrent click is ignored.
-    const deletedCount = await db.transaction(async (trx) => {
-      const rows = await bellRows(req.admin).transacting(trx).select('activity_logs.id');
-      let count = 0;
-      for (let i = 0; i < rows.length; i += 500) {
-        const batch = rows.slice(i, i + 500).map((r) => ({
-          admin_id: req.admin.id, activity_log_id: r.id, dismissed_at: dismissedAt,
-        }));
-        await trx('notification_dismissals').insert(batch)
-          .onConflict(['admin_id', 'activity_log_id']).ignore();
-        count += batch.length;
-      }
-      return count;
-    });
+    // One INSERT … SELECT: the database walks the caller's bell rows itself,
+    // so a long-lived install's first "Clear all" never materialises every
+    // activity_logs id on the Node heap. ON CONFLICT DO NOTHING (PostgreSQL
+    // and SQLite alike) ignores a dismissal a concurrent click wrote first.
+    const select = bellRows(req.admin).select(
+      db.raw('? as admin_id', [req.admin.id]),
+      'activity_logs.id as activity_log_id',
+      db.raw('? as dismissed_at', [dismissedAt]),
+    );
+    const { sql, bindings } = select.toSQL().toNative();
+    await db.raw(
+      `INSERT INTO notification_dismissals (admin_id, activity_log_id, dismissed_at) ${sql} ON CONFLICT (admin_id, activity_log_id) DO NOTHING`,
+      bindings,
+    );
+    // The rows this call wrote: the stamp is unique to it.
+    const written = await db('notification_dismissals')
+      .where({ admin_id: req.admin.id, dismissed_at: dismissedAt })
+      .count('id as count').first();
+    const deletedCount = Number(written?.count) || 0;
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);
