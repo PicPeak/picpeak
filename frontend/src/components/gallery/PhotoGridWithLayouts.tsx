@@ -285,6 +285,22 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       return (
         <div className="text-center py-12">
           <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+          {/* The filename list is event-wide (issue 1733, A3d): a search or
+              feedback filter that leaves no photo on screen must not take the
+              favourites' list with it. */}
+          {onCopyFilenames && copyFilenamesCount > 0 && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<ClipboardList className="w-4 h-4" />}
+                onClick={onCopyFilenames}
+                className="text-xs sm:text-sm"
+              >
+                {t('gallery.copyFilenames.button', 'Copy filenames')} ({copyFilenamesCount})
+              </Button>
+            </div>
+          )}
         </div>
       );
     }
