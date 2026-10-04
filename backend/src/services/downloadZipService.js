@@ -148,11 +148,18 @@ class DownloadZipService {
   async generateZip(eventId) {
     // If already building, return the existing promise — unless an
     // invalidate() has moved the version on since that build started: its
-    // result is going to be discarded, and the debounced regeneration that
-    // lands while it is still uploading must start a fresh build instead of
-    // waiting on it.
-    const existing = this.activeBuilds.get(eventId);
-    if (existing && existing.version === (this.versions.get(eventId) || 0)) return existing.promise;
+    // result is going to be discarded, so the debounced regeneration that
+    // lands while it is still uploading needs a fresh build. Wait for the
+    // stale one to settle first rather than overlapping it: both would write
+    // the same key and share one canceller slot, and the stale build's
+    // discard would remove the replacement's zip.
+    for (;;) {
+      const existing = this.activeBuilds.get(eventId);
+      if (!existing) break;
+      if (existing.version === (this.versions.get(eventId) || 0)) return existing.promise;
+      await existing.promise.catch(() => {});
+      if (this.activeBuilds.get(eventId) === existing) this.activeBuilds.delete(eventId);
+    }
 
     const version = (this.versions.get(eventId) || 0) + 1;
     this.versions.set(eventId, version);
