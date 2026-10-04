@@ -34,34 +34,52 @@ const mount = (slug = 'wedding') => {
 describe('GuestIdentityProvider invite cleanup', () => {
   beforeEach(() => {
     redeemInvite.mockClear();
+    sessionStorage.clear();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
-  it('puts the token back after a retryable failure, so a reload redeems again', async () => {
+  it('keeps the token pending after a retryable failure, so a reload redeems again', async () => {
     window.history.replaceState({ r: 1 }, '', '/gallery/wedding?invite=tok123&folder=7');
     const view = mount();
     await waitFor(() => expect(redeemInvite).toHaveBeenCalledTimes(1));
+    // Out of the URL at once, into the session slot.
     expect(window.location.search).toBe('?folder=7');
+    expect(window.history.state).toEqual({ r: 1 });
+    expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('tok123');
 
     rejectRedeem(Object.assign(new Error('Network Error'), { response: undefined }));
-    await waitFor(() => expect(window.location.search).toBe('?folder=7&invite=tok123'));
-    expect(window.history.state).toEqual({ r: 1 });
+    await waitFor(() => expect(console.warn).toHaveBeenCalled());
+    expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('tok123');
+    expect(window.location.search).toBe('?folder=7');
 
-    // The "reload": a fresh provider finds the token and tries again.
+    // The "reload" — on a history entry without the token — still redeems it.
     view.unmount();
+    window.history.replaceState({}, '', '/gallery/wedding');
     mount();
     await waitFor(() => expect(redeemInvite).toHaveBeenCalledTimes(2));
-    rejectRedeem(Object.assign(new Error('Service Unavailable'), { response: { status: 503 } }));
-    await waitFor(() => expect(window.location.search).toBe('?folder=7&invite=tok123'));
+    expect(redeemInvite).toHaveBeenLastCalledWith('wedding', 'tok123');
+    // 429 / 5xx are retryable as well.
+    rejectRedeem(Object.assign(new Error('Too Many Requests'), { response: { status: 429 } }));
+    await waitFor(() => expect(console.warn).toHaveBeenCalledTimes(2));
+    expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('tok123');
   });
 
-  it('keeps the token out of the URL after a terminal answer', async () => {
+  it('drops the pending token after a terminal answer and after success', async () => {
     window.history.replaceState({}, '', '/gallery/wedding?invite=spent');
-    mount();
+    const view = mount();
     await waitFor(() => expect(redeemInvite).toHaveBeenCalledTimes(1));
     rejectRedeem(Object.assign(new Error('Gone'), { response: { status: 410, data: {} } }));
     await waitFor(() => expect(console.warn).toHaveBeenCalled());
     expect(window.location.search).toBe('');
+    expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBeNull();
+    view.unmount();
+
+    window.history.replaceState({}, '', '/gallery/wedding?invite=fresh');
+    mount();
+    await waitFor(() => expect(redeemInvite).toHaveBeenCalledTimes(2));
+    resolveRedeem({ guest: { id: 1, name: 'A' }, token: 't' });
+    await waitFor(() => expect(storeGuestIdentity).toHaveBeenCalled());
+    expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBeNull();
   });
 
   it('keeps a photo opened during redemption, in the URL and in the history state', async () => {

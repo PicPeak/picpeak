@@ -45,6 +45,24 @@ interface GuestIdentityContextValue {
 
 const GuestIdentityContext = createContext<GuestIdentityContextValue | null>(null);
 
+// Verdicts the redeem route gives on the token itself (backend
+// galleryGuests.js statusMap plus its 400 for a missing token).
+const TERMINAL_INVITE_STATUSES = new Set([400, 404, 409, 410]);
+
+// An invite that left the URL but is not yet redeemed or refused. Session
+// scoped: it is this tab's attempt, and it must survive a reload on any
+// history entry, which the URL alone cannot do once a photo entry is pushed.
+const pendingInviteKey = (slug: string) => `picpeak:pending-invite:${slug}`;
+function readPendingInvite(slug: string): string | null {
+  try { return window.sessionStorage.getItem(pendingInviteKey(slug)); } catch { return null; }
+}
+function writePendingInvite(slug: string, token: string | null): void {
+  try {
+    if (token === null) window.sessionStorage.removeItem(pendingInviteKey(slug));
+    else window.sessionStorage.setItem(pendingInviteKey(slug), token);
+  } catch { /* private mode or blocked storage: the URL copy was already consumed; nothing to keep */ }
+}
+
 interface GuestIdentityProviderProps {
   slug: string;
   identityMode: IdentityMode;
@@ -172,7 +190,9 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   useEffect(() => {
     if (identityMode !== 'guest') return;
     const params = new URLSearchParams(window.location.search);
-    const inviteToken = params.get('invite');
+    // The token comes from the URL on first contact and from the per-slug
+    // pending slot after a failed attempt; see below.
+    const inviteToken = params.get('invite') || readPendingInvite(slug);
     if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
     redeemedInviteRef.current = inviteToken;
 
@@ -181,24 +201,25 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     // history entry the lightbox pushes meanwhile (`?photo=`) is built from
     // the current URL, so cleaning only after the response would leave the
     // spent token on the grid entry underneath, where Back and a reload find
-    // it. A retryable failure (no response, 5xx) puts it back below: a
-    // reload then redeems again, where a stripped URL would have lost the
-    // only copy of the token.
-    const rewriteInvite = (token: string | null) => {
-      const current = new URLSearchParams(window.location.search);
-      if (token === null) current.delete('invite'); else current.set('invite', token);
-      const search = current.toString();
+    // it. Until the outcome is known the token lives in sessionStorage,
+    // keyed by slug, so a reload — on whichever history entry — redeems it
+    // again after a network error or 5xx, and it is dropped on success or a
+    // terminal answer.
+    if (params.has('invite')) {
+      params.delete('invite');
+      const search = params.toString();
       window.history.replaceState(
         window.history.state ?? {},
         '',
         window.location.pathname + (search ? `?${search}` : '') + window.location.hash,
       );
-    };
-    rewriteInvite(null);
+    }
+    writePendingInvite(slug, inviteToken);
 
     invitePromiseRef.current = (async () => {
       try {
         const response = await guestsService.redeemInvite(slug, inviteToken);
+        writePendingInvite(slug, null);
         storeGuestIdentity(slug, response.guest, response.token);
         setIdentity(response.guest);
       } catch (error) {
@@ -222,14 +243,15 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
             setIdentity(null);
           }
         }
-        // A terminal answer (any 4xx: used, revoked, expired, unknown) keeps
-        // the token out of the URL. Anything else — network, timeout, 5xx —
-        // may well succeed next time, so the token goes back where a reload
-        // picks it up and the ref no longer counts it as redeemed.
-        const httpStatus = status?.status ?? 0;
-        if (!(httpStatus >= 400 && httpStatus < 500)) {
+        // The redeem route's own verdicts on the token (galleryGuests.js:
+        // 400 missing, 404 unknown or guest gone, 409 used, 410 revoked) are
+        // final: the pending slot is cleared. Anything else — network,
+        // timeout, 408/429, 5xx — may well succeed next time, so the token
+        // stays pending and the ref no longer counts it as redeemed.
+        if (TERMINAL_INVITE_STATUSES.has(status?.status ?? 0)) {
+          writePendingInvite(slug, null);
+        } else {
           redeemedInviteRef.current = null;
-          rewriteInvite(inviteToken);
         }
         // Otherwise fail silently; the visitor falls back to the normal prompt.
         // eslint-disable-next-line no-console
