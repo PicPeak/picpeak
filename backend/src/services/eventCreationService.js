@@ -6,6 +6,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
+const { parseExpiresAtText } = require('../utils/expiresAtText');
 const { slugify } = require('../utils/slug');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
 const { buildShareLinkVariants } = require('./shareLinkService');
@@ -221,7 +222,19 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // Calculate expiration date (days after event date)
   // If expiration is not required, expires_at will be null (never expires)
   // If event_date is not provided, use current date as base for expiration
-  let expires_at = input.expires_at ? new Date(input.expires_at) : null;
+  // A text value goes through the same parser as the update path: a
+  // zone-less date-time is UTC there (what SQLite's julianday() reads the
+  // stored row as), where `new Date()` would read it in the server's zone
+  // and POST and PUT would store different instants for the same input.
+  let expires_at = null;
+  if (input.expires_at) {
+    expires_at = typeof input.expires_at === 'string'
+      ? parseExpiresAtText(input.expires_at)
+      : new Date(input.expires_at);
+    if (!expires_at || Number.isNaN(expires_at.getTime())) {
+      throw new AppError('expires_at must be an ISO 8601 date-time such as 2026-10-06T12:00:00Z', 400);
+    }
+  }
   if (!expires_at && fieldRequirements.require_expiration) {
     const baseDate = event_date || new Date().toISOString().split('T')[0];
     // Parse YYYY-MM-DD format as local date to avoid timezone issues

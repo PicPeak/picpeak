@@ -33,8 +33,16 @@ function parseExpiresAtText(value) {
 }
 
 /**
- * Rewrite every text expires_at that julianday() cannot read as toISOString().
- * SQLite only; a no-op elsewhere and on a schema without the column.
+ * Rewrite every text expires_at that is not already in the canonical
+ * toISOString() form. SQLite only; a no-op elsewhere and on a schema without
+ * the column.
+ *
+ * Two kinds of row are picked up: text julianday() cannot read at all, and
+ * zone-less text it does read ('2026-10-06 12:00:00', a bare '2026-10-06').
+ * SQL treats the latter as UTC, but the JS readers of the same column (the
+ * list serialiser, the extend endpoint) pass it to `new Date()`, which reads
+ * a zone-less date-time as LOCAL time; stamping it as the UTC instant SQL
+ * already assumes makes every reader agree without moving that instant.
  *
  * @param {import('knex').Knex} knex connection or transaction
  * @returns {Promise<{ rewritten: number, unreadable: number[] }>}
@@ -47,14 +55,18 @@ async function canonicaliseSqliteExpiresAt(knex) {
 
   const rows = await knex('events')
     .select('id', 'expires_at')
-    .whereRaw('typeof(expires_at) = \'text\' AND julianday(expires_at) IS NULL');
+    // Canonical rows end in 'Z' with a 'T' separator; everything else is a
+    // candidate. The parser decides, row by row, what can be rewritten.
+    .whereRaw('typeof(expires_at) = \'text\' AND expires_at NOT GLOB \'????-??-??T??:??:??.???Z\'');
   for (const row of rows) {
     const parsed = parseExpiresAtText(row.expires_at);
     if (!parsed) {
       result.unreadable.push(row.id);
       continue;
     }
-    await knex('events').where({ id: row.id }).update({ expires_at: parsed.toISOString() });
+    const canonical = parsed.toISOString();
+    if (canonical === row.expires_at) continue;
+    await knex('events').where({ id: row.id }).update({ expires_at: canonical });
     result.rewritten += 1;
   }
   return result;

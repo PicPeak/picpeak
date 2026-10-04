@@ -38,15 +38,22 @@ describe('canonicaliseSqliteExpiresAt', () => {
   });
   afterEach(async () => { await db.destroy(); });
 
-  test('rewrites only what julianday() cannot read, and reports the rest', async () => {
+  test('rewrites every non-canonical text form, and reports what it cannot read', async () => {
     await db('events').insert([
       { id: 1, expires_at: '2026-10-06T12:00:00+0200' },
       { id: 2, expires_at: '[object Object]' },
       { id: 3, expires_at: '2026-10-02 12:00:00' },
     ]);
-    expect(await canonicaliseSqliteExpiresAt(db)).toEqual({ rewritten: 1, unreadable: [2] });
+    await db('events').insert([
+      { id: 4, expires_at: '2026-10-06T12:00:00.000Z' },
+      { id: 5, expires_at: 1790000000000 },
+    ]);
+    expect(await canonicaliseSqliteExpiresAt(db)).toEqual({ rewritten: 2, unreadable: [2] });
     expect((await db('events').where({ id: 1 }).first()).expires_at).toBe('2026-10-06T10:00:00.000Z');
-    expect((await db('events').where({ id: 3 }).first()).expires_at).toBe('2026-10-02 12:00:00');
+    // Zone-less: the UTC instant SQL already reads, under a non-UTC TZ.
+    expect((await db('events').where({ id: 3 }).first()).expires_at).toBe('2026-10-02T12:00:00.000Z');
+    expect((await db('events').where({ id: 4 }).first()).expires_at).toBe('2026-10-06T12:00:00.000Z');
+    expect((await db('events').where({ id: 5 }).first()).expires_at).toBe(1790000000000);
     expect(await canonicaliseSqliteExpiresAt(db)).toEqual({ rewritten: 0, unreadable: [2] });
   });
 

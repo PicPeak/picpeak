@@ -15,6 +15,11 @@
  * left as they are and logged; they were unreadable before as well. The
  * .picpeak import runs the same helper on the event rows it brings back.
  *
+ * Zone-less text SQLite does read ('2026-10-06 12:00:00', a bare date) is
+ * rewritten too, as the UTC instant SQL already takes it for: the JS readers
+ * of the column parse such a value as local time, so on a non-UTC server
+ * the list and the extend endpoint disagreed with the expiry checker.
+ *
  * PostgreSQL has a timestamp column and nothing to rewrite.
  */
 
