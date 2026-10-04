@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinFilenameStems, photoFilenameStem, photosForFilenameList } from '../photoFilename';
+import { isFilenameListFavourite, joinFilenameStems, photoFilenameStem, photosForFilenameList } from '../photoFilename';
 
 describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
   it('strips the last extension only, like the admin TXT export', () => {
@@ -27,6 +27,20 @@ describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
       .toEqual({ photos: [photos[1]], source: 'selection' });
     expect(photosForFilenameList(photos, selected, isFav, false))
       .toEqual({ photos: [photos[0]], source: 'favorites' });
+  });
+
+  it('counts likes as favourites where the layout\'s favourite control writes likes', () => {
+    // Premium / Story persist `like` and seed from is_liked; the standard
+    // layouts read `favorite` (own rows in identity mode, aggregate otherwise).
+    const liked = { id: 1, favorite_count: 0, is_liked: true };
+    const faved = { id: 2, favorite_count: 3, is_liked: false };
+    const neither = { id: 3, favorite_count: 0, is_liked: false };
+    const sets = { myLiked: new Set([3]), myFavorited: new Set([3]) };
+    const standard = { likeBacked: false, guestIdentity: false, ...sets };
+    const story = { likeBacked: true, guestIdentity: false, ...sets };
+    expect([liked, faved, neither].filter((p) => isFilenameListFavourite(p, standard)).map((p) => p.id)).toEqual([2]);
+    expect([liked, faved, neither].filter((p) => isFilenameListFavourite(p, story)).map((p) => p.id)).toEqual([1, 3]);
+    expect([liked, faved, neither].filter((p) => isFilenameListFavourite(p, { ...standard, guestIdentity: true })).map((p) => p.id)).toEqual([3]);
   });
 
   it('joins with a bare comma or a space, ordered by stored filename', () => {

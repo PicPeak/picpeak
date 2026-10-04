@@ -60,6 +60,31 @@ function photoExportName(photo: FilenameListPhoto): string {
 export type FilenameListSource = 'selection' | 'favorites';
 
 /**
+ * Whether a photo counts as one of the viewer's favourites for the filename
+ * list. The standard layouts' "Favorited" filter reads `favorite` feedback —
+ * the guest's own rows in identity mode, the aggregate count otherwise. The
+ * premium and story layouts have no favourite control of that kind: their
+ * Favourites toggle persists `like` feedback and seeds from the per-viewer
+ * `is_liked`, so there a like is the favourite signal.
+ */
+export function isFilenameListFavourite(
+  photo: Pick<Photo, 'id' | 'favorite_count' | 'is_liked'>,
+  mode: {
+    likeBacked: boolean;
+    guestIdentity: boolean;
+    myLiked: ReadonlySet<number>;
+    myFavorited: ReadonlySet<number>;
+  }
+): boolean {
+  if (mode.likeBacked) {
+    return Boolean(photo.is_liked) || mode.myLiked.has(photo.id);
+  }
+  return mode.guestIdentity
+    ? mode.myFavorited.has(photo.id)
+    : (photo.favorite_count || 0) > 0;
+}
+
+/**
  * Which photos the guest's filename list covers: the selection, or the
  * viewer's favourites when nothing is selected. Cancelling selection mode
  * keeps the set (re-entering restores it), so it only counts while

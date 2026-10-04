@@ -36,7 +36,7 @@ import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
 import { creditGroups, uploaderRequiresEmail } from '../../utils/photoCredits';
 import { hasVideoItems } from '../../utils/mediaCounts';
-import { photosForFilenameList } from '../../utils/photoFilename';
+import { isFilenameListFavourite, photosForFilenameList } from '../../utils/photoFilename';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
@@ -792,14 +792,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // the "Favorited" filter — the guest's own in identity mode, the aggregate in
   // simple mode — and span the whole gallery: the list is for finding the
   // masters in a RAW editor, which has no notion of this gallery's folders.
+  //
+  // Premium and Story have no `favorite` control: their Favourites toggle
+  // writes `like` feedback and seeds from `is_liked`, so there a like is the
+  // favourite (see isFilenameListFavourite).
+  const favouritesAreLikes = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
   const copyFilenames = useMemo(() => photosForFilenameList(
     data?.photos || [],
     selectedPhotos,
-    (photo) => (isGuestIdentityMode
-      ? myFeedbackPhotoIds.favorited.has(photo.id)
-      : (photo.favorite_count || 0) > 0),
+    (photo) => isFilenameListFavourite(photo, {
+      likeBacked: favouritesAreLikes,
+      guestIdentity: isGuestIdentityMode,
+      myLiked: myFeedbackPhotoIds.liked,
+      myFavorited: myFeedbackPhotoIds.favorited,
+    }),
     isSelectionMode,
-  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds]);
+  ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes]);
 
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
