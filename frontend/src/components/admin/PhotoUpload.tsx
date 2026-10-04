@@ -25,6 +25,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   const { t } = useTranslation();
   const { startUpload, isUploading } = useUploadSession();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Folder walks still resolving. Upload stays disabled while any is pending:
+  // otherwise a click sends the current selection, clears it, and the walk's
+  // files arrive in a modal that has already unmounted.
+  const [pendingWalks, setPendingWalks] = useState(0);
   // The selection as of the last add/remove, written synchronously. A folder
   // walk resolves asynchronously, so `addFiles` may run from a render that
   // predates another drop or pick; reading the cap against `selectedFiles`
@@ -162,7 +166,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     setIsDragOver(false);
     // Dropped folders are walked recursively (issue 1733, C1); the result
     // goes through the same filter and per-upload cap as picked files.
-    void collectDroppedFiles(e.dataTransfer).then(addFiles);
+    setPendingWalks((n) => n + 1);
+    void collectDroppedFiles(e.dataTransfer)
+      .then(addFiles)
+      .finally(() => setPendingWalks((n) => n - 1));
   };
 
   const removeFile = (index: number) => {
@@ -170,7 +177,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   };
 
   const handleUpload = () => {
-    if (selectedFiles.length === 0 || isUploading) return;
+    if (selectedFiles.length === 0 || isUploading || pendingWalks > 0) return;
 
     // Validate file count
     if (selectedFiles.length > maxFilesPerUpload) {
@@ -352,7 +359,8 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
         <Button
           variant="primary"
           onClick={handleUpload}
-          disabled={selectedFiles.length === 0 || isUploading}
+          disabled={selectedFiles.length === 0 || isUploading || pendingWalks > 0}
+          isLoading={pendingWalks > 0}
           leftIcon={<Upload className="w-4 h-4" />}
         >
           {t('common.upload') + ` ${selectedFiles.length} ${t(selectedFiles.length === 1 ? 'common.photo' : 'common.photos')}`}

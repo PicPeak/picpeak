@@ -142,6 +142,40 @@ describe('PhotoUpload folder drop', () => {
     expect(screen.queryByText('b2.jpg')).not.toBeInTheDocument();
   });
 
+  it('keeps Upload disabled until a pending folder walk has landed', async () => {
+    // A reader that only answers once released: the walk is pending until then.
+    let release: (() => void) | null = null;
+    const slowDir = {
+      isFile: false,
+      isDirectory: true,
+      name: 'slow',
+      createReader: () => {
+        let done = false;
+        return {
+          readEntries: (ok: (entries: object[]) => void) => {
+            const answer = () => { ok(done ? [] : [fileEntry('late.jpg')]); done = true; };
+            if (done) answer(); else release = answer;
+          },
+        };
+      },
+    };
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    await waitFor(() => expect(screen.getByText('upload.videoSizeLimit')).toBeInTheDocument());
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    // Already selected files alone would enable the button.
+    fireEvent.drop(zone, { dataTransfer: { files: [jpg('early.jpg')] } });
+    await waitFor(() => expect(screen.getByText('early.jpg')).toBeInTheDocument());
+    const uploadButton = () => screen.getByRole('button', { name: /common\.upload/ });
+    expect(uploadButton()).not.toBeDisabled();
+
+    fireEvent.drop(zone, { dataTransfer: { files: [], items: [{ kind: 'file', webkitGetAsEntry: () => slowDir }] } });
+    await waitFor(() => expect(uploadButton()).toBeDisabled());
+
+    release!();
+    await waitFor(() => expect(screen.getByText('late.jpg')).toBeInTheDocument());
+    await waitFor(() => expect(uploadButton()).not.toBeDisabled());
+  });
+
   it('falls back to dataTransfer.files without the entry API', async () => {
     await dropOnZone({ files: [jpg('plain.jpg')] });
 
