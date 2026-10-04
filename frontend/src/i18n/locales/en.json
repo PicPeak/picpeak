@@ -1465,6 +1465,7 @@
       "submit": "Reset Password",
       "successHeading": "Password reset successfully!",
       "emailSentNote": "An email notification has been sent to the host.",
+      "emailNotSentNote": "No email was sent: the gallery has no customer address, or the email could not be queued. Share the new password yourself.",
       "generatedLabel": "Auto-generated gallery password",
       "saveSecurelyNote": "Important: Save this password securely. It cannot be recovered once you close this window.",
       "done": "Done",
