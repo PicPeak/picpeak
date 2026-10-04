@@ -150,6 +150,27 @@ describe('payment-check links', () => {
     expect(rows.find((r) => r.token === b.token).used_at).toBeNull();
   });
 
+  it('a refused action hands the link and its fallbacks back', async () => {
+    const id = await sentInvoice();
+    const sibling = await liveToken(id);
+    const { token } = await payments.queuePaymentCheckEmail(id, { skipThrottle: true });
+    // The sibling predates the new link and is superseded by it; give the
+    // invoice two live links the way two emails within the window would.
+    await db('invoice_payment_check_tokens').where({ token: sibling }).update({ used_at: null, used_action: null });
+
+    // No Skonto on this invoice: the action is refused after the claim.
+    await db('invoices').where({ id }).update({ skonto_disabled: true });
+    expect(await codeOf(payments.recordPaymentCheckAction({ token, action: 'paid_with_skonto' })))
+      .toBe('SKONTO_NOT_CONFIGURED');
+
+    const rows = await tokensOf(id);
+    expect(rows.find((r) => r.token === token).used_at).toBeNull();
+    expect(rows.find((r) => r.token === sibling).used_at).toBeNull();
+    expect((await invoiceRow(id)).status).toBe('sent');
+    // The same link still works for an action that applies.
+    expect(await codeOf(payments.recordPaymentCheckAction({ token, action: 'unpaid' }))).toBeNull();
+  });
+
   it('a recorded payment revokes the pending links', async () => {
     const id = await sentInvoice();
     const link = await liveToken(id);
