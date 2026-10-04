@@ -22,6 +22,7 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     service.activeBuilds.clear();
     service.versions.clear();
     service.buildCancellers.clear();
+    service.pendingCleanups.clear();
     jest.spyOn(service, 'invalidate');
     jest.spyOn(service, '_cleanup').mockResolvedValue(undefined);
   });
@@ -102,6 +103,26 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     expect(await pending).toEqual({ success: false, error: 'Service stopped' });
     expect(build).not.toHaveBeenCalled();
     expect(service.activeBuilds.has(9)).toBe(false);
+  });
+
+  it('waits for invalidate()\'s cleanup before the replacement build starts', async () => {
+    // A cleanup still pending when the new build publishes would delete the
+    // shared key and clear the row of the fresh zip.
+    let finishCleanup;
+    service._cleanup.mockImplementation(() => new Promise((resolve) => { finishCleanup = resolve; }));
+    const build = jest.spyOn(service, '_build').mockResolvedValue({ success: true });
+
+    service.invalidate(4);
+    expect(service.pendingCleanups.has(4)).toBe(true);
+    const pending = service.generateZip(4);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(build).not.toHaveBeenCalled();
+
+    finishCleanup();
+    expect(await pending).toEqual({ success: true });
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(service.pendingCleanups.has(4)).toBe(false);
   });
 
   it('still shares one in-flight build while its version is current', async () => {
