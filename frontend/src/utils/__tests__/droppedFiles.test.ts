@@ -99,6 +99,26 @@ describe('collectDroppedFiles', () => {
     expect((await collectDroppedFiles(dt)).map((f) => f.name)).toEqual(['z.jpg', 'a.jpg']);
   });
 
+  it('stops walking once the limit is reached and leaves later folders unread', async () => {
+    const reads: string[] = [];
+    const countingDir = (name: string, children: Entry[]): FileSystemDirectoryEntry => {
+      const inner = dirEntry(name, children);
+      const reader = inner.createReader.bind(inner);
+      return { ...inner, createReader: () => { reads.push(name); return reader(); } } as unknown as FileSystemDirectoryEntry;
+    };
+    // 10 files over three folders; a cap of 3 asks for 3 + 1.
+    const dt = dataTransferFrom([
+      countingDir('a', ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'].map(fileEntry)),
+      countingDir('b', ['6.jpg', '7.jpg', '8.jpg'].map(fileEntry)),
+      countingDir('c', ['9.jpg', '10.jpg'].map(fileEntry)),
+    ]);
+
+    const files = await collectDroppedFiles(dt, 4);
+
+    expect(files.map((f) => f.name)).toEqual(['1.jpg', '2.jpg', '3.jpg', '4.jpg']);
+    expect(reads).toEqual(['a']);
+  });
+
   it('falls back to dataTransfer.files without the entry API', async () => {
     const plain = [new File(['x'], 'plain.jpg', { type: 'image/jpeg' })];
 

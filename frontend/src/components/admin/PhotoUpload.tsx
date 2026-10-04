@@ -173,7 +173,11 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // Dropped folders are walked recursively (issue 1733, C1); the result
     // goes through the same filter and per-upload cap as picked files.
     setPendingWalks((n) => n + 1);
-    void collectDroppedFiles(e.dataTransfer)
+    // Stop the walk at the remaining capacity plus one (the extra file keeps
+    // addFiles' "some files skipped" notice) instead of reading a whole
+    // archive first; the pick-time selection is what the ref holds.
+    const remaining = Math.max(maxFilesPerUpload - selectedFilesRef.current.length, 0);
+    void collectDroppedFiles(e.dataTransfer, remaining + 1)
       .then((files) => addFilesRef.current(files))
       .finally(() => setPendingWalks((n) => n - 1));
   };

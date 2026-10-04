@@ -214,6 +214,27 @@ describe('PhotoUpload folder drop', () => {
     await waitFor(() => expect(uploadButton()).not.toBeDisabled());
   });
 
+  it('reads no further than the cap plus one and still raises the skipped notice', async () => {
+    const reads: string[] = [];
+    const counting = (name: string, children: object[]) => {
+      const inner = dirEntry(name, children);
+      return { ...inner, createReader: () => { reads.push(name); return inner.createReader(); } };
+    };
+    // Ten files, cap 3: at most four are collected and folder 'late' is never opened.
+    await dropOnZone({
+      files: [],
+      items: [
+        { kind: 'file', webkitGetAsEntry: () => counting('first', ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg', '6.jpg'].map(fileEntry)) },
+        { kind: 'file', webkitGetAsEntry: () => counting('late', ['7.jpg', '8.jpg', '9.jpg', '10.jpg'].map(fileEntry)) },
+      ],
+    });
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledWith('upload.someFilesSkipped:3:3'));
+    expect(screen.getByText('3.jpg')).toBeInTheDocument();
+    expect(screen.queryByText('4.jpg')).not.toBeInTheDocument();
+    expect(reads).toEqual(['first']);
+  });
+
   it('falls back to dataTransfer.files without the entry API', async () => {
     await dropOnZone({ files: [jpg('plain.jpg')] });
 

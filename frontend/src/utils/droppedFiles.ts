@@ -10,8 +10,13 @@
  * name (`readEntries` hands them back in batches of unspecified order) and
  * hidden entries (`.DS_Store`, `._IMG_0001.jpg`) are skipped. The dropped
  * items themselves are taken as the user chose them.
+ *
+ * `limit` stops the walk once that many files are collected, so a drop of a
+ * whole archive does not read every entry of it before the uploader's cap
+ * truncates the result. Pass the remaining capacity plus one: the extra
+ * file lets the uploader still raise its "some files skipped" notice.
  */
-export async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<File[]> {
+export async function collectDroppedFiles(dataTransfer: DataTransfer, limit = Infinity): Promise<File[]> {
   // Both lists are emptied once the drop event has returned, so read them
   // synchronously before the first await.
   const plainFiles = Array.from(dataTransfer.files || []);
@@ -27,12 +32,14 @@ export async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<F
 
   const files: File[] = [];
   for (const entry of entries) {
-    await walkEntry(entry, files);
+    if (files.length >= limit) break;
+    await walkEntry(entry, files, limit);
   }
   return files;
 }
 
-async function walkEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
+async function walkEntry(entry: FileSystemEntry, out: File[], limit: number): Promise<void> {
+  if (out.length >= limit) return;
   if (entry.isFile) {
     const file = await fileOf(entry as FileSystemFileEntry);
     if (file) out.push(file);
@@ -43,7 +50,8 @@ async function walkEntry(entry: FileSystemEntry, out: File[]): Promise<void> {
     .filter((child) => !child.name.startsWith('.'))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   for (const child of children) {
-    await walkEntry(child, out);
+    if (out.length >= limit) return;
+    await walkEntry(child, out, limit);
   }
 }
 
