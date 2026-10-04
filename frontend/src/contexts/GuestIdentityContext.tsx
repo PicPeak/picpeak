@@ -176,22 +176,25 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
     redeemedInviteRef.current = inviteToken;
 
+    // Strip the invite from the address bar NOW, before the request goes
+    // out, keeping the rest of the query and the current history state. The
+    // token is held in `inviteToken`; redemption is async, and any history
+    // entry the lightbox pushes meanwhile (`?photo=`) is built from the
+    // current URL — cleaning only after the response would leave the spent
+    // token on the grid entry underneath, where Back and a reload find it.
+    params.delete('invite');
+    const cleanedSearch = params.toString();
+    window.history.replaceState(
+      window.history.state ?? {},
+      '',
+      window.location.pathname + (cleanedSearch ? `?${cleanedSearch}` : '') + window.location.hash,
+    );
+
     invitePromiseRef.current = (async () => {
       try {
         const response = await guestsService.redeemInvite(slug, inviteToken);
         storeGuestIdentity(slug, response.guest, response.token);
         setIdentity(response.guest);
-        // Strip invite param from URL to prevent re-redemption on reload.
-        // Read the URL as it is NOW, not as captured above: redemption is
-        // async and the visitor may have opened a photo meanwhile (`?photo=`
-        // plus the lightbox's history state), which the stale snapshot and
-        // an empty state would have wiped, leaving close with nothing to
-        // return to.
-        const current = new URLSearchParams(window.location.search);
-        current.delete('invite');
-        const newSearch = current.toString();
-        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
-        window.history.replaceState(window.history.state ?? {}, '', newUrl);
       } catch (error) {
         // A spent (409) or revoked (410) invite is the normal way a guest comes
         // back through their own emailed link, and the identity this device

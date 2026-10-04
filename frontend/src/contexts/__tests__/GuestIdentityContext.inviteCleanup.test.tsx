@@ -20,6 +20,7 @@ vi.mock('../../utils/guestIdentityStorage', async () => {
 });
 
 import { GuestIdentityProvider } from '../GuestIdentityContext';
+import { storeGuestIdentity } from '../../utils/guestIdentityStorage';
 
 describe('GuestIdentityProvider invite cleanup', () => {
   it('keeps a photo opened during redemption, in the URL and in the history state', async () => {
@@ -32,13 +33,26 @@ describe('GuestIdentityProvider invite cleanup', () => {
     );
     await waitFor(() => expect(resolveRedeem).not.toBeUndefined());
 
-    // The lightbox opens a photo while the redeem request is in flight.
-    window.history.pushState({ photo: '42', photoPushed: true }, '', '/gallery/wedding?invite=tok123&photo=42');
+    // The invite leaves the address bar before the request is answered, so
+    // the entry the lightbox pushes next is built from a clean URL.
+    expect(window.location.search).toBe('');
+    const photoUrl = new URL(window.location.href);
+    photoUrl.searchParams.set('photo', '42');
+    window.history.pushState({ photo: '42', photoPushed: true }, '', photoUrl.pathname + photoUrl.search);
 
     resolveRedeem({ guest: { id: 1, name: 'A' }, token: 't' });
+    await waitFor(() => expect(storeGuestIdentity).toHaveBeenCalled());
 
-    await waitFor(() => expect(window.location.search).not.toContain('invite='));
     expect(window.location.search).toBe('?photo=42');
     expect(window.history.state).toEqual({ photo: '42', photoPushed: true });
+
+    // Closing the photo goes Back to the grid entry, which must not carry the
+    // spent token either (a reload there would try to redeem it again).
+    await new Promise<void>((resolve) => {
+      window.addEventListener('popstate', () => resolve(), { once: true });
+      window.history.back();
+    });
+    expect(window.location.search).toBe('');
+    expect(window.history.state).toEqual({});
   });
 });
