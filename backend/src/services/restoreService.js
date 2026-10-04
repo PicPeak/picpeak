@@ -13,7 +13,7 @@ const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
-const { setSessionsValidAfter } = require('../utils/sessionCutoff');
+const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -110,14 +110,6 @@ async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () 
     );
   }
   return { verified: true };
-}
-
-// Session cutoff for a database just replaced. isTokenBeforeCutoff() rejects
-// `iat < cutoff` and JWT iat is a whole second, so a cutoff of "now" lets a
-// token minted earlier in the same second survive the restore. Stamp the next
-// second: everything issued up to and including this second is out.
-function nextSessionCutoff() {
-  return Math.floor(Date.now() / 1000) + 1;
 }
 
 // `restore_max_file_size_mb` (restore settings, default from migration 032)
@@ -486,7 +478,7 @@ class RestoreService {
       // valid restore. A failed verification rolls back, and attemptRollback
       // stamps the cutoff itself.
       if (options.restoreType === 'full' || options.restoreType === 'database') {
-        await setSessionsValidAfter(nextSessionCutoff());
+        await invalidateSessionsIssuedSoFar();
         this.log('info', 'Sessions issued before the restore invalidated');
       }
 
@@ -1899,7 +1891,7 @@ END $$;`
 
         await fs.unlink(decompressedPath);
         // The identity tables changed again; see step 6b in restore().
-        await setSessionsValidAfter(nextSessionCutoff());
+        await invalidateSessionsIssuedSoFar();
       }
 
       // Restore files if backed up

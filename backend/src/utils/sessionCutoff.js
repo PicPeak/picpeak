@@ -89,6 +89,39 @@ async function isTokenBeforeCutoff(decoded) {
 }
 
 /** Test-only: drop the in-process cache. */
+/**
+ * Session cutoff for identity tables that were just replaced (restore,
+ * rollback, portable import). isTokenBeforeCutoff() rejects `iat < cutoff`
+ * and a JWT's iat is a whole second, so a cutoff of "now" would let a token
+ * minted earlier in the same second survive. The next second puts everything
+ * issued up to and including this one out.
+ */
+function nextSessionCutoff() {
+  return Math.floor(Date.now() / 1000) + 1;
+}
+
+/**
+ * Resolve once the wall clock has reached the cutoff. Until then a fresh
+ * login still gets `iat = cutoff - 1` and is rejected like a pre-restore
+ * token, so the operation that stamped the cutoff must not report success
+ * earlier: sessions created after a finished restore are valid. At most ~1 s.
+ */
+async function waitPastSessionCutoff(cutoff) {
+  for (;;) {
+    const remaining = cutoff * 1000 - Date.now();
+    if (remaining <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(remaining, 1000)));
+  }
+}
+
+/** Stamp the next-second cutoff and wait until it has passed. */
+async function invalidateSessionsIssuedSoFar() {
+  const cutoff = nextSessionCutoff();
+  await setSessionsValidAfter(cutoff);
+  await waitPastSessionCutoff(cutoff);
+  return cutoff;
+}
+
 function _resetCache() { cache = null; }
 
 module.exports = {
@@ -96,5 +129,8 @@ module.exports = {
   getSessionsValidAfter,
   setSessionsValidAfter,
   isTokenBeforeCutoff,
+  nextSessionCutoff,
+  waitPastSessionCutoff,
+  invalidateSessionsIssuedSoFar,
   _resetCache,
 };

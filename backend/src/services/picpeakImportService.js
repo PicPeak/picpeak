@@ -27,7 +27,7 @@ const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
 const { hasColumnCached } = require('../utils/schemaCache');
-const { setSessionsValidAfter } = require('../utils/sessionCutoff');
+const { invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION, EXCLUDED_TABLES, listDataTables } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
@@ -845,9 +845,10 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     //    (admin, customer, gallery) stops authenticating — ids may have shifted.
     //    isTokenBeforeCutoff() rejects `iat < cutoff` and iat is a whole
     //    second, so the cutoff is the NEXT second: a token minted earlier in
-    //    the same second as the commit must not survive.
+    //    the same second as the commit must not survive. The helper also
+    //    waits out that second, so a login right after the import is valid.
     await resyncSequences(tables);
-    await setSessionsValidAfter(Math.floor(Date.now() / 1000) + 1);
+    await invalidateSessionsIssuedSoFar();
 
 
     const filesRestored = await restoreFiles(staging);
