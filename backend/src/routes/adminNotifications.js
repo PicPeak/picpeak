@@ -153,33 +153,35 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
     const dismissedAt = new Date().toISOString();
-    // One snapshot for the count and the insert: rows that arrive while the
-    // request runs are neither counted nor dismissed. activity_logs ids are
-    // monotonic, so "everything up to the newest row the admin could see"
-    // is the snapshot.
-    const newest = await bellRows(req.admin).max('activity_logs.id as id').first();
-    const maxId = Number(newest?.id) || 0;
-    const snapshot = () => bellRows(req.admin).where('activity_logs.id', '<=', maxId);
-    // What the admin is clearing from their view; a concurrent click that
-    // wins the insert race changes nothing the toast needs to know.
-    const pending = await snapshot().count('activity_logs.id as count').first();
-    const deletedCount = Number(pending?.count) || 0;
-    // One INSERT … SELECT: the database walks the caller's bell rows itself,
-    // so a long-lived install's first "Clear all" never materialises every
-    // activity_logs id on the Node heap. ON CONFLICT DO NOTHING (PostgreSQL
-    // and SQLite alike) ignores a dismissal a concurrent click wrote first.
+    // One INSERT … SELECT, and the count is what that statement wrote. A
+    // single statement is a single snapshot of the bell: a row that arrives,
+    // or a dismissed download summary that grows again, while the request
+    // runs is either in it and counted or not touched at all — a separate
+    // count and insert could dismiss a row the count never saw. The database
+    // walks the rows itself, so a long-lived install's first "Clear all"
+    // never materialises every activity_logs id on the Node heap, and ON
+    // CONFLICT DO NOTHING ignores a dismissal a concurrent click wrote first.
     // toSQL() keeps knex's `?` placeholders — toNative() would hand back
     // `$1…` on PostgreSQL, which db.raw cannot bind.
-    const select = snapshot().select(
+    const select = bellRows(req.admin).select(
       db.raw('? as admin_id', [req.admin.id]),
       'activity_logs.id as activity_log_id',
       db.raw('? as dismissed_at', [dismissedAt]),
     );
     const { sql, bindings } = select.toSQL();
-    await db.raw(
-      `INSERT INTO notification_dismissals (admin_id, activity_log_id, dismissed_at) ${sql} ON CONFLICT (admin_id, activity_log_id) DO NOTHING`,
-      bindings,
-    );
+    const insert = `INSERT INTO notification_dismissals (admin_id, activity_log_id, dismissed_at) ${sql} ON CONFLICT (admin_id, activity_log_id) DO NOTHING`;
+    let deletedCount;
+    if (db.client.config.client === 'pg') {
+      deletedCount = Number((await db.raw(insert, bindings)).rowCount) || 0;
+    } else {
+      // SQLite reports the rows a statement wrote through changes(), which is
+      // per connection: read it inside the same transaction.
+      deletedCount = await db.transaction(async (trx) => {
+        await trx.raw(insert, bindings);
+        const [row] = await trx.raw('SELECT changes() AS n');
+        return Number(row?.n) || 0;
+      });
+    }
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);

@@ -157,6 +157,15 @@ describe('admin notifications — owner scope and audit retention', () => {
     expect(again.body.deletedCount).toBe(0);
   });
 
+  it('reports what the statement wrote: a row dismissed meanwhile is not counted twice', async () => {
+    const a = await mkLog('photos_uploaded', ownEventId);
+    await mkLog('photos_uploaded', ownEventId);
+    // Another tab of the same admin has already dismissed one of the two.
+    await db('notification_dismissals').insert({ admin_id: scopedId, activity_log_id: a, dismissed_at: new Date().toISOString() });
+    const res = await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok);
+    expect(res.body.deletedCount).toBe(1);
+  });
+
   it('a dismissal is bound to the admin and to the row', async () => {
     const own = await mkLog('photos_uploaded', ownEventId);
     await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);

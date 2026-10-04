@@ -147,11 +147,15 @@ async function deleteEventCascade(eventId, adminContext) {
 
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail) — and the per-admin bell
-    // dismissals that point at them (migration 239): their FK cascades on
-    // PostgreSQL only, SQLite runs without PRAGMA foreign_keys.
-    await trx('notification_dismissals')
-      .whereIn('activity_log_id', trx('activity_logs').where('event_id', eventId).select('id'))
-      .del();
+    // dismissals that point at them (migration 239). On PostgreSQL the FK
+    // cascade removes them with the activity rows, so nothing is deleted
+    // ahead of them there. SQLite runs without PRAGMA foreign_keys, so there
+    // it is explicit.
+    if (trx.client?.config?.client !== 'pg') {
+      await trx('notification_dismissals')
+        .whereIn('activity_log_id', trx('activity_logs').where('event_id', eventId).select('id'))
+        .del();
+    }
     await trx('activity_logs').where('event_id', eventId).del();
     // 2. Delete access logs
     await trx('access_logs').where('event_id', eventId).del();

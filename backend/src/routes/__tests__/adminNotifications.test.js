@@ -30,21 +30,16 @@ jest.mock('../../database/db', () => {
 
   // toSQL() (not toNative()): knex placeholders stay `?` for db.raw.
   chain.toSQL = () => ({ sql: 'SELECT ? as admin_id, … FROM activity_logs …', bindings: [1, 'stamp'] });
-  chain.count = jest.fn().mockReturnThis();
-  chain.max = jest.fn().mockReturnThis();
-  // first() answers the snapshot's newest id, then the count on it.
-  chain.first = jest.fn()
-    .mockResolvedValueOnce({ id: 13 })
-    .mockResolvedValue({ count: rows.length });
-
   const dbMock = jest.fn(() => chain);
   // db.raw builds the select fragments (`? as admin_id`) and runs the
   // INSERT … SELECT; only the latter is awaited.
   const state = { insertError: null };
   const rawMock = jest.fn((sql) => {
     if (!/^INSERT/.test(sql)) return { sql };
-    return state.insertError ? Promise.reject(state.insertError) : Promise.resolve();
+    // The PostgreSQL branch: the statement's own rowCount is the answer.
+    return state.insertError ? Promise.reject(state.insertError) : Promise.resolve({ rowCount: rows.length });
   });
+  dbMock.client = { config: { client: 'pg' } };
   dbMock.raw = rawMock;
   dbMock.__rawMock = rawMock;
   dbMock.__state = state;
@@ -74,9 +69,6 @@ describe('adminNotifications routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     db.__state.insertError = null;
-    db.__chain.first.mockReset()
-      .mockResolvedValueOnce({ id: 13 })
-      .mockResolvedValue({ count: db.__rows.length });
   });
 
   it('clears all notifications by dismissing them for the caller', async () => {
