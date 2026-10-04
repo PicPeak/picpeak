@@ -130,6 +130,24 @@ describe('single-photo download when res.sendFile fails (issue 1733)', () => {
     expect(res.body).toEqual({ error: 'Failed to download photo' });
   });
 
+  it('keeps a 416 and its Content-Range for an unsatisfiable Range request', async () => {
+    // What `send` does before calling back with its own client error.
+    sendFileBehaviour = (res, cb) => {
+      res.setHeader('Content-Range', 'bytes */1024');
+      const err = new Error('Range Not Satisfiable');
+      err.status = 416;
+      cb(err);
+    };
+
+    const res = await request(app).get(`/api/gallery/${SLUG}/download/${photoId}`)
+      .set('Range', 'bytes=999999-');
+
+    expect(res.status).toBe(416);
+    expect(res.headers['content-range']).toBe('bytes */1024');
+    expect(res.headers['content-disposition']).toBeUndefined();
+    expect(res.body).toEqual({ error: 'Requested range not satisfiable' });
+  });
+
   it('breaks the transfer instead of hanging when headers are already out', async () => {
     sendFileBehaviour = (res, cb) => {
       res.write('partial-bytes');
