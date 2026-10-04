@@ -441,19 +441,23 @@ describe('v1 original downloads (issue 1473)', () => {
       }).returning('id');
       const row = { id: inserted[0]?.id ?? inserted[0] };
       let raced = false;
-      const origQuery = db.client.query.bind(db.client);
-      db.client.query = async (conn, obj) => {
+      // The bump runs inside a transaction, whose child client is a fresh
+      // object off the client prototype — hook the prototype so the update
+      // is intercepted wherever it runs.
+      const proto = Object.getPrototypeOf(db.client);
+      const origQuery = proto.query;
+      proto.query = async function (conn, obj) {
         if (!raced && /^update/i.test(obj.sql || '') && /activity_logs/.test(obj.sql || '')) {
           raced = true;
-          await origQuery(conn, db('activity_logs').where({ id: row.id })
+          await origQuery.call(this, conn, db('activity_logs').where({ id: row.id })
             .update({ metadata: JSON.stringify({ ...md, count: md.count + 5 }) }).toSQL().toNative());
         }
-        return origQuery(conn, obj);
+        return origQuery.call(this, conn, obj);
       };
       try {
         await recordSingleDownload({ tokenId: md.token_id, tokenName: md.token_name, eventId, actor: null });
       } finally {
-        db.client.query = origQuery;
+        proto.query = origQuery;
       }
       expect(raced).toBe(true);
       const [after] = await db('activity_logs').where({ id: row.id });

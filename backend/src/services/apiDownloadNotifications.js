@@ -90,23 +90,25 @@ async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
       return;
     }
 
-    // The per-admin dismissals (migration 261) go first, for the same
-    // reason read_at is reset below: an admin who cleared the bell during
-    // this hour's window must see the row again once it grows. Deleting
-    // them before the count moves means a crash in between only shows the
-    // row once more; the other order could leave a grown count hidden.
-    await db('notification_dismissals').where({ activity_log_id: open.id }).del();
-
     // Compare-and-set: the in-process chain serialises one replica, this
     // keeps a second replica's increment of the same row from being lost.
-    const updated = await db('activity_logs')
-      .where({ id: open.id })
-      .whereRaw('CAST(metadata AS TEXT) = ?', [open.text])
-      .update({
-        metadata: JSON.stringify({ ...open.metadata, count: (Number(open.metadata.count) || 0) + 1 }),
-        // Back to unread, so the bell shows the grown count.
-        read_at: null
-      });
+    // The per-admin dismissals (migration 261) go in the same transaction,
+    // for the same reason read_at is reset: an admin who cleared the bell
+    // during this hour's window must see the row again once it grows, and
+    // a Clear all landing between the two writes must not hide the grown
+    // count behind a dismissal the increment never saw.
+    const updated = await db.transaction(async (trx) => {
+      const n = await trx('activity_logs')
+        .where({ id: open.id })
+        .whereRaw('CAST(metadata AS TEXT) = ?', [open.text])
+        .update({
+          metadata: JSON.stringify({ ...open.metadata, count: (Number(open.metadata.count) || 0) + 1 }),
+          // Back to unread, so the bell shows the grown count.
+          read_at: null
+        });
+      if (n) await trx('notification_dismissals').where({ activity_log_id: open.id }).del();
+      return n;
+    });
     if (updated) return;
   }
   logger.warn('API download notification lost an increment under contention', { eventId });

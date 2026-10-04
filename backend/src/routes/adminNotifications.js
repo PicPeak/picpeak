@@ -155,9 +155,16 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
     const dismissedAt = new Date().toISOString();
+    // One snapshot for the count and the insert: rows that arrive while the
+    // request runs are neither counted nor dismissed. activity_logs ids are
+    // monotonic, so "everything up to the newest row the admin could see"
+    // is the snapshot.
+    const newest = await bellRows(req.admin).max('activity_logs.id as id').first();
+    const maxId = Number(newest?.id) || 0;
+    const snapshot = () => bellRows(req.admin).where('activity_logs.id', '<=', maxId);
     // What the admin is clearing from their view; a concurrent click that
     // wins the insert race changes nothing the toast needs to know.
-    const pending = await bellRows(req.admin).count('activity_logs.id as count').first();
+    const pending = await snapshot().count('activity_logs.id as count').first();
     const deletedCount = Number(pending?.count) || 0;
     // One INSERT … SELECT: the database walks the caller's bell rows itself,
     // so a long-lived install's first "Clear all" never materialises every
@@ -165,7 +172,7 @@ router.delete('/clear-all', adminAuth, requirePermission('notifications.manage')
     // and SQLite alike) ignores a dismissal a concurrent click wrote first.
     // toSQL() keeps knex's `?` placeholders — toNative() would hand back
     // `$1…` on PostgreSQL, which db.raw cannot bind.
-    const select = bellRows(req.admin).select(
+    const select = snapshot().select(
       db.raw('? as admin_id', [req.admin.id]),
       'activity_logs.id as activity_log_id',
       db.raw('? as dismissed_at', [dismissedAt]),
