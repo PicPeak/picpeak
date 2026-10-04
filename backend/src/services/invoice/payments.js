@@ -560,7 +560,7 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
   // it. Two links, or two clicks, cannot both confirm the same payment, and
   // a link that outlived a payment or a Storno cannot reopen the invoice.
   const nowIso = new Date().toISOString();
-  const { invoice, outstandingMinor } = await db.transaction(async (trx) => {
+  const { invoice, outstandingMinor, tokenRowId } = await db.transaction(async (trx) => {
     const row = await trx('invoice_payment_check_tokens').where({ token }).first();
     if (!row) throw new AppError('Token not found', 404);
     if (row.used_at) {
@@ -604,8 +604,26 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
       throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
     }
     await revokePendingPaymentCheckTokens(trx, locked.id, nowIso, 'superseded');
-    return { invoice: locked, outstandingMinor: outstanding };
+    return { invoice: locked, outstandingMinor: outstanding, tokenRowId: row.id };
   });
+
+  // The claim above is final only once the action below has been applied.
+  // A refusal there (Skonto not configured, reminder level exhausted the
+  // wrong way, a write that fails) used to leave this link and every
+  // fallback link dead while nothing had changed on the invoice; the
+  // claims are undone — exactly the rows this request stamped at nowIso.
+  let result;
+  try {
+    result = await applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId });
+  } catch (actionErr) {
+    await db('invoice_payment_check_tokens')
+      .where({ id: tokenRowId, used_at: nowIso })
+      .update({ used_at: null, used_action: null, used_amount_minor: null, used_ip: null });
+    await db('invoice_payment_check_tokens')
+      .where({ invoice_id: invoice.id, used_at: nowIso, used_action: 'superseded' })
+      .update({ used_at: null, used_action: null });
+    throw actionErr;
+  }
 
   try {
     await logActivity('invoice_payment_check_recorded',
@@ -627,7 +645,13 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
     }
   }
 
-  // --- Apply the action -----------------------------------------
+  return result;
+}
+
+// The ledger side of recordPaymentCheckAction: payment, Skonto payment,
+// partial payment plus reminder, or reminder. Throws before writing when the
+// action does not apply to this invoice.
+async function applyPaymentCheckAction({ invoice, outstandingMinor, action, amountMinor, adminId }) {
   const actor = adminId || 'public:payment-check';
   if (action === 'paid_full') {
     await recordPayment(invoice.id, {
