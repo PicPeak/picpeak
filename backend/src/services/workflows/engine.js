@@ -251,7 +251,9 @@ async function resumeRun(runId, { decisionHandle = null } = {}) {
   // The scheduler and recovery sweeps check the flag before calling in, but a
   // gate decision from the public approval link does not pass through them;
   // the kill-switch has to hold at the one transition every resume shares.
-  if (!(await workflowsEnabled())) return;
+  // Returns 'disabled' so a caller that already recorded a decision can undo
+  // it instead of leaving the run waiting with nothing left to wake it.
+  if (!(await workflowsEnabled())) return 'disabled';
   const run = await db('workflow_runs').where({ id: runId }).first();
   if (!run || run.status !== 'waiting') return;
   const { edges } = await loadGraph(run.workflow_id, run.version);
