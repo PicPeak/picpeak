@@ -365,13 +365,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => { mounted = false; };
   }, [slug]);
 
+  // Seed from the list payload (issue 1733): a rating given on the tile is
+  // already in the gallery-photos cache, so the stars are right before the
+  // per-photo fetch below confirms them instead of flashing empty. Keyed on
+  // the value too, not only the photo: a tile POST that settles after the
+  // lightbox opened on the same photo still reaches the stars.
+  useEffect(() => {
+    setMyRating(currentPhoto?.my_rating ?? 0);
+  }, [currentPhoto?.id, currentPhoto?.my_rating]);
+
   // Load my feedback for the current photo
   useEffect(() => {
     let mounted = true;
-    // Seed from the list payload (issue 1733): a rating given on the tile is
-    // already in the gallery-photos cache, so the stars are right before the
-    // per-photo fetch below confirms them instead of flashing empty.
-    setMyRating(currentPhoto?.my_rating ?? 0);
     (async () => {
       try {
         if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
