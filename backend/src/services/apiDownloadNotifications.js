@@ -100,7 +100,13 @@ async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
         // Back to unread, so the bell shows the grown count.
         read_at: null
       });
-    if (updated) return;
+    if (updated) {
+      // Same reason for the per-admin dismissals (migration 261): an admin
+      // who cleared the bell during this hour's window must see the row
+      // again once it grows, like read_at above.
+      await db('notification_dismissals').where({ activity_log_id: open.id }).del();
+      return;
+    }
   }
   logger.warn('API download notification lost an increment under contention', { eventId });
 }

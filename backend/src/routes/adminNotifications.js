@@ -125,7 +125,9 @@ router.put('/:id/read', adminAuth, requirePermission('notifications.manage'), as
 // Mark all notifications as read
 router.put('/read-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    await scopeToVisibleEvents(db('activity_logs'), req.admin)
+    // Only what the caller's bell shows: read_at is shared, so a row this
+    // admin has dismissed must not be marked read on everyone's behalf.
+    await bellRows(req.admin)
       .whereNull('activity_logs.read_at')
       .update({
         read_at: new Date().toISOString()
@@ -152,19 +154,24 @@ router.put('/read-all', adminAuth, requirePermission('notifications.manage'), as
 // frontend toast and carries the number of rows dismissed.
 router.delete('/clear-all', adminAuth, requirePermission('notifications.manage'), async (req, res) => {
   try {
-    const rows = await bellRows(req.admin).select('activity_logs.id');
     const dismissedAt = new Date().toISOString();
-    let deletedCount = 0;
-    // Chunked so a long-lived install's first "Clear all" does not build one
-    // giant statement; a dismissal written by a concurrent click is ignored.
-    for (let i = 0; i < rows.length; i += 500) {
-      const batch = rows.slice(i, i + 500).map((r) => ({
-        admin_id: req.admin.id, activity_log_id: r.id, dismissed_at: dismissedAt,
-      }));
-      await db('notification_dismissals').insert(batch)
-        .onConflict(['admin_id', 'activity_log_id']).ignore();
-      deletedCount += batch.length;
-    }
+    // One transaction: either every visible row is dismissed or none is, so
+    // a failed chunk cannot leave the bell half cleared behind a 500. Chunked
+    // so a long-lived install's first "Clear all" does not build one giant
+    // statement; a dismissal written by a concurrent click is ignored.
+    const deletedCount = await db.transaction(async (trx) => {
+      const rows = await bellRows(req.admin).transacting(trx).select('activity_logs.id');
+      let count = 0;
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500).map((r) => ({
+          admin_id: req.admin.id, activity_log_id: r.id, dismissed_at: dismissedAt,
+        }));
+        await trx('notification_dismissals').insert(batch)
+          .onConflict(['admin_id', 'activity_log_id']).ignore();
+        count += batch.length;
+      }
+      return count;
+    });
     res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
     logger.error('Clear notifications error:', error);

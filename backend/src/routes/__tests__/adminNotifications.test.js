@@ -18,6 +18,7 @@ jest.mock('../../database/db', () => {
     whereIn: jest.fn().mockReturnThis(),
     whereNotIn: jest.fn().mockReturnThis(),
     whereNull: jest.fn().mockReturnThis(),
+    transacting: jest.fn().mockReturnThis(),
     update: jest.fn().mockResolvedValue(0),
     delete: jest.fn().mockResolvedValue(0),
     del: jest.fn().mockResolvedValue(0),
@@ -29,6 +30,9 @@ jest.mock('../../database/db', () => {
 
   const dbMock = jest.fn(() => chain);
   dbMock.raw = jest.fn();
+  // The clear-all handler runs inside db.transaction(trx => …); the stub
+  // hands the same builder out as `trx`.
+  dbMock.transaction = jest.fn(async (work) => work(dbMock));
   dbMock.__chain = chain;
   dbMock.__insertMock = insertMock;
   dbMock.__ignoreMock = ignoreMock;

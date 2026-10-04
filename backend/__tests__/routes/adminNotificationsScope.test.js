@@ -168,6 +168,45 @@ describe('admin notifications — owner scope and audit retention', () => {
     expect(scoped.body.notifications.map((n) => n.id)).toEqual([later]);
   });
 
+  it('read-all leaves the rows the caller dismissed alone', async () => {
+    const dismissed = await mkLog('photos_uploaded', ownEventId);
+    await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);
+    const fresh = await mkLog('photos_uploaded', ownEventId);
+
+    await auth(request(app).put('/api/admin/notifications/read-all'), scopedTok).expect(200);
+    // read_at is shared with every other admin's bell; only what this
+    // caller could see is marked.
+    expect(await unreadIds()).toEqual([dismissed]);
+    expect(fresh).toBeGreaterThan(dismissed);
+  });
+
+  it('a download summary that grows again reappears for an admin who had cleared it', async () => {
+    const { recordSingleDownload, SUMMARY_TYPE } = require('../../src/services/apiDownloadNotifications');
+    const summary = await insertId('activity_logs', {
+      activity_type: SUMMARY_TYPE, actor_type: 'system', actor_id: null, actor_name: 'api',
+      metadata: JSON.stringify({ via: 'api_v1', token_id: 77, token_name: 't', count: 1, window_started_at: Date.now() }),
+      event_id: ownEventId, created_at: new Date().toISOString(),
+    });
+    await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);
+    expect(Number((await db('notification_dismissals').where({ activity_log_id: summary }).count('id as c').first()).c)).toBe(1);
+
+    await recordSingleDownload({ tokenId: 77, tokenName: 't', eventId: ownEventId, actor: { type: 'system' } });
+
+    const row = await db('activity_logs').where({ id: summary }).first();
+    expect(JSON.parse(row.metadata).count).toBe(2);
+    expect(Number((await db('notification_dismissals').where({ activity_log_id: summary }).count('id as c').first()).c)).toBe(0);
+    const scoped = await auth(request(app).get('/api/admin/notifications'), scopedTok);
+    expect(scoped.body.notifications.map((n) => n.id)).toEqual([summary]);
+  });
+
+  it('clear-all dismisses more than one chunk in one go', async () => {
+    const ids = [];
+    for (let i = 0; i < 503; i += 1) ids.push(await mkLog('photos_uploaded', ownEventId));
+    const res = await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok);
+    expect(res.body.deletedCount).toBe(503);
+    expect(Number((await db('notification_dismissals').where({ admin_id: scopedId }).count('id as c').first()).c)).toBe(503);
+  });
+
   it('clear-all by a super_admin keeps every row and every read_at as well', async () => {
     await mkLog('photos_uploaded', ownEventId);
     await mkLog('contract_signed', null, { contractId: 7 });
