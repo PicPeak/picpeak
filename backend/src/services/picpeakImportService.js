@@ -76,9 +76,23 @@ function archiveLimitError(message, statusCode) {
 // the import copies files/ into STORAGE_PATH as-is, and some of that tree is
 // served publicly (fonts/, uploads/logos, uploads/favicons).
 const IMPORT_FILE_ROOTS = ['business-docs', 'uploads', 'events/active', 'events/archived'];
-// Active web content must never land in storage through an archive. SVG is
-// deliberately not here: it is a supported logo format and secureStatic serves
-// it under a script-blocking CSP.
+// The storage subtrees (inside the roots above) that the app serves as
+// static web content, without authentication:
+//   uploads/logos     backend/server.js `app.use('/uploads/logos', secureStatic(...))`
+//   uploads/favicons  backend/server.js `app.use('/uploads/favicons', secureStatic(...))`,
+//                     and the /favicon.ico handler, which streams from both
+// frontend/nginx.conf proxies `location ^~ /uploads` to those mounts and
+// serves no storage path itself. fonts/ is served too but is not an import
+// root; /photos and /thumbnails are no longer mounted. Everything else under
+// the roots — transfer attachments (uploads/transfers/<id>/...), signed
+// contracts, business documents, event media — is handed out by authorised
+// routes as an attachment under its stored name, never as a page.
+const IMPORT_PUBLICLY_SERVED_PREFIXES = ['uploads/logos', 'uploads/favicons'];
+// Active web content must never land in a served subtree through an archive.
+// SVG is deliberately not here: it is a supported logo format and
+// secureStatic serves it under a script-blocking CSP. Outside the served
+// subtrees the extension is just a name: a client may well have uploaded
+// `payload.js` or `page.html` to a transfer, and a genuine export carries it.
 const IMPORT_FORBIDDEN_EXTENSIONS = new Set(['.html', '.htm', '.xhtml', '.xht', '.shtml', '.js', '.mjs', '.cjs']);
 
 /**
@@ -90,7 +104,11 @@ function importFilePathProblem(rel) {
   if (parts.some((p) => !p || p === '.' || p === '..')) return 'malformed path';
   const root = IMPORT_FILE_ROOTS.find((r) => rel === r || rel.startsWith(`${r}/`));
   if (!root || rel === root) return `not under an exported storage folder (${IMPORT_FILE_ROOTS.join(', ')})`;
-  if (IMPORT_FORBIDDEN_EXTENSIONS.has(path.posix.extname(rel).toLowerCase())) return 'active web content';
+  // Compared case-insensitively: a case-insensitive filesystem would land
+  // `uploads/Logos/x.html` in the served directory all the same.
+  const lower = rel.toLowerCase();
+  const served = IMPORT_PUBLICLY_SERVED_PREFIXES.some((prefix) => lower.startsWith(`${prefix}/`));
+  if (served && IMPORT_FORBIDDEN_EXTENSIONS.has(path.posix.extname(lower))) return 'active web content';
   return null;
 }
 
