@@ -266,12 +266,24 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(true);
   });
 
-  it('does not refetch the list in simple mode, where nothing was in flight', async () => {
+  it('leaves a simple-mode background refresh alone and refetches nothing extra', async () => {
     seedCache(PHOTO);
+    // An unrelated refresh already running; cancelling it would drop its
+    // result for good, since nothing re-invalidates in simple mode.
+    let resolveList: (v: GalleryData) => void = () => {};
+    const refreshed = { event: { id: 1 }, photos: [{ ...PHOTO, my_rating: 5, like_count: 9 }, { ...PHOTO, id: 8, my_rating: 2 }] } as unknown as GalleryData;
+    const inflight = queryClient.fetchQuery({
+      queryKey: ['gallery-photos', SLUG, 'all', undefined],
+      queryFn: () => new Promise<GalleryData>((resolve) => { resolveList = resolve; }),
+      staleTime: 0,
+    });
     renderCard();
     fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
     await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
     await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
+    resolveList(refreshed);
+    await expect(inflight).resolves.toBeTruthy();
+    expect(cachedPhoto(7).like_count).toBe(9);
     expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(false);
   });
 

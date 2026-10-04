@@ -67,8 +67,12 @@ export const TileRating: React.FC<TileRatingProps> = ({
       // request was also what brought the other photos' is_liked /
       // my_rating for the new identity, and the refetch now includes this
       // rating, so nothing is lost either way.
-      await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
+      // Only there: in simple/shared mode nothing invalidated the list, so
+      // cancelling would abort an unrelated background refresh for good.
       const identityRefreshedList = guestIdentity?.identityMode === 'guest';
+      if (identityRefreshedList) {
+        await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
+      }
       // In place, not a refetch: a 500-photo list re-hydrated per star is
       // what the lightbox path already costs, and the tile is meant to be
       // the fast route. The key prefix matches every filter/guest variant.
