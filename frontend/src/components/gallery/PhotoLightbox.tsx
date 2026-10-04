@@ -370,20 +370,28 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // per-photo fetch below confirms them instead of flashing empty. Keyed on
   // the value too, not only the photo: a tile POST that settles after the
   // lightbox opened on the same photo still reaches the stars.
+  // The seed generation: a per-photo GET that started before the newest
+  // seed must not write its (older) rating over it.
+  const ratingSeedRef = useRef(0);
   useEffect(() => {
+    ratingSeedRef.current += 1;
     setMyRating(currentPhoto?.my_rating ?? 0);
   }, [currentPhoto?.id, currentPhoto?.my_rating]);
 
   // Load my feedback for the current photo
   useEffect(() => {
     let mounted = true;
+    const seedAtStart = ratingSeedRef.current;
     (async () => {
       try {
         if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
-        setMyRating(data.my_feedback.rating || 0);
+        // Skip the rating when the list row reseeded the stars meanwhile
+        // (a tile POST settled while this request was out); the next GET
+        // carries the new value.
+        if (ratingSeedRef.current === seedAtStart) setMyRating(data.my_feedback.rating || 0);
         setMyColorLabel((data.my_feedback.color_label as ColorLabel) || null);
         setColorLabelCounts(data.color_labels || {});
         setLikeCount(Number(data.summary?.like_count) || 0);

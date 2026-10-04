@@ -18,10 +18,10 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({ useGuestIdentityOptio
 vi.mock('../../../services/feedback.service', () => ({
   feedbackService: {
     getGalleryFeedbackSettings: vi.fn().mockResolvedValue({ feedback_enabled: true, allow_ratings: true, allow_likes: false, allow_comments: false }),
-    // The per-photo fetch answers before the tile POST has settled.
-    getPhotoFeedback: vi.fn().mockResolvedValue({ feedback: [], my_feedback: { rating: 0 }, summary: {} }),
+    getPhotoFeedback: vi.fn(),
   },
 }));
+import { feedbackService } from '../../../services/feedback.service';
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
 vi.mock('../../common', () => ({ AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} /> }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn() } }));
@@ -42,6 +42,8 @@ const ui = (p: Photo) => (
 
 describe('PhotoLightbox — my_rating seed follows the list row', () => {
   it('reseeds the stars when the same photo\'s my_rating changes under an open lightbox', async () => {
+    // The per-photo fetch answers before the tile POST has settled.
+    vi.mocked(feedbackService.getPhotoFeedback).mockResolvedValue({ feedback: [], my_feedback: { rating: 0 }, summary: {} } as never);
     const { rerender } = render(ui(photo(null)));
     await waitFor(() => expect(screen.getByTitle('Rate 4')).toBeInTheDocument());
     expect(screen.queryByTitle('Remove rating')).toBeNull();
@@ -50,6 +52,26 @@ describe('PhotoLightbox — my_rating seed follows the list row', () => {
 
     await waitFor(() => expect(screen.getByTitle('Remove rating')).toBeInTheDocument());
     expect(screen.getByTitle('Remove rating')).toHaveAttribute('aria-label', 'Remove rating');
+    expect(screen.queryByTitle('Rate 4')).toBeNull();
+  });
+
+  it('ignores a per-photo GET that started before the reseed and resolves after it', async () => {
+    let resolveGet: (v: unknown) => void = () => {};
+    vi.mocked(feedbackService.getPhotoFeedback).mockImplementation(
+      () => new Promise((resolve) => { resolveGet = resolve; }) as never,
+    );
+    const { rerender } = render(ui(photo(null)));
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
+
+    // Tile POST settles: the list row now says 4.
+    rerender(ui(photo(4)));
+    await waitFor(() => expect(screen.getByTitle('Remove rating')).toBeInTheDocument());
+
+    // The GET from before the rating comes back with the old value.
+    resolveGet({ feedback: [], my_feedback: { rating: 0 }, summary: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(screen.getByTitle('Remove rating')).toBeInTheDocument();
     expect(screen.queryByTitle('Rate 4')).toBeNull();
   });
 });
