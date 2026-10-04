@@ -50,6 +50,10 @@ export interface BaseGalleryLayoutProps {
    * /download-all has no such cap.
    */
   onDownloadEverything?: () => void;
+  // Copyable filename list (issue 1733, A3d), for layouts that own their
+  // chrome: the selection, or the viewer's favourites. Hidden at zero.
+  onCopyFilenames?: () => void;
+  copyFilenamesCount?: number;
   // Resolution picker choices (#858). More than one entry means the gallery
   // offers a real choice, so bulk downloads must route through the modal
   // instead of calling downloadSelectedPhotos directly.

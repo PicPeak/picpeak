@@ -167,6 +167,21 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     expect(bar(noContainer.container)).toBeNull();
   });
 
+  it('offers the filename list from the fixed nav, not from a band it would cover', () => {
+    const h = handlers();
+    const onCopyFilenames = vi.fn();
+    const { container } = render(
+      <GalleryStoryLayout {...baseProps} {...h} onCopyFilenames={onCopyFilenames} copyFilenamesCount={2} />
+    );
+    const button = nav(container).getByTestId('story-nav-copy-filenames');
+    expect(button).toHaveAttribute('aria-label', 'Copy filenames (2)');
+    fireEvent.click(button);
+    expect(onCopyFilenames).toHaveBeenCalledTimes(1);
+
+    const none = render(<GalleryStoryLayout {...baseProps} {...h} onCopyFilenames={onCopyFilenames} copyFilenamesCount={0} />);
+    expect(nav(none.container).queryByTestId('story-nav-copy-filenames')).toBeNull();
+  });
+
   it('never traps a one-photo gallery: no checkbox to enter with, but a bar to leave by', () => {
     const h = handlers();
     const one = [photo(1)];

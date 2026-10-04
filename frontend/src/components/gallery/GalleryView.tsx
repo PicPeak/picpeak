@@ -1229,7 +1229,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
-        {(hasFolderNav || copyFilenames.photos.length > 0) && (
+        {(hasFolderNav || (copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story')) && (
           // Story's `.story-nav` is fixed across this same band at z-index 50.
           // Raising the strip above it is necessary for the chips to be
           // clickable at all, but the strip is mostly empty space — so the
@@ -1269,10 +1269,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 {t('gallery.downloadEverything', 'Download all photos')}
               </Button>
             )}
-            {/* Filename list (issue 1733, A3d). These layouts have no
-                selection toolbar and no sidebar, so this band is the only
-                chrome of ours above their full-bleed grid. */}
-            {copyFilenames.photos.length > 0 && (
+            {/* Filename list (issue 1733, A3d). Premium has no selection
+                toolbar and no sidebar, so this band is the only chrome of ours
+                above its full-bleed grid. Story's fixed nav covers this band
+                on narrow phones, so Story gets the button inside that nav
+                instead (onCopyFilenames below). */}
+            {copyFilenames.photos.length > 0 && theme.galleryLayout !== 'gallery-story' && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1308,6 +1310,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onDownloadEverything={
             allowDownloads && !hasRestrictedCategory ? handleDownloadAll : undefined
           }
+          onCopyFilenames={() => setShowCopyFilenames(true)}
+          copyFilenamesCount={copyFilenames.photos.length}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}

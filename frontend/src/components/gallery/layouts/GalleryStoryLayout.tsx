@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, Heart, LogOut, Download, CheckSquare, X, Package } from 'lucide-react';
+import { Search, Heart, LogOut, Download, CheckSquare, X, Package, ClipboardList } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
@@ -72,6 +72,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   suppressEmptyState = false,
   eventPhotoCount,
   onDownloadEverything,
+  onCopyFilenames,
+  copyFilenamesCount = 0,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -453,6 +455,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
               data-testid="story-nav-download-all"
             >
               <Download size={20} />
+            </button>
+          )}
+          {/* Filename list (issue 1733, A3d): in the fixed nav, where every
+              other gallery-wide action of this layout lives; a band above the
+              hero would sit under this nav on narrow phones. */}
+          {onCopyFilenames && copyFilenamesCount > 0 && (
+            <button
+              type="button"
+              className="story-nav-btn"
+              onClick={onCopyFilenames}
+              aria-label={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
+              title={`${t('gallery.copyFilenames.button', 'Copy filenames')} (${copyFilenamesCount})`}
+              data-testid="story-nav-copy-filenames"
+            >
+              <ClipboardList size={20} />
             </button>
           )}
           {bulkLikesAllowed && (
