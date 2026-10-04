@@ -201,18 +201,35 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onLightboxPhotoChange?.(null, 'close');
   };
 
+  // Gallery Premium and Gallery Story mount their own lightbox and report
+  // its moves through this wrapper, so the id it is on is known here too.
+  const layoutOwnsLightbox = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
+  const reportLayoutLightbox: LightboxPhotoChangeHandler = (photoId, reason) => {
+    lightboxPhotoIdRef.current = reason === 'close' ? null : photoId;
+    onLightboxPhotoChange?.(photoId, reason);
+  };
+
   // The open photo left the list (unliking the last Liked photo, a filter
   // change): the lightbox would simply unmount — or the component return its
   // empty state — without a close, leaving `?photo=` and the pushed history
-  // entry behind. Close it properly instead.
+  // entry behind. Close it properly instead. A layout-owned lightbox keeps
+  // its own index while the list is non-empty; only the empty list, which
+  // unmounts the layout and its lightbox outright, is closed from here.
   useEffect(() => {
-    if (selectedPhotoIndex === null || lightboxPhotoIdRef.current === null) return;
+    if (lightboxPhotoIdRef.current === null) return;
+    if (layoutOwnsLightbox) {
+      if (photos.length > 0) return;
+      lightboxPhotoIdRef.current = null;
+      onLightboxPhotoChange?.(null, 'close');
+      return;
+    }
+    if (selectedPhotoIndex === null) return;
     if (photos.some((photo) => photo.id === lightboxPhotoIdRef.current)) return;
     handleLightboxClose();
     // handleLightboxClose is recreated every render; the inputs that matter
-    // are the list and whether the lightbox is open.
+    // are the list and whether a lightbox is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photos, selectedPhotoIndex]);
+  }, [photos, selectedPhotoIndex, layoutOwnsLightbox]);
 
   // Link to a single photo (issue 1733): the URL asks for a photo — open on
   // it, or close on null. Only against `photos`, the list this viewer sees;
@@ -388,7 +405,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // Link to a single photo (issue 1733): the full-page layouts mount their
     // own lightbox, so the URL contract has to reach them as well.
     openPhotoId,
-    onLightboxPhotoChange,
+    onLightboxPhotoChange: reportLayoutLightbox,
     onFeedbackChange: onFeedbackChange,
     onDownload: handleDownload,
     heroPhotoOverride,

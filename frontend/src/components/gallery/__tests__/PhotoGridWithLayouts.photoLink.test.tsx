@@ -15,7 +15,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) }),
 }));
 vi.mock('react-toastify', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
-vi.mock('../../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { galleryLayout: 'grid' } }) }));
+// vi.mock is hoisted above every import; vi.hoisted keeps the switch with it.
+const layoutSwitch = vi.hoisted(() => ({ galleryLayout: 'grid' }));
+vi.mock('../../../contexts/ThemeContext', () => ({ useTheme: () => ({ theme: { galleryLayout: layoutSwitch.galleryLayout } }) }));
 vi.mock('../../../contexts/DownloadQuotaContext', () => ({
   useDownloadQuota: () => ({ allows: () => true, canDownload: () => true, remaining: null }),
 }));
@@ -31,6 +33,16 @@ vi.mock('../layouts', () => ({
     <div>
       {photos.map((photo, index) => (
         <button key={photo.id} data-testid={`tile-${photo.id}`} onClick={() => onPhotoClick(index)} />
+      ))}
+    </div>
+  ),
+  // A full-page layout owns its lightbox and reports through the callback.
+  GalleryPremiumLayout: ({ photos, onLightboxPhotoChange }: {
+    photos: Photo[]; onLightboxPhotoChange?: (id: number | null, reason: string) => void;
+  }) => (
+    <div data-testid="premium">
+      {photos.map((photo) => (
+        <button key={photo.id} data-testid={`ptile-${photo.id}`} onClick={() => onLightboxPhotoChange?.(photo.id, 'open')} />
       ))}
     </div>
   ),
@@ -122,6 +134,31 @@ describe('PhotoGridWithLayouts — link to a single photo (issue 1733)', () => {
     );
     expect(onChange).not.toHaveBeenCalledWith(null, 'close');
     expect(screen.getByTestId('lightbox')).toBeTruthy();
+  });
+
+  it('closes a layout-owned lightbox when the list empties, and leaves it alone otherwise', () => {
+    layoutSwitch.galleryLayout = 'gallery-premium';
+    try {
+      const onChange = vi.fn();
+      const { rerender } = render(
+        <PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={null} onLightboxPhotoChange={onChange} />,
+      );
+      fireEvent.click(screen.getByTestId('ptile-11'));
+      expect(onChange).toHaveBeenLastCalledWith(11, 'open');
+
+      // The layout keeps its own index on a non-empty list: no close from here.
+      rerender(
+        <PhotoGridWithLayouts photos={photos.filter((p) => p.id !== 11)} slug="g" openPhotoId={11} onLightboxPhotoChange={onChange} />,
+      );
+      expect(onChange).not.toHaveBeenCalledWith(null, 'close');
+
+      // Empty list: the layout and its lightbox unmount, so the close is reported.
+      rerender(<PhotoGridWithLayouts photos={[]} slug="g" openPhotoId={11} onLightboxPhotoChange={onChange} />);
+      expect(onChange).toHaveBeenLastCalledWith(null, 'close');
+      expect(screen.queryByTestId('premium')).toBeNull();
+    } finally {
+      layoutSwitch.galleryLayout = 'grid';
+    }
   });
 
   it('opens nothing for an id that is not in the list it shows', () => {
