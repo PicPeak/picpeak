@@ -133,7 +133,7 @@ describe('payment-check links', () => {
     expect(await codeOf(payments.getPaymentCheckByToken(older))).toBeNull();
   });
 
-  it('two overlapping resends keep both fresh links and retire only the older ones', async () => {
+  it('two overlapping resends are issued one after the other; the last link is the live one', async () => {
     const id = await sentInvoice();
     const older = await liveToken(id);
 
@@ -145,9 +145,55 @@ describe('payment-check links', () => {
 
     const rows = await tokensOf(id);
     expect(rows.find((r) => r.token === older)).toMatchObject({ used_action: 'superseded' });
-    // Each resend retires what predates its own link, never the other's.
-    expect(rows.find((r) => r.token === a.token).used_at).toBeNull();
-    expect(rows.find((r) => r.token === b.token).used_at).toBeNull();
+    // Never both dead (each used to retire the other's fresh link), and
+    // never two live: the later issuance replaces the earlier, mailed one.
+    const fresh = [a.token, b.token].map((t) => rows.find((r) => r.token === t));
+    expect(fresh.filter((r) => r.used_at === null)).toHaveLength(1);
+    expect(fresh.filter((r) => r.used_action === 'superseded')).toHaveLength(1);
+  });
+
+  it('a second resend does not snapshot or retire a link whose email is still being queued', async () => {
+    const id = await sentInvoice();
+    const older = await liveToken(id);
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    let openGate;
+    const gate = new Promise((resolve) => { openGate = resolve; });
+    const liveAtQueueTime = [];
+    let calls = 0;
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockImplementation(async (...args) => {
+      calls += 1;
+      // Resend A stops here: its token is inserted, its email is not out yet.
+      if (calls === 1) await gate;
+      // Whatever link this email carries has to be redeemable when it is queued.
+      const carried = /payment-check\/([a-f0-9]{64})/.exec(args[3].paid_url)[1];
+      liveAtQueueTime.push((await db('invoice_payment_check_tokens').where({ token: carried }).first()).used_at === null);
+      return real(...args);
+    });
+
+    try {
+      const first = payments.queuePaymentCheckEmail(id, { skipThrottle: true });
+      while (calls < 1) await new Promise((resolve) => setTimeout(resolve, 10));
+      const second = payments.queuePaymentCheckEmail(id, { skipThrottle: true });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // B is held back: no second token, no second email, nothing retired.
+      expect(calls).toBe(1);
+      const during = await tokensOf(id);
+      expect(during).toHaveLength(2);
+      expect(during.every((r) => r.used_at === null)).toBe(true);
+
+      openGate();
+      const [a, b] = await Promise.all([first, second]);
+
+      expect(liveAtQueueTime).toEqual([true, true]);
+      const rows = await tokensOf(id);
+      expect(rows.find((r) => r.token === older)).toMatchObject({ used_action: 'superseded' });
+      expect(rows.find((r) => r.token === a.token)).toMatchObject({ used_action: 'superseded' });
+      expect(rows.find((r) => r.token === b.token).used_at).toBeNull();
+    } finally {
+      openGate();
+      spy.mockRestore();
+    }
   });
 
   it('a refused action hands the link and its fallbacks back', async () => {

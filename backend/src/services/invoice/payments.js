@@ -276,7 +276,47 @@ async function queueInvoicePaidAdminNotification({
   } catch (_) { /* non-fatal */ }
 }
 
-async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor = null } = {}) {
+// One payment-check issuance per invoice at a time. An issuance inserts its
+// token, queues the email and only then retires the links it replaces; two
+// of them interleaved could retire each other's fresh link (B snapshots A's
+// token before A's email is out, then supersedes it), so A mailed a dead
+// link. In-process the calls are chained per invoice; across replicas on
+// PostgreSQL a transaction-scoped advisory lock holds the others back (it
+// is released with the transaction, also when the issuance throws). The
+// work inside keeps using `db`: the lock is not a row lock, so the invoice
+// update below is not blocked by it. SQLite has one writer process and one
+// pooled connection, so no transaction is opened around it there.
+const PAYMENT_CHECK_ISSUANCE_LOCK = 1075;
+const issuanceChains = new Map();
+
+async function withPaymentCheckIssuanceLock(invoiceId, fn) {
+  const key = Number(invoiceId);
+  const previous = issuanceChains.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  const tail = previous.then(() => current);
+  issuanceChains.set(key, tail);
+
+  await previous;
+  try {
+    if (db.client.config.client === 'pg') {
+      return await db.transaction(async (trx) => {
+        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [PAYMENT_CHECK_ISSUANCE_LOCK, key]);
+        return fn();
+      });
+    }
+    return await fn();
+  } finally {
+    release();
+    if (issuanceChains.get(key) === tail) issuanceChains.delete(key);
+  }
+}
+
+function queuePaymentCheckEmail(invoiceId, options = {}) {
+  return withPaymentCheckIssuanceLock(invoiceId, () => issuePaymentCheckEmail(invoiceId, options));
+}
+
+async function issuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor = null } = {}) {
   const invoice = await db('invoices').where({ id: invoiceId }).first();
   if (!invoice) return { sent: false, reason: 'not_found' };
   if (!['sent', 'overdue'].includes(invoice.status)) {
@@ -311,8 +351,9 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   // below — revoking first would leave the recipient with no usable link
   // when rendering or queueing fails.
   // What this resend is replacing: the links that already existed when it
-  // started. Captured before the insert so an overlapping resend's fresh
-  // link — queued in its own email — is not retired by this one.
+  // started. Issuances are serialised per invoice (see
+  // withPaymentCheckIssuanceLock), so every one of them has had its email
+  // queued; nothing newer than this snapshot is touched.
   const priorMaxId = (await db('invoice_payment_check_tokens')
     .where({ invoice_id: invoiceId }).whereNull('used_at').orderBy('id', 'desc').first('id'))?.id;
   await db('invoice_payment_check_tokens').insert({
