@@ -381,6 +381,19 @@ class DownloadZipService {
         download_zip_generated_at: new Date(),
       });
 
+      // The stat and the row write are awaits too: an invalidate() landing
+      // in either window has run its cleanup already, and the write above
+      // just put the stale zip back. Undo exactly that — only while the row
+      // still points at this key, so a newer build's publication is left
+      // alone.
+      if (this.versions.get(eventId) !== version) {
+        await db('events')
+          .where({ id: eventId, download_zip_path: finalKey })
+          .update({ download_zip_path: null, download_zip_generated_at: null });
+        await storage.delete(finalKey).catch(() => {});
+        return { success: false, error: 'Build invalidated' };
+      }
+
       logger.info('Pre-zip generated', { eventId, slug: event.slug, size: stat.size, photos: photos.length });
       return { success: true, key: finalKey, size: stat.size };
     } catch (err) {
@@ -440,14 +453,17 @@ class DownloadZipService {
    */
   async invalidateAll() {
     try {
-      const events = await db('events')
-        .whereNotNull('download_zip_path')
-        .select('id');
       // A first build still in flight has no download_zip_path yet, so the
       // query misses it — and it read its settings when it started. Left
       // alone, its version checks pass and it publishes a zip built under
-      // the old settings.
-      const ids = new Set([...events.map((event) => event.id), ...this.activeBuilds.keys()]);
+      // the old settings. Taken BEFORE the query: a build that finishes
+      // while the SELECT runs leaves activeBuilds and writes the row after
+      // the query read it, so it would be in neither set afterwards.
+      const building = [...this.activeBuilds.keys()];
+      const events = await db('events')
+        .whereNotNull('download_zip_path')
+        .select('id');
+      const ids = new Set([...events.map((event) => event.id), ...building]);
       for (const id of ids) {
         this.invalidate(id);
       }
