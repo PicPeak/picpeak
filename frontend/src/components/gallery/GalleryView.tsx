@@ -707,8 +707,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // gallery whose host has just switched names off.
     selectedCreditKey: data?.event?.credits_visible ? selectedCreditKey : null,
     // Only while ratings are on: the chips hide with the switch, and a stale
-    // threshold would otherwise keep emptying the grid with no way to clear it.
-    minRating: feedbackSettings?.allow_ratings ? minRating : null,
+    // threshold would otherwise keep emptying the grid with no way to clear
+    // it. The master switch counts too — turning feedback off keeps
+    // allow_ratings as it was, and the chips hide with feedbackEnabled.
+    minRating: feedbackSettings?.feedback_enabled && feedbackSettings?.allow_ratings ? minRating : null,
   });
   const creditsVisible = data?.event?.credits_visible === true;
 
