@@ -310,6 +310,11 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   // The older links are superseded only once this one has been queued, see
   // below — revoking first would leave the recipient with no usable link
   // when rendering or queueing fails.
+  // What this resend is replacing: the links that already existed when it
+  // started. Captured before the insert so an overlapping resend's fresh
+  // link — queued in its own email — is not retired by this one.
+  const priorMaxId = (await db('invoice_payment_check_tokens')
+    .where({ invoice_id: invoiceId }).whereNull('used_at').max('id as m').first())?.m;
   await db('invoice_payment_check_tokens').insert({
     invoice_id: invoiceId,
     token,
@@ -406,10 +411,12 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
     await db('invoice_payment_check_tokens').where({ token }).whereNull('used_at').del();
     throw queueErr;
   }
-  // Now the newest email carries this link, the older ones go.
-  await db('invoice_payment_check_tokens').where({ invoice_id: invoiceId }).whereNull('used_at')
-    .whereNot('token', token)
-    .update({ used_at: new Date().toISOString(), used_action: 'superseded' });
+  // Now the newest email carries this link, the ones it replaces go.
+  if (priorMaxId != null) {
+    await db('invoice_payment_check_tokens').where({ invoice_id: invoiceId }).whereNull('used_at')
+      .where('id', '<=', Number(priorMaxId))
+      .update({ used_at: new Date().toISOString(), used_action: 'superseded' });
+  }
 
   try {
     await logActivity('invoice_payment_check_sent', { invoiceId, token: token.slice(0, 8) },
