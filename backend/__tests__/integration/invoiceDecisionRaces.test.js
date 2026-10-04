@@ -133,6 +133,23 @@ describe('payment-check links', () => {
     expect(await codeOf(payments.getPaymentCheckByToken(older))).toBeNull();
   });
 
+  it('two overlapping resends keep both fresh links and retire only the older ones', async () => {
+    const id = await sentInvoice();
+    const older = await liveToken(id);
+
+    const [a, b] = await Promise.all([
+      payments.queuePaymentCheckEmail(id, { skipThrottle: true }),
+      payments.queuePaymentCheckEmail(id, { skipThrottle: true }),
+    ]);
+    expect(a.sent && b.sent).toBe(true);
+
+    const rows = await tokensOf(id);
+    expect(rows.find((r) => r.token === older)).toMatchObject({ used_action: 'superseded' });
+    // Each resend retires what predates its own link, never the other's.
+    expect(rows.find((r) => r.token === a.token).used_at).toBeNull();
+    expect(rows.find((r) => r.token === b.token).used_at).toBeNull();
+  });
+
   it('a recorded payment revokes the pending links', async () => {
     const id = await sentInvoice();
     const link = await liveToken(id);
