@@ -168,6 +168,26 @@ describe('admin notifications — owner scope and audit retention', () => {
     expect(scoped.body.notifications.map((n) => n.id)).toEqual([later]);
   });
 
+  it('read-all leaves the rows the caller dismissed alone', async () => {
+    const dismissed = await mkLog('photos_uploaded', ownEventId);
+    await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok).expect(200);
+    const fresh = await mkLog('photos_uploaded', ownEventId);
+
+    await auth(request(app).put('/api/admin/notifications/read-all'), scopedTok).expect(200);
+    // read_at is shared with every other admin's bell; only what this
+    // caller could see is marked.
+    expect(await unreadIds()).toEqual([dismissed]);
+    expect(fresh).toBeGreaterThan(dismissed);
+  });
+
+  it('clear-all dismisses more than one chunk in one go', async () => {
+    const ids = [];
+    for (let i = 0; i < 503; i += 1) ids.push(await mkLog('photos_uploaded', ownEventId));
+    const res = await auth(request(app).delete('/api/admin/notifications/clear-all'), scopedTok);
+    expect(res.body.deletedCount).toBe(503);
+    expect(Number((await db('notification_dismissals').where({ admin_id: scopedId }).count('id as c').first()).c)).toBe(503);
+  });
+
   it('clear-all by a super_admin keeps every row and every read_at as well', async () => {
     await mkLog('photos_uploaded', ownEventId);
     await mkLog('contract_signed', null, { contractId: 7 });
