@@ -251,5 +251,34 @@ describe('admin notifications — owner scope and audit retention', () => {
 
       expect(Number((await db('notification_dismissals').where({ admin_id: goneId }).count('id as c').first()).c)).toBe(0);
     });
+
+    it('keeps the dismissals when the account delete itself is refused', async () => {
+      const role = await db('roles').where({ name: 'bell_manager' }).first();
+      const stayId = await insertId('admin_users', {
+        username: 'bell-stays', email: 'bell-stays@example.com', password_hash: 'x',
+        role_id: role.id, must_change_password: false, created_at: new Date().toISOString(),
+      });
+      await db('notification_dismissals').insert({
+        admin_id: stayId, activity_log_id: await mkLog('photos_uploaded', ownEventId), dismissed_at: new Date().toISOString(),
+      });
+      // The account delete fails after the dismissal cleanup ran (the table is
+      // out of reach for exactly that statement): both roll back together.
+      const realQuery = Object.getPrototypeOf(db.client).query;
+      let armed = true;
+      Object.getPrototypeOf(db.client).query = async function (conn, obj) {
+        if (armed && /^delete from .admin_users./i.test(obj.sql || '')) {
+          armed = false;
+          throw new Error('still referenced');
+        }
+        return realQuery.call(this, conn, obj);
+      };
+      try {
+        await expect(svc.deleteAdminUser(stayId, superId)).rejects.toThrow('still referenced');
+      } finally {
+        Object.getPrototypeOf(db.client).query = realQuery;
+      }
+      expect(Number((await db('notification_dismissals').where({ admin_id: stayId }).count('id as c').first()).c)).toBe(1);
+      expect(await db('admin_users').where({ id: stayId }).first()).toBeTruthy();
+    });
   });
 });
