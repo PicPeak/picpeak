@@ -305,9 +305,11 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(now.getTime() + PAYMENT_CHECK_TOKEN_TTL_MS);
-  // One live link per invoice: the one in the newest email. Two live links
-  // could each confirm the full payment from the same pre-payment snapshot.
-  await revokePendingPaymentCheckTokens(db, invoiceId, nowIso, 'superseded');
+  // One live link per invoice: the one in the newest email (two live links
+  // could each confirm the full payment from the same pre-payment snapshot).
+  // The older links are superseded only once this one has been queued, see
+  // below — revoking first would leave the recipient with no usable link
+  // when rendering or queueing fails.
   await db('invoice_payment_check_tokens').insert({
     invoice_id: invoiceId,
     token,
@@ -368,36 +370,46 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
     ? Math.round(Number(invoice.total_amount_minor) * (1 - Number(skontoPercent) / 100))
     : null;
 
-  await emailProcessor.queueEmail(invoice.event_id || null, adminContact.email,
-    'invoice_payment_check', {
-      invoice_number: invoice.invoice_number,
-      customer_name: customer?.company_name
+  try {
+    await emailProcessor.queueEmail(invoice.event_id || null, adminContact.email,
+      'invoice_payment_check', {
+        invoice_number: invoice.invoice_number,
+        customer_name: customer?.company_name
         || customer?.display_name
         || [customer?.first_name, customer?.last_name].filter(Boolean).join(' ')
         || customer?.email || '',
-      event_name: invoice.event_name || '',
-      // Keep the body language consistent with the locale the amounts are
-      // formatted in, instead of event-first resolution (admin-facing gate).
-      __language: locale,
-      due_date: formatShortDate(invoice.due_date),
-      total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),
-      paid_amount: formatMajor(paidMinor, invoice.currency, locale),
-      outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
-      has_partial_payment: hasPartial,
-      paid_url:    buildUrl('paid_full'),
-      partial_url: buildUrl('partial'),
-      unpaid_url:  buildUrl('unpaid'),
-      // Skonto button — template uses {{#if has_skonto}} to render the
-      // fourth button only when the invoice qualifies.
-      has_skonto: hasSkonto,
-      skonto_percent: hasSkonto ? skontoPercent : '',
-      skonto_amount: hasSkonto
-        ? formatMajor(skontoDiscountedTotalMinor, invoice.currency, locale)
-        : '',
-      skonto_url: hasSkonto ? buildUrl('paid_with_skonto') : '',
-      late_fee_due: willChargeFee,
-      late_fee_amount: formatMajor(reminderFeeMinor, invoice.currency, locale),
-    });
+        event_name: invoice.event_name || '',
+        // Keep the body language consistent with the locale the amounts are
+        // formatted in, instead of event-first resolution (admin-facing gate).
+        __language: locale,
+        due_date: formatShortDate(invoice.due_date),
+        total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),
+        paid_amount: formatMajor(paidMinor, invoice.currency, locale),
+        outstanding_amount: formatMajor(outstandingMinor, invoice.currency, locale),
+        has_partial_payment: hasPartial,
+        paid_url:    buildUrl('paid_full'),
+        partial_url: buildUrl('partial'),
+        unpaid_url:  buildUrl('unpaid'),
+        // Skonto button — template uses {{#if has_skonto}} to render the
+        // fourth button only when the invoice qualifies.
+        has_skonto: hasSkonto,
+        skonto_percent: hasSkonto ? skontoPercent : '',
+        skonto_amount: hasSkonto
+          ? formatMajor(skontoDiscountedTotalMinor, invoice.currency, locale)
+          : '',
+        skonto_url: hasSkonto ? buildUrl('paid_with_skonto') : '',
+        late_fee_due: willChargeFee,
+        late_fee_amount: formatMajor(reminderFeeMinor, invoice.currency, locale),
+      });
+  } catch (queueErr) {
+    // Never emailed, so nothing can redeem it; the previous link stays live.
+    await db('invoice_payment_check_tokens').where({ token }).whereNull('used_at').del();
+    throw queueErr;
+  }
+  // Now the newest email carries this link, the older ones go.
+  await db('invoice_payment_check_tokens').where({ invoice_id: invoiceId }).whereNull('used_at')
+    .whereNot('token', token)
+    .update({ used_at: new Date().toISOString(), used_action: 'superseded' });
 
   try {
     await logActivity('invoice_payment_check_sent', { invoiceId, token: token.slice(0, 8) },

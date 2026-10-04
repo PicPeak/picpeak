@@ -117,6 +117,22 @@ describe('payment-check links', () => {
     expect(await codeOf(payments.recordPaymentCheckAction({ token: older, action: 'unpaid' }))).toBe('TOKEN_ALREADY_USED');
   });
 
+  it('keeps the older link live when the replacement cannot be queued', async () => {
+    const id = await sentInvoice();
+    const older = await liveToken(id);
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockRejectedValueOnce(new Error('queue offline'));
+
+    await expect(payments.queuePaymentCheckEmail(id, { skipThrottle: true })).rejects.toThrow('queue offline');
+    spy.mockRestore();
+
+    // The recipient still holds a usable link; the never-emailed one is gone.
+    const rows = await tokensOf(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ token: older, used_at: null });
+    expect(await codeOf(payments.getPaymentCheckByToken(older))).toBeNull();
+  });
+
   it('a recorded payment revokes the pending links', async () => {
     const id = await sentInvoice();
     const link = await liveToken(id);
