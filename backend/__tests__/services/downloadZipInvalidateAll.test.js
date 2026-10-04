@@ -97,4 +97,45 @@ describe('downloadZipService.invalidateAll with a build in flight (issue 1733)',
     expect(await service.generateZip(6)).toEqual({ success: true, key: 'k' });
     expect(build).not.toHaveBeenCalled();
   });
+
+  it('still invalidates a first-time build that finishes while the cached-row query runs', async () => {
+    // The build publishes its row and leaves activeBuilds during the SELECT:
+    // the query read the row before the write, so afterwards the event is in
+    // neither set unless the active keys were taken first.
+    service.versions.set(8, 1);
+    service.activeBuilds.set(8, { promise: new Promise(() => {}), version: 1 });
+    db.mockReturnValue({
+      whereNotNull: () => ({
+        select: async () => {
+          service.activeBuilds.delete(8);
+          return [];
+        },
+      }),
+    });
+
+    await service.invalidateAll();
+
+    expect(service.invalidate).toHaveBeenCalledWith(8);
+    expect(service.versions.get(8)).toBe(2);
+  });
+
+  it('takes the published row back when the version moved during stat or the row write', () => {
+    // Pinned at source level: _build needs archiver, storage and a real photo
+    // set to run. The recheck must sit after the row write and before the
+    // success return, and must clear the row only while it still points at
+    // this build's key.
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '../../src/services/downloadZipService.js'), 'utf8');
+    const write = src.indexOf("download_zip_generated_at: new Date(),");
+    const recheck = src.indexOf('if (this.versions.get(eventId) !== version)', write);
+    const success = src.indexOf("return { success: true, key: finalKey", write);
+    expect(write).toBeGreaterThan(-1);
+    expect(recheck).toBeGreaterThan(write);
+    expect(recheck).toBeLessThan(success);
+    const block = src.slice(recheck, success);
+    expect(block).toContain(".where({ id: eventId, download_zip_path: finalKey })");
+    expect(block).toContain('download_zip_path: null, download_zip_generated_at: null');
+    expect(block).toContain('storage.delete(finalKey)');
+  });
 });
