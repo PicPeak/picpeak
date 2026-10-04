@@ -140,7 +140,9 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [selfIdentity, setSelfIdentity] = useState<{ name: string; email: string } | null>(null);
 
-  const savedIdentityValue = identityMode === 'self' ? selfIdentity : savedIdentity;
+  // Self mode still honours an identity the layout already holds (typed into
+  // another tile), so one viewer is asked once per gallery, not once per card.
+  const savedIdentityValue = identityMode === 'self' ? (selfIdentity ?? savedIdentity ?? null) : savedIdentity;
 
   const hideOverlay = useCallback(() => {
     if (overlayTimeoutRef.current !== null && typeof window !== 'undefined') {
@@ -499,6 +501,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
               onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
               onSubmit={async (name, email) => {
                 setSelfIdentity({ name, email });
+                onIdentitySaved?.({ name, email });
                 setShowIdentityModal(false);
                 if (pendingAction) {
                   if (pendingAction.type === 'like' && onLikeSuccess) {

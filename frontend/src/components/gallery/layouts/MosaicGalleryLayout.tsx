@@ -35,6 +35,9 @@ interface MosaicPhotoProps {
     allowComments?: boolean;
     requireNameEmail?: boolean;
   };
+  /** One identity per viewer, held by the layout so no second tile asks again. */
+  savedIdentity: { name: string; email: string } | null;
+  onIdentitySaved: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
 }
 
@@ -49,11 +52,12 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   slug,
   feedbackEnabled = false,
   feedbackOptions,
-  onQuickComment
+  onQuickComment,
+  savedIdentity,
+  onIdentitySaved,
 }) => {
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
-  const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
   // Seed from server is_liked (#590 follow-up). useState's initializer
   // fires once on mount, so subsequent prop updates don't reseed.
   const [likedLocal, setLikedLocal] = React.useState(photo.is_liked ?? false);
@@ -111,7 +115,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
           setLikedLocal(prev => !prev);
         }}
         savedIdentity={savedIdentity}
-        onIdentitySaved={setSavedIdentity}
+        onIdentitySaved={onIdentitySaved}
         onRequireIdentity={(action, photoId) => {
           setPendingAction({ type: action, photoId });
           setShowIdentityModal(true);
@@ -138,7 +142,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         isOpen={showIdentityModal}
         onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
         onSubmit={async (name, email) => {
-          setSavedIdentity({ name, email });
+          onIdentitySaved({ name, email });
           setShowIdentityModal(false);
           if (pendingAction) {
             await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
@@ -168,6 +172,9 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   feedbackEnabled = false,
   feedbackOptions
 }) => {
+  // Shared by every tile (issue 1733): the identity typed into one tile's
+  // modal — for a like or a rating — is reused by all the others.
+  const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
   const { theme } = useTheme();
   const scale = theme.gallerySettings?.thumbnailScale || 'md';
   const scaleOffsets: Record<string, number> = { xs: 3, sm: 1, md: 0, lg: -1, xl: -2 };
@@ -216,6 +223,8 @@ export const MosaicGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           slug={slug}
           feedbackEnabled={feedbackEnabled}
           feedbackOptions={feedbackOptions}
+          savedIdentity={savedIdentity}
+          onIdentitySaved={setSavedIdentity}
           onQuickComment={() => {
             if (typeof onOpenPhotoWithFeedback !== 'undefined' && onOpenPhotoWithFeedback) {
               onOpenPhotoWithFeedback(index);

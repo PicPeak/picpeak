@@ -59,6 +59,9 @@ interface MasonryPhotoProps {
     allowComments?: boolean;
     requireNameEmail?: boolean;
   };
+  /** One identity per viewer, held by the layout so no second tile asks again. */
+  savedIdentity?: { name: string; email: string } | null;
+  onIdentitySaved?: (identity: { name: string; email: string }) => void;
   onQuickComment?: () => void;
   // Column width for calculating proper aspect-ratio-based height
   columnWidth?: number;
@@ -83,6 +86,8 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   columnWidth = 300,
   liked = false,
   onLikeSuccess,
+  savedIdentity,
+  onIdentitySaved,
 }) => {
   // Calculate height based on actual photo aspect ratio
   // This preserves the photo's natural proportions in the masonry layout
@@ -131,6 +136,8 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
       liked={liked}
       onLikeSuccess={onLikeSuccess}
       identityMode="self"
+      savedIdentity={savedIdentity}
+      onIdentitySaved={onIdentitySaved}
       likeToggleLabels
       checkboxTestId
       beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} withTitles /> : undefined}
@@ -166,6 +173,9 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
+  // Likewise the identity a viewer typed into one tile's modal (like or
+  // rating, issue 1733): every other tile reuses it instead of asking again.
+  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   // Seed from server is_liked on first non-empty photos payload (#590
   // follow-up). Mount-only: subsequent refetches don't clobber in-session
   // optimistic toggles, only the first arrival of photos initializes.
@@ -561,6 +571,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 feedbackOptions={feedbackOptions}
                 onQuickComment={() => onOpenPhotoWithFeedback && onOpenPhotoWithFeedback(originalIndex)}
                 columnWidth={columnWidth}
+                savedIdentity={savedIdentity}
+                onIdentitySaved={setSavedIdentity}
                 liked={likedPhotoIds.has(photo.id)}
                 onLikeSuccess={() => {
                   // Toggle, not add — the /feedback like endpoint toggles
