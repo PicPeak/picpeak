@@ -18,6 +18,7 @@ const source = fs.readFileSync(path.join(backendDir, 'server.js'), 'utf8');
 const start = source.indexOf('const PUBLIC_SITE_FONT_FACES');
 const end = source.indexOf('async function handlePublicSiteRequest');
 const section = source.slice(start, end);
+const handler = source.slice(end, source.indexOf('\n}\n', end));
 
 describe('buildPublicSiteDocument — fonts', () => {
   it('finds the font-face block and the document template', () => {
@@ -37,6 +38,14 @@ describe('buildPublicSiteDocument — fonts', () => {
     }
     expect(section).toContain('font-display: swap');
     expect(section).toContain('<style>${PUBLIC_SITE_FONT_FACES}</style>');
+  });
+
+  it('validates the rendered document, so a template change busts cached copies', () => {
+    // payload.etag hashes settings only; a client that cached the Google
+    // Fonts version would otherwise get 304 forever.
+    expect(handler).not.toContain("req.headers['if-none-match'] === payload.etag");
+    expect(handler).toMatch(/createHash\('sha1'\)\.update\(document\)/);
+    expect(handler).toContain("res.setHeader('ETag', etag)");
   });
 
   it('points at files the /fonts mount actually ships', () => {
