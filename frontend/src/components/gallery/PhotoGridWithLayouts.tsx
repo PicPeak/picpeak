@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ClipboardList, Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
@@ -177,22 +177,42 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     setSelectedPhotos(new Set());
   }, [categoryId, setSelectedPhotos]);
 
+  // The photo the lightbox is on, by id: `selectedPhotoIndex` is a position
+  // in `photos`, which a filter change can shift or empty under it.
+  const lightboxPhotoIdRef = useRef<number | null>(null);
+
   const handlePhotoClick = (index: number) => {
     setOpenFeedbackInitially(false);
     setSelectedPhotoIndex(index);
+    lightboxPhotoIdRef.current = photos[index]?.id ?? null;
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
 
   const handleOpenWithFeedback = (index: number) => {
     setOpenFeedbackInitially(true);
     setSelectedPhotoIndex(index);
+    lightboxPhotoIdRef.current = photos[index]?.id ?? null;
     if (photos[index]) onLightboxPhotoChange?.(photos[index].id, 'open');
   };
 
   const handleLightboxClose = () => {
     setSelectedPhotoIndex(null);
+    lightboxPhotoIdRef.current = null;
     onLightboxPhotoChange?.(null, 'close');
   };
+
+  // The open photo left the list (unliking the last Liked photo, a filter
+  // change): the lightbox would simply unmount — or the component return its
+  // empty state — without a close, leaving `?photo=` and the pushed history
+  // entry behind. Close it properly instead.
+  useEffect(() => {
+    if (selectedPhotoIndex === null || lightboxPhotoIdRef.current === null) return;
+    if (photos.some((photo) => photo.id === lightboxPhotoIdRef.current)) return;
+    handleLightboxClose();
+    // handleLightboxClose is recreated every render; the inputs that matter
+    // are the list and whether the lightbox is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos, selectedPhotoIndex]);
 
   // Link to a single photo (issue 1733): the URL asks for a photo — open on
   // it, or close on null. Only against `photos`, the list this viewer sees;
@@ -208,6 +228,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     if (index >= 0) {
       setOpenFeedbackInitially(false);
       setSelectedPhotoIndex(index);
+      lightboxPhotoIdRef.current = openPhotoId;
     }
   }, [openPhotoId, photos]);
 
@@ -572,7 +593,10 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           showOriginalFilename={showOriginalFilename}
           people={people}
           onSelectPerson={onSelectPerson}
-          onCurrentPhotoChange={(photoId) => onLightboxPhotoChange?.(photoId, 'step')}
+          onCurrentPhotoChange={(photoId) => {
+            lightboxPhotoIdRef.current = photoId;
+            onLightboxPhotoChange?.(photoId, 'step');
+          }}
         />
       )}
 

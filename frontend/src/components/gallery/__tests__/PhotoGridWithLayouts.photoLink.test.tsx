@@ -40,9 +40,12 @@ vi.mock('../PhotoLightbox', () => ({
     photos: Photo[]; initialIndex: number; onClose: () => void; onCurrentPhotoChange?: (id: number) => void;
   }) => {
     const [index, setIndex] = React.useState(initialIndex);
-    React.useEffect(() => { onCurrentPhotoChange?.(photos[index].id); }, [index, photos, onCurrentPhotoChange]);
+    // The real lightbox clamps its index when the list shrinks under it; the
+    // stub only has to survive that render.
+    const current = photos[index] ?? photos[photos.length - 1];
+    React.useEffect(() => { if (current) onCurrentPhotoChange?.(current.id); }, [current, onCurrentPhotoChange]);
     return (
-      <div data-testid="lightbox" data-photo={photos[index].id}>
+      <div data-testid="lightbox" data-photo={current?.id}>
         <button data-testid="next" onClick={() => setIndex((i) => i + 1)} />
         <button data-testid="close" onClick={onClose} />
       </div>
@@ -78,6 +81,47 @@ describe('PhotoGridWithLayouts — link to a single photo (issue 1733)', () => {
 
     rerender(<PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={null} />);
     expect(screen.queryByTestId('lightbox')).toBeNull();
+  });
+
+  it('follows the lightbox to a neighbour when the open photo leaves a non-empty list', () => {
+    // The lightbox clamps onto a neighbour and reports the step, so the URL
+    // stays on a photo that is actually shown.
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={11} onLightboxPhotoChange={onChange} />,
+    );
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('11');
+
+    rerender(
+      <PhotoGridWithLayouts photos={photos.filter((p) => p.id !== 11)} slug="g" openPhotoId={11} onLightboxPhotoChange={onChange} />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(12, 'step');
+    expect(onChange).not.toHaveBeenCalledWith(null, 'close');
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+  });
+
+  it('closes, reporting it, when the filtered list empties under the open photo', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />,
+    );
+    expect(screen.getByTestId('lightbox').dataset.photo).toBe('12');
+
+    rerender(<PhotoGridWithLayouts photos={[]} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />);
+    expect(onChange).toHaveBeenLastCalledWith(null, 'close');
+    expect(screen.queryByTestId('lightbox')).toBeNull();
+  });
+
+  it('keeps the lightbox when another photo leaves the list', () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <PhotoGridWithLayouts photos={photos} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />,
+    );
+    rerender(
+      <PhotoGridWithLayouts photos={photos.filter((p) => p.id !== 10)} slug="g" openPhotoId={12} onLightboxPhotoChange={onChange} />,
+    );
+    expect(onChange).not.toHaveBeenCalledWith(null, 'close');
+    expect(screen.getByTestId('lightbox')).toBeTruthy();
   });
 
   it('opens nothing for an id that is not in the list it shows', () => {
