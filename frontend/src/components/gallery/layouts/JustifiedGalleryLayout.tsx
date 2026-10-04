@@ -11,6 +11,7 @@ import { feedbackService } from '../../../services/feedback.service';
 import { buildResourceUrl } from '../../../utils/url';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useLazyBands } from './lazyBands';
 import {
   calculateJustifiedLayout,
   createJustifiedPhotos,
@@ -76,6 +77,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
   liked = false,
   onLikeSuccess,
 }) => {
+  const bands = useLazyBands();
   const animationClass =
     animationType === 'scale'
       ? 'transition-transform duration-300 hover:scale-[1.02]'
@@ -128,7 +130,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
       // Release far-off tiles like Grid (issue 1733). The absolute px box
       // above holds the tile whether or not the image is mounted, so
       // unmounting shifts nothing; same outer band as Grid, see there.
-      releaseRootMargin="300% 0px"
+      releaseRootMargin={bands.keep}
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton w-full h-full rounded-lg"
       imageProps={{

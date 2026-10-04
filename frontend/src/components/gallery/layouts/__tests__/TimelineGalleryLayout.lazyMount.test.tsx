@@ -14,9 +14,11 @@ import { render, screen } from '@testing-library/react';
 
 import { TimelineGalleryLayout } from '../TimelineGalleryLayout';
 import type { Photo } from '../../../../types';
+import { lazyBands } from '../lazyBands';
 
-const LOAD_BAND = '100% 0px';
-const KEEP_BAND = '300% 0px';
+// The bands the layout hands PhotoCard are px derived from the viewport
+// height (lazyBands.ts), so key the mock by what the component really passes.
+const { load: LOAD_BAND, keep: KEEP_BAND } = lazyBands(window.innerHeight);
 
 /**
  * Which bands the tiles are currently inside; the test drives these directly

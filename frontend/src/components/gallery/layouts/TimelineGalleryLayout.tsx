@@ -5,6 +5,7 @@ import { useTheme } from '../../../contexts/ThemeContext';
 import { PhotoCard } from '../PhotoCard';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useLazyBands } from './lazyBands';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -22,6 +23,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   feedbackEnabled = false,
   feedbackOptions
 }) => {
+  const bands = useLazyBands();
   const { theme } = useTheme();
   const { formatTime: fmtTime } = useLocalizedDate();
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
@@ -140,8 +142,8 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     // AuthenticatedImage fetches on mount, so without `lazy`
                     // every tile of the gallery was requested on first render.
                     lazy
-                    inViewRootMargin="100% 0px"
-                    releaseRootMargin="300% 0px"
+                    inViewRootMargin={bands.load}
+                    releaseRootMargin={bands.keep}
                     imageProps={{
                       src: photo.thumbnail_url || photo.url,
                       alt: photo.filename,

@@ -11,6 +11,7 @@ import {
 import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useLazyBands } from './lazyBands';
 
 // Count-style feedback indicators shared by all masonry modes (top-left).
 // `withTitles` matches the columns-mode markup, which carries title attributes.
@@ -83,6 +84,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   liked = false,
   onLikeSuccess,
 }) => {
+  const bands = useLazyBands();
   // Calculate height based on actual photo aspect ratio
   // This preserves the photo's natural proportions in the masonry layout
   const imageHeight = useMemo(() => {
@@ -127,8 +129,8 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
        * containing block of that `position: fixed` modal.
        */
       lazy
-      inViewRootMargin="100% 0px"
-      releaseRootMargin="300% 0px"
+      inViewRootMargin={bands.load}
+      releaseRootMargin={bands.keep}
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
@@ -173,6 +175,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   feedbackEnabled = false,
   feedbackOptions
 }) => {
+  const bands = useLazyBands();
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(3);
@@ -400,8 +403,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               // Lazy mount + release with Grid's bands (issue 1733); the
               // absolute px box holds the tile either way.
               lazy
-              inViewRootMargin="100% 0px"
-              releaseRootMargin="300% 0px"
+              inViewRootMargin={bands.load}
+              releaseRootMargin={bands.keep}
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
@@ -463,8 +466,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 containIntrinsicSize: `${box.width}px ${box.height}px`,
               }}
               lazy
-              inViewRootMargin="100% 0px"
-              releaseRootMargin="300% 0px"
+              inViewRootMargin={bands.load}
+              releaseRootMargin={bands.keep}
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,
@@ -536,8 +539,8 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               // tile and a released one. No intrinsic size, as in Grid.
               style={{ contentVisibility: 'auto' }}
               lazy
-              inViewRootMargin="100% 0px"
-              releaseRootMargin="300% 0px"
+              inViewRootMargin={bands.load}
+              releaseRootMargin={bands.keep}
               imageProps={{
                 src: photo.thumbnail_url || photo.url,
                 alt: photo.filename,

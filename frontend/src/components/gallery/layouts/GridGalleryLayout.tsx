@@ -7,6 +7,7 @@ import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useLazyBands } from './lazyBands';
 
 interface GridPhotoProps {
   photo: Photo;
@@ -54,6 +55,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
   liked = false,
   onLikeSuccess
 }) => {
+  const bands = useLazyBands();
   const { t } = useTranslation();
 
   const animationClass = animationType === 'scale'
@@ -96,7 +98,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        * resolves against the root's own box, so 100% is one viewport height
        * of lead in each direction, which is what vh would have meant.
        */
-      inViewRootMargin="100% 0px"
+      inViewRootMargin={bands.load}
       /*
        * Release band (#1287). The pre-load band above fixed tiles arriving
        * late; it did nothing about tiles never leaving. Every tile scrolled
@@ -118,7 +120,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        * from the stored dimensions, and releases with the same bands
        * (issue 1733).
        */
-      releaseRootMargin="300% 0px"
+      releaseRootMargin={bands.keep}
       /*
        * Issue 1733: a released tile still costs style, layout and paint on
        * every scroll frame — 500 skeletons are still 500 boxes. With

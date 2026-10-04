@@ -18,10 +18,16 @@
  *
  * jsdom has no IntersectionObserver, so this asserts against the source
  * rather than constructing one.
+ *
+ * Since issue 1733 the layouts no longer write the bands as percentages:
+ * `rootMargin` percentages resolve against the root's WIDTH on every side,
+ * so `100% 0px` was under half a screen on a portrait phone. They take
+ * `useLazyBands()` (lazyBands.ts), which converts viewport heights to px.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { lazyBands, LOAD_BAND_VIEWPORTS, KEEP_BAND_VIEWPORTS } from '../lazyBands';
 
 const layouts = resolve(__dirname, '..');
 const read = (f: string) => readFileSync(resolve(layouts, f), 'utf8');
@@ -43,13 +49,19 @@ describe('grid lazy pre-load band', () => {
     expect(read('GridGalleryLayout.tsx')).toMatch(/inViewRootMargin=/);
   });
 
-  it('every inViewRootMargin in every layout uses a legal unit', () => {
+  it('every band in every layout is a literal with a legal unit or comes from useLazyBands', () => {
     // A vh value throws at IntersectionObserver construction and takes the
     // whole gallery down with it, so this guards the unit, not just presence.
+    // A percentage is legal but means width, so the shared helper is the
+    // expected form (issue 1733).
     for (const file of PHOTO_CARD_LAYOUTS) {
       const src = read(file);
       for (const [, value] of src.matchAll(/(?:inView|release)RootMargin="([^"]+)"/g)) {
         expect(value, `${file}: "${value}"`).toMatch(LEGAL_ROOT_MARGIN);
+        expect(value, `${file}: "${value}" is width-relative; use useLazyBands()`).not.toMatch(/%/);
+      }
+      for (const [, value] of src.matchAll(/(?:inView|release)RootMargin=\{([^}]+)\}/g)) {
+        expect(value, `${file}: {${value}}`).toMatch(/^bands\.(load|keep)$/);
       }
     }
   });
@@ -62,16 +74,28 @@ describe('grid lazy pre-load band', () => {
     // URL and any protection canvas for the life of the page. With it the peak
     // is 68.
     const src = read('GridGalleryLayout.tsx');
-    const release = src.match(/releaseRootMargin="([^"]+)"/);
-    expect(release, 'Grid declares no releaseRootMargin').toBeTruthy();
-    expect(release![1]).toMatch(LEGAL_ROOT_MARGIN);
+    expect(src).toMatch(/releaseRootMargin=\{bands\.keep\}/);
+    expect(src).toMatch(/inViewRootMargin=\{bands\.load\}/);
+    expect(src).toMatch(/const bands = useLazyBands\(\)/);
 
     // The gap between the bands is the hysteresis. If the outer band were not
     // strictly wider, a tile would be released and immediately reloaded on
     // every scroll across the edge.
-    const load = src.match(/inViewRootMargin="([^"]+)"/);
-    const percent = (value: string) => Number(value.split(/\s+/)[0].replace('%', ''));
-    expect(percent(release![1])).toBeGreaterThan(percent(load![1]));
+    const { load, keep } = lazyBands(844);
+    expect(load).toMatch(LEGAL_ROOT_MARGIN);
+    expect(keep).toMatch(LEGAL_ROOT_MARGIN);
+    const px = (value: string) => Number(value.split(/\s+/)[0].replace('px', ''));
+    expect(px(keep)).toBeGreaterThan(px(load));
+  });
+
+  it('the bands are viewport heights in px, not percentages of the width', () => {
+    // IntersectionObserver resolves every rootMargin percentage against the
+    // root's width, top and bottom included: `100% 0px` on a 390×844 phone
+    // preloaded 390px, under half a screen.
+    expect(lazyBands(844)).toEqual({ load: '844px 0px', keep: '2532px 0px' });
+    expect(lazyBands(390)).toEqual({ load: '400px 0px', keep: '1200px 0px' }); // floor for tiny/0 heights
+    expect(lazyBands(0).load).toBe('400px 0px');
+    expect(KEEP_BAND_VIEWPORTS).toBeGreaterThan(LOAD_BAND_VIEWPORTS);
   });
 
   it('Mosaic is lazy and releases, with the same bands as Grid', () => {
@@ -84,7 +108,7 @@ describe('grid lazy pre-load band', () => {
     const mosaic = read('MosaicGalleryLayout.tsx');
     const grid = read('GridGalleryLayout.tsx');
     expect(/^\s*lazy\s*$/m.test(mosaic)).toBe(true);
-    const band = (src: string, name: string) => src.match(new RegExp(`${name}="([^"]+)"`))?.[1];
+    const band = (src: string, name: string) => src.match(new RegExp(`${name}=\\{([^}]+)\\}`))?.[1];
     expect(band(mosaic, 'inViewRootMargin')).toBe(band(grid, 'inViewRootMargin'));
     expect(band(mosaic, 'releaseRootMargin')).toBe(band(grid, 'releaseRootMargin'));
   });
@@ -108,18 +132,18 @@ describe('grid lazy pre-load band', () => {
     // stored dimensions, so releasing cannot reflow. Masonry has four modes
     // and every one of them renders a PhotoCard; all four must opt in.
     const grid = read('GridGalleryLayout.tsx');
-    const release = grid.match(/releaseRootMargin="([^"]+)"/)![1];
+    const release = grid.match(/releaseRootMargin=\{([^}]+)\}/)![1];
     for (const file of ['MasonryGalleryLayout.tsx', 'TimelineGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
       const src = read(file);
       const cards = src.match(/<(?:PhotoCard|MasonryPhoto|JustifiedPhoto)\b/g)!.length;
       const lazies = src.match(/^\s*lazy\s*$/mg)?.length ?? 0;
-      const releases = src.match(/releaseRootMargin="([^"]+)"/g) ?? [];
+      const releases = src.match(/releaseRootMargin=\{([^}]+)\}/g) ?? [];
       // Every card site in the file, less the one inner component that
       // forwards to PhotoCard (MasonryPhoto, JustifiedPhoto) declares both.
       const sites = cards - (/\b(?:MasonryPhoto|JustifiedPhoto)\b/.test(src) ? 1 : 0);
       expect(lazies, `${file}: lazy on ${lazies} of ${sites} card sites`).toBe(sites);
       expect(releases.length, `${file}: releaseRootMargin on ${releases.length} of ${sites} card sites`).toBe(sites);
-      for (const r of releases) expect(r).toBe(`releaseRootMargin="${release}"`);
+      for (const r of releases) expect(r).toBe(`releaseRootMargin={${release}}`);
     }
   });
 
@@ -142,5 +166,17 @@ describe('grid lazy pre-load band', () => {
     expect(masonry.match(/contentVisibility: 'auto'/g)).toHaveLength(3);
     const masonryPhoto = masonry.slice(masonry.indexOf('const MasonryPhoto'), masonry.indexOf('export const MasonryGalleryLayout'));
     expect(masonryPhoto).not.toMatch(/contentVisibility/);
+  });
+
+  it('the columns-mode placeholder does not animate', () => {
+    // Without content-visibility a released MasonryPhoto still paints every
+    // frame, and the default `.skeleton` is `animate-pulse`: hundreds of
+    // far-off tiles would run an infinite opacity animation for the life
+    // of the page, undoing what releasing them saved (issue 1733).
+    const masonry = read('MasonryGalleryLayout.tsx');
+    const masonryPhoto = masonry.slice(masonry.indexOf('const MasonryPhoto'), masonry.indexOf('export const MasonryGalleryLayout'));
+    const skeleton = masonryPhoto.match(/skeletonClassName="([^"]+)"/);
+    expect(skeleton, 'MasonryPhoto relies on the animated default skeleton').toBeTruthy();
+    expect(skeleton![1]).not.toMatch(/\bskeleton\b|animate-/);
   });
 });

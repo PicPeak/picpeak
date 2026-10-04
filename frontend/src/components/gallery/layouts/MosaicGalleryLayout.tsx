@@ -6,6 +6,7 @@ import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+import { useLazyBands } from './lazyBands';
 
 /**
  * Mosaic Gallery Layout
@@ -50,6 +51,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
   feedbackOptions,
   onQuickComment
 }) => {
+  const bands = useLazyBands();
   const [showIdentityModal, setShowIdentityModal] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = React.useState<{ name: string; email: string } | null>(null);
@@ -89,8 +91,8 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
          * reasons — see the comments there.
          */
         lazy
-        inViewRootMargin="100% 0px"
-        releaseRootMargin="300% 0px"
+        inViewRootMargin={bands.load}
+        releaseRootMargin={bands.keep}
         imageProps={{
           src: photo.thumbnail_url || photo.url,
           alt: photo.filename,
