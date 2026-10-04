@@ -261,6 +261,18 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     await new Promise((r) => setTimeout(r, 20));
 
     expect(cachedPhoto(7).my_rating).toBe(5);
+    // The cancelled request also carried the other photos' identity-bound
+    // fields; the list is marked for a refetch (background, patch stays).
+    expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(true);
+  });
+
+  it('does not refetch the list in simple mode, where nothing was in flight', async () => {
+    seedCache(PHOTO);
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: 'Rate 5 stars' }));
+    await waitFor(() => expect(cachedPhoto(7).my_rating).toBe(5));
+    await waitFor(() => expect(feedbackService.getPhotoFeedback).toHaveBeenCalled());
+    expect(queryClient.getQueryState(['gallery-photos', SLUG, 'all', undefined])?.isInvalidated).toBe(false);
   });
 
   it('keeps the star when the summary request fails', async () => {

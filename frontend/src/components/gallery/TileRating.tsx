@@ -62,9 +62,13 @@ export const TileRating: React.FC<TileRatingProps> = ({
     onSuccess: async (_result, data) => {
       // A list request still in flight (guest mode: ensureIdentity()
       // invalidates gallery-photos right before the rating POST) would land
-      // after the patch below and put the unrated row back. Cancel it; the
-      // query refetches on its own next trigger with the rating included.
+      // after the patch below and put the unrated row back. Cancel it, and
+      // ask for a fresh list once the patch is in (below): the cancelled
+      // request was also what brought the other photos' is_liked /
+      // my_rating for the new identity, and the refetch now includes this
+      // rating, so nothing is lost either way.
       await queryClient.cancelQueries({ queryKey: ['gallery-photos', slug] });
+      const identityRefreshedList = guestIdentity?.identityMode === 'guest';
       // In place, not a refetch: a 500-photo list re-hydrated per star is
       // what the lightbox path already costs, and the tile is meant to be
       // the fast route. The key prefix matches every filter/guest variant.
@@ -93,6 +97,11 @@ export const TileRating: React.FC<TileRatingProps> = ({
       } catch {
         // The star itself is already right; the aggregates catch up on the
         // next list fetch.
+      }
+      if (identityRefreshedList) {
+        // Last, because setQueryData clears the invalidated flag: a background
+        // refetch while the patched row stays on screen.
+        void queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
       }
     },
     onError: (error: any) => {
