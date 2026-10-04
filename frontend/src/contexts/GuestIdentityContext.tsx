@@ -182,10 +182,16 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         storeGuestIdentity(slug, response.guest, response.token);
         setIdentity(response.guest);
         // Strip invite param from URL to prevent re-redemption on reload.
-        params.delete('invite');
-        const newSearch = params.toString();
+        // Read the URL as it is NOW, not as captured above: redemption is
+        // async and the visitor may have opened a photo meanwhile (`?photo=`
+        // plus the lightbox's history state), which the stale snapshot and
+        // an empty state would have wiped, leaving close with nothing to
+        // return to.
+        const current = new URLSearchParams(window.location.search);
+        current.delete('invite');
+        const newSearch = current.toString();
         const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
-        window.history.replaceState({}, '', newUrl);
+        window.history.replaceState(window.history.state ?? {}, '', newUrl);
       } catch (error) {
         // A spent (409) or revoked (410) invite is the normal way a guest comes
         // back through their own emailed link, and the identity this device
