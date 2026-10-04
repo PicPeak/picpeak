@@ -380,9 +380,15 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // buttons overflow a two-column phone tile, and the corners are already
   // taken (badge, checkbox, indicators, video chip). Absolute inside the
   // overlay, so it reveals and hides with it and inherits its hit-testing.
+  // Just under the centre on a normal tile, but never past the bottom edge:
+  // a panoramic Mosaic tile can be ~50px high and clips with overflow-hidden,
+  // so the row stops one pill height above the bottom.
   const ratingRow =
     showFeedbackActions && feedbackOptions?.allowRatings && slug ? (
-      <div className="absolute inset-x-0 top-1/2 mt-6 flex justify-center">
+      <div
+        className="absolute inset-x-0 flex justify-center"
+        style={{ top: 'min(calc(50% + 1.5rem), calc(100% - 1.75rem))' }}
+      >
         <TileRating
           photo={photo}
           slug={slug}

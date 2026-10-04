@@ -131,6 +131,19 @@ describe('PhotoCard tile rating (issue 1733)', () => {
     expect(stars()).toHaveLength(5);
   });
 
+  it('keeps the rating row inside a short tile', () => {
+    renderCard();
+    const row = stars()[0].closest('div[role="group"]')!.parentElement!;
+    // Centre + offset on a normal tile, clamped to one pill height above the
+    // bottom on a ~50px panoramic Mosaic tile (overflow-hidden would clip it).
+    // jsdom's CSSOM garbles the min() argument list, so pin its two parts.
+    const top = row.getAttribute('style') || '';
+    expect(top).toMatch(/^top: min\(/);
+    expect(top).toContain('calc(50% + 1.5rem)');
+    expect(top).toContain('calc(100% - 1.75rem)');
+    expect(row.className).not.toMatch(/top-1\/2|mt-6/);
+  });
+
   it('renders nothing when ratings are off, or feedback is off', () => {
     renderCard({ feedbackOptions: { allowLikes: true, allowRatings: false } });
     expect(stars()).toHaveLength(0);
