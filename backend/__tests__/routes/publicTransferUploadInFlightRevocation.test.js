@@ -105,9 +105,9 @@ it('removes the uploaded files when the re-read of the request fails', async () 
   // used to skip every cleanup loop and leave the temporary files behind.
   const storage = require('../../src/services/storage').getStorage();
   const put = jest.spyOn(storage, 'putFromFile');
-  const real = transferService.getRequestByToken;
+  const real = transferService.getTransferByUploadToken;
   let first = true;
-  jest.spyOn(transferService, 'getRequestByToken').mockImplementation(async (token) => {
+  jest.spyOn(transferService, 'getTransferByUploadToken').mockImplementation(async (token) => {
     if (first) { first = false; return real(token); }
     throw new Error('database gone');
   });
