@@ -84,6 +84,31 @@ describe('restoreService — pre-restore sessions are invalidated', () => {
     expect(await cutoff.isTokenBeforeCutoff({ iat: minted })).toBe(true);
   });
 
+  it.each(['database', 'full'])('a %s restore reports success only once the cutoff second has passed', async (restoreType) => {
+    // Until then a fresh login gets iat = cutoff - 1 and is rejected like a
+    // pre-restore token; a session created after a finished restore must be
+    // valid.
+    const { svc, options } = stubbedService(restoreType);
+    const result = await svc.restore(options);
+    expect(result.success).toBe(true);
+    const stamped = await cutoff.getSessionsValidAfter();
+    expect(Date.now()).toBeGreaterThanOrEqual(stamped * 1000);
+    expect(await cutoff.isTokenBeforeCutoff({ iat: Math.floor(Date.now() / 1000) })).toBe(false);
+  });
+
+  it('the rollback and the shared helper wait out the cutoff second as well', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-restore-cutoff-wait-'));
+    fs.writeFileSync(path.join(dir, 'backup-manifest.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'database.sql.gz'), zlib.gzipSync(Buffer.from('-- dump')));
+    await new RestoreService().attemptRollback(dir);
+    expect(Date.now()).toBeGreaterThanOrEqual((await cutoff.getSessionsValidAfter()) * 1000);
+
+    // What the portable import calls.
+    const stamped = await cutoff.invalidateSessionsIssuedSoFar();
+    expect(Date.now()).toBeGreaterThanOrEqual(stamped * 1000);
+    expect(await cutoff.isTokenBeforeCutoff({ iat: Math.floor(Date.now() / 1000) })).toBe(false);
+  });
+
   it('stamps the cutoff only after verification has counted the restored rows', async () => {
     // A backup that predates the setting has no security_sessions_valid_after
     // row; stamping before verification inserted one and put app_settings one
