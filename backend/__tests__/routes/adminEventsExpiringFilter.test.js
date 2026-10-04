@@ -92,3 +92,35 @@ test('PUT reads a zone-less expires_at as UTC, like julianday() reads the stored
   expect(res.status).toBe(200);
   expect((await db('events').where({ id }).first('expires_at')).expires_at).toBe('2026-10-06T12:00:00.000Z');
 });
+
+test('POST and PUT store the same instant for the same zone-less expires_at', async () => {
+  // Both go through parseExpiresAtText; `new Date()` on the create path read
+  // the value in the server's zone (TZ above) and stored a different instant.
+  const created = await request(app).post('/api/admin/events')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      event_type: 'wedding', event_name: `Zoneless ${Date.now()}`, event_date: '2026-09-01',
+      customer_name: 'A', customer_email: 'a@example.com', admin_email: 'admin@example.com',
+      password: 'ZonelessPass!1', expires_at: '2026-10-06T12:00:00',
+    });
+  expect(created.status).toBeLessThan(300);
+  const createdRow = await db('events').where({ id: created.body.id }).first('expires_at');
+  expect(createdRow.expires_at).toBe('2026-10-06T12:00:00.000Z');
+
+  const { id } = await db('events').where({ slug: 'iso-far' }).first('id');
+  await request(app).put(`/api/admin/events/${id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ expires_at: '2026-10-06T12:00:00' }).expect(200);
+  expect((await db('events').where({ id }).first('expires_at')).expires_at).toBe(createdRow.expires_at);
+});
+
+test('POST refuses an expires_at it cannot read instead of failing on it', async () => {
+  const res = await request(app).post('/api/admin/events')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      event_type: 'wedding', event_name: `Unreadable ${Date.now()}`, event_date: '2026-09-01',
+      customer_name: 'A', customer_email: 'a@example.com', admin_email: 'admin@example.com',
+      password: 'ZonelessPass!1', expires_at: '20261006T120000Z',
+    });
+  expect(res.status).toBe(400);
+});

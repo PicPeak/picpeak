@@ -3,6 +3,9 @@
  * rewritten in canonical ISO form once, so whereTimestamp's julianday()
  * expression keeps seeing the row (issue 1733).
  */
+// A non-UTC server zone: the zone-less rows must keep the instant SQL reads.
+process.env.TZ = 'America/New_York';
+
 const knex = require('knex');
 const migration = require('../../migrations/core/263_sqlite_expires_at_canonical_text');
 
@@ -26,6 +29,8 @@ describe('migration 263 on SQLite', () => {
       { id: 5, slug: 'epoch-ms', expires_at: NOW + DAY },
       { id: 6, slug: 'zone-less', expires_at: '2026-10-02 12:00:00' },
       { id: 7, slug: 'never', expires_at: null },
+      { id: 8, slug: 'bare-date', expires_at: '2026-10-03' },
+      { id: 9, slug: 'zone-less-t', expires_at: '2026-10-02T12:00:00' },
     ]);
   });
 
@@ -33,12 +38,27 @@ describe('migration 263 on SQLite', () => {
 
   const row = async (id) => (await db('events').where({ id }).first()).expires_at;
 
-  it('rewrites the forms julianday() cannot read and leaves every other row alone', async () => {
+  it('rewrites every non-canonical text form and leaves the rest alone', async () => {
+    // What SQL reads the zone-less rows as before the rewrite.
+    const epochBefore = async (id) => (await db('events').where({ id })
+      .first(db.raw('CAST(round((julianday(expires_at) - 2440587.5) * 86400000) AS INTEGER) AS ms'))).ms;
+    const before = { 6: await epochBefore(6), 8: await epochBefore(8), 9: await epochBefore(9) };
+
     const log = jest.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await migration.up(db);
     } finally {
       log.mockRestore();
+    }
+
+    // Zone-less text becomes the UTC instant SQL already took it for, so
+    // `new Date()` in the JS readers no longer reads it as local time.
+    expect(await row(6)).toBe('2026-10-02T12:00:00.000Z');
+    expect(await row(8)).toBe('2026-10-03T00:00:00.000Z');
+    expect(await row(9)).toBe('2026-10-02T12:00:00.000Z');
+    for (const id of [6, 8, 9]) {
+      expect(new Date(await row(id)).getTime()).toBe(before[id]);
+      expect(await epochBefore(id)).toBe(before[id]);
     }
 
     expect(await row(1)).toBe('2026-10-06T10:00:00.000Z');
@@ -47,14 +67,14 @@ describe('migration 263 on SQLite', () => {
     expect(await row(3)).toBe('[object Object]');
     expect(await row(4)).toBe(new Date(NOW + DAY).toISOString());
     expect(await row(5)).toBe(NOW + DAY);
-    expect(await row(6)).toBe('2026-10-02 12:00:00');
     expect(await row(7)).toBeNull();
 
-    // What the readers see afterwards: the rewritten row has an epoch.
-    const readable = await db('events')
+    // What the readers see afterwards: only the two unparsable rows are
+    // still without an epoch.
+    const unreadable = await db('events')
       .whereRaw("typeof(expires_at) = 'text' AND julianday(expires_at) IS NULL")
       .pluck('id');
-    expect(Array.from(readable).sort()).toEqual([2, 3]);
+    expect(Array.from(unreadable).sort()).toEqual([2, 3]);
   });
 
   it('names the rows it could not read', async () => {
@@ -62,7 +82,7 @@ describe('migration 263 on SQLite', () => {
     try {
       await migration.up(db);
       expect(log.mock.calls.map((c) => c.join(' ')).join('\n'))
-        .toMatch(/1 expires_at value\(s\) rewritten.*left unreadable on events 2, 3/);
+        .toMatch(/4 expires_at value\(s\) rewritten.*left unreadable on events 2, 3/);
     } finally {
       log.mockRestore();
     }
