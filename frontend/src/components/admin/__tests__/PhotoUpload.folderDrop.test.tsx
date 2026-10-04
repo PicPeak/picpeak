@@ -258,6 +258,44 @@ describe('PhotoUpload folder drop', () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
+  it('holds a walk that finished before the settings settled and admits it afterwards', async () => {
+    // Nothing delays the walk here: it is done while admin-settings is still
+    // loading, and admitting it then would judge by the defaults for good.
+    let releaseSettings: (() => void) | null = null;
+    settingsMock.mockImplementation(() => new Promise((ok) => {
+      releaseSettings = () => ok({
+        ...DEFAULT_SETTINGS,
+        general_allowed_file_types: 'jpg,mp4',
+        general_max_file_size_mb: 100,
+      });
+    }));
+    const sized = (name: string, type: string, mb: number) => {
+      const file = new File(['x'], name, { type });
+      Object.defineProperty(file, 'size', { value: mb * 1024 * 1024 });
+      return { isFile: true, isDirectory: false, name, file: (ok: (f: File) => void) => ok(file) };
+    };
+    const { container } = renderWithClient(<PhotoUpload eventId={1} />);
+    const zone = container.querySelector('input[type="file"]')!.parentElement!;
+    fireEvent.drop(zone, {
+      dataTransfer: {
+        files: [],
+        items: [{ kind: 'file', webkitGetAsEntry: () => dirEntry('mixed', [sized('big.jpg', 'image/jpeg', 60), sized('clip.mp4', 'video/mp4', 1)]) }],
+      },
+    });
+    // Let the walk run to its end; nothing is selected or refused yet.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('big.jpg')).not.toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /common\.upload/ })).toBeDisabled();
+
+    releaseSettings!();
+
+    await waitFor(() => expect(screen.getByText('clip.mp4')).toBeInTheDocument());
+    expect(screen.getByText('big.jpg')).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole('button', { name: /common\.upload/ })).not.toBeDisabled());
+  });
+
   it('reports an oversized file in a folder once', async () => {
     const big = new File(['x'], 'huge.jpg', { type: 'image/jpeg' });
     Object.defineProperty(big, 'size', { value: 60 * 1024 * 1024 });

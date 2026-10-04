@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Upload, X, Image, Info } from 'lucide-react';
 import { Button } from '../common';
 import { clsx } from 'clsx';
@@ -56,7 +56,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     queryFn: () => categoriesService.getEventCategories(eventId),
   });
 
-  const { data: settings } = useQuery({
+  const { data: settings, isPending: settingsPending } = useQuery({
     queryKey: ['admin-settings'],
     queryFn: () => settingsService.getAllSettings(),
   });
@@ -160,6 +160,19 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   // must not decide what a folder walk keeps.
   const settingsLoadedRef = useRef(false);
   settingsLoadedRef.current = settings !== undefined;
+  // Dropped files are admitted only once admin-settings has settled (loaded
+  // or failed): a walk that finishes earlier waits here, or addFiles would
+  // discard a server-allowed video or larger photo under the defaults for
+  // good. The walk stays counted in pendingWalks, so Upload is held too.
+  const settingsSettledRef = useRef(false);
+  settingsSettledRef.current = !settingsPending;
+  const settledWaiters = useRef<Array<() => void>>([]);
+  useEffect(() => {
+    if (!settingsPending) settledWaiters.current.splice(0).forEach((resume) => resume());
+  }, [settingsPending]);
+  const whenSettingsSettled = () => (settingsSettledRef.current
+    ? Promise.resolve()
+    : new Promise<void>((resume) => { settledWaiters.current.push(resume); }));
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     addFiles(Array.from(e.target.files || []));
@@ -203,7 +216,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
     // its size toast fires here or in addFiles, never in both.
     const accept = (file: File) => !settingsLoadedRef.current || admitFileRef.current(file);
     void collectDroppedFiles(e.dataTransfer, { limit: FOLDER_WALK_CEILING, accept })
-      .then((files) => addFilesRef.current(files))
+      .then(async (files) => {
+        await whenSettingsSettled();
+        addFilesRef.current(files);
+      })
       .finally(() => setPendingWalks((n) => n - 1));
   };
 
