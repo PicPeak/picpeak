@@ -103,4 +103,34 @@ describe('approval lifetime is bounded on the server', () => {
     expect(calls.confirm).toBe(1);
     expect((await db('workflow_runs').where({ id: runId }).first()).status).toBe('done');
   });
+
+  test('the admin inbox can still decide an approval whose link has run out', async () => {
+    // The lifetime bounds the emailed bearer, not the run: a gate that waits
+    // longer than the default must stay decidable from the authenticated
+    // inbox, and stay listed there.
+    const { runId, approval } = await pendingGate('lifetime.inbox');
+    await db('workflow_approvals').where({ id: approval.id })
+      .update({ expires_at: new Date(Date.now() - DAY).toISOString() });
+    expect((await engine.listPending()).map((a) => a.id)).toContain(approval.id);
+
+    expect(await engine.actById(approval.id, 'confirm', 1)).toEqual({ ok: true, status: 'confirmed' });
+    expect(calls.confirm).toBe(1);
+    expect((await db('workflow_runs').where({ id: runId }).first()).status).toBe('done');
+  });
+
+  test('an approval a late link click marked expired stays in the inbox and decidable there', async () => {
+    const { runId, approval } = await pendingGate('lifetime.inbox_after_link');
+    const raw = 'd'.repeat(64);
+    await db('workflow_approvals').where({ id: approval.id })
+      .update({ token_hash: engine.hashToken(raw), expires_at: new Date(Date.now() - DAY).toISOString() });
+    expect(await engine.actByToken(raw, 'confirm')).toEqual({ ok: false, reason: 'expired' });
+    expect((await db('workflow_approvals').where({ id: approval.id }).first()).status).toBe('expired');
+    expect((await engine.listPending()).map((a) => a.id)).toContain(approval.id);
+
+    expect(await engine.actById(approval.id, 'deny', 1)).toEqual({ ok: true, status: 'denied' });
+    expect(calls.confirm).toBe(0);
+    expect((await db('workflow_runs').where({ id: runId }).first()).status).not.toBe('waiting');
+    // A second decision from anywhere is answered as already decided.
+    expect(await engine.actById(approval.id, 'confirm', 1)).toMatchObject({ ok: true, already: true, status: 'denied' });
+  });
 });

@@ -107,10 +107,19 @@ async function alreadyDecided(approvalId) {
   return { ok: true, already: true, status: current ? current.status : null };
 }
 
-async function finalizeApproval(approval, decision, actorPatch) {
+/**
+ * `viaLink`: the emailed bearer token is what the lifetime bounds — a link
+ * that outlived expires_at is refused and the row marked expired. The admin
+ * inbox is authenticated and acts on the run itself, so it may still decide
+ * an approval the link can no longer reach (a gate that waits longer than
+ * the default lifetime would otherwise be stuck forever); it also takes an
+ * approval a late link click already marked expired.
+ */
+async function finalizeApproval(approval, decision, actorPatch, { viaLink = false } = {}) {
   if (!approval) return { ok: false, reason: 'not_found' };
-  if (approval.status !== 'pending') return { ok: true, already: true, status: approval.status };
-  if (isExpired(approval)) {
+  const actionable = viaLink ? ['pending'] : ['pending', 'expired'];
+  if (!actionable.includes(approval.status)) return { ok: true, already: true, status: approval.status };
+  if (viaLink && isExpired(approval)) {
     const expired = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
       .update({ status: 'expired' });
     if (!expired) return alreadyDecided(approval.id);
@@ -125,7 +134,7 @@ async function finalizeApproval(approval, decision, actorPatch) {
   // inbox and a double click can all act at once; without the condition two
   // requests both passed the check and both resumed the run, so confirm and
   // deny could each run their branch (or one branch run twice).
-  const decided = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
+  const decided = await db('workflow_approvals').where({ id: approval.id }).whereIn('status', actionable)
     .update({ status, acted_at: db.fn.now(), ...actorPatch });
   if (!decided) return alreadyDecided(approval.id);
   // Resume down the matching edge (handles 'confirm' | 'deny'). The flag is
@@ -143,7 +152,7 @@ async function finalizeApproval(approval, decision, actorPatch) {
 /** Act on an approval via the emailed single-use token. */
 async function actByToken(rawToken, decision) {
   const approval = await db('workflow_approvals').where({ token_hash: hashToken(rawToken) }).first();
-  return finalizeApproval(approval, decision, { acted_via: 'email' });
+  return finalizeApproval(approval, decision, { acted_via: 'email' }, { viaLink: true });
 }
 
 /**
@@ -165,12 +174,16 @@ async function actById(id, decision, adminId) {
   return finalizeApproval(approval, decision, { acted_via: 'web', acted_by: adminId || null });
 }
 
-/** Pending approvals for the webview inbox, newest first, with workflow name. */
+/**
+ * Undecided approvals for the webview inbox, newest first, with workflow
+ * name. An approval whose emailed link expired is still undecided and its
+ * run still waits, so it stays in the inbox (see finalizeApproval).
+ */
 async function listPending(limit = 100) {
   return db('workflow_approvals as a')
     .join('workflow_runs as r', 'r.id', 'a.run_id')
     .join('workflows as w', 'w.id', 'r.workflow_id')
-    .where('a.status', 'pending')
+    .whereIn('a.status', ['pending', 'expired'])
     .select(
       'a.id', 'a.type', 'a.payload', 'a.created_at', 'a.expires_at',
       'r.id as run_id', 'r.entity_type', 'r.entity_id',
