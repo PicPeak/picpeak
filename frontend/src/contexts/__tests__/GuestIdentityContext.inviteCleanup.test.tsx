@@ -4,29 +4,40 @@
  * history state) before it settles; the cleanup must leave both in place or
  * closing the photo has nothing to return to.
  */
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let resolveRedeem: (v: any) => void = () => {};
 let rejectRedeem: (e: any) => void = () => {};
 const redeemInvite = vi.fn(() => new Promise((resolve, reject) => { resolveRedeem = resolve; rejectRedeem = reject; }));
+const registerGuest = vi.fn(async () => ({ guest: { id: 7, name: 'Me' }, token: 'mine' }));
+const verifyRecoveryCode = vi.fn(async () => ({ guest: { id: 8, name: 'Me again' }, token: 'mine-again' }));
 vi.mock('../../services/guests.service', () => ({
-  guestsService: { redeemInvite: (...args: unknown[]) => redeemInvite(...args) },
+  guestsService: {
+    redeemInvite: (...args: unknown[]) => redeemInvite(...args),
+    registerGuest: (...args: unknown[]) => registerGuest(...args),
+    verifyRecoveryCode: (...args: unknown[]) => verifyRecoveryCode(...args),
+  },
 }));
 vi.mock('../../utils/guestIdentityStorage', async () => {
   const actual = await vi.importActual<typeof import('../../utils/guestIdentityStorage')>('../../utils/guestIdentityStorage');
   return { ...actual, getGuestIdentity: () => null, storeGuestIdentity: vi.fn() };
 });
 
-import { GuestIdentityProvider } from '../GuestIdentityContext';
+import { GuestIdentityProvider, useGuestIdentity } from '../GuestIdentityContext';
 import { storeGuestIdentity } from '../../utils/guestIdentityStorage';
+
+// Exposes register / recoverVerify to the test through the context.
+let identityApi: ReturnType<typeof useGuestIdentity> | null = null;
+const Probe: React.FC = () => { identityApi = useGuestIdentity(); return null; };
 
 const mount = (slug = 'wedding') => {
   const client = new QueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <GuestIdentityProvider slug={slug} identityMode="guest"><div /></GuestIdentityProvider>
+      <GuestIdentityProvider slug={slug} identityMode="guest"><Probe /></GuestIdentityProvider>
     </QueryClientProvider>,
   );
 };
@@ -62,6 +73,24 @@ describe('GuestIdentityProvider invite cleanup', () => {
     rejectRedeem(Object.assign(new Error('Too Many Requests'), { response: { status: 429 } }));
     await waitFor(() => expect(console.warn).toHaveBeenCalledTimes(2));
     expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('tok123');
+  });
+
+  it('drops the pending token when the visitor registers or recovers instead', async () => {
+    for (const flow of ['register', 'recover'] as const) {
+      sessionStorage.clear();
+      window.history.replaceState({}, '', '/gallery/wedding?invite=stuck');
+      const view = mount();
+      await waitFor(() => expect(redeemInvite).toHaveBeenCalled());
+      rejectRedeem(Object.assign(new Error('Network Error'), { response: undefined }));
+      await waitFor(() => expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBe('stuck'));
+
+      if (flow === 'register') await act(() => identityApi!.register('Me', 'me@example.com'));
+      else await act(() => identityApi!.recoverVerify('me@example.com', '123456'));
+
+      // A reload must not retry the stale invite over the identity just made.
+      expect(sessionStorage.getItem('picpeak:pending-invite:wedding')).toBeNull();
+      view.unmount();
+    }
   });
 
   it('drops the pending token after a terminal answer and after success', async () => {

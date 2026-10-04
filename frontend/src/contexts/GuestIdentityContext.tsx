@@ -277,6 +277,10 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   const register = useCallback(
     async (name: string, email?: string): Promise<GuestIdentity> => {
       const response = await guestsService.registerGuest(slug, { name, email });
+      // The visitor now has an identity of their own: a still-pending invite
+      // from an earlier failed redemption must not be retried on a reload
+      // and replace it (or, answered 409, clear it).
+      writePendingInvite(slug, null);
       storeGuestIdentity(slug, response.guest, response.token);
       setIdentity(response.guest);
       setPromptOpen(false);
@@ -298,7 +302,9 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
 
   const recoverVerify = useCallback(
     async (email: string, code: string): Promise<GuestIdentity> => {
+      // Same as register: the recovered identity wins over a pending invite.
       const response = await guestsService.verifyRecoveryCode(slug, email, code);
+      writePendingInvite(slug, null);
       storeGuestIdentity(slug, response.guest, response.token);
       setIdentity(response.guest);
       setPromptOpen(false);
