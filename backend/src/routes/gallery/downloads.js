@@ -383,15 +383,20 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       // or a file removed between the check and the send.
       if (!res.headersSent) {
         // Drop the staged attachment headers, or the browser saves a .jpg
-        // containing JSON.
-        res.removeHeader('Content-Type');
-        res.removeHeader('Content-Disposition');
+        // containing JSON — and the file metadata send stages once it has
+        // stat'ed the file (validators, ranges, caching), or the JSON error
+        // carries the photo's ETag and a bogus range.
         const gone = downloadError.code === 'ENOENT' || downloadError.status === 404;
+        const status = gone ? 404
+          : (downloadError.status >= 400 && downloadError.status < 500 ? downloadError.status : 500);
+        for (const header of ['Content-Type', 'Content-Disposition', 'Content-Length', 'ETag', 'Last-Modified',
+          'Accept-Ranges', 'Cache-Control']) {
+          res.removeHeader(header);
+        }
+        // A 416 keeps the Content-Range send staged: that is what tells a
+        // resuming client to start over, where a 500 would not.
+        if (status !== 416) res.removeHeader('Content-Range');
         if (gone) return res.status(404).json({ error: 'Photo file not found' });
-        // send's own client errors keep their status: a 416 for an
-        // unsatisfiable Range (its Content-Range header is already staged)
-        // tells a resuming client to start over, where a 500 would not.
-        const status = downloadError.status >= 400 && downloadError.status < 500 ? downloadError.status : 500;
         return res.status(status).json({ error: status === 416 ? 'Requested range not satisfiable' : 'Failed to download photo' });
       }
       // Headers are out: a broken transfer, not a hang.
