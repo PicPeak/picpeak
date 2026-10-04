@@ -54,6 +54,12 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
       queryClient.invalidateQueries({ queryKey: ['gallery-photos'] });
+      // The parent refetch fired optimistically in onMutate, before the
+      // server applied the change. In guest identity mode the Favorited
+      // filter and the filename list read the guest's own rows from
+      // my-feedback, so refresh it now that the toggle is accepted (as
+      // PhotoRating does).
+      queryClient.invalidateQueries({ queryKey: ['my-feedback', gallerySlug] });
     },
     onError: (error: any) => {
       // Revert optimistic update
