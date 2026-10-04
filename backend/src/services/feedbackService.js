@@ -523,32 +523,51 @@ class FeedbackService {
             return { removed: true };
           }
 
-          if (feedback_type === 'rating' && rating !== existing.rating) {
-            // Converge to exactly one row, like the reaction / colour-label
-            // path below: the check-then-insert above can race into
-            // duplicates, `existing` is whichever of them the lookup found,
-            // and updating only that one left the other — the newer row by
-            // created_at — for the tile and the lightbox to keep reading.
-            // Visible rows only (#1150): a hidden one is the admin's record.
-            const otherRatings = db('photo_feedback').where({
-              photo_id: photoId,
-              event_id: eventId,
-              feedback_type: 'rating',
-              is_hidden: false,
-            }).whereNot('id', existing.id);
-            if (guest_id) otherRatings.where('guest_id', guest_id);
-            else otherRatings.where('guest_identifier', guestIdentifier);
-            await otherRatings.delete();
-            // Update existing rating
-            await db('photo_feedback')
-              .where('id', existing.id)
-              .update({
-                rating,
-                updated_at: new Date().toISOString()
+          if (feedback_type === 'rating') {
+            // Converge to exactly one row before anything is compared, like
+            // the reaction / colour-label path below. The check-then-insert
+            // above can race into duplicates and `existing` is whichever of
+            // them the lookup found: comparing the submission against that
+            // row alone skipped the cleanup whenever it happened to hold the
+            // submitted value already, while a newer duplicate with another
+            // value went on winning in the readers and counting in the
+            // average. The survivor is the row the readers already show
+            // (lastMutatedFirst). Visible rows only (#1150): a hidden one is
+            // the admin's record.
+            const ownRatings = () => {
+              const q = db('photo_feedback').where({
+                photo_id: photoId,
+                event_id: eventId,
+                feedback_type: 'rating',
+                is_hidden: false,
               });
+              if (guest_id) q.where('guest_id', guest_id);
+              else q.where('guest_identifier', guestIdentifier);
+              return q;
+            };
+            const rows = Array.from(await ownRatings().select('id', 'rating', 'created_at', 'updated_at'))
+              .sort(lastMutatedFirst);
+            const survivor = rows[0] || existing;
+            const collapsed = rows.length > 1
+              ? await ownRatings().whereNot('id', survivor.id).delete()
+              : 0;
 
-            await this.updatePhotoFeedbackStats(photoId);
-            return { id: existing.id, updated: true };
+            if (Number(survivor.rating) !== Number(rating)) {
+              // Update existing rating
+              await db('photo_feedback')
+                .where('id', survivor.id)
+                .update({
+                  rating,
+                  updated_at: new Date().toISOString()
+                });
+
+              await this.updatePhotoFeedbackStats(photoId);
+              return { id: survivor.id, updated: true };
+            }
+            // Same value: nothing to write, but a removed duplicate was in
+            // the average.
+            if (collapsed) await this.updatePhotoFeedbackStats(photoId);
+            return { id: survivor.id, exists: true };
           }
 
           // Single-value types — one reaction (#839) and one colour label

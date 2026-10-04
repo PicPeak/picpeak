@@ -175,6 +175,25 @@ describe('my_rating on the photo list (issue 1733)', () => {
     expect((await getPhoto()).my_rating).toBe(3);
   });
 
+  it('collapses conflicting duplicates even when the submitted value equals the older row', async () => {
+    // Rows 2 then 5; the lookup may hand submitFeedback the older one, whose
+    // value already equals the submission. The cleanup must not depend on
+    // which row was found: one row, value 2, everywhere.
+    const feedbackService = require('../../src/services/feedbackService');
+    await rate('me', 2, { created_at: '2026-01-01T10:00:00.000Z', updated_at: '2026-01-01T10:00:00.000Z' });
+    await rate('me', 5, { created_at: '2026-01-01T10:00:01.000Z', updated_at: '2026-01-01T10:00:01.000Z' });
+
+    await feedbackService.submitFeedback(photoId, eventId, { feedback_type: 'rating', rating: 2, guest_id: myGuestRowId }, ME);
+
+    const mine = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'rating', guest_id: myGuestRowId });
+    expect(Array.from(mine).map((r) => Number(r.rating))).toEqual([2]);
+    expect((await getPhoto()).my_rating).toBe(2);
+    const rows = await feedbackService.getPhotoFeedback(photoId, { guest_id: myGuestRowId });
+    expect(rows.find((r) => r.feedback_type === 'rating').rating).toBe(2);
+    // The removed 5 no longer counts in the photo's average.
+    expect(Number((await db('photos').where({ id: photoId }).first()).average_rating)).toBe(2);
+  });
+
   it('does not report another viewer\'s rating as mine', async () => {
     await rate('other', 5);
     expect((await getPhoto()).my_rating).toBeNull();
