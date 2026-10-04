@@ -201,12 +201,16 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     threshold: 0,
     rootMargin: releaseRootMargin,
   });
+  // The self-managed identity modal lives inside the released subtree and
+  // does not lock page scrolling, so a tile that let go while the form was
+  // open threw away a half-typed name and email (issue 1733). Hold it.
+  const holdsModal = identityMode === 'self' && showIdentityModal;
   const [rendered, setRendered] = useState(false);
   useEffect(() => {
     if (!releases) return;
     if (withinLoadBand) setRendered(true);
-    else if (!withinKeepBand) setRendered(false);
-  }, [releases, withinLoadBand, withinKeepBand]);
+    else if (!withinKeepBand && !holdsModal) setRendered(false);
+  }, [releases, withinLoadBand, withinKeepBand, holdsModal]);
   const inView = !lazy || (releases ? rendered : withinLoadBand);
 
   // Tile width for the responsive tier (#1095), measured rather than inferred.

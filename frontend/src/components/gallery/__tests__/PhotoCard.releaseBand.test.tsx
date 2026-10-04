@@ -14,7 +14,7 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 import { PhotoCard } from '../PhotoCard';
 import type { Photo } from '../../../types';
@@ -54,6 +54,11 @@ vi.mock('../../common', () => ({
 }));
 vi.mock('../../../contexts/GuestIdentityContext', () => ({
   useGuestIdentityOptional: () => null,
+}));
+// The real modal pulls Input/Button from `../../common`, mocked above; what
+// matters here is only whether it is still mounted while open.
+vi.mock('../FeedbackIdentityModal', () => ({
+  FeedbackIdentityModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div role="dialog" /> : null),
 }));
 
 const PHOTO = {
@@ -167,6 +172,30 @@ describe('grid tiles release when they are far enough out of view', () => {
     scrollTo(rerender, { [LOAD_BAND]: true, [KEEP_BAND]: true });
     expect(screen.getByTestId('tile')).toBeTruthy();
     expect(lifecycle.mounted).toBe(2);
+  });
+
+  it('holds a tile whose identity form is open, even past the outer band', () => {
+    // identityMode="self" renders FeedbackIdentityModal inside the released
+    // subtree and the modal does not lock scrolling; releasing the tile threw
+    // the half-typed name and email away (issue 1733).
+    bands = { [LOAD_BAND]: true, [KEEP_BAND]: true };
+    const { rerender } = renderCard({
+      identityMode: 'self', slug: 'x', showFeedbackActions: true,
+      feedbackEnabled: true, feedbackOptions: { allowLikes: true, requireNameEmail: true },
+    } as Partial<React.ComponentProps<typeof PhotoCard>>);
+    expect(screen.getByTestId('tile')).toBeTruthy();
+
+    // Open the self-managed modal through the like action.
+    fireEvent.click(screen.getByRole('button', { name: /like/i }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    // Scrolled well past: outside both bands — but the form is open.
+    scrollTo(rerender, {}, {
+      identityMode: 'self', slug: 'x', showFeedbackActions: true,
+      feedbackEnabled: true, feedbackOptions: { allowLikes: true, requireNameEmail: true },
+    } as Partial<React.ComponentProps<typeof PhotoCard>>);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(lifecycle.unmounted).toBe(0);
   });
 
   it('keeps the old latch for layouts that do not opt in', () => {
