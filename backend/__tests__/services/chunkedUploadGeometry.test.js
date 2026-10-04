@@ -167,6 +167,19 @@ describe('chunked upload geometry', () => {
       await fs.rm(merged.tempDir, { recursive: true, force: true });
     });
 
+    it('hands the upload back as in_progress when the merge directory cannot be created', async () => {
+      const uploadId = await fullUpload();
+      const mkdir = jest.spyOn(fs, 'mkdir').mockRejectedValueOnce(Object.assign(new Error('ENOSPC: no space left'), { code: 'ENOSPC' }));
+      await expect(chunkedUpload.completeUpload(uploadId)).rejects.toThrow('ENOSPC');
+      mkdir.mockRestore();
+
+      // Not stuck in 'merging': the next completion attempt goes through.
+      expect(chunkedUpload.getUploadStatus(uploadId).status).toBe('in_progress');
+      const merged = await chunkedUpload.completeUpload(uploadId);
+      expect(merged.size).toBe(CHUNK_SIZE + 10);
+      await fs.rm(merged.tempDir, { recursive: true, force: true });
+    });
+
     it('lets exactly one of several concurrent completions merge; the rest get 409', async () => {
       const uploadId = await fullUpload();
       const results = await Promise.allSettled([
