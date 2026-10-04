@@ -54,6 +54,39 @@ test('a file whose xref points at a definition the scan did not keep is flagged,
   expect((await validatePdf(await makePdf({ pages: 1 }))).ambiguousObjects).toBe(false);
 });
 
+test('page content that spells "1 0 obj" is data, not a second definition', async () => {
+  // An uncompressed content stream carrying the same characters an object
+  // header has: a byte search counted it and refused a valid file on the
+  // signer and inbound-invoice paths.
+  const { PDFDocument } = require('pdf-lib');
+  const { _internal } = require('../../src/utils/pdfInspect');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([300, 200]);
+  page.node.addContentStream(doc.context.register(
+    doc.context.stream('BT /F1 12 Tf 20 60 Td (see) Tj ET\n1 0 obj\n2 0 obj\n'),
+  ));
+  const buffer = Buffer.from(await doc.save({ useObjectStreams: false }));
+  expect(buffer.toString('latin1')).toContain('\n1 0 obj\n2 0 obj\n');
+  expect(_internal.findAmbiguousObjects(buffer)).toBe(false);
+  expect((await validatePdf(buffer)).ambiguousObjects).toBe(false);
+});
+
+test('the same characters in a string or a comment are not definitions either, and cannot hide one', async () => {
+  const { duplicateObjectPdf, minimalPdf } = require('../integration/helpers/pdfFixture');
+  const { _internal } = require('../../src/utils/pdfInspect');
+  const plain = (await minimalPdf({ label: 'note: 1 0 obj and 2 0 obj' })).toString('latin1');
+  expect(_internal.findAmbiguousObjects(Buffer.from(`${plain}\n% 1 0 obj\n% 1 0 obj\n`, 'latin1'))).toBe(false);
+
+  // A `stream` keyword spelled inside a string must not open a span that
+  // swallows the real duplicate definition behind it.
+  const hidden = duplicateObjectPdf().toString('latin1')
+    .replace('2 0 obj\n<< /Type /Pages', '2 0 obj\n<< /Length 400 /X (>> stream\n) /Type /Pages');
+  expect(hidden).toContain('/X (>> stream');
+  expect(_internal.collectObjectDefinitions(`${hidden}\nendstream\n`).get('1 0')).toHaveLength(2);
+  expect(_internal.findAmbiguousObjects(Buffer.from(hidden, 'latin1'))).toBe(true);
+  expect(_internal.findAmbiguousObjects(duplicateObjectPdf())).toBe(true);
+});
+
 test('an incremental update whose newest xref points at the last definition is not ambiguous', async () => {
   const { minimalPdf } = require('../integration/helpers/pdfFixture');
   const { _internal } = require('../../src/utils/pdfInspect');

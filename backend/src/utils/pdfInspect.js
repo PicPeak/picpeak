@@ -93,18 +93,95 @@ function hasPdfSignature(buffer) {
  *
  * @returns {boolean} true when the file is ambiguous
  */
+const PDF_WHITESPACE = new Set([0x09, 0x0a, 0x0c, 0x0d, 0x20]);
+const OBJ_AT = /(\d+)[\t\n\f\r ]+(\d+)[\t\n\f\r ]+obj(?=[\t\n\f\r <[/(%]|$)/y;
+
+/**
+ * Every `N G obj` that is an object definition, with its byte offset.
+ *
+ * A lexical walk, not a byte search: the same characters inside a stream
+ * payload (page content that draws the text "1 0 obj"), a string or a
+ * comment are data, and counting them made a valid file look ambiguous.
+ * Stream payloads are skipped by their direct /Length when the bytes after
+ * it are `endstream`, and by the `endstream` keyword otherwise; strings and
+ * comments are skipped so that a `stream` keyword spelled inside one cannot
+ * open a span that hides a real definition behind it.
+ */
+function collectObjectDefinitions(text) {
+  const defs = new Map(); // "num gen" -> [offsets]
+  const n = text.length;
+  let pos = 0;
+  let lastObjEnd = 0;
+  const boundaryBefore = (i) => i === 0 || PDF_WHITESPACE.has(text.charCodeAt(i - 1));
+  while (pos < n) {
+    const c = text.charCodeAt(pos);
+    if (c === 0x25) { // % comment, to end of line
+      while (pos < n && text.charCodeAt(pos) !== 0x0a && text.charCodeAt(pos) !== 0x0d) pos += 1;
+    } else if (c === 0x28) { // ( literal string, nested and escaped
+      let depth = 1;
+      pos += 1;
+      while (pos < n && depth > 0) {
+        const s = text.charCodeAt(pos);
+        if (s === 0x5c) pos += 1;
+        else if (s === 0x28) depth += 1;
+        else if (s === 0x29) depth -= 1;
+        pos += 1;
+      }
+    } else if (c === 0x3c) {
+      if (text.charCodeAt(pos + 1) === 0x3c) { // << opens a dictionary
+        pos += 2;
+      } else { // <hex string>
+        const close = text.indexOf('>', pos + 1);
+        pos = close === -1 ? n : close + 1;
+      }
+    } else if (c === 0x73 && text.startsWith('stream', pos)
+      && (pos === 0 || !/[A-Za-z0-9]/.test(text[pos - 1]))
+      && (text.startsWith('\r\n', pos + 6) || text.charCodeAt(pos + 6) === 0x0a)) {
+      const dataStart = pos + 6 + (text.charCodeAt(pos + 6) === 0x0d ? 2 : 1);
+      // A direct /Length in this object's dictionary; `/Length 12 0 R` is not.
+      const length = /\/Length[\t\n\f\r ]+(\d+)(?![\t\n\f\r ]+\d+[\t\n\f\r ]+R)/.exec(text.slice(lastObjEnd, pos));
+      let end = -1;
+      if (length) {
+        const after = dataStart + Number(length[1]);
+        if (/^[\t\n\f\r ]*endstream/.test(text.slice(after, after + 16))) end = text.indexOf('endstream', after);
+      }
+      if (end === -1) end = text.indexOf('endstream', dataStart);
+      pos = end === -1 ? n : end + 'endstream'.length;
+    } else if (c >= 0x30 && c <= 0x39 && boundaryBefore(pos)) {
+      OBJ_AT.lastIndex = pos;
+      const m = OBJ_AT.exec(text);
+      if (m) {
+        const key = `${Number(m[1])} ${Number(m[2])}`;
+        // The offset of the object number is what an xref entry holds.
+        (defs.get(key) || defs.set(key, []).get(key)).push(pos);
+        pos += m[0].length;
+        lastObjEnd = pos;
+      } else {
+        while (pos < n && text.charCodeAt(pos) >= 0x30 && text.charCodeAt(pos) <= 0x39) pos += 1;
+      }
+    } else {
+      pos += 1;
+    }
+  }
+  return defs;
+}
+
 function findAmbiguousObjects(buffer) {
   const text = buffer.toString('latin1');
-  const defs = new Map(); // "num gen" -> [offsets]
-  const objRe = /(?:^|[^0-9])(\d+)\s+(\d+)\s+obj\b/g;
-  let m;
-  while ((m = objRe.exec(text)) !== null) {
+  // Cheap first pass over the raw bytes: it sees every definition the walk
+  // below can (and data that merely looks like one), so a file without a
+  // repeat here has none, and most files end here.
+  const raw = new Set();
+  let repeats = false;
+  const rawRe = /(\d+)[\t\n\f\r ]+(\d+)[\t\n\f\r ]+obj/g;
+  for (let m = rawRe.exec(text); m !== null; m = rawRe.exec(text)) {
     const key = `${Number(m[1])} ${Number(m[2])}`;
-    // Offset of the object number itself, not of the separator the match
-    // may have consumed in front of it — that is what an xref entry holds.
-    const start = m.index + (m[0].length - m[0].replace(/^[^0-9]/, '').length);
-    (defs.get(key) || defs.set(key, []).get(key)).push(start);
+    if (raw.has(key)) { repeats = true; break; }
+    raw.add(key);
   }
+  if (!repeats) return false;
+
+  const defs = collectObjectDefinitions(text);
   const repeated = [...defs.entries()].filter(([, offsets]) => offsets.length > 1);
   if (repeated.length === 0) return false;
 
@@ -380,5 +457,7 @@ module.exports = {
   DEFAULT_MAX_PAGES,
   DEFAULT_MAX_INFLATE_BYTES,
   inspectPdf,
-  _internal: { hasPdfSignature, findActiveContent, assertInflateWithinBudget, findAmbiguousObjects },
+  _internal: {
+    hasPdfSignature, findActiveContent, assertInflateWithinBudget, findAmbiguousObjects, collectObjectDefinitions,
+  },
 };
