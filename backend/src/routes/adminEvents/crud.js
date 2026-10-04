@@ -1453,6 +1453,16 @@ module.exports = (router) => {
       // null values normalize to NULL in the column ("never expires").
       if (Object.prototype.hasOwnProperty.call(updates, 'expires_at') && !updates.expires_at) {
         updates.expires_at = null;
+      } else if (typeof updates.expires_at === 'string') {
+        // Store the canonical toISOString() form. isISO8601() also accepts
+        // shapes SQLite's strftime() cannot read (`+0200` offsets, the basic
+        // format without separators), and whereTimestamp drops such a row
+        // from every expiry comparison rather than guess.
+        const parsed = new Date(updates.expires_at);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: 'expires_at is not a date' });
+        }
+        updates.expires_at = parsed.toISOString();
       }
 
       // Format hero logo settings if provided. null = inherit the global

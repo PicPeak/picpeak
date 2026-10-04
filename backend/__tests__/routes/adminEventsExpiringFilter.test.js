@@ -59,3 +59,15 @@ test('status=expiring lists every gallery expiring within seven days, in any sto
   const slugs = (res.body.events || res.body).map((e) => e.slug).sort();
   expect(slugs).toEqual(FIXTURES.filter(([, , soon]) => soon).map(([slug]) => slug).sort());
 });
+
+test('PUT stores a client-supplied expires_at in the canonical ISO form', async () => {
+  // isISO8601() accepts `+0200`, which SQLite's strftime() cannot read; the
+  // row would otherwise fall out of every expiry comparison above.
+  const { id } = await db('events').where({ slug: 'iso-far' }).first('id');
+  const res = await request(app).put(`/api/admin/events/${id}`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ expires_at: '2026-10-06T12:00:00+0200' });
+  expect(res.status).toBe(200);
+  const row = await db('events').where({ id }).first('expires_at');
+  expect(row.expires_at).toBe('2026-10-06T10:00:00.000Z');
+});
