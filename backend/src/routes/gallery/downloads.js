@@ -387,9 +387,12 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         res.removeHeader('Content-Type');
         res.removeHeader('Content-Disposition');
         const gone = downloadError.code === 'ENOENT' || downloadError.status === 404;
-        return gone
-          ? res.status(404).json({ error: 'Photo file not found' })
-          : res.status(500).json({ error: 'Failed to download photo' });
+        if (gone) return res.status(404).json({ error: 'Photo file not found' });
+        // send's own client errors keep their status: a 416 for an
+        // unsatisfiable Range (its Content-Range header is already staged)
+        // tells a resuming client to start over, where a 500 would not.
+        const status = downloadError.status >= 400 && downloadError.status < 500 ? downloadError.status : 500;
+        return res.status(status).json({ error: status === 416 ? 'Requested range not satisfiable' : 'Failed to download photo' });
       }
       // Headers are out: a broken transfer, not a hang.
       res.destroy();
