@@ -310,6 +310,30 @@ describe('signed-contract PDF upload hardening', () => {
       const row = await contractRow(id);
       expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.signed_pdf_path))).toBe(true);
     });
+
+    it('a committed upload is kept when the failure also takes the lookup down', async () => {
+      // The service commits, something after it fails, and the catch block's
+      // "did it commit?" lookup fails too: indeterminate, so the file stays.
+      const id = await insertContract();
+      const contractService = require('../../src/services/contractService');
+      const real = contractService.attachSignedPdfUpload;
+      jest.spyOn(contractService, 'attachSignedPdfUpload').mockImplementation(async (...args) => {
+        await real(...args);
+        await db.schema.renameTable('contracts', 'contracts_offline');
+        throw new Error('post-commit failure');
+      });
+      let res;
+      try {
+        res = await adminUpload(id).attach('file', ...asPdf(REAL_PDF));
+      } finally {
+        jest.restoreAllMocks();
+        await db.schema.renameTable('contracts_offline', 'contracts');
+      }
+      expect(res.status).toBe(500);
+      const row = await contractRow(id);
+      expect(row.status).toBe('fully_signed');
+      expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.signed_pdf_path))).toBe(true);
+    });
   });
 
   describe('the signer learns the status, not the storage path', () => {
