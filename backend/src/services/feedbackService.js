@@ -738,8 +738,11 @@ class FeedbackService {
         query.where('guest_identifier', options.guest_identifier);
       }
       
+      // Newest first; the id breaks a same-second tie so the viewer's own
+      // rating here agrees with the list's my_rating (galleryQueryService)
+      // when submitFeedback's check-then-insert left two rows behind.
       const feedback = await query
-        .orderBy('created_at', 'desc')
+        .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
         .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
       
       return feedback;

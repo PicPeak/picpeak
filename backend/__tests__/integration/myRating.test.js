@@ -128,6 +128,15 @@ describe('my_rating on the photo list (issue 1733)', () => {
     expect((await getPhoto()).my_rating).toBe(1);
   });
 
+  it('getPhotoFeedback puts the newest of two same-second rows first, like my_rating', async () => {
+    const feedbackService = require('../../src/services/feedbackService');
+    await rate('me', 3, { created_at: '2026-01-01T11:00:00.000Z' });
+    await rate('me', 1, { created_at: '2026-01-01T11:00:00.000Z' });
+    const rows = await feedbackService.getPhotoFeedback(photoId, { guest_id: myGuestRowId });
+    expect(rows.find((r) => r.feedback_type === 'rating').rating).toBe(1);
+    expect((await getPhoto()).my_rating).toBe(1);
+  });
+
   it('does not report another viewer\'s rating as mine', async () => {
     await rate('other', 5);
     expect((await getPhoto()).my_rating).toBeNull();
