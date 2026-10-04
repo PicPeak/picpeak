@@ -65,17 +65,33 @@ test('a plain PDF from the mailbox is captured with its page count', async () =>
   expect(doc.pageCount).toBe(1);
 });
 
-test('what is stored is what was checked: the normalised bytes, and their hash', async () => {
-  // The xref points at a catalog with JavaScript; the scan kept the harmless
-  // last one. Keeping the upload would hand a viewer the active definition.
+test('a plain PDF is stored byte for byte, hashed as received', async () => {
+  // A supplier invoice may be digitally signed; re-serialising it would
+  // break the signature and replace the accounting evidence.
   const crypto = require('crypto');
-  const filePath = await fileWith(duplicateObjectPdf());
+  const original = await minimalPdf({ label: 'signed-supplier-invoice' });
+  const filePath = await fileWith(original);
   const doc = await record(filePath, 'email', null);
   expect(doc.status).toBe('unsorted');
-  const stored = await fs.promises.readFile(filePath);
-  expect(stored.toString('latin1')).not.toContain('/JavaScript');
+  expect((await fs.promises.readFile(filePath)).equals(original)).toBe(true);
   const row = await db('inbound_documents').where({ id: doc.id }).first();
-  expect(row.file_sha256).toBe(crypto.createHash('sha256').update(stored).digest('hex'));
+  expect(row.file_sha256).toBe(crypto.createHash('sha256').update(original).digest('hex'));
+});
+
+test('a mailed PDF whose xref resolves what the scan did not keep is declined, not stored as usable', async () => {
+  // The xref points at a catalog with JavaScript; the scan kept the harmless
+  // last one. The original is kept, so the disagreement itself is refused.
+  const doc = await record(await fileWith(duplicateObjectPdf()), 'email', null);
+  expect(doc.status).toBe('declined');
+  expect(doc.parseStatus).toBe('failed');
+  const row = await db('inbound_documents').where({ id: doc.id }).first();
+  expect(row.parse_error).toContain('PDF_AMBIGUOUS_OBJECTS');
+});
+
+test('the same file uploaded by an admin is answered 400 and does not stay on disk', async () => {
+  const filePath = await fileWith(duplicateObjectPdf());
+  await expect(record(filePath, 'upload', adminId)).rejects.toMatchObject({ statusCode: 400, code: 'PDF_AMBIGUOUS_OBJECTS' });
+  expect(fs.existsSync(filePath)).toBe(false);
 });
 
 test('a mail attachment the PDF check refuses is recorded as failed and declined, once', async () => {
