@@ -7,7 +7,9 @@
  * expiry stored as `…+0200` by an older install would come back unreadable
  * to julianday() and fall out of every expiry comparison.
  */
-process.env.TZ = 'America/New_York';
+// (Not forced here: process.env.TZ does not re-bind inside a running jest
+// process. The non-UTC server zone is proven in a child process in
+// __tests__/utils/expiresAtText.test.js; these cases hold in every zone.)
 
 const fs = require('fs');
 const path = require('path');

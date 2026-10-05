@@ -4,7 +4,9 @@
  * expression keeps seeing the row (issue 1733).
  */
 // A non-UTC server zone: the zone-less rows must keep the instant SQL reads.
-process.env.TZ = 'America/New_York';
+// (Not forced here: process.env.TZ does not re-bind inside a running jest
+// process. The non-UTC server zone is proven in a child process in
+// __tests__/utils/expiresAtText.test.js; these cases hold in every zone.)
 
 const knex = require('knex');
 const migration = require('../../migrations/core/238_sqlite_expires_at_canonical_text');
