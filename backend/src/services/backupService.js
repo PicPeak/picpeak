@@ -476,12 +476,16 @@ async function ownOutputDirs(config, storagePath) {
  * nesting copies or drop the folder from the backup. The run refuses
  * instead, and the connection test says so.
  */
-async function backedUpFolderAtDestination(config) {
+async function backedUpFolderAtDestination(config, { everyPath = false } = {}) {
   const storagePath = getStoragePath();
   const own = await ownOutputDirs(config, storagePath);
   if (own.atStorageRoot) return '.';
   if (own.paths.length === 0 && own.ids.length === 0) return null;
-  for (const target of await resolveBackupPaths(config)) {
+  // everyPath: also the folders that are switched off. The connection test
+  // probes a form that is not saved yet, so the "what to back up" toggles it
+  // would be judged by are not the ones the next run uses.
+  const targets = everyPath ? await loadBackupPathRows({ includeDisabled: true }) : await resolveBackupPaths(config);
+  for (const target of targets) {
     const dir = path.join(storagePath, target.path);
     if (own.paths.includes(dir)) return target.path;
     const id = own.ids.length > 0 ? await dirIdentity(dir) : null;

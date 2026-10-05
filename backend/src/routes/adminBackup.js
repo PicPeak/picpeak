@@ -738,7 +738,7 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
           ...(await getBackupConfig()),
           backup_destination_type: 'local',
           backup_destination_path: target,
-        });
+        }, { everyPath: true });
         if (clashingFolder) {
           res.json({
             success: false,

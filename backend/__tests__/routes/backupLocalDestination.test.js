@@ -179,6 +179,20 @@ describe('local backup destination', () => {
       expect(res.body.message).toContain('the backed-up folder "uploads" itself');
     });
 
+    it('refuses a backed-up folder that is switched off in the saved settings', async () => {
+      // The form being tested is not saved yet, so its toggles are unknown
+      // here; a folder the backup can copy is refused whatever they say now.
+      await db('app_settings').insert({
+        setting_key: 'backup_include_thumbnails', setting_value: JSON.stringify(false), setting_type: 'backup',
+      }).onConflict('setting_key').merge();
+      try {
+        const res = await testLocal(path.join(process.env.STORAGE_PATH, 'thumbnails'));
+        expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_IS_BACKED_UP_FOLDER' });
+      } finally {
+        await db('app_settings').where({ setting_key: 'backup_include_thumbnails' }).del();
+      }
+    });
+
     it('refuses the storage folder itself, where every file would be copied onto itself', async () => {
       const res = await testLocal(process.env.STORAGE_PATH);
       expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_IS_BACKED_UP_FOLDER' });
