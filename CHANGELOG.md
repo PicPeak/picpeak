@@ -5,6 +5,26 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.0](https://github.com/PicPeak/picpeak/compare/v3.133.10...v3.134.0) (2026-10-05)
+
+
+### Features
+
+* **notifications:** clear the bell per admin with notification_dismissals (stable) ([#1814](https://github.com/PicPeak/picpeak/issues/1814)) ([d094d24](https://github.com/PicPeak/picpeak/commit/d094d24b7c7838b27bda77212bcda44bee4502ca))
+
+
+### Bug Fixes
+
+* **archives:** clear the event's child rows before deleting it (stable) ([#1805](https://github.com/PicPeak/picpeak/issues/1805)) ([dd05d73](https://github.com/PicPeak/picpeak/commit/dd05d7323a15eedf9b2de76c64b194dd217a5c5d))
+* **db:** four PostgreSQL-only query defects (audit trail, XMP label, visitors alias, case-insensitive search) (stable) ([#1806](https://github.com/PicPeak/picpeak/issues/1806)) ([34215b4](https://github.com/PicPeak/picpeak/commit/34215b40c5a4f1ce0f8010e1e9e783b3000540d8))
+* **downloads:** invalidate in-flight zips and answer a failed single-file send (stable) ([#1807](https://github.com/PicPeak/picpeak/issues/1807)) ([d60dca5](https://github.com/PicPeak/picpeak/commit/d60dca54e657a6fd4c9dfc05e69ce66da4e92ad6))
+* **events:** let an admin clear the customer contact, and refuse a resend with no recipient (stable) ([#1808](https://github.com/PicPeak/picpeak/issues/1808)) ([3e91f93](https://github.com/PicPeak/picpeak/commit/3e91f93c5c17c500d252947d2010394eb9ab7477))
+* **expiry:** compare expires_at by value on SQLite whatever shape it was stored in (stable) ([#1794](https://github.com/PicPeak/picpeak/issues/1794)) ([a85a5ad](https://github.com/PicPeak/picpeak/commit/a85a5ad2cfc7e8b8eb72c28c0135da509ab361e9))
+* **frontend:** hide the placeholder support address and format dates in all eight locales (stable) ([#1804](https://github.com/PicPeak/picpeak/issues/1804)) ([0147d38](https://github.com/PicPeak/picpeak/commit/0147d38534ef767d05246e132ff819da8144b3db))
+* **notifications:** send activity timestamps as UTC so the bell and dashboard do not show them in the future ([#1817](https://github.com/PicPeak/picpeak/issues/1817)) ([91ad3a8](https://github.com/PicPeak/picpeak/commit/91ad3a8aafbd3adab55e729972ce92b52a1eeed0))
+* **public-site:** self-host Inter instead of loading it from Google Fonts (stable) ([#1803](https://github.com/PicPeak/picpeak/issues/1803)) ([cebcc5e](https://github.com/PicPeak/picpeak/commit/cebcc5e2739a2fbe83926ee11f615e4e71ba4176))
+* **security:** close the contained findings of the October security scan (stable) ([#1810](https://github.com/PicPeak/picpeak/issues/1810)) ([13da2c7](https://github.com/PicPeak/picpeak/commit/13da2c7e99646a34cce5d3df32ca29a8265bb30e))
+
 ## [3.133.10](https://github.com/PicPeak/picpeak/compare/v3.133.9...v3.133.10) (2026-10-02)
 
 
