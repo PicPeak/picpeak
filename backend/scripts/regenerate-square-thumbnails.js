@@ -71,13 +71,23 @@ async function regenerateAllThumbnails() {
         // Through the RAW extraction: sharp cannot open a RAW original, so
         // without this every RAW in the library is counted as an error and
         // keeps whatever thumbnail it had, at the old dimensions.
-        const proc = await withProcessableImage(
-          originalPath,
-          photo.original_filename || photo.filename
-        );
+        //
+        // Named off the stored path, the way regenerateThumbnail does it, for
+        // two reasons. Without an outputBasename a RAW thumbnail is named
+        // after the random temp file the preview was extracted to, which is a
+        // key nothing else in the system will ever look for: the old
+        // thumbnail is orphaned, a fresh one is orphaned on the next run, and
+        // every lazy repair path misses its cache and regenerates. And the
+        // stored name is unique per gallery where the client-supplied camera
+        // name is not, so two galleries holding the same filename cannot
+        // overwrite each other's thumbnail.
+        const proc = await withProcessableImage(originalPath, photo.path);
         let thumbnailPath;
         try {
-          thumbnailPath = await generateThumbnail(proc.path, { regenerate: true });
+          thumbnailPath = await generateThumbnail(proc.path, {
+            regenerate: true,
+            outputBasename: proc.outputBasename,
+          });
         } finally {
           await proc.cleanup();
         }
