@@ -18,6 +18,7 @@
  */
 
 const logger = require('./logger');
+const { isStorageUnavailableError } = require('../services/storage/storageErrors');
 
 /**
  * @param {import('stream').Readable} stream  source, already opened or lazy
@@ -25,9 +26,12 @@ const logger = require('./logger');
  * @param {object}  [options]
  * @param {string}  [options.context]  what was being served, for the log line
  * @param {number}  [options.missingStatus=404]  status when the source is gone
+ * @param {(res: import('express').Response) => void} [options.onStorageUnavailable]
+ *        answers in place of the 500 when the stream fails, before any byte
+ *        is sent, because the storage backend could not be reached
  */
 function pipeStreamToResponse(stream, res, options = {}) {
-  const { context = 'file', missingStatus = 404 } = options;
+  const { context = 'file', missingStatus = 404, onStorageUnavailable } = options;
 
   stream.on('error', (err) => {
     const gone = err && (err.code === 'ENOENT' || err.code === 'EISDIR');
@@ -67,6 +71,15 @@ function pipeStreamToResponse(stream, res, options = {}) {
       // and was replaced before the open. One broken tile, not an outage.
       logger.warn(`Source vanished while serving ${context}: ${err.message}`);
       res.status(missingStatus).json({ error: 'File not found' });
+      return;
+    }
+
+    // S3 resolves get() once the response headers are in; a timeout or reset
+    // while the body is read arrives here, not in the caller's catch. A route
+    // with its own answer for an unreachable backend gets to give it.
+    if (onStorageUnavailable && isStorageUnavailableError(err)) {
+      logger.warn(`Storage unavailable while serving ${context}: ${err.message}`);
+      onStorageUnavailable(res);
       return;
     }
 

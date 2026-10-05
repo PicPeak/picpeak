@@ -538,9 +538,12 @@ router.get('/:slug/hero/:photoId',
         photoId: req.params.photoId,
         eventId: req.event?.id
       });
-      if (res.headersSent) return;
-      if (isStorageUnavailableError(error)) return answerStorageUnavailable(res);
-      // Fall back to original photo on any other error
+      // Fall back to original photo on any error. Unlike the preview route
+      // this one keeps redirecting when storage cannot be reached (issue
+      // 1785): the hero is loaded as a CSS background by the Premium layout
+      // and with the original as fallbackSrc by HeroHeader, and neither can
+      // retry a 503. What changed is upstream: an unreachable backend no
+      // longer makes ensureHeroImage regenerate a healthy rendition.
       res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
     }
   }
@@ -549,9 +552,13 @@ router.get('/:slug/hero/:photoId',
 // Storage that cannot be reached is not a broken rendition (issue 1785). The
 // original sits behind the same backend and is many times the size, so
 // redirecting there only adds load to whatever is already failing. A 503 lets
-// the client retry the small file instead.
+// the client retry the small file instead. The headers staged for the image
+// go first: Express keeps a Content-Type that is already set, and the JSON
+// would leave as image/jpeg.
 function answerStorageUnavailable(res) {
   res.removeHeader('ETag');
+  res.removeHeader('Content-Type');
+  res.removeHeader('Content-Length');
   res.set({ 'Retry-After': '5', 'Cache-Control': 'no-store' });
   return res.status(503).json({ error: 'Storage temporarily unavailable', code: 'STORAGE_UNAVAILABLE' });
 }
@@ -680,7 +687,10 @@ router.get('/:slug/preview/:photoId',
       } else {
         res.setHeader('Content-Length', stat.size);
         const stream = await storage.get(previewPath);
-        pipeStreamToResponse(stream, res, { context: `preview for photo ${photoId}` });
+        pipeStreamToResponse(stream, res, {
+          context: `preview for photo ${photoId}`,
+          onStorageUnavailable: answerStorageUnavailable,
+        });
       }
     } catch (error) {
       logger.error('Error serving preview image:', {
