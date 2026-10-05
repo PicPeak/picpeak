@@ -252,7 +252,15 @@ async function extractRawPreview(rawPath) {
       + `${MIN_RAW_PREVIEW_LONG_EDGE}px. Falling back to ${undersized.tag.replace(/^-/, '')} `
       + `at ${undersized.size}, so this photo will be soft everywhere it is shown.`
     );
-    await fsp.writeFile(outPath, undersized.bytes);
+    try {
+      await fsp.writeFile(outPath, undersized.bytes);
+    } catch (err) {
+      // Nothing is handed back, so nobody is left to call cleanup. Removing
+      // the temp dir here is the difference between a failed photo and a
+      // failed photo plus a directory nothing will ever collect.
+      await cleanup();
+      throw err;
+    }
     await applyContainerOrientation(outPath, orientation, undersized.orientation);
     return { path: outPath, cleanup };
   }

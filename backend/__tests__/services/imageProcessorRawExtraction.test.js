@@ -306,6 +306,47 @@ describe('extractRawPreview', () => {
     expect(execFile).toHaveBeenCalledTimes(1);
   });
 
+  it('removes the temp dir when the fallback write fails', async () => {
+    // The fallback is the one write with nothing left to hand back, so there
+    // is no cleanup() for the caller to run and a full disk would otherwise
+    // leave a directory behind per bad file.
+    const fs = require('fs');
+    const fsp = fs.promises;
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const thumbnail = await jpegOf(160, 120);
+
+    let outDir;
+    const realMkdtemp = fsp.mkdtemp.bind(fsp);
+    jest.spyOn(fsp, 'mkdtemp').mockImplementation(async (prefix) => {
+      outDir = await realMkdtemp(prefix);
+      return outDir;
+    });
+    const realWriteFile = fsp.writeFile.bind(fsp);
+    let writes = 0;
+    jest.spyOn(fsp, 'writeFile').mockImplementation(async (...args) => {
+      writes += 1;
+      // The first write is the loop measuring the candidate; the second is
+      // the fallback committing it.
+      if (writes === 2) throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      return realWriteFile(...args);
+    });
+
+    try {
+      exiftoolWith({
+        probe: { ThumbnailLength: 7833, Orientation: 1 },
+        previews: { '-ThumbnailImage': thumbnail },
+      });
+
+      await expect(extractRawPreview('/tmp/DSC00632.ARW'))
+        .rejects.toThrow(/no space left on device/);
+      expect(outDir).toBeTruthy();
+      expect(fs.existsSync(outDir)).toBe(false);
+    } finally {
+      jest.restoreAllMocks();
+      warn.mockRestore();
+    }
+  });
+
   it('fails when the file carries no embedded image at all', async () => {
     exiftoolWith({ probe: { Orientation: 1 } });
     await expect(extractRawPreview('/tmp/DSC00632.ARW'))
