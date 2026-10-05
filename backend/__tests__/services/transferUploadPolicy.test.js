@@ -44,6 +44,18 @@ describe('normalizeAllowedTypes', () => {
   it('drops entries that are not a MIME type at all', () => {
     expect(normalizeAllowedTypes(['notamime', '', null, 42, { mime: 'x' }])).toEqual([]);
   });
+
+  it('fills in extensions for every camera RAW type, not only DNG', () => {
+    // An admin who lists a RAW type and nothing else used to get an entry with
+    // no extensions, which only matches on MIME. Browsers send no MIME for
+    // these, so the upload was refused by the very setting that allowed it.
+    expect(normalizeAllowedTypes(['image/x-sony-arw']))
+      .toEqual([{ mime: 'image/x-sony-arw', extensions: ['.arw'] }]);
+    expect(normalizeAllowedTypes(['image/x-olympus-orf']))
+      .toEqual([{ mime: 'image/x-olympus-orf', extensions: ['.orf'] }]);
+    expect(normalizeAllowedTypes(['image/x-adobe-dng']))
+      .toEqual([{ mime: 'image/x-adobe-dng', extensions: ['.dng'] }]);
+  });
 });
 
 describe('validateTransferFileType', () => {
@@ -69,6 +81,18 @@ describe('validateTransferFileType', () => {
       ['', 'shoot.dng'],
     ])('admits %s named %s', (mime, name) => {
       expect(validateTransferFileType(name, mime, policy)).toBe(true);
+    });
+
+    it.each([
+      ['', 'DSC00632.ARW'],
+      ['application/octet-stream', 'DSC00632.arw'],
+      ['image/tiff', 'P1000123.orf'],
+      ['', 'IMG_0001.cr2'],
+    ])('admits %s named %s once the type is listed', (mime, name) => {
+      const raw = policyOf(['image/x-sony-arw', 'image/x-olympus-orf', 'image/x-canon-cr2']);
+      expect(validateTransferFileType(name, mime, raw)).toBe(true);
+      // And only then. A RAW the admin did not list is still refused.
+      expect(validateTransferFileType(name, mime, policy)).toBe(false);
     });
 
     it('still refuses an unlisted extension whatever the MIME claims', () => {
