@@ -17,10 +17,12 @@
  */
 
 // Node socket and DNS failures, as they surface through the AWS SDK's HTTP
-// handler or a network-mounted local path.
+// handler or a network-mounted local path. ESTALE is an NFS handle whose
+// server went away. EIO is left out on purpose: it is also what one damaged
+// file reports, and regenerating that rendition is the right repair.
 const NETWORK_ERROR_CODES = new Set([
-  'ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE',
-  'EAI_AGAIN', 'ENOTFOUND', 'ENETUNREACH', 'EHOSTUNREACH',
+  'ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT', 'EPIPE',
+  'EAI_AGAIN', 'ENOTFOUND', 'ENETUNREACH', 'EHOSTUNREACH', 'ESTALE',
 ]);
 
 // What the SDK names a request that never got an answer, or one the service
@@ -35,7 +37,9 @@ const UNAVAILABLE_ERROR_NAMES = new Set([
 function isStorageUnavailableError(err) {
   if (!err || typeof err !== 'object') return false;
   if (NETWORK_ERROR_CODES.has(err.code)) return true;
-  if (UNAVAILABLE_ERROR_NAMES.has(err.name)) return true;
+  // Either field: the SDK names its errors, older handlers put the same
+  // token in `code` (s3Storage's retry list reads both too).
+  if (UNAVAILABLE_ERROR_NAMES.has(err.name) || UNAVAILABLE_ERROR_NAMES.has(err.code)) return true;
   const status = err.$metadata?.httpStatusCode;
   return status === 429 || (typeof status === 'number' && status >= 500);
 }

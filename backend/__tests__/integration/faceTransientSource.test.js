@@ -112,6 +112,22 @@ describe('transient source vs dead photo', () => {
     expect(photo.face_status).not.toBe('failed');
   });
 
+  it('defers when the storage backend cannot be reached while the preview is checked', async () => {
+    // Issue 1785: ensurePreviewImage now throws for an unreachable backend
+    // instead of regenerating. A healthy photo must stay claimable for that.
+    const live = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'storage-outage', 'individual');
+    await fs.promises.mkdir(live, { recursive: true });
+    await fs.promises.writeFile(path.join(live, 'a.jpg'), 'x');
+    const { photoId } = await seedExternalPhoto({ externalPath: 'storage-outage' });
+    mockEnsurePreviewImage.mockRejectedValueOnce(Object.assign(new Error('socket pool timeout'), { name: 'TimeoutError' }));
+
+    await expect(faceProcessor.processPhotoFaces(photoId))
+      .rejects.toBeInstanceOf(faceProcessor.TransientSourceError);
+
+    const photo = await db('photos').where({ id: photoId }).first();
+    expect(photo.face_status).not.toBe('failed');
+  });
+
   it('defers when the event root survives an unmount but is empty', async () => {
     // The common NFS/SMB shape: unmounting leaves the mountpoint behind as an
     // ordinary empty directory, so fs.access succeeds on storage that is

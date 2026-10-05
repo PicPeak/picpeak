@@ -15,6 +15,7 @@ const sharp = require('sharp');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
+const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { ensurePreviewImage } = require('./imageProcessor');
 // SidecarUnavailableError is deliberately NOT caught here — it propagates to
 // faceQueue, which is the only layer that knows to retry rather than fail.
@@ -177,7 +178,18 @@ async function processPhotoFaces(photoId) {
   // A photo whose source really is gone still returns null and lands in the
   // 'failed' branch below, which is the honest outcome — that is a broken
   // photo, not an unsupported one.
-  const previewKey = await ensurePreviewImage(photo);
+  let previewKey;
+  try {
+    previewKey = await ensurePreviewImage(photo);
+  } catch (err) {
+    // The storage backend could not be reached while the stored preview was
+    // checked (issue 1785). That clears itself, so the photo is deferred like
+    // an unreachable external source rather than failed for good.
+    if (isStorageUnavailableError(err)) {
+      throw new TransientSourceError(photoId, `storage unreachable (${err.code || err.name})`, photo.event_id);
+    }
+    throw err;
+  }
   if (!previewKey) {
     // Before failing the photo, check whether it is the STORAGE that is gone
     // rather than the file. ensurePreviewImage returns null for both, but only
