@@ -21,8 +21,8 @@ vi.mock('react-intersection-observer', () => ({ useInView: () => ({ ref: vi.fn()
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
 vi.mock('../../common', async () => ({ ...await vi.importActual('../../common'), PoweredBy: () => null }));
 vi.mock('react-photo-album', () => ({
-  MasonryPhotoAlbum: ({ photos, render: renderer }: any) => <>{photos.map((photo: any) =>
-    <React.Fragment key={photo.key}>{renderer.photo({}, { photo, width: 300, height: 200 })}</React.Fragment>
+  MasonryPhotoAlbum: ({ photos, render: renderer }: any) => <>{photos.map((photo: any, index: number) =>
+    <React.Fragment key={photo.key}>{renderer.photo({}, { photo, index, width: 300, height: 200 })}</React.Fragment>
   )}</>,
 }));
 // A controlled stand-in for YARL: shows the index it is given, fires no view.
