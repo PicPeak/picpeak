@@ -399,7 +399,38 @@ function isExcludedName(name, excludePatterns) {
   });
 }
 
-async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) {
+/**
+ * The directories below the storage root that a local backup writes into, as
+ * the walker will meet them (issue 1780).
+ *
+ * A local destination inside a backed-up folder (say <storage>/uploads/backups)
+ * made every run copy the previous run's output: one more nested copy of the
+ * tree per backup, until the volume was full. The walker skips these instead.
+ * Saving such a path is not refused, because installs that already have one
+ * could no longer save their backup form.
+ *
+ * Only for a local destination: with S3 or rsync selected, a leftover local
+ * path is not written to, and skipping it would drop real files.
+ */
+async function ownOutputDirs(config, storagePath) {
+  if ((config.backup_destination_type || 'local').toLowerCase() !== 'local') return [];
+  // The same defaults performLocalBackup and saveManifestToLocal apply.
+  const destination = config.backup_destination_path || path.join(storagePath, 'backups');
+  const candidates = [destination, config.backup_manifest_path].filter(Boolean);
+  // Through symlinks where the path exists, so a destination reached by
+  // another name is still recognised.
+  const real = (p) => fs.realpath(p).catch(() => path.resolve(p));
+  const root = await real(storagePath);
+  const dirs = [];
+  for (const candidate of candidates) {
+    const rel = path.relative(root, await real(candidate));
+    const inside = rel && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+    if (inside) dirs.push(path.join(storagePath, rel));
+  }
+  return dirs;
+}
+
+async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skipDirs = []) {
   try {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     for (const entry of entries) {
@@ -411,7 +442,8 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
       }
 
       if (entry.isDirectory()) {
-        await scanDirectory(fullPath, fileList, basePath, excludePatterns);
+        if (skipDirs.includes(fullPath)) continue;
+        await scanDirectory(fullPath, fileList, basePath, excludePatterns, skipDirs);
       } else if (entry.isFile()) {
         const stats = await fs.stat(fullPath);
         fileList.push({
@@ -664,6 +696,9 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     : [];
   const excludePatterns = [...new Set([...DEFAULT_EXCLUDE_PATTERNS, ...configuredExcludes])];
 
+  // Never the backup's own output (issue 1780).
+  const skipDirs = await ownOutputDirs(config, storagePath);
+
   for (const target of targets) {
     // CRM document estate is special-cased in the comment block below
     // because it's the most expensive omission to recover from:
@@ -679,7 +714,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     // those values refer to do not, leaving every CRM *_path column a
     // broken FK. scanDirectory short-circuits on ENOENT so installs
     // that never used CRM features won't error.
-    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns);
+    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns, skipDirs);
   }
 
   // Documents a row names in the legacy root (<cwd>/storage) when that is not
