@@ -376,4 +376,91 @@ describe('backupService — configurable walker (backup_paths)', () => {
     expect(typeof info.size).toBe('number');
     expect(info.size).toBe(421988);
   });
+
+  // Issue 1780: a local destination inside a backed-up folder made every run
+  // copy the previous run's output, one nesting level deeper each time.
+  describe('the backup\'s own output', () => {
+    const inDestination = (rels, dir) => rels.filter((rel) => rel.startsWith(`${dir}${path.sep}`));
+
+    it('is not walked when the local destination lies inside a backed-up folder', async () => {
+      seedFile('uploads/logos/logo.png');
+      // What an earlier run left in the destination.
+      seedFile('uploads/own-backups/uploads/logos/logo.png');
+      seedFile('uploads/own-backups/database/dump.sql');
+      seedFile('uploads/own-backups/manifests/backup-1.json');
+
+      const files = await backupService.getFilesToBackup({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(storagePath, 'uploads', 'own-backups'),
+      });
+      const rels = files.map((f) => f.relativePath);
+
+      expect(rels).toContain(path.join('uploads', 'logos', 'logo.png'));
+      expect(inDestination(rels, path.join('uploads', 'own-backups'))).toEqual([]);
+    });
+
+    it('recognises the destination when it is configured through a symlink', async () => {
+      seedFile('uploads/linked-backups/uploads/logos/logo.png');
+      const link = path.join(path.dirname(storagePath), `backup-link-${process.pid}`);
+      fs.symlinkSync(path.join(storagePath, 'uploads', 'linked-backups'), link);
+      try {
+        const files = await backupService.getFilesToBackup({
+          backup_destination_type: 'local',
+          backup_destination_path: link,
+        });
+        expect(inDestination(files.map((f) => f.relativePath), path.join('uploads', 'linked-backups'))).toEqual([]);
+      } finally {
+        fs.unlinkSync(link);
+      }
+    });
+
+    it('skips a manifest folder inside a backed-up folder too', async () => {
+      seedFile('uploads/own-manifests/backup-1.json');
+
+      const files = await backupService.getFilesToBackup({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(path.dirname(storagePath), 'elsewhere'),
+        backup_manifest_path: path.join(storagePath, 'uploads', 'own-manifests'),
+      });
+
+      expect(inDestination(files.map((f) => f.relativePath), path.join('uploads', 'own-manifests'))).toEqual([]);
+    });
+
+    it('still walks a folder that only shares the destination\'s name', async () => {
+      seedFile('uploads/own-backups/earlier.bin');
+      seedFile('uploads/intake/own-backups/keep.bin');
+
+      const files = await backupService.getFilesToBackup({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(storagePath, 'uploads', 'own-backups'),
+      });
+
+      expect(files.map((f) => f.relativePath)).toContain(path.join('uploads', 'intake', 'own-backups', 'keep.bin'));
+    });
+
+    it('walks a leftover local path when the destination is not local', async () => {
+      // With S3 or rsync selected nothing is written there, so the folder is
+      // ordinary content and leaving it out would lose files.
+      seedFile('uploads/own-backups/earlier.bin');
+
+      for (const type of ['s3', 'rsync']) {
+        const files = await backupService.getFilesToBackup({
+          backup_destination_type: type,
+          backup_destination_path: path.join(storagePath, 'uploads', 'own-backups'),
+        });
+        expect(files.map((f) => f.relativePath)).toContain(path.join('uploads', 'own-backups', 'earlier.bin'));
+      }
+    });
+
+    it('leaves a destination outside the backed-up folders alone', async () => {
+      seedFile('uploads/logos/logo.png');
+
+      const files = await backupService.getFilesToBackup({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(storagePath, 'backups'),
+      });
+
+      expect(files.map((f) => f.relativePath)).toContain(path.join('uploads', 'logos', 'logo.png'));
+    });
+  });
 });
