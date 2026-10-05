@@ -176,14 +176,25 @@ async function extractRawPreview(rawPath) {
   // better turns up: a soft photo beats a photo the client cannot see at all.
   let undersized = null;
 
-  let candidates = RAW_PREVIEW_TAGS.map(({ tag }) => tag);
+  const everyTag = RAW_PREVIEW_TAGS.map(({ tag }) => tag);
+  let candidates = everyTag;
   let orientation = null;
   try {
     const probe = await probeRawPreviews(rawPath);
-    // Narrow to what the probe actually found. An empty list means the probe
-    // read the file and it carries nothing, so trying all three would be three
-    // spawns to learn what one already said.
-    candidates = probe.tags;
+    // What the probe found, biggest first, then the tags it said nothing
+    // about.
+    //
+    // The ones it said nothing about still have to be tried. A length tag is
+    // how the probe ranks candidates, not proof that an image is there:
+    // Panasonic RW2's JpgFromRaw, Fuji RAF's PreviewImage and the CR3
+    // QuickTime boxes carry no length tag, while ThumbnailLength does. Stop at
+    // what the probe reported and those three formats offer a 160x120 screen
+    // nail as the only candidate on a file that holds a full-size JPEG.
+    //
+    // Asking for a tag the file does not hold costs one spawn that writes
+    // nothing to stdout, and the floor already rejects anything too small to
+    // be the photo.
+    candidates = [...probe.tags, ...everyTag.filter((tag) => !probe.tags.includes(tag))];
     orientation = probe.orientation;
   } catch (err) {
     lastErr = err;

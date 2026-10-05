@@ -109,6 +109,28 @@ describe('extractRawPreview', () => {
     }
   });
 
+  it('still finds the full-size image when no length tag describes it', async () => {
+    // Panasonic RW2's JpgFromRaw, Fuji RAF's PreviewImage and the CR3
+    // QuickTime boxes have no length tag, so the probe sees only the screen
+    // nail. The full-size JPEG is in the file all the same, and taking the
+    // probe's silence for an answer would ship 160x120 as the photo.
+    exiftoolWith({
+      probe: { ThumbnailLength: 7833, Orientation: 1 },
+      previews: {
+        '-ThumbnailImage': await jpegOf(160, 120),
+        '-JpgFromRaw': await jpegOf(5184, 3888),
+      },
+    });
+
+    const preview = await extractRawPreview('/tmp/P1000123.RW2');
+    try {
+      expect((await sharp(preview.path).metadata()).width).toBe(5184);
+      expect(extractionTags()).toEqual(['-ThumbnailImage', '-JpgFromRaw']);
+    } finally {
+      await preview.cleanup();
+    }
+  });
+
   it('puts the camera orientation on the extracted preview', async () => {
     // Verified on a real ARW: the container says 8, and all three embedded
     // images come out with no EXIF at all. Without this the downstream
@@ -264,7 +286,9 @@ describe('extractRawPreview', () => {
     exiftoolWith({ probe: { Orientation: 1 } });
     await expect(extractRawPreview('/tmp/DSC00632.ARW'))
       .rejects.toThrow(/No usable embedded preview/);
-    // The probe already said there is nothing, so nothing is extracted.
-    expect(extractionTags()).toEqual([]);
+    // Every tag is asked, because a silent probe is not the same answer as an
+    // empty file: three formats carry a full-size JPEG under no length tag.
+    // Each miss is one spawn that writes nothing.
+    expect(extractionTags()).toEqual(['-JpgFromRaw', '-PreviewImage', '-ThumbnailImage']);
   });
 });
