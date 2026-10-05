@@ -409,7 +409,8 @@ function isExcludedName(name, excludePatterns) {
  * made every run copy the previous run's output: one more nested copy of the
  * tree per backup, until the volume was full. The walker skips these instead.
  * Saving such a path is not refused, because installs that already have one
- * could no longer save their backup form.
+ * could no longer save their backup form. A destination that IS a backed-up
+ * folder cannot be skipped; see backedUpFolderAtDestination.
  *
  * Only for a local destination: with S3 or rsync selected, a leftover local
  * path is not written to, and skipping it would drop real files.
@@ -419,9 +420,24 @@ async function ownOutputDirs(config, storagePath) {
   // The same defaults performLocalBackup and saveManifestToLocal apply.
   const destination = config.backup_destination_path || path.join(storagePath, 'backups');
   const candidates = [destination, config.backup_manifest_path].filter(Boolean);
-  // Through symlinks where the path exists, so a destination reached by
-  // another name is still recognised.
-  const real = (p) => fs.realpath(p).catch(() => path.resolve(p));
+  // Through symlinks, so a destination reached by another name is still
+  // recognised. A path that does not exist yet (the backup creates it) is
+  // resolved from its nearest existing ancestor, or it would not compare
+  // with a storage root that is itself reached through a link.
+  const real = async (p) => {
+    let current = path.resolve(p);
+    const missing = [];
+    for (;;) {
+      try {
+        return path.join(await fs.realpath(current), ...missing);
+      } catch (error) {
+        const parent = path.dirname(current);
+        if (parent === current) return path.resolve(p);
+        missing.unshift(path.basename(current));
+        current = parent;
+      }
+    }
+  };
   const root = await real(storagePath);
   const dirs = [];
   for (const candidate of candidates) {
@@ -430,6 +446,29 @@ async function ownOutputDirs(config, storagePath) {
     if (inside) dirs.push(path.join(storagePath, rel));
   }
   return dirs;
+}
+
+/**
+ * The backed-up folder a local destination (or manifest folder) IS, or null.
+ *
+ * Skipping cannot help here: with the destination set to <storage>/uploads
+ * itself, that folder's own files and the backup's output share one
+ * directory and cannot be told apart, so the walker would either keep
+ * nesting copies or drop the folder from the backup. The run refuses
+ * instead, and the connection test says so.
+ */
+async function backedUpFolderAtDestination(config) {
+  const storagePath = getStoragePath();
+  const dirs = await ownOutputDirs(config, storagePath);
+  if (dirs.length === 0) return null;
+  const targets = await resolveBackupPaths(config);
+  const hit = targets.find((target) => dirs.includes(path.join(storagePath, target.path)));
+  return hit ? hit.path : null;
+}
+
+function destinationIsBackedUpFolderMessage(folder) {
+  return `The backup destination is the backed-up folder "${folder}" itself, so every run would copy the previous one. `
+    + 'Use a folder of its own, for example a subfolder of it or a directory outside the storage folder.';
 }
 
 async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skipDirs = []) {
@@ -1210,6 +1249,14 @@ async function runBackupInternal(isManual = false) {
     }).returning('id');
     runId = insertResult[0]?.id || insertResult[0];
 
+    // A destination that is itself a backed-up folder nests one more copy
+    // of the tree per run (issue 1780). Before the dump, which is written
+    // there too.
+    const clashingFolder = await backedUpFolderAtDestination(config);
+    if (clashingFolder) {
+      throw new Error(destinationIsBackedUpFolderMessage(clashingFolder));
+    }
+
     // Inline DB dump + fail-loud verification. The returned `databaseInfo`
     // is reused at manifest-build time below so we don't pay a second
     // `getDatabaseBackupInfo()` round-trip — see `ensureDatabaseDumpForBackup`
@@ -1838,6 +1885,8 @@ service.validateBackupManifest = validateBackupManifest;
 service.loadManifestFromS3Bounded = loadManifestFromS3Bounded;
 service.MAX_S3_MANIFEST_BYTES = MAX_S3_MANIFEST_BYTES;
 service.resolveBackupPaths = resolveBackupPaths;
+service.backedUpFolderAtDestination = backedUpFolderAtDestination;
+service.destinationIsBackedUpFolderMessage = destinationIsBackedUpFolderMessage;
 service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
 service.backupPathIncluded = backupPathIncluded;
 service.effectiveFlagValue = effectiveFlagValue;

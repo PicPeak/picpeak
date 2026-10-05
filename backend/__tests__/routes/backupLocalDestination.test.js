@@ -170,6 +170,20 @@ describe('local backup destination', () => {
     });
   });
 
+  // Issue 1780: writable is not enough when the path is one the backup copies.
+  describe('POST /test-connection (local) for a backed-up folder', () => {
+    it('refuses a destination that is itself a backed-up folder', async () => {
+      const res = await testLocal(path.join(process.env.STORAGE_PATH, 'uploads'));
+      expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_IS_BACKED_UP_FOLDER' });
+      expect(res.body.message).toContain('the backed-up folder "uploads" itself');
+    });
+
+    it('accepts a destination inside a backed-up folder, which the backup skips', async () => {
+      const res = await testLocal(path.join(process.env.STORAGE_PATH, 'uploads', 'own-backups'));
+      expect(res.body).toMatchObject({ success: true });
+    });
+  });
+
   describe('PUT /config', () => {
     it('stores the destination trimmed, as the database dump reads it', async () => {
       const target = path.join(writable, 'padded');
@@ -235,6 +249,31 @@ describe('local backup destination', () => {
       const run = await runBackupTo(target);
       expect(run.status).toBe('completed');
       expect(fs.statSync(path.join(writable, 'dotdot-backups')).isDirectory()).toBe(true);
+    });
+
+    // Issue 1780: each run used to copy the previous run's output.
+    it('does not copy its own output when the destination lies inside a backed-up folder', async () => {
+      const uploads = path.join(process.env.STORAGE_PATH, 'uploads');
+      fs.mkdirSync(path.join(uploads, 'logos'), { recursive: true });
+      fs.writeFileSync(path.join(uploads, 'logos', 'logo.png'), 'logo bytes');
+      const target = path.join(uploads, 'own-backups');
+
+      expect((await runBackupTo(target)).status).toBe('completed');
+      expect(fs.existsSync(path.join(target, 'uploads', 'logos', 'logo.png'))).toBe(true);
+      expect((await runBackupTo(target)).status).toBe('completed');
+
+      expect(fs.existsSync(path.join(target, 'uploads', 'own-backups'))).toBe(false);
+    });
+
+    it('refuses to run into a destination that is itself a backed-up folder', async () => {
+      const uploads = path.join(process.env.STORAGE_PATH, 'uploads');
+      fs.mkdirSync(uploads, { recursive: true });
+
+      const run = await runBackupTo(uploads);
+
+      expect(run.status).toBe('failed');
+      expect(run.error_message).toContain('the backed-up folder "uploads" itself');
+      expect(fs.existsSync(path.join(uploads, 'uploads'))).toBe(false);
     });
   });
 });

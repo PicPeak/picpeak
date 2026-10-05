@@ -535,6 +535,22 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       }
       const blocker = await findWriteBlocker(target);
       if (!blocker) {
+        // Writable, but the backup run refuses a destination that is itself
+        // a backed-up folder (issue 1780); say so here rather than there.
+        const backupService = require('../services/backupService');
+        const clashingFolder = await backupService.backedUpFolderAtDestination({
+          ...(await getBackupConfig()),
+          backup_destination_type: 'local',
+          backup_destination_path: target,
+        });
+        if (clashingFolder) {
+          res.json({
+            success: false,
+            code: 'LOCAL_PATH_IS_BACKED_UP_FOLDER',
+            message: backupService.destinationIsBackedUpFolderMessage(clashingFolder)
+          });
+          break;
+        }
         res.json({ success: true, message: 'Local path is writable' });
         break;
       }
