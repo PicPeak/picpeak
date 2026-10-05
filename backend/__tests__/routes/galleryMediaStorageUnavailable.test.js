@@ -7,13 +7,16 @@
  * download of the full original to regenerate it, and the preview and hero
  * routes redirected the guest to that same original. Both went through the
  * client that was already timing out. The checks now let that error through,
- * and the two routes answer 503 instead of redirecting.
+ * and the preview route answers 503 instead of redirecting. The hero route
+ * keeps its redirect, because its consumers cannot retry a 503, but no longer
+ * regenerates.
  */
 
 const request = require('supertest');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const { Readable } = require('stream');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'media-storage-unavailable-secret';
@@ -100,7 +103,6 @@ describe('gallery media routes while storage cannot be reached', () => {
   it.each([
     ['/preview', 'the stored preview'],
     ['/preview?w=1280', 'a preview tier'],
-    ['/hero', 'the hero rendition'],
   ])('answers 503 on %s when the check of %s times out', async (route) => {
     storage.stat.mockRejectedValue(timeoutError());
     const [path, query = ''] = route.split('?');
@@ -116,6 +118,20 @@ describe('gallery media routes while storage cannot be reached', () => {
     // And nothing was fetched to regenerate a rendition that is fine.
     expect(storage.getToFile).not.toHaveBeenCalled();
     expect(storage.get).not.toHaveBeenCalled();
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(storage.putFromFile).not.toHaveBeenCalled();
+  });
+
+  it('does not regenerate a hero whose check timed out, and keeps its redirect', async () => {
+    // The Premium layout loads the hero as a CSS background and HeroHeader
+    // falls back to the original by itself; neither can retry a 503.
+    storage.stat.mockRejectedValue(timeoutError());
+
+    const res = await get(`/hero/${photoId}`);
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}`);
+    expect(storage.getToFile).not.toHaveBeenCalled();
     expect(storage.put).not.toHaveBeenCalled();
     expect(storage.putFromFile).not.toHaveBeenCalled();
   });
@@ -139,10 +155,28 @@ describe('gallery media routes while storage cannot be reached', () => {
     const res = await get(`/preview/${photoId}`);
 
     expect(res.status).toBe(503);
-    // The preview's validator must not ride along on the error.
+    // Nothing staged for the image rides along on the error: the JSON must
+    // not leave as image/jpeg, nor carry the preview's validator.
+    expect(res.headers['content-type']).toMatch(/^application\/json/);
+    expect(res.body.code).toBe('STORAGE_UNAVAILABLE');
     expect(res.headers.etag || '').not.toContain('preview-');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers.location).toBeUndefined();
+  });
+
+  it('answers 503 when the read starts and the body then times out', async () => {
+    // S3 resolves get() once the response headers are in; the timeout comes
+    // out of the stream afterwards, past the route's catch.
+    storage.stat.mockResolvedValue({ size: 1024, mtime: new Date('2026-08-01T00:00:00Z') });
+    storage.get.mockResolvedValue(new Readable({ read() { this.destroy(timeoutError()); } }));
+
+    const res = await get(`/preview/${photoId}`);
+
+    expect(res.status).toBe(503);
+    expect(res.headers['content-type']).toMatch(/^application\/json/);
+    expect(res.body.code).toBe('STORAGE_UNAVAILABLE');
+    expect(res.headers['retry-after']).toBe('5');
+    expect(res.headers['cache-control']).toBe('no-store');
   });
 
   it('still falls back to the original when the rendition cannot be made', async () => {
