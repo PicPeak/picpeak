@@ -190,6 +190,24 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(actors).not.toContain('foreign-actor');
   });
 
+  it('/activity sends a zone-less SQLite timestamp as UTC (issue 1815)', async () => {
+    // The column default writes CURRENT_TIMESTAMP: UTC, no zone marker. Sent
+    // as is, a browser west of UTC reads it as local time and shows the entry
+    // in the future.
+    await db('activity_logs').insert({
+      activity_type: 'gallery_viewed', actor_type: 'guest', actor_name: 'tz-actor',
+      event_id: ownEventId, created_at: '2026-10-05 14:00:00',
+    });
+    const res = await request(app)
+      .get('/api/admin/dashboard/activity')
+      .set('Authorization', `Bearer ${superToken}`);
+    expect(res.status).toBe(200);
+    const entry = res.body.find((a) => a.actorName === 'tz-actor');
+    expect(entry.createdAt).toBe('2026-10-05T14:00:00.000Z');
+    // Every entry carries an explicit zone, whatever shape was stored.
+    for (const a of res.body) expect(a.createdAt).toMatch(/Z$/);
+  });
+
   it('leaves super_admin unscoped across all three', async () => {
     const stats = await request(app)
       .get('/api/admin/dashboard/stats')

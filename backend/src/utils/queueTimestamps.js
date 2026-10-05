@@ -45,6 +45,21 @@ function toMillis(value) {
 }
 
 /**
+ * A stored timestamp as the ISO 8601 UTC string an API response should carry,
+ * or null when it cannot be read. For columns filled by the database default:
+ * on SQLite that is CURRENT_TIMESTAMP, 'YYYY-MM-DD HH:MM:SS' in UTC with no
+ * zone marker, and a browser reads a zone-less date-time as LOCAL time — west
+ * of UTC every such row then lies in the future (issue 1815).
+ *
+ * @param {Date|number|string|null|undefined} value
+ * @returns {string|null}
+ */
+function toUtcIso(value) {
+  const ms = toMillis(value);
+  return ms === null ? null : new Date(ms).toISOString();
+}
+
+/**
  * A timestamp to WRITE into email_queue: a Date on Postgres, epoch ms on
  * SQLite — the shape the processor's `scheduled_at <= ?` bind takes there
  * (issue 1670). A raw number on SQLite also sidesteps the jest/sqlite3
@@ -109,5 +124,5 @@ async function normaliseSqliteEmailQueue(knex, { now = Date.now() } = {}) {
 }
 
 module.exports = {
-  toMillis, SQLITE_NAIVE_TIMESTAMP, queueTimestamp, normaliseSqliteEmailQueue, STALE_AFTER_MS, STALE_MESSAGE,
+  toMillis, toUtcIso, SQLITE_NAIVE_TIMESTAMP, queueTimestamp, normaliseSqliteEmailQueue, STALE_AFTER_MS, STALE_MESSAGE,
 };
