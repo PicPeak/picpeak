@@ -126,6 +126,23 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       expect((await snap({})).gallery_folders.configured).toBe(false);
     });
 
+    test('camera RAW counts as configured for any RAW extension, not only DNG', async () => {
+      const configured = async (allowedFileTypes) => {
+        await db('app_settings').where({ setting_key: 'general_allowed_file_types' }).delete();
+        await db('app_settings').insert({ setting_key: 'general_allowed_file_types', setting_value: allowedFileTypes });
+        const snapshot = await expandSnapshot(db, {
+          features: p.emptyFeatures('usage.v1'), flags: {}, used: new Set(), now, version: 'usage.v3'
+        });
+        return snapshot.camera_raw_uploads.configured;
+      };
+      expect(await configured('jpg,jpeg,png,webp')).toBe(false);
+      expect(await configured('jpg,dng')).toBe(true);
+      // The regression: an install that opts into Sony or Olympus and not DNG
+      // used to report no RAW at all.
+      expect(await configured('jpg,arw')).toBe(true);
+      expect(await configured('jpg, .ORF ')).toBe(true);
+    });
+
     test('ML recognition is already represented without querying faces or results', async () => {
       await db('feature_flags').insert({ key: 'faces', value: true });
       await client.markUsed(['face_recognition']);

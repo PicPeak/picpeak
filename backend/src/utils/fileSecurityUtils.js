@@ -227,6 +227,31 @@ const RAW_EXTENSION_TO_MIME = Object.entries(ALLOWED_IMAGE_TYPES)
     return map;
   }, {});
 
+// The same set again without the leading dots, for comparing against
+// general_allowed_file_types, which stores extensions bare.
+const RAW_UPLOAD_EXTENSIONS = new Set(
+  Object.keys(RAW_EXTENSION_TO_MIME).map((extension) => extension.slice(1))
+);
+
+/**
+ * Whether a filename names a camera RAW this build knows, judged by extension.
+ *
+ * For callers that report what an upload was, or what an install is configured
+ * for. They used to test `ext === '.dng'`, which was right while DNG was the
+ * only RAW in the table and silently wrong the moment the rest arrived.
+ *
+ * This answers "is it RAW", not "may it be uploaded". Admission also needs the
+ * extension to be in general_allowed_file_types, and none of this set is on by
+ * default.
+ *
+ * @param {string} filename - The filename, read for its extension
+ * @returns {boolean}
+ */
+function isRawUploadFilename(filename) {
+  const ext = path.extname(String(filename == null ? '' : filename)).toLowerCase();
+  return Boolean(RAW_EXTENSION_TO_MIME[ext]);
+}
+
 const ALLOWED_VIDEO_TYPES = {
   'video/mp4': {
     extensions: ['.mp4', '.m4v'],
@@ -498,9 +523,11 @@ module.exports = {
   assertRealpathUnderSync,
   isPathSafe,
   normalizeUploadMimeType,
+  isRawUploadFilename,
   validateFileType,
   validateFileContent,
   createFileUploadValidator,
+  RAW_UPLOAD_EXTENSIONS,
   ALLOWED_IMAGE_TYPES,
   ALLOWED_VIDEO_TYPES,
   ALLOWED_MEDIA_TYPES

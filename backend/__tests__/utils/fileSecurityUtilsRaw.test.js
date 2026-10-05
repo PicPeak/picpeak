@@ -6,6 +6,8 @@ const {
   validateFileType,
   validateFileContent,
   normalizeUploadMimeType,
+  isRawUploadFilename,
+  RAW_UPLOAD_EXTENSIONS,
 } = require('../../src/utils/fileSecurityUtils');
 
 // What a browser actually hands multer for a camera RAW. macOS and Windows
@@ -87,6 +89,33 @@ describe('validateFileType with camera RAW', () => {
     expect(normalizeUploadMimeType('holiday.jpg', UNTYPED)).toBe(UNTYPED);
     expect(normalizeUploadMimeType('payload.exe', OCTET_STREAM)).toBe(OCTET_STREAM);
     expect(normalizeUploadMimeType(undefined, UNTYPED)).toBe(UNTYPED);
+  });
+});
+
+describe('isRawUploadFilename', () => {
+  test('names every RAW in the table, not just DNG', () => {
+    for (const name of ['a.dng', 'DSC01234.ARW', 'a.sr2', 'a.srf', 'IMG.CR2',
+      'a.nef', 'a.nrw', 'a.pef', 'a.srw', 'a.orf']) {
+      expect(isRawUploadFilename(name)).toBe(true);
+    }
+  });
+
+  test('says no to ordinary formats and to junk', () => {
+    for (const name of ['holiday.jpg', 'a.png', 'a.webp', 'a.heic', 'clip.mp4',
+      'a.tif', 'payload.exe', 'noextension', '.dng', '', null, undefined]) {
+      expect(isRawUploadFilename(name)).toBe(false);
+    }
+  });
+
+  test('stays derived from the type table', () => {
+    // The point of the helper: a new RAW entry reaches the callers that report
+    // what an upload was without anyone remembering to widen a second list.
+    expect([...RAW_UPLOAD_EXTENSIONS].sort()).toEqual(
+      ['arw', 'cr2', 'dng', 'nef', 'nrw', 'orf', 'pef', 'sr2', 'srf', 'srw']
+    );
+    for (const extension of RAW_UPLOAD_EXTENSIONS) {
+      expect(isRawUploadFilename(`photo.${extension}`)).toBe(true);
+    }
   });
 });
 

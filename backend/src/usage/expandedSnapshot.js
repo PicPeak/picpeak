@@ -1,6 +1,7 @@
 'use strict';
 const { CATALOGS, emptyFeatures } = require('./schema.cjs');
 const { formatBoolean } = require('../utils/dbCompat');
+const { RAW_UPLOAD_EXTENSIONS } = require('../utils/fileSecurityUtils');
 
 const truth = (value) => value === true || value === 1 || value === '1';
 const parse = (value) => {
@@ -62,7 +63,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
   const extensions = new Set(String(settings.general_allowed_file_types || 'jpg,jpeg,png,webp')
     .toLowerCase().split(',').map((s) => s.trim().replace(/^\./, '')));
   result.video_uploads.configured = ['mp4', 'm4v', 'webm', 'mov', 'avi'].some((extension) => extensions.has(extension));
-  result.camera_raw_uploads.configured = extensions.has('dng');
+  result.camera_raw_uploads.configured = [...RAW_UPLOAD_EXTENSIONS].some((extension) => extensions.has(extension));
   result.public_site.configured = truth(settings.general_public_site_enabled);
   result.database_backup.configured = truth(settings.database_backup_enabled);
   result.email_webhook.configured = Boolean((process.env.EMAIL_WEBHOOK_URL || '').trim() && (process.env.EMAIL_WEBHOOK_SECRET || '').trim());
