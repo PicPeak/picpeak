@@ -5,6 +5,24 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.160.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.159.0-beta.0...v3.160.0-beta.0) (2026-10-05)
+
+
+### Features
+
+* **gallery:** carry source_filename on the guest photo list ([#1802](https://github.com/PicPeak/picpeak/issues/1802)) ([0c0d0b9](https://github.com/PicPeak/picpeak/commit/0c0d0b9b017f450f30a462de8cf13b21f29adbc2))
+
+
+### Bug Fixes
+
+* **archives:** clear the event's child rows before deleting it ([#1790](https://github.com/PicPeak/picpeak/issues/1790)) ([e452cb4](https://github.com/PicPeak/picpeak/commit/e452cb4fdbe87b9c35a03041e0d8040aa1b6e3b8))
+* **db:** four PostgreSQL-only query defects (audit trail, XMP label, visitors alias, case-insensitive search) ([#1791](https://github.com/PicPeak/picpeak/issues/1791)) ([9fcb887](https://github.com/PicPeak/picpeak/commit/9fcb8875b8531803723fd1b13e6677a534d88dcb))
+* **downloads:** invalidate in-flight zips and answer a failed single-file send ([#1792](https://github.com/PicPeak/picpeak/issues/1792)) ([8101c7b](https://github.com/PicPeak/picpeak/commit/8101c7bab8e57ae7f9feee7fe7c9d2f2680a479d))
+* **events:** let an admin clear the customer contact, and refuse a resend with no recipient ([#1793](https://github.com/PicPeak/picpeak/issues/1793)) ([bc0c99d](https://github.com/PicPeak/picpeak/commit/bc0c99d0b886fa0b06d882e3e812c1537496d41f))
+* **expiry:** compare expires_at by value on SQLite whatever shape it was stored in ([#1788](https://github.com/PicPeak/picpeak/issues/1788)) ([ba42888](https://github.com/PicPeak/picpeak/commit/ba428882fff5b9f94a2fb07abfc33c83a2fdbbde))
+* **gallery:** send the event date as a calendar date, not a timestamp ([#1801](https://github.com/PicPeak/picpeak/issues/1801)) ([5cb1348](https://github.com/PicPeak/picpeak/commit/5cb13481a9fbb22a52d0d34814f6b02e3da4dc62))
+* **notifications:** send activity timestamps as UTC so the bell and dashboard do not show them in the future ([#1816](https://github.com/PicPeak/picpeak/issues/1816)) ([9f1b128](https://github.com/PicPeak/picpeak/commit/9f1b128d40c583c1c7192f562bb5a3324f79f3ab))
+
 ## [3.159.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.158.2-beta.0...v3.159.0-beta.0) (2026-10-05)
 
 
