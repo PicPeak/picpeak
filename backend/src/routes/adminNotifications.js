@@ -3,6 +3,7 @@ const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const logger = require('../utils/logger');
+const { toUtcIso } = require('../utils/queueTimestamps');
 const router = express.Router();
 
 // Get notifications (unread activity logs)
@@ -44,8 +45,10 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
           return {};
         }
       })(),
-      createdAt: notification.created_at,
-      readAt: notification.read_at,
+      // created_at comes from the column default: a zone-less UTC string on
+      // SQLite, which the browser would read as local time (issue 1815).
+      createdAt: toUtcIso(notification.created_at),
+      readAt: toUtcIso(notification.read_at),
       isRead: !!notification.read_at
     }));
 

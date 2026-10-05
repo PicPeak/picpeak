@@ -9,7 +9,7 @@ const { resolveAdapter } = require('../services/trackers');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
-const { queueTimestamp } = require('../utils/queueTimestamps');
+const { queueTimestamp, toUtcIso } = require('../utils/queueTimestamps');
 const router = express.Router();
 
 /**
@@ -250,7 +250,8 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
           return {};
         }
       })(),
-      createdAt: activity.created_at
+      // Zone-less UTC from the column default on SQLite; see toUtcIso.
+      createdAt: toUtcIso(activity.created_at)
     }));
 
     res.json(formattedActivities);
