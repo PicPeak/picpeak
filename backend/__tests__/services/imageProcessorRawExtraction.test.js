@@ -53,6 +53,16 @@ const jpegOf = (width, height) => sharp({
 const tagOf = (args) => args.find(arg => arg.startsWith('-') && arg !== '-b' && arg !== '-n');
 
 /**
+ * What execFile reports when the deadline fires: the child is killed with the
+ * configured signal and there is no exit code. `code` stays unset, which is
+ * what keeps a wedged tag from being mistaken for a missing binary.
+ */
+const killedAtDeadline = (args) => Object.assign(
+  new Error(`Command failed: exiftool ${args.join(' ')}`),
+  { killed: true, signal: 'SIGKILL' }
+);
+
+/**
  * Stand in for exiftool: answer the probe from `probe`, answer each `-b <tag>`
  * from `previews`, and accept an orientation write. A tag the file does not
  * carry writes nothing to stdout rather than failing, which is what exiftool
@@ -345,6 +355,59 @@ describe('extractRawPreview', () => {
       jest.restoreAllMocks();
       warn.mockRestore();
     }
+  });
+
+  it('moves to the next candidate when one extraction is killed at the deadline', async () => {
+    // A single wedged tag must not cost the photo. The largest candidate is
+    // the one that hangs, so the fallback is a real downgrade in size and the
+    // test would not pass by accident.
+    execFile.mockImplementation((cmd, args, options, callback) => {
+      if (args.includes('-json')) {
+        return process.nextTick(() => callback(null, {
+          stdout: JSON.stringify([{ SourceFile: args[args.length - 1], ...ILCE_7M5 }]),
+          stderr: '',
+        }));
+      }
+      if (args.some(arg => arg.startsWith('-Orientation='))) {
+        return process.nextTick(() => callback(null, { stdout: '1 image files updated', stderr: '' }));
+      }
+      if (tagOf(args) === '-JpgFromRaw') {
+        return process.nextTick(() => callback(killedAtDeadline(args)));
+      }
+      return process.nextTick(async () => callback(null, {
+        stdout: tagOf(args) === '-PreviewImage' ? await jpegOf(1616, 1080) : Buffer.alloc(0),
+        stderr: '',
+      }));
+    });
+
+    const preview = await extractRawPreview('/tmp/DSC00632.ARW');
+    try {
+      expect((await sharp(preview.path).metadata()).width).toBe(1616);
+      expect(extractionTags()).toEqual(['-JpgFromRaw', '-PreviewImage']);
+    } finally {
+      await preview.cleanup();
+    }
+  });
+
+  it('reports the deadline when every extraction is killed at it', async () => {
+    // The photo fails, and the reason it failed has to reach the log. A
+    // timeout swallowed into "no preview tag returned data" sends whoever
+    // reads it looking for a corrupt file.
+    execFile.mockImplementation((cmd, args, options, callback) => {
+      if (args.includes('-json')) {
+        return process.nextTick(() => callback(null, {
+          stdout: JSON.stringify([{ SourceFile: args[args.length - 1], ...ILCE_7M5 }]),
+          stderr: '',
+        }));
+      }
+      return process.nextTick(() => callback(killedAtDeadline(args)));
+    });
+
+    await expect(extractRawPreview('/tmp/DSC00632.ARW'))
+      .rejects.toThrow(/No usable embedded preview in RAW file DSC00632.ARW: Command failed/);
+    // Every tag is still tried: unlike a missing binary, one tag timing out
+    // says nothing about the next.
+    expect(extractionTags()).toEqual(['-JpgFromRaw', '-PreviewImage', '-ThumbnailImage']);
   });
 
   it('fails when the file carries no embedded image at all', async () => {
