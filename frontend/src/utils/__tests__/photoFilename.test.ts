@@ -43,9 +43,16 @@ describe('filename list for a RAW editor search (issue 1733, A3d)', () => {
     expect([liked, faved, neither].filter((p) => isFilenameListFavourite(p, { ...standard, guestIdentity: true })).map((p) => p.id)).toEqual([3]);
   });
 
-  it('offers no favourites while the feedback settings are still loading', () => {
-    // The identity mode is unknown then; the aggregate fallback would list
-    // other guests' favourites in a guest-identity gallery.
+  it('offers no favourites until the feedback settings have loaded successfully', () => {
+    // Pending, or the error fallback without identity_mode: the identity
+    // mode is unknown, and the aggregate fallback would list other guests'
+    // favourites in a guest-identity gallery. GalleryView derives the flag
+    // from `settings?.identity_mode !== undefined`.
+    const resolvedFrom = (settings?: { identity_mode?: string }) => settings?.identity_mode !== undefined;
+    expect(resolvedFrom(undefined)).toBe(false);
+    expect(resolvedFrom({})).toBe(false); // error fallback { feedback_enabled: false }
+    expect(resolvedFrom({ identity_mode: 'guest' })).toBe(true);
+
     const photo = { id: 1, favorite_count: 5, is_liked: true };
     const sets = { myLiked: new Set([1]), myFavorited: new Set([1]) };
     expect(isFilenameListFavourite(photo, { likeBacked: false, guestIdentity: false, ...sets, settingsResolved: false })).toBe(false);

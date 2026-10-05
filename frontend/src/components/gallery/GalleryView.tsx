@@ -805,10 +805,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       guestIdentity: isGuestIdentityMode,
       myLiked: myFeedbackPhotoIds.liked,
       myFavorited: myFeedbackPhotoIds.favorited,
-      // Until the settings have resolved the identity mode is unknown (the
-      // query falls back to a disabled object on error, so undefined only
-      // means loading); no favourites are offered meanwhile.
-      settingsResolved: feedbackSettings !== undefined,
+      // The identity mode is known only from a successful load: the public
+      // settings always carry identity_mode, the query's error fallback
+      // ({ feedback_enabled: false }) does not. Pending or failed, no
+      // favourites are offered — the aggregate fallback would list other
+      // guests' favourites in a guest-identity gallery.
+      settingsResolved: feedbackSettings?.identity_mode !== undefined,
     }),
     isSelectionMode,
   ), [data?.photos, selectedPhotos, isSelectionMode, isGuestIdentityMode, myFeedbackPhotoIds, favouritesAreLikes, feedbackSettings]);

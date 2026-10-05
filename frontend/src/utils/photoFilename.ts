@@ -75,7 +75,8 @@ export function isFilenameListFavourite(
     myLiked: ReadonlySet<number>;
     myFavorited: ReadonlySet<number>;
     /**
-     * False while the gallery's feedback settings are still loading: the
+     * False until the gallery's feedback settings have loaded successfully
+     * (pending, or the error fallback that carries no identity_mode): the
      * identity mode is unknown then, and the aggregate fallback would offer
      * other guests' favourites in a guest-identity gallery.
      */
