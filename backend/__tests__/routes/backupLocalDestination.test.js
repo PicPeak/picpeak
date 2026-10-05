@@ -178,6 +178,12 @@ describe('local backup destination', () => {
       expect(res.body.message).toContain('the backed-up folder "uploads" itself');
     });
 
+    it('refuses the storage folder itself, where every file would be copied onto itself', async () => {
+      const res = await testLocal(process.env.STORAGE_PATH);
+      expect(res.body).toMatchObject({ success: false, code: 'LOCAL_PATH_IS_BACKED_UP_FOLDER' });
+      expect(res.body.message).toContain('the storage folder itself');
+    });
+
     it('accepts a destination inside a backed-up folder, which the backup skips', async () => {
       const res = await testLocal(path.join(process.env.STORAGE_PATH, 'uploads', 'own-backups'));
       expect(res.body).toMatchObject({ success: true });
@@ -274,6 +280,12 @@ describe('local backup destination', () => {
       expect(run.status).toBe('failed');
       expect(run.error_message).toContain('the backed-up folder "uploads" itself');
       expect(fs.existsSync(path.join(uploads, 'uploads'))).toBe(false);
+    });
+
+    it('refuses to run into the storage folder itself', async () => {
+      const run = await runBackupTo(process.env.STORAGE_PATH);
+      expect(run.status).toBe('failed');
+      expect(run.error_message).toContain('the storage folder itself');
     });
   });
 });

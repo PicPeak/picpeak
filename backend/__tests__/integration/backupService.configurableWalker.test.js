@@ -414,6 +414,33 @@ describe('backupService — configurable walker (backup_paths)', () => {
       }
     });
 
+    it('recognises the destination when the same folder is mounted at a second path', async () => {
+      // Docker can show one host folder at two container paths, e.g. /backup
+      // and <storage>/uploads/mounted-backups. No symlink connects them, so
+      // only what the directory is on disk gives it away; the second mount
+      // is played here by answering stat for the outside path with the
+      // inside folder's.
+      seedFile('uploads/mounted-backups/uploads/logos/logo.png');
+      const inside = path.join(storagePath, 'uploads', 'mounted-backups');
+      const alias = path.join(path.dirname(storagePath), `backup-mount-${process.pid}`);
+      const realStat = fs.promises.stat.bind(fs.promises);
+      const stat = jest.spyOn(fs.promises, 'stat')
+        .mockImplementation((p, options) => realStat(p === alias ? inside : p, options));
+      try {
+        const files = await backupService.getFilesToBackup({
+          backup_destination_type: 'local',
+          backup_destination_path: alias,
+        });
+        expect(inDestination(files.map((f) => f.relativePath), path.join('uploads', 'mounted-backups'))).toEqual([]);
+        expect(await backupService.backedUpFolderAtDestination({
+          backup_destination_type: 'local',
+          backup_destination_path: alias,
+        })).toBeNull();
+      } finally {
+        stat.mockRestore();
+      }
+    });
+
     it('skips a manifest folder inside a backed-up folder too', async () => {
       seedFile('uploads/own-manifests/backup-1.json');
 
