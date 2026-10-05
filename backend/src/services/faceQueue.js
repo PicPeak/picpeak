@@ -32,6 +32,7 @@ const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhotoFaces } = require('./faceProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { TransientSourceError } = require('./faceProcessor');
+const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { isFeatureEnabled, isEnabledForEvent } = require('./faceSettings');
 
 const POLL_INTERVAL_MS = parseInt(process.env.FACE_PROCESSOR_POLL_MS || '2000', 10);
@@ -99,6 +100,17 @@ function logUnreachableSource(message) {
   logger.warn(
     `faceQueue: ${message}. Photos stay queued and will be retried — check the `
     + 'external media mount. Further identical warnings are suppressed for 5 minutes.'
+  );
+}
+
+let lastStorageUnavailableLogAt = 0;
+function logStorageUnavailable(err) {
+  const now = Date.now();
+  if (now - lastStorageUnavailableLogAt < SOURCE_LOG_INTERVAL_MS) return;
+  lastStorageUnavailableLogAt = now;
+  logger.warn(
+    `faceQueue: storage backend unreachable (${err.code || err.name}: ${err.message}). Photos stay queued and `
+    + 'will be retried. Further identical warnings are suppressed for 5 minutes.'
   );
 }
 
@@ -331,6 +343,17 @@ async function workerLoop(workerIdx) {
       // get on with.
       if (err instanceof SidecarUnavailableError) {
         // Retry, don't fail. faceClient already rate-limits the log line.
+        await releaseToPending(claimed.id).catch(() => {});
+        await sleep(UNAVAILABLE_BACKOFF_MS);
+        continue;
+      }
+
+      // So does the storage backend being unreachable (issue 1785): S3 timing
+      // out, or its socket pool being full, fails every managed photo alike
+      // and says nothing about this one. Marking it 'failed' would strand it,
+      // and the per-event deferral below only covers external sources.
+      if (isStorageUnavailableError(err)) {
+        logStorageUnavailable(err);
         await releaseToPending(claimed.id).catch(() => {});
         await sleep(UNAVAILABLE_BACKOFF_MS);
         continue;
