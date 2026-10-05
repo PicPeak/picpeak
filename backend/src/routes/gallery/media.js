@@ -14,6 +14,7 @@ const { pipeStreamToResponse } = require('../../utils/streamResponse');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { blockHiddenGallery } = require('../../utils/revealMode');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../../services/imageProcessor');
+const { isStorageUnavailableError } = require('../../services/storage/storageErrors');
 const { heroQueryRedirect } = require('../../utils/heroAnchor');
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
@@ -537,17 +538,30 @@ router.get('/:slug/hero/:photoId',
         photoId: req.params.photoId,
         eventId: req.event?.id
       });
-      // Fall back to original photo on any error
+      if (res.headersSent) return;
+      if (isStorageUnavailableError(error)) return answerStorageUnavailable(res);
+      // Fall back to original photo on any other error
       res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
     }
   }
 );
 
+// Storage that cannot be reached is not a broken rendition (issue 1785). The
+// original sits behind the same backend and is many times the size, so
+// redirecting there only adds load to whatever is already failing. A 503 lets
+// the client retry the small file instead.
+function answerStorageUnavailable(res) {
+  res.removeHeader('ETag');
+  res.set({ 'Retry-After': '5', 'Cache-Control': 'no-store' });
+  return res.status(503).json({ error: 'Storage temporarily unavailable', code: 'STORAGE_UNAVAILABLE' });
+}
+
 // Lightbox preview tier (#492). Aspect-preserved JPEG capped at 1920px
 // long edge — admin-controlled opt-in via app_settings.lightbox_preview_enabled.
 // Mirrors the hero route shape: same auth, ETag from preview mtime,
-// fall back to original on any failure so the lightbox never shows a
-// broken image. The watermark application path is preserved so a
+// fall back to original when the rendition is broken so the lightbox never
+// shows a broken image (storage that cannot be reached answers 503 instead,
+// see answerStorageUnavailable). The watermark application path is preserved so a
 // preview surfaced in the lightbox carries the same protection a
 // guest would see on the full original.
 // A preview that cannot be served falls back to the original, so the lightbox
@@ -596,9 +610,11 @@ router.get('/:slug/preview/:photoId',
         require('../../services/imageProcessor');
       const tierWidth = normalizeTierWidth(req.query.w, PREVIEW_WIDTHS);
 
-      // Lazy generation: ensurePreviewImage returns null on any
-      // failure (corrupt source, sharp OOM, storage unavailable, …).
-      // Fall back to the original so the lightbox always renders.
+      // Lazy generation: ensurePreviewImage returns null when it cannot
+      // make the rendition (corrupt source, sharp OOM, …). Fall back to the
+      // original so the lightbox always renders. It throws when the storage
+      // backend cannot be reached while checking the stored rendition; the
+      // catch below answers that with a 503.
       const previewPath = tierWidth
         ? (await ensurePreviewImageAtWidth(photo, tierWidth)) || (await ensurePreviewImage(photo))
         : await ensurePreviewImage(photo);
@@ -672,6 +688,8 @@ router.get('/:slug/preview/:photoId',
         photoId: req.params.photoId,
         eventId: req.event?.id,
       });
+      if (res.headersSent) return;
+      if (isStorageUnavailableError(error)) return answerStorageUnavailable(res);
       fallBackToOriginal(req, res);
     }
   }
