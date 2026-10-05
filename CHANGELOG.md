@@ -5,6 +5,28 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.161.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.160.0-beta.0...v3.161.0-beta.0) (2026-10-05)
+
+
+### Features
+
+* **gallery:** copy the selected or favourited filenames for a RAW editor search ([#1797](https://github.com/PicPeak/picpeak/issues/1797)) ([4652ef2](https://github.com/PicPeak/picpeak/commit/4652ef21847085f4c8aeae22619164f89ee11e3b))
+* **gallery:** filter by own star rating and select the filtered photos ([#1800](https://github.com/PicPeak/picpeak/issues/1800)) ([f093d46](https://github.com/PicPeak/picpeak/commit/f093d4661b98afd9d6f8847087ebba81534ed250))
+* **gallery:** link to a single photo with ?photo= ([#1799](https://github.com/PicPeak/picpeak/issues/1799)) ([04b29a6](https://github.com/PicPeak/picpeak/commit/04b29a617a79ddab03b5c32cde4889eba185ea5e))
+* **gallery:** rate a photo from the grid tile ([#1796](https://github.com/PicPeak/picpeak/issues/1796)) ([21b4274](https://github.com/PicPeak/picpeak/commit/21b4274adbfb76b7b62882878324f2439f309e07))
+* **notifications:** clear the bell per admin with notification_dismissals ([#1813](https://github.com/PicPeak/picpeak/issues/1813)) ([b2ca7b9](https://github.com/PicPeak/picpeak/commit/b2ca7b9d8990e118fd28fa500b16df259bb7cfee))
+* **upload:** drop a folder onto the admin uploader ([#1795](https://github.com/PicPeak/picpeak/issues/1795)) ([44d6dea](https://github.com/PicPeak/picpeak/commit/44d6dea2dc453c2f45e11a917aa31f573721867c))
+
+
+### Bug Fixes
+
+* **security:** close the contained findings of the October security scan ([#1809](https://github.com/PicPeak/picpeak/issues/1809)) ([16e91d6](https://github.com/PicPeak/picpeak/commit/16e91d6f80ea207cd98339b86906208144f4f5e7))
+
+
+### Performance Improvements
+
+* **gallery:** skip offscreen tile work in every layout ([#1798](https://github.com/PicPeak/picpeak/issues/1798)) ([b300408](https://github.com/PicPeak/picpeak/commit/b3004083c57e126ccb9c4e9c55aec2712efe5d13))
+
 ## [3.160.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.159.0-beta.0...v3.160.0-beta.0) (2026-10-05)
 
 
