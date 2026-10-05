@@ -12,6 +12,22 @@
  * 2393931 bytes, a 1616x1080 PreviewImage at 285137, a 160x120 ThumbnailImage
  * at 7833, and Orientation 8 on the container with no EXIF on any of the three
  * extracted images.
+ *
+ * Two more portrait files were run through the real extraction to check that
+ * the orientation write cannot turn an upright photo on its side, because the
+ * Sony alone does not settle it:
+ *
+ *   Adobe Lightroom 9.6 DNG off a Sony ILCE-1, container Orientation 8. Its
+ *   one embedded JPEG is 1024x683, the sensor frame's aspect ratio, and
+ *   carries no EXIF. The write applies and the photo comes out upright.
+ *
+ *   Apple ProRAW off an iPhone 17 Pro Max, container Orientation 6. Its one
+ *   embedded JPEG is the full 4032x3024 frame and states Orientation 6
+ *   itself, so the write is skipped and the photo comes out upright.
+ *
+ * Both are covered below as shapes rather than fixtures, by "puts the camera
+ * orientation on the extracted preview" and "leaves a preview that states its
+ * own orientation alone".
  */
 jest.mock('child_process', () => ({
   ...jest.requireActual('child_process'),
@@ -135,6 +151,10 @@ describe('extractRawPreview', () => {
     // Verified on a real ARW: the container says 8, and all three embedded
     // images come out with no EXIF at all. Without this the downstream
     // .rotate() has nothing to act on and every portrait RAW is sideways.
+    //
+    // Also the Lightroom DNG shape, verified on an Adobe Lightroom 9.6 export
+    // off a Sony ILCE-1: container Orientation 8, and the one embedded JPEG is
+    // 1024x683, still in the sensor frame and carrying no EXIF of its own.
     const writes = exiftoolWith({
       probe: ILCE_7M5,
       previews: { '-JpgFromRaw': await jpegOf(7008, 4672) },
@@ -153,6 +173,10 @@ describe('extractRawPreview', () => {
     // preview does carry the tag it describes its own pixels, and the
     // container's value may contradict it — overwriting would rotate a photo
     // that was already upright.
+    //
+    // This is the Apple ProRAW shape, verified on an iPhone 17 Pro Max file:
+    // container Orientation 6, and the embedded 4032x3024 JPEG carries
+    // Orientation 6 of its own.
     const selfDescribing = await sharp({
       create: { width: 6000, height: 4000, channels: 3, background: { r: 1, g: 2, b: 3 } },
     }).withMetadata({ orientation: 1 }).jpeg().toBuffer();
