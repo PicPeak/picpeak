@@ -71,12 +71,22 @@ function styleElementCount(html) {
 }
 
 describe('public site <style> element cannot be closed from settings data', () => {
+  // How many <style> elements the template itself emits, taken from a render
+  // with harmless settings rather than hard-coded: the document may carry
+  // more than one (font faces, the generated stylesheet), and what matters
+  // is that settings data cannot add another.
+  let templateStyles;
+  beforeAll(async () => {
+    templateStyles = styleElementCount(await render(payloadWith({ css: 'a{color:red}' })));
+    expect(templateStyles).toBeGreaterThan(0);
+  });
+
   it('custom CSS carrying </style> stays inside the stylesheet', async () => {
     const html = await render(payloadWith({
       css: 'a{color:red}</style><meta http-equiv="refresh" content="0;url=https://evil.example"><style>',
     }));
     expect(html).not.toContain('<meta http-equiv="refresh"');
-    expect(styleElementCount(html)).toBe(1);
+    expect(styleElementCount(html)).toBe(templateStyles);
     expect(html).toContain('\\3c /style>\\3c meta http-equiv="refresh"');
   });
 
@@ -87,7 +97,7 @@ describe('public site <style> element cannot be closed from settings data', () =
   ])('%s terminator in custom CSS', async (_label, terminator, markup) => {
     const html = await render(payloadWith({ css: `a{}${terminator}${markup}` }));
     expect(html).not.toContain(markup);
-    expect(styleElementCount(html)).toBe(1);
+    expect(styleElementCount(html)).toBe(templateStyles);
   });
 
   it('a palette value carrying </style> is neutralised at the sink even when the service let it through', async () => {
@@ -97,7 +107,7 @@ describe('public site <style> element cannot be closed from settings data', () =
     };
     const html = await render(payloadWith({ branding: { companyName: 'Studio', colors } }));
     expect(html).not.toContain('<meta http-equiv="refresh"');
-    expect(styleElementCount(html)).toBe(1);
+    expect(styleElementCount(html)).toBe(templateStyles);
   });
 
   it('every palette slot is covered', async () => {
@@ -105,7 +115,7 @@ describe('public site <style> element cannot be closed from settings data', () =
       const colors = { ...PALETTE, [slot]: '#fff</style><script>alert(1)</script>' };
       const html = await render(payloadWith({ branding: { companyName: 'Studio', colors } }));
       expect(html).not.toContain('<script>');
-      expect(styleElementCount(html)).toBe(1);
+      expect(styleElementCount(html)).toBe(templateStyles);
     }
   });
 
