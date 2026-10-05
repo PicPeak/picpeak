@@ -158,6 +158,7 @@
     "processingFailed_other": "{{count}} photos n'ont pas pu être traitées",
     "uploadingChunks_one": "{{count}} bloc en cours de téléversement",
     "uploadingChunks_other": "{{count}} blocs en cours de téléversement",
+    "invalidFileType": "Type de fichier non pris en charge : {{names}}",
     "uploadingAs": "Envoi en tant que {{name}}",
     "notYou": "Ce n’est pas vous ?",
     "yourName": "Votre nom",

@@ -164,6 +164,7 @@
     "uploadingChunks_one": "{{count}} пакет загружается",
     "uploadingChunks_other": "{{count}} пакета загружается",
     "retryFailed": "Повторить неудавшиеся",
+    "invalidFileType": "Неподдерживаемый тип файла: {{names}}",
     "uploadingAs": "Загрузка от имени {{name}}",
     "notYou": "Это не вы?",
     "yourName": "Ваше имя",

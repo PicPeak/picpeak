@@ -868,6 +868,7 @@
     "replacedFiles_other": "Zamenjanih {{count}} fotografij",
     "uploadingChunks_one": "Nalaganje {{count}} dela",
     "uploadingChunks_other": "Nalaganje {{count}} delov",
+    "invalidFileType": "Nepodprta vrsta datoteke: {{names}}",
     "fileTooLarge": "Datoteka je prevelika: {{name}} (največ {{limit}} MB)",
     "uploadingAs": "Nalaganje kot {{name}}",
     "notYou": "Niste vi?",

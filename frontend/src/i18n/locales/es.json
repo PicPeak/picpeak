@@ -159,6 +159,7 @@
     "uploadingChunks": "Subiendo {{count}} archivos en {{total}} lotes...",
     "mediaCategory": "Categoría de medios",
     "uploadAction": "Subir {{count}} archivos",
+    "invalidFileType": "Tipo de archivo no compatible: {{names}}",
     "uploadingAs": "Subiendo como {{name}}",
     "notYou": "¿No eres tú?",
     "yourName": "Tu nombre",

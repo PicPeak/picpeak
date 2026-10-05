@@ -158,6 +158,7 @@
     "uploadingChunks_one": "{{count}} deel wordt geüpload",
     "uploadingChunks_other": "{{count}} delen worden geüpload",
     "retryFailed": "Mislukte opnieuw proberen",
+    "invalidFileType": "Niet-ondersteund bestandstype: {{names}}",
     "uploadingAs": "Uploaden als {{name}}",
     "notYou": "Niet jij?",
     "yourName": "Je naam",

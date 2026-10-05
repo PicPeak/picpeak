@@ -197,6 +197,7 @@
     "uploadingChunks_many": "Enviando {{count}} fragmentos",
     "uploadingChunks_one": "Enviando {{count}} fragmento",
     "uploadingChunks_other": "Enviando {{count}} fragmentos",
+    "invalidFileType": "Tipo de arquivo não suportado: {{names}}",
     "fileTooLarge": "Arquivo muito grande: {{name}} (máx. {{limit}}MB)",
     "retryFailed": "Tentar novamente os que falharam",
     "uploadingAs": "Enviando como {{name}}",
