@@ -2,15 +2,35 @@
  * expires_at text parsing agrees with how julianday() reads the stored rows:
  * a zone-less value is UTC, whatever the server's zone (issue 1733).
  */
-// Before anything builds a Date: the server zone the bug needs.
-process.env.TZ = 'America/New_York';
-
+const path = require('path');
+const { execFileSync } = require('child_process');
 const knex = require('knex');
 const { parseExpiresAtText, canonicaliseSqliteExpiresAt } = require('../../src/utils/expiresAtText');
 
-describe('parseExpiresAtText under TZ=America/New_York', () => {
+describe('parseExpiresAtText in a non-UTC server zone', () => {
+  // The suite itself runs in whatever zone the host has (UTC on CI), where
+  // reading a zone-less value as local and as UTC give the same answer, and
+  // process.env.TZ does not re-bind inside a running process. So the zone the
+  // bug needs is forced in a child process, which fails on any host.
   test('a zone-less date-time is read as UTC, not as local time', () => {
-    expect(new Date(2026, 0, 1).getTimezoneOffset()).not.toBe(0); // the zone really applies
+    const helper = path.resolve(__dirname, '../../src/utils/expiresAtText');
+    const out = execFileSync(process.execPath, ['-e', `
+      const { parseExpiresAtText } = require(${JSON.stringify(helper)});
+      console.log(JSON.stringify({
+        offset: new Date(2026, 0, 1).getTimezoneOffset(),
+        naive: parseExpiresAtText('2026-10-06T12:00:00').toISOString(),
+        spaced: parseExpiresAtText('2026-10-06 12:00:00').toISOString(),
+        local: new Date('2026-10-06T12:00:00').toISOString(),
+      }));
+    `], { env: { ...process.env, TZ: 'America/New_York' }, encoding: 'utf8' });
+    const seen = JSON.parse(out);
+    expect(seen.offset).not.toBe(0); // the zone really applies in the child
+    expect(seen.local).toBe('2026-10-06T16:00:00.000Z'); // what a bare new Date() makes of it
+    expect(seen.naive).toBe('2026-10-06T12:00:00.000Z');
+    expect(seen.spaced).toBe('2026-10-06T12:00:00.000Z');
+  });
+
+  test('the zone-less shapes, in the suite\'s own zone', () => {
     expect(parseExpiresAtText('2026-10-06T12:00:00').toISOString()).toBe('2026-10-06T12:00:00.000Z');
     expect(parseExpiresAtText('2026-10-06 12:00:00').toISOString()).toBe('2026-10-06T12:00:00.000Z');
     expect(parseExpiresAtText('2026-10-06T12:00').toISOString()).toBe('2026-10-06T12:00:00.000Z');

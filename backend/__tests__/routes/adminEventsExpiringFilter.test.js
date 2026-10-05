@@ -8,7 +8,9 @@ process.env.JWT_SECRET = 'expiring-filter-secret-at-least-32-characters-long';
 process.env.NODE_ENV = 'test';
 // A non-UTC server zone: a zone-less expires_at must still be stored as the
 // UTC instant julianday() reads it as.
-process.env.TZ = 'America/New_York';
+// (Not forced here: process.env.TZ does not re-bind inside a running jest
+// process. The non-UTC server zone is proven in a child process in
+// __tests__/utils/expiresAtText.test.js; these cases hold in every zone.)
 
 const express = require('express');
 const cookieParser = require('cookie-parser');
