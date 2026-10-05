@@ -76,6 +76,22 @@ describe('deferred photos do not block the queue', () => {
     expect(sideBody).toMatch(/releaseToPending/);
   });
 
+  it('returns a row to pending and backs off when the storage backend is unreachable', () => {
+    // Source inspection, like the case above: workerLoop is not exported.
+    // Issue 1785: an S3 timeout fails every managed photo alike, so it is
+    // handled like the sidecar being down, and before the branch that marks
+    // the photo failed.
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'src', 'services', 'faceQueue.js'), 'utf8'
+    );
+    const branch = src.match(/if \(isStorageUnavailableError\(err\)\) \{([\s\S]*?)\n {6}\}/);
+    expect(branch).not.toBeNull();
+    expect(branch[1]).toContain('await releaseToPending(claimed.id)');
+    expect(branch[1]).toContain('await sleep(UNAVAILABLE_BACKOFF_MS)');
+    expect(branch[1]).toContain('continue;');
+    expect(src.indexOf('if (isStorageUnavailableError(err))')).toBeLessThan(src.indexOf("face_status: 'failed'"));
+  });
+
   it('leaves a deferred row claimable-later, not claimable-now', async () => {
     // A row parked in 'processing' is invisible to claimNextPhoto, which only
     // ever selects face_status='pending' — that is what lets the worker move
