@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.163.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.162.0-beta.0...v3.163.0-beta.0) (2026-10-06)
+
+
+### Features
+
+* **admin:** gallery settings as a split view, save bar pinned to the window bottom ([#1820](https://github.com/PicPeak/picpeak/issues/1820)) ([fa7e3e1](https://github.com/PicPeak/picpeak/commit/fa7e3e1575b7d299f6dce558b2891b002b06aaa4))
+
 ## [3.162.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.161.0-beta.0...v3.162.0-beta.0) (2026-10-06)
 
 
