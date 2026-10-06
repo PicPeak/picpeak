@@ -191,6 +191,36 @@ describe('gallery media routes while storage cannot be reached', () => {
     expect(res.headers.location).toBe(`/api/gallery/${SLUG}/photo/${photoId}`);
   });
 
+  describe('writing a freshly made preview', () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const sharp = require('sharp');
+    let source;
+
+    beforeAll(async () => {
+      source = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-preview-outage-')), 'source.jpg');
+      await sharp({ create: { width: 64, height: 48, channels: 3, background: { r: 10, g: 20, b: 30 } } }).jpeg().toFile(source);
+    });
+
+    it('passes on a write the storage backend could not take', async () => {
+      // Swallowed into null, this read as "no preview can be made": the route
+      // redirected to the original and a face scan failed the photo for good.
+      const { generatePreviewImage } = require('../../src/services/imageProcessor');
+      storage.put.mockRejectedValue(timeoutError());
+
+      await expect(generatePreviewImage(source, { outputBasename: 'outage.jpg' }))
+        .rejects.toMatchObject({ name: 'TimeoutError' });
+    });
+
+    it('still answers null for a write that failed for another reason', async () => {
+      const { generatePreviewImage } = require('../../src/services/imageProcessor');
+      storage.put.mockRejectedValue(Object.assign(new Error('Access Denied'), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }));
+
+      await expect(generatePreviewImage(source, { outputBasename: 'denied.jpg' })).resolves.toBeNull();
+    });
+  });
+
   it('keeps the old handling for a storage error that is an answer, not an outage', async () => {
     // AccessDenied is about the request. The original would fail the same
     // way, but that is the existing behaviour and not this fix's to change.

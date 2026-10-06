@@ -1135,6 +1135,10 @@ async function generatePreviewImage(imagePath, options = {}) {
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to generate preview image for ${filename}: ${msg}`);
+    // A write the storage backend could not take is not a photo that has no
+    // preview (issue 1785): null would send the guest to the original and
+    // mark a face scan failed for good. Callers retry or answer 503.
+    if (isStorageUnavailableError(error)) throw error;
     return null;
   }
 }
