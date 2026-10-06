@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.1](https://github.com/PicPeak/picpeak/compare/v3.134.0...v3.134.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **backup:** do not back up the local backup's own destination (stable) ([#1829](https://github.com/PicPeak/picpeak/issues/1829)) ([42f62f1](https://github.com/PicPeak/picpeak/commit/42f62f1689cbc810901946187e6646d4d7d9a524))
+* **storage:** do not read an unreachable storage backend as a broken rendition (stable) ([#1828](https://github.com/PicPeak/picpeak/issues/1828)) ([cec51ae](https://github.com/PicPeak/picpeak/commit/cec51aee40c6b3efbd26d7a850dff797c4822b4f))
+
 ## [3.134.0](https://github.com/PicPeak/picpeak/compare/v3.133.10...v3.134.0) (2026-10-05)
 
 
