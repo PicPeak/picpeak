@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.165.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.1-beta.0...v3.165.2-beta.0) (2026-10-06)
+
+
+### Bug Fixes
+
+* **email:** keep info panel text readable on any email palette ([#1835](https://github.com/PicPeak/picpeak/issues/1835)) ([d223e00](https://github.com/PicPeak/picpeak/commit/d223e00cc11503df0398ca30acffa8d4e371b9d1))
+
 ## [3.165.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.0-beta.0...v3.165.1-beta.0) (2026-10-06)
 
 
