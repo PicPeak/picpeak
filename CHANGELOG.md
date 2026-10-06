@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.165.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.164.0-beta.0...v3.165.0-beta.0) (2026-10-06)
+
+
+### Features
+
+* **events:** announce galleries to the customer email and every assigned customer account ([#1819](https://github.com/PicPeak/picpeak/issues/1819)) ([30e7e30](https://github.com/PicPeak/picpeak/commit/30e7e30d42884fac756248221aee447e40e089c2))
+* **updater:** request in-app updates from the admin UI ([#1818](https://github.com/PicPeak/picpeak/issues/1818)) ([9170f2c](https://github.com/PicPeak/picpeak/commit/9170f2c0d9fda5d65f6ad71dc297e6a9b11e55c6))
+
+
+### Bug Fixes
+
+* **gallery:** galleries made from a quote or contract open from their share link; import from Settings › Photo source ([#1834](https://github.com/PicPeak/picpeak/issues/1834)) ([1fbba12](https://github.com/PicPeak/picpeak/commit/1fbba12bd13501b71bba4d5a6928fd71148fe474))
+* **gallery:** show camera RAW with its largest preview and the camera's rotation ([#1784](https://github.com/PicPeak/picpeak/issues/1784)) ([5698166](https://github.com/PicPeak/picpeak/commit/56981666e4090d08bde89ecf35c3cb70d1566c5d))
+
 ## [3.164.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.163.0-beta.0...v3.164.0-beta.0) (2026-10-06)
 
 
