@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.162.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.161.0-beta.0...v3.162.0-beta.0) (2026-10-06)
+
+
+### Features
+
+* **uploads:** accept camera RAW at the gate and in the file picker ([#1783](https://github.com/PicPeak/picpeak/issues/1783)) ([382d9e2](https://github.com/PicPeak/picpeak/commit/382d9e2a934ec43b7a2d4cc52e5ec0d82c2a2052))
+
 ## [3.161.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.160.0-beta.0...v3.161.0-beta.0) (2026-10-05)
 
 
