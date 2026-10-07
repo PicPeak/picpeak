@@ -379,7 +379,9 @@ class S3StorageAdapter extends stream.EventEmitter {
     const params = {
       Bucket: this.bucket,
       Key: s3Key,
-      Range: options.range
+      Range: options.range,
+      IfMatch: options.ifMatch,
+      VersionId: options.versionId
     };
     
     // Remove undefined values

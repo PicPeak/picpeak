@@ -31,6 +31,8 @@ const { invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION, EXCLUDED_TABLES, listDataTables } = require('./picpeakExportService');
 const { normaliseSqliteEmailQueue } = require('../utils/queueTimestamps');
+const recoveryFiles = require('./recoveryFiles');
+const { getStorage } = require('./storage');
 const { canonicaliseSqliteExpiresAt } = require('../utils/expiresAtText');
 const {
   dedupeExternalPhotos,
@@ -76,7 +78,8 @@ function archiveLimitError(message, statusCode) {
 // was not produced by PicPeak and is refused before any live state changes:
 // the import copies files/ into STORAGE_PATH as-is, and some of that tree is
 // served publicly (fonts/, uploads/logos, uploads/favicons).
-const IMPORT_FILE_ROOTS = ['business-docs', 'uploads', 'events/active', 'events/archived'];
+const IMPORT_FILE_ROOTS = ['business-docs', 'uploads', 'transfers', 'events/active', 'events/archived',
+  'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
 // The storage subtrees (inside the roots above) that the app serves as
 // static web content, without authentication:
 //   uploads/logos     backend/server.js `app.use('/uploads/logos', secureStatic(...))`
@@ -648,7 +651,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
 }
 
 // Copy the archive's files/ tree into storage, overwriting existing files.
-async function restoreFiles(stagingDir) {
+async function restoreFiles(stagingDir, manifest) {
   const src = path.join(stagingDir, 'files');
   if (!fs.existsSync(src)) return 0;
   const storageRoot = getStoragePath();
@@ -664,9 +667,28 @@ async function restoreFiles(stagingDir) {
         // so it refuses the same paths.
         const problem = importFilePathProblem(childRel.split(path.sep).join('/'));
         if (problem) throw new Error(`Refusing to restore ${childRel}: ${problem}`);
-        const dest = path.join(storageRoot, childRel);
-        await fsp.mkdir(path.dirname(dest), { recursive: true });
-        await fsp.copyFile(path.join(src, childRel), dest);
+        const key = childRel.split(path.sep).join('/');
+        const recorded = manifest.files?.find(file => file.path === key);
+        if (recoveryFiles.remoteDestination(key)) {
+          const handle = await fsp.open(path.join(src, childRel), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+          let captured;
+          try {
+            if (!(await handle.stat()).isFile()) throw new Error(`Invalid archive source: ${key}`);
+            captured = await recoveryFiles.captureStream(handle.createReadStream(), {
+              expectedSize: recorded?.size, checksum: recorded?.checksum, label: key,
+            });
+            const options = recoveryFiles.restoreObjectOptions(key, recorded?.object_metadata);
+            await getStorage().putFromFile(key, captured.path, options);
+            await recoveryFiles.verifyAdapter(key, captured.checksum, options);
+          } finally {
+            await handle.close().catch(() => {});
+            if (captured) await captured.cleanup();
+          }
+        } else {
+          const dest = path.join(storageRoot, childRel);
+          await fsp.mkdir(path.dirname(dest), { recursive: true });
+          await fsp.copyFile(path.join(src, childRel), dest);
+        }
         count += 1;
       }
     }
@@ -744,6 +766,30 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       await zip.close();
     }
 
+    // New format-1 exports carry an optional complete blob catalogue. Validate
+    // it before DB replacement; older format-1 archives retain their layout.
+    if (manifest.files != null) {
+      if (!Array.isArray(manifest.files)) throw new Error('Invalid portable file catalogue');
+      const seen = new Set();
+      for (const file of manifest.files) {
+        const key = recoveryFiles.validKey(file.path);
+        if (seen.has(key) || importFilePathProblem(key)) throw new Error(`Invalid portable file catalogue entry: ${key}`);
+        seen.add(key);
+        if (!Number.isSafeInteger(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/.test(file.checksum || '')) {
+          throw new Error(`Invalid portable file size/checksum: ${key}`);
+        }
+        recoveryFiles.objectOptions(file.object_metadata);
+        const handle = await fsp.open(path.join(staging, 'files', ...key.split('/')), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+        let captured;
+        try {
+          if (!(await handle.stat()).isFile()) throw new Error(`Invalid portable source: ${key}`);
+          captured = await recoveryFiles.captureStream(handle.createReadStream(), {
+            expectedSize: file.size, checksum: file.checksum, label: key,
+          });
+        } finally { await handle.close().catch(() => {}); if (captured) await captured.cleanup(); }
+      }
+    }
+
     const dataDir = path.join(staging, 'data');
     // Only touch tables that (a) the uploaded manifest lists AND (b) actually
     // exist as real tables in THIS database. listDataTables() already excludes
@@ -773,7 +819,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     await invalidateSessionsIssuedSoFar();
 
 
-    const filesRestored = await restoreFiles(staging);
+    const filesRestored = await restoreFiles(staging, manifest);
 
     // External media paths (#1163). knex_migrations is excluded from the
     // archive, so migration 187 does not re-run after a restore — a pre-#1163

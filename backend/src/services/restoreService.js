@@ -11,6 +11,8 @@ const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
 const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
+const recoveryFiles = require('./recoveryFiles');
+const { getStorage } = require('./storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
@@ -387,7 +389,7 @@ class RestoreService {
       // Step 4: Create pre-restore backup (unless explicitly skipped)
       if (!options.skipPreBackup) {
         this.updateProgress('Creating pre-restore safety backup...');
-        this.preRestoreBackupPath = await this.createPreRestoreBackup(options);
+        this.preRestoreBackupPath = await this.createPreRestoreBackup(options, manifest);
         this.log('info', 'Pre-restore backup created', { path: this.preRestoreBackupPath });
       } else {
         this.log('warn', 'Pre-restore backup skipped at user request');
@@ -968,12 +970,11 @@ class RestoreService {
   /**
    * Create pre-restore backup
    */
-  async createPreRestoreBackup(options) {
+  async createPreRestoreBackup(options, manifest) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupName = `pre-restore-${timestamp}`;
-    const backupPath = path.join(this.tempDir, backupName);
-
-    await fs.mkdir(backupPath, { recursive: true });
+    await fs.mkdir(this.tempDir, { recursive: true, mode: 0o700 });
+    const backupPath = await fs.mkdtemp(path.join(this.tempDir, `pre-restore-${timestamp}-`));
+    await fs.chmod(backupPath, 0o700);
 
     try {
       // Backup database
@@ -999,12 +1000,31 @@ class RestoreService {
       }
 
       // Backup files
-      if (options.restoreType === 'full' || options.restoreType === 'files') {
+      if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         this.log('info', 'Backing up current files...');
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
         const filesBackupPath = path.join(backupPath, 'files.tar.gz');
 
         await spawnAsync('tar', ['-czf', filesBackupPath, '-C', path.dirname(storagePath), path.basename(storagePath)]);
+        if (getStorage().kind() === 's3') {
+          if (!manifest) throw new Error('An S3 safety backup requires the restore catalogue');
+          const prior = [];
+          const maxBytes = await getRestoreMaxFileBytes();
+          for (const file of recoveryFiles.selectedManifestFiles(manifest, options)) {
+            const key = recoveryFiles.validKey(file.path);
+            if (!recoveryFiles.remoteDestination(key)) continue;
+            if (!(await getStorage().stat(key))) { prior.push({ path: key, existed: false }); continue; }
+            const captured = await recoveryFiles.captureAdapter(key, maxBytes);
+            try {
+              const target = path.join(backupPath, 'adapter-files', ...key.split('/'));
+              await fs.mkdir(path.dirname(target), { recursive: true });
+              await fs.copyFile(captured.path, target);
+              prior.push({ path: key, existed: true, size: captured.size,
+                checksum: captured.checksum, object_metadata: captured.objectMetadata });
+            } finally { await captured.cleanup(); }
+          }
+          await fs.writeFile(path.join(backupPath, 'adapter-files.json'), JSON.stringify(prior), { mode: 0o600 });
+        }
       }
 
       // Create backup manifest
@@ -1078,10 +1098,8 @@ class RestoreService {
       }
 
       // Download files if needed
-      if (options.restoreType === 'full' || options.restoreType === 'files') {
-        const filesToDownload = options.restoreType === 'selective' 
-          ? options.selectedItems 
-          : manifest.files.manifest;
+      if (['full', 'files', 'selective'].includes(options.restoreType)) {
+        const filesToDownload = recoveryFiles.selectedManifestFiles(manifest, options);
 
         let downloaded = 0;
         for (const file of filesToDownload) {
@@ -1581,9 +1599,10 @@ END $$;`
     this.updateProgress('Restoring files...');
 
     const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-    const filesToRestore = options.restoreType === 'selective' 
-      ? options.selectedItems.filter(item => item.type === 'file')
-      : manifest.files.manifest;
+    const filesToRestore = getStorage().kind() === 's3'
+      ? recoveryFiles.selectedManifestFiles(manifest, options)
+      : options.restoreType === 'selective'
+        ? options.selectedItems.filter(item => item.type === 'file') : manifest.files.manifest;
 
     let restoredCount = 0;
     const errors = [];
@@ -1628,6 +1647,22 @@ END $$;`
         // file, a full disk) must close it, or a manifest full of such
         // entries runs the process out of descriptors.
         let targetBackup = null;
+        if (recoveryFiles.remoteDestination(file.path)) {
+          let captured;
+          try {
+            captured = await recoveryFiles.captureStream(sourceHandle.createReadStream(), {
+              maxBytes, expectedSize: file.size, checksum: file.checksum, label: file.path,
+            });
+            const metadata = recoveryFiles.restoreObjectOptions(file.path, file.object_metadata);
+            await getStorage().putFromFile(file.path, captured.path, metadata);
+            await recoveryFiles.verifyAdapter(file.path, captured.checksum, metadata, maxBytes);
+            restoredCount++;
+            continue;
+          } finally {
+            await sourceHandle.close().catch(() => {});
+            if (captured) await captured.cleanup();
+          }
+        }
         try {
           // Create target directory
           await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -1799,7 +1834,7 @@ END $$;`
       // only had to order the bad entry after them to pass.
       if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-        const filesToVerify = options.restoreType === 'selective'
+        const filesToVerify = getStorage().kind() === 's3' ? recoveryFiles.selectedManifestFiles(manifest, options) : options.restoreType === 'selective'
           ? options.selectedItems.filter(item => item.type === 'file')
           : manifest.files.manifest;
 
@@ -1815,6 +1850,13 @@ END $$;`
             continue;
           }
           try {
+            if (recoveryFiles.remoteDestination(file.path)) {
+              const actual = await recoveryFiles.verifyAdapter(file.path, file.checksum,
+                recoveryFiles.restoreObjectOptions(file.path, file.object_metadata), await getRestoreMaxFileBytes());
+              if (file.checksum && actual !== file.checksum) verification.errors.push(`Checksum mismatch for ${file.path}`);
+              verification.checksums[file.path] = { expected: file.checksum, actual, match: !file.checksum || actual === file.checksum };
+              continue;
+            }
             await fs.access(filePath);
             
             if (file.checksum) {
@@ -1881,6 +1923,27 @@ END $$;`
       }
 
       // Restore files if backed up
+      const adapterIndex = path.join(preRestoreBackupPath, 'adapter-files.json');
+      if (await fs.access(adapterIndex).then(() => true).catch(error => {
+        if (error.code === 'ENOENT') return false; throw error;
+      })) {
+        if (getStorage().kind() !== 's3') throw new Error('Primary storage changed since the safety backup');
+        for (const file of JSON.parse(await fs.readFile(adapterIndex, 'utf8'))) {
+          const key = recoveryFiles.validKey(file.path);
+          if (!recoveryFiles.remoteDestination(key)) throw new Error(`Invalid S3 rollback key: ${key}`);
+          if (!file.existed) { await getStorage().delete(key); continue; }
+          const root = await fs.realpath(path.join(preRestoreBackupPath, 'adapter-files'));
+          const handle = await openRestoreSource(root, key, await getRestoreMaxFileBytes());
+          let captured;
+          try {
+            captured = await recoveryFiles.captureStream(handle.createReadStream(), {
+              expectedSize: file.size, checksum: file.checksum, label: key,
+            });
+            await getStorage().putFromFile(key, captured.path, recoveryFiles.objectOptions(file.object_metadata));
+            await recoveryFiles.verifyAdapter(key, file.checksum, file.object_metadata);
+          } finally { await handle.close().catch(() => {}); if (captured) await captured.cleanup(); }
+        }
+      }
       const filesBackupPath = path.join(preRestoreBackupPath, 'files.tar.gz');
       if (await fs.access(filesBackupPath).then(() => true).catch(() => false)) {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');

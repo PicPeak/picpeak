@@ -117,7 +117,8 @@ class BackupManifestGenerator {
           modified: file.modified,
           checksum: file.checksum,
           type: this.getFileType(file.path),
-          permissions: file.permissions
+          permissions: file.permissions,
+          object_metadata: file.object_metadata
         }))
       },
 

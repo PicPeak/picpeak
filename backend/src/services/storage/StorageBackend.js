@@ -13,10 +13,17 @@
  * @typedef {Object} PutOptions
  * @property {string} [contentType] - MIME type stored in object metadata.
  * @property {string} [cacheControl] - Cache-Control header (S3 only).
+ * @property {Record<string,string>} [metadata] - Custom object metadata (S3 only).
  *
  * @typedef {Object} StatResult
  * @property {number} size - Size in bytes.
  * @property {Date} [mtime] - Last modified timestamp (best-effort; S3 uses LastModified).
+ * @property {string} [contentType]
+ * @property {string} [contentDisposition]
+ * @property {string} [cacheControl]
+ * @property {Record<string,string>} [metadata]
+ * @property {string} [etag] - Conditional capture identifier (S3).
+ * @property {string} [versionId] - Object version (versioned S3 buckets).
  *
  * @typedef {Object} ListEntry
  * @property {string} key - Relative path under the storage root.
@@ -28,7 +35,7 @@
  * @property {() => Promise<void>} init - Validates configuration and reachability. Called once at startup.
  * @property {(relPath: string, body: NodeJS.ReadableStream | Buffer, options?: PutOptions) => Promise<void>} put
  * @property {(relPath: string, localPath: string, options?: PutOptions) => Promise<void>} putFromFile
- * @property {(relPath: string) => Promise<NodeJS.ReadableStream>} get - Returns a readable stream of the object body.
+ * @property {(relPath: string, options?: {ifMatch?: string, versionId?: string}) => Promise<NodeJS.ReadableStream>} get - Returns a readable stream; S3 supports conditional/version-pinned capture.
  * @property {(relPath: string, start: number, end: number) => Promise<NodeJS.ReadableStream>} getRange - Returns a readable stream of the object body for the inclusive byte range [start, end]. Used by video range-request handlers.
  * @property {(relPath: string, localPath: string) => Promise<void>} getToFile - Streams the object to a local path (creates parent dirs).
  * @property {(relPath: string) => Promise<boolean>} exists

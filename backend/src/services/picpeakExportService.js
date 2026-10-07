@@ -26,6 +26,8 @@ const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
 const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
 const packageJson = require('../../package.json');
+const recoveryFiles = require('./recoveryFiles');
+const { getStorage } = require('./storage');
 
 // Bump only on a breaking change to the on-disk layout below.
 const PICPEAK_FORMAT_VERSION = 1;
@@ -59,10 +61,10 @@ const EXCLUDED_TABLES = new Set([
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
-const DOC_DIRS = ['business-docs', 'uploads'];
+const DOC_DIRS = ['business-docs', 'uploads', 'transfers'];
 // Original gallery photos — only when includePhotos is true (large; otherwise
 // the admin re-uploads originals per gallery and previews are re-rendered).
-const PHOTO_DIRS = ['events/active', 'events/archived'];
+const PHOTO_DIRS = ['events/active', 'events/archived', 'thumbnails', 'previews', 'heroes', 'videos', 'watermarks'];
 
 const isPostgres = () => knexConfig.client === 'pg';
 
@@ -115,7 +117,7 @@ async function getLatestMigration() {
 // `pathMap` ({ stored value: archived path }, legacy-root documents) is
 // applied to the stored-path columns as the rows are written, so the archive
 // names each document where its bytes are, for any importer.
-async function writeTableNdjson(table, dataDir, pathMap = null) {
+async function writeTableNdjson(table, dataDir, pathMap = null, onRows) {
   const outPath = path.join(dataDir, `${table}.ndjson`);
   const hash = crypto.createHash('sha256');
   const pathColumns = pathMap
@@ -148,6 +150,7 @@ async function writeTableNdjson(table, dataDir, pathMap = null) {
     hash.update(`${line}\n`);
     return line;
   });
+  if (onRows) onRows(table, rows);
   await fsp.writeFile(outPath, lines.length ? `${lines.join('\n')}\n` : '', 'utf8');
   return { rowCount: rows.length, checksum: hash.digest('hex') };
 }
@@ -172,14 +175,17 @@ async function collectDir(subdir, storageRoot, acc) {
   }
 }
 
-async function collectFiles(includePhotos) {
+async function collectFiles(includePhotos, requiredReferences) {
   const storageRoot = getStoragePath();
   const dirs = includePhotos ? [...DOC_DIRS, ...PHOTO_DIRS] : [...DOC_DIRS];
   const acc = [];
   for (const d of dirs) {
     await collectDir(d, storageRoot, acc);
   }
-  return acc;
+  if (getStorage().kind() !== 's3') return acc;
+  const remote = await recoveryFiles.adapterInventory(db, dirs, undefined, requiredReferences);
+  return [...acc.filter(file => !recoveryFiles.managedKey(file.rel.split(path.sep).join('/'))),
+    ...remote.map(file => ({ ...file, rel: file.relativePath }))];
 }
 
 /**
@@ -204,8 +210,11 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     const pathMap = legacyFiles.length ? storedPathMap(legacyFiles) : null;
     const tables = await listDataTables();
     const tableMeta = {};
+    const referenceRows = new Map();
     for (const table of tables) {
-      tableMeta[table] = await writeTableNdjson(table, dataDir, pathMap);
+      tableMeta[table] = await writeTableNdjson(table, dataDir, pathMap, (name, rows) => {
+        if (['events', 'photos', 'customer_documents', 'transfer_uploads', 'transfer_extra_files'].includes(name)) referenceRows.set(name, rows);
+      });
     }
 
     // 2. Gather the non-recalculable blobs (PDFs, business-docs, uploads, and
@@ -214,8 +223,16 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     // rows between engines on the SAME install, so the storage volume is already
     // correct. Copying every business doc through /tmp and back would only risk
     // filling the temp disk.
-    const files = includeFiles ? await collectFiles(includePhotos) : [];
+    const roots = includePhotos ? [...DOC_DIRS, ...PHOTO_DIRS] : DOC_DIRS;
+    const references = includeFiles && getStorage().kind() === 's3'
+      ? [...await recoveryFiles.requiredKeys(referenceRows, key => roots.some(root => key.startsWith(`${root}/`)))] : [];
+    let files = includeFiles ? await collectFiles(includePhotos, references) : [];
     for (const f of legacyFiles) files.push({ abs: f.abs, rel: f.rel.split('/').join(path.sep) });
+    if (includeFiles) {
+      const fileStage = path.join(staging, 'captured');
+      await fsp.mkdir(fileStage, { mode: 0o700 });
+      files = await recoveryFiles.materialize(files, fileStage);
+    }
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.
     const manifest = {
@@ -230,6 +247,8 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       options: { includePhotos: !!includePhotos, includeFiles: !!includeFiles },
       tables: tableMeta,
       file_count: files.length,
+      files: files.map(file => ({ path: file.relativePath, size: file.size,
+        checksum: file.checksum, object_metadata: file.objectMetadata })),
       // NOTE: contains secrets (SMTP password, admin hashes, API keys) in plain
       // text — the download surface must warn about this.
       contains_secrets: true,
