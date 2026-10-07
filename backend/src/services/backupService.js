@@ -957,7 +957,7 @@ async function buildRsyncArgs(config, extraExcludes = []) {
   const { resolveRsyncConnection } = require('../utils/rsyncConnection');
   const connection = await resolveRsyncConnection({ host: config.backup_rsync_host,
     user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key });
-  args.push('-e', ['ssh', ...connection.sshArgs].join(' '));
+  args.push('-e', connection.rsyncShell);
   args.push(source, `${connection.rsyncTarget}:${remotePath}`);
   return args;
 }
