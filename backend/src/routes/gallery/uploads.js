@@ -4,7 +4,6 @@ const { db } = require('../../database/db');
 const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
 const { noStoreCache } = require('../../middleware/noStoreCache');
-const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services/photoCap');
 const categoryScope = require('../../utils/categoryScope');

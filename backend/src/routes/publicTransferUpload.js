@@ -150,69 +150,69 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
   }, options => buildUploader(maxSizeMb * 1024 * 1024, allowed, options), async (uploadReservation, res) => {
 
-  if (!req.files || !req.files.length) {
-    return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
-  }
-
-  // Nothing becomes permanent on the strength of the pre-body check. The
-  // body is on disk already, so a refusal — or a database error while
-  // re-reading the row — removes it; otherwise every request during an
-  // outage leaves its temporary files behind.
-  const dropTempFiles = () => {
-    for (const file of req.files) {
-      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+    if (!req.files || !req.files.length) {
+      return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
     }
-  };
-  let current;
-  try {
-    current = await reloadUploadTransfer(req.params.token);
-  } catch (error) {
-    dropTempFiles();
-    throw error;
-  }
-  if (!current.transfer) {
-    dropTempFiles();
-    return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
-  }
-  const transfer = current.transfer;
 
-  const storage = getStorage();
-  const ip = clientIpForAudit(req);
-  const saved = [];
-  for (const file of req.files) {
-    const safeName = sanitizeFilename(path.basename(file.originalname), 120) || 'file';
-    const key = path.posix.join(transferService.uploadDirKey(transfer.id), `${Date.now()}-${saved.length}-${safeName}`);
-    let charge;
-    let settled = false;
+    // Nothing becomes permanent on the strength of the pre-body check. The
+    // body is on disk already, so a refusal — or a database error while
+    // re-reading the row — removes it; otherwise every request during an
+    // outage leaves its temporary files behind.
+    const dropTempFiles = () => {
+      for (const file of req.files) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    };
+    let current;
     try {
-      charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
-      await storage.putFromFile(key, file.path);
-      settled = true;
-      await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
-        originalFilename: file.originalname,
-        storedPath: key,
-        sizeBytes: file.size,
-        mimeType: file.mimetype,
-        ip,
-      }, conn));
-      saved.push({ filename: file.originalname, size_bytes: file.size });
-    } catch (err) {
-      if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
-        logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
-      });
-      logger.error('transfer upload: failed to store file', {
-        transferId: transfer.id, filename: file.originalname, error: err.message,
-      });
-    } finally {
-      // Remove the temp copy regardless of outcome.
-      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      current = await reloadUploadTransfer(req.params.token);
+    } catch (error) {
+      dropTempFiles();
+      throw error;
     }
-  }
+    if (!current.transfer) {
+      dropTempFiles();
+      return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
+    }
+    const transfer = current.transfer;
 
-  if (!saved.length) {
-    return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED' });
-  }
-  return successResponse(res, { uploaded: saved.length, files: saved }, 201, 'Files uploaded');
+    const storage = getStorage();
+    const ip = clientIpForAudit(req);
+    const saved = [];
+    for (const file of req.files) {
+      const safeName = sanitizeFilename(path.basename(file.originalname), 120) || 'file';
+      const key = path.posix.join(transferService.uploadDirKey(transfer.id), `${Date.now()}-${saved.length}-${safeName}`);
+      let charge;
+      let settled = false;
+      try {
+        charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
+        await storage.putFromFile(key, file.path);
+        settled = true;
+        await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
+          originalFilename: file.originalname,
+          storedPath: key,
+          sizeBytes: file.size,
+          mimeType: file.mimetype,
+          ip,
+        }, conn));
+        saved.push({ filename: file.originalname, size_bytes: file.size });
+      } catch (err) {
+        if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
+          logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
+        });
+        logger.error('transfer upload: failed to store file', {
+          transferId: transfer.id, filename: file.originalname, error: err.message,
+        });
+      } finally {
+      // Remove the temp copy regardless of outcome.
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    }
+
+    if (!saved.length) {
+      return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED' });
+    }
+    return successResponse(res, { uploaded: saved.length, files: saved }, 201, 'Files uploaded');
   });
 }));
 
