@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.165.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.2-beta.0...v3.165.3-beta.0) (2026-10-07)
+
+
+### Bug Fixes
+
+* **admin:** gallery page — settings panes scroll on their own, header actions reordered, customer accounts on the Overview ([#1833](https://github.com/PicPeak/picpeak/issues/1833)) ([b1d8669](https://github.com/PicPeak/picpeak/commit/b1d86692c0cb8bb36c40edd3040fcb8a39f7f7d7))
+
 ## [3.165.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.1-beta.0...v3.165.2-beta.0) (2026-10-06)
 
 
