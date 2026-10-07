@@ -19,6 +19,7 @@ const expenseService = require('./expenseService');
 const sanitizeHtml = require('sanitize-html');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { isMaskedOrBlank, sameImapTarget, PasswordRequiredError } = require('../utils/mailCredentialTarget');
+const { mailSocketOptions, smtpConnectionOptions } = require('../utils/mailConnection');
 
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 
@@ -58,7 +59,9 @@ const IMAP_TIMEOUTS = { connectionTimeout: 10000, greetingTimeout: 10000, socket
 const LOOKBACK_DAYS = 90;
 
 function makeImapClient(cfg) {
-  return new ImapFlow({ host: cfg.host, port: cfg.port, secure: cfg.secure, auth: cfg.auth, logger: false, ...IMAP_TIMEOUTS });
+  const connection = mailSocketOptions('imap', cfg.host, cfg.port);
+  return new ImapFlow({ host: connection.host, port: cfg.port, secure: cfg.secure, auth: cfg.auth,
+    tls: connection, logger: false, ...IMAP_TIMEOUTS });
 }
 
 /** Connect with a hard ceiling, so a stuck TLS handshake can't hang forever. */
@@ -212,14 +215,14 @@ async function roundTripTest({ timeoutMs = 30000, intervalMs = 3000 } = {}) {
   const subject = `picpeak round-trip test ${token}`;
 
   // 1) Send via the saved SMTP config (mirror the /test route's transport).
-  const transporter = nodemailer.createTransport({
-    host: c.smtp_host,
-    port: parseInt(c.smtp_port, 10),
-    secure: c.smtp_secure === true || c.smtp_secure === 1,
-    auth: c.smtp_user && c.smtp_pass ? { user: c.smtp_user, pass: c.smtp_pass } : undefined,
-    tls: { rejectUnauthorized: c.tls_reject_unauthorized !== false },
-  });
   try {
+    const transporter = nodemailer.createTransport(smtpConnectionOptions({
+      host: c.smtp_host,
+      port: parseInt(c.smtp_port, 10),
+      secure: c.smtp_secure === true || c.smtp_secure === 1,
+      auth: c.smtp_user && c.smtp_pass ? { user: c.smtp_user, pass: c.smtp_pass } : undefined,
+      tls: { rejectUnauthorized: c.tls_reject_unauthorized !== false },
+    }));
     await transporter.sendMail({
       from: `${c.from_name || 'picpeak'} <${c.from_email || c.smtp_user}>`,
       to: recipient,
@@ -227,7 +230,7 @@ async function roundTripTest({ timeoutMs = 30000, intervalMs = 3000 } = {}) {
       text: `This is an automated picpeak round-trip test. Token: ${token}. Safe to ignore — it is deleted automatically.`,
     });
   } catch (err) {
-    return { ok: false, sent: false, reason: 'send_failed', error: err.message };
+    return { ok: false, sent: false, reason: 'send_failed', error: err.message, code: err.code };
   }
 
   // 2) Poll IMAP for the tagged message until timeout.
@@ -294,9 +297,10 @@ function sanitizeBody(html) {
  * identical for every mailbox.
  */
 async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses = true } = {}) {
-  const client = makeImapClient(cfg);
+  let client;
   let processed = 0;
   try {
+    client = makeImapClient(cfg);
     await connectWithTimeout(client);
     const lock = await client.getMailboxLock(cfg.folder);
     /* eslint-disable no-await-in-loop */
@@ -488,7 +492,7 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
     await client.logout();
   } catch (e) {
     logger.error?.(`emailIntake: poll failed (${accountKey}): ${e.message}`);
-    try { await client.close(); } catch (_e) { /* ignore */ }
+    try { await client?.close(); } catch (_e) { /* ignore */ }
   }
   return processed;
 }

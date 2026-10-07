@@ -1,5 +1,6 @@
 const { secretValues, redactEmailData, redactRenderedHtml, replaceMaskedSecrets, isSecretKey, redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink } = require('../utils/emailSecretRedaction');
 const nodemailer = require('nodemailer');
+const { smtpConnectionOptions } = require('../utils/mailConnection');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
@@ -111,7 +112,7 @@ async function initializeTransporter(forceReinit = false) {
       try { transporter.close(); } catch (_) { /* best-effort */ }
     }
 
-    transporter = nodemailer.createTransport({
+    transporter = nodemailer.createTransport(smtpConnectionOptions({
       host: config.smtp_host,
       port: config.smtp_port,
       secure: config.smtp_secure,
@@ -123,7 +124,7 @@ async function initializeTransporter(forceReinit = false) {
         // Allow ignoring SSL certificate errors when tls_reject_unauthorized is false
         rejectUnauthorized: config.tls_reject_unauthorized !== false
       }
-    });
+    }));
 
     // Verify configuration
     await transporter.verify();
@@ -1154,13 +1155,13 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     const acct = await db('mail_accounts').where({ account_key: accountKey }).first();
     if (acct && acct.smtp_host && (acct.smtp_user || acct.from_email)) {
       const nodemailer = require('nodemailer');
-      tx = nodemailer.createTransport({
+      tx = nodemailer.createTransport(smtpConnectionOptions({
         host: acct.smtp_host,
         port: parseInt(acct.smtp_port, 10) || 587,
         secure: acct.smtp_secure === true || acct.smtp_secure === 1,
         auth: acct.smtp_user && acct.smtp_pass ? { user: acct.smtp_user, pass: acct.smtp_pass } : undefined,
         tls: { rejectUnauthorized: true },
-      });
+      }));
       fromEmail = acct.from_email || acct.smtp_user;
       fromName = acct.from_name || '';
     }

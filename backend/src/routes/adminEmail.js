@@ -2,6 +2,7 @@ const { changedFields } = require('../usage/adoptionEvidence');
 const express = require('express');
 const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const nodemailer = require('nodemailer');
+const { smtpConnectionOptions, isMailHostAllowed } = require('../utils/mailConnection');
 const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
@@ -81,9 +82,8 @@ router.post('/config', [
     // Validate SMTP host is not a private/internal address (SSRF protection).
     // Resolves DNS so a public-looking hostname pointing at an internal IP
     // is caught, not just literal private addresses (#GHSA-ch64).
-    const { isHostAllowed } = require('../utils/networkValidation');
-    if (!(await isHostAllowed(smtp_host))) {
-      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address' });
+    if (!(await isMailHostAllowed('smtp', smtp_host, smtp_port))) {
+      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
     }
 
     // Check if config exists
@@ -172,9 +172,8 @@ router.post('/incoming-config', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body;
-    const { isHostAllowed } = require('../utils/networkValidation');
-    if (!(await isHostAllowed(imap_host))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
+    if (!(await isMailHostAllowed('imap', imap_host, imap_port))) {
+      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
     }
     const existing = await db('email_configs').first();
     // Same rule as SMTP: the poller would log in to the new server with it.
@@ -210,9 +209,8 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.edit
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body || {};
     if (imap_host) {
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!(await isHostAllowed(imap_host))) {
-        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
+      if (!(await isMailHostAllowed('imap', imap_host, imap_port || 993))) {
+        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
       }
     }
     const emailIntakeService = require('../services/emailIntakeService');
@@ -223,7 +221,7 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.edit
   } catch (error) {
     if (error.code === 'PASSWORD_REQUIRED') return res.status(400).json({ error: error.message, code: error.code });
     logger.error('IMAP folder detection error:', error);
-    res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993) and credentials.` });
+    res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993) and credentials.`, code: error.code });
   }
 });
 
@@ -233,9 +231,8 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.edit'),
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body || {};
     if (imap_host) {
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!(await isHostAllowed(imap_host))) {
-        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
+      if (!(await isMailHostAllowed('imap', imap_host, imap_port || 993))) {
+        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
       }
     }
     const emailIntakeService = require('../services/emailIntakeService');
@@ -250,7 +247,7 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.edit'),
   } catch (error) {
     if (error.code === 'PASSWORD_REQUIRED') return res.status(400).json({ error: error.message, code: error.code });
     logger.error('IMAP connection test error:', error);
-    res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993), credentials and folder.` });
+    res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993), credentials and folder.`, code: error.code });
   }
 });
 
@@ -272,10 +269,10 @@ router.post('/incoming-config/roundtrip', adminAuth, requirePermission('email.se
       not_received: 'The email was sent but did not arrive within 30s — possible delivery delay/greylisting. Check the Received emails tab in a moment.',
     };
     return res.status(result.reason === 'not_received' ? 504 : 400)
-      .json({ error: map[result.reason] || 'Round-trip test failed.', sent: !!result.sent, recipient: result.recipient });
+      .json({ error: map[result.reason] || 'Round-trip test failed.', sent: !!result.sent, recipient: result.recipient, code: result.code });
   } catch (error) {
     logger.error('Round-trip test error:', error);
-    res.status(422).json({ error: `Round-trip test failed (${error.message}) — check both SMTP and IMAP settings.` });
+    res.status(422).json({ error: `Round-trip test failed (${error.message}) — check both SMTP and IMAP settings.`, code: error.code });
   }
 });
 
@@ -425,12 +422,11 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
     if (!b.account_key) return res.status(400).json({ error: 'account_key is required' });
     // SSRF guard — mirror /config + /incoming-config: neither the IMAP nor the
     // SMTP host may point at a private/internal address.
-    const { isHostAllowed } = require('../utils/networkValidation');
-    if (b.imap_host && !(await isHostAllowed(b.imap_host))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
+    if (b.imap_host && !(await isMailHostAllowed('imap', b.imap_host, b.imap_port || 993))) {
+      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
     }
-    if (b.smtp_host && !(await isHostAllowed(b.smtp_host))) {
-      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address' });
+    if (b.smtp_host && !(await isMailHostAllowed('smtp', b.smtp_host, b.smtp_port || 587))) {
+      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
     }
     const patch = {
       label: b.label || null,
@@ -486,9 +482,8 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
 router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email.edit'), async (req, res) => {
   try {
     const b = req.body || {};
-    const { isHostAllowed } = require('../utils/networkValidation');
-    if (b.imap_host && !(await isHostAllowed(b.imap_host))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
+    if (b.imap_host && !(await isMailHostAllowed('imap', b.imap_host, b.imap_port || 993))) {
+      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
     }
     let pass = b.imap_pass;
     if (isMaskedOrBlank(pass)) {
@@ -507,7 +502,7 @@ router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email
     if (result?.ok) capabilityEvidence(res, 'incoming_mail');
     res.json(result);
   } catch (error) {
-    res.status(422).json({ ok: false, error: `Mailbox test failed (${error.message}).` });
+    res.status(422).json({ ok: false, error: `Mailbox test failed (${error.message}).`, code: error.code });
   }
 });
 
@@ -611,7 +606,7 @@ router.post('/test', adminAuth, requirePermission('email.send'), async (req, res
       auth: transportConfig.auth ? 'configured' : 'none'
     });
 
-    const transporter = nodemailer.createTransport(transportConfig);
+    const transporter = nodemailer.createTransport(smtpConnectionOptions(transportConfig));
 
     // Send test email with the same wrapper used for all other emails
     const subject = 'Test Email - Photo Sharing Platform';

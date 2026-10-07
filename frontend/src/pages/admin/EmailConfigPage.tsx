@@ -35,6 +35,7 @@ import { SUPPORTED_LANGUAGES } from "../../components/common/LanguageSelector.ts
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { emailColorsFromBranding, lowListPanelContrast } from '../../utils/emailBrandingSync';
+import { mailPolicyError } from '../../utils/mailErrors';
 
 /**
  * Template categorisation (migration 098). Sidebar sections render
@@ -333,7 +334,8 @@ export const EmailConfigPage: React.FC = () => {
   // password, private-host rejection, …) instead of a generic toast — for
   // email config these messages are the whole diagnosis.
   const errMsg = (e: any, fallback: string): string =>
-    e?.response?.data?.error
+    mailPolicyError(e, t)
+    || e?.response?.data?.error
     || e?.response?.data?.details
     || e?.message
     || fallback;
@@ -658,6 +660,7 @@ export const EmailConfigPage: React.FC = () => {
           )}
           <Card padding="md">
             <h2 className="text-lg font-semibold text-heading mb-4">{t('email.smtpConfiguration')}</h2>
+            <p className="text-sm text-soft mb-4">{t('email.networkPolicyHelp')}</p>
 
             <div className="space-y-4">
               <div>
