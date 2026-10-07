@@ -223,6 +223,11 @@ extracted directory as the selected point.
 S3 recovery uses the selected manifest's bucket/prefix and current credentials.
 Keep custom manifests together with their recorded snapshot location.
 
+An empty `RESTORE_ON_INSTALL` trigger still auto-selects the newest local
+manifest, searching both the shared `manifests/` directory and immediate
+`backup-UUID/manifests/` points. For a renamed point or custom manifest location,
+put its explicit manifest path in the trigger file instead.
+
 Older ambiguous incremental local/S3 backups cannot prove a complete file set
 and are refused for full/file restores, including forced restores. Database-only
 and selective file recovery remain available; they do not establish complete
