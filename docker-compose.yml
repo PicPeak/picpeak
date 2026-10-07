@@ -52,6 +52,7 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-}
+      - EMAIL_QUEUE_ENCRYPTION_KEY=${EMAIL_QUEUE_ENCRYPTION_KEY:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}

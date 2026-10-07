@@ -50,6 +50,11 @@ function validateEnvironment() {
     }
   });
 
+  const emailQueueKey = process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
+  if (emailQueueKey && emailQueueKey.trim().length < 32) {
+    errors.push('EMAIL_QUEUE_ENCRYPTION_KEY must contain at least 32 characters. Generate a unique secret with openssl rand -hex 32.');
+  }
+
   // Log warnings
   warnings.forEach(warning => logger.warn(warning));
 

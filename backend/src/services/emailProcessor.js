@@ -8,6 +8,12 @@ const {
   normaliseSchedule,
 } = require('../utils/businessHours');
 const { hasColumnCached } = require('../utils/schemaCache');
+const {
+  decryptEmailData,
+  encryptEmailData,
+  isProtectedEmailType,
+  PROTECTED_PENDING_STATUS,
+} = require('../utils/emailQueueEncryption');
 const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
@@ -1251,7 +1257,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
       // queue split-payment emails relative to the event date.
       const now = new Date();
       const query = db('email_queue')
-        .where('status', 'pending');
+        .whereIn('status', ['pending', PROTECTED_PENDING_STATUS]);
       // Targeted single-email flush (cockpit "send now"): scope to that row
       // only, so we never force-retry other dead-lettered emails.
       if (onlyId != null) query.where('id', onlyId);
@@ -1302,6 +1308,10 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         emailData = typeof email.email_data === 'string'
           ? JSON.parse(email.email_data || '{}')
           : email.email_data || {};
+        // Account-recovery variables are ciphertext while they wait in the
+        // database. Only the delivery worker opens them, immediately before
+        // template rendering; tamper or a missing/rotated key fails closed.
+        emailData = decryptEmailData(email.email_type, emailData, email.recipient_email);
         // A re-queued row (Messages resend / retry / send now) may carry the
         // archive mask where its passwords used to be; the sentinel makes
         // the template say "not shown" instead of mailing the mask.
@@ -1313,7 +1323,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         if (hasMaskedRecoveryLink(emailData)) {
           // Status-guarded: a row cancelled since the batch was fetched
           // (e.g. a customer erasure, issue 1593) must stay cancelled.
-          await db('email_queue').where({ id: email.id, status: 'pending' }).update({
+          await db('email_queue').where({ id: email.id, status: email.status }).update({
             status: 'failed',
             error_message: 'This invitation or password-reset email cannot be sent again: its link is not kept after sending. Send a new invitation or password reset instead.',
           });
@@ -1343,7 +1353,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           // a full batch goes out after the UI says the campaign is
           // cancelled. Re-check the row still exists and is still pending.
           const stillPending = await db('email_queue')
-            .where({ id: email.id, status: 'pending' })
+            .where({ id: email.id, status: email.status })
             .first('id');
           if (!stillPending) {
             logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
@@ -1363,7 +1373,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           // the row back to 'sent' with the pre-erasure, unredacted data.
           // Re-check the row is still pending immediately before sending.
           const stillPending = await db('email_queue')
-            .where({ id: email.id, status: 'pending' })
+            .where({ id: email.id, status: email.status })
             .first('id');
           if (!stillPending) {
             logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
@@ -1399,7 +1409,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // and redacts this row (issue 1593); an unguarded update would flip
         // it back to 'sent' and restore the pre-erasure data + HTML.
         const markedSent = await db('email_queue')
-          .where({ id: email.id, status: 'pending' })
+          .where({ id: email.id, status: email.status })
           .update(sentUpdate);
         if (!markedSent) {
           logger.info(`Email ${email.id} was sent but cancelled mid-send — leaving the cancelled row as is`);
@@ -1434,10 +1444,11 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           logger.error(`Email ${email.id} not sent: ${error.message}`);
           continue;
         }
-        // Increment retry count. The variables stay in the clear on
-        // failure: a row past the cap can still be re-queued (Messages
-        // "retry" resets retry_count, ignoreSchedule skips the cap) and a
-        // masked password would then be mailed out as the real one.
+        // Increment retry count without rewriting email_data. Protected
+        // account-recovery rows therefore remain encrypted; ordinary rows
+        // retain their variables because a row past the cap can still be
+        // re-queued (Messages "retry" resets retry_count, ignoreSchedule
+        // skips the cap).
         try {
           await db('email_queue')
             .where('id', email.id)
@@ -1571,8 +1582,8 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       event_id: eventId,
       recipient_email: recipientEmail,
       email_type: emailType,
-      email_data: JSON.stringify(emailData),
-      status: 'pending',
+      email_data: JSON.stringify(encryptEmailData(emailType, emailData, recipientEmail)),
+      status: isProtectedEmailType(emailType) ? PROTECTED_PENDING_STATUS : 'pending',
       retry_count: 0,
       created_at: new Date(),
       // Explicit NULL, never the column default. The default is

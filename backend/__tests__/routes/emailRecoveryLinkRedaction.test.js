@@ -131,13 +131,68 @@ describe('admin archive of credential links', () => {
     expect(preview.html).toContain(`/customer/invite/${MASK}`);
   });
 
-  it('scrubs the invitation link once sent, and never sends that row again', async () => {
-    const id = await queueRow({
-      email_type: 'customer_password_reset', status: 'pending', sent_at: null,
-      scheduled_at: new Date().toISOString(),
-      email_data: JSON.stringify({ reset_link: `https://photos.example.com/customer/reset-password/${RESET}`, expires_at: new Date(Date.now() + 3600000).toISOString() }),
+  it('keeps pending recovery variables encrypted and opens them only for delivery', async () => {
+    const { queueEmail, processEmailQueue } = require('../../src/services/emailProcessor');
+    await queueEmail(null, 'encrypted-reset@example.com', 'customer_password_reset', {
+      reset_link: `https://photos.example.com/customer/reset-password/${RESET}`,
+      expires_at: new Date(Date.now() + 3600000).toISOString(),
     });
-    const { processEmailQueue } = require('../../src/services/emailProcessor');
+    const queued = await db('email_queue').where({ recipient_email: 'encrypted-reset@example.com' }).first();
+    expect(queued.email_data).not.toContain(RESET);
+    expect(JSON.parse(queued.email_data)).toHaveProperty('__picpeak_encrypted_email_v1');
+
+    const stub = stubWebhookTransport();
+    try {
+      await processEmailQueue({ ignoreSchedule: true, onlyId: queued.id });
+    } finally { stub.restore(); }
+
+    expect(stub.mails).toHaveLength(1);
+    expect(String(stub.mails[0].html)).toContain(RESET);
+    const sent = await db('email_queue').where({ id: queued.id }).first();
+    expect(sent.status).toBe('sent');
+    expect(sent.email_data).not.toContain(RESET);
+    expect(JSON.parse(sent.email_data).reset_link).toContain(`/reset-password/${MASK}`);
+  });
+
+  it('fails closed before delivery when queued recovery ciphertext is corrupted', async () => {
+    const { queueEmail, processEmailQueue } = require('../../src/services/emailProcessor');
+    await queueEmail(null, 'tampered-reset@example.com', 'customer_password_reset', {
+      reset_link: `https://photos.example.com/customer/reset-password/${RESET}`,
+    });
+    const queued = await db('email_queue').where({ recipient_email: 'tampered-reset@example.com' }).first();
+    const envelope = JSON.parse(queued.email_data);
+    const key = Object.keys(envelope)[0];
+    const [iv, encodedTag, ciphertext] = envelope[key].split('.');
+    const tag = Buffer.from(encodedTag, 'base64url');
+    tag[0] ^= 0xff;
+    envelope[key] = [iv, tag.toString('base64url'), ciphertext].join('.');
+    const corrupted = JSON.stringify(envelope);
+    await db('email_queue').where({ id: queued.id }).update({ email_data: corrupted });
+
+    const stub = stubWebhookTransport();
+    try {
+      await processEmailQueue({ ignoreSchedule: true, onlyId: queued.id });
+    } finally { stub.restore(); }
+
+    expect(stub.mails).toHaveLength(0);
+    const failed = await db('email_queue').where({ id: queued.id }).first();
+    expect(failed.status).toBe('protected_pending');
+    expect(failed.retry_count).toBe(1);
+    expect(failed.email_data).toBe(corrupted);
+    expect(failed.error_message).toMatch(/could not be decrypted/i);
+    expect(failed.error_message).not.toContain(RESET);
+  });
+
+  it('scrubs the invitation link once sent, and never sends that row again', async () => {
+    const { queueEmail, processEmailQueue } = require('../../src/services/emailProcessor');
+    await queueEmail(null, 'someone@example.com', 'customer_password_reset', {
+      reset_link: `https://photos.example.com/customer/reset-password/${RESET}`,
+      expires_at: new Date(Date.now() + 3600000).toISOString(),
+    });
+    const queued = await db('email_queue').where({
+      recipient_email: 'someone@example.com', email_type: 'customer_password_reset',
+    }).orderBy('id', 'desc').first();
+    const id = queued.id;
     const stub = stubWebhookTransport();
     try {
       await processEmailQueue({ ignoreSchedule: true, onlyId: id });
@@ -159,16 +214,11 @@ describe('admin archive of credential links', () => {
       await expect(projectService[action](id)).rejects.toMatchObject({ statusCode: 409 });
     }
 
-    // any other requeue path (e.g. a raw status reset) is refused by the processor
-    await db('email_queue').where({ id }).update({ status: 'pending', retry_count: 0 });
-    const again = stubWebhookTransport();
-    try {
-      await processEmailQueue({ ignoreSchedule: true, onlyId: id });
-    } finally { again.restore(); }
-    expect(again.mails).toHaveLength(0);
-    const refused = await db('email_queue').where({ id }).first();
-    expect(refused.status).toBe('failed');
-    expect(refused.error_message).toMatch(/cannot be sent again/);
+    // The storage boundary also refuses an old/raw requeue path before the
+    // processor could pick up the redacted plaintext row.
+    await expect(db('email_queue').where({ id }).update({
+      status: 'pending', retry_count: 0,
+    })).rejects.toThrow(/protected storage/);
   });
 
   it('webhook delivery detail hides share links from settings.view, not from settings.integrations', async () => {
