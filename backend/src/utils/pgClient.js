@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const tls = require('tls');
 const net = require('net');
-const { pgSslFromEnv } = require('./pgConnection');
+const { pgSslFromEnv, checkPgServerIdentity } = require('./pgConnection');
 
 function quoteConnectionValue(value) {
   if (typeof value !== 'string' || value.includes('\0')) {
@@ -42,7 +42,8 @@ function verifiedPeerCa(host, port) {
     socket.once('connect', () => socket.write(Buffer.from([0, 0, 0, 8, 4, 210, 22, 47])));
     socket.once('data', (response) => {
       if (response.toString() !== 'S') return finish(new Error('PostgreSQL server did not accept TLS'));
-      secure = tls.connect({ socket, host, servername: net.isIP(host) ? undefined : host, rejectUnauthorized: true });
+      secure = tls.connect({ socket, host, servername: net.isIP(host) ? undefined : host,
+        rejectUnauthorized: true, checkServerIdentity: checkPgServerIdentity });
       secure.once('error', finish);
       secure.once('secureConnect', () => {
         const certificates = [];

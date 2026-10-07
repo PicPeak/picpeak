@@ -1,8 +1,23 @@
 'use strict';
 
 const net = require('net');
+const tls = require('tls');
+const { X509Certificate } = require('crypto');
 const PG_TLS_GUIDANCE = 'PostgreSQL TLS verifies the certificate and DB_HOST. For private/self-signed certificates, configure DB_SSL_CA with the CA PEM or a readable CA file; do not disable verification.';
 let announcedVerifiedTls = false;
+
+// Node 22.23's DNS ASCII normalisation misclassifies IPv6 literals. Use
+// OpenSSL's exact iPAddress SAN check, never a DNS/CN fallback for an IP.
+// TLS still verifies the certificate chain before calling this identity hook.
+function checkPgServerIdentity(host, certificate) {
+  if (!net.isIP(host)) return tls.checkServerIdentity(host, certificate);
+  try {
+    if (certificate.raw && new X509Certificate(certificate.raw).checkIP(host)) return undefined;
+  } catch (_) { /* malformed certificate fails closed below */ }
+  const error = new Error('Hostname/IP does not match certificate IP subject alternative names');
+  error.code = 'ERR_TLS_CERT_ALTNAME_INVALID';
+  return error;
+}
 
 /**
  * The PostgreSQL target, resolved in exactly one place (#1038).
@@ -48,7 +63,10 @@ function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
   // pg supplies TLS servername only for DNS hosts. Without host/servername,
   // Node verifies the chain but skips identity checks for IP destinations.
   // `host` enables IP SAN checks without sending an invalid IP-valued SNI.
-  if (host && net.isIP(host)) ssl.host = host;
+  if (host && net.isIP(host)) {
+    ssl.host = host;
+    if (ssl.rejectUnauthorized) ssl.checkServerIdentity = checkPgServerIdentity;
+  }
   const ca = (env.DB_SSL_CA || '').trim();
   if (ca) {
     ssl.ca = ca.includes('-----BEGIN') ? ca : require('fs').readFileSync(ca, 'utf8');
@@ -73,4 +91,4 @@ function pgConnectionFromEnv() {
   };
 }
 
-module.exports = { pgConnectionFromEnv, pgSslFromEnv, PG_TLS_GUIDANCE };
+module.exports = { pgConnectionFromEnv, pgSslFromEnv, checkPgServerIdentity, PG_TLS_GUIDANCE };
