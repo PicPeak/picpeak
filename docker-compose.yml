@@ -72,6 +72,7 @@ services:
       - SMTP_SECURE=${SMTP_SECURE:-false}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - MAIL_PRIVATE_ENDPOINTS=${MAIL_PRIVATE_ENDPOINTS:-}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@picpeak.local}
       # Webhook email transport (#1225). Listed here because this service
       # declares an explicit `environment:` block — a variable only present in
