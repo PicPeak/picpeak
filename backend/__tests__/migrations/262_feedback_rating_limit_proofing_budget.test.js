@@ -6,6 +6,7 @@
  */
 const knex = require('knex');
 const migration = require('../../migrations/core/262_feedback_rating_limit_proofing_budget');
+const { decodeSettingValue } = require('../helpers/settingValue');
 
 const seeded = {
   rating: { max: 100, window: 3600 },
@@ -18,7 +19,7 @@ describe('migration 262 on SQLite', () => {
 
   const stored = async () => {
     const row = await db('app_settings').where({ setting_key: 'feedback_rate_limits' }).first();
-    return JSON.parse(row.setting_value);
+    return decodeSettingValue(db, row.setting_value);
   };
 
   beforeEach(async () => {
