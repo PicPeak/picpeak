@@ -82,6 +82,25 @@ afterEach(() => {
 });
 
 describe('legacy-root documents in archives', () => {
+  it('deduplicates identical mirrored legacy documents into an importable portable catalogue', async () => {
+    const { createPicpeak } = require('../../src/services/picpeakExportService');
+    const { importFromPicpeak } = require('../../src/services/picpeakImportService');
+    const { root, legacy } = useInstall('source');
+    const rel = 'business-docs/inbound/2026/same.pdf';
+    const legacyFile = path.join(legacy, rel);
+    write(legacyFile, 'IDENTICAL'); write(path.join(root, rel), 'IDENTICAL');
+    await db('inbound_documents').del();
+    await db('inbound_documents').insert({ original_filename: 'mirror', file_path: legacyFile });
+    const { filePath, manifest } = await createPicpeak({ includePhotos: false });
+    try {
+      expect(manifest.files.filter(file => file.path === rel)).toHaveLength(1);
+      fs.rmSync(path.join(base, 'source'), { recursive: true, force: true });
+      useInstall('target');
+      await importFromPicpeak({ picpeakPath: filePath });
+      expect(await contents()).toEqual({ mirror: 'IDENTICAL' });
+    } finally { fs.rmSync(path.dirname(filePath), { recursive: true, force: true }); }
+  });
+
   it('a .picpeak restore on another machine opens every document with its own bytes', async () => {
     const { createPicpeak } = require('../../src/services/picpeakExportService');
     const { importFromPicpeak } = require('../../src/services/picpeakImportService');

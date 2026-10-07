@@ -5313,7 +5313,9 @@
         "path": "Path",
         "coverage": "Coverage",
         "featureFlag": "Feature flag",
-        "description": "Description"
+        "description": "Description",
+        "transferDescription": "Admin deliverable transfer attachments",
+        "watermarkDescription": "Managed watermarked gallery renditions"
       },
       "coverage": {
         "willScan": "Will scan",

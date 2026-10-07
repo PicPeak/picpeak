@@ -1341,7 +1341,9 @@
         "path": "Pfad",
         "coverage": "Abdeckung",
         "featureFlag": "Feature-Flag",
-        "description": "Beschreibung"
+        "description": "Beschreibung",
+        "transferDescription": "Vom Admin bereitgestellte Transfer-Anhänge",
+        "watermarkDescription": "Verwaltete Galeriebilder mit Wasserzeichen"
       },
       "coverage": {
         "willScan": "Wird gescannt",

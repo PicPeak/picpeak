@@ -316,7 +316,11 @@ const PathsTable: React.FC<{ paths: BackupCoverageReport['paths'] }> = ({ paths 
                     : '—'}
                 </td>
                 <td className="px-3 py-2 text-xs text-soft">
-                  {p.description ?? '—'}
+                  {p.path === 'transfers' && p.description === 'Admin deliverable transfer attachments'
+                    ? t('backup.coverage.paths.transferDescription')
+                    : p.path === 'watermarks' && p.description === 'Managed watermarked gallery renditions'
+                      ? t('backup.coverage.paths.watermarkDescription')
+                      : p.description ?? '—'}
                 </td>
               </tr>
             ))}

@@ -168,6 +168,12 @@ describe('importFilePathProblem', () => {
     'uploads/contracts/signed/c-1.pdf',
     'events/active/wedding/individual/a.jpg',
     'events/archived/old.zip',
+    'transfers/12/files/opaque',
+    'thumbnails/x.jpg',
+    'previews/x.jpg',
+    'heroes/x.jpg',
+    'videos/x.mp4',
+    'watermarks/x.jpg',
     // Attachment-only trees keep whatever name the client gave the file.
     'uploads/transfers/12/payload.js',
     'uploads/transfers/12/page.html',
@@ -181,7 +187,7 @@ describe('importFilePathProblem', () => {
   it.each([
     ['fonts/Inter/400.woff2', /not under an exported storage folder/],
     ['fonts/payload.html', /not under an exported storage folder/],
-    ['thumbnails/x.jpg', /not under an exported storage folder/],
+    ['thumbnails-other/x.jpg', /not under an exported storage folder/],
     ['events/x.jpg', /not under an exported storage folder/],
     ['events/active', /not under an exported storage folder/],
     ['uploads', /not under an exported storage folder/],

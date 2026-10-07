@@ -11,6 +11,8 @@ const logger = require('../utils/logger');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const packageJson = require('../../package.json');
+const recoveryFiles = require('./recoveryFiles');
+const { getStorage } = require('./storage');
 
 // Constants
 
@@ -673,10 +675,16 @@ class DatabaseBackupService {
       
       // Create the backup
       this.updateProgress('Creating database backup...');
+      const storageReferences = getStorage().kind() === 's3'
+        ? [...await recoveryFiles.requiredKeys(db, () => true)].sort() : null;
       if (this.dbType === 'sqlite') {
         await this.createSQLiteBackup(sqlFile, options);
       } else {
         await this.createPostgreSQLBackup(sqlFile, options);
+      }
+      if (storageReferences && JSON.stringify(storageReferences)
+          !== JSON.stringify([...await recoveryFiles.requiredKeys(db, () => true)].sort())) {
+        throw new Error('Primary-storage references changed during the database dump; retry after uploads/archiving finish');
       }
       
       // Compress if requested
@@ -722,6 +730,7 @@ class DatabaseBackupService {
             compressed: compress,
             validated: validateIntegrity,
             compressionStats,
+            ...(storageReferences ? { storageReferences } : {}),
             tableCount: tableChecksums ? Object.keys(tableChecksums).length : null,
             app_version: packageJson.version,
             node_version: process.version,

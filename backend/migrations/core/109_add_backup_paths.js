@@ -109,6 +109,20 @@ const DEFAULT_PATHS = [
     display_order: 80,
     description: 'Browser-playable copies of videos',
   },
+  {
+    path: 'transfers',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 90,
+    description: 'Admin deliverable transfer attachments',
+  },
+  {
+    path: 'watermarks',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 100,
+    description: 'Managed watermarked gallery renditions',
+  },
 ];
 
 exports.up = async function(knex) {

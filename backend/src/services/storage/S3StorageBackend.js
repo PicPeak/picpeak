@@ -57,6 +57,7 @@ class S3StorageBackend {
         contentType: options.contentType,
         contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
+        metadata: options.metadata,
       });
       return;
     }
@@ -65,6 +66,7 @@ class S3StorageBackend {
         contentType: options.contentType,
         contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
+        metadata: options.metadata,
       });
       return;
     }
@@ -76,11 +78,12 @@ class S3StorageBackend {
       contentType: options.contentType,
       contentDisposition: options.contentDisposition,
       cacheControl: options.cacheControl,
+      metadata: options.metadata,
     });
   }
 
-  async get(relPath) {
-    return this.adapter.downloadStream(this._key(relPath));
+  async get(relPath, options = {}) {
+    return this.adapter.downloadStream(this._key(relPath), { ifMatch: options.ifMatch, versionId: options.versionId });
   }
 
   async getRange(relPath, start, end) {
@@ -104,6 +107,12 @@ class S3StorageBackend {
       return {
         size: head.ContentLength,
         mtime: head.LastModified,
+        contentType: head.ContentType,
+        contentDisposition: head.ContentDisposition,
+        cacheControl: head.CacheControl,
+        metadata: head.Metadata,
+        etag: head.ETag,
+        versionId: head.VersionId,
       };
     } catch (err) {
       if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) return null;
@@ -121,18 +130,26 @@ class S3StorageBackend {
   }
 
   async list(prefix) {
-    const fullPrefix = this._key(prefix || '.');
+    const rootList = !prefix || prefix === '.';
+    const fullPrefix = rootList ? (this.prefix ? `${this.prefix}/` : '') : this._key(prefix);
     const entries = [];
+    const tokens = new Set();
     let continuationToken;
     do {
       const result = await this.adapter.list(fullPrefix, { continuationToken });
       for (const obj of result.Contents || []) {
+        if (this.prefix && !obj.Key.startsWith(`${this.prefix}/`)) continue;
         const stripped = this.prefix && obj.Key.startsWith(`${this.prefix}/`)
           ? obj.Key.slice(this.prefix.length + 1)
           : obj.Key;
         entries.push({ key: stripped, size: obj.Size, mtime: obj.LastModified });
       }
       continuationToken = result.NextContinuationToken;
+      if (result.IsTruncated && !continuationToken) throw new Error('S3 object listing was truncated without a continuation token');
+      if (continuationToken) {
+        if (typeof continuationToken !== 'string' || tokens.has(continuationToken)) throw new Error('S3 object listing has an invalid/repeated continuation token');
+        tokens.add(continuationToken);
+      }
     } while (continuationToken);
     return entries;
   }
