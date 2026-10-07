@@ -66,7 +66,7 @@ describe('pgSslFromEnv', () => {
 
   it.each(['127.0.0.1', '::1'])('pins identity verification for IP host %s', (host) => {
     expect(pgSslFromEnv({ DB_SSL: 'true', DB_HOST: host }))
-      .toEqual({ rejectUnauthorized: true, host });
+      .toEqual({ rejectUnauthorized: true, host, checkServerIdentity: expect.any(Function) });
   });
 
   it.each(['1', 'yes', 'tru'])('rejects a malformed TLS control: %s', (value) => {

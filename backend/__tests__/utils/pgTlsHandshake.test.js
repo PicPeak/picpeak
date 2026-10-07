@@ -88,6 +88,13 @@ test('a trusted CA with the wrong hostname is rejected before startup/credential
   expect(startupMessages).toBe(before);
 });
 
+test('an IPv6 destination cannot use a trusted DNS-only certificate', async () => {
+  const before = startupMessages;
+  await expect(connect({ DB_SSL: 'true', DB_SSL_CA: certificate }, '::1'))
+    .rejects.toThrow(/alternative names/i);
+  expect(startupMessages).toBe(before);
+});
+
 test('private CA and matching hostname preserve legitimate TLS connections', async () => {
   const before = startupMessages;
   await expect(connect({ DB_SSL: 'true', DB_SSL_CA: certificate })).resolves.toBeUndefined();
