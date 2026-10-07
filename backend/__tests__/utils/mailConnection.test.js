@@ -107,15 +107,19 @@ test('matches exact private IPv6 approvals across equivalent literal spellings w
   expect(lookup).not.toHaveBeenCalled();
 });
 test('private approvals never admit IPv6 instance metadata, while other approved ULA mail remains valid', async () => {
-  for (const host of ['fd00:ec2::254', 'FD00:EC2:0:0:0:0:0:254', '[fd00:ec2::254]']) {
-    process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://[fd00:ec2::254]:80';
-    expect(() => mailSocketOptions('smtp', host, 80)).toThrow(/metadata/);
+  for (const [canonical, expanded] of [['fd00:ec2::254', 'FD00:EC2:0:0:0:0:0:254'], ['fd20:ce::254', 'FD20:CE:0:0:0:0:0:254']]) {
+    process.env.MAIL_PRIVATE_ENDPOINTS = `smtp://[${canonical}]:80`;
+    for (const host of [canonical, expanded, `[${canonical}]`]) {
+      expect(() => mailSocketOptions('smtp', host, 80)).toThrow(/metadata/);
+    }
   }
   expect(lookup).not.toHaveBeenCalled();
   process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://mail.internal:80,imap://mail.internal:993';
-  lookup.mockResolvedValue([record('fd00::1'), record('FD00:EC2:0:0:0:0:0:254')]);
-  await expect(open(smtpConnectionOptions({ host: 'mail.internal', port: 80 }))).rejects.toMatchObject({ code: 'MAIL_HOST_FORBIDDEN' });
-  await expect(invoke(mailSocketOptions('imap', 'mail.internal', 993))).rejects.toThrow(/metadata/);
+  for (const host of ['FD00:EC2:0:0:0:0:0:254', 'FD20:CE:0:0:0:0:0:254']) {
+    lookup.mockResolvedValue([record('fd00::1'), record(host)]);
+    await expect(open(smtpConnectionOptions({ host: 'mail.internal', port: 80 }))).rejects.toMatchObject({ code: 'MAIL_HOST_FORBIDDEN' });
+    await expect(invoke(mailSocketOptions('imap', 'mail.internal', 993))).rejects.toThrow(/metadata/);
+  }
   lookup.mockResolvedValue([record('fd00::1')]);
   expect((await open(smtpConnectionOptions({ host: 'mail.internal', port: 80 }))).approved).toEqual([record('fd00::1')]);
 });
