@@ -3,14 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ExternalLink,
+  Info,
   Calendar,
   Archive,
   AlertTriangle,
   Copy,
   Mail,
   MoreHorizontal,
+  Pencil,
   Receipt,
-  Type,
   Send,
   Sparkles,
   CheckCircle2
@@ -21,7 +22,6 @@ import { CompleteDeliveryDialog } from './CompleteDeliveryDialog';
 import { deliveryDue, isAwaitingFullGallery } from './deliveryStatus';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
-import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -54,8 +54,12 @@ interface MenuItem {
   onSelect: () => void;
 }
 
-/** The secondary actions, out of the way behind one button. */
-const ActionsMenu: React.FC<{ items: MenuItem[] }> = ({ items }) => {
+/**
+ * The secondary actions, out of the way behind one button. `align` is the
+ * side the dropdown is anchored to: the button's left edge when it starts a
+ * row, its right edge when it is pinned to the right.
+ */
+const ActionsMenu: React.FC<{ items: MenuItem[]; align?: 'left' | 'right'; className?: string }> = ({ items, align = 'left', className = '' }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -76,7 +80,7 @@ const ActionsMenu: React.FC<{ items: MenuItem[] }> = ({ items }) => {
 
   if (items.length === 0) return null;
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${className}`} ref={ref}>
       <Button
         variant="outline"
         size="sm"
@@ -88,7 +92,7 @@ const ActionsMenu: React.FC<{ items: MenuItem[] }> = ({ items }) => {
         <MoreHorizontal className="w-4 h-4" />
       </Button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-56 rounded-lg border border-line bg-panel shadow-lg p-1">
+        <div role="menu" className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1 z-30 w-56 rounded-lg border border-line bg-panel shadow-lg p-1`}>
           {items.map((item) => (
             <button
               key={item.key}
@@ -106,6 +110,53 @@ const ActionsMenu: React.FC<{ items: MenuItem[] }> = ({ items }) => {
         </div>
       )}
     </div>
+  );
+};
+
+/**
+ * The draft marker. What a draft means is its tooltip; the info icon says
+ * there is one. It opens on hover, keyboard focus, and on click or tap via
+ * its own state, since Safari does not focus a button it clicks. Escape or a
+ * click elsewhere closes it; Escape also hides it while it is still hovered
+ * or focused (WCAG 1.4.13), until the pointer or focus leaves.
+ */
+export const DraftPill: React.FC = () => {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      data-tooltip={t('events.draftBanner')}
+      aria-label={`${t('events.draft')}: ${t('events.draftBanner')}`}
+      onClick={() => { setDismissed(false); setOpen((o) => !o); }}
+      onKeyDown={(e) => { if (e.key === 'Escape') { setOpen(false); setDismissed(true); } }}
+      onBlur={() => setDismissed(false)}
+      onMouseLeave={() => setDismissed(false)}
+      className={`info-tooltip info-tooltip-start ${open ? 'is-open' : ''} ${dismissed ? 'is-dismissed' : ''} items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-200 hover:text-yellow-800 dark:hover:bg-yellow-900/60`}
+    >
+      {t('events.draft')}
+      <Info className="w-3.5 h-3.5" aria-hidden="true" />
+    </button>
   );
 };
 
@@ -144,10 +195,8 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
   });
   const due = deliveryDue(event.delivery_due_at);
 
+  const canEdit = !archived && hasPermission('events.edit');
   const menuItems: MenuItem[] = [];
-  if (!archived && hasPermission('events.edit')) {
-    menuItems.push({ key: 'rename', label: t('events.rename.button', 'Rename'), icon: <Type className="w-4 h-4" />, onSelect: () => setShowRenameDialog(true) });
-  }
   if (hasPermission('events.create')) {
     menuItems.push({ key: 'duplicate', label: t('events.duplicateEvent', 'Duplicate gallery'), icon: <Copy className="w-4 h-4" />, onSelect: () => setShowDuplicateDialog(true) });
   }
@@ -187,9 +236,29 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
             which is on screen here (detail pages navigate by the sidebar; #1730). */}
 
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-heading break-words">{event.event_name}</h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-soft">
+          <div className="min-w-0 w-full sm:w-auto">
+            {/* Renaming sits on the name it changes. It stays a dialog, not
+                inline editing: a rename can move the gallery's URL and resend
+                the customer email, which the dialog explains and asks about. */}
+            <div className="flex items-start gap-2">
+              <h1 className="min-w-0 text-2xl font-bold text-heading break-words">{event.event_name}</h1>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setShowRenameDialog(true)}
+                  className="mt-1 p-1 rounded-lg text-soft hover:text-heading hover:bg-hover shrink-0"
+                  aria-label={t('events.rename.button', 'Rename')}
+                  title={t('events.rename.button', 'Rename')}
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
+              {/* On a phone the menu sits on the title row, pinned right, so
+                  View gallery and the primary action fit next to each other
+                  below. From sm it is the first item of the action row. */}
+              <ActionsMenu items={menuItems} align="right" className="ml-auto shrink-0 sm:hidden" />
+            </div>
+            <div className="relative flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-soft">
               {event.event_date && (
                 <span className="flex items-center">
                   <Calendar className="w-4 h-4 mr-1" />
@@ -206,11 +275,11 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
               >
                 {isGalleryPublic(event.require_password) ? t('events.publicAccess', 'Public access') : t('events.passwordProtected', 'Password protected')}
               </span>
-              {event.is_draft ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300">
-                  {t('events.draft')}
-                </span>
-              ) : null}
+              {/* The pill is the only draft marker: what a draft means is its
+                  tooltip, and Publish is in the action row. The row is
+                  `relative`: on a phone the tooltip anchors to it, so it
+                  starts at the content edge wherever the pill wrapped to. */}
+              {event.is_draft ? <DraftPill /> : null}
               {archived ? (
                 <span className="text-muted flex items-center">
                   <Archive className="w-4 h-4 mr-1" />
@@ -238,7 +307,14 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
             </div>
           </div>
 
+          {/* Secondary first: the menu, then View gallery, then the one
+              primary action of the moment (publish a draft, send the gallery
+              email, announce the full gallery) at the end of the row. */}
           <div className="flex flex-wrap gap-2 items-center">
+            {/* Anchored right too: the row sits at the right edge, so with only
+                the menu (or one button) in it a left-anchored dropdown would
+                run past the content column. */}
+            <ActionsMenu items={menuItems} align="right" className="hidden sm:block" />
             {event.share_link && (
               <a
                 // Admin preview (#868): an explicit intent flag, no token in the
@@ -251,6 +327,19 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
                 <ExternalLink className="w-4 h-4" />
                 {t('events.viewGallery')}
               </a>
+            )}
+            {/* !! — SQLite returns integer booleans; a bare 0 would render as "0" */}
+            {!!event.is_draft && canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<Send className="w-4 h-4" />}
+                onClick={() => setShowPublishDialog(true)}
+                isLoading={isPublishing}
+              >
+                {/* Just "Publish": the dialog asks whether to notify. */}
+                {t('events.publish', 'Publish')}
+              </Button>
             )}
             {canHelpClient && canSendGalleryEmail(event, reach) && (
               <Button
@@ -273,14 +362,13 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
                 {t('events.delivery.completeButton', 'Full gallery is ready')}
               </Button>
             )}
-            <ActionsMenu items={menuItems} />
           </div>
         </div>
       </div>
 
       {delivery && (
         <CompleteDeliveryDialog
-          eventId={event.id}
+          event={event}
           state={delivery}
           isOpen={completeOpen}
           onClose={() => setCompleteOpen(false)}
@@ -288,56 +376,36 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
         />
       )}
 
-      {/* Draft Banner. !! — SQLite returns integer booleans; a bare 0 would render as "0" */}
-      {!!event.is_draft && !archived && (
-        <Card className="p-4 mb-6 border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
-            <div className="flex-1">
-              <p className="font-medium text-yellow-900 dark:text-yellow-200">{t('events.draft')}</p>
-              <p className="text-sm mt-1 text-yellow-700 dark:text-yellow-300">{t('events.draftBanner')}</p>
-            </div>
-            <PermissionGate permission="events.edit">
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Send className="w-4 h-4" />}
-                onClick={() => setShowPublishDialog(true)}
-                isLoading={isPublishing}
-              >
-                {t('events.publishAndNotify')}
-              </Button>
-            </PermissionGate>
-          </div>
-        </Card>
-      )}
-
       {/* Expiration Warning */}
       {!archived && (isExpired || isExpiring) && (
         <Card className={`p-4 mb-6 border-2 ${isExpired ? 'border-red-500 bg-red-50 dark:bg-red-900/20' : 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'}`}>
           <div className="flex items-start gap-3">
             <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${isExpired ? 'text-red-600' : 'text-orange-600'}`} />
-            <div className="flex-1">
-              <p className={`font-medium ${isExpired ? 'text-red-900 dark:text-red-200' : 'text-orange-900 dark:text-orange-200'}`}>
-                {isExpired
-                  ? t('events.eventExpiredMessage')
-                  : t('events.eventExpiresIn', { days: daysUntilExpiration })}
-              </p>
-              <p className={`text-sm mt-1 ${isExpired ? 'text-red-700 dark:text-red-300' : 'text-orange-700 dark:text-orange-300'}`}>
-                {isExpired ? t('events.guestsCannotAccessGallery') : t('events.warningEmailsHaveBeenSent')}
-              </p>
+            {/* Text and action share a wrapping row beside the icon: on a
+                phone the button drops under the text, lined up with it. */}
+            <div className="flex-1 min-w-0 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex-1 basis-64 min-w-0">
+                <p className={`font-medium ${isExpired ? 'text-red-900 dark:text-red-200' : 'text-orange-900 dark:text-orange-200'}`}>
+                  {isExpired
+                    ? t('events.eventExpiredMessage')
+                    : t('events.eventExpiresIn', { days: daysUntilExpiration })}
+                </p>
+                <p className={`text-sm mt-1 ${isExpired ? 'text-red-700 dark:text-red-300' : 'text-orange-700 dark:text-orange-300'}`}>
+                  {isExpired ? t('events.guestsCannotAccessGallery') : t('events.warningEmailsHaveBeenSent')}
+                </p>
+              </div>
+              {!isExpired && canHelpClient && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (await confirm({ message: `${t('events.extendExpiration', { days: 7 })}?` })) onExtendExpiration(7);
+                  }}
+                >
+                  {t('events.extendSevenDays')}
+                </Button>
+              )}
             </div>
-            {!isExpired && canHelpClient && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  if (await confirm({ message: `${t('events.extendExpiration', { days: 7 })}?` })) onExtendExpiration(7);
-                }}
-              >
-                {t('events.extendSevenDays')}
-              </Button>
-            )}
           </div>
         </Card>
       )}

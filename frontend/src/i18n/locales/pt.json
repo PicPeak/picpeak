@@ -1000,7 +1000,7 @@
       "completeTitle": "Marcar a galeria completa como pronta?",
       "completeBody": "O aviso e os espaços reservados desaparecem. Os selos da primeira seleção permanecem. Fotos que os convidados verão: {{count}}.",
       "sendMail": "Enviar o e-mail «A sua galeria completa está pronta»",
-      "sendMailHelp": "Para o e-mail do cliente desta galeria. Os fluxos de trabalho também podem reagir a «gallery.completed».",
+      "sendMailHelp": "Os fluxos de trabalho também podem reagir a «gallery.completed».",
       "removeDuplicates": "Remover duplicados da primeira seleção ({{count}})",
       "removeDuplicatesHelp": "Fotos da primeira seleção encontradas novamente na galeria completa: mesmo nome de arquivo original, único em ambos os lados, e mesma hora de captura (ou, sem ela, mesmo tamanho). A exclusão é definitiva; as cópias da galeria completa assumem o selo.",
       "removeDuplicatesNoPermission": "Excluir fotos requer a permissão photos.delete.",

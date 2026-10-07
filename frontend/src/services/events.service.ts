@@ -121,6 +121,8 @@ export interface DeliveryState {
 export interface CompleteDeliveryResult {
   completed: boolean;
   email_queued: boolean;
+  /** Who the "complete gallery" mail was queued for. */
+  recipients?: GalleryNoticeRecipients;
   duplicate_photo_ids: number[];
   state: DeliveryState;
 }

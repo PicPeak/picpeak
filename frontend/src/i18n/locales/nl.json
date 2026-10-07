@@ -874,7 +874,7 @@
       "completeTitle": "Volledige galerie als klaar markeren?",
       "completeBody": "De melding en de plaatshouders verdwijnen. De badges van de eerste selectie blijven. Gasten zien daarna {{count}} foto's.",
       "sendMail": "E-mail „Uw volledige galerie is er” versturen",
-      "sendMailHelp": "Naar het klant-e-mailadres van deze galerie. Workflows kunnen ook reageren op „gallery.completed”.",
+      "sendMailHelp": "Workflows kunnen ook reageren op „gallery.completed”.",
       "removeDuplicates": "Duplicaten van de eerste selectie verwijderen ({{count}})",
       "removeDuplicatesHelp": "Foto's van de eerste selectie die opnieuw in de volledige galerie staan: dezelfde oorspronkelijke bestandsnaam, aan beide kanten uniek, en dezelfde opnametijd (of, zonder opnametijd, dezelfde grootte). Verwijderen is definitief; de kopieën in de volledige galerie nemen de badge over.",
       "removeDuplicatesNoPermission": "Voor het verwijderen van foto's is de machtiging photos.delete nodig.",

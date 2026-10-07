@@ -14,6 +14,7 @@ import { MaintenanceBanner } from './MaintenanceBanner';
 import { MandatoryPasswordChangeModal } from './MandatoryPasswordChangeModal';
 import { CommandPalette } from './CommandPalette';
 import { BottomBarSlotContext } from './bottomBarSlot';
+import { FillViewportContext, useFillViewportCounter } from './fillViewport';
 
 const SIDEBAR_COLLAPSED_KEY = 'admin-sidebar-collapsed';
 const ProductUsageNotice = lazy(() => import('./ProductUsageNotice'));
@@ -89,6 +90,8 @@ interface AdminLayoutInnerProps {
 const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, mustChangePassword }) => {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [bottomBarSlot, setBottomBarSlot] = useState<HTMLDivElement | null>(null);
+  // Pages that give their panes their own scrollbars (useFillViewport).
+  const [fillViewport, setFillViewport] = useFillViewportCounter();
   const { t } = useTranslation();
 
   // Cmd+K on a Mac, Ctrl+K everywhere else. NOT "either modifier": Ctrl+K on
@@ -181,9 +184,17 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
             reserved once at the column level (see above). main now
             just contributes its content + padding. */}
         <BottomBarSlotContext.Provider value={bottomBarSlot}>
-          <main id="main-content" className={`flex-1 px-4 sm:px-6 lg:px-8 py-8 ${mustChangePassword ? 'opacity-50 pointer-events-none' : ''}`}>
-            <Outlet />
-          </main>
+          <FillViewportContext.Provider value={setFillViewport}>
+            {/* Filling the column, <main> may shrink to the space left (min-h-0)
+                and drops its bottom padding: the page's panes scroll down to
+                the bottom bar, and pad their own content. */}
+            <main
+              id="main-content"
+              className={`flex-1 px-4 sm:px-6 lg:px-8 py-8 ${fillViewport ? 'lg:min-h-0 lg:flex lg:flex-col lg:pb-0' : ''} ${mustChangePassword ? 'opacity-50 pointer-events-none' : ''}`}
+            >
+              <Outlet />
+            </main>
+          </FillViewportContext.Provider>
         </BottomBarSlotContext.Provider>
         {/* Bottom bars (SettingsSaveBar) render here: after a <main> that
             fills the column, so they sit at the bottom of the window even

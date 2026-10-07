@@ -21,8 +21,8 @@ same order.
 
 | Part | Contains | Example |
 |---|---|---|
-| Header | title, status badges, **one** primary action, a `⋯` menu for the rest, external "View" link | `EventDetailsHeader.tsx` |
-| Banners | state that blocks or warns: draft, expiring, archived | draft banner with Publish |
+| Header | title with a pen to rename it, status badges; action row in the order `⋯` menu (its dropdown anchored right), external "View" link, then the primary action of the moment (Publish on a draft, Send gallery email, Full gallery is ready). Usually one; a draft awaiting its full gallery can show two, Publish and Full gallery is ready. Below `sm` the `⋯` menu moves onto the title row, pinned right, so View and the primary action fit side by side | `EventDetailsHeader.tsx` |
+| Banners | state that blocks or warns: expiring, archived. A banner explains; the action it calls for lives in the header when the header has one. A state the header already shows as a pill gets no banner: the pill's tooltip explains it (a draft) | expiry banner with +7 days |
 | Tabs | `Overview` first, `Settings` last | `EventTabs.tsx` |
 | Tab body | see below | |
 
@@ -39,7 +39,8 @@ relying on browser-back.
   and kept in step with back/forward. A copied URL opens the same view.
 - Map retired tab names to their new home instead of breaking old links
   (`?tab=categories` opens Photos with the categories panel).
-- Put secondary actions (rename, duplicate, invoice, archive) in the `⋯` menu.
+- Put secondary actions (duplicate, invoice, archive) in the `⋯` menu.
+  Renaming is a pen next to the title, where the thing it changes is.
   Only actions the role can use are listed; an empty menu is not rendered.
 
 **Don't**
@@ -60,11 +61,16 @@ relying on browser-back.
     "External folder · watching"). Rows sit in small groups of two or three
     under a heading (Basics · Access & downloads · Guests · Photos &
     automation), so the list stays readable as it grows. A **Default** tag
-    marks a section that only follows the global setting. The list scrolls on
-    its own, so the open section stays in view.
+    marks a section that only follows the global setting.
   - **Right, the open section,** edited in place: a header with its title and
     one line on what it covers, then the fields. No window, no second Save —
-    the page draft and save bar stay as in § 2.
+    the page draft and save bar stay as in § 2. Its card's top lines up with
+    the first row of the list, not with the group heading above it.
+  - **Side by side, the two halves scroll on their own,** under the tabs'
+    line: the page header, the tabs and the save bar stay where they are
+    (`useFillViewport` in `components/admin/fillViewport.ts`). On a display
+    tall enough for both, nothing scrolls. Below `lg` the page scrolls as a
+    whole, as everywhere else.
   - Order sections from most to least used. The destructive section ("Danger
     zone") is one full-width red row **after** the groups: it holds actions,
     not settings.

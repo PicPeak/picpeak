@@ -45,6 +45,7 @@ describe('folder ingest and two-stage delivery', () => {
     jest.doMock('../../src/middleware/permissions', () => ({
       requirePermission: () => (_req, _res, next) => next(),
       userHasAllPermissions: async () => true,
+      userHasAnyPermission: async () => true,
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
       requireEventOwnership: (_req, _res, next) => next(),

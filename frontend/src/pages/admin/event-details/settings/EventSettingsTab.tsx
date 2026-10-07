@@ -21,6 +21,7 @@ import { Button } from '../../../../components/common';
 import { SettingsSaveBar } from '../../../../components/admin/SettingsSaveBar';
 import { FaceRecognitionCard } from '../../../../components/admin/FaceRecognitionCard';
 import { useConfirm } from '../../../../components/common/ConfirmDialog';
+import { useFillViewport } from '../../../../components/admin/fillViewport';
 import { useFeatureFlags } from '../../../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
@@ -104,6 +105,9 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
   const phoneOpen = opened !== null;
   const location = useLocation();
   const navigate = useNavigate();
+  // Side by side, the overview and the section scroll on their own under
+  // the tabs; the page head and the save bar stay put.
+  useFillViewport();
 
   const set = (patch: Partial<EventFields>) => setEvent((prev) => ({ ...prev, ...patch }));
 
@@ -133,6 +137,13 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     overviewRef.current?.querySelector<HTMLButtonElement>(`[data-section="${lastOpened.current}"]`)?.focus();
     lastOpened.current = null;
   }, [opened]);
+
+  // The detail half is its own scroll pane: a newly opened section starts at
+  // its top, header in view, also after the save's jump to an invalid one.
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (detailRef.current) detailRef.current.scrollTop = 0;
+  }, [active]);
 
   const onSave = async () => {
     const { invalidSection } = await save();
@@ -279,13 +290,16 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
   const readOnlyHint = !canEdit && active !== 'faces' && active !== 'danger';
 
   return (
-    <div>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)] gap-6 xl:gap-8 2xl:gap-10 items-start">
-        {/* The overview scrolls on its own, so the selected section stays in
-            view next to a long list on a short screen. Its height stops above
-            the save bar pinned to the bottom of the same column (~3.5rem), so
-            the last row is never under the bar. */}
-        <div ref={overviewRef} className={`${phoneOpen ? 'hidden lg:block' : ''} lg:sticky lg:top-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1`}>
+    // From lg this fills the space under the tabs (see useFillViewport), and
+    // the two halves are its scroll panes. The gap under the tabs and above
+    // the bottom is padding inside the panes, so their content scrolls right
+    // up to the tabs' line and down to the save bar. No height floor: a floor
+    // made the panes overflow <main> on a short window, where the pinned save
+    // bar then covered their last rows. On a short window the panes are just
+    // shorter, and still scroll (205px at 1280x600 with the expiry banner).
+    <div className="lg:flex-1 lg:min-h-0">
+      <div className="grid grid-cols-1 lg:h-full lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)] gap-6 xl:gap-8 2xl:gap-10">
+        <div ref={overviewRef} className={`${phoneOpen ? 'hidden lg:block' : ''} lg:min-h-0 lg:overflow-y-auto lg:pr-1 lg:pt-6 lg:pb-8`}>
           <SettingsOverview
             sections={visible}
             active={sideBySide ? active : opened}
@@ -295,49 +309,53 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
           />
         </div>
 
-        {/* The card's cap is the form's width: the form fills the card, so
-            the padding is the same on both sides and a wide display does not
-            leave the card running empty past its fields. From 2xl the card,
-            the padding and the gaps grow a step. */}
-        <div className={`${phoneOpen ? '' : 'hidden lg:block'} min-w-0 lg:max-w-[52rem] 2xl:max-w-[60rem] bg-panel border border-line rounded-xl`}>
-          <div className="flex flex-wrap items-start gap-3 px-5 sm:px-7 2xl:px-10 py-4 2xl:py-5 border-b border-line">
-            <button
-              type="button"
-              onClick={closeSection}
-              className="lg:hidden -ml-1 p-1 rounded-lg text-soft hover:bg-hover"
-              aria-label={t('events.settingsTab.backToSections', 'All settings')}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <ActiveIcon className={`w-5 h-5 mt-0.5 shrink-0 ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-soft'}`} aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <h2 className={`text-lg font-semibold ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-heading'}`}>{activeLabel}</h2>
-              <p className="text-sm text-soft mt-0.5">{about[active]}</p>
-            </div>
-            {canEdit && dirty.has(active) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-amber-700 dark:text-amber-400"
-                leftIcon={<Undo2 className="w-4 h-4" />}
-                onClick={() => discardSection(active)}
+        <div ref={detailRef} data-testid="settings-detail-pane" className={`${phoneOpen ? '' : 'hidden lg:block'} min-w-0 lg:min-h-0 lg:overflow-y-auto lg:pt-6 lg:pb-8`}>
+          {/* The card's cap is the form's width: the form fills the card, so
+              the padding is the same on both sides and a wide display does not
+              leave the card running empty past its fields. From 2xl the card,
+              the padding and the gaps grow a step. Side by side its top lines
+              up with the first section row, below the first group's heading
+              (h-4 + mb-2 in SettingsOverview). */}
+          <div className="lg:mt-6 lg:max-w-[52rem] 2xl:max-w-[60rem] bg-panel border border-line rounded-xl">
+            <div className="flex flex-wrap items-start gap-3 px-5 sm:px-7 2xl:px-10 py-4 2xl:py-5 border-b border-line">
+              <button
+                type="button"
+                onClick={closeSection}
+                className="lg:hidden -ml-1 p-1 rounded-lg text-soft hover:bg-hover"
+                aria-label={t('events.settingsTab.backToSections', 'All settings')}
               >
-                {t('events.settingsTab.undoSection', 'Undo changes in this section')}
-              </Button>
-            )}
-          </div>
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <ActiveIcon className={`w-5 h-5 mt-0.5 shrink-0 ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-soft'}`} aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <h2 className={`text-lg font-semibold ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-heading'}`}>{activeLabel}</h2>
+                <p className="text-sm text-soft mt-0.5">{about[active]}</p>
+              </div>
+              {canEdit && dirty.has(active) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-amber-700 dark:text-amber-400"
+                  leftIcon={<Undo2 className="w-4 h-4" />}
+                  onClick={() => discardSection(active)}
+                >
+                  {t('events.settingsTab.undoSection', 'Undo changes in this section')}
+                </Button>
+              )}
+            </div>
 
-          <div className="px-5 sm:px-7 2xl:px-10 py-6 2xl:py-8 space-y-4">
-            {readOnlyHint && (
-              <p className="text-sm rounded-lg border border-line bg-inset text-body px-4 py-3">
-                {archived
-                  ? t('events.settingsTab.readOnlyArchived', 'This gallery is archived. Its settings can no longer be changed.')
-                  : t('events.settingsTab.readOnly', 'You can see these settings but not change them.')}
-              </p>
-            )}
-            <fieldset disabled={readOnlyHint} className="min-w-0">
-              {body}
-            </fieldset>
+            <div className="px-5 sm:px-7 2xl:px-10 py-6 2xl:py-8 space-y-4">
+              {readOnlyHint && (
+                <p className="text-sm rounded-lg border border-line bg-inset text-body px-4 py-3">
+                  {archived
+                    ? t('events.settingsTab.readOnlyArchived', 'This gallery is archived. Its settings can no longer be changed.')
+                    : t('events.settingsTab.readOnly', 'You can see these settings but not change them.')}
+                </p>
+              )}
+              <fieldset disabled={readOnlyHint} className="min-w-0">
+                {body}
+              </fieldset>
+            </div>
           </div>
         </div>
       </div>

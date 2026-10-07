@@ -19,17 +19,27 @@ import { eventsService, type DeliveryState } from '../../../services/events.serv
 import { photosService } from '../../../services/photos.service';
 import { usePermission } from '../../../hooks/usePermission';
 import { useModalFocus } from '../../../hooks/useModalFocus';
+import { GalleryRecipientsList } from '../../../components/admin/GalleryRecipientsList';
+import type { Event } from '../../../types';
+import { accountsAnnounceable, eventNotice, useAccountReach } from './OverviewTab';
 
 interface CompleteDeliveryDialogProps {
-  eventId: number;
+  /** The gallery; the dialog lists who the mail goes to. */
+  event: Event;
   state: DeliveryState;
   isOpen: boolean;
   onClose: () => void;
   onCompleted: () => void;
 }
 
-export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ eventId, state, isOpen, onClose, onCompleted }) => {
+export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ event, state, isOpen, onClose, onCompleted }) => {
   const { t } = useTranslation();
+  const eventId = event.id;
+  // Exactly whom galleryNotificationService.notifyGalleryCompleted mails: no
+  // account for a draft, archived or expired gallery, and one person in both
+  // fields gets the portal version.
+  const reach = useAccountReach();
+  const notice = eventNotice(event, reach, { preferPortal: true, accountsAnnounced: accountsAnnounceable(event) });
   const queryClient = useQueryClient();
   const canDelete = usePermission('photos.delete');
   const [sendEmail, setSendEmail] = useState(true);
@@ -111,10 +121,18 @@ export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ 
             <span>
               <span className="font-medium text-heading block">{t('events.delivery.sendMail', 'Send the "your complete gallery is ready" email')}</span>
               <span className="text-xs text-muted">
-                {t('events.delivery.sendMailHelp', 'To the customer email of this gallery. Workflows can also react to "gallery.completed".')}
+                {t('events.delivery.sendMailHelp', 'Workflows can also react to "gallery.completed".')}
               </span>
             </span>
           </label>
+          {sendEmail && (
+            <GalleryRecipientsList
+              inlineEmail={notice.inlineEmail}
+              accountNames={notice.accountNames}
+              accountCount={notice.accountCount}
+              skippedAccountCount={notice.skippedAccountCount}
+            />
+          )}
           {state.duplicate_count > 0 && (
             <label className={`flex items-start gap-3 rounded-lg border border-line p-3 ${canDelete ? 'cursor-pointer' : 'opacity-60'}`}>
               <input

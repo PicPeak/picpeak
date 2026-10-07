@@ -78,7 +78,7 @@ const settings = {
   downloadsData: undefined,
 } as unknown as EventSettingsDraftApi;
 
-const renderTab = (setSection: ReturnType<typeof vi.fn>) => {
+const renderTab = (setSection: ReturnType<typeof vi.fn>, sectionFor: () => string = () => 'faces') => {
   const client = new QueryClient();
   const ui = () => (
     <QueryClientProvider client={client}>
@@ -86,7 +86,7 @@ const renderTab = (setSection: ReturnType<typeof vi.fn>) => {
         <EventSettingsTab
           event={EVENT}
           settings={settings}
-          section="faces"
+          section={sectionFor() as 'faces'}
           setSection={setSection}
           categories={[]}
           photos={[]}
@@ -130,3 +130,20 @@ describe('EventSettingsTab — a section the flags hide', () => {
     expect(setSection).toHaveBeenCalledWith(null);
   });
 });
+
+describe('EventSettingsTab — the detail pane', () => {
+  it('starts a newly opened section at its top (review on 1833)', () => {
+    flagsState.flags = { faces: false };
+    flagsState.isLoading = false;
+    let section = 'general';
+    const { rerenderTab } = renderTab(vi.fn(), () => section);
+    const pane = screen.getByTestId('settings-detail-pane');
+    pane.scrollTop = 400;
+
+    section = 'access';
+    rerenderTab();
+
+    expect(pane.scrollTop).toBe(0);
+  });
+});
+

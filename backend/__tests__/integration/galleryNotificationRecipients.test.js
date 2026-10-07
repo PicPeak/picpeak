@@ -27,11 +27,27 @@ jest.mock('../../src/middleware/auth', () => ({
 let mockCanViewCustomers = true;
 // Whether the caller holds customers.events (assigning customer accounts).
 let mockCanAssignCustomers = true;
+// Makes the permission lookup throw, to reach the route's post-commit catch.
+let mockPermissionLookupThrows = false;
+// Makes queueEmail queue nothing for this address (the real queue otherwise).
+let mockRefuseQueueFor = null;
+jest.mock('../../src/services/emailProcessor', () => {
+  const actual = jest.requireActual('../../src/services/emailProcessor');
+  return {
+    ...actual,
+    queueEmail: (eventId, to, ...rest) => (to === mockRefuseQueueFor
+      ? Promise.resolve(false)
+      : actual.queueEmail(eventId, to, ...rest)),
+  };
+});
 jest.mock('../../src/middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
-  userHasAnyPermission: async (_id, perms) => (perms.includes('customers.view')
-    ? mockCanViewCustomers
-    : perms.includes('customers.events') ? mockCanAssignCustomers : true),
+  userHasAnyPermission: async (_id, perms) => {
+    if (mockPermissionLookupThrows) throw new Error('permission lookup down');
+    return perms.includes('customers.view')
+      ? mockCanViewCustomers
+      : perms.includes('customers.events') ? mockCanAssignCustomers : true;
+  },
   userHasAllPermissions: async (_id, perms) => (perms.includes('customers.events') ? mockCanAssignCustomers : true),
 }));
 jest.mock('../../src/middleware/ownership', () => ({
@@ -54,6 +70,7 @@ beforeAll(async () => {
   app = express();
   app.use(express.json());
   app.use('/admin/events', require('../../src/routes/adminEvents'));
+  app.use('/admin', require('../../src/routes/adminDelivery'));
 }, 180000);
 
 afterAll(async () => {
@@ -75,6 +92,8 @@ beforeEach(async () => {
   await setPortal(true);
   mockCanViewCustomers = true;
   mockCanAssignCustomers = true;
+  mockPermissionLookupThrows = false;
+  mockRefuseQueueFor = null;
 });
 
 const idOf = (row) => (typeof row === 'object' ? row.id : row);
@@ -106,11 +125,12 @@ async function seedEvent({
   return idOf(row);
 }
 
-async function seedAccount(email, displayName, { passive = false } = {}) {
+async function seedAccount(email, displayName, { passive = false, language = null } = {}) {
   const [row] = await db('customer_accounts').insert({
     email,
     display_name: displayName,
     password_hash: passive ? null : 'hash',
+    preferred_language: language,
     is_active: 1,
     created_at: new Date().toISOString(),
   }).returning('id');
@@ -448,5 +468,144 @@ describe('accounts-only galleries get a generated password', () => {
     const id = await seedEvent({ slug: 'typed-password' });
     const res = await request(app).put(`/admin/events/${id}`).send({ customer_email: 'client@recipients.test' });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('"your complete gallery is ready" reaches the same people (issue 1562)', () => {
+  const complete = (id, body = {}) => request(app).post(`/admin/events/${id}/delivery/complete`).send(body);
+  const partial = async (slug, opts) => {
+    const id = await seedEvent({ slug, ...opts });
+    await db('events').where({ id }).update({ delivery_status: 'partial' });
+    return id;
+  };
+  const dataOf = (row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data);
+
+  it('mails the customer email (share link) and each account (portal link)', async () => {
+    const id = await partial('complete-both', { customerEmail: 'client@recipients.test' });
+    await assign(id,
+      await seedAccount('anna@recipients.test', 'Anna Muster'),
+      await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+
+    const res = await complete(id);
+    expect(res.status).toBe(200);
+    expect(res.body.email_queued).toBe(true);
+    expect(res.body.recipients).toMatchObject({ email: 'client@recipients.test', account_count: 2 });
+
+    const rows = await queued('gallery_completed');
+    expect(rows.map((r) => r.recipient_email)).toEqual(['anna@recipients.test', 'ben@recipients.test', 'client@recipients.test']);
+    const byTo = Object.fromEntries(rows.map((r) => [r.recipient_email, dataOf(r)]));
+    expect(byTo['client@recipients.test'].gallery_link).toContain('complete-both-token');
+    expect(byTo['anna@recipients.test'].gallery_link).toMatch(/\/customer\/events\/complete-both$/);
+    expect(byTo['anna@recipients.test'].host_name).toBe('Anna Muster');
+  });
+
+  it('tells one person in both fields once, with the portal link', async () => {
+    const id = await partial('complete-same', { customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+
+    await complete(id);
+    const rows = await queued('gallery_completed');
+    expect(rows.map((r) => r.recipient_email)).toEqual(['anna@recipients.test']);
+    expect(dataOf(rows[0]).gallery_link).toMatch(/\/customer\/events\/complete-same$/);
+  });
+
+  it('mails an accounts-only gallery, and no account without customers.events', async () => {
+    const id = await partial('complete-accounts');
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    expect((await complete(id)).body.email_queued).toBe(true);
+    expect(await recipientsOf('gallery_completed')).toEqual(['anna@recipients.test']);
+
+    await db('email_queue').del();
+    mockCanAssignCustomers = false;
+    const other = await partial('complete-no-perm', { customerEmail: 'client@recipients.test' });
+    await assign(other, await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+    await complete(other);
+    expect(await recipientsOf('gallery_completed')).toEqual(['client@recipients.test']);
+  });
+
+  it('writes the mail to each account in its own language, not the gallery language', async () => {
+    const id = await partial('complete-lang', { customerEmail: 'client@recipients.test' });
+    await assign(id,
+      await seedAccount('anna@recipients.test', 'Anna Muster', { language: 'de' }),
+      await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+    await complete(id);
+    const byTo = Object.fromEntries((await queued('gallery_completed')).map((r) => [r.recipient_email, dataOf(r)]));
+    expect(byTo['anna@recipients.test'].__language).toBe('de');
+    // No preference: no override, so the usual lookup decides.
+    expect(byTo['ben@recipients.test'].__language).toBeUndefined();
+    expect(byTo['client@recipients.test'].__language).toBeUndefined();
+  });
+
+  it('falls back to the share-link mail when the folded-in account could not be queued', async () => {
+    const id = await partial('complete-fallback', { customerEmail: 'anna@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    mockRefuseQueueFor = 'anna@recipients.test';
+    const first = await complete(id);
+    // The refusal applied to both versions here, so nothing was queued, and
+    // the response says so instead of claiming a mail.
+    expect(first.body.email_queued).toBe(false);
+
+    // Refuse only the account version: the standard version reaches her.
+    const other = await partial('complete-fallback-2', { customerEmail: 'Anna@Recipients.test' });
+    await assign(other, await db('customer_accounts').where({ email: 'anna@recipients.test' }).first().then((r) => r.id));
+    mockRefuseQueueFor = 'anna@recipients.test';
+    const res = await complete(other);
+    expect(res.body.email_queued).toBe(true);
+    expect(res.body.recipients).toMatchObject({ email: 'Anna@Recipients.test', account_count: 0 });
+    const rows = await queued('gallery_completed');
+    expect(rows.map((r) => r.recipient_email)).toEqual(['Anna@Recipients.test']);
+    expect(dataOf(rows[0]).gallery_link).toContain('complete-fallback-2-token');
+  });
+
+  it('does not mail the accounts of an expired or archived gallery, only the customer email', async () => {
+    const expired = await partial('complete-expired', {
+      customerEmail: 'client@recipients.test',
+      expiresAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+    });
+    await assign(expired, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    await complete(expired);
+    expect(await recipientsOf('gallery_completed')).toEqual(['client@recipients.test']);
+
+    await db('email_queue').del();
+    const archived = await partial('complete-archived', { customerEmail: 'client@recipients.test' });
+    await db('events').where({ id: archived }).update({ is_archived: 1 });
+    await assign(archived, await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+    await complete(archived);
+    expect(await recipientsOf('gallery_completed')).toEqual(['client@recipients.test']);
+  });
+
+  it('names the accounts in the response only with customers.view', async () => {
+    const id = await partial('complete-redact', { customerEmail: 'client@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    mockCanViewCustomers = false;
+    const res = await complete(id);
+    expect(res.body.recipients).toEqual({ email: 'client@recipients.test', account_count: 1, accounts: [] });
+    const log = await db('activity_logs').where({ event_id: id, activity_type: 'delivery_completed' }).first();
+    const meta = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;
+    expect(meta.assigned_accounts).toBe(1);
+    expect(JSON.stringify(meta)).not.toContain('anna@recipients.test');
+  });
+
+  it('answers 200 with no mail when the mail step fails after the delivery is complete', async () => {
+    const id = await partial('complete-throws', { customerEmail: 'client@recipients.test' });
+    mockPermissionLookupThrows = true;
+    const res = await complete(id);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ completed: true, email_queued: false });
+    const row = await db('events').where({ id }).first();
+    expect(row.delivery_status).not.toBe('partial');
+  });
+
+  it('sends nothing when the admin unticks the mail, and nothing to accounts of a draft', async () => {
+    const id = await partial('complete-quiet', { customerEmail: 'client@recipients.test' });
+    await assign(id, await seedAccount('anna@recipients.test', 'Anna Muster'));
+    const res = await complete(id, { send_email: false });
+    expect(res.body.email_queued).toBe(false);
+    expect(await queued('gallery_completed')).toHaveLength(0);
+
+    const draft = await partial('complete-draft', { customerEmail: 'client@recipients.test', isDraft: true });
+    await assign(draft, await seedAccount('ben@recipients.test', 'Ben Beispiel'));
+    await complete(draft);
+    expect(await recipientsOf('gallery_completed')).toEqual(['client@recipients.test']);
   });
 });

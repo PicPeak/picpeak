@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { CalendarClock, Eye, Mail } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
@@ -14,7 +15,7 @@ import { useAnyPermission, usePermission } from '../../../hooks/usePermission';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureEnabled, useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { toBoolean } from '../../../utils/parsers';
-import { accountName, formatNameList, galleryRecipients, type RecipientAccount } from '../../../utils/galleryRecipients';
+import { accountName, galleryRecipients, type RecipientAccount } from '../../../utils/galleryRecipients';
 import type { FeedbackSettings as FeedbackSettingsType } from '../../../services/feedback.service';
 import type { EventDetailsTab } from './types';
 import type { SettingsSectionKey } from './settings/draft';
@@ -78,17 +79,41 @@ export interface EventNotice {
 interface GalleryNoticeCounts { account_count: number; folds_inline: boolean }
 
 /**
+ * Whether assigned accounts are told about this gallery at all: not a draft,
+ * not archived, not expired. Mirrors galleryNotificationService.accountsAnnounceable.
+ */
+export function accountsAnnounceable(event: Event, now: Date = new Date()): boolean {
+  if (toBoolean(event.is_draft, false) || toBoolean(event.is_archived, false)) return false;
+  if (!event.expires_at) return true;
+  const expires = new Date(event.expires_at);
+  return Number.isNaN(expires.getTime()) || expires > now;
+}
+
+export interface EventNoticeOptions {
+  /**
+   * One person in both fields always gets the portal version, whatever the
+   * gallery email would carry (the "complete gallery" mail: preferPortal on
+   * the server).
+   */
+  preferPortal?: boolean;
+  /** False when the mail reaches no account (accountsAnnounceable). */
+  accountsAnnounced?: boolean;
+}
+
+/**
  * Mirrors galleryNotificationService. With the account list (customers.view)
  * it is computed here and names the accounts; without it, from the server's
  * permission-safe `gallery_notice` counts.
  */
-export function eventNotice(event: Event, reach: AccountReach): EventNotice {
+export function eventNotice(event: Event, reach: AccountReach, { preferPortal = false, accountsAnnounced = true }: EventNoticeOptions = {}): EventNotice {
+  const contact = event.customer_email?.trim() || null;
+  // No account is mailed: the customer email gets the mail, unfolded.
+  if (!accountsAnnounced) return { inlineEmail: contact, accountNames: [], accountCount: 0, skippedAccountCount: 0 };
   const listed = assignedAccounts(event);
   const server = (event as { gallery_notice?: GalleryNoticeCounts | null }).gallery_notice;
-  const contact = event.customer_email?.trim() || null;
   const options = {
     portalEnabled: reach.portalEnabled,
-    prefersGalleryEmail: !!event.welcome_message?.trim() || toBoolean(event.client_access_enabled, false),
+    prefersGalleryEmail: !preferPortal && (!!event.welcome_message?.trim() || toBoolean(event.client_access_enabled, false)),
   };
   if (listed.length > 0 || !server) {
     const local = galleryRecipients(contact, listed, { ...options, includeAccounts: reach.canAnnounceToAccounts });
@@ -119,7 +144,7 @@ export function canSendGalleryEmail(event: Event, reach: AccountReach): boolean 
 }
 
 const SummaryRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex items-center justify-between gap-4 py-2.5 border-t border-line first:border-t-0">
+  <div className="flex items-start justify-between gap-4 py-2.5 border-t border-line first:border-t-0">
     <span className="text-sm text-soft">{label}</span>
     <span className="text-sm text-heading text-right">{children}</span>
   </div>
@@ -154,6 +179,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const archived = Boolean(event.is_archived);
   const expiresAt = safeParseDate(event.expires_at);
   const hiddenUntilReveal = toBoolean(event.reveal_mode, false) && !event.revealed_at;
+  // The Details card's customer accounts link each name to its customer page
+  // when that page is reachable: the route sits behind the `clients` flag
+  // plus `customerPortal` or `newsletters`, and needs customers.view. The row
+  // itself only shows with the portal on (portalEnabled below), so a link
+  // never points at a page the install has switched off.
+  const canOpenCustomers = usePermission('customers.view')
+    && !!flags.clients && (!!flags.customerPortal || !!flags.newsletters);
 
   const link = (section: SettingsSectionKey, text: string) => (
     <button type="button" className="text-accent hover:underline" onClick={() => openSettings(section)}>{text}</button>
@@ -216,9 +248,17 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <SummaryRow label={t('events.hostName')}>{event.customer_name || <span className="text-muted">{t('common.notSet')}</span>}</SummaryRow>
           <SummaryRow label={t('events.hostEmail')}>{event.customer_email || <span className="text-muted">{t('common.notSet')}</span>}</SummaryRow>
           {portalEnabled && accounts.length > 0 && (
-            <SummaryRow label={t('events.recipients.customerAccounts', 'Customer accounts')}>
-              <span title={accounts.map(accountName).join(', ')}>
-                {formatNameList(accounts.map(accountName), t)}
+            <SummaryRow label={t('events.customerPicker.label', 'Customer accounts')}>
+              <span className="flex flex-col items-end gap-0.5">
+                {(accounts as Array<RecipientAccount & { id: number }>).map((c) => (
+                  canOpenCustomers ? (
+                    <Link key={c.id} to={`/admin/clients/accounts/${c.id}`} className="text-accent hover:underline" title={c.email || undefined}>
+                      {accountName(c) || `#${c.id}`}
+                    </Link>
+                  ) : (
+                    <span key={c.id}>{accountName(c) || `#${c.id}`}</span>
+                  )
+                ))}
               </span>
             </SummaryRow>
           )}

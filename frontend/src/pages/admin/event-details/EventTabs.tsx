@@ -29,8 +29,18 @@ export const EventTabs: React.FC<EventTabsProps> = ({
   }`;
 
   return (
-    <div className="mb-6 border-b border-line overflow-x-auto">
-      <nav className="-mb-px flex gap-8" role="tablist">
+    // The divider is an inset shadow, not a border: shadows paint under the
+    // tabs, so the active tab's 2px underline covers it without hanging past
+    // the row. A border needed the list pulled 1px over it (-mb-px), and
+    // overflow-y-hidden then clipped that pixel off the underline.
+    // overflow-y-hidden itself: with overflow-x set, overflow-y would be auto
+    // too, and macOS showed a scrollbar for any hanging pixel. Settings at lg
+    // puts its gap inside its panes, so they scroll right up to this line.
+    // shrink-0: in that fill mode the page is a height-bounded flex column,
+    // and overflow-y-hidden lets flex squeeze this row to nothing on a short
+    // window before anything else.
+    <div className={`shrink-0 shadow-[inset_0_-1px_0_var(--ui-line)] overflow-x-auto overflow-y-hidden ${activeTab === 'settings' ? 'mb-6 lg:mb-0' : 'mb-6'}`}>
+      <nav className="flex gap-8" role="tablist">
         <button type="button" role="tab" aria-selected={activeTab === 'overview'} onClick={() => setActiveTab('overview')} className={tabClass('overview')}>
           {t('events.overview')}
         </button>

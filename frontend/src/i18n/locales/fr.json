@@ -885,7 +885,7 @@
       "completeTitle": "Marquer la galerie complète comme prête ?",
       "completeBody": "La note et les emplacements réservés disparaissent. Les badges de la première sélection restent. Photos visibles par les invités : {{count}}.",
       "sendMail": "Envoyer l'e-mail « Votre galerie complète est prête »",
-      "sendMailHelp": "À l'adresse e-mail du client de cette galerie. Les workflows peuvent aussi réagir à « gallery.completed ».",
+      "sendMailHelp": "Les workflows peuvent aussi réagir à « gallery.completed ».",
       "removeDuplicates": "Supprimer les doublons de la première sélection ({{count}})",
       "removeDuplicatesHelp": "Photos de la première sélection retrouvées dans la galerie complète : même nom de fichier d'origine, unique des deux côtés, et même heure de prise de vue (à défaut, même taille). La suppression est définitive ; les copies de la galerie complète reprennent le badge.",
       "removeDuplicatesNoPermission": "La suppression de photos nécessite l'autorisation photos.delete.",

@@ -366,6 +366,42 @@
     color: #171717;
   }
 
+  /* A tooltip on a status pill (DraftPill). Out of layout while closed:
+     an absolutely placed bubble still widens its scroll container, so even
+     at opacity 0 it made a phone page scroll sideways. Opens on hover, on
+     keyboard focus, or with `.is-open` (click or tap, set by the component).
+     The bubble starts at the trigger's left edge; on a phone it anchors to
+     the nearest positioned ancestor instead (give the row `relative`), so it
+     starts at the content edge wherever the pill wrapped to. */
+  .info-tooltip-start::after {
+    left: 0;
+    transform: none;
+    display: none;
+    max-width: min(320px, calc(100vw - 2rem));
+  }
+  .info-tooltip-start:focus-visible::after,
+  .info-tooltip-start.is-open::after {
+    display: block;
+    opacity: 1;
+  }
+  /* Hover only where there is one: on touch a sticky :hover would keep the
+     bubble after the tap that closed it. */
+  @media (hover: hover) {
+    .info-tooltip-start:hover::after {
+      display: block;
+      opacity: 1;
+    }
+  }
+  /* Escape on a hovered or focused trigger (set by the component). */
+  .info-tooltip-start.is-dismissed::after {
+    display: none;
+  }
+  @media (max-width: 639px) {
+    .info-tooltip-start {
+      position: static;
+    }
+  }
+
   /* Image loading skeleton */
   .skeleton {
     @apply animate-pulse rounded-lg bg-neutral-200;

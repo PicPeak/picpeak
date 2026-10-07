@@ -170,9 +170,10 @@ component, not re-created next to it.
 | Confirm | `useConfirm()` (`ConfirmDialog`) — `variant: 'danger'` for destructive | never `window.confirm()` |
 | Page header (section pages) | `SectionPageHeader` (`admin`) | icon, title, one-line description, actions |
 | Settings save | `SettingsSaveBar` (`admin`) | see UX.md › Saving |
+| Panes that scroll on their own | `useFillViewport()` (`admin/fillViewport`) | the page fills the window from `lg`; see Layout › Split views |
 | Permission gate | `PermissionGate`, `usePermission`, `useAnyPermission`; route level `RequirePermission` | see UX.md › Permissions |
 | Picker tile | `.tile-selected` on the chosen tile, `border-2 border-line` on the rest | |
-| Hover help | `<span class="info-tooltip" data-tooltip="…">` | for a short hint on an icon; longer help goes under the field |
+| Hover help | `<span class="info-tooltip" data-tooltip="…">` for a hint on an icon | longer help goes under the field. A tooltip people should click (a status pill) follows `DraftPill` (`event-details/EventDetailsHeader.tsx`): a `<button>` with an `Info` icon (`w-3.5 h-3.5`), `info-tooltip info-tooltip-start`, its own open state for click/tap (Safari does not focus a clicked button), Escape and an outside click to close, and an `aria-label` with the same text. `info-tooltip-start` takes the bubble out of layout while closed and, on a phone, anchors it to the nearest `relative` row |
 
 ## Layout and spacing
 
@@ -188,10 +189,44 @@ component, not re-created next to it.
   `grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px]`. Below `xl` it stacks.
 - **Every flex row of controls wraps.** `flex flex-wrap gap-2`, and
   `min-w-0` on a growing input inside a row. German labels run 30–50 % wider
-  than English; check the row in German at 390 px.
+  than English; check the row in German at 390 px. In a banner (icon, text,
+  action), the text and the action share a wrapping row beside the icon, so
+  on a phone the button drops under the text, lined up with it (the expiry
+  banner). Keep button labels short enough for a phone: `.btn` is
+  `whitespace-nowrap` with a fixed height, so a long label overflows rather
+  than wrapping. If one cannot be shortened, give that button
+  `max-w-full h-auto whitespace-normal`.
 - **No horizontal scroll** in the admin content area at any width. A grid
   child that must not grow gets `min-w-0`; a fixed `w-64` inside a grid cell
   becomes `w-full`.
+- **Split views scroll by pane, not by page.** When two columns sit side
+  by side (a list and the open item, like gallery Settings), the page head,
+  the tabs and the save bar stay put and each column scrolls on its own
+  under the tabs' line. Call `useFillViewport()` in the view; give the
+  page root `lg:flex-1 lg:min-h-0 lg:flex lg:flex-col`, and each pane
+  `lg:min-h-0 lg:overflow-y-auto` with its top and bottom gap as padding
+  *inside* the pane (`lg:pt-6 lg:pb-8`), so content scrolls right up to the
+  line. Below `lg` the page scrolls as one. Every box between `<main>` and
+  the panes takes `lg:min-h-0`, never a `min-h-*` floor: a floor lets the
+  panes overflow `<main>` on a short window, and the pinned save bar then
+  covers their last rows.
+- **Never size from the window by guessing the chrome.** No
+  `h-[calc(100vh-6rem)]`: banners, the upload bar and the save bar come and
+  go, so the guess is wrong somewhere. Let flex give the height
+  (`flex-1 min-h-0`).
+- **A row that scrolls sideways clips the other axis.** `overflow-x-auto`
+  makes overflow-y `auto` too, so a child pulled 1px past the edge gives
+  the row a vertical scrollbar on a Mac that shows scrollbars. Pair it with
+  `overflow-y-hidden`, and then keep everything inside the row: a tab row
+  draws its divider as an inset shadow (`shadow-[inset_0_-1px_0_var(--ui-line)]`)
+  instead of a border with the tabs pulled over it by `-mb-px`, because
+  the clip would cut that pixel off the active underline.
+- **Columns side by side start on one line,** the first *item* on each side,
+  not a group heading on one and a card on the other. Give the heading a
+  fixed height from the scale (`h-4 leading-4 mb-2`) and offset the other
+  column by the same amount (`mt-6`). An `sr-only` element inside a
+  `space-y-*` list still counts as the first sibling and pushes the next
+  one down; keep it outside the spaced wrapper.
 - **Icons:** `lucide-react`, `w-4 h-4` in buttons and inline, `w-5 h-5` in
   card titles. Icon-only buttons need `aria-label`.
 

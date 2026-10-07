@@ -357,7 +357,9 @@ export const EventDetailsPage: React.FC = () => {
       branding={(publicSettings?.theme_config as ThemeConfig | undefined) ?? null}
     >
       {(settings) => (
-        <div>
+        // On Settings the page fills the window from lg (useFillViewport in
+        // EventSettingsTab): the header and tabs stay, the panes scroll.
+        <div className={activeTab === 'settings' ? 'lg:flex-1 lg:min-h-0 lg:flex lg:flex-col' : undefined}>
           <EventDetailsHeader
             event={event}
             setShowRenameDialog={setShowRenameDialog}

@@ -195,7 +195,7 @@ export const DeliverySection: React.FC<FieldsProps & { event: Event; onChanged: 
 
       {state && (
         <CompleteDeliveryDialog
-          eventId={event.id}
+          event={event}
           state={state}
           isOpen={completeOpen}
           onClose={() => setCompleteOpen(false)}

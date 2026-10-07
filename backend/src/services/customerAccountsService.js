@@ -1452,6 +1452,8 @@ async function getAssignmentsForEvent(eventId) {
       'customer_accounts.first_name',
       'customer_accounts.last_name',
       'customer_accounts.is_active',
+      // The language a mail to this account goes out in (__language).
+      'customer_accounts.preferred_language',
       // NOT the hash itself — only whether one exists. A passive customer is
       // identified by password_hash IS NULL (see createDirect), and callers
       // that mail a portal link need to know the recipient can actually sign

@@ -2002,7 +2002,7 @@
       "completeTitle": "Označim celotno galerijo kot pripravljeno?",
       "completeBody": "Obvestilo in nadomestne ploščice izginejo. Oznake prvega izbora ostanejo. Fotografije, ki jih bodo videli gostje: {{count}}.",
       "sendMail": "Pošlji e-pošto »Vaša celotna galerija je pripravljena«",
-      "sendMailHelp": "Na e-poštni naslov stranke te galerije. Poteki dela se lahko odzovejo tudi na »gallery.completed«.",
+      "sendMailHelp": "Poteki dela se lahko odzovejo tudi na »gallery.completed«.",
       "removeDuplicates": "Odstrani dvojnike prvega izbora ({{count}})",
       "removeDuplicatesHelp": "Fotografije prvega izbora, ponovno najdene v celotni galeriji: isto izvirno ime datoteke, edinstveno na obeh straneh, in isti čas posnetka (ali, brez njega, ista velikost). Brisanje je trajno; oznako prevzamejo kopije v celotni galeriji.",
       "removeDuplicatesNoPermission": "Za brisanje fotografij je potrebno dovoljenje photos.delete.",
@@ -2036,7 +2036,6 @@
     },
     "recipients": {
       "andMore": "{{names}} +{{count}} več",
-      "customerAccounts": "Računi strank",
       "galleryEmail": "E-pošta galerije",
       "portalEmail": "E-pošta portala za stranke",
       "previewTitle": "Obveščeni ob objavi galerije:",

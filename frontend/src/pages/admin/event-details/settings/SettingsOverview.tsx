@@ -228,23 +228,28 @@ export const SettingsOverview: React.FC<SettingsOverviewProps> = ({ sections, ac
   };
 
   return (
-    <nav aria-label={t('events.settingsTab.sections', 'Settings sections')} className="space-y-4 2xl:space-y-6">
-      {/* Keeps the heading order: this h2, its group h3s, then the open section's h2. */}
+    <nav aria-label={t('events.settingsTab.sections', 'Settings sections')}>
+      {/* Keeps the heading order: this h2, its group h3s, then the open section's h2.
+          Outside the spaced list, so the first group starts at the top. */}
       <h2 className="sr-only">{t('events.settingsTab.sections', 'Settings sections')}</h2>
-      {SECTION_GROUPS.map((group) => {
-        const keys = group.sections.filter((k) => byKey.has(k));
-        if (keys.length === 0) return null;
-        return (
-          <section key={group.key}>
-            <h3 className="px-1 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-soft">
-              {t(`events.settingsTab.group.${group.key}`, group.label)}
-            </h3>
-            <ul className="space-y-1.5 2xl:space-y-2">{keys.map(row)}</ul>
-          </section>
-        );
-      })}
-      {/* Set apart from the groups: it holds actions, not settings. */}
-      {byKey.has('danger') && <ul className="!mt-8 2xl:!mt-12">{row('danger')}</ul>}
+      <div className="space-y-4 2xl:space-y-6">
+        {SECTION_GROUPS.map((group) => {
+          const keys = group.sections.filter((k) => byKey.has(k));
+          if (keys.length === 0) return null;
+          return (
+            <section key={group.key}>
+              {/* Fixed height: the section card on the right is offset by
+                  h-4 + mb-2 (1.5rem) to line up with the first row. */}
+              <h3 className="h-4 px-1 mb-2 text-[11px] leading-4 font-semibold uppercase tracking-wider text-soft">
+                {t(`events.settingsTab.group.${group.key}`, group.label)}
+              </h3>
+              <ul className="space-y-1.5 2xl:space-y-2">{keys.map(row)}</ul>
+            </section>
+          );
+        })}
+        {/* Set apart from the groups: it holds actions, not settings. */}
+        {byKey.has('danger') && <ul className="!mt-8 2xl:!mt-12">{row('danger')}</ul>}
+      </div>
     </nav>
   );
 };

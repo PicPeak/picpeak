@@ -893,7 +893,7 @@
       "completeTitle": "¿Marcar la galería completa como lista?",
       "completeBody": "El aviso y los marcadores de posición desaparecen. Las insignias de la primera selección se quedan. Fotos que verán los invitados: {{count}}.",
       "sendMail": "Enviar el correo «Su galería completa está lista»",
-      "sendMailHelp": "Al correo del cliente de esta galería. Los flujos de trabajo también pueden reaccionar a «gallery.completed».",
+      "sendMailHelp": "Los flujos de trabajo también pueden reaccionar a «gallery.completed».",
       "removeDuplicates": "Quitar duplicados de la primera selección ({{count}})",
       "removeDuplicatesHelp": "Fotos de la primera selección que vuelven a aparecer en la galería completa: mismo nombre de archivo original, único en ambos lados, y misma hora de captura (o, sin ella, mismo tamaño). Eliminar es definitivo; las copias de la galería completa conservan la insignia.",
       "removeDuplicatesNoPermission": "Para eliminar fotos se necesita el permiso photos.delete.",
