@@ -19,19 +19,13 @@ const REMEMBER_ME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  *   - false  → never set Secure (allow plain HTTP — cookie has no in-flight protection)
  *   - 'auto' → decide per-request based on req.secure (X-Forwarded-Proto
  *              via Express `trust proxy`). Emits Secure when actual HTTPS is
- *              detected, omits it on plain HTTP. This is the right default
- *              for deployments reachable via both HTTPS (reverse proxy) and
- *              LAN HTTP, and for first-time installs that haven't set up a
- *              reverse proxy yet.
+ *              detected, omits it on plain HTTP. This is an explicit
+ *              compatibility mode for deliberately mixed-protocol installs.
  *
  * Default:
- *   - production → 'auto'  (#427: previously hard `true`, which caused silent
- *                  login loops over HTTP because the browser drops the
- *                  Secure cookie. 'auto' is strictly more lenient than `true`
- *                  on real HTTPS — req.secure is true → Secure flag still
- *                  emitted — so this is not a security regression for
- *                  reverse-proxy deployments. Users who explicitly want the
- *                  HTTPS-only behaviour can still set COOKIE_SECURE=true.)
+ *   - production → true (fail closed if a deployment is accidentally exposed
+ *                  over plaintext HTTP; a deliberate HTTP-only deployment
+ *                  must explicitly set COOKIE_SECURE=false or auto.)
  *   - dev → false (allow http://localhost in browsers without HSTS gymnastics)
  */
 const secureCookieMode = (() => {
@@ -41,10 +35,7 @@ const secureCookieMode = (() => {
   if (raw === 'auto') return 'auto';
   if (raw === 'true') return true;
   if (raw === 'false') return false;
-  // No env var set → infer from NODE_ENV. Production defaults to 'auto'
-  // (per-request) rather than hard `true` so first-time HTTP installs don't
-  // silently fail (#427).
-  return process.env.NODE_ENV === 'production' ? 'auto' : false;
+  return process.env.NODE_ENV === 'production';
 })();
 const sameSiteDefault = process.env.COOKIE_SAMESITE || 'Lax';
 const cookieDomain = process.env.COOKIE_DOMAIN;

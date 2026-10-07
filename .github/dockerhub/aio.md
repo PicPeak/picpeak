@@ -13,19 +13,23 @@
 
 ## Quick start
 
-    docker run -d --name picpeak -p 3000:3000 \
+    docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
       -v picpeak:/data \
+      -e COOKIE_SECURE=auto \
       -e JWT_SECRET="$(openssl rand -base64 48)" \
       picpeak/aio:stable
 
-Then open **http://localhost:3000/admin** and complete the setup wizard. Read the one-time setup token with:
+Then open **http://localhost:3000/admin** and complete the setup wizard. The
+explicit cookie mode is for this loopback-only HTTP quick start; omit it behind
+TLS, enable HSTS, and trust only your actual proxy boundary. Read the one-time
+setup token with:
 
     docker exec picpeak cat /data/db/SETUP_TOKEN
 
 > 🔗 Share links need to know your address. The image defaults `FRONTEND_URL` to `http://localhost:3000`; pass `-e FRONTEND_URL=https://photos.example.com` (or set the site URL in Settings) before you send a gallery to a client.
 
 ## Ports & volumes
-- Container port **3000** (HTTP; put your own TLS terminator in front for public use).
+- Container port **3000** (HTTP; publish it on loopback and put your own TLS terminator in front for public use).
 - **One volume: `/data`** — back it up and you have backed up the install.
   - `/data/db` — `picpeak.db` and `SETUP_TOKEN`
   - `/data/storage` — originals, thumbnails, archives

@@ -34,7 +34,8 @@ WORKDIR /app
 # wait-for-db.sh (shell, reads DB_HOST directly) reported "PostgreSQL is up" in
 # the same log. The compose files still override this, so nothing changes for
 # compose users. See #1038.
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    LISTEN_HOST=0.0.0.0
 
 # Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
 # stage's declaration never reached this stage. Consuming it in the RUN below
