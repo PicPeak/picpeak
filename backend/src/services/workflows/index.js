@@ -14,9 +14,11 @@ const registry = require('./registry');
 require('./actions');
 // Registers the gate_setup action + exposes approval helpers.
 const approvals = require('./approvals');
+const access = require('./access');
 
 module.exports = {
   ...engine,
   ...approvals,
+  ...access,
   registry,
 };
