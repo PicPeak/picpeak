@@ -574,15 +574,6 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // Test rsync connection using spawn with argument arrays to prevent command injection
       const { spawn } = require('child_process');
 
-      // Validate and sanitize inputs to prevent command injection
-      const sanitizeInput = (input) => {
-        if (!input || typeof input !== 'string') return null;
-        // Remove any shell metacharacters and limit length
-        return input.replace(/[;&|`$(){}[\]<>\\!#*?"'\n\r]/g, '').substring(0, 255);
-      };
-
-      const host = sanitizeInput(config.host);
-      const user = sanitizeInput(config.user);
       // The key file path from the form, or the saved one when the form
       // holds the mask or sends none. An explicit '' tests without a key, as
       // saving the emptied field would. A value that is not a path (a pasted
@@ -601,53 +592,16 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       }
       const sshKeyPath = keyCandidate || null;
 
-      if (!host) {
-        res.json({ success: false, message: 'Invalid host specified' });
+      let connection;
+      try {
+        connection = await require('../utils/rsyncConnection').resolveRsyncConnection({
+          host: config.host, user: config.user, sshKey: sshKeyPath
+        });
+      } catch (optionError) {
+        res.json({ success: false, code: optionError.code, message: optionError.message });
         break;
       }
-
-      // Validate host format (hostname or IP only)
-      const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (!hostRegex.test(host) && !ipRegex.test(host)) {
-        res.json({ success: false, message: 'Invalid host format' });
-        break;
-      }
-
-      // SSRF protection: resolve the host and block any private/internal
-      // address. ssh does its own DNS at connect time, so a literal-only
-      // check let a hostname resolving to an internal IP through (#GHSA-4jh8).
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!(await isHostAllowed(host))) {
-        res.json({ success: false, message: 'Host cannot be a private or internal network address' });
-        break;
-      }
-
-      // Validate username format if provided
-      if (user && !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(user)) {
-        res.json({ success: false, message: 'Invalid username format' });
-        break;
-      }
-
-      // Build SSH arguments as array (safe from injection)
-      const sshArgs = [];
-      if (sshKeyPath) {
-        // Validate SSH key path exists and is a file
-        const fsSync = require('fs');
-        if (!fsSync.existsSync(sshKeyPath) || !fsSync.statSync(sshKeyPath).isFile()) {
-          res.json({ success: false, message: 'SSH key file not found' });
-          break;
-        }
-        sshArgs.push('-i', sshKeyPath);
-      }
-      sshArgs.push('-o', 'StrictHostKeyChecking=no');
-      sshArgs.push('-o', 'ConnectTimeout=10');
-      sshArgs.push('-o', 'BatchMode=yes');
-
-      // Add target (user@host or just host)
-      const target = user ? `${user}@${host}` : host;
-      sshArgs.push(target);
-      sshArgs.push('echo', 'Connection successful');
+      const sshArgs = [...connection.sshArgs, connection.target, 'echo', 'Connection successful'];
 
       try {
         await new Promise((resolve, reject) => {
@@ -678,10 +632,17 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         res.json({ success: true, message: 'Rsync connection successful' });
       } catch (error) {
         logger.warn('Rsync connection test failed', {
-          destination: host,
+          destination: connection.host,
           error: error.message
         });
-        res.json({ success: false, message: 'Rsync connection failed. Check server logs for details.' });
+        const hostKeyChanged = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(error.message);
+        res.json({
+          success: false,
+          code: hostKeyChanged ? 'RSYNC_SSH_HOST_KEY_UNTRUSTED' : undefined,
+          message: hostKeyChanged
+            ? 'The destination host key is unknown or changed. Independently verify it and provision the approved known_hosts entry before retrying.'
+            : 'Rsync connection failed. Check server logs for details.'
+        });
       }
       break;
     }

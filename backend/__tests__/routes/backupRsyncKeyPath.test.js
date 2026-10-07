@@ -126,6 +126,16 @@ describe('rsync SSH key is a key file path', () => {
   });
 
   describe('POST /test-connection (rsync)', () => {
+    let trustDir;
+    beforeEach(() => {
+      trustDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-rsync-trust-'));
+      process.env.BACKUP_SSH_KNOWN_HOSTS = path.join(trustDir, 'known_hosts');
+      fs.writeFileSync(process.env.BACKUP_SSH_KNOWN_HOSTS, 'backup.example.com ssh-ed25519 fixture-only\n');
+    });
+    afterEach(() => {
+      delete process.env.BACKUP_SSH_KNOWN_HOSTS;
+      fs.rmSync(trustDir, { recursive: true, force: true });
+    });
     // A public IP literal: no DNS, and the key check answers before ssh runs.
     const testRsync = (body) => as(request(app).post('/api/admin/backup/test-connection'))
       .send({ destination_type: 'rsync', host: '8.8.8.8', user: 'backup', ...body });
@@ -138,7 +148,8 @@ describe('rsync SSH key is a key file path', () => {
     it('uses the saved path when the form sends the mask', async () => {
       await setBackupSettings({ backup_rsync_ssh_key: '/nonexistent/picpeak/id_ed25519' });
       const res = await testRsync({ ssh_key: '••••••••' });
-      expect(res.body).toMatchObject({ success: false, message: 'SSH key file not found' });
+      expect(res.body).toMatchObject({ success: false, code: 'RSYNC_CONFIG_INVALID' });
+      expect(res.body.message).toContain('SSH key file not found');
     });
 
     it('tests without a key when the field was emptied, not with the saved one', async () => {
@@ -166,14 +177,56 @@ describe('rsync SSH key is a key file path', () => {
       const res = await testRsync({});
       expect(res.body.code).toBe('RSYNC_SSH_KEY_NOT_PATH');
     });
+
+    it('pins the approved address rather than letting SSH resolve a rebound hostname', async () => {
+      const dns = require('dns').promises;
+      const lookup = jest.spyOn(dns, 'lookup')
+        .mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }])
+        .mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+      const { EventEmitter } = require('events');
+      const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+        setImmediate(() => proc.emit('close', 0));
+        return proc;
+      });
+      try {
+        const res = await testRsync({ host: 'backup.example.com', ssh_key: '' });
+        expect(res.body.success).toBe(true);
+        const [cmd, args] = spawn.mock.calls[0];
+        expect(cmd).toBe('ssh');
+        expect(args).toContain('Hostname=8.8.8.8');
+        expect(args).toContain('HostKeyAlias=backup.example.com');
+        expect(args).toContain('StrictHostKeyChecking=yes');
+        expect(args).toContain('-F');
+        expect(lookup).toHaveBeenCalledTimes(1);
+      } finally { lookup.mockRestore(); spawn.mockRestore(); }
+    });
+
+    it('rejects malformed host/user instead of stripping them into another destination', async () => {
+      const { EventEmitter } = require('events');
+      const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+        setImmediate(() => proc.emit('close', 0));
+        return proc;
+      });
+      try {
+        for (const body of [{ host: '8.8.8.8;' }, { user: 'backup;' }]) {
+          const res = await testRsync({ ssh_key: '', ...body });
+          expect(res.body.success).toBe(false);
+        }
+        expect(spawn).not.toHaveBeenCalled();
+      } finally { spawn.mockRestore(); }
+    });
   });
 
   describe('the rsync backup', () => {
-    it('names a stored pasted key plainly', () => {
+    it('names a stored pasted key plainly', async () => {
       const backupService = require('../../src/services/backupService');
-      expect(() => backupService.buildRsyncArgs({
+      await expect(backupService.buildRsyncArgs({
         backup_rsync_host: 'backup.example.com', backup_rsync_path: '/srv/backups', backup_rsync_ssh_key: PASTED_KEY,
-      })).toThrow(/holds a pasted key, not a key file path/);
+      })).rejects.toThrow(/holds a pasted key, not a key file path/);
     });
   });
 });

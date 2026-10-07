@@ -931,38 +931,15 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-function buildRsyncArgs(config, extraExcludes = []) {
+async function buildRsyncArgs(config, extraExcludes = []) {
   const storagePath = getStoragePath();
-  const host = validateRsyncParam(config.backup_rsync_host, 'host');
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
 
-  if (!host || !remotePath) {
+  if (!config.backup_rsync_host || !remotePath) {
     throw new Error('Rsync configuration incomplete');
   }
 
-  // Validate host format (hostname or IP only)
-  const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (!hostRegex.test(host) && !ipRegex.test(host)) {
-    throw new Error('Invalid rsync host format');
-  }
-
   const args = ['-avz', '--delete', '--stats'];
-  if (config.backup_rsync_ssh_key) {
-    // The setting is a key FILE path. The form used to ask for the key
-    // itself, so a pasted key can still be stored here; name that plainly
-    // instead of reporting "disallowed characters".
-    if (/PRIVATE KEY|\n/.test(String(config.backup_rsync_ssh_key))) {
-      throw new Error('The rsync SSH key setting holds a pasted key, not a key file path. Enter the absolute path to a private key file.');
-    }
-    const sshKey = validateRsyncParam(config.backup_rsync_ssh_key, 'SSH key path');
-    const fs = require('fs');
-    if (!fs.existsSync(sshKey) || !fs.statSync(sshKey).isFile()) {
-      throw new Error('SSH key file not found or is not a file');
-    }
-    // Pass SSH options as separate array elements to avoid shell interpretation
-    args.push('-e', `ssh -i ${sshKey} -o StrictHostKeyChecking=no`);
-  }
 
   // Same noise filters as the walker, plus the de-selected backup paths
   // (extraExcludes) — rsync syncs the whole storage root, so this is the
@@ -976,19 +953,13 @@ function buildRsyncArgs(config, extraExcludes = []) {
 
   const source = `${storagePath}/`;
 
-  const user = config.backup_rsync_user;
-  if (user) {
-    validateRsyncParam(user, 'user');
-    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(user)) {
-      throw new Error('Invalid rsync username format');
-    }
-  }
-
-  const destination = user
-    ? `${user}@${host}:${remotePath}`
-    : `${host}:${remotePath}`;
-
-  args.push(source, destination);
+  // Last awaited operation before spawning: the returned literal, not an
+  // independently resolved hostname, controls the actual SSH socket.
+  const { resolveRsyncConnection } = require('../utils/rsyncConnection');
+  const connection = await resolveRsyncConnection({ host: config.backup_rsync_host,
+    user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key });
+  args.push('-e', ['ssh', ...connection.sshArgs].join(' '));
+  args.push(source, `${connection.rsyncTarget}:${remotePath}`);
   return args;
 }
 
@@ -1010,14 +981,6 @@ function parseRsyncStats(output) {
 
 async function performRsyncBackup(config, files) {
   const { spawnAsync } = require('../utils/safeExec');
-  // SSRF: the /test-connection route validates the host, but a scheduled or
-  // manual /run reaches here directly with the stored host. Resolve-and-vet
-  // it right before ssh/rsync does its own DNS at connect time, so a host
-  // that resolves to an internal address can't be reached (GHSA-4jh8).
-  const { isHostAllowed } = require('../utils/networkValidation');
-  if (!(await isHostAllowed(config.backup_rsync_host))) {
-    throw new Error('rsync host resolves to a private or internal network address');
-  }
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
   // file list (which only feeds manifests and file state).
@@ -1030,7 +993,7 @@ async function performRsyncBackup(config, files) {
     files = files.filter((file) => !file.legacyValues);
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
-  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
+  const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
   const stats = parseRsyncStats(stdout);
 

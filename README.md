@@ -97,6 +97,14 @@ The compose stack above is still the right choice for anything busier — SQLite
 
 Both registries get the same digests and the same tags — `stable`/`latest`, a pinned `x.y.z`, and `beta`/`main` for the active development channel — for `linux/amd64` and `linux/arm64`. Keep every image in one install on the **same** tag.
 
+### Rsync/SSH backup destination security
+
+Rsync connection tests and backup runs resolve and vet every DNS answer, then pin SSH to one approved public address. Private, metadata, reserved and mixed public/private destinations are refused. SSH host-key verification remains bound to the configured hostname, including when its approved address changes. No private-network bypass is provided.
+
+Before use, obtain the destination's SSH host public key and fingerprint through an independent trusted channel with its operator. Provision a `known_hosts` entry for that hostname; do not trust unverified `ssh-keyscan` output or delete a changed-key entry merely to make a test pass. Existing verified entries remain usable. Unknown or changed keys fail instead of being learned automatically.
+
+Pass `BACKUP_SSH_KNOWN_HOSTS` into the backend/AIO process to select an absolute readable trust-file path (without spaces or shell syntax). Otherwise a configured private key uses `known_hosts` in its directory. These selected files may be read-only and are the only host-key trust source. With neither selected, pre-provisioned OpenSSH default user/global trust remains available; default identity files and an SSH agent still work when no key is configured. Mount trust and key files persistently and independently of backup contents. The SSH connection ignores local/system configuration, aliases, proxies and control sockets, uses port 22, and does not accept configuration-based custom ports or jump hosts. Verify intentional server key replacements independently before updating the approved entry.
+
 ## 🌟 Why PicPeak?
 
 Unlike expensive SaaS solutions, PicPeak gives you:
