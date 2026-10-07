@@ -12,6 +12,7 @@
  *
  * @typedef {Object} PutOptions
  * @property {string} [contentType] - MIME type stored in object metadata.
+ * @property {string} [contentDisposition] - Delivery header stored on the object (S3 only).
  * @property {string} [cacheControl] - Cache-Control header (S3 only).
  * @property {Record<string,string>} [metadata] - Custom object metadata (S3 only).
  *

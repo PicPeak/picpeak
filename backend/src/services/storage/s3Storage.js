@@ -226,6 +226,7 @@ class S3StorageAdapter extends stream.EventEmitter {
         Key: s3Key,
         Body: fileStream,
         ContentType: options.contentType || 'application/octet-stream',
+        ContentDisposition: options.contentDisposition,
         Metadata: options.metadata || {},
         CacheControl: options.cacheControl
       };
@@ -276,6 +277,7 @@ class S3StorageAdapter extends stream.EventEmitter {
       Key: s3Key,
       Body: readStream,
       ContentType: options.contentType || 'application/octet-stream',
+      ContentDisposition: options.contentDisposition,
       Metadata: options.metadata || {},
       CacheControl: options.cacheControl
     };

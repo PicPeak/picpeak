@@ -55,6 +55,7 @@ class S3StorageBackend {
       const stream = Readable.from(body);
       await this.adapter.uploadStream(stream, key, {
         contentType: options.contentType,
+        contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
         metadata: options.metadata,
       });
@@ -63,6 +64,7 @@ class S3StorageBackend {
     if (body && typeof body.pipe === 'function') {
       await this.adapter.uploadStream(body, key, {
         contentType: options.contentType,
+        contentDisposition: options.contentDisposition,
         cacheControl: options.cacheControl,
         metadata: options.metadata,
       });
@@ -74,6 +76,7 @@ class S3StorageBackend {
   async putFromFile(relPath, localPath, options = {}) {
     await this.adapter.upload(localPath, this._key(relPath), {
       contentType: options.contentType,
+      contentDisposition: options.contentDisposition,
       cacheControl: options.cacheControl,
       metadata: options.metadata,
     });
