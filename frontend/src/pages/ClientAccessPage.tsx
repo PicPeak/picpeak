@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -13,6 +13,7 @@ import { buildResourceUrl } from '../utils/url';
 export const ClientAccessPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { isAuthenticated, isClient, clientLogin, isLoading: authLoading } = useGalleryAuth();
   const { t } = useTranslation();
   const [pin, setPin] = useState('');
@@ -50,10 +51,16 @@ export const ClientAccessPage: React.FC = () => {
       return;
     }
 
+    const linkToken = searchParams.get('token');
+    if (!linkToken) {
+      setLoginError(t('clientAccess.invalidPin'));
+      return;
+    }
+
     try {
       setIsLoggingIn(true);
       setLoginError(null);
-      await clientLogin(slug, pin);
+      await clientLogin(slug, pin, linkToken);
       navigate(`/gallery/${slug}`, { replace: true });
     } catch (error: any) {
       const statusCode = error.response?.status;

@@ -20,7 +20,7 @@ const crypto = require('crypto');
 
 process.env.JWT_SECRET = 'gallery-session-invalidation-secret-at-least-32-chars';
 
-let db, cleanup, app, adminId, customerId;
+let db, cleanup, app, adminId, customerId, clientPasswordHash;
 const eventId = 71001, slug = 'session-invalidation';
 const photos = `/api/gallery/${slug}/photos`;
 
@@ -34,6 +34,7 @@ beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   ({ adminId, customerId } = await seedMinimal(db));
   await assignAdminRole(db, adminId);
+  clientPasswordHash = await require('bcrypt').hash('2468', 4);
   await db('events').insert({
     id: eventId, slug, event_type: 'wedding', event_name: 'Session invalidation',
     event_date: '2026-01-01', host_email: 'h@example.test', admin_email: 'a@example.test',
@@ -51,6 +52,7 @@ beforeAll(async () => {
   }
   app = express(); app.use(express.json()); app.use(cookieParser());
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+  app.use('/api/auth', require('../../src/routes/auth'));
   app.use('/api/gallery', require('../../src/routes/gallery'));
   app.use('/api/customer/auth', require('../../src/routes/customerAuth'));
   app.use('/api/customer', require('../../src/routes/customer'));
@@ -60,6 +62,7 @@ beforeEach(async () => {
   await db('events').where({ id: eventId }).update({
     is_active: 1, is_archived: 0, is_draft: 0, require_password: 1, client_access_enabled: 1,
     expires_at: new Date(Date.now() + 86400000).toISOString(),
+    client_password_hash: clientPasswordHash, client_share_token: 'a'.repeat(64),
     gallery_password_changed_at: null, client_password_changed_at: null,
   });
 });
@@ -190,6 +193,29 @@ describe('rotating a gallery credential', () => {
     expect(refused.status).toBe(401);
     expect(refused.body.code).toBe('GALLERY_PASSWORD_CHANGED');
     expect((await listWith(guest)).status).toBe(200);
+  });
+
+  it('rotates the private link without ending existing client sessions', async () => {
+    const existingSession = galleryToken({ accessLevel: 'client' });
+    const oldLinkToken = 'a'.repeat(64);
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    expect((await listWith(existingSession)).status).toBe(200);
+
+    const update = await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth)
+      .send({ regenerate_client_token: true });
+    expect(update.status).toBe(200);
+
+    const event = await db('events').where({ id: eventId }).first();
+    expect(event.client_share_token).not.toBe(oldLinkToken);
+    expect(event.client_password_changed_at).toBeNull();
+    expect((await listWith(existingSession)).status).toBe(200);
+
+    const staleLogin = await request(app).post(`/api/auth/gallery/${slug}/client-login`)
+      .send({ password: '2468', token: oldLinkToken });
+    expect(staleLogin.status).toBe(401);
+    const currentLogin = await request(app).post(`/api/auth/gallery/${slug}/client-login`)
+      .send({ password: '2468', token: event.client_share_token });
+    expect(currentLogin.status).toBe(200);
   });
 });
 
