@@ -106,6 +106,19 @@ test('matches exact private IPv6 approvals across equivalent literal spellings w
   expect(() => mailSocketOptions('imap', 'fe80:0:0:0:0:0:0:1', 993)).toThrow();
   expect(lookup).not.toHaveBeenCalled();
 });
+test('private approvals never admit IPv6 instance metadata, while other approved ULA mail remains valid', async () => {
+  for (const host of ['fd00:ec2::254', 'FD00:EC2:0:0:0:0:0:254', '[fd00:ec2::254]']) {
+    process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://[fd00:ec2::254]:80';
+    expect(() => mailSocketOptions('smtp', host, 80)).toThrow(/metadata/);
+  }
+  expect(lookup).not.toHaveBeenCalled();
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://mail.internal:80,imap://mail.internal:993';
+  lookup.mockResolvedValue([record('fd00::1'), record('FD00:EC2:0:0:0:0:0:254')]);
+  await expect(open(smtpConnectionOptions({ host: 'mail.internal', port: 80 }))).rejects.toMatchObject({ code: 'MAIL_HOST_FORBIDDEN' });
+  await expect(invoke(mailSocketOptions('imap', 'mail.internal', 993))).rejects.toThrow(/metadata/);
+  lookup.mockResolvedValue([record('fd00::1')]);
+  expect((await open(smtpConnectionOptions({ host: 'mail.internal', port: 80 }))).approved).toEqual([record('fd00::1')]);
+});
 test('times out and destroys pending SMTP socket exactly once; late events cannot hand it to Nodemailer', async () => {
   jest.useFakeTimers(); connect.mockImplementation(() => socket()); const callback = jest.fn();
   const options = smtpConnectionOptions({ host: 'smtp.example.com', port: 587, connectionTimeout: 25 });
