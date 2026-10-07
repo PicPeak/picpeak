@@ -27,6 +27,11 @@ export interface EmailProcessorStatus {
 }
 
 export interface SystemHealthFailures {
+  /** Backup-store authenticity, not merely a completed run or unkeyed digest. */
+  backupAuthentication?: {
+    signingKey: { ready: boolean; source: 'env' | 'file' | 'missing' | 'invalid'; keyId: string | null };
+    latestManifest: { authenticated: boolean; keyId?: string; state?: string };
+  };
   stuckEmails: StuckEmail[];
   /** Due, under the retry cap, and still unsent — nobody picked them up. */
   waitingEmails: StuckEmail[];

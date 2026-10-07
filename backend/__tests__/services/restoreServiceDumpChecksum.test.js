@@ -59,18 +59,18 @@ describe('restoreService — database dump checksum', () => {
       .rejects.toThrow(/does not match the checksum recorded in the backup manifest/);
   });
 
-  it('restores a manifest without a dump checksum with a warning', async () => {
+  it('refuses a manifest without a dump checksum by default', async () => {
     const file = writeDump('legacy.sql', 'SELECT 1;');
     const warn = jest.fn();
-    await expect(_internal.verifyDatabaseDumpChecksum(file, null, warn)).resolves.toEqual({ verified: false });
-    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/no database dump checksum/));
+    await expect(_internal.verifyDatabaseDumpChecksum(file, null, warn)).rejects.toThrow(/valid SHA-256/);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('refuses a manifest without a dump checksum when keyed manifests are required', async () => {
     process.env.BACKUP_MANIFEST_REQUIRE_KEYED = 'true';
     const file = writeDump('legacy-required.sql', 'SELECT 1;');
     await expect(_internal.verifyDatabaseDumpChecksum(file, undefined))
-      .rejects.toThrow(/BACKUP_MANIFEST_REQUIRE_KEYED/);
+      .rejects.toThrow(/valid SHA-256/);
   });
 
   it('stops a database restore before the dump is decompressed or replayed', async () => {

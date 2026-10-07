@@ -28,6 +28,13 @@ services:
           if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
           else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
         fi
+        if [ ! -e /run/secrets/backup_manifest_key ]; then
+          if [ -n "$$BACKUP_MANIFEST_KEY" ]; then printf '%s' "$$BACKUP_MANIFEST_KEY" > /run/secrets/backup_manifest_key;
+          else od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > /run/secrets/backup_manifest_key; fi
+        fi
+        # Independent backup-store trust anchor: backend volume only, never
+        # copied into Postgres/Redis secrets or the backed-up media estate.
+        chmod 644 /run/secrets/backup_manifest_key
         # 644: the readers run as three different users (postgres, redis, nodejs),
         # so a non-root reader must be able to read them. The volume is private to
         # these containers and never host-exposed.
@@ -117,6 +124,7 @@ services:
       # it; without the mount below the backend ran as UID 1001 against a
       # root-owned / and every local backup failed with EACCES (issue 1365).
       - BACKUP_DIR=/backup
+      - BACKUP_MANIFEST_KEY_FILE=${BACKUP_MANIFEST_KEY_FILE:-/run/secrets/backup_manifest_key}
       - PICPEAK_RELEASE_CHANNEL=${PICPEAK_CHANNEL:-stable}
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}

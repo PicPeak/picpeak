@@ -257,6 +257,28 @@ export const SystemHealthPage: React.FC = () => {
 
       {/* Where the key for signing evidence comes from (#1446) — never the key
           itself. Shown while contracts are on, or once a key exists. */}
+      {!isLoading && data?.backupAuthentication && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-muted" />
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-heading">{t('systemHealth.backupAuthentication.title')}</h2>
+              <p className="text-sm text-body mt-1">
+                {t(data.backupAuthentication.signingKey.ready
+                  ? 'systemHealth.backupAuthentication.keyReady' : 'systemHealth.backupAuthentication.keyMissing')}
+                {data.backupAuthentication.signingKey.keyId && (
+                  <span className="font-mono"> · {data.backupAuthentication.signingKey.keyId}</span>
+                )}
+              </p>
+              <p className="text-sm text-body mt-1">
+                {t(data.backupAuthentication.latestManifest.authenticated
+                  ? 'systemHealth.backupAuthentication.verified' : 'systemHealth.backupAuthentication.unverified')}
+              </p>
+              <p className="text-xs text-soft mt-2">{t('systemHealth.backupAuthentication.hint')}</p>
+            </div>
+          </div>
+        </Card>
+      )}
       {!isLoading && data?.evidenceKey && (flags.contracts || data.evidenceKey.source !== 'none') && (
         <Card padding="lg" className="mb-4">
           <div className="flex items-start gap-3">

@@ -103,6 +103,7 @@ describe('Enhanced Backup Service Tests', () => {
     backupManifest.saveManifest = jest.fn().mockResolvedValue('/path/to/manifest.json');
     backupManifest.loadManifest = jest.fn().mockResolvedValue({});
     backupManifest.validateManifest = jest.fn();
+    backupManifest.getAuthentication = jest.fn().mockReturnValue({ valid: true, authenticated: true, recovery: false, warnings: [] });
     backupManifest.generateSummaryReport = jest.fn().mockReturnValue('Summary report');
     
     // Mock logger
@@ -120,7 +121,7 @@ describe('Enhanced Backup Service Tests', () => {
       type: 'sqlite',
       backupFile: DB_DUMP_PATH,
       size: 13,
-      checksum: 'abc123',
+      checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
       hasChanged: false
     });
   });
@@ -219,6 +220,7 @@ describe('Enhanced Backup Service Tests', () => {
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
         type: 'sqlite',
         backupFile: DB_DUMP_PATH,
+        checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
         hasChanged: true
       });
       
@@ -322,7 +324,7 @@ describe('Enhanced Backup Service Tests', () => {
         type: 'sqlite',
         backupFile: '/backup/db-backup.sql',
         size: 1024000,
-        checksum: 'abc123',
+        checksum: crypto.createHash('sha256').update('database backup content').digest('hex'),
         hasChanged: false
       });
       
@@ -747,8 +749,10 @@ describe('Enhanced Backup Service Tests', () => {
       expect(status).toEqual({
         isRunning: false,
         isHealthy: true,
-        lastRun: { ...run, manifestValid: true },
-        lastBackup: { ...run, manifestValid: true },
+        signingKey: { ready: true, source: 'env', keyId: expect.any(String) },
+        manifestAuthentication: { valid: true, authenticated: true, recovery: false, warnings: [] },
+        lastRun: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
+        lastBackup: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
         lastSuccessfulBackup: run,
         zombieRuns: [],
         recentRuns: [run],
