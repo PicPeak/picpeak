@@ -81,6 +81,21 @@ describe('settings protected-key boundary (/general)', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
+  it('derives dashboard cookie scope from the cookie writer and never stores generic overrides', async () => {
+    const key = 'analytics_dashboard_cookie_domain';
+    for (const route of ['general', 'analytics', 'seo', 'security']) {
+      await auth(request(app).put('/api/admin/settings/' + route), superTok)
+        .send({ [key]: 'attacker.example' }).expect(200);
+      expect(await db('app_settings').where({ setting_key: key }).first()).toBeUndefined();
+    }
+    await db('app_settings').insert({
+      setting_key: key, setting_type: 'analytics', setting_value: JSON.stringify('attacker.example'),
+    });
+    const response = await auth(request(app).get('/api/admin/settings'), superTok).expect(200);
+    expect(response.body[key]).toBe(require('../../src/utils/tokenUtils').getAuthCookieDomain());
+    await db('app_settings').where({ setting_key: key }).del();
+  });
+
   it('settings.edit role can save /general when general_site_url is unchanged', async () => {
     const res = await auth(request(app).put('/api/admin/settings/general'), mgrTok)
       .send({ general_site_url: STORED_URL, general_max_file_size_mb: 50 });
@@ -200,6 +215,24 @@ describe('settings protected-key boundary (/general)', () => {
       .send({ analytics_tracker_provider: 'umami', analytics_umami_url: 'https://tracker.example' });
     expect(res.status).toBe(200);
     expect(await readSetting('analytics_umami_url')).toBe('https://tracker.example');
+  });
+
+  it('even root cannot enable custom execution through any generic writer', async () => {
+    for (const endpoint of ['analytics', 'general', 'seo', 'security']) {
+      for (const payload of [
+        { analytics_tracker_provider: 'custom' },
+        { analytics_custom_head_html: '<script>fetch("/api/admin/users")</script>' },
+      ]) {
+        const res = await auth(request(app).put('/api/admin/settings/' + endpoint), superTok).send(payload);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('CUSTOM_ANALYTICS_DISABLED');
+      }
+    }
+    expect(await readSetting('analytics_custom_head_html')).toBeUndefined();
+    expect(await readSetting('analytics_tracker_provider')).toBe('umami');
+    const cleared = await auth(request(app).put('/api/admin/settings/analytics'), superTok)
+      .send({ analytics_custom_head_html: '', analytics_tracker_provider: 'none' });
+    expect(cleared.status).toBe(200);
   });
 
   // Backup destinations and the manifest location are owned by

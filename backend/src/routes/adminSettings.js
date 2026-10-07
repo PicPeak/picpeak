@@ -12,6 +12,7 @@ const validator = require('validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { adminAuth } = require('../middleware/auth');
+const { getAuthCookieDomain } = require('../utils/tokenUtils');
 const { requirePermission, userHasAnyPermission, isSuperAdminUser } = require('../middleware/permissions');
 const { ForbiddenError } = require('../utils/errors');
 const { clearMaintenanceCache } = require('../middleware/maintenance');
@@ -76,7 +77,8 @@ const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
   // (#705). They are computed from the environment, never stored, so a
   // round-trip of the GET payload must not create phantom setting rows.
   || key === 'general_site_url_env_pinned'
-  || key === 'general_site_url_effective';
+  || key === 'general_site_url_effective'
+  || key === 'analytics_dashboard_cookie_domain';
 const stripReservedSettingKeys = (settings) => {
   for (const key of Object.keys(settings)) {
     if (isReservedSettingKey(key)) delete settings[key];
@@ -160,12 +162,9 @@ const PROTECTED_SETTING_KEY_PERMS = [
   { match: (k) => k === 'general_site_url', perm: 'settings.domains' },
   { match: (k) => k.startsWith('security_'), perm: 'settings.security' },
   { match: (k) => k.startsWith('accounting_'), perm: 'settings.banking' },
-  // The tracker provider/URL and the custom head HTML decide which JavaScript
-  // the app serves from its own origin (the tracker proxy re-serves the
-  // configured script same-origin) and runs in every visitor's session,
-  // including a super admin's. Whoever picks that code can act as any account
-  // that loads it, so no delegable permission (settings.integrations
-  // included) may grant it — super admins only, like the SSO provider.
+  // Collector selection remains super-admin-only. These values previously
+  // selected executable code; even with data-only forwarding, choosing an
+  // external telemetry destination is not a delegable settings permission.
   { match: (k) => TRACKER_CODE_KEYS.has(k), superAdmin: true },
 ];
 // Returns the list of {key, perm} the caller tried to CHANGE without the owning
@@ -205,6 +204,15 @@ const rejectUnauthorizedProtectedKeys = async (settings, req, res) => {
       error: `You don't have permission to change: ${denied.map((d) => d.key).join(', ')}`,
       code: 'FORBIDDEN',
       keys: denied,
+    });
+    return true;
+  }
+  // Shared by every generic writer: no executable analytics, even for root.
+  if (settings.analytics_tracker_provider === 'custom'
+    || (Object.hasOwn(settings, 'analytics_custom_head_html') && settings.analytics_custom_head_html !== '')) {
+    res.status(400).json({
+      error: 'Custom analytics scripts are no longer supported; choose Umami, Rybbit or none',
+      code: 'CUSTOM_ANALYTICS_DISABLED',
     });
     return true;
   }
@@ -390,6 +398,9 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
         settingsObject[key] = value;
       }
     }
+    // Browser dashboards must not receive PicPeak's authentication cookies.
+    // Derived from the cookie writer; never trust a stored/generic input here.
+    settingsObject.analytics_dashboard_cookie_domain = getAuthCookieDomain();
     res.json(settingsObject);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch settings');
@@ -1834,7 +1845,7 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
     // Validate the provider switch (#663 Phase 1). Reject unknown values
     // so the dashboard route's factory doesn't have to defensively guard.
     if (Object.prototype.hasOwnProperty.call(settings, 'analytics_tracker_provider')) {
-      const valid = ['none', 'umami', 'rybbit', 'custom'];
+      const valid = ['none', 'umami', 'rybbit'];
       if (!valid.includes(settings.analytics_tracker_provider)) {
         return res.status(400).json({
           error: `analytics_tracker_provider must be one of: ${valid.join(', ')}`,
@@ -1842,13 +1853,7 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
       }
     }
 
-    // Sanitise the custom-mode HTML snippet on save (#663 Phase 1). Stored
-    // pre-sanitised so the publicSettings endpoint surfaces it as-is on
-    // every gallery request — never re-running sanitize-html on the hot path.
-    if (Object.prototype.hasOwnProperty.call(settings, 'analytics_custom_head_html')) {
-      const { sanitizeTrackerSnippet } = require('../services/trackers/customScriptSanitiser');
-      settings.analytics_custom_head_html = sanitizeTrackerSnippet(settings.analytics_custom_head_html);
-    }
+    // Custom snippets are rejected at the shared generic-writer boundary.
 
     // Update or insert each setting
     const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);

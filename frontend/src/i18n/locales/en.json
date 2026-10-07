@@ -2145,7 +2145,7 @@
     "analytics": {
       "title": "Analytics",
       "providerHeading": "Analytics provider",
-      "providerDescription": "Pick which tracker to use for the public gallery, or paste your own script. The admin dashboard's device-breakdown chart only enriches when you pick Umami or Rybbit — those expose a metrics API. Other providers (Plausible, Matomo, GA4, …) work via the Custom mode below.",
+      "providerDescription": "Choose Umami or Rybbit for public gallery analytics. PicPeak forwards data only; arbitrary custom scripts are no longer supported.",
       "providerLabel": "Provider",
       "provider": {
         "none": "None",
@@ -2153,9 +2153,11 @@
         "rybbit": "Rybbit",
         "custom": "Custom (paste your own script)"
       },
-      "providerNoneInfo": "No external tracker injected. The admin dashboard still shows summary cards + the daily chart from PicPeak's own access_logs; the device-breakdown chart uses a coarse user-agent heuristic.",
-      "proxiedNotice": "Served from your own domain",
-      "proxiedNoticeText": "PicPeak loads the tracker script and forwards its events through its own domain, so no Content-Security-Policy or reverse-proxy change is needed — and ad blockers see first-party requests. Your tracker still gets each visitor's IP and user agent (forwarded as X-Forwarded-For), so device and location reporting keeps working. The URL must be reachable from the PicPeak server and resolve to a public address.",
+      "providerNoneInfo": "No external events forwarded. The admin dashboard still shows summary cards and the daily chart from PicPeak's own access_logs; device breakdown uses a coarse user-agent heuristic.",
+      "proxiedNotice": "Data-only analytics forwarding",
+      "customDisabled": "Custom scripts disabled",
+      "customDisabledHelp": "Your legacy custom snippet is disabled and is not sent to visitors. Choose Umami, Rybbit or None, then save to clear the old snippet.",
+      "proxiedNoticeText": "PicPeak forwards sanitized page views and gallery events without loading third-party code. The collector receives visitor IP and user agent, but no query strings, page titles, referrers, tokens or account identifiers. Production collectors must use HTTPS.",
       "customOnlyCspWarningText": "PicPeak ships with a strict CSP (`script-src 'self'; connect-src 'self'`). Unlike the Umami and Rybbit options above, a pasted snippet is not proxied — add your tracker's domain to BOTH `script-src` (to load the script) and `connect-src` (for the events it sends) in your reverse-proxy or nginx CSP config, otherwise the browser silently blocks it.",
       "rybbitUrl": "Rybbit URL",
       "rybbitUrlHelp": "Your Rybbit instance URL — `https://app.rybbit.io` for the SaaS, or `https://rybbit.yourdomain.com` for self-hosted.",
@@ -2707,6 +2709,7 @@
     "title": "Analytics Dashboard",
     "subtitle": "Track gallery performance and visitor engagement",
     "detailedSubtitle": "Detailed analytics powered by Umami",
+    "embedUnavailable": "External dashboards require an HTTPS host outside PicPeak's cookie scope and a browser with credentialless iframe support. Built-in statistics remain available.",
     "loadingAnalytics": "Loading analytics...",
     "showSummaryView": "Show Summary View",
     "fullDashboard": "Full Dashboard",

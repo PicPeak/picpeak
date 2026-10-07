@@ -75,7 +75,7 @@ export interface PublicSettings {
   analytics_tracker_provider?: 'none' | 'umami' | 'rybbit' | 'custom';
   rybbit_url?: string | null;
   rybbit_website_id?: string | null;
-  // Custom-mode HTML snippet, already sanitised server-side.
+  // Deprecated compatibility field: always empty; custom scripts are disabled.
   analytics_custom_head_html?: string;
   // Upload settings
   allowed_file_types?: string;

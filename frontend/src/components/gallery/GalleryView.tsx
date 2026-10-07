@@ -263,13 +263,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       console.warn('DevTools detected in gallery view');
 
       // Track analytics
-      if (typeof window !== 'undefined' && (window as any).umami) {
-        (window as any).umami.track('gallery_devtools_detected', {
-          gallery: slug,
-          protectionLevel,
-          eventId: data?.event?.id
-        });
-      }
+      analyticsService.track('gallery_devtools_detected', { protectionLevel });
 
       // For maximum protection, redirect away from gallery
       if (protectionLevel === 'maximum') {

@@ -238,6 +238,9 @@ function getGuestTokenFromRequest(req, slug) {
 
 module.exports = {
   ADMIN_COOKIE_NAME,
+  // The dashboard boundary must use the same startup-time domain as cookies,
+  // not a writable setting or a port-sensitive browser origin comparison.
+  getAuthCookieDomain: () => cookieDomain || null,
   buildCookieOptionsWithExpiry,
   DEFAULT_MAX_AGE_MS,
   REMEMBER_ME_MAX_AGE_MS,

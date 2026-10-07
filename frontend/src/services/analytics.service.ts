@@ -1,402 +1,169 @@
-// Pluggable analytics service (#663 Phase 1).
-//
-// Routes initialization to the right tracker based on the operator's chosen
-// provider in Settings → Analytics, and dispatches `track()` calls to the
-// tracker's runtime API when one is loaded.
-//
-//   None    → no script, no-op tracking.
-//   Umami   → inject Umami script tag; `window.umami.track(name, data)`.
-//   Rybbit  → inject Rybbit script tag; `window.rybbit.event(name, data)`.
-//   Custom  → render admin-pasted HTML (sanitised server-side) into <head>;
-//             no runtime API hook — `track()` becomes a no-op.
-
+// PicPeak-owned telemetry: only data goes to the backend's closed /events
+// endpoint. Never execute custom snippets, fetch vendor scripts, invoke
+// vendor globals, or read application cookies/storage/DOM contents.
 import { getApiBaseUrl } from '../utils/url';
-
-export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
-
-// Umami and Rybbit scripts are loaded from PicPeak's OWN origin and proxied to
-// the configured tracker by `backend/src/routes/analyticsTrackerProxy.js`.
-// Loading them from the tracker's domain directly was always blocked by the
-// shipped CSP (`script-src 'self' …`, and `connect-src 'self' …` for the
-// beacon), which cannot be made dynamic in the Docker deployment — nginx
-// serves index.html off disk and strips the backend's CSP header. Proxying
-// removes the need for a CSP change entirely, and is what both vendors
-// document for first-party tracking.
-//
-// Both scripts derive their collect endpoint from their own `src`:
-//   Umami  — `<script-dir>/api/send` (also honours data-host-url, set below)
-//   Rybbit — `src.split('/script.js')[0]` + `/track`
-// so the single prefix below is all the backend has to expose.
-const trackerProxyBase = (): string => `${getApiBaseUrl().replace(/\/+$/, '')}/analytics/tracker`;
-
-interface BaseInitConfig {
-  provider: TrackerProvider;
-  autoTrack?: boolean;
-  doNotTrack?: boolean;
-}
-
-interface UmamiInitConfig extends BaseInitConfig {
-  provider: 'umami';
-  websiteId: string;
-  hostUrl: string;
-  domains?: string[];
-}
-
-interface RybbitInitConfig extends BaseInitConfig {
-  provider: 'rybbit';
-  websiteId: string;
-  hostUrl: string;
-  // URL path patterns whose value must never reach the collector (they embed
-  // the gallery share token). Rendered into Rybbit's data-mask-patterns.
-  maskPatterns?: string[];
-}
-
-interface CustomInitConfig extends BaseInitConfig {
-  provider: 'custom';
-  customHeadHtml: string;
-}
-
-interface NoneInitConfig extends BaseInitConfig {
-  provider: 'none';
-}
-
-type InitConfig = UmamiInitConfig | RybbitInitConfig | CustomInitConfig | NoneInitConfig;
-
-declare global {
-  interface Window {
-    umami?: {
-      // Current script.js (v2): `track(name, data)` sends a named event;
-      // `track(fn)` sends fn(defaultPayload) — a payload without `name` is a
-      // page view. This is the only page-view API the shipped tracker has.
-      track?: {
-        (eventName: string, eventData?: any): void;
-        (payload: (props: Record<string, unknown>) => Record<string, unknown>): void;
-      };
-      // Legacy (v1) API. Absent from current script.js — calling it
-      // unguarded is what threw on every admin route change (issue 1316).
-      trackView?: (url?: string, referrer?: string, websiteId?: string) => void;
-      trackEvent?: (
-        eventValue: string,
-        eventType: string,
-        url?: string,
-        websiteId?: string
-      ) => void;
-    };
-    rybbit?: {
-      event: (eventName: string, eventData?: any) => void;
-      pageview?: (path?: string) => void;
-    };
-  }
-}
-
-// The admin UI, including its login page. Matched the way the router matches
-// routes: case-insensitively, on the percent-decoded path, so `/ADMIN` or
-// `/%61dmin` counts too. A path that cannot be decoded counts as admin.
-// Pages whose URL carries a bearer secret, or whose session holds one:
-//   - the /s/ short links (the slug redeems to a gallery share URL);
-//   - the customer portal tree (/customer/*): login, invite/reset tokens and
-//     the cookie-authenticated portal pages behind them;
-//   - invitation, quote, contract, payment-check and transfer tokens.
-// A tracker that auto-collects page views would ship the token to the
-// analytics host, where anyone with access to the events could redeem it
-// first; and the tracker script (vendor code re-served through our origin, or
-// the admin-pasted custom head HTML) runs with whatever that page can do —
-// act as the signed-in customer. These pages get no tracker and no custom
-// head scripts, admin-style (Codex security audit 2026-09-30; customer tree
-// and short links added 2026-10-03). Gallery pages (/gallery/:slug/:token)
-// stay tracked by maintainer decision: their share token is redacted by
-// trackPageView and by the maskPatterns list in App.tsx (GHSA-7m6c), which is
-// also the second line of defence for a page view recorded just before a
-// client-side navigation onto one of the paths below.
-const CREDENTIAL_PATH_PREFIXES = [
-  '/s/', '/customer/', '/invite/', '/quote/', '/contract/', '/payment-check/',
-  '/transfer/', '/transfer-upload/',
-];
-const isCredentialPath = (pathname: string) => {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    return true;
-  }
-  const lower = decoded.toLowerCase().replace(/\/{2,}/g, '/');
-  // `/customer` (the portal index) counts like `/customer/…`.
-  return CREDENTIAL_PATH_PREFIXES.some((prefix) => lower.startsWith(prefix) || lower === prefix.slice(0, -1));
-};
-
-/** No tracker and no third-party head scripts here. */
-const isUntrackedPath = (pathname: string) => isAdminPath(pathname) || isCredentialPath(pathname);
-
-const isAdminPath = (pathname: string) => {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    return true;
-  }
-  const normalized = decoded.toLowerCase().replace(/\/{2,}/g, '/');
-  return normalized === '/admin' || normalized.startsWith('/admin/');
-};
-
-class AnalyticsService {
-  private initialized = false;
-  private customHeadHtml = '';
-  private customHeadInjected = false;
-  // Overridable in tests: jsdom cannot reload.
-  reloadPage = () => { window.location.reload(); };
-  private provider: TrackerProvider = 'none';
-  private websiteId: string | null = null;
-
-  initialize(config: InitConfig) {
-    if (this.initialized) return;
-    if (config.provider === 'none') {
-      this.initialized = true;
-      this.provider = 'none';
-      return;
-    }
-
-    if (config.provider === 'umami') {
-      if (!config.websiteId || !config.hostUrl) {
-        console.warn('Umami: missing websiteId or hostUrl');
-        return;
-      }
-      this.websiteId = config.websiteId;
-      const proxyBase = trackerProxyBase();
-      const script = document.createElement('script');
-      script.async = true;
-      script.defer = true;
-      script.src = `${proxyBase}/script.js`;
-      // Pin the collect host explicitly rather than relying on the tracker's
-      // src-directory fallback: an Umami built with COLLECT_API_HOST set would
-      // otherwise post straight to the tracker's domain and be blocked by
-      // `connect-src 'self'`.
-      script.setAttribute('data-host-url', proxyBase);
-      script.setAttribute('data-website-id', config.websiteId);
-      // Auto-track OFF by default (GHSA-7m6c): Umami's auto page-view capture
-      // reads window.location verbatim, so a gallery URL /gallery/:slug/:token
-      // would ship the secret share token to the analytics collector. Page
-      // views are fired manually through trackPageView(), which redacts the
-      // token. Only an explicit autoTrack:true opts back into raw capture.
-      if (config.autoTrack !== true) script.setAttribute('data-auto-track', 'false');
-      if (config.doNotTrack !== false) script.setAttribute('data-do-not-track', 'true');
-      if (config.domains?.length) script.setAttribute('data-domains', config.domains.join(','));
-      // Not on a token-bearing page: an auto-tracked view would carry the
-      // secret in the URL (stable has no deferral for the tracker script, so
-      // such a visit simply goes untracked).
-      if (!isUntrackedPath(window.location.pathname)) document.head.appendChild(script);
-    } else if (config.provider === 'rybbit') {
-      if (!config.websiteId || !config.hostUrl) {
-        console.warn('Rybbit: missing websiteId or hostUrl');
-        return;
-      }
-      this.websiteId = config.websiteId;
-      const script = document.createElement('script');
-      script.async = true;
-      script.defer = true;
-      // `/script.js` (not the upstream's `/api/script.js`): Rybbit's script
-      // computes its analytics host as `src.split('/script.js')[0]`, so the
-      // proxy prefix has to be the part before that literal segment.
-      script.src = `${trackerProxyBase()}/script.js`;
-      script.setAttribute('data-site-id', config.websiteId);
-      // GHSA-7m6c: Rybbit auto-tracks page views (initial load + SPA route
-      // changes) reading window.location, so a gallery URL would ship the raw
-      // share token. Unlike Umami we CAN'T fix this with a manual tracker —
-      // the initial-load pageview fires before any of our code runs. Instead
-      // use Rybbit's native data-mask-patterns, which replaces matching paths
-      // with the pattern string in analytics, stripping the token on every
-      // auto-tracked pageview including the first.
-      if (config.maskPatterns?.length) {
-        script.setAttribute('data-mask-patterns', JSON.stringify(config.maskPatterns));
-      }
-      // Not on a token-bearing page: an auto-tracked view would carry the
-      // secret in the URL (stable has no deferral for the tracker script, so
-      // such a visit simply goes untracked).
-      if (!isUntrackedPath(window.location.pathname)) document.head.appendChild(script);
-    } else if (config.provider === 'custom') {
-      this.customHeadHtml = (config.customHeadHtml || '').trim();
-      // Scripts pasted here run with the privileges of whoever is signed in on
-      // this origin, so they are kept out of the admin UI. A visit that starts
-      // on an admin route defers them until a public route is shown.
-      if (!isUntrackedPath(window.location.pathname)) this.injectCustomHead();
-    }
-
-    this.provider = config.provider;
-    this.initialized = true;
-  }
-
-  isInitialized() {
-    return this.initialized;
-  }
-
-  // Track custom events. Dispatched to whichever tracker is loaded; custom
-  // mode no-ops (we don't know the operator's tracker's runtime API).
-  track(eventName: string, eventData?: Record<string, any>) {
-    if (!this.initialized) return;
-    if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
-      window.umami.track?.(eventName, eventData);
-    } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit) {
-      window.rybbit.event(eventName, eventData);
-    }
-    // 'none' / 'custom' / unloaded → silently ignore.
-  }
-
-  // Redact secrets from a URL before it reaches the analytics collector
-  // (GHSA-7m6c): drop the query string entirely and replace token-looking
-  // path segments (long hex / opaque IDs — e.g. the gallery share token in
-  // /gallery/:slug/:token) with a placeholder. Failing safe: on any parse
-  // issue return just the pathname without the query.
-  private sanitizeTrackedUrl(url: string): string {
-    try {
-      const pathOnly = url.split('?')[0].split('#')[0];
-      return pathOnly
-        .split('/')
-        .map((seg) =>
-          /^[0-9a-fA-F]{16,}$/.test(seg) || /^[A-Za-z0-9_-]{20,}$/.test(seg) ? '[redacted]' : seg)
-        .join('/');
-    } catch {
-      return url.split('?')[0];
-    }
-  }
-
-  /**
-   * Keep the custom head HTML out of the admin UI across in-app navigation:
-   * run it once a public route is shown, and reload into a clean document when
-   * the admin UI is entered after it already ran in this page.
-   */
-  handleRouteChange(pathname: string) {
-    if (this.provider !== 'custom' || !this.customHeadHtml) return;
-    if (isUntrackedPath(pathname)) {
-      if (this.customHeadInjected) this.reloadPage();
-      return;
-    }
-    this.injectCustomHead();
-  }
-
-  private injectCustomHead() {
-    if (this.customHeadInjected || !this.customHeadHtml) return;
-    this.customHeadInjected = true;
-    // The admin-pasted HTML is sanitised server-side (see
-    // backend `customScriptSanitiser.js`). We render it via a wrapper
-    // <div> and move each child node into <head> so <script> tags
-    // execute. Using innerHTML on a <head> directly is also fine
-    // here — the child nodes get parsed and inserted in order.
-    const container = document.createElement('div');
-    container.innerHTML = this.customHeadHtml;
-    // Re-create <script> elements so the browser actually evaluates
-    // them — assigning innerHTML to a parent inserts the nodes but
-    // doesn't trigger script execution per the HTML spec.
-    Array.from(container.childNodes).forEach((node) => {
-      if (node.nodeName === 'SCRIPT') {
-        const orig = node as HTMLScriptElement;
-        const fresh = document.createElement('script');
-        Array.from(orig.attributes).forEach((attr) => fresh.setAttribute(attr.name, attr.value));
-        if (orig.textContent) fresh.textContent = orig.textContent;
-        document.head.appendChild(fresh);
-      } else {
-        document.head.appendChild(node);
-      }
-    });
-  }
-
-  trackPageView(url?: string, referrer?: string) {
-    if (!this.initialized) return;
-    // Only Umami is manually tracked here: its auto-track is disabled (so the
-    // raw token URL never hits the collector) and this sanitized call is the
-    // ONLY page-view source. Rybbit keeps its own auto-tracking with
-    // data-mask-patterns doing the redaction, so a manual call would
-    // double-count — skip it. 'none'/'custom' have no page-view API.
-    if (this.provider !== 'umami' || typeof window === 'undefined') return;
-    const raw = url ?? window.location.pathname;
-    // Untracked pages record nothing, even while the tracker is still loaded:
-    // useAnalytics calls handleRouteChange (which schedules the reload that
-    // unloads it) and then trackPageView in the same effect, so without this
-    // the first view of a portal or token page would still reach the
-    // collector from the old document.
-    if (isUntrackedPath(raw.split('?')[0].split('#')[0])) return;
-    // The script tag is injected async, so `window.umami` is absent until it
-    // has loaded; a route change before that is simply not recorded.
-    const umami = window.umami;
-    if (!umami) return;
-    const safe = this.sanitizeTrackedUrl(raw);
-    try {
-      if (typeof umami.track === 'function') {
-        // Umami v2 page view: merge the sanitized URL into the tracker's own
-        // default payload (website, screen, language, title, …). Without a
-        // `name` the collector records it as a page view.
-        umami.track((props) => ({
-          ...props,
-          url: safe,
-          ...(referrer !== undefined ? { referrer } : {}),
-        }));
-      } else if (typeof umami.trackView === 'function') {
-        umami.trackView(safe, referrer, this.websiteId || undefined);
-      }
-      // Neither API → no-op. Analytics must never break navigation.
-    } catch (err) {
-      console.warn('Analytics: page-view tracking failed', err);
-    }
-  }
-
-  // Gallery-specific tracking events
-  trackGalleryEvent(eventType: 'password_entry' | 'photo_view' | 'photo_download' | 'gallery_expired' | 'bulk_download', data?: any) {
-    this.track(`gallery_${eventType}`, data);
-  }
-
-  trackAdminEvent(eventType: 'login' | 'event_created' | 'event_archived' | 'event_deleted' | 'settings_updated', data?: any) {
-    this.track(`admin_${eventType}`, data);
-  }
-
-  trackDownload(photoId: string | number, gallerySlug: string, isBulk: boolean = false) {
-    this.track('photo_download', {
-      photo_id: photoId,
-      gallery: gallerySlug,
-      bulk: isBulk,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  trackExpirationWarning(gallerySlug: string, daysRemaining: number) {
-    this.track('expiration_warning_viewed', {
-      gallery: gallerySlug,
-      days_remaining: daysRemaining,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  trackSearch(query: string, resultsCount: number, context: 'gallery' | 'admin') {
-    this.track('search_performed', {
-      query_length: query.length,
-      results_count: resultsCount,
-      context,
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-export const analyticsService = new AnalyticsService();
-
-// Helper hook for React components
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
+export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
+type InitConfig = { provider: TrackerProvider; doNotTrack?: boolean; autoTrack?: boolean;
+  hostUrl?: string; websiteId?: string; domains?: string[]; maskPatterns?: string[]; customHeadHtml?: string };
+type Cache = { site: string; token: string };
+const PRIVATE_ROOTS = new Set(['admin', 'customer', 's', 'invite', 'quote', 'contract',
+  'payment-check', 'transfer', 'transfer-upload', 'slideshow']);
+const EVENT_NAMES = new Set([
+  'gallery_password_entry', 'gallery_photo_view', 'gallery_photo_download',
+  'gallery_gallery_expired', 'gallery_bulk_download', 'photo_download',
+  'expiration_warning_viewed', 'search_performed', 'gallery_devtools_detected',
+  'thumbnail_protection_violation', 'lightbox_devtools_detected', 'lightbox_protection_violation',
+]);
+const NUMBERS = new Set(['photo_count', 'days_remaining', 'query_length', 'results_count', 'statusCode', 'zoom']);
+const BOOLEANS = new Set(['success', 'bulk', 'is_download_all']);
+const ENUMS: Record<string, readonly string[]> = {
+  context: ['gallery'],
+  protectionLevel: ['basic', 'standard', 'enhanced', 'maximum'],
+  violationType: ['devtools_detected', 'print_screen_detected', 'canvas_access_blocked',
+    'right_click', 'drag_attempt', 'keyboard_shortcut', 'screenshot_attempt',
+    'context_menu', 'print_attempt', 'canvas_access', 'save_attempt', 'drag_start',
+    'text_selection', 'suspicious_visibility_change', 'clipboard_copy', 'clipboard_paste'],
+};
+
+// Kept in sync with backend analyticsEventPolicy and tested on both sides.
+// Gallery suffixes are structurally redacted, never classified by length.
+export function analyticsPath(raw: string): string | null {
+  if (typeof raw !== 'string' || raw.length > 2048 || !raw.startsWith('/')) return null;
+  let path: string;
+  try { path = decodeURIComponent(raw.split(/[?#]/)[0]); } catch { return null; }
+  if (/[\\%?#]/.test(path) || Array.from(path).some(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) return null;
+  const parts = path.split('/').filter(Boolean);
+  if (parts.some(p => p === '.' || p === '..')) return null;
+  const first = (parts[0] || '').toLowerCase();
+  if (PRIVATE_ROOTS.has(first)) return null;
+  if (first === 'gallery') {
+    if (!parts[1] || !/^[A-Za-z0-9_-]{1,100}$/.test(parts[1])
+      || ['client-access', 'show'].includes((parts[2] || '').toLowerCase())) return null;
+    return '/gallery/' + parts[1] + (parts.length > 2 ? '/[redacted]' : '');
+  }
+  if (!parts.length) return '/';
+  return parts.length === 1 && /^[A-Za-z0-9_-]{1,100}$/.test(parts[0]) ? '/' + parts[0] : null;
+}
+
+function eventProperties(data?: Record<string, unknown>): Record<string, unknown> {
+  const safe: Record<string, unknown> = {};
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return safe;
+  for (const [key, raw] of Object.entries(data)) {
+    // Count blocked shortcuts, not their key contents.
+    const value = key === 'violationType' && typeof raw === 'string' && raw.startsWith('keyboard_shortcut_')
+      ? 'keyboard_shortcut' : raw;
+    if ((NUMBERS.has(key) && typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1000000)
+      || (BOOLEANS.has(key) && typeof value === 'boolean')
+      || (Object.prototype.hasOwnProperty.call(ENUMS, key) && typeof value === 'string' && ENUMS[key].includes(value))) {
+      safe[key] = value;
+    }
+  }
+  return safe;
+}
+
+class AnalyticsService {
+  private initialized = false;
+  private provider: TrackerProvider = 'none';
+  private routePath = '';
+  private lastPageView: string | null = null;
+  private cache?: Cache;
+  private domains?: string[];
+
+  initialize(config: InitConfig) {
+    if (this.initialized) return;
+    // Legacy custom configurations remain inert, including cached snippets.
+    this.provider = config.provider === 'umami' || config.provider === 'rybbit' ? config.provider : 'none';
+    this.domains = config.domains;
+    this.initialized = true;
+    this.routePath = window.location.pathname;
+    // Settings resolve after the initial route effect. Record the first
+    // eligible view now; deduplication also covers React StrictMode effects.
+    this.trackPageView();
+  }
+
+  isInitialized() { return this.initialized; }
+
+  handleRouteChange(pathname: string) {
+    this.routePath = pathname;
+    if (!analyticsPath(pathname)) this.lastPageView = null;
+  }
+
+  private canTrack() {
+    return this.initialized && this.provider !== 'none'
+      && analyticsPath(this.routePath) !== null
+      && analyticsPath(window.location.pathname) !== null
+      && navigator.doNotTrack !== '1'
+      && (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl !== true
+      && (!this.domains?.length || this.domains.includes(window.location.hostname));
+  }
+
+  private async send(type: 'pageview' | 'event', path: string, name?: string, data?: Record<string, unknown>) {
+    if (!this.canTrack()) return;
+    const size = (n: number) => Number.isInteger(n) && n >= 0 && n <= 9999 ? n : 0;
+    const language = /^[A-Za-z0-9-]{0,35}$/.test(navigator.language) ? navigator.language : '';
+    try {
+      const response = await fetch(getApiBaseUrl().replace(/\/+$/, '') + '/analytics/tracker/events', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', keepalive: true,
+        body: JSON.stringify({
+          type, path, hostname: window.location.hostname, language,
+          screenWidth: size(window.screen.width), screenHeight: size(window.screen.height),
+          ...(type === 'event' ? { name, data } : {}),
+          ...(this.provider === 'umami' && this.cache ? { cache: this.cache } : {}),
+        }),
+      });
+      if (this.provider === 'umami' && response.ok) {
+        const result: unknown = await response.json();
+        const candidate = (result as { cache?: Cache } | null)?.cache;
+        if (candidate && typeof candidate.site === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(candidate.site)
+          && typeof candidate.token === 'string' && candidate.token.length <= 2048
+          && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(candidate.token)) {
+          this.cache = { site: candidate.site, token: candidate.token };
+        }
+      }
+    } catch { /* Analytics failures must not affect navigation or gallery use. */ }
+  }
+
+  track(eventName: string, eventData?: Record<string, unknown>) {
+    if (!EVENT_NAMES.has(eventName) || !this.canTrack()) return;
+    const path = analyticsPath(window.location.pathname);
+    if (path) void this.send('event', path, eventName, eventProperties(eventData));
+  }
+
+  trackPageView(url?: string, _referrer?: string) {
+    if (!this.canTrack()) return;
+    const path = analyticsPath(url ?? window.location.pathname);
+    if (!path || path === this.lastPageView) return;
+    this.lastPageView = path;
+    void this.send('pageview', path);
+  }
+
+  trackGalleryEvent(eventType: 'password_entry' | 'photo_view' | 'photo_download' | 'gallery_expired' | 'bulk_download', data?: Record<string, unknown>) {
+    this.track('gallery_' + eventType, data);
+  }
+  // Admin routes are deliberately excluded, including late async callbacks.
+  trackAdminEvent(_eventType: 'login' | 'event_created' | 'event_archived' | 'event_deleted' | 'settings_updated', _data?: Record<string, unknown>) {}
+
+  trackDownload(_photoId: string | number, _gallerySlug: string, isBulk = false) {
+    this.track('photo_download', { bulk: isBulk });
+  }
+  trackExpirationWarning(_gallerySlug: string, daysRemaining: number) {
+    this.track('expiration_warning_viewed', { days_remaining: daysRemaining });
+  }
+  trackSearch(query: string, resultsCount: number, context: 'gallery' | 'admin') {
+    if (context === 'gallery') this.track('search_performed', { query_length: query.length, results_count: resultsCount, context });
+  }
+}
+export const analyticsService = new AnalyticsService();
 export const useAnalytics = () => {
   const location = useLocation();
-
   useEffect(() => {
     analyticsService.handleRouteChange(location.pathname);
-    // Track page views on route change
-    analyticsService.trackPageView(location.pathname + location.search);
+    analyticsService.trackPageView(location.pathname);
   }, [location]);
-
   return analyticsService;
 };
-
-// Renderless component that drives manual page-view tracking. MUST be mounted
-// INSIDE <Router> (useLocation needs router context) — that's why the
-// AnalyticsBootstrap init, which lives outside the Router, can't do this
-// itself. Without a mounted caller trackPageView never fires and Umami — whose
-// auto-track we deliberately disable — records nothing.
-export const AnalyticsRouteTracker = (): null => {
-  useAnalytics();
-  return null;
-};
+export const AnalyticsRouteTracker = (): null => { useAnalytics(); return null; };
