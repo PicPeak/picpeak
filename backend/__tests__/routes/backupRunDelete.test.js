@@ -276,6 +276,32 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(res.status).toBe(200);
       expect(fs.existsSync(manifest)).toBe(false);
     });
+    it('deletes a new standalone snapshot manifest without deleting its data', async () => {
+      const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000001');
+      const manifest = path.join(snapshot, 'manifests', 'm.json');
+      const media = path.join(snapshot, 'a.jpg');
+      fs.mkdirSync(path.dirname(manifest), { recursive: true });
+      fs.writeFileSync(manifest, '{}');
+      fs.writeFileSync(media, 'retained snapshot');
+      const res = await del(await insertRun({ manifest_path: manifest }));
+      expect(res.status).toBe(200);
+      expect(fs.existsSync(manifest)).toBe(false);
+      expect(fs.readFileSync(media, 'utf8')).toBe('retained snapshot');
+    });
+    it('refuses a standalone snapshot manifests symlink escaping its configured root', async () => {
+      const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000002');
+      const outside = path.join(storagePath, 'outside-snapshot');
+      fs.mkdirSync(snapshot, { recursive: true });
+      fs.mkdirSync(outside);
+      fs.writeFileSync(path.join(outside, 'm.json'), 'keep me');
+      fs.symlinkSync(outside, path.join(snapshot, 'manifests'), 'dir');
+      const id = await insertRun({ manifest_path: path.join(snapshot, 'manifests', 'm.json') });
+      const res = await del(id);
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ARTIFACT_OUT_OF_SCOPE');
+      expect(fs.readFileSync(path.join(outside, 'm.json'), 'utf8')).toBe('keep me');
+      expect(await runExists(id)).toBe(true);
+    });
   });
 
   describe('S3 destination', () => {
@@ -330,6 +356,18 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(mockS3.constructed[0]).toMatchObject({ bucket: 'picpeak-backups', endpoint: 'https://s3.example.com' });
       expect(await runExists(id)).toBe(false);
       expect((await lastAudit()).metadata).not.toContain('secret');
+    });
+    it('accepts the new standalone UUID prefix without widening metadata deletion', async () => {
+      await s3Settings();
+      const prefix = 'backups/2026/10/07/backup-00000000-0000-4000-8000-000000000003';
+      const key = prefix + '/manifests/m.json';
+      mockS3.list
+        .mockResolvedValueOnce({ Contents: [{ Key: key }], IsTruncated: false })
+        .mockResolvedValueOnce({ Contents: [], IsTruncated: false });
+      mockS3.deleteMany.mockResolvedValue({ Deleted: [{ Key: key }], Errors: [] });
+      const res = await del(await insertRun({ manifest_path: 's3://picpeak-backups/' + key }));
+      expect(res.status).toBe(200);
+      expect(mockS3.deleteMany).toHaveBeenCalledWith([key]);
     });
 
     it.each([

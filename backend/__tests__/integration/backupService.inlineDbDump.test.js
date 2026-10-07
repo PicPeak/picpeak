@@ -60,6 +60,7 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
     await db('app_settings').insert([
       { setting_key: 'backup_destination_type',    setting_value: JSON.stringify('local'), setting_type: 'backup' },
       { setting_key: 'backup_destination_path',    setting_value: JSON.stringify(dest),    setting_type: 'backup' },
+      { setting_key: 'backup_manifest_path',       setting_value: JSON.stringify(path.join(dest, 'manifests')), setting_type: 'backup' },
       { setting_key: 'backup_enabled',             setting_value: JSON.stringify(true),    setting_type: 'backup' },
       { setting_key: 'backup_email_on_failure',    setting_value: JSON.stringify(false),   setting_type: 'backup' },
     ]).onConflict('setting_key').merge();

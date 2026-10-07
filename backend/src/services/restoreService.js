@@ -14,6 +14,7 @@ const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
+const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../utils/backupRestorePoint');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -303,6 +304,7 @@ class RestoreService {
     this.isRunning = true;
     this.restoreLog = [];
     this.preservedMetaSnapshot = [];  // reset per run
+    this.preRestoreBackupPath = null;
     const startTime = new Date();
     let restoreRun = null;
 
@@ -327,6 +329,9 @@ class RestoreService {
       // Step 1: Load and validate manifest
       this.updateProgress('Loading and validating manifest...');
       const manifest = await this.loadAndValidateManifest(options.manifestPath, options.s3Config);
+      assertCompleteFileRestore(manifest, options);
+      const backupConfig = await require('./backupService').getBackupConfig();
+      const selectedBackup = await resolveBackupPointLocation(manifest, options, backupConfig);
       this.log('info', 'Manifest loaded and validated', {
         backupId: manifest.backup.id,
         backupType: manifest.backup.type,
@@ -393,39 +398,13 @@ class RestoreService {
         this.log('warn', 'Pre-restore backup skipped at user request');
       }
 
-      // Step 5: Download backup if from S3, or resolve the local root.
-      //
-      // The wizard passes `options.source = 'local'` (the SOURCE TYPE
-      // string) — not a path. The old code assigned that string to
-      // `localBackupPath` verbatim and every downstream `path.join(...)`
-      // ended up with junk like `local/database/<file>.sql.gz`. Caused
-      // the disaster-recovery restore flow to fail with
-      // `Database backup file not found: local/database/...` even when
-      // the manifest recorded the correct absolute path AND the file
-      // existed at exactly that path on disk.
-      //
-      // Resolve `'local'` to the configured backup destination root by
-      // reading `backup_destination_path` from app_settings. That's the
-      // same root the file-backup walker writes to, so every relative
-      // `file.path` in the manifest resolves correctly via
-      // `path.join(localBackupPath, file.path)` further down.
-      let localBackupPath = options.source;
-      if (options.source === 'local') {
-        try {
-          const row = await db('app_settings')
-            .where('setting_key', 'backup_destination_path')
-            .first();
-          if (row?.setting_value) {
-            let parsed;
-            try { parsed = JSON.parse(row.setting_value); } catch (_) { parsed = row.setting_value; }
-            if (parsed) localBackupPath = parsed;
-          }
-        } catch (err) {
-          this.log('warn', `Could not resolve backup_destination_path: ${err.message}`);
-        }
-      } else if (options.source.startsWith('s3://')) {
+      // Step 5: Use the selected restore point, not today's destination or
+      // another run's mirror. The wizard's source type tokens were resolved
+      // and their roots validated before any destructive restore work.
+      let localBackupPath = selectedBackup;
+      if (selectedBackup.startsWith('s3://')) {
         this.updateProgress('Downloading backup from S3...');
-        localBackupPath = await this.downloadFromS3(options.source, manifest, options);
+        localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
       }
 
       // Step 6: Perform the actual restore based on type
@@ -784,7 +763,7 @@ class RestoreService {
       throw new Error('Selected items are required for selective restore');
     }
 
-    if (options.source.startsWith('s3://') && !options.s3Config) {
+    if ((options.source === 's3' || options.source.startsWith('s3://')) && !options.s3Config) {
       throw new Error('S3 configuration is required for S3-based backups');
     }
   }
@@ -1092,9 +1071,9 @@ class RestoreService {
       }
 
       // Download files if needed
-      if (options.restoreType === 'full' || options.restoreType === 'files') {
+      if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         const filesToDownload = options.restoreType === 'selective' 
-          ? options.selectedItems 
+          ? options.selectedItems.filter(item => item.type === 'file')
           : manifest.files.manifest;
 
         let downloaded = 0;

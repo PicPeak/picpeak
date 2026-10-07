@@ -326,7 +326,10 @@ async function ensureDatabaseDumpForBackup(config) {
     );
   }
 
-  return databaseInfo;
+  // Capture the actual dump for this run. Older history rows may not have
+  // checksum metadata and can be retained independently of file backups.
+  return { ...databaseInfo, size: dumpStat.size,
+    checksum: await calculateChecksum(databaseInfo.backupFile) };
 }
 
 async function getDatabaseBackupInfoInternal() {
@@ -503,9 +506,20 @@ function destinationIsBackedUpFolderMessage(folder) {
     + 'Use a folder of its own, for example a subfolder of it or a directory outside the storage folder.';
 }
 
-async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skip = NO_OWN_OUTPUT) {
+async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skip = NO_OWN_OUTPUT, strict = false, allowMissing = true) {
+  let entries;
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    // A feature never used has no top-level directory. A directory already
+    // enumerated below it disappearing, or any unreadable directory, is not
+    // a complete catalogue for a standalone point.
+    if (error.code === 'ENOENT' && allowMissing) return;
+    logger.error(`Failed to scan directory ${dirPath}:`, error);
+    if (strict) throw error;
+    return;
+  }
+  try {
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       const relativePath = path.relative(basePath, fullPath);
@@ -517,7 +531,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
       if (entry.isDirectory()) {
         if (skip.paths.includes(fullPath)) continue;
         if (skip.ids.length > 0 && skip.ids.includes(await dirIdentity(fullPath))) continue;
-        await scanDirectory(fullPath, fileList, basePath, excludePatterns, skip);
+        await scanDirectory(fullPath, fileList, basePath, excludePatterns, skip, strict, false);
       } else if (entry.isFile()) {
         const stats = await fs.stat(fullPath);
         fileList.push({
@@ -529,9 +543,8 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
       }
     }
   } catch (error) {
-    if (error.code !== 'ENOENT') {
-      logger.error(`Failed to scan directory ${dirPath}:`, error);
-    }
+    logger.error(`Failed to scan directory ${dirPath}:`, error);
+    if (strict) throw error;
   }
 }
 
@@ -772,6 +785,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
 
   // Never the backup's own output (issue 1780).
   const ownOutput = await ownOutputDirs(config, storagePath);
+  const strictCatalogue = ['local', 's3'].includes(String(config.backup_destination_type || 'local').toLowerCase());
 
   for (const target of targets) {
     // CRM document estate is special-cased in the comment block below
@@ -788,7 +802,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     // those values refer to do not, leaving every CRM *_path column a
     // broken FK. scanDirectory short-circuits on ENOENT so installs
     // that never used CRM features won't error.
-    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns, ownOutput);
+    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns, ownOutput, strictCatalogue);
   }
 
   // Documents a row names in the legacy root (<cwd>/storage) when that is not
@@ -801,6 +815,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     legacyFiles = await collectLegacyStoredFiles(db);
   } catch (error) {
     logger.warn(`Could not list documents stored outside the storage root: ${error.message}`);
+    if (strictCatalogue) throw error;
   }
   for (const legacy of legacyFiles) {
     const target = targets.find((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
@@ -813,6 +828,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
       stats = await fs.stat(legacy.abs);
     } catch (error) {
       logger.warn(`Skipping a document stored outside the storage root that is no longer readable: ${error.code || error.message}`);
+      if (strictCatalogue) throw error;
       continue;
     }
     files.push({
@@ -826,18 +842,6 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   }
 
   return files;
-}
-
-async function hasFileChanged(filePath, checksum) {
-  try {
-    const existing = await db('backup_file_states')
-      .where('file_path', filePath)
-      .first();
-    return !existing || existing.checksum !== checksum;
-  } catch (error) {
-    logger.error('Failed to check file state:', error);
-    return true;
-  }
 }
 
 async function updateFileState(filePath, checksum, size, modified) {
@@ -864,7 +868,7 @@ async function updateFileState(filePath, checksum, size, modified) {
   }
 }
 
-async function performLocalBackup(config, files) {
+async function performLocalBackup(config, files, verifiedDatabaseInfo) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   // A bare "EACCES ... mkdir '/home/ubuntu'" did not say that the configured
   // path is looked up inside the container (issue 1365). Resolved first, so
@@ -881,6 +885,9 @@ async function performLocalBackup(config, files) {
 
   const backedUpFiles = [];
   let backedUpSize = 0;
+  // Never overwrite another restore point, even after history is removed.
+  const backupPath = path.resolve(destinationRoot, `backup-${crypto.randomUUID()}`);
+  await fs.mkdir(backupPath);
 
   for (const file of files) {
     try {
@@ -893,14 +900,16 @@ async function performLocalBackup(config, files) {
       const checksum = await calculateChecksum(file.path);
       file.checksum = checksum;
 
-      const changed = await hasFileChanged(file.relativePath, checksum);
-      if (!changed && normalizeBoolean(config.backup_incremental) !== false) {
-        continue;
-      }
-
-      const destinationFile = path.join(destinationRoot, file.relativePath);
+      const destinationFile = path.join(backupPath, file.relativePath);
       await fs.mkdir(path.dirname(destinationFile), { recursive: true });
       await fs.copyFile(file.path, destinationFile);
+      if (await calculateChecksum(destinationFile) !== checksum) {
+        throw new Error('File changed while its restore point was being created');
+      }
+      file.size = (await fs.stat(destinationFile)).size;
+      if (file.size > maxSizeMb * 1024 * 1024) {
+        throw new Error('File grew beyond the configured backup size limit');
+      }
 
       await updateFileState(file.relativePath, checksum, file.size, file.modified);
 
@@ -908,14 +917,30 @@ async function performLocalBackup(config, files) {
       backedUpSize += file.size;
     } catch (error) {
       logger.error(`Failed to backup file ${file.relativePath}:`, error);
+      throw error;
     }
+  }
+
+  let databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
+  if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
+    const relativeDump = path.join('database', path.basename(verifiedDatabaseInfo.backupFile));
+    const snapshotDump = path.join(backupPath, relativeDump);
+    await fs.mkdir(path.dirname(snapshotDump), { recursive: true });
+    await fs.copyFile(verifiedDatabaseInfo.backupFile, snapshotDump);
+    const checksum = await calculateChecksum(snapshotDump);
+    if (checksum !== verifiedDatabaseInfo.checksum) {
+      throw new Error('Database dump changed while its restore point was being created');
+    }
+    databaseInfo = { ...verifiedDatabaseInfo, backupFile: relativeDump,
+      size: (await fs.stat(snapshotDump)).size, checksum };
   }
 
   return {
     backedUpCount: backedUpFiles.length,
     backedUpSize,
     backedUpFiles,
-    backupPath: destinationRoot
+    backupPath,
+    databaseInfo
   };
 }
 
@@ -1123,7 +1148,30 @@ async function performRsyncBackup(config, files) {
   };
 }
 
-async function performS3Backup(config, files) {
+// Upload only captured bytes: hashing a live source and opening it later for
+// upload can publish an object whose bytes disagree with its manifest. Stage
+// one file at a time, not the whole estate, and discard it even on failure.
+async function uploadCapturedBackupFile(client, source, key, options, maxBytes, expectedChecksum) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-backup-upload-'));
+  try {
+    const captured = path.join(directory, path.basename(source));
+    await fs.copyFile(source, captured);
+    const size = (await fs.stat(captured)).size;
+    if (size > maxBytes) throw new Error('File grew beyond the configured backup size limit');
+    const checksum = await calculateChecksum(captured);
+    if (expectedChecksum && checksum !== expectedChecksum) {
+      throw new Error('Database dump changed while its restore point was being created');
+    }
+    await client.upload(captured, key, {
+      ...options, metadata: { ...options.metadata, checksum }
+    });
+    return { size, checksum };
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function performS3Backup(config, files, verifiedDatabaseInfo) {
   try {
     const bucket = config.backup_s3_bucket;
     if (!bucket || !config.backup_s3_access_key || !config.backup_s3_secret_key) {
@@ -1148,7 +1196,7 @@ async function performS3Backup(config, files) {
 
     const now = new Date();
     const datePrefix = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-    const backupId = `backup-${now.getTime()}`;
+    const backupId = `backup-${crypto.randomUUID()}`;
     const basePrefix = config.backup_s3_prefix ? config.backup_s3_prefix : 'backups';
     const s3Prefix = path.posix.join(basePrefix, datePrefix, backupId);
 
@@ -1163,23 +1211,17 @@ async function performS3Backup(config, files) {
           continue;
         }
 
-        const checksum = await calculateChecksum(file.path);
-        file.checksum = checksum;
-
-        const changed = await hasFileChanged(file.relativePath, checksum);
-        if (!changed && normalizeBoolean(config.backup_incremental) !== false) {
-          continue;
-        }
-
         const s3Key = path.posix.join(s3Prefix, file.relativePath);
-        await s3Client.upload(file.path, s3Key, {
+        const captured = await uploadCapturedBackupFile(s3Client, file.path, s3Key, {
           metadata: {
             'original-path': file.relativePath,
-            checksum,
             'backup-id': backupId,
             'backup-time': now.toISOString()
           }
-        });
+        }, maxSizeMb * 1024 * 1024);
+        const { checksum } = captured;
+        file.checksum = checksum;
+        file.size = captured.size;
 
         await updateFileState(file.relativePath, checksum, file.size, file.modified);
 
@@ -1187,30 +1229,33 @@ async function performS3Backup(config, files) {
         backedUpSize += file.size;
       } catch (error) {
         logger.error(`Failed to backup file ${file.relativePath} to S3:`, error);
+        throw error;
       }
     }
 
-    let databaseInfo = null;
-    if (normalizeBoolean(config.backup_include_database) !== false) {
+    let databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
+    if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
       try {
-        databaseInfo = await service.getDatabaseBackupInfo();
+        databaseInfo = verifiedDatabaseInfo;
         if (databaseInfo.backupFile && await fs.stat(databaseInfo.backupFile).catch(() => null)) {
           const dbKey = path.posix.join(s3Prefix, 'database', path.basename(databaseInfo.backupFile));
-          await s3Client.upload(databaseInfo.backupFile, dbKey, {
+          const captured = await uploadCapturedBackupFile(s3Client, databaseInfo.backupFile, dbKey, {
             metadata: {
               'backup-id': backupId,
               'backup-type': 'database',
-              'database-type': databaseInfo.type,
-              checksum: databaseInfo.checksum || ''
+              'database-type': databaseInfo.type
             }
-          });
-          backedUpFiles.push(path.posix.join('database', path.basename(databaseInfo.backupFile)));
+          }, Infinity, databaseInfo.checksum);
+          const relativeDump = path.posix.join('database', path.basename(databaseInfo.backupFile));
+          databaseInfo = { ...databaseInfo, ...captured, backupFile: relativeDump };
+          backedUpFiles.push(relativeDump);
           backedUpSize += databaseInfo.size || 0;
         } else {
-          logger.warn('No recent database backup found to include in S3 backup');
+          throw new Error('No verified database dump is available for this S3 restore point');
         }
       } catch (error) {
         logger.error('Failed to include database backup in S3:', error);
+        throw error;
       }
     }
 
@@ -1265,17 +1310,18 @@ async function getPreviousSuccessfulBackup(currentRunId) {
   return record || null;
 }
 
-function buildManifestFiles(backedUpFiles, allFiles) {
+function buildManifestFiles(backedUpFiles, allFiles, databaseInfo = null) {
   const fileMap = new Map();
   allFiles.forEach(file => {
     fileMap.set(file.relativePath, file);
   });
 
   return backedUpFiles.map(relativePath => {
-    const source = fileMap.get(relativePath) || {};
+    const source = fileMap.get(relativePath) || (databaseInfo?.backupFile === relativePath
+      ? { size: databaseInfo.size, checksum: databaseInfo.checksum } : {});
     return {
       path: relativePath,
-      size: source.size || null,
+      size: source.size ?? null,
       checksum: source.checksum || null
     };
   });
@@ -1377,11 +1423,11 @@ async function runBackupInternal(isManual = false) {
     const destinationType = (config.backup_destination_type || 'local').toLowerCase();
 
     if (destinationType === 'local') {
-      result = await performLocalBackup(config, files);
+      result = await performLocalBackup(config, files, verifiedDatabaseInfo);
     } else if (destinationType === 'rsync') {
       result = await performRsyncBackup(config, files);
     } else if (destinationType === 's3') {
-      result = await performS3Backup(config, files);
+      result = await performS3Backup(config, files, verifiedDatabaseInfo);
     } else {
       throw new Error(`Unknown backup destination type: ${config.backup_destination_type}`);
     }
@@ -1395,8 +1441,8 @@ async function runBackupInternal(isManual = false) {
     try {
       logger.info('Generating backup manifest...');
 
-      const previousBackup = await getPreviousSuccessfulBackup(runId);
-      const manifestFiles = buildManifestFiles(result.backedUpFiles, files);
+      const previousBackup = destinationType === 'rsync'
+        ? await getPreviousSuccessfulBackup(runId) : null;
       // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
       // top of this run — reuse it so manifest building doesn't pay a
       // second `getDatabaseBackupInfo()` round-trip. The
@@ -1404,6 +1450,7 @@ async function runBackupInternal(isManual = false) {
       // (S3, future destinations) that override the local info on the result
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
+      const manifestFiles = buildManifestFiles(result.backedUpFiles, files, databaseInfo);
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
@@ -1431,6 +1478,10 @@ async function runBackupInternal(isManual = false) {
         customMetadata: {
           backup_run_id: runId,
           destination_type: destinationType,
+          ...(destinationType === 'local' || destinationType === 's3'
+            ? { restore_point: 'standalone-v1',
+              restore_point_manifest_layout: destinationType === 'local' && config.backup_manifest_path
+                ? 'external' : 'nested' } : {}),
           retentionDays: config.backup_retention_days || 30,
           ...(Object.keys(legacyMap).length
             ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
@@ -1451,7 +1502,9 @@ async function runBackupInternal(isManual = false) {
       if (result.s3Client) {
         manifestPath = await saveManifestToS3(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, config, result);
       } else {
-        manifestPath = await saveManifestToLocal(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, config);
+        const manifestConfig = destinationType === 'local'
+          ? { ...config, backup_destination_path: result.backupPath } : config;
+        manifestPath = await saveManifestToLocal(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, manifestConfig);
       }
 
       try {
@@ -1463,6 +1516,7 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      throw error;
     }
 
     // Per-Stage-B-path stats — bucket the actually-backed-up files

@@ -15,6 +15,7 @@ const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { getStoragePath } = require('../config/storage');
 const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
+const { resolveBackupPointLocation, parseS3Location } = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -481,7 +482,7 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 // What "the stored artifact" is depends on the destination, and only the
 // metadata recorded on the run at backup time decides where to look, never
 // anything in the request. On every destination it is the run's own
-// metadata, never its data files: an incremental run only stores the files
+// metadata, never its data files: a legacy incremental run only stores files
 // that changed since the previous one (hasFileChanged against the shared
 // backup_file_states table), so a later run's manifest points at files that
 // exist only under an earlier run. Removing those would take the only copy.
@@ -491,12 +492,14 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //          only when it sits under the configured bucket and base prefix.
 //          The data objects under the prefix stay; the retention-based S3
 //          cleanup route is what purges them.
-//   local  the manifest file, when it resolves inside the manifest directory.
-//          The mirrored tree under backup_destination_path stays.
+//   local  the manifest file, in the configured manifest directory or a
+//          validated standalone snapshot's immediate manifests directory.
+//          The data tree stays; this operation only removes history metadata.
 //   rsync  the local manifest as above; nothing on the remote mirror.
 // The record goes only after the artifact step succeeded or found nothing to
 // do, so the UI never reports a deletion that left storage behind.
 const backupDeleteError = (res, status, code, message) => res.status(status).json({ error: message, code });
+const STANDALONE_SNAPSHOT_RE = /^backup-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 class ArtifactOutOfScopeError extends Error {
   constructor(message) {
@@ -514,7 +517,25 @@ async function deleteLocalBackupManifest(config, manifestPath) {
   // than "somewhere below it", also rules out a symlinked subdirectory that
   // points outside, which a prefix check would follow.
   if (path.dirname(resolved) !== path.resolve(manifestDir)) {
-    throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
+    const selectedManifestDir = path.dirname(resolved);
+    const snapshotRoot = path.dirname(selectedManifestDir);
+    if (config.backup_manifest_path || path.basename(selectedManifestDir) !== 'manifests'
+        || path.dirname(snapshotRoot) !== path.resolve(destinationRoot)
+        || !STANDALONE_SNAPSHOT_RE.test(path.basename(snapshotRoot))) {
+      throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
+    }
+    try {
+      const realDestination = await fs.realpath(destinationRoot);
+      const realSnapshot = await fs.realpath(snapshotRoot);
+      const realManifestDir = await fs.realpath(selectedManifestDir);
+      if (path.dirname(realSnapshot) !== realDestination
+          || realManifestDir !== path.join(realSnapshot, 'manifests')) {
+        throw new ArtifactOutOfScopeError('The recorded snapshot manifest escapes its configured directory');
+      }
+    } catch (error) {
+      if (error.code === 'ENOENT') return { kind: 'manifest', status: 'missing', removed: 0 };
+      throw error;
+    }
   }
   try {
     await fs.unlink(resolved);
@@ -539,7 +560,8 @@ async function deleteS3BackupRun(config, manifestPath) {
   const manifestsAt = key.lastIndexOf('/manifests/');
   const runPrefix = manifestsAt > 0 ? key.slice(0, manifestsAt) : '';
   const runSegment = runPrefix.split('/').pop() || '';
-  if (baseWithSlash === '/' || !runPrefix.startsWith(baseWithSlash) || !/^backup-\d+$/.test(runSegment) || runPrefix.includes('..')) {
+  if (baseWithSlash === '/' || !runPrefix.startsWith(baseWithSlash)
+      || (!/^backup-\d+$/.test(runSegment) && !STANDALONE_SNAPSHOT_RE.test(runSegment)) || runPrefix.includes('..')) {
     throw new ArtifactOutOfScopeError('The recorded manifest location is outside the configured backup prefix');
   }
 
@@ -1316,13 +1338,18 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
     }
     
     const config = await getBackupConfig();
-    
-    // Handle different backup types
-    switch (config.backup_destination_type) {
+    const { manifest } = await getBackupManifest(backupRun.id);
+    const destinationType = manifest.metadata?.destination_type || config.backup_destination_type;
+
+    // History belongs to the selected manifest, not the current destination.
+    switch (destinationType) {
     case 'local': {
       // Stream local backup as zip
-      const backupPath = path.join(config.backup_destination_path, `backup-${backupRun.id}`);
+      const backupPath = await resolveBackupPointLocation(manifest, {
+        source: 'local', manifestPath: backupRun.manifest_path
+      }, config);
       const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('error', error => res.destroy(error));
         
       res.attachment(`picpeak-backup-${backupRun.id}.zip`);
       archive.pipe(res);
@@ -1341,9 +1368,13 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
 
     case 's3': {
       // For S3, provide pre-signed URLs or stream files
+      const location = await resolveBackupPointLocation(manifest, {
+        source: 's3', manifestPath: backupRun.manifest_path
+      }, config);
+      const selected = parseS3Location(location);
       const s3Adapter = new S3StorageAdapter({
         endpoint: config.backup_s3_endpoint,
-        bucket: config.backup_s3_bucket,
+        bucket: selected.bucket,
         accessKeyId: config.backup_s3_access_key,
         secretAccessKey: config.backup_s3_secret_key,
         region: config.backup_s3_region || 'us-east-1',
@@ -1352,20 +1383,33 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         ...backupS3Access(config)
       });
         
-      // List all files for this backup
-      const prefix = `backups/${backupRun.id}/`;
-      const files = await s3Adapter.list(prefix, { maxKeys: 1000 });
-        
-      // Generate pre-signed URLs
+      // The adapter returns AWS Contents, not an objects property. Follow
+      // every page within this exact point; never return a truncated backup.
+      const prefix = selected.prefix + '/';
       const urls = [];
-      for (const file of files.objects || []) {
-        const url = await s3Adapter.getSignedUrl('getObject', file.key, { expiresIn: 3600 }); // 1 hour
-        urls.push({
-          key: file.key,
-          size: file.size,
-          url: url
-        });
-      }
+      const seenKeys = new Set();
+      const seenTokens = new Set();
+      const maxObjects = Math.max(manifest.files.count, manifest.files.manifest.length) + 10;
+      let continuationToken;
+      do {
+        const page = await s3Adapter.list(prefix, { maxKeys: 1000, continuationToken });
+        for (const file of page.Contents || []) {
+          if (typeof file.Key !== 'string' || !file.Key.startsWith(prefix)
+              || seenKeys.has(file.Key) || seenKeys.size >= maxObjects) {
+            throw new Error('Invalid or oversized backup object listing');
+          }
+          seenKeys.add(file.Key);
+          urls.push({
+            key: file.Key, size: file.Size,
+            url: await s3Adapter.getSignedUrl('getObject', file.Key, { expiresIn: 3600 })
+          });
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+        if (page.IsTruncated && (!continuationToken || seenTokens.has(continuationToken))) {
+          throw new Error('Incomplete backup object listing');
+        }
+        if (continuationToken) seenTokens.add(continuationToken);
+      } while (continuationToken);
         
       res.json({
         backupId: backupRun.id,
