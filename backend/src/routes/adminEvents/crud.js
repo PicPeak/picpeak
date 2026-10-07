@@ -1483,7 +1483,6 @@ module.exports = (router) => {
       }
       if (updates.regenerate_client_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
-        credentialChanges.add('client');
       }
       delete updates.regenerate_client_token;
 

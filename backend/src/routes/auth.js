@@ -585,7 +585,7 @@ router.post('/gallery/:slug/client-login', [
     }
 
     const { slug } = req.params;
-    const { password } = req.body;
+    const { password, token: clientShareToken } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
 
@@ -604,6 +604,14 @@ router.post('/gallery/:slug/client-login', [
         error: 'Too many failed attempts. Please try again later.',
         retryAfter: lockoutStatus.remainingTime
       });
+    }
+
+    const validLinkToken = typeof clientShareToken === 'string'
+      && typeof event.client_share_token === 'string'
+      && timingSafeEqualStr(clientShareToken, event.client_share_token);
+    if (!validLinkToken) {
+      await trackFailedAttempt(`client:${slug}`, ipAddress, userAgent);
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const validPassword = await bcrypt.compare(password, event.client_password_hash);

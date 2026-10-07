@@ -36,8 +36,8 @@ const { filterOwnedEventIds } = require('../middleware/ownership');
 
 // Unambiguous alphabet for the client upload token — no 0/O/1/I/L to keep it
 // easy to read aloud / type from an email. 31 characters, so 10 of them give
-// about 49.6 bits; the 6-character codes issued before (about 29.7 bits)
-// stay valid, the route accepts 4 to 16. Guessing is further slowed by the
+// about 49.6 bits. Legacy shorter codes are rotated by migration 267 and the
+// public route rejects them afterward. Guessing is further slowed by the
 // per-route rate limiter and the per-network lockout on the upload endpoint.
 const UPLOAD_TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const UPLOAD_TOKEN_LENGTH = 10;
