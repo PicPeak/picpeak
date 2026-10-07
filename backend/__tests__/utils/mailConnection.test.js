@@ -33,12 +33,13 @@ afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); delete process.e
 
 test('every connection on one cached SMTP transport resolves afresh and consumes only the vetted answer', async () => {
   lookup.mockResolvedValueOnce([record('8.8.8.8')]).mockResolvedValueOnce([record('127.0.0.1')]);
-  const options = smtpConnectionOptions({ host: 'SMTP.example.com.', port: 587, secure: false, auth: { user: 'mailer', pass: 'fixture' } });
+  const auth = { user: 'mailer', pass: require('crypto').randomBytes(16).toString('hex') };
+  const options = smtpConnectionOptions({ host: 'SMTP.example.com.', port: 587, secure: false, auth });
   expect((await open(options)).approved).toEqual([record('8.8.8.8')]);
   await expect(open(options)).rejects.toMatchObject({ code: 'MAIL_HOST_FORBIDDEN' });
   expect(lookup).toHaveBeenCalledTimes(2); expect(sockets[1].destroy).toHaveBeenCalledTimes(1);
   expect(options.tls).toMatchObject({ host: 'smtp.example.com', servername: 'smtp.example.com' });
-  expect(options.auth).toEqual({ user: 'mailer', pass: 'fixture' });
+  expect(options.auth).toEqual(auth);
 });
 test('keeps all vetted families for native pre-connect fallback and serves both lookup callback shapes', async () => {
   lookup.mockResolvedValue([record('8.8.4.4'), record('2606:4700:4700::1111'), record('8.8.8.8')]);
