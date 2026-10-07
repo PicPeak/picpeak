@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 
@@ -43,6 +44,7 @@ describe('installFromBackupBoot', () => {
   let tryInstallFromBackup;
   let originalBackupRootEnv;
   let originalForceEnv;
+  const standalonePoints = [];
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -82,8 +84,12 @@ describe('installFromBackupBoot', () => {
       const p = path.join(backupRoot, name);
       if (fs.existsSync(p)) fs.unlinkSync(p);
     }
+    fs.mkdirSync(manifestsDir, { recursive: true });
     for (const f of fs.readdirSync(manifestsDir)) {
       fs.unlinkSync(path.join(manifestsDir, f));
+    }
+    for (const point of standalonePoints.splice(0)) {
+      fs.rmSync(point, { recursive: true, force: true });
     }
 
     // Reset DB to fresh-install state
@@ -134,6 +140,68 @@ describe('installFromBackupBoot', () => {
     const result = await tryInstallFromBackup(db);
     expect(result.ran).toBe(true);
     expect(result.manifestPath).toBe(specific);
+  });
+
+  function standaloneManifest() {
+    const point = path.join(backupRoot, 'backup-' + crypto.randomUUID());
+    standalonePoints.push(point);
+    const dir = path.join(point, 'manifests');
+    fs.mkdirSync(dir, { recursive: true });
+    const manifest = path.join(dir, 'backup-manifest-fixture.json');
+    fs.writeFileSync(manifest, '{}');
+    return manifest;
+  }
+
+  it('empty trigger finds the newest standalone point without a shared manifests directory', async () => {
+    fs.rmdirSync(manifestsDir);
+    const older = standaloneManifest();
+    const past = new Date(Date.now() - 60_000);
+    fs.utimesSync(older, past, past);
+    const newer = standaloneManifest();
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL'), '');
+    const result = await tryInstallFromBackup(db);
+    expect(result).toMatchObject({ ran: true, manifestPath: newer });
+    expect(mockRestore).toHaveBeenCalledWith(expect.objectContaining({ manifestPath: newer }));
+  });
+
+  it('compares legacy and standalone manifests without preferring the legacy directory', async () => {
+    const older = path.join(manifestsDir, 'backup-manifest-legacy.yaml');
+    fs.writeFileSync(older, '{}');
+    const past = new Date(Date.now() - 60_000);
+    fs.utimesSync(older, past, past);
+    const newer = standaloneManifest();
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL.txt'), '');
+    expect(await tryInstallFromBackup(db)).toMatchObject({ ran: true, manifestPath: newer });
+  });
+
+  it('still selects a newer legacy manifest alongside older standalone points', async () => {
+    const older = standaloneManifest();
+    const past = new Date(Date.now() - 60_000);
+    fs.utimesSync(older, past, past);
+    const newer = path.join(manifestsDir, 'backup-manifest-legacy.json');
+    fs.writeFileSync(newer, '{}');
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL'), '');
+    expect(await tryInstallFromBackup(db)).toMatchObject({ ran: true, manifestPath: newer });
+  });
+
+  it('does not discover arbitrary or symlinked snapshot directories', async () => {
+    const selected = standaloneManifest();
+    const unrecognized = path.join(backupRoot, 'unrelated');
+    standalonePoints.push(unrecognized);
+    fs.mkdirSync(path.join(unrecognized, 'manifests'), { recursive: true });
+    const unexpected = path.join(unrecognized, 'manifests', 'backup-manifest-ignore.json');
+    fs.writeFileSync(unexpected, '{}');
+    const future = new Date(Date.now() + 60_000);
+    fs.utimesSync(unexpected, future, future);
+    const linked = path.join(backupRoot, 'backup-' + crypto.randomUUID());
+    standalonePoints.push(linked);
+    fs.symlinkSync(unrecognized, linked, 'dir');
+    const linkedManifests = path.join(backupRoot, 'backup-' + crypto.randomUUID());
+    standalonePoints.push(linkedManifests);
+    fs.mkdirSync(linkedManifests);
+    fs.symlinkSync(path.join(unrecognized, 'manifests'), path.join(linkedManifests, 'manifests'), 'dir');
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL'), '');
+    expect(await tryInstallFromBackup(db)).toMatchObject({ ran: true, manifestPath: selected });
   });
 
   it('deletes the trigger file after a successful restore', async () => {
