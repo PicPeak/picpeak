@@ -99,6 +99,7 @@ const {
   getAdminTokenFromRequest,
   getGalleryTokenFromRequest,
 } = require('./src/utils/tokenUtils');
+const { parseTrustProxy, resolveListenHost } = require('./src/config/network');
 
 // Import routes
 const authRoutes = require('./src/routes/auth');
@@ -110,6 +111,7 @@ const setupRoutes = require('./src/routes/setup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const LISTEN_HOST = resolveListenHost();
 
 // Trust proxy headers (required for Traefik/nginx).
 //
@@ -119,20 +121,18 @@ const PORT = process.env.PORT || 3000;
 // rate-limit keys) is the originating client IP behind any number
 // of trusted reverse proxies.
 //
-// Default: 'loopback, linklocal, uniquelocal' — covers localhost,
-// link-local (169.254.0.0/16), and unique-local IPv6 (fc00::/7).
-// Standard for nginx-in-front-of-Node deployments on the same host
-// and for Docker bridge networks. Operators with unusual topologies
-// (load balancer in a public subnet, multi-hop NAT) override via
-// TRUST_PROXY env, accepting any value Express accepts: a number,
+// Default: false. A source address being private does not prove that it is a
+// proxy controlled by this deployment. Native reverse-proxy installs set
+// 'loopback'; the Compose stack trusts exactly its one frontend nginx hop.
+// Other topologies must set TRUST_PROXY to the exact boundary they control,
+// accepting any value Express accepts: a number,
 // 'loopback', 'linklocal', 'uniquelocal', a CIDR, a comma list, or
 // 'true' (trust ALL proxies — only safe behind a fully-controlled
 // reverse-proxy chain).
 //
 // NEVER read req.headers['x-forwarded-for'] directly in audit paths
 // — see utils/clientIp.js for the rationale.
-const trustProxySetting = process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
-app.set('trust proxy', trustProxySetting === 'true' ? true : trustProxySetting);
+app.set('trust proxy', parseTrustProxy());
 
 // Security middleware with custom CSP
 // In native HTTP installs, do NOT force HTTPS for subresources.
@@ -1351,8 +1351,8 @@ async function startServer() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
-    httpServer = app.listen(PORT, () => {
-      logger.info(`Server running on port ${PORT}`);
+    httpServer = app.listen(PORT, LISTEN_HOST, () => {
+      logger.info(`Server running on ${LISTEN_HOST}:${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
       // First-run banner. Print the TOKEN ITSELF only when the 0600 token file

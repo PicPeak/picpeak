@@ -61,6 +61,7 @@ SMTP_PORT=""
 SMTP_USER=""
 SMTP_PASS=""
 ENABLE_SSL=false
+ALLOW_INSECURE_HTTP=false  # explicit escape hatch for non-loopback plaintext installs
 CUSTOM_PORT=""
 UNATTENDED=false
 UPDATE_MODE=false
@@ -163,6 +164,13 @@ review_and_confirm() {
     echo "  Email/SMTP     : ${SMTP_HOST:-not configured}"
     echo "  Access URL     : $(base_url)"
     echo
+    if [[ "$HTTPS_MODE" == "none" ]]; then
+        log_warn "Plain HTTP exposes login and gallery sessions without transport encryption."
+        log_warn "Use this only on a trusted network while you prepare a TLS reverse proxy."
+        if ! confirm "Accept the risk and expose PicPeak over plaintext HTTP?" "n"; then
+            die "Installation cancelled. Configure a domain/TLS proxy and run the installer again."
+        fi
+    fi
     if ! confirm "Proceed with installation?" "y"; then
         die "Installation cancelled by user."
     fi
@@ -243,6 +251,9 @@ validate_unattended() {
         fi
     else
         HTTPS_MODE="none"
+    fi
+    if [[ "$HTTPS_MODE" == "none" && "$ALLOW_INSECURE_HTTP" != "true" ]]; then
+        die "Unattended plaintext installation requires the explicit --allow-insecure-http override. Prefer --domain with a TLS reverse proxy."
     fi
 }
 
@@ -736,6 +747,20 @@ setup_docker_installation() {
 
     local frontend_port="${CUSTOM_PORT:-3000}"
     local site_url; site_url="$(base_url)"
+    local public_bind_address="0.0.0.0"
+    local trust_proxy="1"
+    local cookie_secure="false"
+    local enable_hsts="false"
+    if [[ "$HTTPS_MODE" == "proxy" ]]; then
+        # The external TLS proxy reaches the host-local frontend. Keeping this
+        # loopback-only prevents a second plaintext path around that proxy.
+        public_bind_address="127.0.0.1"
+        # The host-local TLS proxy is followed by the frontend nginx. The
+        # loopback publication prevents remote clients taking a shorter path.
+        trust_proxy="2"
+        cookie_secure="true"
+        enable_hsts="true"
+    fi
 
     # Create .env for docker-compose.production.yml (prebuilt GHCR images).
     # The write is wholesale, so anything else the operator hand-edited (extra
@@ -780,6 +805,8 @@ DB_NAME=picpeak
 # Host-published ports (frontend is the user-facing one)
 FRONTEND_PORT=$frontend_port
 BACKEND_PORT=3001
+PICPEAK_BIND_ADDRESS=$public_bind_address
+TRUST_PROXY=$trust_proxy
 
 # Host bind-mount paths (required by the production compose)
 APP_STORAGE=./storage
@@ -793,9 +820,10 @@ $(if [[ -n "$ADMIN_PASSWORD" ]]; then printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSW
 FRONTEND_URL=$site_url
 ADMIN_URL=$site_url
 
-# Auth cookie behavior — 'auto' emits Secure on HTTPS, omits it on HTTP so a
-# first HTTP install (before a reverse proxy) does not silently fail login (#427).
-COOKIE_SECURE=auto
+# The no-TLS installer choice is an explicit plaintext opt-in. Proxy mode
+# binds to loopback, requires Secure cookies, and enables HSTS.
+COOKIE_SECURE=$cookie_secure
+ENABLE_HSTS=$enable_hsts
 
 # Email (optional; can also be configured later in the admin panel)
 SMTP_HOST=$SMTP_HOST
@@ -1011,6 +1039,19 @@ setup_native_installation() {
     jwt_secret=$(read_env_value "$NATIVE_APP_DIR/app/backend/.env" JWT_SECRET)
     [[ -n "$jwt_secret" ]] || jwt_secret=$(generate_jwt_secret)
 
+    local listen_host="0.0.0.0"
+    local trust_proxy="false"
+    local cookie_secure="false"
+    local enable_hsts="false"
+    if [[ "$HTTPS_MODE" == "caddy" || "$HTTPS_MODE" == "proxy" ]]; then
+        # Caddy and the supported external-proxy layout terminate TLS on this
+        # host. Do not leave a remotely reachable plaintext origin beside it.
+        listen_host="127.0.0.1"
+        trust_proxy="loopback"
+        cookie_secure="true"
+        enable_hsts="true"
+    fi
+
     # Create .env file
     log_step "Creating configuration..."
     if [ -f "$NATIVE_APP_DIR/app/backend/.env" ]; then
@@ -1029,6 +1070,8 @@ setup_native_installation() {
 # Application
 NODE_ENV=production
 PORT=${CUSTOM_PORT:-$DEFAULT_PORT}
+LISTEN_HOST=$listen_host
+TRUST_PROXY=$trust_proxy
 JWT_SECRET=$jwt_secret
 
 # Admin — created in the browser via a one-time /setup token unless a password
@@ -1056,8 +1099,10 @@ SMTP_FROM=${SMTP_USER:-noreply@localhost}
 FRONTEND_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
 ADMIN_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
 
-# Auth cookie behavior — see Docker .env block above for rationale (#427).
-COOKIE_SECURE=auto
+# The no-TLS installer choice is an explicit plaintext opt-in. TLS modes bind
+# the origin to loopback and fail closed on cookies and transport policy.
+COOKIE_SECURE=$cookie_secure
+ENABLE_HSTS=$enable_hsts
 
 # Features
 ENABLE_FILE_WATCHER=true
@@ -1171,7 +1216,7 @@ setup_caddy() {
     # Configure Caddy
     cat > /etc/caddy/Caddyfile <<EOF
 $DOMAIN_NAME {
-    reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+    reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     
     header {
         X-Content-Type-Options nosniff
@@ -1188,12 +1233,12 @@ $DOMAIN_NAME {
     
     @api path /api/*
     handle @api {
-        reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+        reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     }
     
     @admin path /admin/*
     handle @admin {
-        reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+        reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     }
 }
 EOF
@@ -1655,6 +1700,10 @@ parse_arguments() {
                 ENABLE_SSL=true
                 shift
                 ;;
+            --allow-insecure-http)
+                ALLOW_INSECURE_HTTP=true
+                shift
+                ;;
             --port)
                 CUSTOM_PORT="$2"
                 shift 2
@@ -1713,6 +1762,10 @@ Options:
   --smtp-pass PASS    Deprecated: SMTP password on the command line
   --force-admin-password-reset  Regenerate admin credentials after setup
   --enable-ssl        Native only: provision HTTPS via Caddy (needs --domain)
+  --allow-insecure-http
+                      Required for unattended installs without TLS. Publishes
+                      the frontend on all host interfaces and disables Secure
+                      cookies; use only as a temporary trusted-LAN override.
   --port PORT         Custom user-facing port
   --update            Update existing installation
   --uninstall         Remove PicPeak installation
@@ -1723,7 +1776,7 @@ Examples:
   sudo $0
 
   # Unattended Docker install, admin created in the browser afterwards
-  sudo $0 --docker --unattended --email admin@example.com
+  sudo $0 --docker --unattended --email admin@example.com --allow-insecure-http
 
   # Unattended Docker install behind your own reverse proxy, seeded admin.
   # The password comes from a private file, never from the command line:

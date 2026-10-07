@@ -1002,13 +1002,11 @@ router.post('/password-strength', [
 
 const OIDC_STATE_COOKIE = 'oidc_state';
 
-function oidcStateCookieOptions(req) {
+function oidcStateCookieOptions(res) {
   return {
-    httpOnly: true,
-    secure: Boolean(req.secure),
+    ...buildCookieOptionsWithExpiry(res, 10 * 60 * 1000),
     sameSite: 'Lax',
     path: '/api/auth/admin/sso',
-    maxAge: 10 * 60 * 1000,
   };
 }
 
@@ -1044,7 +1042,7 @@ router.get('/admin/sso/login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '10m', issuer: 'picpeak-auth' }
     );
-    res.cookie(OIDC_STATE_COOKIE, stash, oidcStateCookieOptions(req));
+    res.cookie(OIDC_STATE_COOKIE, stash, oidcStateCookieOptions(res));
     return res.redirect(url);
   } catch (error) {
     if (error.code === 'OIDC_NOT_CONFIGURED') {
@@ -1071,7 +1069,11 @@ router.get('/admin/sso/callback', async (req, res) => {
   const fail = (key) => res.redirect(`${frontendBase}/admin/login?sso_error=${key}`);
 
   const stashCookie = req.cookies?.[OIDC_STATE_COOKIE];
-  res.clearCookie(OIDC_STATE_COOKIE, { ...oidcStateCookieOptions(req), maxAge: undefined });
+  res.clearCookie(OIDC_STATE_COOKIE, {
+    ...buildClearCookieOptions(),
+    sameSite: 'Lax',
+    path: '/api/auth/admin/sso',
+  });
   if (!stashCookie) return fail('state');
 
   let stash;

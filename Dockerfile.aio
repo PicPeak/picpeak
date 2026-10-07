@@ -69,7 +69,8 @@ WORKDIR /app
 # Compose masks this by setting STORAGE_PATH=/app/storage; this image must
 # pin the same path (it is the directory the Dockerfile creates and chowns).
 ENV NODE_ENV=production \
-    DATABASE_CLIENT=sqlite3
+    DATABASE_CLIENT=sqlite3 \
+    LISTEN_HOST=0.0.0.0
 
 # See backend/Dockerfile for the rationale of each of the following blocks.
 RUN echo "cachebust=${CACHEBUST}" && apk upgrade --no-cache

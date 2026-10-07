@@ -107,6 +107,12 @@ services:
     env_file: .env
     environment:
       - NODE_ENV=production
+      - LISTEN_HOST=0.0.0.0
+      # Trust exactly the immediately connected frontend nginx hop. The
+      # backend port is host-loopback-only, preventing remote bypasses.
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
+      - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - DB_HOST=${DB_HOST:-postgres}
       - REDIS_HOST=redis
       - STORAGE_PATH=/app/storage
@@ -145,7 +151,7 @@ services:
       - ${APP_DATA:-./data}:/app/data
       - picpeak-secrets:/run/secrets:ro
     ports:
-      - "${BACKEND_PORT:-3001}:3000"
+      - "127.0.0.1:${BACKEND_PORT:-3001}:3000"
     networks:
       - picpeak-network
     depends_on:
@@ -225,7 +231,7 @@ services:
       - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
       - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${PICPEAK_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-3000}:80"
     networks:
       - picpeak-network
     depends_on:
