@@ -48,4 +48,19 @@ describe('public settings — Umami share URL stays private', () => {
     expect(res.body).not.toHaveProperty('umami_share_url');
     expect(JSON.stringify(res.body)).not.toContain('SECRET-TOKEN');
   });
+
+  it('never exposes legacy custom executable HTML, even with a stale Umami enabled flag', async () => {
+    for (const [key, value] of Object.entries({
+      analytics_tracker_provider: 'custom',
+      analytics_custom_head_html: '<script>fetch("/api/admin/users")</script>',
+    })) {
+      await db('app_settings').insert({
+        setting_key: key, setting_value: JSON.stringify(value), setting_type: 'analytics',
+      }).onConflict('setting_key').merge({ setting_value: JSON.stringify(value) });
+    }
+    const res = await request(app).get('/api/public/settings').expect(200);
+    expect(res.body.analytics_tracker_provider).toBe('none');
+    expect(res.body.analytics_custom_head_html).toBe('');
+    expect(JSON.stringify(res.body)).not.toContain('fetch(');
+  });
 });

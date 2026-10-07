@@ -11,6 +11,7 @@ import { feedbackService, type ColorLabel, type KeybindMode } from '../../servic
 import { PhotoColorLabels } from './PhotoColorLabels';
 import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
+import { analyticsService } from '../../services/analytics.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -247,14 +248,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       console.warn('DevTools detected in photo lightbox');
 
       // Track analytics
-      if (typeof window !== 'undefined' && (window as any).umami) {
-        (window as any).umami.track('lightbox_devtools_detected', {
-          photoId: currentPhoto.id,
-          protectionLevel,
-          zoom,
-          gallery: slug
-        });
-      }
+      analyticsService.track('lightbox_devtools_detected', { protectionLevel, zoom });
 
       // Close lightbox immediately for maximum protection
       if (protectionLevel === 'maximum') {
@@ -1312,14 +1306,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
 
-                  if (typeof window !== 'undefined' && (window as any).umami) {
-                    (window as any).umami.track('lightbox_protection_violation', {
-                      photoId: photo.id,
-                      violationType,
-                      protectionLevel,
-                      zoom
-                    });
-                  }
+                  analyticsService.track('lightbox_protection_violation', { violationType, protectionLevel, zoom });
 
                   if (protectionLevel === 'maximum' &&
                       ['devtools_detected', 'print_screen_detected', 'canvas_access_blocked'].includes(violationType)) {

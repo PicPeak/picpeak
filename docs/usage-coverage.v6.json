@@ -1471,8 +1471,10 @@
     "analyticsTrackerProxy.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": []
+      "reason": "Optional data-only visitor telemetry is separate from product-usage reporting: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /events"
+      ]
     },
     "auth.js": {
       "decision": "partial",

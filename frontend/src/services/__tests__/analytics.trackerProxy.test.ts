@@ -1,135 +1,54 @@
-/**
- * Pins the same-origin tracker URLs.
- *
- * Umami and Rybbit used to be injected with a `src` pointing at the admin's
- * own tracker domain, which the shipped CSP (`script-src 'self' …`,
- * `connect-src 'self' …`) always blocked — silently, with only a console
- * error. The script and its beacon now go through PicPeak's own origin
- * (`/api/analytics/tracker/*`, proxied by the backend), which `'self'`
- * already covers. If any of these URLs regress to the tracker's domain the
- * feature breaks again, invisibly, so the shapes are pinned here.
- */
-
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyticsService } from '../analytics.service';
-
-function lastScript(): HTMLScriptElement {
-  const scripts = document.head.querySelectorAll('script');
-  return scripts[scripts.length - 1] as HTMLScriptElement;
-}
-
-function freshService() {
-  // The service is a module-level singleton with an `initialized` latch; each
-  // case needs its own instance.
-  return new (analyticsService.constructor as new () => typeof analyticsService)();
-}
-
-describe('analytics tracker script injection', () => {
-  beforeEach(() => {
-    document.head.innerHTML = '';
-  });
-
-  afterEach(() => {
-    document.head.innerHTML = '';
-  });
-
-  it('loads the Umami script from PicPeak\'s own origin, not the tracker domain', () => {
-    freshService().initialize({
-      provider: 'umami',
-      hostUrl: 'https://analytics.example.com',
-      websiteId: 'site-123',
-      doNotTrack: true,
-    });
-
-    const script = lastScript();
-    expect(script.getAttribute('src')).toBe('/api/analytics/tracker/script.js');
-    expect(script.getAttribute('src')).not.toContain('analytics.example.com');
-    // Umami derives its collect endpoint as `<data-host-url>/api/send`, so
-    // this is what keeps the beacon inside `connect-src 'self'` too.
-    expect(script.getAttribute('data-host-url')).toBe('/api/analytics/tracker');
-    expect(script.getAttribute('data-website-id')).toBe('site-123');
-    // GHSA-7m6c: auto-track stays off so the raw gallery URL (which carries
-    // the share token) never reaches the collector.
-    expect(script.getAttribute('data-auto-track')).toBe('false');
-  });
-
-  it('loads the Rybbit script from a prefix its own host-derivation can parse', () => {
-    freshService().initialize({
-      provider: 'rybbit',
-      hostUrl: 'https://rybbit.example.com',
-      websiteId: 'site-456',
-      doNotTrack: true,
-      maskPatterns: ['/gallery/**'],
-    });
-
-    const script = lastScript();
-    const src = script.getAttribute('src')!;
-    expect(src).toBe('/api/analytics/tracker/script.js');
-    // Rybbit computes `analyticsHost = src.split('/script.js')[0]` and then
-    // calls `<host>/track`; the split has to land on our proxy prefix.
-    expect(src.split('/script.js')[0]).toBe('/api/analytics/tracker');
-    expect(script.getAttribute('data-site-id')).toBe('site-456');
-    expect(script.getAttribute('data-mask-patterns')).toBe(JSON.stringify(['/gallery/**']));
-  });
-
-  it('injects nothing when the tracker URL is missing', () => {
-    freshService().initialize({
-      provider: 'umami',
-      hostUrl: '',
-      websiteId: 'site-123',
-    });
-
-    expect(document.head.querySelectorAll('script')).toHaveLength(0);
-  });
+const fetchMock = vi.fn();
+function fresh() { return new (analyticsService.constructor as new () => typeof analyticsService)(); }
+beforeEach(() => {
+  document.head.innerHTML = '';
+  window.history.pushState({}, '', '/gallery/wedding/short-secret?share=SECRET#SECRET');
+  fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetchMock);
 });
+afterEach(() => { vi.unstubAllGlobals(); document.head.innerHTML = ''; window.history.pushState({}, '', '/'); });
 
-// The proxied tracker script runs same-origin with the privileges of whoever
-// is signed in, so it is kept out of the admin UI exactly like the custom head
-// HTML: deferred on admin routes, and entering the admin UI after it ran
-// reloads into a clean document.
-describe('tracker script and the admin UI', () => {
-  const scripts = () => document.head.querySelectorAll('script').length;
-  const serviceWithReload = () => {
-    const service = freshService();
-    service.reloadPage = vi.fn();
-    return service;
-  };
-
-  beforeEach(() => {
-    document.head.innerHTML = '';
+describe('PicPeak-owned tracker transport', () => {
+  it.each(['umami', 'rybbit'] as const)('records exactly one initial %s page view without loading vendor code', provider => {
+    const service = fresh();
+    service.handleRouteChange(window.location.pathname); service.trackPageView();
+    expect(fetchMock).not.toHaveBeenCalled();
+    service.initialize({ provider, hostUrl: 'https://hostile.example', websiteId: 'site-1', autoTrack: true });
+    service.trackPageView(window.location.pathname + window.location.search);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(document.head.querySelectorAll('script, iframe, link, meta')).toHaveLength(0);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/analytics/tracker/events');
+    expect(options).toMatchObject({ credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', keepalive: true });
+    expect(JSON.parse(options.body)).toMatchObject({ type: 'pageview', path: '/gallery/wedding/[redacted]' });
+    expect(options.body).not.toContain('SECRET'); expect(options.body).not.toContain('short-secret');
   });
-
-  afterEach(() => {
-    document.head.innerHTML = '';
-    window.history.pushState({}, '', '/');
+  it('never invokes provider globals or inserts response-defined HTML/code', async () => {
+    const track = vi.fn(); const event = vi.fn();
+    Object.assign(window, { umami: { track }, rybbit: { event } });
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ code: 'window.pwned=true',
+      cache: { site: 'site-1', token: '<script>evil()</script>' } }) });
+    const service = fresh(); service.initialize({ provider: 'umami' });
+    service.trackDownload(1, 'secret-gallery');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(track).not.toHaveBeenCalled(); expect(event).not.toHaveBeenCalled();
+    expect(document.head.querySelectorAll('script, iframe')).toHaveLength(0);
+    Reflect.deleteProperty(window, 'umami'); Reflect.deleteProperty(window, 'rybbit');
   });
-
-  it('does not load the tracker when the visit starts on an admin route', () => {
-    window.history.pushState({}, '', '/admin/dashboard');
-    const service = serviceWithReload();
-
-    service.initialize({ provider: 'umami', hostUrl: 'https://analytics.example.com', websiteId: 'site-123' });
-    expect(scripts()).toBe(0);
-
-    service.handleRouteChange('/admin/events');
-    expect(scripts()).toBe(0);
-    // Nothing ran yet, so staying in the admin UI must not reload.
-    expect(service.reloadPage).not.toHaveBeenCalled();
-
-    service.handleRouteChange('/gallery/summer-party');
-    service.handleRouteChange('/gallery/summer-party/photo/3');
-    expect(scripts()).toBe(1);
+  it('retains only a bounded opaque Umami cache token in memory', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ cache: { site: 'site-1', token: 'header.payload.signature' },
+      sessionId: 'SECRET', html: '<script>evil()</script>' }) });
+    const service = fresh(); service.initialize({ provider: 'umami' });
+    await vi.waitFor(() => { service.trackDownload(1, 'private-gallery'); expect(JSON.parse(fetchMock.mock.lastCall![1].body).cache)
+      .toEqual({ site: 'site-1', token: 'header.payload.signature' }); });
+    expect(fetchMock.mock.lastCall![1].body).not.toContain('SECRET');
   });
-
-  it('reloads when the admin UI is entered after the tracker ran', () => {
-    window.history.pushState({}, '', '/gallery/summer-party');
-    const service = serviceWithReload();
-
-    service.initialize({ provider: 'rybbit', hostUrl: 'https://rybbit.example.com', websiteId: 'site-456' });
-    expect(scripts()).toBe(1);
-
-    service.handleRouteChange('/admin');
-    expect(service.reloadPage).toHaveBeenCalledTimes(1);
+  it('keeps analytics errors out of gallery/navigation workflows', () => {
+    fetchMock.mockRejectedValue(new Error('offline'));
+    const service = fresh();
+    expect(() => service.initialize({ provider: 'rybbit' })).not.toThrow();
+    expect(() => service.trackDownload(1, 'wedding')).not.toThrow();
   });
 });

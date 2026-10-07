@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { analyticsDashboardFrameProps } from '../../utils/analyticsDashboardUrl';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -55,7 +56,8 @@ export const AnalyticsPage: React.FC = () => {
   const [isEmbedMode, setIsEmbedMode] = useState(false);
   
   // Check if Umami is configured from settings or environment
-  const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean }>({});
+  const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean; cookieDomain?: string | null }>({});
+  const dashboardProps = analyticsDashboardFrameProps(umamiConfig.shareUrl, umamiConfig.cookieDomain);
 
   // Fetch analytics data from backend
   const { data: apiData, isLoading, refetch } = useQuery({
@@ -95,6 +97,7 @@ export const AnalyticsPage: React.FC = () => {
           setUmamiConfig({
             url: settings.analytics_umami_url,
             shareUrl: settings.analytics_umami_share_url,
+            cookieDomain: settings.analytics_dashboard_cookie_domain,
             enabled: true
           });
         } else {
@@ -106,6 +109,7 @@ export const AnalyticsPage: React.FC = () => {
             setUmamiConfig({
               url: envUrl,
               shareUrl: import.meta.env.VITE_UMAMI_SHARE_URL,
+              cookieDomain: settings.analytics_dashboard_cookie_domain,
               enabled: true
             });
           } else {
@@ -234,7 +238,7 @@ export const AnalyticsPage: React.FC = () => {
   }
 
   // If Umami is configured and embed mode is enabled, show the Umami dashboard
-  if (isEmbedMode && umamiConfig.shareUrl) {
+  if (isEmbedMode && dashboardProps) {
     return (
       <div>
         <div className="flex justify-between items-center mb-6">
@@ -253,15 +257,11 @@ export const AnalyticsPage: React.FC = () => {
         
         <Card padding="none" className="overflow-hidden" style={{ height: '800px' }}>
           <iframe
-            src={umamiConfig.shareUrl}
+            {...dashboardProps}
             className="w-full h-full border-0"
             title="Umami Analytics Dashboard"
-            // An admin-configured third-party page: it gets what a dashboard
-            // needs (its own scripts, its own origin, links, forms) and
-            // nothing more — no top-navigation, no popups without user
-            // activation, no referrer.
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups-to-escape-sandbox allow-popups"
-            referrerPolicy="no-referrer"
+            // Separate cookie/storage context, including redirects; no
+            // ordinary-frame fallback, popup escape or top navigation.
           />
         </Card>
       </div>
@@ -275,9 +275,12 @@ export const AnalyticsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-heading">{t('analytics.title')}</h1>
           <p className="text-soft mt-1">{t('analytics.subtitle')}</p>
+          {umamiConfig.shareUrl && !dashboardProps && (
+            <p className="text-soft mt-2 text-sm" role="status">{t('analytics.embedUnavailable')}</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {umamiConfig.shareUrl && (
+          {dashboardProps && (
             <Button
               variant="outline"
               onClick={() => setIsEmbedMode(true)}
