@@ -120,7 +120,7 @@ describe('Enhanced Backup Service Tests', () => {
       type: 'sqlite',
       backupFile: DB_DUMP_PATH,
       size: 13,
-      checksum: 'abc123',
+      checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
       hasChanged: false
     });
   });

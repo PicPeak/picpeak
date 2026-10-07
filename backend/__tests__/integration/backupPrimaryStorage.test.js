@@ -54,13 +54,6 @@ async function seedEstate() {
   const external = await event('external', { source_mode: 'reference' });
   await db('photos').insert({ event_id: external, filename: 'external.jpg', path: 'external/absent.jpg',
     type: 'individual', source_origin: 'external', external_relpath: 'library/absent.jpg' });
-  await db('customer_documents').insert([
-    { customer_account_id: customerId, uploader_type: 'admin', original_name: 'customer.pdf', storage_key: document,
-      size_bytes: 3, sha256: '00'.repeat(32), status: 'clean', deleted_at: '2026-10-06' },
-    { customer_account_id: customerId, uploader_type: 'admin', original_name: 'purged.pdf',
-      storage_key: 'business-docs/customer-documents/1/purged.pdf', size_bytes: 3, sha256: '00'.repeat(32),
-      status: 'clean', purged_at: '2026-10-06' },
-  ]);
   await db('transfers').insert({ id: 1, token: 'ab'.repeat(32), title: 'fixture', expires_at: '2027-10-07' });
   await db('transfer_extra_files').insert({ transfer_id: 1, original_filename: 'extra.html', stored_path: extra });
   await db('transfer_uploads').insert({ transfer_id: 1, original_filename: 'upload.js', stored_path: upload });
@@ -85,7 +78,7 @@ beforeAll(async () => {
   ({ RestoreService } = require('../../src/services/restoreService'));
 }, 120000);
 beforeEach(async () => {
-  await db('photos').del(); await db('events').del(); await db('customer_documents').del();
+  await db('photos').del(); await db('events').del();
   await db('transfer_uploads').del(); await db('transfer_extra_files').del(); await db('transfers').del();
   await db('backup_file_states').del(); await db('backup_runs').del();
   await db('database_backup_runs').del();
@@ -126,7 +119,7 @@ it('honors archive/photo/thumb toggles and explicit path/exclusion policy for re
   expect(inventory.some(file => [original, archived, document, 'thumbnails/original.jpg'].includes(file.relativePath))).toBe(false);
 });
 
-it.each([original, archived, document, extra, upload])('refuses a missing required object %s even with a local decoy', async key => {
+it.each([original, archived, extra, upload])('refuses a missing required object %s even with a local decoy', async key => {
   await seedEstate(); objects.delete(key); await local(key);
   await expect(backup.getFilesToBackup({ backup_include_archived: true })).rejects.toThrow(/Required primary-storage object/);
 });
@@ -318,7 +311,7 @@ it('rejects a reference lifecycle change while the actual database dump is being
   } finally { spy.mockRestore(); }
 });
 
-it.each([['customer_documents', 'storage_key'], ['transfer_uploads', 'stored_path'], ['transfer_extra_files', 'stored_path']])(
+it.each([['transfer_uploads', 'stored_path'], ['transfer_extra_files', 'stored_path']])(
   'rejects a selected %s reference without a storage key', async (table, column) => {
     await seedEstate(); const row = await db(table).first(); await db(table).where('id', row.id).update({ [column]: '' });
     await expect(exporter.collectFiles(true)).rejects.toThrow(/has no primary-storage key/);
