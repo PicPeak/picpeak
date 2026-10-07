@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
+const http = require('http');
 const dns = require('dns').promises;
 const { EventEmitter } = require('events');
 
@@ -57,8 +58,10 @@ const publicRecords = [record('8.8.8.8')];
 const privateRecords = [record('127.0.0.1')];
 
 describe('mail entry points consume guarded connection answers', () => {
-  let db; let cleanup; let app; let token; let processor; let intake; let lookup; let connect;
-  const post = (url, body = {}) => request(app).post(`/api/admin/email${url}`).set('Authorization', `Bearer ${token}`).send(body);
+  let db; let cleanup; let server; let token; let processor; let intake; let lookup; let connect;
+  const httpAgent = new http.Agent();
+  httpAgent.createConnection = (...args) => net.createConnection(...args);
+  const post = (url, body = {}) => request(server).post(`/api/admin/email${url}`).agent(httpAgent).set('Authorization', `Bearer ${token}`).send(body);
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -79,13 +82,19 @@ describe('mail entry points consume guarded connection answers', () => {
     });
     processor = require('../../src/services/emailProcessor');
     intake = require('../../src/services/emailIntakeService');
-    app = buildRouteApp('/api/admin/email', require('../../src/routes/adminEmail'));
+    server = http.createServer(buildRouteApp('/api/admin/email', require('../../src/routes/adminEmail')));
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   }, 120000);
   beforeEach(() => {
     delete process.env.MAIL_PRIVATE_ENDPOINTS;
     mockSmtpOptions.length = 0; mockImapOptions.length = 0; mockAccepted.length = 0;
     lookup = jest.spyOn(dns, 'lookup').mockResolvedValue(publicRecords);
-    connect = jest.spyOn(net, 'createConnection').mockImplementation(options => {
+    const nativeConnect = net.createConnection;
+    connect = jest.spyOn(net, 'createConnection').mockImplementation((options, ...args) => {
+      // Node versions may route the local Supertest client through this API.
+      // Permit only this fixture's HTTP listener, never an unguarded mail target.
+      if (options.host === '127.0.0.1' && Number(options.port) === server.address().port) return nativeConnect.call(net, options, ...args);
+      expect(options.lookup).toEqual(expect.any(Function));
       const socket = new EventEmitter(); socket.destroy = () => { socket.destroyed = true; };
       process.nextTick(() => options.lookup(options.host, { all: true }, (error, records) => {
         if (socket.destroyed) return;
@@ -98,7 +107,12 @@ describe('mail entry points consume guarded connection answers', () => {
     webhook.isEnabled.mockReturnValue(false); webhook.send.mockClear();
   });
   afterEach(() => { jest.restoreAllMocks(); delete process.env.MAIL_PRIVATE_ENDPOINTS; });
-  afterAll(async () => { await processor?.stopEmailQueueProcessor(); if (cleanup) await cleanup(); });
+  afterAll(async () => {
+    await processor?.stopEmailQueueProcessor();
+    httpAgent.destroy();
+    if (server) await new Promise(resolve => server.close(resolve));
+    if (cleanup) await cleanup();
+  });
 
   it('covers all four SMTP constructors and saved IMAP diagnostics with unchanged success contracts', async () => {
     const cached = await processor.initializeTransporter(true); expect(cached).toBeTruthy();
