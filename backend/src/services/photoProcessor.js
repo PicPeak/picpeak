@@ -650,7 +650,13 @@ async function processPhoto(photoId) {
     logger.warn(`processPhoto: webhook fire failed for ${photoId}`, { error: e.message });
   }
 
-  await require('./publicUploadQuota').processingComplete(photoId);
+  try {
+    await require('./publicUploadQuota').processingComplete(photoId);
+  } catch (error) {
+    // Retain the pending charge, but do not turn a completed original into a
+    // failed/retryable job because accounting could not release its work hold.
+    logger.warn('Public upload processing settled but quota hold remains', { photoId, error: error.message });
+  }
   return updateData;
 }
 

@@ -275,11 +275,14 @@ test('a staging-cleanup failure keeps its capacity and simultaneous-upload slot'
   expect(await db('public_upload_requests').where({ id: session.id }).first()).toMatchObject({ active: 1, bytes: session.bytes });
   jest.restoreAllMocks(); await quota.finish(session);
 });
-test('Multer-skipped transfer parts still cross the raw body ceiling', async () => {
-  if (!(await db.schema.hasColumn('transfers', 'kind'))) return; // stable rejects invalid types rather than skipping them
+test('unsupported transfer parts cannot bypass the raw body ceiling on either branch', async () => {
   limits({ requestBytes: 4096 });
-  await db('app_settings').where({ setting_key: 'transfer_upload_accept_all' }).update({ setting_value: 'false' });
-  expect((await require('../../src/services/transferUploadPolicy').getTransferUploadPolicy()).acceptAll).toBe(false);
+  if (await db.schema.hasColumn('transfers', 'kind')) {
+    await db('app_settings').where({ setting_key: 'transfer_upload_accept_all' }).update({ setting_value: 'false' });
+    expect((await require('../../src/services/transferUploadPolicy').getTransferUploadPolicy()).acceptAll).toBe(false);
+    const skipped = await transferRequest().attach('files', JPEG, { filename: 'owned.unknown', contentType: 'application/x-owned' });
+    expect(skipped.status).toBe(400); expect(skipped.body.code).toBe('TYPE_REJECTED');
+  }
   const res = await transferRequest().attach('files', Buffer.alloc(8192), { filename: 'owned.unknown', contentType: 'application/x-owned' });
   expect(res.status).toBe(413); await waitSettled(); expect(mockStorage.putFromFile).not.toHaveBeenCalled();
 });

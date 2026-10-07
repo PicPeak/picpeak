@@ -263,6 +263,18 @@ describe('photoProcessor.processPhoto', () => {
     expect(finalUpdate.data.video_codec).toBe('hevc');
   });
 
+  it('keeps completed media complete when its quota work-hold release fails', async () => {
+    dbModule.__setPhoto({ id: 102, event_id: 5, filename: 'ordinary.jpg', original_filename: 'ordinary.jpg',
+      mime_type: 'image/jpeg', media_type: 'image', size_bytes: 12, captured_at: '2026-04-25T12:00:00Z' });
+    dbModule.__setEvent({ id: 5, slug: 'owned', event_name: 'Owned' });
+    imageProcessor.generateThumbnail.mockResolvedValueOnce('thumbnails/ordinary.jpg');
+    require('../../src/services/publicUploadQuota').processingComplete.mockRejectedValueOnce(new Error('owned accounting failure'));
+    const result = await require('../../src/services/photoProcessor').processPhoto(102);
+    expect(result.processing_status).toBe('complete');
+    expect(require('../../src/utils/logger').warn).toHaveBeenCalledWith('Public upload processing settled but quota hold remains',
+      expect.objectContaining({ photoId: 102 }));
+  });
+
   it('throws when the photo row no longer exists', async () => {
     dbModule.__setPhoto(null);
     dbModule.__setEvent({ id: 1 });
