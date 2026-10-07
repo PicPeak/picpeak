@@ -779,7 +779,7 @@
       "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
       "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",
       "busy": "Other uploads or processing jobs are using the available capacity. Please try again later.",
-      "rate": "The upload byte limit for this hour has been reached. Please try again later.",
+      "rate": "The upload byte or request limit for this hour has been reached. Please try again later.",
       "unavailable": "Upload storage capacity is unavailable. Please contact the owner.",
       "timeout": "The upload took too long. Please try a smaller batch."
     },

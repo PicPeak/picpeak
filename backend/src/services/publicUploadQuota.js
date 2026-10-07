@@ -13,16 +13,16 @@ const logger = require('../utils/logger');
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
 const DEFAULTS = Object.freeze({
-  requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 5,
+  requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 5, headroomFiles: 1024,
   requestTimeoutMs: 300000,
-  gallery: { bytes: 5 * GiB, files: 2000, pendingBytes: 512 * MiB, pendingFiles: 100, requests: 2, hourBytes: GiB },
-  guest: { bytes: GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 256 * MiB },
-  transfer: { bytes: 2 * GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 512 * MiB },
-  account: { bytes: 50 * GiB, files: 20000, pendingBytes: GiB, pendingFiles: 500, requests: 4, hourBytes: 2 * GiB },
-  deployment: { bytes: 200 * GiB, files: 100000, pendingBytes: 2 * GiB, pendingFiles: 1000, requests: 8, hourBytes: 4 * GiB },
+  gallery: { bytes: 5 * GiB, files: 2000, pendingBytes: 512 * MiB, pendingFiles: 100, requests: 2, hourBytes: GiB, hourRequests: 120 },
+  guest: { bytes: GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 256 * MiB, hourRequests: 120 },
+  transfer: { bytes: 2 * GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 512 * MiB, hourRequests: 120 },
+  account: { bytes: 50 * GiB, files: 20000, pendingBytes: GiB, pendingFiles: 500, requests: 4, hourBytes: 2 * GiB, hourRequests: 600 },
+  deployment: { bytes: 200 * GiB, files: 100000, pendingBytes: 2 * GiB, pendingFiles: 1000, requests: 8, hourBytes: 4 * GiB, hourRequests: 1200 },
 });
 const scopeNames = ['gallery', 'guest', 'transfer', 'account', 'deployment'];
-const capNames = ['bytes', 'files', 'pendingBytes', 'pendingFiles', 'requests', 'hourBytes'];
+const capNames = ['bytes', 'files', 'pendingBytes', 'pendingFiles', 'requests', 'hourBytes', 'hourRequests'];
 
 function configuration() {
   const result = JSON.parse(JSON.stringify(DEFAULTS));
@@ -31,10 +31,11 @@ function configuration() {
   if (raw.length > 8192) throw new Error('Invalid PUBLIC_UPLOAD_LIMITS_JSON');
   const overrides = JSON.parse(raw);
   if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) throw new Error('Invalid PUBLIC_UPLOAD_LIMITS_JSON');
-  const scalar = ['requestBytes', 'headroomBytes', 'headroomPercent', 'requestTimeoutMs'];
+  const scalar = ['requestBytes', 'headroomBytes', 'headroomPercent', 'headroomFiles', 'requestTimeoutMs'];
   for (const [key, value] of Object.entries(overrides)) {
     if (scalar.includes(key)) {
-      if (!Number.isSafeInteger(value) || value <= 0 || value > (key === 'headroomPercent' ? 50 : 1024 * GiB)) {
+      const maximum = key === 'headroomPercent' ? 50 : key === 'requestTimeoutMs' ? 3600000 : 1024 * GiB;
+      if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
         throw new Error(`Invalid public upload limit: ${key}`);
       }
       result[key] = value;
@@ -125,7 +126,7 @@ function stagingPath(id) {
   return path.join(tempRoot(), id);
 }
 
-async function headroom(trx, bytes, limits, directory = tempRoot()) {
+async function headroom(trx, bytes, limits, directory = tempRoot(), files = 0) {
   let stat;
   for (;;) {
     try { stat = await fs.statfs(directory); break; } catch (err) {
@@ -137,11 +138,14 @@ async function headroom(trx, bytes, limits, directory = tempRoot()) {
   const total = Number(stat.blocks) * Number(stat.bsize);
   const other = await sum(trx('public_upload_requests').where({ active: 1 }));
   const promoting = getStorage().kind() === 'local'
-    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0 };
+    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0, files: 0 };
+  const active = await trx('public_upload_requests').where({ active: 1 }).count('id as count').first();
+  const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
   const copies = getStorage().kind() === 'local' ? 2 : 1;
   const floor = Math.max(limits.headroomBytes, Math.ceil(total * limits.headroomPercent / 100));
-  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - copies * (bytes + other.bytes + promoting.bytes) < floor) {
+  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - copies * (bytes + other.bytes + promoting.bytes) < floor
+    || !Number.isSafeInteger(freeFiles) || freeFiles - copies * (files + other.files + promoting.files) - Number(active?.count || 0) - 1 < limits.headroomFiles) {
     throw refusal('UPLOAD_STORAGE_LOW', 507);
   }
 }
@@ -169,8 +173,9 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
       const pending = await sum(filter(trx('public_upload_objects').where({ pending: 1 }), scope, values));
       const active = await filter(trx('public_upload_requests').where({ active: 1 }), scope, values).count('id as count').first();
       const rate = await filter(trx('public_upload_requests').where('created_at', '>=', new Date(Date.now() - 3600000).toISOString()), scope, values)
-        .sum('rate_bytes as bytes').first();
+        .sum('rate_bytes as bytes').count('id as count').first();
       if (Number(active?.count || 0) >= cap.requests) throw refusal('UPLOAD_CONCURRENCY_LIMIT');
+      if (Number(rate?.count || 0) >= cap.hourRequests) throw refusal('UPLOAD_REQUEST_RATE_LIMIT');
       const quotaBytes = cap.bytes - base.bytes - objects.bytes - held.bytes;
       const quotaFiles = cap.files - base.files - objects.files - held.files;
       const pendingBytes = cap.pendingBytes - pending.bytes - held.bytes;
@@ -185,7 +190,7 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
       files = Math.min(files, quotaFiles, pendingFiles, Math.ceil(cap.pendingFiles / cap.requests));
     }
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(files) || files <= 0) throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
-    await headroom(trx, bytes, limits);
+    await headroom(trx, bytes, limits, tempRoot(), files);
     const row = { id: crypto.randomUUID(), ...values, bytes, files, rate_bytes: bytes, active: 1, host: os.hostname(), pid: process.pid,
       created_at: new Date().toISOString() };
     await trx('public_upload_requests').insert(row);
@@ -200,6 +205,7 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
 }
 
 async function prepareObject(session, key, size) {
+  if (session.isCancelled?.()) throw refusal('UPLOAD_CANCELLED', 400);
   if (!Number.isSafeInteger(size) || size <= 0) throw new Error('Invalid uploaded file size');
   return locked(async trx => {
     const request = await trx('public_upload_requests').where({ id: session.id, active: 1 }).first();
@@ -214,7 +220,7 @@ async function prepareObject(session, key, size) {
       event_id: request.event_id, guest_scope: request.guest_scope, transfer_id: request.transfer_id, account_id: request.account_id };
     await trx('public_upload_objects').insert(object);
     await trx('public_upload_requests').where({ id: session.id }).update({ bytes: Number(request.bytes) - size, files: request.files - 1 });
-    return object;
+    return { ...object, isCancelled: session.isCancelled };
   });
 }
 
@@ -222,6 +228,7 @@ async function commitObject(object, type, writeRow) {
   return locked(async trx => {
     const charge = await trx('public_upload_objects').where({ id: object.id, state: 'promoting' }).first();
     if (!charge) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+    if (object.isCancelled?.()) throw refusal('UPLOAD_CANCELLED', 400);
     const id = await writeRow(trx);
     if (!Number.isInteger(Number(id)) || Number(id) <= 0) throw new Error('Upload row was not inserted');
     await trx('public_upload_objects').where({ id: object.id }).update({ state: 'stored', reference_type: type, reference_id: id, pending: type === 'photo' ? 1 : 0 });

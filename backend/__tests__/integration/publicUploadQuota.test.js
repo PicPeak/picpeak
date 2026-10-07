@@ -197,6 +197,37 @@ test('low disk capacity refuses before body staging', async () => {
   const res = await attach(galleryRequest(), 'photos'); expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(mockStorage.putFromFile).not.toHaveBeenCalled();
 });
+test('free bytes do not bypass inode headroom', async () => {
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 2000000, ffree: 2 });
+  const res = await attach(galleryRequest(), 'photos'); expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
+  expect(mockStorage.putFromFile).not.toHaveBeenCalled();
+});
+test('zero-byte rejected requests cannot grow the ledger past its hourly count ceiling', async () => {
+  limits({ deployment: { hourRequests: 1 } });
+  const first = await transferRequest().set('Content-Type', 'application/octet-stream').send('');
+  expect(first.status).toBe(400);
+  expect(Number((await db('public_upload_requests').first()).rate_bytes)).toBe(0);
+  const second = await transferRequest().set('Content-Type', 'application/octet-stream').send('');
+  expect(second.status).toBe(429); expect(second.body.code).toBe('UPLOAD_REQUEST_RATE_LIMIT');
+  expect(await db('public_upload_requests')).toHaveLength(1);
+});
+test('unsupported Node timer durations are rejected as invalid configuration', () => {
+  limits({ requestTimeoutMs: 2147483648 });
+  expect(() => quota.configuration()).toThrow('requestTimeoutMs');
+});
+test('cancellation before promotion does not create an object charge', async () => {
+  const session = await quota.begin({ transferId: transfer, maxFiles: 1 }); session.isCancelled = () => true;
+  await expect(quota.prepareObject(session, 'transfers/owned-cancel', 12)).rejects.toMatchObject({ code: 'UPLOAD_CANCELLED' });
+  expect(await db('public_upload_objects')).toHaveLength(0); await quota.finish(session);
+});
+test('cancellation after a settled promotion refuses the row and compensates without dropping uncertain writes', async () => {
+  const session = await quota.begin({ transferId: transfer, maxFiles: 1 });
+  let cancelled = false; session.isCancelled = () => cancelled;
+  const object = await quota.prepareObject(session, 'transfers/owned-cancel', 12); mockObjects.set(object.object_key, 12); cancelled = true;
+  const writer = jest.fn(); await expect(quota.commitObject(object, 'transfer', writer)).rejects.toMatchObject({ code: 'UPLOAD_CANCELLED' });
+  expect(writer).not.toHaveBeenCalled(); await quota.failedObject(object, { storage: mockStorage, settled: true });
+  expect(mockObjects.size).toBe(0); expect(await db('public_upload_objects')).toHaveLength(0); await quota.finish(session);
+});
 test('invalid/disabled operator limits fail closed', async () => {
   limits({ deployment: { bytes: 0 } });
   const res = await attach(galleryRequest(), 'photos'); expect(res.status).not.toBe(202); expect(mockStorage.putFromFile).not.toHaveBeenCalled();
