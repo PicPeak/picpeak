@@ -416,6 +416,15 @@ generate_jwt_secret() {
     openssl rand -base64 64 | tr -d "\n"
 }
 
+# Preserve trusted signing configuration verbatim across a wholesale .env
+# rewrite (quotes and Compose interpolation included). One-artifact recovery
+# approvals are deliberately NOT retained by installation/reconfiguration.
+preserve_backup_manifest_env() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    sed -n -E '/^[[:space:]]*(export[[:space:]]+)?BACKUP_MANIFEST_(KEY|KEY_FILE|KEYS_OLD|LEGACY_KEY)[[:space:]]*=/p' "$file"
+}
+
 get_available_ram_mb() {
     # Prefer /proc/meminfo (always available on Linux), fallback to free(1)
     if [[ -r /proc/meminfo ]]; then
@@ -705,6 +714,8 @@ setup_docker_installation() {
     jwt_secret=$(read_env_value "$app_dir/.env" JWT_SECRET)
     db_password=$(read_env_value "$app_dir/.env" DB_PASSWORD)
     redis_password=$(read_env_value "$app_dir/.env" REDIS_PASSWORD)
+    local manifest_env
+    manifest_env=$(preserve_backup_manifest_env "$app_dir/.env")
 
     # Reading nothing back does NOT mean "no secrets exist". The documented
     # install leaves all three commented out (.env.example) and lets the
@@ -771,6 +782,9 @@ NODE_ENV=production
 $(env_secret_line JWT_SECRET "$jwt_secret")
 $(env_secret_line DB_PASSWORD "$db_password")
 $(env_secret_line REDIS_PASSWORD "$redis_password")
+
+# External backup authentication configuration retained from the old file.
+$manifest_env
 
 # Database
 DB_HOST=postgres
@@ -1009,6 +1023,8 @@ setup_native_installation() {
     # admin session and gallery link on a live install.
     local jwt_secret
     jwt_secret=$(read_env_value "$NATIVE_APP_DIR/app/backend/.env" JWT_SECRET)
+    local manifest_env
+    manifest_env=$(preserve_backup_manifest_env "$NATIVE_APP_DIR/app/backend/.env")
     [[ -n "$jwt_secret" ]] || jwt_secret=$(generate_jwt_secret)
 
     # Create .env file
@@ -1030,6 +1046,9 @@ setup_native_installation() {
 NODE_ENV=production
 PORT=${CUSTOM_PORT:-$DEFAULT_PORT}
 JWT_SECRET=$jwt_secret
+
+# External backup authentication configuration retained from the old file.
+$manifest_env
 
 # Admin — created in the browser via a one-time /setup token unless a password
 # is seeded here (--admin-password).

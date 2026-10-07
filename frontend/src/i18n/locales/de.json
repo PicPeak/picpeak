@@ -659,6 +659,14 @@
     "delete": "Endgültig löschen"
   },
   "systemHealth": {
+    "backupAuthentication": {
+      "title": "Authentizität der Sicherung",
+      "keyReady": "Der externe Signaturschlüssel für Sicherungen ist verfügbar.",
+      "keyMissing": "Der Signaturschlüssel fehlt oder ist ungültig. Eine authentifizierte Wiederherstellung ist nicht bereit.",
+      "verified": "Das neueste Sicherungsmanifest wurde mit einem aufbewahrten Schlüssel authentifiziert.",
+      "unverified": "Das neueste Sicherungsmanifest ist nicht verfügbar oder nicht authentifiziert. Ein abgeschlossener Lauf allein belegt keine Authentizität.",
+      "hint": "Bewahren Sie den Signaturschlüssel getrennt und außerhalb des Hosts auf. Übernehmen Sie ihn niemals aus der wiederherzustellenden Sicherung; entfernen Sie eine einmalige Freigabe für nicht authentifizierte Wiederherstellung anschließend."
+    },
     "title": "Systemzustand",
     "subtitle": "Hintergrundfehler, die Aufmerksamkeit erfordern.",
     "retry": "Erneut versuchen",

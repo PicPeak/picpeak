@@ -81,7 +81,7 @@ describe('restoreService — required files are fatal', () => {
 
   it('post-restore verification covers the selected files of a selective restore', async () => {
     const verification = await restoreService.performPostRestoreVerification(
-      { files: { manifest: [] }, database: {} },
+      { files: { manifest: [{ path: 'nope/missing.jpg', checksum: sha256('expected') }] }, database: {} },
       { restoreType: 'selective', selectedItems: [{ type: 'file', path: 'nope/missing.jpg' }] },
     );
     expect(verification.isValid).toBe(false);

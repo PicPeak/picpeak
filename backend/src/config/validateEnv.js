@@ -22,6 +22,12 @@ function validateEnvironment() {
 
   const warnings = [];
   const errors = [];
+  const backupKey = require('../utils/backupManifestKey').keyStatus();
+  if (backupKey.source === 'invalid') errors.push('Backup manifest signing key configuration is invalid; check its encoding, permissions and external location.');
+  if (!backupKey.ready) warnings.push('Backup manifest key not provisioned yet. A new key is created only when signing a backup; retain that external key separately for recovery.');
+  if (process.env.BACKUP_MANIFEST_RECOVERY_SHA256 || process.env.BACKUP_MANIFEST_RECOVERY_REASON) {
+    warnings.push('UNAUTHENTICATED backup recovery approval is configured. Use only on an isolated recovery host and remove it immediately after that one-artifact recovery.');
+  }
 
   // Check each required variable
   requiredVars.forEach(({ name, description, critical }) => {

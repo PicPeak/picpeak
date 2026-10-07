@@ -1,3 +1,7 @@
+// Fixture-only signing material; never create a trust anchor in a checkout
+// or inherit a developer's production key file during ordinary Jest runs.
+if (!process.env.BACKUP_MANIFEST_KEY) process.env.BACKUP_MANIFEST_KEY = '91'.repeat(32);
+
 // Supertest 6 binds an IPv6 wildcard listener but hardcodes an IPv4 URL.
 // macOS can allocate that IPv6 port while a different IPv4 service owns it.
 // Address the listener's actual family so a test cannot reach that service.

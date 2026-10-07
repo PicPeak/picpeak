@@ -659,6 +659,14 @@
     "delete": "Delete permanently"
   },
   "systemHealth": {
+    "backupAuthentication": {
+      "title": "Backup authenticity",
+      "keyReady": "The external backup signing key is available.",
+      "keyMissing": "The backup signing key is missing or invalid. Authentic recovery is not ready.",
+      "verified": "The latest backup manifest is authenticated with a retained key.",
+      "unverified": "The latest backup manifest is unavailable or unauthenticated. A completed run alone does not establish authenticity.",
+      "hint": "Retain the signing key separately and off-host. Never obtain it from the backup being restored; remove any one-artifact unauthenticated recovery approval after recovery."
+    },
     "title": "System health",
     "subtitle": "Background failures that need attention.",
     "retry": "Retry",

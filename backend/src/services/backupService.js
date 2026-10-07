@@ -15,6 +15,7 @@ const logger = require('../utils/logger');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
+const backupManifestKey = require('../utils/backupManifestKey');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
@@ -327,6 +328,19 @@ async function ensureDatabaseDumpForBackup(config) {
       'Refusing to proceed with file backup to avoid shipping a manifest with no DB content.'
     );
   }
+
+  // The dump lives in mutable backup storage. Its independently recorded
+  // creation digest is the authority; rehashing and replacing that digest
+  // would launder changed store bytes into a newly authenticated manifest.
+  const expected = typeof databaseInfo.checksum === 'string' ? databaseInfo.checksum.trim().toLowerCase() : '';
+  if (!/^[a-f0-9]{64}$/.test(expected)) {
+    throw new Error('Database backup has no valid recorded checksum. Create a fresh database dump before signing a file backup.');
+  }
+  if (await calculateChecksum(databaseInfo.backupFile) !== expected) {
+    throw new Error('Database backup does not match its recorded checksum; refusing to sign changed dump bytes.');
+  }
+  databaseInfo.size = dumpStat.size;
+  databaseInfo.checksum = expected;
 
   return databaseInfo;
 }
@@ -1043,9 +1057,10 @@ async function performRsyncBackup(config, files) {
   for (const file of files) {
     try {
       const checksum = await calculateChecksum(file.path);
+      file.checksum = checksum;
       await updateFileState(file.relativePath, checksum, file.size, file.modified);
     } catch (error) {
-      logger.error(`Failed to update rsync file state for ${file.relativePath}:`, error);
+      throw new Error(`Cannot authenticate rsync file ${file.relativePath}: ${error.message}`);
     }
   }
 
@@ -1199,11 +1214,16 @@ async function getPreviousSuccessfulBackup(currentRunId) {
   return record || null;
 }
 
-function buildManifestFiles(backedUpFiles, allFiles) {
+function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
   const fileMap = new Map();
   allFiles.forEach(file => {
     fileMap.set(file.relativePath, file);
   });
+  if (databaseInfo?.backupFile) {
+    fileMap.set(path.posix.join('database', path.basename(databaseInfo.backupFile)), {
+      size: databaseInfo.size, checksum: databaseInfo.checksum,
+    });
+  }
 
   return backedUpFiles.map(relativePath => {
     const source = fileMap.get(relativePath) || {};
@@ -1291,6 +1311,7 @@ async function runBackupInternal(isManual = false) {
     if (clashingFolder) {
       throw new Error(destinationIsBackedUpFolderMessage(clashingFolder));
     }
+    backupManifestKey.loadKey({ create: true });
 
     // Inline DB dump + fail-loud verification. The returned `databaseInfo`
     // is reused at manifest-build time below so we don't pay a second
@@ -1328,7 +1349,6 @@ async function runBackupInternal(isManual = false) {
       logger.info('Generating backup manifest...');
 
       const previousBackup = await getPreviousSuccessfulBackup(runId);
-      const manifestFiles = buildManifestFiles(result.backedUpFiles, files);
       // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
       // top of this run — reuse it so manifest building doesn't pay a
       // second `getDatabaseBackupInfo()` round-trip. The
@@ -1336,6 +1356,7 @@ async function runBackupInternal(isManual = false) {
       // (S3, future destinations) that override the local info on the result
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
+      const manifestFiles = buildManifestFiles(result.backedUpFiles, files, databaseInfo);
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
@@ -1393,6 +1414,7 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      throw error;
     }
 
     // Per-Stage-B-path stats — bucket the actually-backed-up files
@@ -1605,12 +1627,14 @@ async function getBackupStatus(limit = 10) {
 
     const lastRun = runs[0];
     let manifestValid = false;
+    let manifestAuthentication = { authenticated: false, state: 'unavailable' };
 
     if (lastRun && lastRun.manifest_path) {
       try {
         // Use validateBackupManifest which handles both local and S3 paths
         const result = await validateBackupManifest(lastRun.manifest_path);
         manifestValid = result.valid;
+        manifestAuthentication = result.authentication || { authenticated: false, state: 'unverified' };
         if (!result.valid) {
           logger.warn('Manifest validation failed:', result.error);
         }
@@ -1619,7 +1643,8 @@ async function getBackupStatus(limit = 10) {
       }
     }
 
-    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid } : null;
+    const signingKey = backupManifestKey.keyStatus();
+    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid, authentication: manifestAuthentication } : null;
 
     // Separate "most recent attempt" from "most recent SUCCESS" so the
     // dashboard widget can distinguish:
@@ -1646,7 +1671,9 @@ async function getBackupStatus(limit = 10) {
 
     return {
       isRunning,
-      isHealthy: Boolean(lastRun && lastRun.status === 'completed'),
+      isHealthy: Boolean(lastRun && lastRun.status === 'completed' && manifestValid && manifestAuthentication.authenticated && signingKey.ready),
+      signingKey,
+      manifestAuthentication,
       lastRun: lastRunWithManifest,
       lastBackup: lastRunWithManifest, // Alias for frontend compatibility
       lastSuccessfulBackup: lastSuccessful, // NEW — see comment above
@@ -1900,7 +1927,7 @@ async function validateBackupManifest(manifestPath) {
       backupManifest.validateManifest(manifest);
     }
 
-    return { valid: true, manifest };
+    return { valid: true, manifest, authentication: backupManifest.getAuthentication(manifest) };
   } catch (error) {
     return { valid: false, error: error.message };
   }
