@@ -252,27 +252,31 @@ sanitize_identifier() {
   printf '%s' "$1" | sed "s/'/''/g"
 }
 
+pg_client() {
+  node "$(dirname "$0")/scripts/pg-client.js" psql "$@"
+}
+
 echo "Waiting for PostgreSQL at $host:$port..."
 
 # First, wait for PostgreSQL server to be reachable
 max_attempts=30
 attempt=0
 while [ $attempt -lt $max_attempts ]; do
-  if PGPASSWORD="$DB_PASSWORD" psql -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' >/dev/null 2>&1; then
+  if PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' >/dev/null 2>&1; then
     >&2 echo "PostgreSQL is up - database \"$target_db\" is accessible."
     break
   fi
 
   # If target DB doesn't work, try connecting to 'postgres' or 'template1' to create it
-  if PGPASSWORD="$DB_PASSWORD" psql -h "$host" -p "$port" -U "$user" -d "template1" -c '\q' >/dev/null 2>&1; then
+  if PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "template1" -c '\q' >/dev/null 2>&1; then
     >&2 echo "PostgreSQL is up - checking if database \"$target_db\" needs to be created..."
 
     # Check if database exists
-    db_exists=$(PGPASSWORD="$DB_PASSWORD" psql -h "$host" -p "$port" -U "$user" -d "template1" -tAc "SELECT 1 FROM pg_database WHERE datname = '$(sanitize_identifier "$target_db")'" 2>/dev/null || echo 0)
+    db_exists=$(PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "template1" -tAc "SELECT 1 FROM pg_database WHERE datname = '$(sanitize_identifier "$target_db")'" 2>/dev/null || echo 0)
 
     if [ "$db_exists" != "1" ]; then
       >&2 echo "Database \"$target_db\" not found. Attempting to create..."
-      if PGPASSWORD="$DB_PASSWORD" psql -h "$host" -p "$port" -U "$user" -d "template1" -c "CREATE DATABASE \"$target_db\";" >/dev/null 2>&1; then
+      if PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "template1" -c "CREATE DATABASE \"$target_db\";" >/dev/null 2>&1; then
         >&2 echo "Database \"$target_db\" created successfully."
       else
         >&2 echo "Warning: Could not create database. It may already exist or user lacks permissions."
@@ -292,7 +296,7 @@ if [ $attempt -eq $max_attempts ]; then
 fi
 
 # Final verification - wait for target database to accept connections
-until PGPASSWORD="$DB_PASSWORD" psql -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' >/dev/null 2>&1; do
+until PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' >/dev/null 2>&1; do
   >&2 echo "Waiting for database \"$target_db\" to accept connections..."
   sleep 2
 done

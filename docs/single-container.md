@@ -135,6 +135,9 @@ Nothing is required. Everything below has a working default.
 | `SMTP_*` | — | Optional override for outbound email, which is normally configured in the setup wizard / Settings → Email. Without either, PicPeak runs fine but sends nothing. |
 | `DATABASE_CLIENT` | `sqlite3` | Set to `pg` to use an external PostgreSQL. Required — the image declares `sqlite3`, and the boot resolver treats a declared client as an explicit instruction, so `DB_*` alone will **not** switch engines. |
 | `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | — | Connection details, used when `DATABASE_CLIENT=pg`. |
+| `DB_SSL` | `false` | Enable TLS for an external TCP database. `true` verifies the certificate and hostname for the app, readiness checks, backups and restores. |
+| `DB_SSL_CA` | — | Private CA as PEM text, or a path inside the container to a read-only mounted PEM file. Required for self-signed/private certificates. |
+| `DB_SSL_REJECT_UNAUTHORIZED` | `true` | With TLS enabled, `false` explicitly accepts any certificate. Insecure compatibility override; configure a CA instead. |
 | `EXTERNAL_MEDIA_ROOT` | `/external-media` | Read-only photo library to offer in the picker. Mount a folder there and it works without setting this. |
 
 ### Using an external PostgreSQL
@@ -148,6 +151,15 @@ docker run -d --name picpeak -p 3000:3000 -v picpeak:/data \
 
 The image waits for the database to accept connections before running
 migrations, exactly as the compose backend does.
+
+For a remote database, add `-e DB_SSL=true` and use its certificate's DNS name
+as `DB_HOST`. Publicly trusted certificates use the default trust store. For a
+private CA, also mount its PEM file read-only (for example,
+`-v /path/to/ca.pem:/run/certs/postgres-ca.pem:ro`) and set
+`-e DB_SSL_CA=/run/certs/postgres-ca.pem`. TLS now verifies by default: existing
+self-signed deployments must supply their CA rather than relying on the old
+accept-any-certificate behavior. Certificate failures never fall back to an
+unverified connection. Leave TLS disabled for the bundled non-TLS database.
 
 ## Using photos that are already on the disk
 

@@ -1,5 +1,7 @@
 'use strict';
 
+const net = require('net');
+
 /**
  * The PostgreSQL target, resolved in exactly one place (#1038).
  *
@@ -24,43 +26,31 @@
  * server.js both normalise these variables before the app opens a pool.
  */
 
-let warnedUnverifiedTls = false;
-
 /**
- * TLS towards PostgreSQL.
- *
- * DB_SSL=true alone used to mean `rejectUnauthorized: false`: encrypted, but
- * any certificate accepted, so whoever can redirect the database connection
- * can impersonate the database (Codex security audit 2026-09-30). Verification
- * is now on whenever the operator gives us the means or asks for it:
- *
- *   DB_SSL_CA                  PEM text, or a path to a PEM file — verify
- *                              against it (private CAs, managed databases).
- *   DB_SSL_REJECT_UNAUTHORIZED true  — verify against the system CA store
- *                              false — accept any certificate (explicit)
- *
- * DB_SSL=true with neither set keeps the old behaviour so existing installs
- * with self-signed certificates keep connecting, and logs one warning at
- * boot so the gap is visible rather than silent.
+ * TLS towards PostgreSQL. Enabling TLS authenticates the server by default.
+ * Private/self-signed deployments must supply DB_SSL_CA (PEM text or a file).
+ * DB_SSL_REJECT_UNAUTHORIZED=false is an explicit, insecure compatibility
+ * override, not the default. Malformed controls must not disable protection.
+ * Accept an environment argument so libpq children use this same policy.
  */
-function pgSslFromEnv() {
-  if (process.env.DB_SSL !== 'true') return false;
-  const ssl = {};
-  const ca = (process.env.DB_SSL_CA || '').trim();
+function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
+  const enabled = (env.DB_SSL || '').trim().toLowerCase();
+  if (enabled === '' || enabled === 'false') return false;
+  if (enabled !== 'true') throw new Error('DB_SSL must be true or false');
+
+  const explicit = (env.DB_SSL_REJECT_UNAUTHORIZED || '').trim().toLowerCase();
+  if (explicit !== '' && explicit !== 'true' && explicit !== 'false') {
+    throw new Error('DB_SSL_REJECT_UNAUTHORIZED must be true or false');
+  }
+  const ssl = { rejectUnauthorized: explicit !== 'false' };
+  // pg supplies TLS servername only for DNS hosts. Without host/servername,
+  // Node verifies the chain but skips identity checks for IP destinations.
+  // `host` enables IP SAN checks without sending an invalid IP-valued SNI.
+  if (host && net.isIP(host)) ssl.host = host;
+  const ca = (env.DB_SSL_CA || '').trim();
   if (ca) {
     ssl.ca = ca.includes('-----BEGIN') ? ca : require('fs').readFileSync(ca, 'utf8');
-  }
-  const explicit = (process.env.DB_SSL_REJECT_UNAUTHORIZED || '').trim().toLowerCase();
-  if (explicit === 'false') {
-    ssl.rejectUnauthorized = false;
-  } else if (explicit === 'true' || ca) {
-    ssl.rejectUnauthorized = true;
-  } else {
-    ssl.rejectUnauthorized = false;
-    if (!warnedUnverifiedTls && process.env.NODE_ENV !== 'test') {
-      warnedUnverifiedTls = true;
-      console.warn('[db] DB_SSL=true without DB_SSL_CA or DB_SSL_REJECT_UNAUTHORIZED: the PostgreSQL certificate is NOT verified. Set DB_SSL_CA to your CA, or DB_SSL_REJECT_UNAUTHORIZED=true for a publicly trusted certificate.');
-    }
+    if (!ssl.ca.trim()) throw new Error('DB_SSL_CA must contain a PEM certificate');
   }
   return ssl;
 }
