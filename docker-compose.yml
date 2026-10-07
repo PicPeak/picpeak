@@ -66,6 +66,9 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME}
+      - DB_SSL=${DB_SSL:-false}
+      - DB_SSL_CA=${DB_SSL_CA:-}
+      - DB_SSL_REJECT_UNAUTHORIZED=${DB_SSL_REJECT_UNAUTHORIZED:-}
       - EXTERNAL_MEDIA_ROOT=${EXTERNAL_MEDIA_ROOT:-/app/storage/external-media}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
