@@ -45,6 +45,8 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
   try {
     await quota.cleanupAbandoned();
     session = await quota.begin(scope);
+    session.isCancelled = () => Boolean(req.aborted || res.destroyed);
+    if (req.destroyed || session.isCancelled()) throw quota.refusal('UPLOAD_CANCELLED', 400);
     phase = 'staging';
     req.publicUploadReservation = session;
     const storage = {
@@ -85,6 +87,7 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
     clearTimeout(timer);
     if (guard) req.unpipe(guard);
     phase = 'handling';
+    if (session.isCancelled()) throw quota.refusal('UPLOAD_CANCELLED', 400);
     await handler(session, reply);
   } catch (err) {
     if (!res.headersSent && !res.destroyed) {
