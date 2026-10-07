@@ -256,6 +256,10 @@ pg_client() {
   node "$(dirname "$0")/scripts/pg-client.js" psql "$@"
 }
 
+# Validate controls before retrying, and keep CA guidance visible even though
+# individual readiness errors are intentionally suppressed below.
+node "$(dirname "$0")/scripts/pg-client.js" --check-config
+
 echo "Waiting for PostgreSQL at $host:$port..."
 
 # First, wait for PostgreSQL server to be reachable

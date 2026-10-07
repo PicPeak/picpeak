@@ -161,6 +161,11 @@ self-signed deployments must supply their CA rather than relying on the old
 accept-any-certificate behavior. Certificate failures never fall back to an
 unverified connection. Leave TLS disabled for the bundled non-TLS database.
 
+On Node 22.12–22.14, native database clients first perform a bounded,
+credential-free verified TLS handshake to preserve the runtime's configured
+trust store. Newer Node versions export the trust roots directly. An explicit
+`DB_SSL_CA` avoids that extra handshake on every supported Node version.
+
 ## Using photos that are already on the disk
 
 Galleries do not have to be built from uploads. Mount an existing photo library
