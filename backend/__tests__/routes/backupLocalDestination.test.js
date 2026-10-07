@@ -278,11 +278,14 @@ describe('local backup destination', () => {
       fs.writeFileSync(path.join(uploads, 'logos', 'logo.png'), 'logo bytes');
       const target = path.join(uploads, 'own-backups');
 
-      expect((await runBackupTo(target)).status).toBe('completed');
-      expect(fs.existsSync(path.join(target, 'uploads', 'logos', 'logo.png'))).toBe(true);
-      expect((await runBackupTo(target)).status).toBe('completed');
-
-      expect(fs.existsSync(path.join(target, 'uploads', 'own-backups'))).toBe(false);
+      const manifests = require('../../src/services/backupManifest');
+      for (let index = 0; index < 2; index++) {
+        const run = await runBackupTo(target);
+        expect(run.status).toBe('completed');
+        const manifest = await manifests.loadManifest(run.manifest_path);
+        expect(fs.existsSync(path.join(manifest.backup.path, 'uploads', 'logos', 'logo.png'))).toBe(true);
+        expect(fs.existsSync(path.join(manifest.backup.path, 'uploads', 'own-backups'))).toBe(false);
+      }
     });
 
     it('refuses to run into a destination that is itself a backed-up folder', async () => {

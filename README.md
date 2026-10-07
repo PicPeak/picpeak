@@ -199,6 +199,36 @@ We love contributions! PicPeak is built by photographers, for photographers — 
 
 Found a security issue? Please open a [security issue](https://github.com/PicPeak/picpeak/issues/new?labels=security). See [SECURITY.md](SECURITY.md) for the policy.
 
+## Standalone backup restore points
+
+New local and S3 scheduled/manual file backups copy every eligible file into
+a unique restore-point directory or object prefix. Their manifests are full
+catalogues marked `standalone-v1`, with no parent dependency; an included,
+verified database dump lives inside the same point. Existing path, feature,
+filename and maximum-file-size exclusions still apply. These backups do not
+cover storage outside the configured backup scope.
+
+Local/S3 `backup_incremental` settings no longer skip unchanged files. Plan
+capacity for a full copy per retained point and temporary space for one S3
+upload file. Backup-history retention is not an artifact-retention policy:
+manage retained snapshot directories/object prefixes separately. An earlier
+point is not overwritten by a later run, and deleting history or separately
+retained database dumps does not invalidate a standalone point.
+
+Select the point's manifest in the restore wizard. A rescued local mount must
+be under a configured backup location (or `RESTORE_ALLOWED_ROOTS`); its
+default nested `manifests/` layout can move or be renamed without rewriting
+the manifest. A downloaded ZIP's root `manifest.json` also identifies its
+extracted directory as the selected point.
+S3 recovery uses the selected manifest's bucket/prefix and current credentials.
+Keep custom manifests together with their recorded snapshot location.
+
+Older ambiguous incremental local/S3 backups cannot prove a complete file set
+and are refused for full/file restores, including forced restores. Database-only
+and selective file recovery remain available; they do not establish complete
+recovery. Take and test a new standalone point before relying on it. Existing
+rsync catalogue behavior and portable `.picpeak` exports are unchanged.
+
 ## ☕ Support the Project
 
 PicPeak is free, open source, and self-hostable forever. If it saves you time or replaces a paid subscription, consider [buying me a coffee](https://buymeacoffee.com/theluap) — it directly funds new features, bug fixes, and keeping the demo + docs running. You can also ⭐ star the repo, share it, file good bug reports, or open a PR.

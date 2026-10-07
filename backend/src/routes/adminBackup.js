@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
+const { resolveBackupPointLocation, parseS3Location } = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -1107,13 +1108,18 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
     }
     
     const config = await getBackupConfig();
-    
-    // Handle different backup types
-    switch (config.backup_destination_type) {
+    const { manifest } = await getBackupManifest(backupRun.id);
+    const destinationType = manifest.metadata?.destination_type || config.backup_destination_type;
+
+    // History belongs to the selected manifest, not the current destination.
+    switch (destinationType) {
     case 'local': {
       // Stream local backup as zip
-      const backupPath = path.join(config.backup_destination_path, `backup-${backupRun.id}`);
+      const backupPath = await resolveBackupPointLocation(manifest, {
+        source: 'local', manifestPath: backupRun.manifest_path
+      }, config);
       const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('error', error => res.destroy(error));
         
       res.attachment(`picpeak-backup-${backupRun.id}.zip`);
       archive.pipe(res);
@@ -1132,9 +1138,13 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
 
     case 's3': {
       // For S3, provide pre-signed URLs or stream files
+      const location = await resolveBackupPointLocation(manifest, {
+        source: 's3', manifestPath: backupRun.manifest_path
+      }, config);
+      const selected = parseS3Location(location);
       const s3Adapter = new S3StorageAdapter({
         endpoint: config.backup_s3_endpoint,
-        bucket: config.backup_s3_bucket,
+        bucket: selected.bucket,
         accessKeyId: config.backup_s3_access_key,
         secretAccessKey: config.backup_s3_secret_key,
         region: config.backup_s3_region || 'us-east-1',
@@ -1143,20 +1153,33 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         ...backupS3Access(config)
       });
         
-      // List all files for this backup
-      const prefix = `backups/${backupRun.id}/`;
-      const files = await s3Adapter.list(prefix, { maxKeys: 1000 });
-        
-      // Generate pre-signed URLs
+      // The adapter returns AWS Contents, not an objects property. Follow
+      // every page within this exact point; never return a truncated backup.
+      const prefix = selected.prefix + '/';
       const urls = [];
-      for (const file of files.objects || []) {
-        const url = await s3Adapter.getSignedUrl('getObject', file.key, { expiresIn: 3600 }); // 1 hour
-        urls.push({
-          key: file.key,
-          size: file.size,
-          url: url
-        });
-      }
+      const seenKeys = new Set();
+      const seenTokens = new Set();
+      const maxObjects = Math.max(manifest.files.count, manifest.files.manifest.length) + 10;
+      let continuationToken;
+      do {
+        const page = await s3Adapter.list(prefix, { maxKeys: 1000, continuationToken });
+        for (const file of page.Contents || []) {
+          if (typeof file.Key !== 'string' || !file.Key.startsWith(prefix)
+              || seenKeys.has(file.Key) || seenKeys.size >= maxObjects) {
+            throw new Error('Invalid or oversized backup object listing');
+          }
+          seenKeys.add(file.Key);
+          urls.push({
+            key: file.Key, size: file.Size,
+            url: await s3Adapter.getSignedUrl('getObject', file.Key, { expiresIn: 3600 })
+          });
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+        if (page.IsTruncated && (!continuationToken || seenTokens.has(continuationToken))) {
+          throw new Error('Incomplete backup object listing');
+        }
+        if (continuationToken) seenTokens.add(continuationToken);
+      } while (continuationToken);
         
       res.json({
         backupId: backupRun.id,
