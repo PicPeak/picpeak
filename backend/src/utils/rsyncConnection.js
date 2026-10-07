@@ -107,7 +107,8 @@ async function resolveRsyncConnection({ host: value, user: username, sshKey: key
   // The application-owned relay consumes only this immutable literal set and
   // never retries once a socket is established or SSH/rsync has begun work.
   const proxy = addresses.length > 1
-    ? [process.execPath, path.join(__dirname, 'rsyncProxy.js'), ...addresses].map(shellQuote).join(' ')
+    ? [process.execPath, path.join(__dirname, 'rsyncProxy.js'), ...addresses]
+      .map(value => shellQuote(value.replace(/%/g, '%%'))).join(' ')
     : 'none';
   // Ignore local/system SSH aliases, proxies, canonicalization and control
   // sockets. Otherwise they can redirect even a vetted literal destination.
