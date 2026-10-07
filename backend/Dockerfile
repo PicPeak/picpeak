@@ -34,8 +34,8 @@ WORKDIR /app
 # wait-for-db.sh (shell, reads DB_HOST directly) reported "PostgreSQL is up" in
 # the same log. The compose files still override this, so nothing changes for
 # compose users. See #1038.
-ENV NODE_ENV=production \
-    LISTEN_HOST=0.0.0.0
+ENV NODE_ENV=production
+ENV LISTEN_HOST=0.0.0.0
 
 # Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
 # stage's declaration never reached this stage. Consuming it in the RUN below
@@ -119,7 +119,7 @@ EXPOSE 3000
 # checks. wget is part of the Alpine base image. Long start-period covers
 # the wait-for-db.sh delay before the Node process starts listening.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["./wait-for-db.sh", "node", "server.js"]

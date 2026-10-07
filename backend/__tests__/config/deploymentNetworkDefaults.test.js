@@ -21,6 +21,15 @@ describe('shipped deployment network boundaries', () => {
     (file) => expect(read(file)).toContain('LISTEN_HOST=0.0.0.0')
   );
 
+  test.each(['backend/Dockerfile', 'docker-compose.production.yml', '.github/workflows/install-smoke.yml'])(
+    '%s probes the IPv4 listener without relying on localhost resolving to IPv4',
+    (file) => {
+      const source = read(file);
+      expect(source).toContain('http://127.0.0.1:3000/health');
+      expect(source).not.toContain('http://localhost:3000/health');
+    }
+  );
+
   test('the installer closes the plaintext side door in TLS modes', () => {
     const installer = read('scripts/picpeak-setup.sh');
     expect(installer).toContain('PICPEAK_BIND_ADDRESS=$public_bind_address');
