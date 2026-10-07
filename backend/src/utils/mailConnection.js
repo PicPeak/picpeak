@@ -51,8 +51,8 @@ function privateEndpoints() {
 function assertAddress(address, allowPrivate) {
   if (typeof address !== 'string' || !net.isIP(address) || address.includes('%')) throw policyError('Invalid mail destination address');
   const parsed = ipaddr.process(address);
-  // EC2's IPv6 metadata endpoint is ULA, not link-local. Never except it.
-  if (parsed.toString() === 'fd00:ec2::254') throw policyError('Mail instance metadata destinations are forbidden');
+  // AWS and Google IPv6 metadata endpoints are ULA, not link-local. Never except them.
+  if (['fd00:ec2::254', 'fd20:ce::254'].includes(parsed.toString())) throw policyError('Mail instance metadata destinations are forbidden');
   const range = parsed.range();
   if (range === 'unicast' && !isPrivateIP(address)) return;
   if (allowPrivate && ['private', 'loopback', 'uniqueLocal'].includes(range)) return;
