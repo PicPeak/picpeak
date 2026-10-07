@@ -10,11 +10,13 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 
 const mockSizes = new Map();
 const mockStatOverride = { size: null };
 const mockStorage = {
   kind: () => 'local',
+  resolveLocalPath: key => path.join(process.env.STORAGE_PATH, key),
   putFromFile: jest.fn(async (key, localPath) => { mockSizes.set(key, fs.statSync(localPath).size); }),
   stat: jest.fn(async (key) => (mockStatOverride.size !== null
     ? { size: mockStatOverride.size }

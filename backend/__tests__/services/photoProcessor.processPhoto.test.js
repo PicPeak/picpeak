@@ -10,6 +10,7 @@
  */
 
 const path = require('path');
+jest.mock('../../src/services/publicUploadQuota', () => ({ processingComplete: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('../../src/database/db', () => {
   const recorded = { whereCalls: [], updateCalls: [] };
@@ -167,6 +168,7 @@ describe('photoProcessor.processPhoto', () => {
 
     const { processPhoto } = require('../../src/services/photoProcessor');
     await processPhoto(101);
+    expect(require('../../src/services/publicUploadQuota').processingComplete).toHaveBeenCalledWith(101);
 
     const finalUpdate = dbModule.__recorded().updateCalls.pop();
     expect(finalUpdate.data.processing_status).toBe('complete');
@@ -266,6 +268,7 @@ describe('photoProcessor.processPhoto', () => {
     dbModule.__setEvent({ id: 1 });
     const { processPhoto } = require('../../src/services/photoProcessor');
     await expect(processPhoto(999)).rejects.toThrow(/Photo 999 not found/);
+    expect(require('../../src/services/publicUploadQuota').processingComplete).not.toHaveBeenCalled();
   });
 });
 
