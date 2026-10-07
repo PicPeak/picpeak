@@ -15,6 +15,7 @@ const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
 
 /**
  * Create a new admin user invitation
@@ -72,7 +73,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
 
   const [invitationId] = await db('admin_invitations').insert({
     email,
-    token,
+    ...capabilityTokenColumns(token),
     role_id: roleId,
     invited_by: invitedById,
     expires_at: expiresAt,
@@ -114,7 +115,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
  */
 async function acceptInvitation({ token, username, password }) {
   const invitation = await db('admin_invitations')
-    .where('token', token)
+    .where('token_digest', digestCapabilityToken(token))
     .whereNull('accepted_at')
     .where('expires_at', '>', new Date())
     .first();
@@ -142,6 +143,15 @@ async function acceptInvitation({ token, username, password }) {
 
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
+    // Claim before creating the account. Concurrent submissions may both read
+    // the pending row above, but only one conditional update can consume it.
+    const claimed = await trx('admin_invitations')
+      .where('id', invitation.id)
+      .whereNull('accepted_at')
+      .where('expires_at', '>', new Date())
+      .update({ accepted_at: new Date() });
+    if (claimed !== 1) throw new ValidationError('Invalid or expired invitation');
+
     const [userId] = await trx('admin_users').insert({
       username,
       email: invitation.email,
@@ -161,7 +171,6 @@ async function acceptInvitation({ token, username, password }) {
     await trx('admin_invitations')
       .where('id', invitation.id)
       .update({
-        accepted_at: new Date(),
         accepted_user_id: id
       });
 
@@ -718,7 +727,13 @@ async function cancelInvitation(id, cancelledById) {
   await assertActorReachesRole(cancelledById, invitation.role_id,
     'You can only cancel invitations to roles within your own permissions');
 
-  await db('admin_invitations').where('id', id).del();
+  const cancelled = await db('admin_invitations')
+    .where('id', id)
+    .whereNull('accepted_at')
+    .del();
+  if (cancelled !== 1) {
+    throw new ConflictError('This invitation has already been accepted');
+  }
 
   await logActivity('admin_invitation_cancelled',
     { invitationId: id, email: invitation.email },
@@ -737,7 +752,7 @@ async function cancelInvitation(id, cancelledById) {
 async function validateInvitationToken(token) {
   const invitation = await db('admin_invitations')
     .join('roles', 'roles.id', 'admin_invitations.role_id')
-    .where('admin_invitations.token', token)
+    .where('admin_invitations.token_digest', digestCapabilityToken(token))
     .whereNull('admin_invitations.accepted_at')
     .where('admin_invitations.expires_at', '>', new Date())
     .select(

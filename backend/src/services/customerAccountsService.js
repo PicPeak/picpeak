@@ -20,6 +20,8 @@ const { auditedInsert, auditedUpdate, redactCustomerHistory } = require('./accou
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
+const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
+const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches admin invites
 
@@ -161,7 +163,7 @@ async function createInvitation({ email, invitedById, prefill }) {
 
   const [insertedId] = await db('customer_invitations').insert({
     email: normalisedEmail,
-    token,
+    ...capabilityTokenColumns(token),
     invited_by: invitedById,
     expires_at: expiresAt,
     created_at: new Date(),
@@ -301,7 +303,7 @@ async function createDirect({ email, prefill, createdByAdminId, withinTransactio
  */
 async function acceptInvitation({ token, name, password, profile }) {
   const invitation = await db('customer_invitations')
-    .where('token', token)
+    .where('token_digest', digestCapabilityToken(token))
     .whereNull('accepted_at')
     .where('expires_at', '>', new Date())
     .first();
@@ -491,7 +493,7 @@ async function acceptInvitation({ token, name, password, profile }) {
 async function validateInvitationToken(token) {
   const invitation = await db('customer_invitations')
     .leftJoin('admin_users', 'admin_users.id', 'customer_invitations.invited_by')
-    .where('customer_invitations.token', token)
+    .where('customer_invitations.token_digest', digestCapabilityToken(token))
     .whereNull('customer_invitations.accepted_at')
     .where('customer_invitations.expires_at', '>', new Date())
     .select(
@@ -1009,7 +1011,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       if (emails.length > 0) {
         const candidates = await trx('email_queue')
           .whereRaw(`LOWER(recipient_email) IN (${emails.map(() => 'LOWER(?)').join(', ')})`, emails)
-          .whereIn('status', ['pending', 'sent', 'failed', 'cancelled'])
+          .whereIn('status', ['pending', PROTECTED_PENDING_STATUS, 'sent', 'failed', 'cancelled'])
           .select('id', 'recipient_email', 'email_data');
         signerQueueIds = candidates.filter((row) => {
           let data;
@@ -1029,7 +1031,8 @@ async function eraseCustomer(id, erasedByAdminId) {
       ? q.where((w) => forCustomer(w).orWhereIn('id', signerQueueIds))
       : forCustomer(q));
 
-    const cancelledQueueRows = await matchQueue(trx('email_queue')).where('status', 'pending')
+    const cancelledQueueRows = await matchQueue(trx('email_queue'))
+      .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
       .select('id', 'campaign_id');
     if (cancelledQueueRows.length > 0) {
       await trx('email_queue')
@@ -1711,7 +1714,7 @@ async function createPasswordReset({ customerId, requestedByAdminId }) {
   const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
 
   await db('customer_password_resets').insert({
-    token,
+    ...capabilityTokenColumns(token),
     customer_account_id: customerId,
     requested_by_admin_id: requestedByAdminId || null,
     expires_at: expiresAt,
@@ -1742,7 +1745,7 @@ async function createPasswordReset({ customerId, requestedByAdminId }) {
 async function validatePasswordResetToken(token) {
   const row = await db('customer_password_resets')
     .join('customer_accounts', 'customer_accounts.id', 'customer_password_resets.customer_account_id')
-    .where('customer_password_resets.token', token)
+    .where('customer_password_resets.token_digest', digestCapabilityToken(token))
     .whereNull('customer_password_resets.used_at')
     .where('customer_password_resets.expires_at', '>', new Date())
     .where('customer_accounts.is_active', formatBoolean(true))
@@ -1767,7 +1770,7 @@ async function validatePasswordResetToken(token) {
  */
 async function applyPasswordReset({ token, password }) {
   const row = await db('customer_password_resets')
-    .where('token', token)
+    .where('token_digest', digestCapabilityToken(token))
     .whereNull('used_at')
     .where('expires_at', '>', new Date())
     .first();
