@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.166.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.3-beta.0...v3.166.0-beta.0) (2026-10-07)
+
+
+### Features
+
+* **delivery:** "your complete gallery is ready" also reaches assigned customer accounts ([#1837](https://github.com/PicPeak/picpeak/issues/1837)) ([be10fd4](https://github.com/PicPeak/picpeak/commit/be10fd494b6eadd5fb6df2809fe7e74810e82d84))
+
 ## [3.165.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.165.2-beta.0...v3.165.3-beta.0) (2026-10-07)
 
 
