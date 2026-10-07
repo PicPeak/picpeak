@@ -1,6 +1,8 @@
 'use strict';
 
 const net = require('net');
+const PG_TLS_GUIDANCE = 'PostgreSQL TLS verifies the certificate and DB_HOST. For private/self-signed certificates, configure DB_SSL_CA with the CA PEM or a readable CA file; do not disable verification.';
+let announcedVerifiedTls = false;
 
 /**
  * The PostgreSQL target, resolved in exactly one place (#1038).
@@ -56,14 +58,19 @@ function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
 }
 
 function pgConnectionFromEnv() {
+  const ssl = pgSslFromEnv();
+  if (ssl && ssl.rejectUnauthorized && !announcedVerifiedTls && process.env.NODE_ENV !== 'test') {
+    announcedVerifiedTls = true;
+    process.stderr.write(`[db] ${PG_TLS_GUIDANCE}\n`);
+  }
   return {
     host: process.env.DB_HOST || 'postgres',
     port: process.env.DB_PORT || 5432,
     user: process.env.DB_USER || 'picpeak',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME || 'picpeak',
-    ssl: pgSslFromEnv(),
+    ssl,
   };
 }
 
-module.exports = { pgConnectionFromEnv, pgSslFromEnv };
+module.exports = { pgConnectionFromEnv, pgSslFromEnv, PG_TLS_GUIDANCE };

@@ -46,6 +46,22 @@ test('the startup CLI preserves output and uses the same verified policy', async
   checkRecord(JSON.parse(result.stdout));
 });
 
+test('startup configuration emits actionable CA guidance before suppressed probes', async () => {
+  const result = await spawnAsync(process.execPath,
+    [path.resolve(__dirname, '../../scripts/pg-client.js'), '--check-config'], { env });
+  expect(result.stderr).toContain('DB_SSL_CA');
+  expect(result.stderr).toContain('private/self-signed');
+  await expect(spawnAsync(process.execPath,
+    [path.resolve(__dirname, '../../scripts/pg-client.js'), '--check-config'],
+    { env: { ...env, DB_SSL: 'typo' } })).rejects.toThrow('DB_SSL must be true or false');
+});
+
+test('failed direct startup probes also explain verified TLS', async () => {
+  await expect(spawnAsync(process.execPath,
+    [path.resolve(__dirname, '../../scripts/pg-client.js'), 'psql', '-d', 'picpeak'],
+    { env: { ...env, PG_TEST_EXIT: '3' } })).rejects.toThrow('DB_SSL_CA');
+});
+
 test('streaming pg_dump applies the policy and flushes the output file', async () => {
   const output = path.join(directory, 'dump.sql');
   await spawnToFile('pg_dump', ['-d', 'picpeak'], output, { env });

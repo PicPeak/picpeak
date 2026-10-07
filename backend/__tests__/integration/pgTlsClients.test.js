@@ -23,10 +23,18 @@ suite('PostgreSQL TLS across real libpq clients', () => {
     container = `picpeak-tls-test-${crypto.randomBytes(6).toString('hex')}`;
     const key = path.join(directory, 'server.key');
     const cert = path.join(directory, 'server.crt');
+    const caKey = path.join(directory, 'ca.key');
+    const caCert = path.join(directory, 'ca.crt');
+    const request = path.join(directory, 'server.csr');
+    const extensions = path.join(directory, 'extensions.cnf');
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-      '-keyout', key, '-out', cert, '-days', '2', '-subj', '/CN=localhost',
-      '-addext', 'subjectAltName=DNS:localhost'], { stdio: 'ignore' });
-    certificate = fs.readFileSync(cert, 'utf8');
+      '-keyout', caKey, '-out', caCert, '-days', '2', '-subj', '/CN=PicPeak-TLS-test-CA'], { stdio: 'ignore' });
+    execFileSync('openssl', ['req', '-new', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', key, '-out', request, '-subj', '/CN=localhost'], { stdio: 'ignore' });
+    fs.writeFileSync(extensions, 'subjectAltName=DNS:localhost\n');
+    execFileSync('openssl', ['x509', '-req', '-in', request, '-CA', caCert, '-CAkey', caKey,
+      '-CAcreateserial', '-out', cert, '-days', '2', '-extfile', extensions], { stdio: 'ignore' });
+    certificate = fs.readFileSync(caCert, 'utf8');
     await docker(['run', '-d', '--name', container, '--tmpfs', '/var/lib/postgresql/data',
       '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '-v', `${directory}:/tls-fixture:ro`,
       '--entrypoint', 'sh', image, '-c',
@@ -53,7 +61,7 @@ suite('PostgreSQL TLS across real libpq clients', () => {
   });
 
   async function client(command, env, database = 'postgres', host = 'localhost', extra = []) {
-    const prepared = preparePgClient(['-h', host, '-U', 'postgres', '-d', database, ...extra], { env });
+    const prepared = await preparePgClient(['-h', host, '-U', 'postgres', '-d', database, ...extra], { env });
     try {
       const args = ['run', '--rm', '--network', `container:${container}`];
       if (prepared.options.env.PGSSLROOTCERT) {
@@ -86,7 +94,7 @@ suite('PostgreSQL TLS across real libpq clients', () => {
     await client('psql', env, 'postgres', 'localhost', ['-c', 'DROP TABLE tls_control;']);
     const restore = path.join(directory, 'restore.sql');
     fs.writeFileSync(restore, dump.stdout);
-    const prepared = preparePgClient(['-h', 'localhost', '-U', 'postgres', '-d', 'postgres', '-f', '/tls-fixture/restore.sql'], { env });
+    const prepared = await preparePgClient(['-h', 'localhost', '-U', 'postgres', '-d', 'postgres', '-f', '/tls-fixture/restore.sql'], { env });
     try {
       const caDirectory = path.dirname(prepared.options.env.PGSSLROOTCERT);
       await docker(['run', '--rm', '--network', `container:${container}`,
@@ -109,5 +117,29 @@ suite('PostgreSQL TLS across real libpq clients', () => {
       const result = await client('psql', env, 'postgres', 'localhost', ['-tAc', 'SELECT 1']);
       expect(result.stdout.trim()).toBe('1');
     }
+  });
+
+  test.each(['openssl', 'extra'])('supported Node 22.12 retains configured %s trust for verified native clients', async (store) => {
+    const backend = path.resolve(__dirname, '../..');
+    const result = await docker(['run', '--rm', '--network', `container:${container}`,
+      '-v', `${directory}:/tls-fixture:ro`, '-v', `${backend}:/app:ro`,
+      '-e', `NODE_OPTIONS=${store === 'openssl' ? '--use-openssl-ca' : ''}`,
+      '-e', 'SSL_CERT_FILE=/tls-fixture/ca.crt',
+      '-e', `NODE_EXTRA_CA_CERTS=${store === 'extra' ? '/tls-fixture/ca.crt' : ''}`,
+      '-e', 'DB_SSL=true', '-e', 'NODE_ENV=test', 'node:22.12-alpine',
+      'node', '/app/__tests__/fixtures/pgLegacyTrustProbe.js']);
+    expect(JSON.parse(result.stdout)).toEqual({ verified: true, mode: 'verify-full', containsConfiguredCa: true });
+  });
+
+  test.each(['untrusted', 'hostname'])('legacy trust probes reject %s peers before native command execution', async (failure) => {
+    const backend = path.resolve(__dirname, '../..');
+    await expect(docker(['run', '--rm', '--network', `container:${container}`,
+      '-v', `${directory}:/tls-fixture:ro`, '-v', `${backend}:/app:ro`,
+      '-e', 'NODE_OPTIONS=--use-openssl-ca',
+      '-e', `SSL_CERT_FILE=${failure === 'hostname' ? '/tls-fixture/ca.crt' : '/nonexistent-ca'}`,
+      '-e', `DB_HOST=${failure === 'hostname' ? '127.0.0.1' : 'localhost'}`,
+      '-e', 'DB_SSL=true', '-e', 'NODE_ENV=test', 'node:22.12-alpine',
+      'node', '/app/__tests__/fixtures/pgLegacyTrustProbe.js']))
+      .rejects.toThrow(/certificate|cert|altname/i);
   });
 });
