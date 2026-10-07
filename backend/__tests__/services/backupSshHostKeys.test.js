@@ -85,6 +85,15 @@ test('normalizes DNS identity case/trailing dot without changing the approved ad
   expect(lookup).toHaveBeenCalledWith('backup.example.com', { all: true });
 });
 
+test('retains all approved addresses for pre-connect fallback in a controlled, quoted relay', async () => {
+  lookup.mockResolvedValue([{ address: '8.8.4.4', family: 4 }, { address: '8.8.8.8', family: 4 }]);
+  const result = await resolveRsyncConnection(options);
+  expect(result.addresses).toEqual(['8.8.4.4', '8.8.8.8']);
+  const proxy = result.sshArgs.find(arg => arg.startsWith('ProxyCommand='));
+  expect(proxy).toContain('rsyncProxy.js'); expect(proxy).toContain("'8.8.4.4' '8.8.8.8'");
+  expect(result.rsyncShell).toContain("''8.8.4.4'' ''8.8.8.8''");
+});
+
 test('requires a provisioned store next to a configured key; never creates trust', async () => {
   const key = path.join(tmp, 'backup_ed25519');
   fs.writeFileSync(key, 'fixture private key');

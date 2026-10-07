@@ -99,7 +99,7 @@ Both registries get the same digests and the same tags — `stable`/`latest`, a 
 
 ### Rsync/SSH backup destination security
 
-Rsync connection tests and backup runs resolve and vet every DNS answer, then pin SSH to one approved public address. Private, metadata, reserved and mixed public/private destinations are refused. SSH host-key verification remains bound to the configured hostname, including when its approved address changes. No private-network bypass is provided.
+Rsync connection tests and backup runs resolve and vet every DNS answer, then pin SSH to approved public addresses. Private, metadata, reserved and mixed public/private destinations are refused. For multi-address destinations, an application-owned TCP relay can try the next captured literal only before connecting; it never resolves DNS again or retries an established SSH/rsync operation. SSH host-key verification remains bound to the configured hostname, including when its approved address changes. No private-network bypass is provided.
 
 Before use, obtain the destination's SSH host public key and fingerprint through an independent trusted channel with its operator. Provision a `known_hosts` entry for that hostname; do not trust unverified `ssh-keyscan` output or delete a changed-key entry merely to make a test pass. Existing verified entries remain usable. Unknown or changed keys fail instead of being learned automatically.
 

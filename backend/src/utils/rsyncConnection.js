@@ -75,6 +75,17 @@ function hostKeyOptions(key) {
   return options;
 }
 
+function isPublicAddress(address) {
+  if (typeof address !== 'string' || !net.isIP(address) || address.includes('%') || isPrivateIP(address)) return false;
+  try { return ipaddr.process(address).range() === 'unicast'; } catch { return false; }
+}
+
+// OpenSSH executes ProxyCommand with a shell. These are application-owned
+// executable paths and already validated literals, never a configured command.
+const shellQuote = value => '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
+// rsync has its own -e parser: doubled quotes, not shell backslash escaping.
+const rsyncQuote = value => '\'' + value.replace(/'/g, '\'\'') + '\'';
+
 /** Resolve once, consume that result, and never let SSH re-resolve the name. */
 async function resolveRsyncConnection({ host: value, user: username, sshKey: keyValue }) {
   const host = validateHost(value);
@@ -86,24 +97,29 @@ async function resolveRsyncConnection({ host: value, user: username, sshKey: key
     throw new RsyncConnectionError('RSYNC_HOST_UNRESOLVED', 'Rsync host could not be resolved');
   }
   const approved = result.reason === 'ok' && Array.isArray(result.addresses) && result.addresses.length > 0
-    && result.addresses.every(({ address, family }) => {
-      if (!net.isIP(address) || net.isIP(address) !== family || isPrivateIP(address)) return false;
-      try { return ipaddr.process(address).range() === 'unicast'; } catch { return false; }
-    });
+    && result.addresses.every(record => record && isPublicAddress(record.address) && net.isIP(record.address) === record.family);
   if (!approved) {
     throw new RsyncConnectionError('RSYNC_HOST_FORBIDDEN', 'Host cannot be a private, internal or reserved network address');
   }
-  const address = result.addresses[0].address;
+  const addresses = [...new Set(result.addresses.map(record => record.address))];
+  const address = addresses[0];
+  // Preserve native SSH's pre-connect fallback without a second DNS lookup.
+  // The application-owned relay consumes only this immutable literal set and
+  // never retries once a socket is established or SSH/rsync has begun work.
+  const proxy = addresses.length > 1
+    ? [process.execPath, path.join(__dirname, 'rsyncProxy.js'), ...addresses].map(shellQuote).join(' ')
+    : 'none';
   // Ignore local/system SSH aliases, proxies, canonicalization and control
   // sockets. Otherwise they can redirect even a vetted literal destination.
   const sshArgs = ['-F', '/dev/null', '-o', `Hostname=${address}`, '-o', `HostKeyAlias=${host}`,
-    '-o', 'CanonicalizeHostname=no', '-o', 'ProxyCommand=none', '-o', 'ProxyJump=none',
-    '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+    '-o', 'CanonicalizeHostname=no', '-o', `ProxyCommand=${proxy}`, '-o', 'ProxyJump=none',
+    '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'BatchMode=yes', '-o', `ConnectTimeout=${10 * addresses.length}`,
     ...trustOptions];
   if (key) sshArgs.push('-i', key);
   const rsyncHost = net.isIPv6(host) ? `[${host}]` : host;
-  return { host, address, target: user ? `${user}@${host}` : host,
-    rsyncTarget: user ? `${user}@${rsyncHost}` : rsyncHost, sshArgs };
+  return { host, address, addresses, target: user ? `${user}@${host}` : host,
+    rsyncTarget: user ? `${user}@${rsyncHost}` : rsyncHost, sshArgs,
+    rsyncShell: ['ssh', ...sshArgs].map(rsyncQuote).join(' ') };
 }
 
-module.exports = { resolveRsyncConnection };
+module.exports = { resolveRsyncConnection, isPublicAddress };
