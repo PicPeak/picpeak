@@ -151,6 +151,19 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 
 **Project meta:** [Support](SUPPORT.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE) · [Security](SECURITY.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
+### Mail network policy
+
+Every SMTP/IMAP connection validates and consumes only its current vetted DNS
+answers, while retaining the configured hostname for TLS verification. Private
+mail servers require deployment-owned `MAIL_PRIVATE_ENDPOINTS` entries with an
+exact protocol, hostname and explicit port, for example `smtp://mailhog:1025` or
+`imap://mail.internal:993`. No settings request can add an approval. Metadata,
+link-local, multicast and reserved addresses remain forbidden even with an
+approval. For the Compose `dev` mail catcher, set `SMTP_HOST=mailhog`,
+`SMTP_PORT=1025` and `MAIL_PRIVATE_ENDPOINTS=smtp://mailhog:1025` explicitly.
+An approval does not disable TLS certificate checks; production private TLS
+servers still need a trusted certificate for their configured hostname.
+
 ## 📊 Comparison with Alternatives
 
 | Feature | PicPeak | PicDrop | Scrapbook.de | Pixieset |

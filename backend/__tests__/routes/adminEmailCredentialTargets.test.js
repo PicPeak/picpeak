@@ -17,10 +17,10 @@ process.env.TEST_DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(),
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'mailtarget-test-secret';
 process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-mailtarget-storage-'));
 
-// No DNS in tests: every host counts as public.
-jest.mock('../../src/utils/networkValidation', () => ({
-  ...jest.requireActual('../../src/utils/networkValidation'),
-  isHostAllowed: async () => true,
+// No DNS in credential-contract tests; connection guards are exercised separately.
+jest.mock('../../src/utils/mailConnection', () => ({
+  ...jest.requireActual('../../src/utils/mailConnection'),
+  isMailHostAllowed: async () => true,
 }));
 
 // Record every IMAP login instead of connecting.
