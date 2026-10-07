@@ -23,7 +23,6 @@
 
 const express = require('express');
 const fs = require('fs');
-const path = require('path');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
 const { rateLimitKey } = require('../utils/rateLimitKey');
@@ -31,7 +30,6 @@ const { param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { clientIpForAudit } = require('../utils/clientIp');
-const { sanitizeFilename } = require('../utils/filenameSanitizer');
 const { getStorage } = require('../services/storage');
 const {
   getTransferUploadPolicy,
@@ -42,6 +40,8 @@ const {
 const transferService = require('../services/transferService');
 const { _internal: tokenLock } = require('../utils/publicTokenGuards');
 const logger = require('../utils/logger');
+const { withPublicUpload } = require('../middleware/publicUploadStream');
+const uploadQuota = require('../services/publicUploadQuota');
 
 const router = express.Router();
 
@@ -49,7 +49,6 @@ const router = express.Router();
 // probed) once an admin disables the feature under Settings → Features.
 router.use(requireFeatureFlag('transfers'));
 
-const { getStoragePath } = require('../config/storage');
 const MAX_FILES_PER_UPLOAD = 25;
 
 // S3 parity with the download routes: an object written for a transfer says it
@@ -158,23 +157,10 @@ async function preUploadGuard(req, res, next) {
   }
 }
 
-// Multer writes to a per-transfer temp dir; we then hand files to the storage
-// backend (so S3 works too) and delete the temp copy.
-const tempStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(getStoragePath(), 'temp', 'transfer-uploads');
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const safe = sanitizeFilename(path.basename(file.originalname), 60) || 'file';
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}-${safe}`);
-  },
-});
-
-function buildUploader(maxSizeBytes, policy) {
+function buildUploader(maxSizeBytes, policy, { storage, streamHandler, maxFiles }) {
   return multer({
-    storage: tempStorage,
+    storage,
+    streamHandler,
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]`, and this route is
     // unauthenticated (token-only) — no legitimate field name uses
@@ -184,8 +170,8 @@ function buildUploader(maxSizeBytes, policy) {
     // parts and multer keeps every one in memory before the handler ever
     // runs (Codex security audit 2026-09-30).
     limits: {
-      fileSize: maxSizeBytes, files: MAX_FILES_PER_UPLOAD, fieldArrayIndexLimit: 0,
-      fields: 5, fieldSize: 1024, parts: MAX_FILES_PER_UPLOAD + 5,
+      fileSize: maxSizeBytes, files: maxFiles, fieldArrayIndexLimit: 0,
+      fields: 5, fieldSize: 1024, parts: maxFiles + 5,
     },
     fileFilter: (req, file, cb) => {
       // The transfer policy, not the media registry — these bytes are stored
@@ -198,33 +184,16 @@ function buildUploader(maxSizeBytes, policy) {
       req.rejectedFiles.push(file.originalname);
       return cb(null, false);
     },
-  }).array('files', MAX_FILES_PER_UPLOAD);
+  }).array('files', maxFiles);
 }
 
 router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, handleAsync(async (req, res) => {
   const policy = await getTransferUploadPolicy();
   const maxSizeMb = policy.maxSizeMb;
-  const uploader = buildUploader(maxSizeMb * 1024 * 1024, policy);
-
-  try {
-    await new Promise((resolve, reject) => {
-      uploader(req, res, (err) => (err ? reject(err) : resolve()));
-    });
-  } catch (err) {
-    // Translate multer errors to a clean 4xx.
-    // Multer's own message is not echoed: a filesystem failure inside the
-    // temp-file destination carries the server path (EACCES /app/storage/...),
-    // and this route is unauthenticated. The size case is the only one worth
-    // naming, because it tells the client something actionable.
-    const msg = err && err.code === 'LIMIT_FILE_SIZE'
-      ? `Each file must be ${maxSizeMb} MB or smaller`
-      : 'Upload failed';
-    if (err && err.code !== 'LIMIT_FILE_SIZE') {
-      logger.warn('transfer upload rejected', { code: err.code, error: err.message });
-    }
-    if (!res.headersSent) res.status(400).json({ error: msg, code: 'UPLOAD_REJECTED' });
-    return;
-  }
+  await withPublicUpload(req, res, {
+    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD,
+    fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
+  }, options => buildUploader(maxSizeMb * 1024 * 1024, policy, options), async (uploadReservation, res) => {
 
   const rejected = req.rejectedFiles || [];
   if (!req.files || !req.files.length) {
@@ -274,17 +243,24 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     // object can end in .html/.svg/.js/.php on disk or in S3. The real name is
     // kept on the row and is what the admin downloads it as.
     const key = transferService.newUploadFileKey(transfer.id);
+    let charge;
+    let settled = false;
     try {
+      charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
       await storage.putFromFile(key, file.path, TRANSFER_OBJECT_OPTIONS);
-      await transferService.addUpload(transfer.id, {
+      settled = true;
+      await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
         originalFilename: file.originalname,
         storedPath: key,
         sizeBytes: file.size,
         mimeType: file.mimetype,
         ip,
-      });
+      }, conn));
       saved.push({ filename: file.originalname, size_bytes: file.size });
     } catch (err) {
+      if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
+        logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
+      });
       failed.push(file.originalname);
       logger.error('transfer upload: failed to store file', {
         transferId: transfer.id, filename: file.originalname, error: err.message,
@@ -319,6 +295,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
     201,
     notes.length ? `Uploaded ${saved.length} file(s); ${notes.join('; ')}` : 'Files uploaded',
   );
+  });
 }));
 
 module.exports = router;

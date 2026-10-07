@@ -10,6 +10,7 @@ import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { guestsService, type GuestIdentity } from '../../services/guests.service';
 import { clearGuestIdentity, getGuestIdentity, getGuestToken, storeGuestIdentity } from '../../utils/guestIdentityStorage';
 import type { GuestNameMode } from '../../types';
+import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -319,6 +320,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // Set when the server no longer knows the stored uploader; the name field
     // is back on screen and says why.
     let stoppedForName = false;
+    let stoppedForCapacity = false;
 
     for (const [index, file] of files.entries()) {
       // The gallery's photo limit refuses this file and every one after it:
@@ -406,6 +408,16 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           setFiles(unsent);
           break;
         }
+        const capacityKey = publicUploadErrorKey(error.response?.data?.code);
+        if (capacityKey) {
+          failedCount += files.length - index;
+          toast.error(t(capacityKey));
+          // Do not turn a capacity refusal into hundreds of repeated requests.
+          // Leave unsent files selected and retain earlier processing groups.
+          stoppedForCapacity = true;
+          setFiles(files.slice(index));
+          break;
+        }
         // Upload error handled - user notified via UI
         failedCount++;
         
@@ -421,7 +433,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
     }
-    if (stoppedForName) {
+    if (stoppedForName || stoppedForCapacity) {
       // onUploadComplete closes the dialog, and the guest has a name to enter
       // and files left to send. Report these groups with the next attempt.
       pendingUploadIdsRef.current = [...pendingUploadIdsRef.current, ...uploadIds];
@@ -430,7 +442,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       pendingUploadIdsRef.current = [];
     }
     
-    if (failedCount > 0 && !stoppedAtPhotoCap && !stoppedForName) {
+    if (failedCount > 0 && !stoppedAtPhotoCap && !stoppedForName && !stoppedForCapacity) {
       toast.error(`${failedCount} ${t('upload.someFilesFailed')}`);
     }
 

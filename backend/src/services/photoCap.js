@@ -40,7 +40,14 @@ function photoCapError(cap) {
  * insert result, or null when the cap is reached. Without a cap it is a plain
  * insert.
  */
-async function insertPhotoWithinCap(row, cap) {
+async function insertPhotoWithinCap(row, cap, conn = null) {
+  if (conn) {
+    if (cap) {
+      if (conn.client.config.client === 'pg') await conn('events').where({ id: row.event_id }).forUpdate().first();
+      if ((await countEventPhotos(row.event_id, conn)) >= cap) return null;
+    }
+    return conn('photos').insert(row).returning('id');
+  }
   if (!cap) return db('photos').insert(row).returning('id');
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.

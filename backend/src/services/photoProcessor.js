@@ -393,7 +393,7 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
-    uploadedBy = 'admin', credit = {},
+    uploadedBy = 'admin', credit = {}, uploadReservation = null,
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -428,6 +428,9 @@ async function queueFilesForProcessing(files, options = {}) {
   for (const file of fileList) {
     const tempPath = file?.path || file?.filepath || file?.tempFilePath;
     let storedKey = null;
+    let uploadCharge = null;
+    let promotionSettled = false;
+    let rowCommitted = false;
     try {
       if (!tempPath) {
         throw new Error('Uploaded file is missing a temporary path');
@@ -449,9 +452,14 @@ async function queueFilesForProcessing(files, options = {}) {
       const relativePath = path.posix.join(event.slug, newFilename);
       const isVideo = isVideoMimeType(file.mimetype);
 
+      if (uploadReservation) {
+        uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
+      }
+
       // Move to storage first so the file is at its recorded path by the
       // time the worker picks up the row.
       await storage.putFromFile(finalKey, tempPath, { contentType: file.mimetype });
+      promotionSettled = true;
       storedKey = finalKey;
       await fs.unlink(tempPath).catch(() => {});
 
@@ -462,7 +470,7 @@ async function queueFilesForProcessing(files, options = {}) {
 
       // The count above is only a fast path; this insert is the binding
       // check, so parallel uploads cannot overshoot the cap together.
-      const inserted = await insertPhotoWithinCap({
+      const photoRow = {
         event_id: parseInt(eventId, 10),
         filename: newFilename,
         original_filename: file.originalname,
@@ -481,12 +489,21 @@ async function queueFilesForProcessing(files, options = {}) {
         // guest upload used to be recorded as the photographer's (#1561).
         uploaded_by: uploadedBy,
         ...credit,
-      }, photoCap);
+      };
+      const writePhoto = async conn => {
+        const inserted = await insertPhotoWithinCap(photoRow, photoCap, conn);
+        if (!inserted) { capReached = true; throw capRefusal(); }
+        return inserted[0]?.id || inserted[0];
+      };
+      const inserted = uploadCharge
+        ? [await require('./publicUploadQuota').commitObject(uploadCharge, 'photo', writePhoto)]
+        : await insertPhotoWithinCap(photoRow, photoCap);
       if (!inserted) {
         capReached = true;
         throw capRefusal();
       }
       const photoId = inserted[0]?.id || inserted[0];
+      rowCommitted = true;
       await settleGuestCredit(photoId, credit);
 
       queued.push({
@@ -498,7 +515,11 @@ async function queueFilesForProcessing(files, options = {}) {
     } catch (err) {
       // An object with no photo row is invisible to every listing and every
       // cleanup, so a failure after the upload removes what it stored.
-      if (storedKey) await storage.delete(storedKey).catch(() => {});
+      if (!rowCommitted && uploadCharge) {
+        await require('./publicUploadQuota').failedObject(uploadCharge, { storage, settled: promotionSettled }).catch(cleanupError => {
+          logger.warn('Public photo cleanup failed; quota remains charged', { error: cleanupError.message });
+        });
+      } else if (!rowCommitted && storedKey) await storage.delete(storedKey).catch(() => {});
       if (tempPath) await fs.unlink(tempPath).catch(() => {});
       errors.push({
         filename: file?.originalname || 'unknown',
@@ -713,6 +734,7 @@ async function processPhoto(photoId) {
     logger.warn(`processPhoto: webhook fire failed for ${photoId}`, { error: e.message });
   }
 
+  await require('./publicUploadQuota').processingComplete(photoId);
   return updateData;
 }
 

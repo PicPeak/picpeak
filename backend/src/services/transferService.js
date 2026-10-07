@@ -1245,8 +1245,8 @@ function assertUploadable(transfer) {
 }
 
 /** Record a client-uploaded file (bytes already written by the route/multer). */
-async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, mimeType, ip }) {
-  const [id] = await db('transfer_uploads').insert({
+async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, mimeType, ip }, conn = db) {
+  const [id] = await conn('transfer_uploads').insert({
     transfer_id: transferId,
     original_filename: truncateSafely(originalFilename || 'file', 512),
     stored_path: storedPath,
@@ -1256,7 +1256,7 @@ async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, 
     uploader_ip: ip || null,
     uploaded_at: new Date(),
   }).returning('id');
-  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() });
+  await conn('transfers').where({ id: transferId }).update({ updated_at: new Date() });
   return typeof id === 'object' && id !== null ? id.id : id;
 }
 

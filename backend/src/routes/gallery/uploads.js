@@ -10,6 +10,7 @@ const { errorResponse } = require('../../utils/routeHelpers');
 const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services/photoCap');
 const categoryScope = require('../../utils/categoryScope');
 const { guestNameModeOf, guestCreditFields } = require('../../services/photoCredit');
+const { withPublicUpload } = require('../../middleware/publicUploadStream');
 
 router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
   try {
@@ -48,17 +49,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
       return res.status(409).json(photoCapError(photoCap));
     }
 
-    // Ensure temp upload directory exists
     const fs = require('fs');
-    const tempUploadDir = '/tmp/uploads/';
-    if (!fs.existsSync(tempUploadDir)) {
-      try {
-        fs.mkdirSync(tempUploadDir, { recursive: true, mode: 0o755 });
-        logger.info('Created temp upload directory:', tempUploadDir);
-      } catch (mkdirErr) {
-        return errorResponse(res, mkdirErr, 500, 'Server configuration error: unable to create upload directory');
-      }
-    }
 
     // Import multer and photo processing
     const multer = require('multer');
@@ -100,17 +91,21 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
       maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
     }
 
-    const upload = multer({
-      dest: tempUploadDir,
+    await withPublicUpload(req, res, {
+      eventId, guestId: uploader?.id || null, maxFiles: maxFilesPerUpload,
+      fileLimitMessage: `File too large. Maximum size is ${Math.floor(maxFileSizeBytes / (1024 * 1024))} MB per file.`,
+    }, ({ storage, streamHandler, maxFiles }) => multer({
+      storage,
+      streamHandler,
       limits: {
         fileSize: maxFileSizeBytes,
-        files: maxFilesPerUpload,
+        files: maxFiles,
         // The only text field this route reads is category_id. Without these
         // caps an unbounded number of ~1 MiB text parts is held in memory
         // before the handler runs (Codex security audit 2026-09-30).
         fields: 5,
         fieldSize: 1024,
-        parts: maxFilesPerUpload + 5,
+        parts: maxFiles + 5,
         // CVE-2026-82333: files arrive as repeated `photos` parts via
         // .array(), not bracket-indexed field names like `photos[0]` — no
         // legitimate field name uses array-index syntax at all. Reject any
@@ -127,20 +122,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           cb(new Error('Invalid file type'));
         }
       }
-    }).array('photos', maxFilesPerUpload);
-    
-    // Handle upload
-    upload(req, res, async (err) => {
-      if (err) {
-        logger.error('Upload error:', err);
-        // Turn multer's generic "File too large" into an actionable message
-        // that names the configured limit.
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          const limitMb = Math.floor(maxFileSizeBytes / (1024 * 1024));
-          return res.status(400).json({ error: `File too large. Maximum size is ${limitMb} MB per file.` });
-        }
-        return res.status(400).json({ error: err.message });
-      }
+    }).array('photos', maxFiles), async (uploadReservation, res) => {
       
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded' });
@@ -200,6 +182,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           photoCap,
           uploadedBy: 'guest',
           credit,
+          uploadReservation,
         });
 
         // Every file refused for the cap: say so as a refusal, not a 202.
