@@ -1,9 +1,11 @@
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
+const os = require('os');
 const path = require('path');
 const { effectiveMemory } = require('./imageResourcePolicy');
 const { parseStat } = require('./linuxProcessLease');
 const attemptContext = require('./mediaAttemptContext');
+const kernelLease = require('./linuxKernelLease');
 
 const GUARD = path.join(__dirname, '../../bin/media-process-guard');
 const MiB = 1024 * 1024;
@@ -32,21 +34,49 @@ function pump() {
   }
 }
 async function waitForNativeDeath(entry) {
-  // Abnormal supervisor death is not terminal proof. The seccomp filter
-  // permits no additional processes, and PDEATHSIG kills this exact child.
-  // Wait for its disappearance/zombie state before releasing work or storage.
-  if (!entry.nativePid) return;
+  // A zombie group leader can still have live threads. Every native job
+  // retains protected FD9 until its last thread dies, including jobs outside
+  // a durable queue attempt. Only the same inode's free kernel lock is proof.
   for (;;) {
-    try {
-      const value = parseStat(await fs.readFile(`/proc/${entry.nativePid}/stat`, 'utf8'));
-      if (entry.nativeStart && value.startTicks !== entry.nativeStart || ['Z', 'X'].includes(value.state)) return;
-      if (!entry.nativeStart) entry.nativeStart = value.startTicks;
-      try { process.kill(-entry.nativePid, 'SIGKILL'); } catch (_) { /* Confirm below, not from kill's return. */ }
-    } catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return; }
+    if (await kernelLease.probe(entry.leasePath, entry.proofIdentity) === 'free') return;
+    if (entry.nativePid) {
+      try {
+        const value = parseStat(await fs.readFile(`/proc/${entry.nativePid}/stat`, 'utf8'));
+        if (!entry.nativeStart) entry.nativeStart = value.startTicks;
+        if (value.startTicks === entry.nativeStart) {
+          try { process.kill(-entry.nativePid, 'SIGKILL'); } catch (_) { /* Kernel lock, not kill return, proves death. */ }
+          try { process.kill(entry.nativePid, 'SIGKILL'); } catch (_) { /* Also kill a moved process group. */ }
+        }
+      } catch (_) { /* Missing/inaccessible PID is not all-thread proof. */ }
+    }
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 }
 async function execute(entry) {
+  let ownedDirectory;
+  try {
+    if (entry.failure) throw entry.failure;
+    if (!entry.leasePath) {
+      ownedDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-native-lease-'));
+      entry.leasePath = path.join(ownedDirectory, 'execution.lease');
+    }
+    let prepared;
+    try { prepared = await kernelLease.acquire(entry.leasePath); }
+    catch (error) {
+      throw errorFor(entry, 'A local native execution lease is unavailable', error.code === 'MEDIA_LEASE_BUSY' ? 'LEASE_BUSY' : 'WORKER_UNAVAILABLE');
+    }
+    entry.proofIdentity = { device: prepared.device, inode: prepared.inode, filesystem: prepared.filesystem };
+    await prepared.release();
+    return await executePrepared(entry);
+  } finally {
+    // Unknown/live execution remains fenced with its inode intact. Never
+    // remove a caller's durable attempt/restore lease.
+    if (ownedDirectory && (!entry.proofIdentity || await kernelLease.probe(entry.leasePath, entry.proofIdentity) === 'free')) {
+      await fs.rm(ownedDirectory, { recursive: true, force: true });
+    }
+  }
+}
+async function executePrepared(entry) {
   if (entry.failure) throw entry.failure;
   const remaining = entry.deadline - Date.now();
   if (remaining <= 0) throw errorFor(entry, 'Native processing deadline exceeded', 'TIMEOUT');
@@ -75,6 +105,11 @@ async function execute(entry) {
         try {
           const value = JSON.parse(line);
           if (value.version === 1 && Number.isSafeInteger(value.pid) && value.pid > 0 && value.group === value.pid) {
+            if (value.leaseDevice !== entry.proofIdentity.device || value.leaseInode !== entry.proofIdentity.inode ||
+                value.leaseFilesystem !== entry.proofIdentity.filesystem) {
+              entry.fail(errorFor(entry, 'Native execution lease identity changed', 'WORKER_FAILED'));
+              continue;
+            }
             entry.nativePid = value.pid;
             const registration = Promise.all([
               fs.readFile(`/proc/${value.pid}/stat`, 'utf8'), fs.readFile(`/proc/${child.pid}/stat`, 'utf8'),
@@ -119,11 +154,9 @@ async function execute(entry) {
         const outcomes = await Promise.allSettled(writes);
         let teardownError = outcomes.find(outcome => outcome.status === 'rejected')?.reason;
         try { await output?.close(); } catch (error) { teardownError ||= error; }
-        if (!terminal && child.pid) {
-          // An abnormal guardian exit before its child identity arrived is
-          // not proof of termination. Keep the lease fenced rather than
-          // authorizing a retry or restore against an unknown execution.
-          if (!entry.nativePid && !spawnError && ![123, 125].includes(code)) await new Promise(() => {});
+        if (child.pid && (terminal || entry.nativePid || ![123, 125].includes(code))) {
+          // Normal terminal records and abnormal supervisor death both need
+          // the same last-thread kernel proof before I/O or pool release.
           await waitForNativeDeath(entry);
         }
         try { await entry.onFinish?.(entry.lease); } catch (error) { teardownError ||= error; }
