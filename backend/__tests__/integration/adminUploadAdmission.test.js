@@ -14,6 +14,10 @@ jest.mock('../../src/services/downloadZipService', () => ({ invalidate: jest.fn(
 let db, cleanup, app, eventId, token, apiToken, settings, jpeg, storage, quota, stagedBytes;
 const chunkUploads = new Set();
 const originalLimits = process.env.ADMIN_UPLOAD_LIMITS_JSON;
+const GiB = 1024 * 1024 * 1024;
+// 4 TiB free of 8 TiB: admission outcomes must not depend on the CI disk.
+const disk = (freeBytes = 4096 * GiB) => jest.spyOn(fs.promises, 'statfs')
+  .mockResolvedValue({ bavail: Math.floor(freeBytes / 4096), bsize: 4096, blocks: 2 * 1024 * 1024 * 1024, ffree: 100000000 });
 const idOf = rows => rows[0]?.id || rows[0];
 const setting = (key, value) => db('app_settings').insert({
   setting_key: key, setting_value: JSON.stringify(value), setting_type: 'general',
@@ -56,7 +60,7 @@ beforeAll(async () => {
 }, 120000);
 beforeEach(async () => {
   await db('public_upload_objects').del(); await db('public_upload_requests').del(); await db('photos').del();
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{}';
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{}'; delete process.env.PUBLIC_UPLOAD_LIMITS_JSON;
   await setting('general_max_file_size_mb', 4); await setting('general_max_video_size_mb', 8);
   await setting('general_max_upload_batch_size_mb', 95);
   await setting('general_allowed_file_types', 'jpg,jpeg,png,webp,mp4,mov,avi,webm');
@@ -90,16 +94,20 @@ test.each(['photos', 'events'])('ordinary scoped JPEG through the %s alias prese
   const photo = await db('photos').where({ id: res.body.photo_ids[0] }).first();
   expect(photo.processing_status).toBe('pending');
   expect(await storage.stat('events/active/' + photo.path)).toMatchObject({ size: jpeg.length });
-  expect(await db('public_upload_objects').first()).toMatchObject({
-    bytes: jpeg.length, reference_type: 'photo', reference_id: photo.id, state: 'stored', pending: 1, staging_bytes: 0, staging_files: 0,
-  });
-  expect(await db('public_upload_requests').first()).toMatchObject({ upload_kind: 'admin', active: 0, staging_bytes: 0 });
+  // Recorded while it was staged, charged to nothing once stored: no ledger
+  // row survives, so a photo that later fails processing holds nothing either.
+  expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(await db('public_upload_requests').first()).toMatchObject({ upload_kind: 'admin', active: 0, bytes: 0, rate_bytes: 0 });
 });
-test('above-batch multipart is refused before both originals are fully staged or promoted', async () => {
+test('a multipart body above the request ceiling is refused from its declared length, before anything is staged', async () => {
   await setting('general_max_upload_batch_size_mb', 1);
-  const res = await attach(attach(upload(), image(600 * 1024), 'a.jpg'), image(600 * 1024), 'b.jpg');
+  // Ceiling: the larger of the batch setting and one maximum (8 MB video) file.
+  let req = upload();
+  for (const name of ['a.jpg', 'b.jpg', 'c.jpg']) req = attach(req, image(4 * 1024 * 1024 - 1024), name);
+  const res = await req;
   expect(res.status).toBe(413); expect(res.body.code).toBe('UPLOAD_REQUEST_TOO_LARGE');
-  await waitSettled(); expect(stagedBytes).toBeLessThan(1200 * 1024);
+  expect(res.body.error).not.toMatch(/gallery owner/);
+  await waitSettled(); expect(stagedBytes).toBe(0);
   expect(storage.putFromFile).not.toHaveBeenCalled(); expect(await db('photos')).toHaveLength(0);
 });
 test('an image cannot be fully staged up to the larger video ceiling', async () => {
@@ -123,33 +131,106 @@ test('an actual MP4 above the photo cap retains its configured video cap and pen
   expect(res.status).toBe(202); expect(res.body.count).toBe(1);
   expect(await db('photos').first()).toMatchObject({ mime_type: 'video/mp4', size_bytes: video.length, media_type: 'video' });
 });
-test('future physical holds include a local promotion copy and shrink only after staging has settled', async () => {
-  const session = await quota.begin({ eventId, mode: 'admin', maxFiles: 2 });
-  expect(session.staging_bytes).toBe(session.bytes * 2);
-  await quota.staged(session, jpeg.length, 1);
-  expect(await db('public_upload_requests').where({ id: session.id }).first()).toMatchObject({ staging_bytes: jpeg.length, staging_files: 1 });
-  await quota.finish(session);
-});
-test('fair private default slots preserve both the default and maximum configured file counts', async () => {
-  for (const count of [500, 2000]) {
-    const session = await quota.begin({ eventId, mode: 'admin', maxFiles: count });
-    expect(session.files).toBe(count);
+test('the defaults carry a 2000-photo wedding: no hourly, lifetime or per-gallery cap on authenticated uploads', async () => {
+  disk();
+  const limits = quota.configuration('admin');
+  expect(limits).toEqual({ headroomBytes: 512 * 1024 * 1024, headroomPercent: 5, headroomFiles: 1024, requestTimeoutMs: 600000,
+    stagedFiles: 50000, accountRequests: 16, requests: 64 });
+  // 700 batches of 90 MiB in one hour: 61 GiB. The previous defaults stopped
+  // at 10 GiB/hour, 600 requests/hour and 100 GiB per gallery.
+  for (let n = 0; n < 700; n++) {
+    const session = await quota.begin({ eventId, mode: 'admin', accountId: 1, maxFiles: 50, declaredBytes: 90 * 1024 * 1024 });
     await quota.finish(session);
   }
+  expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
+}, 120000);
+test('one resumable file of any allowed size is admitted when the disk has room, and refused only for disk space', async () => {
+  disk();
+  await setting('general_max_video_size_mb', 10240); settings.clearMaxVideoSizeCache();
+  const init = await initChunk(9 * GiB, 'ceremony.mp4');
+  expect(init.status).toBe(200);
+  expect(await db('public_upload_requests').where({ active: 1 }).first()).toMatchObject({ bytes: 9 * GiB, files: 1, upload_kind: 'admin' });
+  await require('../../src/services/chunkedUploadService').abortUpload(init.body.uploadId);
+  // Even past the staged-bytes bound: a request that is alone always fits.
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"stagedBytes":1048576}';
+  expect((await initChunk(9 * GiB, 'ceremony.mp4')).status).toBe(200);
+  for (const id of chunkUploads) await require('../../src/services/chunkedUploadService').abortUpload(id);
+  fs.promises.statfs.mockRestore(); disk(20 * GiB);
+  const low = await initChunk(9 * GiB, 'ceremony.mp4');
+  expect(low.status).toBe(507); expect(low.body.code).toBe('UPLOAD_STORAGE_LOW');
+  expect(low.body.error).toMatch(/disk space/); expect(low.body.error).not.toMatch(/gallery owner/);
 });
-test('parallel private reservations cannot exceed a persistent deployment session allowance', async () => {
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = JSON.stringify({ deployment: { requests: 1 } });
-  const calls = await Promise.allSettled([quota.begin({ eventId, mode: 'admin', maxFiles: 1 }), quota.begin({ eventId, mode: 'admin', maxFiles: 1 })]);
-  expect(calls.filter(r => r.status === 'fulfilled')).toHaveLength(1);
-  expect(calls.find(r => r.status === 'rejected').reason.code).toBe('UPLOAD_CONCURRENCY_LIMIT');
-  await quota.finish(calls.find(r => r.status === 'fulfilled').value);
+test('what authenticated requests hold in staging together is bounded by a share of free disk, as a transient refusal', async () => {
+  disk(); // a quarter of the free space is far above the 50 GiB ceiling
+  const first = await quota.begin({ eventId, mode: 'admin', maxFiles: 1, requestedBytes: 30 * GiB });
+  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, requestedBytes: 30 * GiB })).rejects.toMatchObject({ code: 'UPLOAD_PENDING_LIMIT', status: 429 });
+  const second = await quota.begin({ eventId, mode: 'admin', maxFiles: 1, requestedBytes: 10 * GiB });
+  await quota.finish(first); await quota.finish(second);
+  fs.promises.statfs.mockRestore(); disk(1024 * GiB);
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"stagedFiles":1}';
+  const one = await quota.begin({ eventId, mode: 'admin', maxFiles: 5, declaredBytes: 1024 });
+  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 5, declaredBytes: 1024 })).rejects.toMatchObject({ code: 'UPLOAD_PENDING_LIMIT' });
+  await quota.finish(one);
 });
-test('private rates are separate from public ingress while concurrency claims remain shared', async () => {
-  const session = await quota.begin({ eventId, maxFiles: 1 });
-  const privateSession = await quota.begin({ eventId, mode: 'admin', maxFiles: 1 });
-  expect(privateSession.guest_scope).toBeNull();
-  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
-  await quota.finish(session); await quota.finish(privateSession);
+test('concurrency is bounded per uploading account and per deployment', async () => {
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = JSON.stringify({ accountRequests: 1, requests: 2 });
+  const mine = await quota.begin({ eventId, mode: 'admin', accountId: 7, maxFiles: 1, declaredBytes: 10 });
+  await expect(quota.begin({ eventId, mode: 'admin', accountId: 7, maxFiles: 1, declaredBytes: 10 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
+  const other = await quota.begin({ eventId, mode: 'admin', accountId: 8, maxFiles: 1, declaredBytes: 10 });
+  await expect(quota.begin({ eventId, mode: 'admin', accountId: 9, maxFiles: 1, declaredBytes: 10 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
+  await quota.finish(mine); await quota.finish(other);
+});
+test('authenticated uploads are neither charged to nor refused by the public allowance, and take no public slot', async () => {
+  process.env.PUBLIC_UPLOAD_LIMITS_JSON = JSON.stringify({ gallery: { bytes: 2 * 1024 * 1024, files: 2, pendingFiles: 1, requests: 1 } });
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
+  quota._legacyCache.clear();
+  for (let n = 0; n < 3; n++) expect((await attach(upload(), image(1024 * 1024), `admin-${n}.jpg`)).status).toBe(202);
+  expect(await db('photos').where({ processing_status: 'pending' })).toHaveLength(3);
+  const held = await quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 });
+  const guest = await quota.begin({ eventId, maxFiles: 1, declaredBytes: 1024 });
+  expect(guest.upload_kind).toBe('public');
+  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 1024 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
+  await quota.finish(held); await quota.finish(guest);
+});
+test('a restart reclaims authenticated requests and resumable sessions by their lapsed heartbeat', async () => {
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
+  const id = crypto.randomUUID();
+  // What a killed process leaves: an active row, its chunks, a half promotion.
+  await db('public_upload_requests').insert({ id, event_id: eventId, account_id: 1, bytes: 4096, files: 1, rate_bytes: 0, active: 1,
+    host: 'gone', pid: process.pid, upload_kind: 'admin', heartbeat_at: Date.now() - quota.STALE_MS - 1000, created_at: new Date().toISOString() });
+  await db('public_upload_objects').insert({ id: crypto.randomUUID(), request_id: id, object_key: 'events/active/none.jpg', bytes: 10, files: 1,
+    event_id: eventId, upload_kind: 'admin', created_at: new Date().toISOString() });
+  const dir = path.join(process.env.STORAGE_PATH, 'temp', 'public-uploads', id);
+  fs.mkdirSync(path.join(dir, 'chunks'), { recursive: true }); fs.writeFileSync(path.join(dir, 'chunks', 'chunk_000000'), 'x');
+  await expect(quota.begin({ eventId, mode: 'admin', maxFiles: 1, declaredBytes: 10 })).rejects.toMatchObject({ code: 'UPLOAD_CONCURRENCY_LIMIT' });
+  await quota.cleanupAbandoned();
+  expect(await db('public_upload_requests').where({ id }).first()).toMatchObject({ active: 0, bytes: 0 });
+  expect(await db('public_upload_objects')).toHaveLength(0); expect(fs.existsSync(dir)).toBe(false);
+  // A live session is kept by this process's heartbeat however old its row.
+  const init = await initChunk(jpeg.length);
+  await db('public_upload_requests').where({ active: 1 }).update({ heartbeat_at: Date.now() - quota.STALE_MS - 1000 });
+  await quota.heartbeat(); await quota.cleanupAbandoned();
+  expect(Number((await db('public_upload_requests').where({ active: 1 }).first()).heartbeat_at)).toBeGreaterThan(Date.now() - 5000);
+  expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
+});
+test('an abandoned resumable session releases its slot after fifteen idle minutes, not twenty-four hours', async () => {
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
+  await setting('general_max_file_size_mb', 20); settings.clearMaxFileSizeCache();
+  const chunks = require('../../src/services/chunkedUploadService');
+  const init = await initChunk(chunks.CHUNK_SIZE + 10);
+  expect((await sendChunk(init.body.uploadId, Buffer.alloc(10), 1)).status).toBe(200);
+  const hold = await db('public_upload_requests').where({ active: 1 }).first();
+  const now = Date.now();
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(now + chunks.ADMITTED_IDLE_MS - 60000);
+  expect(await chunks.cleanupExpiredUploads()).toBe(0);
+  expect(chunks.getUploadStatus(init.body.uploadId)).not.toBeNull();
+  clock.mockReturnValue(now + chunks.ADMITTED_IDLE_MS + 60000);
+  expect(await chunks.cleanupExpiredUploads()).toBe(1);
+  clock.mockRestore();
+  expect(chunks.getUploadStatus(init.body.uploadId)).toBeNull();
+  expect(await db('public_upload_requests').where({ id: hold.id }).first()).toMatchObject({ active: 0 });
+  expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'temp', 'public-uploads', hold.id))).toBe(false);
+  expect((await initChunk(jpeg.length)).status).toBe(200);
 });
 test('a settled PUT followed by atomic row failure is compensated instead of orphaning an uncharged original', async () => {
   const commit = quota.commitObject;
@@ -172,6 +253,10 @@ test.each([
   { filename: 'disguised.mp4', mime: 'video/mp4', prefix: Buffer.from('not-a-video-header!!') },
 ])('rejected $filename bodies cannot bypass the raw limit through Multer error draining', async ({ filename, mime, prefix }) => {
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requestBytes":4096}';
+  // The ceiling still admits one maximum file plus framing: 2 MiB here.
+  await setting('general_max_file_size_mb', 1); await setting('general_max_video_size_mb', 1);
+  settings.clearMaxFileSizeCache(); settings.clearMaxVideoSizeCache();
+  const total = 4 * 1024 * 1024;
   const http = require('http');
   const server = http.createServer(app);
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -189,12 +274,12 @@ test.each([
       req.write(`--owned-drain\r\nContent-Disposition: form-data; name="photos"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`);
       req.write(prefix);
       interval = setInterval(() => {
-        sent += 1024; req.write(Buffer.alloc(1024));
-        if (sent >= 64 * 1024) { clearInterval(interval); req.end('\r\n--owned-drain--\r\n'); }
+        sent += 65536; req.write(Buffer.alloc(65536));
+        if (sent >= total) { clearInterval(interval); req.end('\r\n--owned-drain--\r\n'); }
       }, 5);
     });
     expect(result.status).toBe(413); expect(result.body.code).toBe('UPLOAD_REQUEST_TOO_LARGE');
-    expect(sent).toBeLessThan(64 * 1024);
+    expect(sent).toBeLessThanOrEqual(total);
   } finally { clearInterval(interval); await new Promise(resolve => server.close(resolve)); }
   await waitSettled(); expect(storage.putFromFile).not.toHaveBeenCalled();
 });
@@ -221,11 +306,11 @@ test('a photos.upload-only principal can cancel only their own uncommitted admis
   expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
   expect(storage.putFromFile).not.toHaveBeenCalled();
 });
-test.each(['photos', 'events'])('actual admitted chunk JPEG through %s preserves synchronous processing and durable charge', async alias => {
+test.each(['photos', 'events'])('actual admitted chunk JPEG through %s preserves synchronous processing and settles its admission', async alias => {
   const init = await initChunk(jpeg.length, 'chunk-control.jpg', alias);
   expect(init.status).toBe(200);
   const hold = await db('public_upload_requests').where({ active: 1 }).first();
-  expect(hold).toMatchObject({ bytes: jpeg.length, files: 1, upload_shape: 'chunked', staging_bytes: jpeg.length * 2, staging_files: 4 });
+  expect(hold).toMatchObject({ bytes: jpeg.length, files: 1, upload_kind: 'admin', rate_bytes: 0 });
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
   const res = await completeChunk(init.body.uploadId);
   expect(res.status).toBe(200); expect(res.body.uploaded).toBe(1);
@@ -233,13 +318,14 @@ test.each(['photos', 'events'])('actual admitted chunk JPEG through %s preserves
   const photo = await db('photos').where({ id: res.body.photos[0].id }).first();
   expect(photo).toMatchObject({ size_bytes: jpeg.length, processing_status: 'complete', mime_type: 'image/jpeg' });
   expect(await storage.stat('events/active/' + photo.path)).toMatchObject({ size: jpeg.length });
-  expect(await db('public_upload_objects').first()).toMatchObject({ state: 'stored', pending: 0, bytes: jpeg.length, reference_id: photo.id });
+  expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(await db('public_upload_requests')).toHaveLength(1);
 });
 test('chunk init keeps image and video ceilings distinct and shares admission with multipart', async () => {
   await setting('general_max_file_size_mb', 1); settings.clearMaxFileSizeCache();
   expect((await initChunk(2 * 1024 * 1024)).status).toBe(400);
   expect(await db('public_upload_requests')).toHaveLength(0);
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"deployment":{"requests":1}}';
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
   const init = await initChunk(2 * 1024 * 1024, 'ordinary.mp4');
   expect(init.status).toBe(200);
   expect((await attach(upload(), jpeg)).body.code).toBe('UPLOAD_CONCURRENCY_LIMIT');
@@ -265,18 +351,22 @@ test('video chunk zero must classify before later indices, but ordinary out-of-o
   const photo = await initChunk(chunks.CHUNK_SIZE + 10);
   expect((await sendChunk(photo.body.uploadId, Buffer.alloc(10), 1)).status).toBe(200);
 });
-test('re-sending a chunk charges every ingress request without increasing resident bytes and stops at the hourly request cap', async () => {
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"gallery":{"hourRequests":3}}';
-  const init = await initChunk(jpeg.length);
-  expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
-  expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
-  const refusal = await sendChunk(init.body.uploadId, jpeg);
-  expect(refusal.status).toBe(429); expect(refusal.body.code).toBe('UPLOAD_REQUEST_RATE_LIMIT');
-  const requests = await db('public_upload_requests');
-  expect(requests).toHaveLength(3);
-  expect(requests.reduce((n, row) => n + Number(row.rate_bytes), 0)).toBe(jpeg.length * 2);
+test('every chunk and re-sent chunk of one resumable session is the same single active request', async () => {
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"accountRequests":1}';
+  await setting('general_max_file_size_mb', 40); settings.clearMaxFileSizeCache();
   const chunks = require('../../src/services/chunkedUploadService');
-  expect(chunks.getUploadStatus(init.body.uploadId).receivedChunks).toBe(1);
+  const init = await initChunk(2 * chunks.CHUNK_SIZE + 10);
+  for (const [index, bytes] of [[0, chunks.CHUNK_SIZE], [0, chunks.CHUNK_SIZE], [1, chunks.CHUNK_SIZE], [2, 10], [2, 10]]) {
+    expect((await sendChunk(init.body.uploadId, Buffer.alloc(bytes), index)).status).toBe(200);
+  }
+  expect(chunks.getUploadStatus(init.body.uploadId).receivedChunks).toBe(3);
+  const requests = await db('public_upload_requests');
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ active: 1, rate_bytes: 0, bytes: 2 * chunks.CHUNK_SIZE + 10 });
+  // The session, not its chunks, is what holds the account's one slot.
+  const refused = await initChunk(jpeg.length);
+  expect(refused.status).toBe(429); expect(refused.body.code).toBe('UPLOAD_CONCURRENCY_LIMIT');
+  expect(refused.body.error).not.toMatch(/gallery owner/);
 });
 test('chunk identity refuses nondecimal event and chunk indices instead of truncating into another scope', async () => {
   expect((await initChunk(jpeg.length, 'control.jpg', 'photos', `${eventId}e0`)).status).toBe(404);
@@ -287,7 +377,7 @@ test('chunk identity refuses nondecimal event and chunk indices instead of trunc
   expect(stagedBytes).toBe(0);
 });
 test.each(['abort', 'expiry'])('%s cannot release a reservation or unlink ahead of a pending native file open and close', async operation => {
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"deployment":{"requests":1}}';
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
   const init = await initChunk(jpeg.length);
   const hold = await db('public_upload_requests').where({ active: 1 }).first();
   const chunks = require('../../src/services/chunkedUploadService');
@@ -329,10 +419,10 @@ test('overlapping chunk attempts are refused before opening another staging writ
   await expect(chunks.uploadChunk(init.body.uploadId, 0, jpeg)).rejects.toMatchObject({ statusCode: 409 });
   source.end(jpeg);
   expect((await writing).value.complete).toBe(true);
-  expect(await db('public_upload_requests').where({ upload_shape: 'chunk' })).toHaveLength(1);
+  expect(await db('public_upload_requests')).toHaveLength(1);
 });
 test('abort during an actual original PUT holds capacity until synchronous processing settles and compensates the original', async () => {
-  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"deployment":{"requests":1}}';
+  process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
   const init = await initChunk(jpeg.length);
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
   let promoted, release;
@@ -374,7 +464,6 @@ test('a stalled chunk body times out, closes its writer, retains its resumable a
   expect(chunks.getUploadStatus(init.body.uploadId).receivedChunks).toBe(0);
   expect(await db('public_upload_requests').where({ active: 1 }).first()).toBeTruthy();
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
-  expect(await db('public_upload_requests').where({ upload_shape: 'chunk' }).orderBy('created_at').first()).toMatchObject({ rate_bytes: 20 });
 });
 test('resumed chunk receipt rechecks disk headroom before reading a body or starting another writer', async () => {
   const init = await initChunk(jpeg.length);
@@ -382,7 +471,6 @@ test('resumed chunk receipt rechecks disk headroom before reading a body or star
   const res = await sendChunk(init.body.uploadId, jpeg);
   expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(stagedBytes).toBe(0);
-  expect(await db('public_upload_requests').where({ upload_shape: 'chunk' })).toHaveLength(0);
   fs.promises.statfs.mockRestore();
 });
 test('merge rechecks inode headroom and cannot leave an unreserved partial copy', async () => {
@@ -407,7 +495,7 @@ test('an actual admitted MP4 above the photo cap survives chunk merge and synchr
   expect(res.status).toBe(200); expect(res.body.uploaded).toBe(1);
   await waitSettled();
   expect(await db('photos').first()).toMatchObject({ media_type: 'video', mime_type: 'video/mp4', size_bytes: bytes.length, processing_status: 'complete' });
-  expect(await db('public_upload_objects').first()).toMatchObject({ pending: 0, state: 'stored', bytes: bytes.length });
+  expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('failed part cleanup makes the session nonretryable and failed abort cleanup keeps its claim and metadata', async () => {
   const init = await initChunk(jpeg.length);
@@ -431,7 +519,7 @@ test('failed part cleanup makes the session nonretryable and failed abort cleanu
   fs.promises.rm.mockRestore();
   expect(await chunks.abortUpload(init.body.uploadId)).toBe(true);
 });
-test('a rejected PUT with lost acknowledgement keeps its durable lifetime charge after chunk staging finishes', async () => {
+test('a rejected PUT with lost acknowledgement leaves no charge and no orphan once chunk staging finishes', async () => {
   const init = await initChunk(jpeg.length);
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
   storage.putFromFile.mockRestore();
@@ -443,36 +531,16 @@ test('a rejected PUT with lost acknowledgement keeps its durable lifetime charge
   expect(res.status).toBe(200); expect(res.body.uploaded).toBe(0);
   await waitSettled();
   expect(await db('photos')).toHaveLength(0);
-  expect(await db('public_upload_objects').first()).toMatchObject({ state: 'uncertain', bytes: jpeg.length, files: 1 });
+  expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(await storage.stat(storage.putFromFile.mock.calls[0][0])).toBeNull();
 });
-test.each(['api-control.jpg', 'api-control.photograph-format'])('ordinary scoped v1 %s preserves its synchronous response and settles the original charge', async filename => {
+test.each(['api-control.jpg', 'api-control.photograph-format'])('ordinary scoped v1 %s preserves its synchronous response and settles its admission', async filename => {
   const res = await attachV1(v1Upload(), jpeg, filename);
   expect(res.status).toBe(201); expect(res.body.size_bytes).toBe(jpeg.length);
   expect(await storage.stat('events/active/' + res.body.path)).toMatchObject({ size: jpeg.length });
   expect(await db('photos').where({ id: res.body.id }).first()).toMatchObject({ width: 16, height: 16, processing_status: 'complete' });
-  expect(await db('public_upload_objects').first()).toMatchObject({ reference_id: res.body.id, state: 'stored', pending: 0, bytes: jpeg.length });
-});
-test('v1 cannot bypass the configured raw request ceiling with its single-photo path', async () => {
-  await setting('general_max_upload_batch_size_mb', 1);
-  const http = require('http');
-  const server = http.createServer(app); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const body = image(2 * 1024 * 1024); let sent = 0; let interval;
-  try {
-    const result = await new Promise((resolve, reject) => {
-      const req = http.request({ host: '127.0.0.1', port: server.address().port, method: 'POST',
-        path: `/api/v1/events/${eventId}/photos`, headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'multipart/form-data; boundary=owned-v1' } },
-      res => { let data = ''; res.on('data', b => { data += b; }); res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(data) })); });
-      req.on('error', err => { if (!['EPIPE', 'ECONNRESET'].includes(err.code)) reject(err); });
-      req.write('--owned-v1\r\nContent-Disposition: form-data; name="photo"; filename="api-control.jpg"\r\nContent-Type: image/jpeg\r\n\r\n');
-      interval = setInterval(() => {
-        const end = Math.min(body.length, sent + 32768); req.write(body.subarray(sent, end)); sent = end;
-        if (sent >= body.length) { clearInterval(interval); req.end('\r\n--owned-v1--\r\n'); }
-      }, 3);
-    });
-    expect(result.status).toBe(413); expect(result.body.code).toBe('UPLOAD_REQUEST_TOO_LARGE'); expect(sent).toBeLessThan(body.length);
-  } finally { clearInterval(interval); await new Promise(resolve => server.close(resolve)); }
-  await waitSettled(); expect(stagedBytes).toBeLessThan(2 * 1024 * 1024);
-  expect(storage.putFromFile).not.toHaveBeenCalled();
+  expect(await db('public_upload_objects')).toHaveLength(0);
+  expect(await db('public_upload_requests').first()).toMatchObject({ upload_kind: 'admin', active: 0 });
 });
 test('v1 retains the photo-only file cap and bounded documented text fields', async () => {
   await setting('general_max_file_size_mb', 1); settings.clearMaxFileSizeCache();
@@ -482,13 +550,13 @@ test('v1 retains the photo-only file cap and bounded documented text fields', as
   const field = await attachV1(v1Upload().field('category_id', 'x'.repeat(2048)));
   expect(field.status).toBe(400); expect(storage.putFromFile).not.toHaveBeenCalled();
 });
-test('v1 replacement keeps identity/source filename while every accepted original retains its lifetime charge', async () => {
+test('v1 replacement keeps identity/source filename and charges nothing', async () => {
   const first = await attachV1(v1Upload(), jpeg, 'camera.jpg'); expect(first.status).toBe(201);
   const res = await attachV1(v1Upload().field('replaces_photo_id', String(first.body.id)), jpeg, 'edited.jpg');
   expect(res.status).toBe(200); expect(res.body.replaced).toBe(true);
   expect(res.body.photo).toMatchObject({ id: first.body.id, original_filename: 'edited.jpg', source_filename: 'camera.jpg' });
   expect(await db('photos')).toHaveLength(1);
-  expect(await db('public_upload_objects').where({ reference_id: first.body.id, state: 'stored', pending: 0 })).toHaveLength(2);
+  expect(await db('public_upload_objects')).toHaveLength(0);
 });
 test('a typed session token cannot enter the v1 adapter or create a private reservation', async () => {
   const res = await request(app).post(`/api/v1/events/${eventId}/photos`).set('Authorization', `Bearer ${token}`).attach('photo', jpeg, 'wrong-auth.jpg');
@@ -540,7 +608,7 @@ test('private admission and promotion cannot disagree about exponential event id
   const normal = await attach(upload('photos', `000${ownedId}`), jpeg);
   expect(normal.status).toBe(202);
   expect(await db('photos').first()).toMatchObject({ event_id: ownedId });
-  expect(await db('public_upload_objects').first()).toMatchObject({ event_id: ownedId });
+  expect(await db('public_upload_requests').first()).toMatchObject({ event_id: ownedId, upload_kind: 'admin' });
 });
 
 test('the existing 500-file default still accepts a real bounded batch of small images', async () => {
@@ -548,5 +616,5 @@ test('the existing 500-file default still accepts a real bounded batch of small 
   for (let n = 0; n < 500; n++) req = attach(req, jpeg, `small-${n}.jpg`);
   const res = await req;
   expect(res.status).toBe(202); expect(res.body.count).toBe(500);
-  expect(await db('photos')).toHaveLength(500); expect(await db('public_upload_objects')).toHaveLength(500);
+  expect(await db('photos')).toHaveLength(500); expect(await db('public_upload_objects')).toHaveLength(0);
 }, 120000);

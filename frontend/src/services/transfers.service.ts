@@ -127,6 +127,8 @@ export interface UploadInfo {
   expires_at: string;
   max_size_mb: number;
   max_files: number;
+  /** Raw body budget of one upload request, in bytes. */
+  max_request_bytes: number;
   allowed_mime: string[];
 }
 
