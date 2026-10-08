@@ -168,7 +168,7 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
   let serial = 0;
   async function graph({ creator = ownerId, builtin = false, targetId = ids.invoices[0] } = {}) {
     const [inserted] = await db('workflows').insert({ name: `CRM fixture ${++serial}`, version: 1,
-      trigger_type: 'crm.scope.fixture', enabled: formatBoolean(true), created_by: creator,
+      trigger_type: builtin ? 'invoice.sent' : 'crm.scope.fixture', enabled: formatBoolean(true), created_by: creator,
       is_builtin: formatBoolean(builtin), builtin_key: builtin ? 'invoice_dunning' : null }).returning('id');
     const workflowId = inserted.id ?? inserted;
     await db('workflow_nodes').insert([
@@ -192,14 +192,68 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
   const step = await db('workflow_run_steps').where({ run_id: runId, node_key: 'update' }).first();
   expect(JSON.parse(step.result).updated).toBe(0);
 
-  // Shipped system workflows still act on their explicit entity, not another
-  // photographer's document or another same-owner deal chosen by the graph.
-  const builtIn = await graph({ creator: null, builtin: true });
-  const [systemRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('crm.scope.fixture', {
-    entityType: 'invoice', entityId: ids.invoices[0], targetWorkflowId: builtIn,
+  // A counterfeit/edited graph retaining a known builtin flag is not system
+  // authority, even when a trusted scheduler invokes it for a foreign entity.
+  const builtIn = await graph({ creator: null, builtin: true, targetId: ids.invoices[1] });
+  const [counterfeitRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('invoice.sent', {
+    entityType: 'invoice', entityId: ids.invoices[1], targetWorkflowId: builtIn,
   }));
-  await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(systemRun));
-  expect((await db('invoices').where('id', ids.invoices[0]).first()).status).toBe('overdue');
+  await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(counterfeitRun));
+  expect((await db('workflow_runs').where('id', counterfeitRun).first()).status).toBe('failed');
+  expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
+
+  // Exercise the actual shipped dunning graph; stored timing remains valid
+  // independently of later app-setting changes. Only its primary entity can
+  // be changed, never another photographer's document.
+  const { BUILTINS } = require('../../src/services/_workflowSeedBoot');
+  const def = BUILTINS.find(entry => entry.key === 'invoice_dunning');
+  const shipped = await def.build();
+  await db('workflows').where('id', builtIn).update({ version: 2, trigger_type: def.trigger_type, admin_toggled_at: db.fn.now() });
+  await db('workflow_nodes').insert(shipped.nodes.map(n => ({ workflow_id: builtIn, version: 2,
+    node_key: n.node_key, type: n.type, config: JSON.stringify(n.config || {}) })));
+  await db('workflow_edges').insert(shipped.edges.map(e => ({ workflow_id: builtIn, version: 2,
+    from_node: e.from_node, to_node: e.to_node, from_handle: e.from_handle || null, loop_back: formatBoolean(!!e.loop_back) })));
+  const oldCondition = registry.getCondition('invoice_paid');
+  const oldAction = registry.getAction('queue_payment_check');
+  registry.registerCondition('invoice_paid', async () => false);
+  registry.registerAction('queue_payment_check', async ctx => ({
+    foreign: await ctx.db('invoices').where('id', ids.invoices[1]).update({ status: 'overdue' }),
+    primary: await ctx.db('invoices').where('id', ctx.run.entity_id).update({ status: 'overdue' }),
+  }));
+  try {
+    const [systemRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('invoice.sent', {
+      entityType: 'invoice', entityId: ids.invoices[0], targetWorkflowId: builtIn, payload: { dueDate: '2020-01-01' },
+    }));
+    for (let i = 0; i < 2; i++) await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(systemRun));
+    const paymentStep = await db('workflow_run_steps').where({ run_id: systemRun, node_key: 'paymentCheck' }).first();
+    expect(JSON.parse(paymentStep.result)).toEqual({ foreign: 0, primary: 1 });
+    expect((await db('invoices').where('id', ids.invoices[0]).first()).status).toBe('overdue');
+    expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
+  } finally {
+    if (oldCondition) registry.registerCondition('invoice_paid', oldCondition); else registry.conditions.delete('invoice_paid');
+    if (oldAction) registry.registerAction('queue_payment_check', oldAction); else registry.actions.delete('queue_payment_check');
+  }
+
+  // Real typed-auth edits claim execution authority for the actual editor,
+  // regardless of caller-supplied creator/system fields.
+  const workflowPermission = await db('permissions').where('name', 'workflows.manage').first();
+  const ownerRow = await db('admin_users').where('id', ownerId).first();
+  await db('role_permissions').insert({ role_id: ownerRow.role_id, permission_id: workflowPermission.id });
+  require('../../src/middleware/permissions').clearPermissionCache();
+  const workflowApp = buildRouteApp('/api/admin/workflows', require('../../src/routes/adminWorkflows'));
+  const editedNodes = shipped.nodes.map(n => n.node_key === 'paymentCheck'
+    ? { ...n, config: { action: 'crm_scope_fixture', targetId: ids.invoices[1] } } : n);
+  const edit = await request(workflowApp).put('/api/admin/workflows/' + builtIn).set(auth('owner')).send({
+    nodes: editedNodes, edges: shipped.edges, created_by: superId, is_builtin: true,
+  });
+  expect(edit.status).toBe(200);
+  expect((await db('workflows').where('id', builtIn).first()).created_by).toBe(ownerId);
+  const [editedRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('invoice.sent', {
+    entityType: 'invoice', entityId: ids.invoices[1], targetWorkflowId: builtIn,
+  }));
+  for (let i = 0; i < 2; i++) await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(editedRun));
+  expect((await db('workflow_runs').where('id', editedRun).first()).status).toBe('failed');
+  expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
 
   const untrustedGraph = await graph({ creator: superId, targetId: ids.invoices[1] });
   const [untrustedRun] = await engine.emitWorkflowEvent('crm.scope.fixture', {

@@ -535,15 +535,47 @@ async function validateDelete(builder, client, connection) {
   await inspectReferences(parsed.table, ids);
 }
 
+/** Only the shipped executable graph, not its editable builtin flag, is trusted. */
+async function isShippedCrmGraph(workflow, graph) {
+  if (workflow?.created_by || !graph?.nodeByKey || !Array.isArray(graph.edges)) return false;
+  const { BUILTINS, buildDunningGraph } = require('../services/_workflowSeedBoot');
+  const def = BUILTINS.find(entry => entry.key === workflow.builtin_key);
+  if (!def || workflow.trigger_type !== def.trigger_type) return false;
+  let shipped;
+  if (def.key === 'invoice_dunning') {
+    // Timing is seeded from settings, which may have changed since this pinned
+    // version was written. Accept only the same shipped ladder/actions with
+    // finite stored timing; never arbitrary configs, targets or recipients.
+    const firstDays = graph.nodeByKey.get('waitGrace')?.config?.delayDays;
+    const gapDays = graph.nodeByKey.get('waitGap')?.config?.delayDays;
+    if (!Number.isFinite(firstDays) || firstDays < 0 || !Number.isFinite(gapDays) || gapDays < 1) return false;
+    shipped = buildDunningGraph({ firstDays, gapDays, maxReminders: 3 });
+  } else shipped = await def.build();
+  const canonical = value => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    return value;
+  };
+  const executable = (nodes, edges) => canonical({
+    nodes: nodes.map(n => ({ key: n.node_key, type: n.type, config: n.config || {} }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    edges: edges.map(e => ({ from: e.from_node, to: e.to_node, handle: e.from_handle || null,
+      loop: [true, 1, '1'].includes(e.loop_back) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  });
+  return JSON.stringify(executable([...graph.nodeByKey.values()], graph.edges))
+    === JSON.stringify(executable(shipped.nodes, shipped.edges));
+}
+
 /** Rehydrate workflow authority independently of its editable graph/payload. */
-async function workflowCrmActor(run, workflow, initiatingAdminId) {
+async function workflowCrmActor(run, workflow, initiatingAdminId, graph) {
   const { db } = require('./db');
   const roots = { quote: 'quotes', invoice: 'invoices', contract: 'contracts', event: 'events' };
   const root = roots[run.entity_type];
   const inherited = currentCrmActor();
   const originId = initiatingAdminId || inherited?.id;
   const builtinKeys = new Set(['invoice_dunning', 'pre_event_email', 'booking_full', 'booking_simple', 'booking_invoice_only', 'contract_completed_invoice']);
-  const builtin = [true, 1, '1'].includes(workflow?.is_builtin) && builtinKeys.has(workflow?.builtin_key);
+  const builtin = [true, 1, '1'].includes(workflow?.is_builtin) && builtinKeys.has(workflow?.builtin_key)
+    && await isShippedCrmGraph(workflow, graph);
   let actor;
   if (originId) actor = await loadCrmActor({ id: Number(originId) });
   else if (!builtin && workflow?.created_by) actor = await loadCrmActor({ id: Number(workflow.created_by) });
