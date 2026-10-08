@@ -1,5 +1,4 @@
-const META_BYTES = 16384;
-const AUDIT_BYTES = 65536;
+const { backfillMailIntake } = require('../../src/utils/mailIntakeLedger');
 
 async function add(knex, table, column, builder) {
   if (!(await knex.schema.hasColumn(table, column))) await knex.schema.alterTable(table, builder);
@@ -36,26 +35,7 @@ exports.up = async function (knex) {
   await knex('mail_intake_state').insert({ key: 'installation' }).onConflict('key').ignore();
   await add(knex, 'mail_intake_state', 'sweep_cursor', t => t.string('sweep_cursor', 512));
   await add(knex, 'mail_intake_state', 'sweep_document_id', t => t.integer('sweep_document_id').defaultTo(0));
-  // Backfill without materialising potentially large legacy bodies in JS.
-  const size = knex.client.config.client === 'pg'
-    ? 'COALESCE(octet_length(body_text), 0) + COALESCE(octet_length(body_html), 0) + ?'
-    : 'COALESCE(length(CAST(body_text AS BLOB)), 0) + COALESCE(length(CAST(body_html AS BLOB)), 0) + ?';
-  await knex('received_emails').where('retained_bytes', 0).update({ retained_bytes: knex.raw(size, [META_BYTES]) });
-  if (!hasInbound) return;
-  await knex('inbound_documents').where({ source: 'email' }).whereNull('mail_account_key').update({ mail_account_key: 'accounting' });
-  const count = await knex('inbound_documents').where({ source: 'email' }).count({ n: '*' }).first();
-  await knex('mail_intake_state').insert({ key: 'audit:accounting', retained_audit_bytes: Number(count.n) * AUDIT_BYTES }).onConflict('key').ignore();
-  let last = 0;
-  while (true) {
-    const rows = await knex('inbound_documents').where({ source: 'email' }).where('id', '>', last).orderBy('id').limit(100).select('id', 'file_path', 'file_sha256', 'created_at');
-    if (!rows.length) break;
-    for (const row of rows) {
-      // Unknown legacy size must block admission until a strict stat measures
-      // it; assuming today's per-message cap undercharges older overrides.
-      if (row.file_path) await knex('mail_intake_files').insert({ file_path: row.file_path, file_sha256: row.file_sha256, account_key: 'accounting', byte_size: 2 ** 42, created_at: row.created_at || knex.fn.now() }).onConflict('file_path').ignore();
-    }
-    last = rows[rows.length - 1].id;
-  }
+  await backfillMailIntake(knex);
 };
 
 exports.down = async function () {

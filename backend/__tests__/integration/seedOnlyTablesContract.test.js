@@ -18,6 +18,8 @@ const { bootCrmDb } = require('./helpers/crmDb');
 // restore replaces them with the archive's own rows like any other table.
 // Some also re-seed at runtime (roles/permissions via _permissionsBoot.js,
 // backup_paths via _backupPathsBoot.js), a second, independent reason.
+// New runtime ledgers with an explicit transactional restore rebuild are
+// likewise exempt: retaining their local rows would mix installations.
 const SEEDED_BUT_NOT_SEED_ONLY = new Set([
   'migrations',                   // migration ledger itself (runner bookkeeping)
   'app_settings',                 // db.js base schema
@@ -33,6 +35,7 @@ const SEEDED_BUT_NOT_SEED_ONLY = new Set([
   'feature_flags',                // 088
   'business_profile',             // 107
   'backup_paths',                 // 109; _backupPathsBoot.js re-seeds
+  'mail_intake_state',            // 270; importer rebuilds from restored mail, not local runtime state
 ]);
 
 let db; let cleanup;

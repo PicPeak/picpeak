@@ -62,3 +62,9 @@ attention, not optimistic release of their reserved capacity. Keep enough
 filesystem headroom for the rest of PicPeak and backups: these are application
 retained-byte budgets, not operating-system filesystem quotas. Database
 deletion makes pages reusable but does not promise immediate disk shrinkage.
+
+Portable restore replaces the local installation's mail admission state.
+Current archives retain their recorded rate windows, reservations and audit
+allowances. Older archives rebuild missing ownership and byte charges from
+the restored message/document rows in the restore transaction; unknown file
+sizes remain conservatively charged until measured by the sweeper.
