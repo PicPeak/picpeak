@@ -332,6 +332,20 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
       throw failure();
     }
   }
+  async function admitStartupRestore() {
+    // Only the shipped boot restore's existing ordinary startup owner may use
+    // this internal entry. A control HTTP request, missing scope, ready server
+    // or drained old owner cannot manufacture startup authority.
+    if (!initialized || offline || locallyReady || work.isClosed() || work.isControl() || !work.hasScope()) throw failure();
+    let row;
+    try { row = await read(); }
+    catch (_) { work.closeAdmission(); void tick(); throw failure(); }
+    if (row.state !== 'open' || row.generation !== registration.generation || row.storage_id !== location.storageId) {
+      work.closeAdmission(); locallyReady = false;
+      void tick();
+      throw failure();
+    }
+  }
   async function reserveRestore({ archivePath, operatorId, options = {} }) {
     if (!initialized || (!offline && !locallyReady) || (!offline && (!Number.isSafeInteger(operatorId) || operatorId <= 0))) throw failure();
     if (!options || typeof options !== 'object' || Array.isArray(options)
@@ -457,7 +471,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     // The runtime FD deliberately remains held until actual Node lifetime
     // ends. A hung/unknown worker must not be mistaken for a dead runtime.
   }
-  return { initialize, waitForStartupAdmission, admitRequest, admitUpload: admitRequest, start, progress, tick, stop,
+  return { initialize, waitForStartupAdmission, admitRequest, admitUpload: admitRequest, admitStartupRestore, start, progress, tick, stop,
     restoreOffline,
     markReady: () => { locallyReady = true; }, validateStart,
     instanceId: () => registration?.instance_id, isInitialized: () => initialized };
