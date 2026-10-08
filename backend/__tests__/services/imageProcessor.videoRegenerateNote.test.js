@@ -20,7 +20,8 @@ jest.mock('../../src/database/db', () => {
       return { where: (_col, id) => ({ first: async () => state.events[id] || null }) };
     }
     if (table === 'photos') {
-      return { where: (criteria) => ({ update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
+      return { where: (criteria) => ({ first: async () => criteria,
+        update: async (values) => { state.updates.push({ criteria, values }); return 1; } }) };
     }
     if (table === 'app_settings') {
       return { whereIn: () => ({ select: async () => [] }) };
@@ -77,7 +78,7 @@ describe('regenerating a video thumbnail and the processing note', () => {
     mockProcessUploadedVideo.mockResolvedValue({ success: true, thumbnailKey: 'thumbnails/thumb_clip.jpg', placeholder: false, thumbnailError: null });
     expect(await imageProcessor.ensureThumbnail(video({ processing_error: 'No poster frame: ffmpeg seek failed' }), { force: true }))
       .toBe('thumbnails/thumb_clip.jpg');
-    expect(db.__state.updates).toEqual([{ criteria: { id: 501 }, values: { thumbnail_path: 'thumbnails/thumb_clip.jpg', processing_error: null } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg', processing_error: null } }]);
   });
 
   it('writes the note when the regeneration fell back to the placeholder', async () => {
@@ -93,6 +94,6 @@ describe('regenerating a video thumbnail and the processing note', () => {
   it('leaves the note of a row that is not complete alone', async () => {
     mockProcessUploadedVideo.mockResolvedValue({ success: true, thumbnailKey: 'thumbnails/thumb_clip.jpg', placeholder: false, thumbnailError: null });
     await imageProcessor.ensureThumbnail(video({ processing_status: 'failed', processing_error: 'sharp: bad header' }), { force: true });
-    expect(db.__state.updates).toEqual([{ criteria: { id: 501 }, values: { thumbnail_path: 'thumbnails/thumb_clip.jpg' } }]);
+    expect(db.__state.updates).toEqual([{ criteria: expect.objectContaining({ id: 501, filename: 'clip.mp4' }), values: { thumbnail_path: 'thumbnails/thumb_clip.jpg' } }]);
   });
 });

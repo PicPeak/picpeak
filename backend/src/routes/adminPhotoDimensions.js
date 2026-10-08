@@ -128,7 +128,7 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
     applicationWork.defer('dimension repair', async () => {
       let sharp;
       try {
-        sharp = require('sharp');
+        sharp = require('../services/isolatedSharp');
       } catch (err) {
         logger.error('Sharp not available for dimension repair:', err.message);
         lease.stop();
@@ -624,7 +624,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
     res.json({ message: `Checking orientation for ${photos.length} photos`, count: photos.length });
 
     applicationWork.defer('photo rendition repair', async () => {
-      const sharp = require('sharp');
+      const sharp = require('../services/isolatedSharp');
       const {
         orientedDimensions, hasOrientationTransform, withLocalCopy, withProcessableImage,
         deletePreviewTiers, deleteThumbnailTiers, previewTierKeys, thumbnailTierKeys,

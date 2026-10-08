@@ -8,7 +8,8 @@
 
 const path = require('path');
 const fsp = require('fs/promises');
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { isResourceError } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
 const {
   generateThumbnail, extractCaptureDate, withProcessableImage,
@@ -20,6 +21,7 @@ const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const { resolveCredit } = require('./photoCredit');
 const logger = require('../utils/logger');
+const uploadQuota = require('./publicUploadQuota');
 
 /**
  * The trailing digit run of a filename stem, e.g. `Smith_Wedding_11234.jpg`
@@ -132,8 +134,12 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
  * @param {Object} opts - { originalFilename, mimeType, event }
  * @returns {{ success: boolean, photo?: Object, error?: string }}
  */
-async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, mimeType, event }) {
+async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, mimeType, event, uploadReservation = null }) {
   const categorySlug = existingPhoto.type === 'collage' ? 'collages' : 'individual';
+  let object;
+  let storage;
+  let promotionSettled = false;
+  let mediaReservation, rowCommitted = false;
 
   try {
     // Generate new filename + storage key
@@ -141,7 +147,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     const newFilename = generatePhotoFilename(event.event_name, categorySlug, Date.now(), ext);
     const relativePath = path.posix.join(event.slug, categorySlug, newFilename);
     const finalKey = path.posix.join('events/active', relativePath);
-    const storage = getStorage();
+    storage = getStorage();
 
     // Sharp/EXIF need a local file. The temp file from multer still satisfies
     // that — we read metadata before uploading the original to storage.
@@ -158,6 +164,11 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // EXIF replaces it. Guest and manual credits are decisions about the
     // photo and stay.
     const isVideoReplacement = !!mimeType?.startsWith('video/');
+    if (isVideoReplacement) {
+      const admission = require('./mediaWorkAdmission');
+      const value = await admission.inspect(newFileTempPath, uploadReservation?.signal);
+      mediaReservation = await admission.reserve(existingPhoto.event_id, value, { bytes: value.decodedBytes, work: value.work });
+    }
     const autoCredit = existingPhoto.uploaded_by !== 'guest'
       && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
       ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
@@ -177,17 +188,21 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         const metadata = await sharp(proc.path).metadata();
         // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
         ({ width, height } = require('./imageProcessor').orientedDimensions(metadata));
-      } catch {
+      } catch (error) {
+        if (isResourceError(error)) throw error;
         // Non-image or corrupt
       }
       try {
         thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
-      } catch {
+      } catch (error) {
+        if (isResourceError(error)) throw error;
         logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
       }
     } finally {
       await proc.cleanup();
     }
+
+    if (uploadReservation) object = await uploadQuota.prepareObject(uploadReservation, finalKey, stats.size);
 
     // Delete old assets BEFORE uploading the new key — if they share the path
     // (rare but possible if filename collision), we want the new content.
@@ -221,6 +236,11 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // and the admin path at once: adminPhotos only unlinks in its
     // new-files branch, so replaced files leaked there too.
     await storage.putFromFile(finalKey, newFileTempPath, { contentType: mimeType });
+    promotionSettled = true;
+    if (uploadReservation) {
+      const promoted = await storage.stat(finalKey);
+      if (!promoted || promoted.size !== stats.size) throw new Error('Size mismatch after replacement upload');
+    }
     await fsp.unlink(newFileTempPath).catch(() => {});
 
     // Update DB record — preserve id, event_id, category_id, type, visibility,
@@ -247,6 +267,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // A replaced video is queued for a new copy while the setting is on;
       // anything else starts over with none.
       web_path: null,
+      processing_attempt_id: null,
+      web_attempt_id: null,
+      web_attempts: 0,
       web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
@@ -291,7 +314,28 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       });
     }
 
-    await db('photos').where({ id: existingPhoto.id }).update(updates);
+    if (object) {
+      await uploadQuota.commitObject(object, 'photo', async conn => {
+        if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
+          throw new Error('Replacement target no longer exists');
+        }
+        if (mediaReservation) {
+          await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
+          await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
+        }
+        return existingPhoto.id;
+      });
+    } else await db.transaction(async conn => {
+      if (await conn('photos').where({ id: existingPhoto.id }).update(updates) !== 1) throw new Error('Replacement target no longer exists');
+      if (mediaReservation) {
+        await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
+        await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
+      }
+    });
+    rowCommitted = true;
+    if (mediaReservation && !updates.web_status) await Promise.all([
+      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
+    ]);
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
       // and so does a replacement that installed another file since.
@@ -302,6 +346,10 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     }
 
     const updatedPhoto = await db('photos').where({ id: existingPhoto.id }).first();
+    if (object && updatedPhoto && !['pending', 'processing', 'failed'].includes(updatedPhoto.processing_status)) {
+      try { await uploadQuota.processingComplete(existingPhoto.id); }
+      catch (err) { logger.warn('Replacement pending charge retained', { photoId: existingPhoto.id, error: err.message }); }
+    }
 
     logger.info('Photo replaced', {
       photoId: existingPhoto.id,
@@ -316,8 +364,17 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       previousFilename: existingPhoto.filename,
     };
   } catch (err) {
+    if (mediaReservation && !rowCommitted) await Promise.all([
+      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
+    ]).catch(cleanupError => logger.warn('Replacement media charge retained', { error: cleanupError.message }));
+    if (object) {
+      try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
+      catch (cleanupError) {
+        logger.warn('Replacement object cleanup failed; charge retained', { objectId: object.id, error: cleanupError.message });
+      }
+    }
     logger.error('replacePhoto error', { photoId: existingPhoto.id, error: err.message });
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, ...(isResourceError(err) ? { code: err.code } : {}) };
   }
 }
 

@@ -106,6 +106,8 @@ services:
       - ADMIN_URL=${ADMIN_URL:-}
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage
+      - PUBLIC_UPLOAD_LIMITS_JSON=${PUBLIC_UPLOAD_LIMITS_JSON:-}
+      - ADMIN_UPLOAD_LIMITS_JSON=${ADMIN_UPLOAD_LIMITS_JSON:-}
       # Makes the entrypoint create /backup/picpeak and /backup/database and
       # chown the ./backup mount to UID 1001 (same as production).
       - BACKUP_DIR=/backup

@@ -25,7 +25,7 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
     processPhoto = jest.fn().mockResolvedValue({ status: 'skipped' });
     featureEnabled = jest.fn().mockResolvedValue(true);
     janitorUpdate = jest.fn().mockResolvedValue(0);
-    const chain = { where: jest.fn().mockReturnThis(), update: janitorUpdate };
+    const chain = { where: jest.fn().mockReturnThis(), update: janitorUpdate, first: jest.fn().mockResolvedValue(null) };
     db = jest.fn(() => chain);
     db.client = { config: { client: 'pg' } };
     // Claims and processing are controlled at the I/O boundary; the real
@@ -33,6 +33,10 @@ describe.each(['backgroundProcessor', 'faceQueue'])('%s shutdown', name => {
     db.transaction = jest.fn().mockResolvedValue(null);
     jest.doMock('../../src/database/db', () => ({ db }));
     jest.doMock('../../src/services/photoProcessor', () => ({ processPhoto }));
+    jest.doMock('../../src/services/mediaAttemptService', () => ({
+      claimNext: () => db.transaction(), execute: (_photo, _kind, callback) => callback(),
+      recover: () => janitorUpdate(), cancel: jest.fn(), assertDrained: jest.fn(),
+    }));
     jest.doMock('../../src/services/faceProcessor', () => ({
       processPhotoFaces: processPhoto, TransientSourceError: class extends Error {},
     }));

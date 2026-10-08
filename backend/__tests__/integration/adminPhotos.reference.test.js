@@ -50,6 +50,7 @@ describe('Admin photos in reference mode', () => {
     }));
 
     jest.doMock('../../src/services/imageProcessor', () => ({
+      withProcessableImage: async localPath => ({ path: localPath, cleanup: () => {} }),
       generateThumbnail: jest.fn().mockResolvedValue('thumbnails/mock-thumb.jpg'),
       ensureThumbnail: jest.fn()
     }));
@@ -88,6 +89,10 @@ describe('Admin photos in reference mode', () => {
       table.string('event_name').notNullable();
       table.string('source_mode').notNullable();
       table.string('external_path');
+      // Persistent ingress resolves ownership and legacy catalogue usage.
+      table.integer('created_by');
+      table.string('archive_path');
+      table.bigInteger('archive_size');
     });
 
     await db.schema.createTable('photo_categories', (table) => {
@@ -157,6 +162,21 @@ describe('Admin photos in reference mode', () => {
       table.boolean('is_hidden');
     });
 
+    // Keep real admission/transactions in this integration fixture; the
+    // minimal pre-admission schema omitted these authoritative tables.
+    await db.schema.createTable('transfers', table => {
+      table.increments('id'); table.integer('created_by');
+    });
+    await db.schema.createTable('transfer_uploads', table => {
+      table.increments('id'); table.integer('transfer_id'); table.bigInteger('size_bytes');
+    });
+    await db.schema.createTable('app_settings', table => {
+      table.string('setting_key'); table.string('setting_value');
+    });
+    await require('../../migrations/core/266_public_upload_quotas').up(db);
+    await require('../../migrations/core/267_admin_upload_admission').up(db);
+    await require('../../migrations/core/268_image_work_budget').up(db);
+
     await db('events').insert({
       id: 1,
       slug: 'test-event',
@@ -194,7 +214,7 @@ describe('Admin photos in reference mode', () => {
     const uploadResponse = await request(app)
       .post(`/api/admin/events/1/upload`)
       .field('category_id', String(categoryId))
-      .attach('photos', Buffer.from('fake image data'), 'photo.jpg');
+      .attach('photos', await require('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'white' } }).jpeg().toBuffer(), 'photo.jpg');
 
     // 202 Accepted since the upload route went async (851744c3): the files are
     // stored and a pending row is inserted, thumbnails/EXIF follow in the

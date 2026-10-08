@@ -558,14 +558,15 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.mkdir(path.join(storagePath, 'videos'), { recursive: true });
     const seed = async (name, extra) => {
-      await fs.promises.writeFile(path.join(dir, name), BYTES);
+      const videoBytes = require('../fixtures/admissionVideo').admissionVideo();
+      await fs.promises.writeFile(path.join(dir, name), videoBytes);
       const [r] = await db('photos').insert({
         event_id: eventId,
         filename: name,
         original_filename: name,
         path: `events/active/${slug}/individual/${name}`,
         type: 'individual',
-        size_bytes: BYTES.length,
+        size_bytes: videoBytes.length,
         media_type: 'video',
         mime_type: 'video/quicktime',
         processing_status: 'complete',

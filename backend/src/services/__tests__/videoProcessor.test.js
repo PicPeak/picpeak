@@ -1,5 +1,19 @@
 jest.mock('../../utils/logger');
 jest.mock('fluent-ffmpeg');
+// The compatibility fixtures remain independent from real native validation;
+// stand in at the new mandatory supervisor boundary, not child_process.
+jest.mock('../mediaProcessService', () => ({
+  probeVideo: path => new Promise((resolve, reject) => require('fluent-ffmpeg').ffprobe(path, (error, value) => error ? reject(error) : resolve(value))),
+  probeSnapshot: jest.fn(async () => ({})),
+  inputOptions: () => [],
+  withSnapshot: (path, _kind, callback) => callback(path, { format: 'mov,mp4', policy: { nativeBytes: 768 * 1024 * 1024, thumbnailMs: 60000 } }),
+  run: (_command, args) => new Promise((resolve, reject) => {
+    const command = require('fluent-ffmpeg')(args[args.indexOf('-i') + 1]);
+    const output = args[args.length - 1];
+    command.on('end', () => resolve({ stdout: Buffer.alloc(0) })).on('error', reject)
+      .screenshots({ filename: require('path').basename(output), folder: require('path').dirname(output) });
+  }),
+}));
 jest.mock('../storage', () => ({
   getStorage: jest.fn()
 }));

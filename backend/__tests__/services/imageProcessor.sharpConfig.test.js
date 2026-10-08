@@ -9,7 +9,7 @@ const mockSharp = jest.fn();
 mockSharp.cache = jest.fn();
 mockSharp.concurrency = jest.fn();
 
-jest.mock('sharp', () => mockSharp);
+jest.mock('../../src/services/isolatedSharp', () => mockSharp);
 
 jest.mock('../../src/utils/logger', () => ({
   error: jest.fn(),

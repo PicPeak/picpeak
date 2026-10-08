@@ -30,6 +30,8 @@ logs/*
 
 # Build outputs
 build/
+backend/bin/media-process-guard
+backend/bin/local-process-lease.node
 dist/
 *.log
 
@@ -159,4 +161,3 @@ ml/*.h5
 /screenshot-*.jpg
 /*-screenshot.png
 /*-screenshot.jpg
-

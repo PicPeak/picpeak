@@ -110,9 +110,27 @@ jest.mock('../../../services/uploadSettings', () => ({
   DEFAULT_MAX_FILE_SIZE_MB: 50,
 }));
 
+// This is a handler-only unit test with sequenced DB builders and fake
+// Multer/Sharp/storage, not an ingress test. Real parser, auth and persistent
+// admission are exercised by integration/adminUploadAdmission.test.js.
+jest.mock('../../../middleware/publicUploadStream', () => ({
+  withPublicUpload: jest.fn(async (req, res, scope, makeUploader, handler) => {
+    req.publicUploadReservation = { id: 'unit-admission', event_id: scope.eventId };
+    const upload = makeUploader({ storage: {}, streamHandler: () => {}, rejectBody: () => {}, maxFiles: 1 });
+    await new Promise((resolve, reject) => upload(req, res, err => err ? reject(err) : resolve()));
+    await handler(req.publicUploadReservation, res);
+  }),
+}));
+jest.mock('../../../services/publicUploadQuota', () => ({
+  prepareObject: jest.fn(async (_session, key, size) => ({ id: 'unit-object', object_key: key, bytes: size })),
+  commitObject: jest.fn(async (_object, _type, writeRow) => writeRow(require('../../../database/db').db)),
+  processingComplete: jest.fn().mockResolvedValue(undefined),
+  failedObject: jest.fn().mockResolvedValue(undefined),
+}));
+
 // Stub sharp so the happy-path test doesn't actually decode an image
-// (the temp file is a 0-byte placeholder — see the beforeAll below).
-jest.mock('sharp', () => jest.fn(() => ({
+// (the temp file is a one-byte placeholder — see the beforeEach below).
+jest.mock('../../../services/isolatedSharp', () => jest.fn(() => ({
   metadata: jest.fn().mockResolvedValue({ width: 1920, height: 1080 }),
 })));
 
@@ -125,6 +143,7 @@ jest.mock('../../../services/imageProcessor', () => ({
 jest.mock('../../../services/storage', () => ({
   getStorage: jest.fn(() => ({
     putFromFile: jest.fn().mockResolvedValue(undefined),
+    stat: jest.fn().mockResolvedValue({ size: 1 }),
   })),
 }));
 
@@ -212,7 +231,7 @@ describe('v1 POST /events/:id/photos — happy path (#525)', () => {
     // fs.unlink(tempPath) after a successful upload, so a beforeAll
     // would leave the second test without an inode for statSync to
     // read (manifests as 500 Internal Server Error).
-    fsSync.writeFileSync(FAKE_TMP, '');
+    fsSync.writeFileSync(FAKE_TMP, 'x');
   });
 
   afterAll(() => {
@@ -248,7 +267,7 @@ describe('v1 POST /events/:id/photos — happy path (#525)', () => {
     expect(response.body).toMatchObject({
       id: 101,
       category_id: 7,
-      size_bytes: 0,
+      size_bytes: 1,
       thumbnail_path: 'thumbnails/fake_thumb.jpg',
     });
     expect(response.body.filename).toMatch(/^\d+_[a-f0-9]+\.jpg$/);

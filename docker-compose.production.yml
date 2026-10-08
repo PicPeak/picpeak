@@ -110,6 +110,8 @@ services:
       - DB_HOST=${DB_HOST:-postgres}
       - REDIS_HOST=redis
       - STORAGE_PATH=/app/storage
+      - PUBLIC_UPLOAD_LIMITS_JSON=${PUBLIC_UPLOAD_LIMITS_JSON:-}
+      - ADMIN_UPLOAD_LIMITS_JSON=${ADMIN_UPLOAD_LIMITS_JSON:-}
       - PHOTOS_DIR=/app/storage/events
       # Built-in backups land under /backup (migrations 029 + 030 seed
       # /backup/picpeak and /backup/database). The entrypoint creates the

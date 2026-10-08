@@ -27,11 +27,13 @@ const path = require('path');
 const fsp = require('fs').promises;
 const os = require('os');
 const crypto = require('crypto');
-const ffmpeg = require('fluent-ffmpeg');
+const mediaProcesses = require('./mediaProcessService');
+const { isResourceError } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
 const { IS_VIDEO_SQL } = require('../utils/mediaTypeSql');
+const mediaAttempts = require('./mediaAttemptService');
 
 const WEB_KEY_BASENAME_MAX = 100;
 
@@ -47,8 +49,8 @@ function capUtf8Bytes(str, max) {
 const SETTING_KEY = 'general_video_web_rendition';
 const CACHE_TTL_MS = 60_000;
 
-const TIMEOUT_MS = Math.max(60_000, parseInt(process.env.VIDEO_RENDITION_TIMEOUT_MS || '3600000', 10) || 3600000);
-const MAX_EDGE = Math.max(240, parseInt(process.env.VIDEO_RENDITION_MAX_EDGE || '1920', 10) || 1920);
+const TIMEOUT_MS = require('./mediaProcessPolicy').configuration().renditionMs;
+const MAX_EDGE = Math.min(4096, Math.max(240, parseInt(process.env.VIDEO_RENDITION_MAX_EDGE || '1920', 10) || 1920));
 const CRF = Math.min(51, Math.max(0, parseInt(process.env.VIDEO_RENDITION_CRF || '23', 10) || 23));
 
 let cachedEnabled = false;
@@ -84,7 +86,7 @@ function clearCache() {
  */
 async function backfillPending({ eventId } = {}) {
   const { formatBoolean } = require('../utils/dbCompat');
-  return db('photos')
+  const rows = await db('photos')
     .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
     // An archived gallery's originals are in its zip, not in storage: queuing
     // its rows would only fail. The restore route backfills the event again.
@@ -96,7 +98,25 @@ async function backfillPending({ eventId } = {}) {
     .where(function () {
       this.where('processing_status', 'complete').orWhereNull('processing_status');
     })
-    .update({ web_status: 'pending', web_error: null, web_started_at: null });
+    .select('*');
+  let queued = 0;
+  for (const photo of rows) queued += await enqueueWeb(photo);
+  return queued;
+}
+
+/** Every optional/legacy producer shares upload's signature and work admission. */
+async function enqueueWeb(photo) {
+  if (['pending', 'processing'].includes(photo.web_status) || Number(photo.web_attempts || 0) >= mediaAttempts.MAX_ATTEMPTS) return 0;
+  try {
+    await require('./mediaWorkAdmission').ensureQueued(photo);
+    return await db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename, web_status: photo.web_status ?? null })
+      .update({ web_status: 'pending', web_error: null, web_started_at: null });
+  } catch (error) {
+    await db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename, web_status: photo.web_status ?? null })
+      .update({ web_status: 'failed', web_error: String(error.message).slice(0, 1000) });
+    logger.warn('Video work admission refused', { photoId: photo.id, code: error.code, error: error.message });
+    return 0;
+  }
 }
 
 /**
@@ -105,7 +125,8 @@ async function backfillPending({ eventId } = {}) {
  * its own object and can never touch the one the current attempt wrote.
  */
 function webKeyFor(photo, claimedAt) {
-  const attempt = claimedAt ? `${new Date(claimedAt).getTime().toString(36)}_` : '';
+  const token = /^[a-f0-9-]{36}$/i.test(claimedAt || '') ? claimedAt : claimedAt ? new Date(claimedAt).getTime().toString(36) : '';
+  const attempt = token ? `${token}_` : '';
   // The basename is for a human reading the bucket; the id and claim make
   // the key unique. Capped in UTF-8 bytes (a filesystem counts bytes, not
   // characters) so a long NAS filename plus prefix, id, claim and
@@ -159,27 +180,23 @@ async function hasFaststart(localPath) {
   }
 }
 
-function probe(localPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(localPath, (err, metadata) => {
-      if (err) return reject(err);
-      const video = (metadata.streams || []).find((s) => s.codec_type === 'video');
-      const audio = (metadata.streams || []).find((s) => s.codec_type === 'audio');
-      resolve({
-        formatName: metadata.format?.format_name || '',
-        majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
-        videoCodec: video?.codec_name || null,
-        audioCodec: audio?.codec_name || null,
-        pixFmt: video?.pix_fmt || null,
-        width: video?.width || null,
-        height: video?.height || null,
-        // HDR is told by the transfer function: PQ (smpte2084) or HLG
-        // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
-        colorTransfer: video?.color_transfer || null,
-        colorPrimaries: video?.color_primaries || null,
-      });
-    });
-  });
+async function probe(localPath) {
+  const metadata = await mediaProcesses.probeVideo(localPath);
+  const video = (metadata.streams || []).find((s) => s.codec_type === 'video');
+  const audio = (metadata.streams || []).find((s) => s.codec_type === 'audio');
+  return {
+    formatName: metadata.format?.format_name || '',
+    majorBrand: String(metadata.format?.tags?.major_brand || '').trim().toLowerCase(),
+    videoCodec: video?.codec_name || null,
+    audioCodec: audio?.codec_name || null,
+    pixFmt: video?.pix_fmt || null,
+    width: video?.width || null,
+    height: video?.height || null,
+    // HDR is told by the transfer function: PQ (smpte2084) or HLG
+    // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
+    colorTransfer: video?.color_transfer || null,
+    colorPrimaries: video?.color_primaries || null,
+  };
 }
 
 /**
@@ -218,15 +235,10 @@ let toneMapSupport = null;
 /** Whether this ffmpeg has the filters HDR_TO_SDR_FILTER needs. Asked once. */
 function canToneMap() {
   if (!toneMapSupport) {
-    toneMapSupport = new Promise((resolve) => {
-      try {
-        ffmpeg.getAvailableFilters((err, filters) => {
-          resolve(!err && !!filters && !!filters.zscale && !!filters.tonemap);
-        });
-      } catch {
-        resolve(false);
-      }
-    });
+    toneMapSupport = mediaProcesses.run('ffmpeg', ['-hide_banner', '-filters'], {
+      memoryBytes: 768 * 1024 * 1024, wallMs: 10000, cpuSeconds: 5,
+    }).then(({ stdout }) => /\bzscale\b/.test(stdout.toString()) && /\btonemap\b/.test(stdout.toString()))
+      .catch(error => { if (isResourceError(error)) { toneMapSupport = null; throw error; } return false; });
   }
   return toneMapSupport;
 }
@@ -265,17 +277,14 @@ function transcodeOptions({ toneMap = false } = {}) {
 }
 
 function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS, toneMap = false } = {}) {
-  return new Promise((resolve, reject) => {
-    let timer = null;
-    const command = ffmpeg(localPath).outputOptions(transcodeOptions({ toneMap }));
-    command
-      .on('end', () => { clearTimeout(timer); resolve(); })
-      .on('error', (err) => { clearTimeout(timer); reject(err); });
-    timer = setTimeout(() => {
-      try { command.kill('SIGKILL'); } catch { /* already gone */ }
-      reject(new Error(`transcode timed out after ${Math.round(timeoutMs / 1000)}s`));
-    }, timeoutMs);
-    command.save(outPath);
+  return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
+    await mediaProcesses.probeSnapshot(snapshot, details);
+    await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+      ...mediaProcesses.inputOptions(details.format), '-i', snapshot,
+      ...transcodeOptions({ toneMap }), '-threads', '1', '-filter_threads', '1', '-filter_complex_threads', '1', outPath], {
+      memoryBytes: details.policy.nativeBytes, wallMs: Math.min(timeoutMs, details.policy.renditionMs),
+      cpuSeconds: Math.min(7200, Math.ceil(details.policy.renditionMs / 1000)), fileBytes: details.policy.outputBytes,
+    });
   });
 }
 
@@ -283,22 +292,24 @@ function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS, toneMap = false
  * Decide for one video and, if needed, write its copy. Throws on failure so
  * the queue records it; returns the status it wrote otherwise.
  */
-async function renderWebCopy(photoId, { claimedAt } = {}) {
+async function renderWebCopy(photoId) {
+  if (!mediaAttempts.current()) {
+    const claimed = await mediaAttempts.claimNext('web', photoId);
+    if (!claimed) throw require('./mediaProcessPolicy').refusal('Video has no current pending execution attempt', 'MEDIA_ATTEMPT_REQUIRED');
+    return mediaAttempts.execute(claimed, 'web', () => renderWebCopy(photoId));
+  }
+  const attempt = mediaAttempts.current();
+  await attempt.assertCurrent();
   const photo = await db('photos').where({ id: photoId }).first();
   if (!photo) throw new Error(`Photo ${photoId} not found`);
-  // The worker's claim, as the queue wrote it: status plus claim time. Every
-  // write below matches on it, so a worker that lost the row — replaced,
-  // deleted, or re-queued by the janitor and claimed again by another
-  // worker — writes nothing. Without the time, a second claim on the same
-  // row would look like the first.
-  const claim = { id: photoId, web_status: 'processing', ...(claimedAt ? { web_started_at: claimedAt } : {}) };
+  // UUID + source identity fence every publication, including skipped rows.
   const event = await db('events').where({ id: photo.event_id }).first();
   if (!event) throw new Error(`Event ${photo.event_id} not found for photo ${photoId}`);
 
   const isVideo = photo.media_type === 'video'
     || (typeof photo.mime_type === 'string' && photo.mime_type.startsWith('video/'));
   if (!isVideo) {
-    await db('photos').where({ id: photoId }).update({ web_status: 'skipped', web_started_at: null, web_error: null });
+    await mediaAttempts.guard(attempt, db, true).update({ web_status: 'skipped', web_started_at: null, web_error: null });
     return 'skipped';
   }
 
@@ -314,15 +325,16 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
     if (playsInBrowser(probed, await hasFaststart(localPath))) {
       // A stale copy from an earlier source (a replacement, say) is not
       // worth keeping: the original is what plays now.
-      if (photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
+      await attempt.assertCurrent();
       // Same fence as the publish below: a row that moved on keeps its state.
-      await db('photos').where(claim).update({
+      const published = await mediaAttempts.guard(attempt, db, true).update({
         web_path: null, web_status: 'skipped', web_started_at: null, web_error: null,
       });
+      if (published && photo.web_path) await getStorage().delete(photo.web_path).catch(() => {});
       return 'skipped';
     }
 
-    const webKey = webKeyFor(photo, claimedAt);
+    const webKey = webKeyFor(photo, attempt.id);
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-webcopy-'));
     const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.mp4`);
     // An HDR source is tone-mapped to SDR when this ffmpeg can; otherwise the
@@ -337,7 +349,10 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
       await transcode(localPath, tmpPath, { toneMap });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
+      if (stat.size > require('./mediaProcessPolicy').configuration().outputBytes) throw require('./mediaProcessPolicy').refusal('Video rendition output exceeds the processing budget');
+      await attempt.assertCurrent();
       await getStorage().putFromFile(webKey, tmpPath, { contentType: 'video/mp4' });
+      await attempt.assertCurrent();
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -348,7 +363,7 @@ async function renderWebCopy(photoId, { claimedAt } = {}) {
     // source over any of those would serve stale content and lose the new
     // file's queue entry. On a lost claim the object is dropped again; the
     // key carries the claim, so it is this attempt's object and no other's.
-    const published = await db('photos').where(claim).update({
+    const published = await mediaAttempts.guard(attempt, db, true).update({
       web_path: webKey, web_status: 'complete', web_started_at: null, web_error: null,
     });
     if (!published) {
@@ -373,6 +388,7 @@ module.exports = {
   isEnabled,
   clearCache,
   backfillPending,
+  enqueueWeb,
   webKeyFor,
   hasFaststart,
   probe,

@@ -1,7 +1,7 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { resolveCredit } = require('./photoCredit');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
@@ -174,6 +174,7 @@ async function processNewPhoto(filePath) {
         dimensions = { width: dims.width, height: dims.height };
       }
     } catch (err) {
+      if (require('./imageResourcePolicy').isResourceError(err)) throw err;
       logger.debug(`Could not read image dimensions for ${filename}: ${err.message}`);
     }
   }
@@ -219,10 +220,13 @@ async function processNewPhoto(filePath) {
       size_bytes: stats.size,
       mime_type: mimeType,
       ...(dimensions && { width: dimensions.width, height: dimensions.height }),
-      ...(webCopyEnabled ? { web_status: 'pending' } : {}),
       ...credit
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
+    if (webCopyEnabled) {
+      const photo = await db('photos').where({ id: photoId }).first();
+      if (photo) await require('./videoRenditionService').enqueueWeb(photo);
+    }
 
     logger.info(`Added new photo: ${relativePath}`);
     downloadZipService.invalidate(event.id);

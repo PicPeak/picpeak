@@ -10,6 +10,12 @@
  */
 
 const path = require('path');
+jest.mock('../../src/services/mediaAttemptService', () => ({
+  current: () => ({ id: '11111111-1111-4111-8111-111111111111', assertCurrent: async () => {} }),
+  outputName: name => name,
+  guard: (_attempt, db) => db('photos').where({ id: db.__photoId || 1 }),
+}));
+jest.mock('../../src/services/publicUploadQuota', () => ({ processingComplete: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('../../src/database/db', () => {
   const recorded = { whereCalls: [], updateCalls: [] };
@@ -137,7 +143,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 // Stub sharp so we don't actually read any image off disk.
-jest.mock('sharp', () => {
+jest.mock('../../src/services/isolatedSharp', () => {
   const mock = jest.fn(() => ({
     metadata: jest.fn(async () => ({ width: 1920, height: 1080 })),
   }));
@@ -176,6 +182,7 @@ describe('photoProcessor.processPhoto', () => {
 
     const { processPhoto } = require('../../src/services/photoProcessor');
     await processPhoto(101);
+    expect(require('../../src/services/publicUploadQuota').processingComplete).toHaveBeenCalledWith(101);
 
     const finalUpdate = dbModule.__recorded().updateCalls.pop();
     expect(finalUpdate.data.processing_status).toBe('complete');
@@ -374,11 +381,24 @@ describe('photoProcessor.processPhoto', () => {
     expect(dbModule.__recorded().updateCalls.pop().data).not.toHaveProperty('web_status');
   });
 
+  it('keeps completed media complete when its quota work-hold release fails', async () => {
+    dbModule.__setPhoto({ id: 102, event_id: 5, filename: 'ordinary.jpg', original_filename: 'ordinary.jpg',
+      mime_type: 'image/jpeg', media_type: 'image', size_bytes: 12, captured_at: '2026-04-25T12:00:00Z' });
+    dbModule.__setEvent({ id: 5, slug: 'owned', event_name: 'Owned' });
+    imageProcessor.generateThumbnail.mockResolvedValueOnce('thumbnails/ordinary.jpg');
+    require('../../src/services/publicUploadQuota').processingComplete.mockRejectedValueOnce(new Error('owned accounting failure'));
+    const result = await require('../../src/services/photoProcessor').processPhoto(102);
+    expect(result.processing_status).toBe('complete');
+    expect(require('../../src/utils/logger').warn).toHaveBeenCalledWith('Public upload processing settled but quota hold remains',
+      expect.objectContaining({ photoId: 102 }));
+  });
+
   it('throws when the photo row no longer exists', async () => {
     dbModule.__setPhoto(null);
     dbModule.__setEvent({ id: 1 });
     const { processPhoto } = require('../../src/services/photoProcessor');
     await expect(processPhoto(999)).rejects.toThrow(/Photo 999 not found/);
+    expect(require('../../src/services/publicUploadQuota').processingComplete).not.toHaveBeenCalled();
   });
 });
 

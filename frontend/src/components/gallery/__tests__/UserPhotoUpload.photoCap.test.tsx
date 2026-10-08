@@ -52,6 +52,20 @@ describe('UserPhotoUpload photo limit', () => {
   beforeEach(() => { postState.calls = 0; });
   afterEach(() => vi.clearAllMocks());
 
+  it('localizes a capacity refusal, keeps unsent files and stops subsequent requests', async () => {
+    postState.impl = () => Promise.reject(Object.assign(new Error('capacity'), {
+      response: { status: 429, data: { error: 'Server English message', code: 'UPLOAD_LIFETIME_LIMIT' } },
+    }));
+    const user = userEvent.setup();
+    const completed = vi.fn(); const closed = vi.fn();
+    const { container } = render(<UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={completed} onClose={closed} />);
+    await pickTwoAndUpload(container, user);
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('upload.capacity.lifetime'));
+    expect(postState.calls).toBe(1); expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(completed).not.toHaveBeenCalled(); expect(closed).not.toHaveBeenCalled();
+    expect(screen.getByText('first.png')).toBeInTheDocument(); expect(screen.getByText('second.png')).toBeInTheDocument();
+  });
+
   it('shows the photo-limit message once and stops after a 409', async () => {
     postState.impl = () => Promise.reject(Object.assign(new Error('Request failed with status code 409'), {
       response: { status: 409, data: { error: 'limit', code: 'PHOTO_CAP_REACHED', limit: 3 } },
