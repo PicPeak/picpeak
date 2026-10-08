@@ -6,7 +6,7 @@ import { Button } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
-import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -211,7 +211,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           }
           failedCount++;
           const capacityKey = publicUploadErrorKey(firstError?.code);
-          const reason = capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed');
+          const reason = imageLimitMessage(t, firstError) ?? (capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed'));
           toast.error(`${file.name}: ${reason}`);
           continue;
         }

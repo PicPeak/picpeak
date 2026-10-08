@@ -12,7 +12,7 @@ import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, nor
 import { useUploadProgress } from '../../hooks/useUploadProgress';
 import { photosService } from '../../services/photos.service';
 import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
-import { adminUploadErrorKey } from '../../utils/publicUploadErrors';
+import { adminUploadErrorKey, imageLimitMessage } from '../../utils/publicUploadErrors';
 import { CAPACITY_RETRY_DELAYS_MS, isTransientUploadRefusal, retryWhileBusy } from '../../utils/uploadCapacityRetry';
 
 interface PhotoUploadProps {
@@ -446,7 +446,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
             for (const r of rejected) {
               collected.push({
                 filename: r?.filename || t('upload.failures.unknownFile', 'Unknown file'),
-                reason: r?.error || t('upload.failures.unknownReason', 'Unknown error'),
+                reason: imageLimitMessage(t, r) ?? (r?.error || t('upload.failures.unknownReason', 'Unknown error')),
                 kind: 'rejected',
               });
             }

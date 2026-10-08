@@ -6,7 +6,6 @@ export function publicUploadErrorKey(code: unknown): string | null {
     case 'IMAGE_TIMEOUT':
     case 'IMAGE_CANCELLED': return 'upload.capacity.timeout';
     case 'IMAGE_WORKER_UNAVAILABLE':
-    case 'IMAGE_ADMISSION_UNAVAILABLE':
     case 'IMAGE_WORKER_FAILED': return 'upload.capacity.processing';
     case 'UPLOAD_REQUEST_TOO_LARGE': return 'upload.capacity.batch';
     case 'UPLOAD_LIFETIME_LIMIT': return 'upload.capacity.lifetime';
@@ -22,6 +21,29 @@ export function publicUploadErrorKey(code: unknown): string | null {
     case 'UPLOAD_TARGET_GONE': return 'upload.capacity.gone';
     default: return null;
   }
+}
+
+const IMAGE_LIMIT_KEYS: Record<string, string> = {
+  pixels: 'upload.capacity.imagePixels',
+  dimension: 'upload.capacity.imageDimension',
+  frames: 'upload.capacity.imageFrames',
+  input: 'upload.capacity.imageFileSize',
+  decoded: 'upload.capacity.imageMemory',
+  memory: 'upload.capacity.imageMemory',
+};
+
+/**
+ * A file the server refused for one of its image limits: the message that
+ * names the limit (the server sends which one and its value). Null for
+ * anything else.
+ */
+export function imageLimitMessage(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  error: { code?: unknown; imageLimit?: unknown; imageMax?: unknown } | null | undefined,
+): string | null {
+  if (error?.code !== 'IMAGE_RESOURCE_LIMIT') return null;
+  const key = typeof error.imageLimit === 'string' ? IMAGE_LIMIT_KEYS[error.imageLimit] : undefined;
+  return key ? t(key, { max: error.imageMax }) : t('upload.capacity.decoded');
 }
 
 /**
