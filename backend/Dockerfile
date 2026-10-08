@@ -35,7 +35,6 @@ WORKDIR /app
 # the same log. The compose files still override this, so nothing changes for
 # compose users. See #1038.
 ENV NODE_ENV=production
-ENV LISTEN_HOST=0.0.0.0
 
 # Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
 # stage's declaration never reached this stage. Consuming it in the RUN below

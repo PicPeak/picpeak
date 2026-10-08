@@ -20,8 +20,8 @@
       picpeak/aio:stable
 
 Then open **http://localhost:3000/admin** and complete the setup wizard. The
-explicit cookie mode is for this loopback-only HTTP quick start; omit it behind
-TLS, enable HSTS, and trust only your actual proxy boundary. Read the one-time
+cookie mode (also the default) suits this loopback-only HTTP quick start; behind
+TLS set `COOKIE_SECURE=true`, enable HSTS, and trust only your actual proxy boundary. Read the one-time
 setup token with:
 
     docker exec picpeak cat /data/db/SETUP_TOKEN

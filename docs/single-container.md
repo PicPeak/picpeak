@@ -196,9 +196,10 @@ Settings → General (or re-run the setup wizard) so generated links match —
 
 Keep the published port on `127.0.0.1` when the TLS proxy runs on the host. For
 a containerized proxy, attach both containers to a private network instead of
-publishing the origin publicly. Production defaults to Secure cookies; set
-`ENABLE_HSTS=true` and set `TRUST_PROXY` to the exact proxy subnet/list when
-PicPeak must consume `X-Forwarded-*` headers. Do not use `TRUST_PROXY=true`
+publishing the origin publicly. Behind TLS set `COOKIE_SECURE=true` and
+`ENABLE_HSTS=true`, and set `TRUST_PROXY` to the exact hop count or proxy
+subnet/list (unset, PicPeak trusts `X-Forwarded-*` headers from every
+private-range address for compatibility and logs a warning at startup). Do not use `TRUST_PROXY=true`
 unless every route to the container crosses a proxy you control.
 
 ## NAS notes
@@ -207,8 +208,8 @@ unless every route to the container crosses a proxy you control.
 this from the registry UI: pull `ghcr.io/picpeak/picpeak/aio:main`, map a
 host port to container port `3000`, and add one volume mapping to `/data`.
 The registry UI's host-port mapping deliberately exposes plain HTTP. Prefer
-the NAS TLS proxy. If you intentionally keep LAN-only HTTP, set
-`COOKIE_SECURE=false`; this is an explicit insecure compatibility override.
+the NAS TLS proxy. LAN-only HTTP works without any cookie setting: the
+default `COOKIE_SECURE=auto` omits `Secure` on plain-HTTP requests.
 The secret itself is generated on first start.
 
 Point the volume at a folder on your data pool, not the system partition, and

@@ -13,10 +13,11 @@
  * **Correct path:** trust ONLY `req.ip`, and rely on
  * `app.set('trust proxy', ...)` in `server.js` to populate it
  * correctly. Express's trust-proxy machinery is the only thing that
- * knows which upstream hops are trustworthy. `server.js` trusts no proxy by
- * default. The installer and Compose files set a topology-specific boundary
+ * knows which upstream hops are trustworthy. With `TRUST_PROXY` unset,
+ * `server.js` keeps the legacy `'loopback, linklocal, uniquelocal'` trust.
+ * The installer and Compose files set a topology-specific boundary
  * (`loopback` for native installs or a hop count for Compose); other operators
- * must provide the exact proxy boundary through `TRUST_PROXY`.
+ * should provide the exact proxy boundary through `TRUST_PROXY`.
  *
  * **Returns:** the resolved IPv4/IPv6 string, or `null` when Express
  * couldn't determine one (very rare — happens with abusive raw
