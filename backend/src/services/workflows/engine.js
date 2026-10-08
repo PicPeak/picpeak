@@ -129,7 +129,7 @@ async function advanceRun(runId) {
   let actor;
   try {
     const workflow = await db('workflows').where('id', run.workflow_id).first();
-    actor = await workflowCrmActor(run, workflow, context.crmInitiatedByAdminId);
+    actor = await workflowCrmActor(run, workflow, context.crmInitiatedByAdminId, { nodeByKey, edges });
   } catch (error) {
     // Pure graph primitives still work on old ownerless definitions. A data
     // handler runs without CRM authority and fails closed at its first CRM

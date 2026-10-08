@@ -221,6 +221,9 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
           ? (b.trigger_config ? JSON.stringify(b.trigger_config) : null)
           : wf.trigger_config,
         version: newVersion,
+        // An editable graph executes as its live editor, not a builtin system
+        // capability or a previous privileged creator. Pinned runs rehydrate it.
+        created_by: req.admin.id,
         updated_at: trx.fn.now(),
       };
       // An admin edit claims ownership of a built-in so the boot seeder stops
