@@ -3,8 +3,9 @@
 const net = require('net');
 const tls = require('tls');
 const { X509Certificate } = require('crypto');
-const PG_TLS_GUIDANCE = 'PostgreSQL TLS verifies the certificate and DB_HOST. For private/self-signed certificates, configure DB_SSL_CA with the CA PEM or a readable CA file; do not disable verification.';
-let announcedVerifiedTls = false;
+const PG_TLS_GUIDANCE = 'PostgreSQL TLS verifies the certificate and DB_HOST. For private/self-signed certificates, configure DB_SSL_CA with the CA PEM or a readable CA file; if the certificate carries another name than DB_HOST, set DB_SSL_SERVERNAME; do not disable verification.';
+const PG_TLS_UNVERIFIED_WARNING = 'WARNING: PostgreSQL TLS certificate verification is explicitly disabled. Configure DB_SSL_CA instead.';
+let announcedTlsNotice = false;
 
 // Node 22.23's DNS ASCII normalisation misclassifies IPv6 literals. Use
 // OpenSSL's exact iPAddress SAN check, never a DNS/CN fallback for an IP.
@@ -48,24 +49,37 @@ function checkPgServerIdentity(host, certificate) {
  * Private/self-signed deployments must supply DB_SSL_CA (PEM text or a file).
  * DB_SSL_REJECT_UNAUTHORIZED=false is an explicit, insecure compatibility
  * override, not the default. Malformed controls must not disable protection.
+ * DB_SSL_SERVERNAME names the certificate when DB_HOST is an IP or an alias
+ * the certificate does not carry; the chain is verified either way.
  * Accept an environment argument so libpq children use this same policy.
  */
-function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
-  const enabled = (env.DB_SSL || '').trim().toLowerCase();
-  if (enabled === '' || enabled === 'false') return false;
-  if (enabled !== 'true') throw new Error('DB_SSL must be true or false');
+// Accept the usual boolean spellings rather than refusing to boot over
+// DB_SSL=1; anything else is still an error, never a silent "off".
+function pgBooleanFromEnv(env, name) {
+  const value = (env[name] || '').trim().toLowerCase();
+  if (value === '') return undefined;
+  if (['true', '1', 'yes', 'on'].includes(value)) return true;
+  if (['false', '0', 'no', 'off'].includes(value)) return false;
+  throw new Error(`${name} must be true or false`);
+}
 
-  const explicit = (env.DB_SSL_REJECT_UNAUTHORIZED || '').trim().toLowerCase();
-  if (explicit !== '' && explicit !== 'true' && explicit !== 'false') {
-    throw new Error('DB_SSL_REJECT_UNAUTHORIZED must be true or false');
-  }
-  const ssl = { rejectUnauthorized: explicit !== 'false' };
+function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
+  if (!pgBooleanFromEnv(env, 'DB_SSL')) return false;
+
+  const ssl = { rejectUnauthorized: pgBooleanFromEnv(env, 'DB_SSL_REJECT_UNAUTHORIZED') !== false };
   // pg supplies TLS servername only for DNS hosts. Without host/servername,
   // Node verifies the chain but skips identity checks for IP destinations.
   // `host` enables IP SAN checks without sending an invalid IP-valued SNI.
   if (host && net.isIP(host)) {
     ssl.host = host;
     if (ssl.rejectUnauthorized) ssl.checkServerIdentity = checkPgServerIdentity;
+  }
+  const servername = (env.DB_SSL_SERVERNAME || '').trim();
+  if (servername && ssl.rejectUnauthorized) {
+    // pg overwrites `servername` with a DNS DB_HOST, so the identity hook, not
+    // the option, is what binds the certificate to the configured name.
+    if (!net.isIP(servername)) ssl.servername = servername;
+    ssl.checkServerIdentity = (_host, certificate) => checkPgServerIdentity(servername, certificate);
   }
   const ca = (env.DB_SSL_CA || '').trim();
   if (ca) {
@@ -75,11 +89,20 @@ function pgSslFromEnv(env = process.env, host = env.DB_HOST) {
   return ssl;
 }
 
+// What an operator needs to read at boot. A verified connection with its own
+// CA is the healthy end state and stays quiet.
+function pgTlsNotice(ssl) {
+  if (!ssl) return null;
+  if (!ssl.rejectUnauthorized) return PG_TLS_UNVERIFIED_WARNING;
+  return ssl.ca ? null : PG_TLS_GUIDANCE;
+}
+
 function pgConnectionFromEnv() {
   const ssl = pgSslFromEnv();
-  if (ssl && ssl.rejectUnauthorized && !announcedVerifiedTls && process.env.NODE_ENV !== 'test') {
-    announcedVerifiedTls = true;
-    process.stderr.write(`[db] ${PG_TLS_GUIDANCE}\n`);
+  const notice = pgTlsNotice(ssl);
+  if (notice && !announcedTlsNotice && process.env.NODE_ENV !== 'test') {
+    announcedTlsNotice = true;
+    process.stderr.write(`[db] ${notice}\n`);
   }
   return {
     host: process.env.DB_HOST || 'postgres',
@@ -91,4 +114,4 @@ function pgConnectionFromEnv() {
   };
 }
 
-module.exports = { pgConnectionFromEnv, pgSslFromEnv, checkPgServerIdentity, PG_TLS_GUIDANCE };
+module.exports = { pgConnectionFromEnv, pgSslFromEnv, pgTlsNotice, checkPgServerIdentity, PG_TLS_GUIDANCE };

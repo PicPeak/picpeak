@@ -55,6 +55,71 @@ test('the explicit insecure override requires encryption but accepts an untruste
   expect(args[3]).toContain('sslmode=\'require\'');
 });
 
+describe('DB_SSL_SERVERNAME', () => {
+  const ca = '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----';
+
+  test('an IP host keeps verify-full: the name is verified, the IP is dialled', async () => {
+    const { args, options } = await prepare(['-h', '10.0.0.5', '-d', 'picpeak'],
+      { DB_SSL: 'true', DB_SSL_CA: ca, DB_SSL_SERVERNAME: 'db.example.com' });
+    expect(args[3]).toContain('host=\'db.example.com\' hostaddr=\'10.0.0.5\' sslmode=\'verify-full\'');
+    expect(options.env.PGSSLMODE).toBe('verify-full');
+  });
+
+  test('a DNS host that differs from the name falls back to verify-ca', async () => {
+    const { args, options } = await prepare(['-h', 'postgres', '-d', 'picpeak'],
+      { DB_SSL: 'true', DB_SSL_CA: ca, DB_SSL_SERVERNAME: 'db.example.com' });
+    expect(args[3]).toContain('host=\'postgres\' sslmode=\'verify-ca\'');
+    expect(args[3]).not.toContain('hostaddr');
+    expect(options.env.PGSSLMODE).toBe('verify-ca');
+    expect(fs.readFileSync(options.env.PGSSLROOTCERT, 'utf8')).toBe(ca);
+  });
+
+  test('a name equal to the host changes nothing', async () => {
+    const { args } = await prepare(undefined, { DB_SSL: 'true', DB_SSL_CA: ca, DB_SSL_SERVERNAME: 'db.example.test' });
+    expect(args[3]).toContain('host=\'db.example.test\' sslmode=\'verify-full\'');
+  });
+
+  test('it never weakens or re-enables anything on its own', async () => {
+    const off = await prepare(undefined, { DB_SSL: 'false', DB_SSL_SERVERNAME: 'db.example.com' });
+    expect(off.args[3]).toContain('sslmode=\'disable\'');
+    const insecure = await prepare(undefined, { DB_SSL: 'true', DB_SSL_REJECT_UNAUTHORIZED: 'false', DB_SSL_SERVERNAME: 'db.example.com' });
+    expect(insecure.args[3]).toContain('host=\'db.example.test\' sslmode=\'require\'');
+  });
+});
+
+test('the final readiness failure shows the client error and the TLS ways out', () => {
+  const { spawnSync } = require('child_process');
+  const os = require('os');
+  const entrypoint = fs.readFileSync(path.resolve(__dirname, '../../wait-for-db.sh'), 'utf8');
+  const section = entrypoint.slice(entrypoint.indexOf('host="${DB_HOST:-postgres}"'),
+    entrypoint.indexOf('# Final verification'));
+  expect(section).toContain('max_attempts=30');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-wait-db-'));
+  try {
+    // A stand-in for `node scripts/pg-client.js`: config check passes, every probe fails.
+    fs.writeFileSync(path.join(dir, 'node'),
+      '#!/bin/sh\n[ "$2" = "--check-config" ] && exit 0\necho "psql: error: certificate verify failed" >&2\nexit 2\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    const script = path.join(dir, 'wait.sh');
+    fs.writeFileSync(script, `set -e\n${section.replace('max_attempts=30', 'max_attempts=2')}`);
+    const run = (DB_SSL) => spawnSync('sh', [script], { encoding: 'utf8',
+      env: { PATH: `${dir}:${process.env.PATH}`, DB_PASSWORD: 'fixture-secret', DB_SSL } });
+
+    const tls = run(' YES ');
+    expect(tls.status).toBe(1);
+    expect(tls.stderr).toContain('Failed to connect to PostgreSQL after 2 attempts.');
+    expect(tls.stderr).toContain('psql: error: certificate verify failed');
+    expect(tls.stderr).toMatch(/DB_SSL_CA.*DB_SSL_REJECT_UNAUTHORIZED=false/);
+    expect(tls.stdout + tls.stderr).not.toContain('fixture-secret');
+
+    const plain = run('false');
+    expect(plain.stderr).toContain('psql: error: certificate verify failed');
+    expect(plain.stderr).not.toContain('DB_SSL_REJECT_UNAUTHORIZED');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test.each([
   ['-h', '/tmp'], ['--host', '/tmp'], ['--host=/tmp'], ['-h/tmp'], ['--host=db.example.test,/tmp'], ['--host=']
 ])('rejects socket/implicit plaintext host variants with TLS: %j', async (...hostArgs) => {

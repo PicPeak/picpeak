@@ -138,6 +138,7 @@ Nothing is required. Everything below has a working default.
 | `DB_SSL` | `false` | Enable TLS for an external TCP database. `true` verifies the certificate and hostname for the app, readiness checks, backups and restores. |
 | `DB_SSL_CA` | — | Private CA as PEM text, or a path inside the container to a read-only mounted PEM file. Required for self-signed/private certificates. |
 | `DB_SSL_REJECT_UNAUTHORIZED` | `true` | With TLS enabled, `false` explicitly accepts any certificate. Insecure compatibility override; configure a CA instead. |
+| `DB_SSL_SERVERNAME` | — | The name on the certificate when it is not `DB_HOST` (an IP address or a network alias). The app verifies this name; `psql`/`pg_dump` do too for an IP `DB_HOST`, and verify the CA chain only for a DNS `DB_HOST`, so pair it with `DB_SSL_CA`. |
 | `EXTERNAL_MEDIA_ROOT` | `/external-media` | Read-only photo library to offer in the picker. Mount a folder there and it works without setting this. |
 
 ### Using an external PostgreSQL
