@@ -5,19 +5,18 @@
  *
  * Gated by the `incomingMail` feature flag. Idempotent: each message is logged
  * in received_emails keyed by message-id (skip if seen); duplicate attachments
- * are caught downstream by the inbound_documents SHA-256 dedup. Handles
+ * reuse verified owned SHA-256 files before the accounting record is made.
+ * Admission and retention share database-fenced byte/rate budgets. Handles
  * forwarded messages because mailparser flattens nested attachments.
  */
-const fsp = require('fs').promises;
-const path = require('path');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { getStoragePath } = require('../config/storage');
 const expenseService = require('./expenseService');
+const mailRetention = require('./mailRetentionService');
 const sanitizeHtml = require('sanitize-html');
-const { isUniqueViolation } = require('../utils/dbErrors');
+const { formatBoolean } = require('../utils/dbCompat');
 const { isMaskedOrBlank, sameImapTarget, PasswordRequiredError } = require('../utils/mailCredentialTarget');
 
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
@@ -28,7 +27,7 @@ const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 // are generous for real supplier invoices; all three are env-overridable.
 const numFromEnv = (name, fallback) => {
   const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
+  return Number.isSafeInteger(n) && n > 0 && n <= 2 ** 32 ? n : fallback;
 };
 const MAX_MESSAGE_BYTES = numFromEnv('EMAIL_INTAKE_MAX_MESSAGE_BYTES', 25 * 1024 * 1024);
 // received_emails.message_id is varchar(512) WITH a UNIQUE constraint. A sender
@@ -108,16 +107,7 @@ async function resolveOverridePassword(override) {
   throw new PasswordRequiredError('Enter the IMAP password: the saved password is only used for the server it was saved for.');
 }
 
-async function saveAttachment(att) {
-  const year = new Date().getFullYear();
-  const dir = path.join(getStoragePath(), 'business-docs', 'inbound', String(year));
-  await fsp.mkdir(dir, { recursive: true });
-  const ext = path.extname(att.filename || '')
-    || (att.contentType === 'application/pdf' ? '.pdf' : att.contentType === 'image/png' ? '.png' : '.jpg');
-  const filePath = path.join(dir, `email-${Date.now()}-${Math.floor(Math.random() * 1e6)}${ext}`);
-  await fsp.writeFile(filePath, att.content);
-  return filePath;
-}
+const saveAttachment = (att, claim) => mailRetention.saveAttachment(att, claim);
 
 /**
  * List the mailbox folders on the IMAP server so the UI can offer a
@@ -319,9 +309,10 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
           candidates.push({
             uid: m.uid,
             size: Number(m.size) || 0,
+            sender: m.envelope?.from?.[0]?.address || '<unknown>',
             messageId: boundedMessageId(
               m.envelope && m.envelope.messageId,
-              `uid-${cfg.folder}-${m.uid}`,
+              `uid-${require('crypto').createHash('sha256').update(`${accountKey}\0${cfg.host}\0${cfg.auth.user}\0${cfg.folder}\0${client.mailbox?.uidValidity || 'unknown'}\0${m.uid}`).digest('hex')}`,
             ),
           });
         }
@@ -339,67 +330,37 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
       // 4) Download + process each fresh message.
       for (const cand of fresh) {
         let messageId = cand.messageId;
-        let claimKey = null;
-        let claimed = false;
+        let claim = null;
         try {
           // Refuse oversized messages before download (GHSA-2qf9). Recorded
           // under the REAL message id — not a synthetic err-<uid>-<now> key —
           // so the step-3 dedup skips it on the next poll. Without that, the
           // same huge message was re-downloaded every poll interval forever,
           // and an OOM-kill/restart simply resumed the loop.
-          if (MAX_MESSAGE_BYTES > 0 && cand.size > MAX_MESSAGE_BYTES) {
-            logger.warn?.(`emailIntake: skipping uid ${cand.uid} — ${cand.size} bytes exceeds the ${MAX_MESSAGE_BYTES}-byte limit`);
-            await db('received_emails').insert({
-              message_id: cand.messageId,
-              account_key: accountKey,
-              status: 'error',
-              error: `Message too large (${cand.size} bytes); limit is ${MAX_MESSAGE_BYTES}`,
-              attachment_count: 0,
-              received_at: new Date(),
-              created_at: new Date(),
-            });
+          const oversized = cand.size > MAX_MESSAGE_BYTES;
+          const admission = await mailRetention.admit({
+            messageId: cand.messageId, accountKey, sender: cand.sender,
+            bytes: 2 * (cand.size > 0 ? cand.size : MAX_MESSAGE_BYTES) + mailRetention.META_BYTES
+              + (routeToExpenses ? MAX_ATTACHMENTS * mailRetention.AUDIT_BYTES : 0),
+            error: oversized ? `Message too large (${cand.size} bytes); limit is ${MAX_MESSAGE_BYTES}` : null,
+          });
+          if (admission.skip) {
+            await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
+            continue;
+          }
+          claim = admission;
+          const one = await client.fetchOne(String(cand.uid), { source: true }, { uid: true });
+          if (!one || !one.source) throw new Error('Message source unavailable');
+          if (one.source.length > MAX_MESSAGE_BYTES) throw new Error('Downloaded message exceeds the message-size limit');
+          const parsed = await simpleParser(one.source);
+          messageId = boundedMessageId(parsed.messageId, cand.messageId);
+          if (!(await mailRetention.rekey(claim, messageId))) {
             await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
             continue;
           }
 
-          const one = await client.fetchOne(String(cand.uid), { source: true }, { uid: true });
-          if (!one || !one.source) continue;
-          const parsed = await simpleParser(one.source);
-          messageId = boundedMessageId(parsed.messageId, cand.messageId);
-          // Claim key: a no-Message-ID mail still needs a non-null, per-message
-          // key so two pollers converge — fall back to the mailbox uid.
-          claimKey = messageId || `nomsgid-${cand.uid}`;
-
-          // Fast-path: already processed. Recover a row left 'processing' by a
-          // worker that crashed mid-ingest (>10 min) so the attachment isn't
-          // orphaned — otherwise skip + mark seen.
-          const existing = await db('received_emails').where({ message_id: claimKey }).first();
-          if (existing) {
-            const staleProcessing = existing.status === 'processing'
-              && existing.created_at
-              && (Date.now() - new Date(existing.created_at).getTime() > 10 * 60 * 1000);
-            if (!staleProcessing) { await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true }); continue; }
-            await db('received_emails').where({ id: existing.id }).del();
-          }
-
-          // CLAIM the message atomically BEFORE any ingest. The message_id UNIQUE
-          // index (migration 128) makes this the real guard: if a second poller
-          // (multi-replica / rolling deploy) already claimed it, the insert hits
-          // the unique constraint and we skip cleanly — no double-ingest.
-          try {
-            await db('received_emails').insert({
-              message_id: claimKey,
-              account_key: accountKey,
-              status: 'processing',
-              attachment_count: 0,
-              received_at: new Date(),
-              created_at: new Date(),
-            });
-            claimed = true;
-          } catch (ce) {
-            if (isUniqueViolation(ce)) { await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true }); continue; }
-            throw ce;
-          }
+          const bodyHtml = sanitizeBody(parsed.html || null);
+          const bodyText = parsed.text || null;
 
           // Attachment handling. The accounting mailbox drops PDF/image
           // attachments into the incoming-invoices inbox (isolated so one bad
@@ -428,10 +389,11 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
               attBytes += size;
               atts.push(att);
             }
+            await mailRetention.checkSize(claim, Buffer.byteLength(bodyHtml || '') + Buffer.byteLength(bodyText || ''), atts);
             for (const att of atts) {
               try {
-                const filePath = await saveAttachment(att);
-                const doc = await expenseService.recordInboundDocument({ source: 'email', filePath, originalFilename: att.filename || 'attachment', mimeType: att.contentType }, null);
+                const filePath = await saveAttachment(att, claim);
+                const doc = await expenseService.recordInboundDocument({ source: 'email', filePath, originalFilename: (att.filename || 'attachment').slice(0, 512), mimeType: att.contentType, mailClaim: claim }, null);
                 inboundId = doc.id; count += 1;
               } catch (ae) {
                 attErrors.push(ae.message);
@@ -439,6 +401,7 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
               }
             }
           } else {
+            await mailRetention.checkSize(claim, Buffer.byteLength(bodyHtml || '') + Buffer.byteLength(bodyText || ''), []);
             count = (parsed.attachments || []).length;
           }
 
@@ -450,16 +413,16 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
             : 'received';
           // Finalise the claimed row — every processed message ends up in the
           // Received log with its (sanitized) body, even attachment-less ones.
-          await db('received_emails').where({ message_id: claimKey }).update({
+          await mailRetention.finish(claim, {
             from_address: ((parsed.from && parsed.from.text) || '').slice(0, 512) || null,
             to_address: ((parsed.to && parsed.to.text) || '').slice(0, 512) || null,
-            subject: parsed.subject || null,
+            subject: (parsed.subject || '').slice(0, 512) || null,
             received_at: receivedAt,
             attachment_count: count,
             status,
             inbound_document_id: inboundId,
-            body_html: sanitizeBody(parsed.html || null),
-            body_text: parsed.text || null,
+            body_html: bodyHtml,
+            body_text: bodyText,
             error: attErrors.length ? attErrors.join('; ').slice(0, 2000) : null,
           });
           await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
@@ -469,13 +432,7 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
           // Received row.
           logger.error?.(`emailIntake: message uid ${cand.uid} (${messageId}) failed: ${e.message}`);
           try {
-            if (claimed && claimKey) {
-              // We already claimed the row — mark it errored rather than orphan it.
-              await db('received_emails').where({ message_id: claimKey })
-                .update({ status: 'error', error: String(e.message).slice(0, 2000) });
-            } else {
-              await db('received_emails').insert({ message_id: `err-${cand.uid}-${Date.now()}`, account_key: accountKey, status: 'error', error: e.message, attachment_count: 0, received_at: new Date(), created_at: new Date() });
-            }
+            if (claim) await mailRetention.fail(claim, e);
           } catch (ie) {
             logger.error?.(`emailIntake: could not even write the error row (received_emails insert failing): ${ie.message}`);
           }
@@ -500,11 +457,12 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
  */
 async function pollOnce() {
   if (polling) return { skipped: 'busy' };
-  if (!(await isEnabled())) return { skipped: 'disabled' };
   polling = true;
   let processed = 0;
   let anyConfigured = false;
   try {
+    await mailRetention.sweep();
+    if (!(await isEnabled())) return { skipped: 'disabled' };
     // 1) Primary accounting mailbox — routes attachments to the invoices inbox.
     const acctCfg = await getImapConfig();
     if (acctCfg) {
@@ -516,7 +474,7 @@ async function pollOnce() {
     let extras = [];
     try {
       if (await db.schema.hasTable('mail_accounts')) {
-        extras = await db('mail_accounts').where({ enabled: true });
+        extras = await db('mail_accounts').where({ enabled: formatBoolean(true) });
       }
     } catch (_) { extras = []; }
     for (const a of extras) {
