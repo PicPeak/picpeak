@@ -7,22 +7,32 @@ an account, then explicitly assign it. Assigning the same folder to another
 account transfers future source access. Revoking a grant does not delete files
 or photos already published in galleries.
 
-Scoped accounts browse and import only their assigned sources and their
-subfolders, into galleries they own. Gallery-wide view/manage permissions do not
-grant external-source access or cross-owner import authority. The global mount,
-unassigned sources and ownerless sources remain SuperAdmin-only. Source grants
-must not overlap; assign disjoint roots instead of giving different accounts a
-parent and its child. Symlink aliases cannot be assigned as source roots.
+Grants gate browsing and new bindings. A scoped account browses only its
+assigned sources and their subfolders, and can point a gallery at a folder only
+inside them. Gallery-wide view/manage permissions do not grant external-source
+access. The global mount and unassigned folders remain SuperAdmin-only for
+browsing and for new bindings. Source grants must not overlap; assign disjoint
+roots instead of giving different accounts a parent and its child. Symlink
+aliases cannot be assigned as source roots.
 
-Existing source paths are not automatically converted into grants during an
-upgrade. A SuperAdmin must review and assign them explicitly. Existing published
-gallery originals remain reachable without being moved or rebased.
+The folder a gallery already points at keeps working for that gallery without a
+grant: whoever may manage the gallery (its creator, or anyone for an ownerless gallery) can rescan and import from it,
+and its folder watcher keeps running. That covers every gallery bound before an
+upgrade, so existing source paths are not converted into grants and need none.
+It also means revoking or transferring a grant stops browsing and new bindings,
+not the galleries already bound to the folder; switch such a gallery to managed
+uploads, or point it elsewhere, to detach it. Saving a gallery without changing
+its folder asks for no source access. Paths saved by earlier releases with a
+leading slash or a colon in a folder name are still read; new input accepts
+neither.
 
-Automatic imports run with the current gallery owner's live source and upload
-permissions. After an upgrade, ownerless watched galleries need an explicit
-owner; scoped owners need a source grant. Revoked/deactivated owners or source
-access stop later imports. A SuperAdmin's manual cross-owner import does not
-give its destination owner unrestricted access to the mount.
+Automatic imports run on behalf of the gallery's creator, who must be an active
+account holding `photos.upload`; an ownerless gallery's watcher follows its
+stored folder. When a watcher is refused, the server log carries one warning
+per gallery with the gallery, the folder and the reason. Published originals
+are read from wherever their stored path leads inside the mount, including
+through a directory link that stays inside it; a link leaving the mount is
+refused.
 
 The authenticated API exposes `GET /api/admin/external-media/sources`.
 SuperAdmins can assign/transfer with
