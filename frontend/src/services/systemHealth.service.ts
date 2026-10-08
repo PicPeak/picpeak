@@ -24,6 +24,8 @@ export interface EmailProcessorStatus {
   lastRunAt: string | null;
   lastResult: { processed: number; sent: number; failed: number } | null;
   lastError: string | null;
+  /** Set for a mail network-policy refusal (MAIL_HOST_FORBIDDEN, …). */
+  lastErrorCode?: string | null;
 }
 
 export interface SystemHealthFailures {

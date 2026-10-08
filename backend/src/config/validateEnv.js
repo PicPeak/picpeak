@@ -63,6 +63,11 @@ function validateEnvironment() {
     }
   });
 
+  const emailQueueKey = process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
+  if (emailQueueKey && emailQueueKey.trim().length < 32) {
+    errors.push('EMAIL_QUEUE_ENCRYPTION_KEY must contain at least 32 characters. Generate a unique secret with openssl rand -hex 32.');
+  }
+
   // The evidence key (#1446) is read here rather than at the first contract
   // send: a value that is a character short of a key would otherwise fail in
   // the middle of signing, hours after anyone touched the configuration.

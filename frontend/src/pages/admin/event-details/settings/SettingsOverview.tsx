@@ -63,6 +63,7 @@ export function useSectionSummaries(
   const f = draft.event;
   const expires = safeParseDate(f.expires_at);
   const accounts = f.customer_accounts.length;
+  const teamMembers = f.assigned_admins.length;
   const offset = f.event_reminder_offset_days.trim();
   const reminderInherits = !f.event_reminder_disabled && offset === '' && f.event_reminder_body_override.trim() === '';
   const s = (key: string, fallback: string, opts?: Record<string, unknown>) =>
@@ -74,6 +75,9 @@ export function useSectionSummaries(
         { text: f.customer_name.trim() || s('noCustomerName', 'No customer name'), tone: f.customer_name.trim() ? 'strong' : 'off' },
         ...(f.welcome_message.trim() ? [{ text: s('welcomeSet', 'welcome message set') }] : []),
         ...(accounts > 0 ? [{ text: s('clientAccounts', '{{count}} client accounts', { count: accounts }) }] : []),
+        // Gallery team (issue 743).
+        ...(teamMembers > 0 ? [{ text: s('teamMembers', '{{count}} team members', { count: teamMembers }) }] : []),
+        ...(f.review_contributor_uploads ? [{ text: s('teamReview', 'team uploads reviewed') }] : []),
       ],
     },
     appearance: {

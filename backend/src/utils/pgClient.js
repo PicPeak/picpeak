@@ -1,0 +1,151 @@
+'use strict';
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const tls = require('tls');
+const net = require('net');
+const { pgSslFromEnv, checkPgServerIdentity } = require('./pgConnection');
+
+function quoteConnectionValue(value) {
+  if (typeof value !== 'string' || value.includes('\0')) {
+    throw new Error('PostgreSQL connection values must be strings without NUL bytes');
+  }
+  return `'${value.replace(/['\\]/g, '\\$&')}'`;
+}
+
+async function defaultCaBundle(host, port, name = host) {
+  // sslrootcert=system is unavailable on PostgreSQL 15. Export Node's trust
+  // roots as PEM so the app and its libpq tools authenticate the same peer.
+  if (typeof tls.getCACertificates === 'function') {
+    return tls.getCACertificates('default').join('\n');
+  }
+  // Node 22.12–22.14 cannot export its trust store. Do not guess filesystem
+  // CA locations or substitute bundled roots. Authenticate a credential-free
+  // SSLRequest with Node's actual store, then pin that verified issuer chain
+  // for libpq (which verifies the hostname again).
+  return verifiedPeerCa(host, port, name);
+}
+
+function verifiedPeerCa(host, port, name) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port: Number(port) });
+    let secure;
+    const timer = setTimeout(() => finish(new Error('PostgreSQL TLS trust probe timed out')), 30000);
+    const finish = (error, bundle) => {
+      clearTimeout(timer);
+      if (secure) secure.destroy();
+      socket.destroy();
+      if (error) reject(error); else resolve(bundle);
+    };
+    socket.once('error', finish);
+    socket.once('connect', () => socket.write(Buffer.from([0, 0, 0, 8, 4, 210, 22, 47])));
+    socket.once('data', (response) => {
+      if (response.toString() !== 'S') return finish(new Error('PostgreSQL server did not accept TLS'));
+      secure = tls.connect({ socket, host, servername: net.isIP(name) ? undefined : name,
+        rejectUnauthorized: true, checkServerIdentity: (_host, certificate) => checkPgServerIdentity(name, certificate) });
+      secure.once('error', finish);
+      secure.once('secureConnect', () => {
+        const certificates = [];
+        const seen = new Set();
+        let certificate = secure.getPeerCertificate(true);
+        while (certificate?.raw && !seen.has(certificate.raw.toString('hex'))) {
+          seen.add(certificate.raw.toString('hex'));
+          const pem = certificate.raw.toString('base64').match(/.{1,64}/g).join('\n');
+          certificates.push(`-----BEGIN CERTIFICATE-----\n${pem}\n-----END CERTIFICATE-----`);
+          certificate = certificate.issuerCertificate;
+        }
+        if (!certificates.length) return finish(new Error('Cannot export verified PostgreSQL CA; configure DB_SSL_CA'));
+        finish(null, certificates.join('\n'));
+      });
+    });
+  });
+}
+
+/**
+ * Apply the application's TLS policy to psql/pg_dump, including startup,
+ * backups, restores and rollback. libpq's default "prefer" does not verify
+ * certificates. An inherited PGSSLMODE or a dbname parsed as conninfo must
+ * not override DB_SSL. Every repository caller supplies a named -d argument.
+ *
+ * DB_SSL_SERVERNAME: libpq has no option for "verify this name instead of the
+ * host". For an IP host the name goes in `host` and the IP in `hostaddr`,
+ * which keeps verify-full. For a DNS host that differs from the name there is
+ * no such split without resolving DNS here, so those children fall back to
+ * verify-ca: the chain is verified against the CA, the name is not.
+ */
+async function preparePgClient(args, options = {}) {
+  const env = { ...(options.env || process.env) };
+  const ssl = pgSslFromEnv(env);
+  let sslmode = !ssl ? 'disable' : ssl.rejectUnauthorized ? 'verify-full' : 'require';
+  let directory;
+  const cleanup = () => {
+    if (directory) fs.rmSync(directory, { recursive: true, force: true });
+  };
+
+  try {
+    // Resolve a literal TCP host too: libpq ignores TLS on Unix sockets.
+    let host = env.PGHOST || env.DB_HOST || 'postgres';
+    let port = env.PGPORT || env.DB_PORT || 5432;
+    const databases = [];
+    const valueOptions = new Set(['-p', '--port', '-U', '--username', '-c', '--command',
+      '-f', '--file', '-v', '--set', '-tAc']);
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i];
+      if (arg === '-d' || arg === '--dbname') databases.push({ index: ++i, database: args[i], prefix: '' });
+      else if (arg.startsWith('--dbname=')) databases.push({ index: i, database: arg.slice('--dbname='.length), prefix: '--dbname=' });
+      else if (arg.startsWith('-d') && arg.length > 2) databases.push({ index: i, database: arg.slice(2), prefix: '-d' });
+      else if (arg === '-h' || arg === '--host') host = args[++i];
+      else if (arg.startsWith('--host=')) host = arg.slice('--host='.length);
+      else if (arg.startsWith('-h') && arg.length > 2) host = arg.slice(2);
+      else if (arg === '-p' || arg === '--port') port = args[++i];
+      else if (arg.startsWith('--port=')) port = arg.slice('--port='.length);
+      else if (arg.startsWith('-p') && arg.length > 2) port = arg.slice(2);
+      else if (valueOptions.has(arg)) i += 1;
+    }
+    if (databases.length !== 1) throw new Error('PostgreSQL client requires exactly one named database argument');
+    const { index, database, prefix } = databases[0];
+    const quotedDatabase = quoteConnectionValue(database);
+    const servername = (env.DB_SSL_SERVERNAME || '').trim();
+    let hostInfo = `host=${quoteConnectionValue(host)}`;
+    if (sslmode === 'verify-full' && servername && servername !== host) {
+      if (net.isIP(host)) hostInfo = `host=${quoteConnectionValue(servername)} hostaddr=${quoteConnectionValue(host)}`;
+      else sslmode = 'verify-ca';
+    }
+    if (ssl && (typeof host !== 'string' || host.split(',').some((entry) => !entry || entry.startsWith('/')))) {
+      throw new Error('PostgreSQL TLS requires a TCP host, not a Unix socket');
+    }
+    let rootCert;
+    if (ssl) {
+      directory = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-pg-ca-'));
+      rootCert = path.join(directory, 'root.crt');
+      if (ssl.rejectUnauthorized) {
+        fs.writeFileSync(rootCert, ssl.ca || await defaultCaBundle(host, port, servername || host), { mode: 0o600 });
+      }
+      // For the explicit insecure override, keep root.crt absent: libpq's
+      // "require" otherwise switches to verify-ca when a default CA exists.
+      env.PGSSLROOTCERT = rootCert;
+    }
+    env.PGSSLMODE = sslmode;
+
+    const protectedArgs = [...args];
+    protectedArgs[index] = `${prefix}dbname=${quotedDatabase} ${hostInfo} sslmode=${quoteConnectionValue(sslmode)}` +
+      (rootCert ? ` sslrootcert=${quoteConnectionValue(rootCert)}` : '');
+    return { args: protectedArgs, options: { ...options, env }, cleanup };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+
+async function withPgClientPolicy(cmd, args, options, execute) {
+  if (cmd !== 'psql' && cmd !== 'pg_dump') return execute(args, options);
+  const prepared = await preparePgClient(args, options);
+  try {
+    return await execute(prepared.args, prepared.options);
+  } finally {
+    prepared.cleanup();
+  }
+}
+
+module.exports = { preparePgClient, withPgClientPolicy };

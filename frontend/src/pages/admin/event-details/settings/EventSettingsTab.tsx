@@ -83,6 +83,12 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
 
   const archived = Boolean(event.is_archived);
   const canEdit = hasPermission('events.edit') && !archived;
+  // Archiving and deleting are the owner's (issue 743): an assigned team
+  // member gets 403 from both routes, so the danger zone is not offered.
+  // An older payload without the field is read as the owner's.
+  const ownsEvent = event.can_manage_assignments !== false;
+  const canArchive = ownsEvent && hasPermission('events.archive');
+  const canDelete = ownsEvent && hasPermission('events.delete');
 
   const sections: Array<{ key: SettingsSectionKey; label: string; show: boolean }> = [
     { key: 'general', label: t('events.settingsTab.general', 'General'), show: true },
@@ -95,7 +101,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
     { key: 'reminder', label: t('eventReminderOverride.title', 'Pre-event reminder'), show: !!flags.reminderEmails },
     { key: 'slideshow', label: t('slideshow.adminTitle', 'Live Slideshow'), show: !!flags.slideshow },
     { key: 'faces', label: t('events.settingsTab.faces', 'Faces'), show: !!flags.faces },
-    { key: 'danger', label: t('events.settingsTab.danger', 'Danger zone'), show: !archived && (hasPermission('events.archive') || hasPermission('events.delete')) },
+    { key: 'danger', label: t('events.settingsTab.danger', 'Danger zone'), show: !archived && (canArchive || canDelete) },
   ];
   const visible = sections.filter((s) => s.show);
   const opened = section && visible.some((s) => s.key === section) ? section : null;
@@ -182,7 +188,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
       case 'general':
         return <GeneralSection f={draft.event} set={set} phoneFieldEnabled={phoneFieldEnabled} event={event} />;
       case 'access':
-        return <AccessSection f={draft.event} set={set} />;
+        return <AccessSection f={draft.event} set={set} ownsEvent={ownsEvent} />;
       case 'downloads':
         return (
           <DownloadsSection
@@ -235,7 +241,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
       case 'danger':
         return (
           <SectionCard>
-            {hasPermission('events.archive') && (
+            {canArchive && (
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-heading">{t('events.archiveEvent')}</p>
@@ -254,7 +260,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
                 </Button>
               </div>
             )}
-            {hasPermission('events.delete') && (
+            {canDelete && (
               <div className="flex items-start justify-between gap-4 pt-4 border-t border-line">
                 <div>
                   <p className="text-sm font-medium text-heading">{t('events.settingsTab.deleteTitle', 'Delete gallery')}</p>

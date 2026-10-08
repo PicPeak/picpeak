@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const bcrypt = require('bcrypt');
+const { templateFor } = require('./migrationTemplate');
 
 async function runCoreMigrations(db) {
   await db.schema.createTable('migrations', (t) => {
@@ -41,6 +42,19 @@ async function runCoreMigrations(db) {
       await mod.up(db);
     }
     await db('migrations').insert({ filename: f });
+  }
+}
+
+// True while nothing has opened or written the SQLite file yet, so
+// replacing it with the template cannot pull it out from under a connection.
+async function isUntouched(db, file) {
+  const pool = db.client.pool;
+  if (!pool || pool.numUsed() + pool.numFree() + pool.numPendingCreates() > 0) return false;
+  try {
+    return (await fs.promises.stat(file)).size === 0;
+  } catch (err) {
+    if (err.code === 'ENOENT') return true;
+    throw err;
   }
 }
 
@@ -65,7 +79,17 @@ async function bootCrmDb() {
   // when invoked before any service import.
   const { db } = require('../../../src/database/db');
 
-  await runCoreMigrations(db);
+  // Copy the run's migrated template rather than migrating again (see
+  // migrationTemplate.js). It goes to whichever file db.js opens: usually
+  // the TEST_DATABASE_PATH set above, but a suite that sets its own path and
+  // loads services before booting has db.js bound to that file instead.
+  const template = await templateFor(process.env);
+  const target = db.client.config.connection?.filename;
+  if (template && target && await isUntouched(db, target)) {
+    await fs.promises.copyFile(template, target);
+  } else {
+    await runCoreMigrations(db);
+  }
 
   return {
     db,
@@ -226,6 +250,7 @@ function buildRouteApp(mount, router) {
 
 module.exports = {
   bootCrmDb,
+  runCoreMigrations,
   seedMinimal,
   assignAdminRole,
   mintAdminToken,

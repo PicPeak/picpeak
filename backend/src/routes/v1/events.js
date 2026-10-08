@@ -23,6 +23,7 @@ const { db, logActivity } = require('../../database/db');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const { holdsForReview, adminUploadColumns } = require('../../services/uploadReviewService');
 // GHSA-9697: migration 081 defines a token's effective permissions as the
 // INTERSECTION of the owner's role permissions and the token's scope flags.
 // requireApiScope only ever checked the scope half — so a token minted while
@@ -507,6 +508,16 @@ router.post(
       // otherwise overwrite a photo the caller never named in the URL.
       const rawReplacesId = req.body?.replaces_photo_id;
       if (rawReplacesId !== undefined && rawReplacesId !== null && rawReplacesId !== '') {
+        // A team member whose uploads the owner reviews (issue 743) cannot
+        // swap a photo underneath it.
+        if (await holdsForReview(req.admin, event)) {
+          await fs.unlink(tempPath).catch(() => {});
+          tempPath = null;
+          return res.status(403).json({
+            error: 'Uploads to this event wait for the owner\'s review; replacing a photo is not available',
+            code: 'UPLOAD_REVIEW_REQUIRED',
+          });
+        }
         const replacesId = parseInt(rawReplacesId, 10);
         if (Number.isNaN(replacesId)) {
           // Cleanup is in this route's catch block, so an early return has to
@@ -610,6 +621,7 @@ router.post(
       await fs.unlink(tempPath).catch(() => {});
       tempPath = null;
 
+      const uploadColumns = await adminUploadColumns(req.admin, event);
       const insertResult = await db('photos').insert({
         event_id: event.id,
         filename: finalName,
@@ -630,6 +642,9 @@ router.post(
         mime_type: req.file.mimetype,
         uploaded_at: new Date().toISOString(),
         uploaded_by: 'admin',
+        // The token owner's account, and hidden + pending for a team member
+        // whose uploads the owner reviews (issue 743).
+        ...uploadColumns,
         ...credit
       }).returning('id');
       const id = insertResult[0]?.id || insertResult[0];
@@ -639,14 +654,17 @@ router.post(
       });
 
       // Webhook (#327): one event per uploaded photo so receivers get a
-      // 1:1 stream they can react to.
-      try {
-        const webhookService = require('../../services/webhookService');
-        await webhookService.fire('photo.uploaded', {
-          event: { id: event.id, slug: event.slug, event_name: event.event_name },
-          photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
-        });
-      } catch (e) { /* non-fatal */ }
+      // 1:1 stream they can react to. A photo held for review (issue 743)
+      // fires when it is approved instead (uploadReviewService).
+      if (!uploadColumns.moderation_status) {
+        try {
+          const webhookService = require('../../services/webhookService');
+          await webhookService.fire('photo.uploaded', {
+            event: { id: event.id, slug: event.slug, event_name: event.event_name },
+            photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
+          });
+        } catch (e) { /* non-fatal */ }
+      }
 
       res.status(201).json({
         id,
@@ -927,7 +945,7 @@ router.get(
       // statements above.
       const mediaRows = pageIds.length
         ? await db('photos').where('event_id', eventId).whereIn('id', pageIds)
-          .select('id', 'media_type', 'mime_type', 'processing_status')
+          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status')
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
 
@@ -975,6 +993,9 @@ router.get(
             // 'complete' unless the async worker is still on it. The preview
             // and download routes answer 503/422 for the other states.
             processing_status: mediaById.get(photo.id)?.processing_status ?? null,
+            // A team upload waiting for review, or rejected (issue 743): not
+            // shown to any gallery viewer until approved.
+            moderation_status: mediaById.get(photo.id)?.moderation_status ?? null,
             uploaded_at: photo.uploaded_at || null
           };
         }),

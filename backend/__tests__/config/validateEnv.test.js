@@ -158,3 +158,39 @@ describe('startup evidence key form', () => {
     expect(passphraseWarned()).toBe(false);
   });
 });
+
+describe('startup email queue encryption key validation', () => {
+  const previous = {
+    emailQueueKey: process.env.EMAIL_QUEUE_ENCRYPTION_KEY,
+    jwtSecret: process.env.JWT_SECRET,
+  };
+  let exit;
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    jest.clearAllMocks();
+    exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    for (const [name, value] of [
+      ['EMAIL_QUEUE_ENCRYPTION_KEY', previous.emailQueueKey],
+      ['JWT_SECRET', previous.jwtSecret],
+    ]) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    exit.mockRestore();
+  });
+
+  test('rejects a configured key shorter than 32 characters', () => {
+    process.env.EMAIL_QUEUE_ENCRYPTION_KEY = 'too-short';
+    validateEnvironment();
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('too-short');
+  });
+
+  test('accepts a dedicated 32-character-or-longer key', () => {
+    process.env.EMAIL_QUEUE_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+  });
+});

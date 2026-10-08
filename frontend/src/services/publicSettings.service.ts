@@ -67,15 +67,10 @@ export interface PublicSettings {
   recaptcha_site_key: string | null;
   maintenance_mode: boolean;
   umami_enabled: boolean;
-  umami_url: string | null;
-  umami_website_id: string | null;
-  // Pluggable trackers (#663 Phase 1). The backend always surfaces these;
-  // missing fields fall back via the existing umami_* shape so older
-  // builds keep working.
-  analytics_tracker_provider?: 'none' | 'umami' | 'rybbit' | 'custom';
-  rybbit_url?: string | null;
-  rybbit_website_id?: string | null;
-  // Custom-mode HTML snippet, already sanitised server-side.
+  // Pluggable trackers (#663 Phase 1). Only the provider is public; a
+  // missing value falls back to the legacy umami_enabled flag.
+  analytics_tracker_provider?: 'none' | 'umami' | 'rybbit';
+  // Deprecated compatibility field: always empty; custom scripts are disabled.
   analytics_custom_head_html?: string;
   // Upload settings
   allowed_file_types?: string;
@@ -104,6 +99,7 @@ export interface PublicSettings {
   event_default_allow_comments?: boolean;
   event_default_allow_reactions?: boolean;
   event_default_allow_color_labels?: boolean;
+  event_default_allow_decisions?: boolean;
   event_default_keybind_mode?: 'colors' | 'lightroom';
   // Download limit default (issue 1560). null = unlimited.
   event_default_download_limit?: number | null;

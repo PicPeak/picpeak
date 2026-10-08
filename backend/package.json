@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.166.0-beta.0",
+  "version": "3.167.1-beta.0",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
@@ -41,7 +41,7 @@
     "helmet": "^7.0.0",
     "i18next": "25.3.2",
     "i18next-browser-languagedetector": "^8.2.0",
-    "i18next-http-backend": "3.0.5",
+    "i18next-http-backend": "4.0.2",
     "imapflow": "^1.4.0",
     "ipaddr.js": "^2.3.0",
     "joi": "^17.13.4",
@@ -64,7 +64,7 @@
     "qrcode": "^1.5.4",
     "react-i18next": "^15.6.0",
     "sanitize-html": "2.17.7",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "sqlite3": "^5.1.6",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

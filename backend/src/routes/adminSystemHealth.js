@@ -26,9 +26,14 @@ const { verifyDocumentArtefacts } = require('../services/backupIntegrityService'
 const { getCoverageReport } = require('../services/backupCoverageService');
 const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { toMillis } = require('../utils/queueTimestamps');
+const {
+  isEncryptedEmailData, isProtectedEmailType, PROTECTED_PENDING_STATUS,
+} = require('../utils/emailQueueEncryption');
+const { parseEmailData } = require('../utils/emailSecretRedaction');
 const { db } = require('../database/db');
 
 const router = express.Router();
+const PENDING_EMAIL_STATUSES = ['pending', PROTECTED_PENDING_STATUS];
 
 router.use(adminAuth);
 
@@ -182,7 +187,7 @@ const mapEmailRow = (r) => ({
   id: r.id,
   recipientEmail: r.recipient_email,
   emailType: r.email_type,
-  status: r.status,
+  status: r.status === PROTECTED_PENDING_STATUS ? 'pending' : r.status,
   retryCount: r.retry_count,
   errorMessage: r.error_message,
   createdAt: r.created_at,
@@ -214,7 +219,7 @@ router.get(
       .where(function () {
         this.where('status', 'failed')
           .orWhere(function () {
-            this.where('status', 'pending').andWhere('retry_count', '>=', 3);
+            this.whereIn('status', PENDING_EMAIL_STATUSES).andWhere('retry_count', '>=', 3);
           });
       })
       .orderBy('created_at', 'desc')
@@ -255,7 +260,7 @@ router.get(
     for (let offset = 0; offset < WAITING_SCAN_MAX; offset += WAITING_PAGE_SIZE) {
       // eslint-disable-next-line no-await-in-loop
       const page = await db('email_queue')
-        .where('status', 'pending')
+        .whereIn('status', PENDING_EMAIL_STATUSES)
         .where('retry_count', '<', 3)
         .orderBy('id', 'asc')
         .offset(offset)
@@ -381,8 +386,14 @@ router.post(
   handleAsync(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+    const row = await db('email_queue').where({ id }).first('id', 'email_type', 'email_data');
+    if (!row) return res.status(404).json({ error: 'Email not found' });
+    const encrypted = isEncryptedEmailData(parseEmailData(row.email_data));
+    if (isProtectedEmailType(row.email_type) && !encrypted) {
+      return res.status(409).json({ error: 'Create a new invitation or password reset; this recovery email cannot be retried.' });
+    }
     const updated = await db('email_queue').where({ id }).update({
-      status: 'pending',
+      status: encrypted ? PROTECTED_PENDING_STATUS : 'pending',
       retry_count: 0,
       error_message: null,
       scheduled_at: null,

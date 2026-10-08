@@ -51,9 +51,12 @@ async function refuseForeignCategoryEvent(req, res, eventId) {
 async function heroCandidate(category, photoId) {
   if (parseBooleanInput(category.is_folder, false) && category.event_id) {
     const ids = await folderTree.subtreeIds(category.event_id, category.id);
-    return db('photos').where('id', photoId).whereIn('folder_id', ids).first();
+    return db('photos').where('id', photoId).whereIn('folder_id', ids)
+      .whereNull('moderation_status').first();
   }
-  return db('photos').where({ id: photoId, category_id: category.id }).first();
+  // A team upload still under review (issue 743) cannot be a hero yet.
+  return db('photos').where({ id: photoId, category_id: category.id })
+    .whereNull('moderation_status').first();
 }
 
 // Get all global categories

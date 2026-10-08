@@ -124,6 +124,12 @@ services:
     env_file: .env
     environment:
       - NODE_ENV=production
+      # Trust exactly the immediately connected frontend nginx hop. The
+      # backend port is host-loopback-only, preventing remote bypasses.
+      # A reverse proxy on the host in front of the frontend makes it 2.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-auto}
+      - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - DB_HOST=${DB_HOST:-postgres}
       - REDIS_HOST=redis
       - STORAGE_PATH=/app/storage
@@ -191,7 +197,7 @@ services:
       - ${APP_UPDATE:-./update}/request:/app/update/request
       - ${APP_UPDATE:-./update}/status:/app/update/status:ro
     ports:
-      - "${BACKEND_PORT:-3001}:3000"
+      - "${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000"
     networks:
       - picpeak-network
     depends_on:
@@ -218,7 +224,7 @@ services:
       # indefinitely even when /health responds. Mirrors the wget-based
       # HEALTHCHECK already declared in backend/Dockerfile so docker
       # compose, plain `docker run`, and `docker ps` all agree.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -285,7 +291,7 @@ services:
       - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
       - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80"
     networks:
       - picpeak-network
     depends_on:
