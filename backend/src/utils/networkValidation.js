@@ -247,4 +247,4 @@ async function validateExternalUrlAsync(urlString) {
   return { valid: true, reason: 'ok', hostname: parsed.hostname.replace(/^\[|\]$/g, ''), addresses };
 }
 
-module.exports = { isPrivateIP, validateExternalUrl, isHostAllowed, validateExternalUrlAsync, classifyHost };
+module.exports = { isPrivateIP, validateExternalUrl, isHostAllowed, validateExternalUrlAsync, classifyHost, resolveHost };
