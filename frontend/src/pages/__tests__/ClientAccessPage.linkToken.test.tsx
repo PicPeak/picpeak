@@ -65,6 +65,8 @@ describe('ClientAccessPage private-link binding', () => {
     await submitPin();
 
     expect(mocks.clientLogin).not.toHaveBeenCalled();
-    expect(screen.getByText('clientAccess.invalidPin')).toBeInTheDocument();
+    // A missing link is named as such, not as a wrong PIN to retry.
+    expect(screen.getByText('clientAccess.linkInvalid')).toBeInTheDocument();
+    expect(screen.queryByText('clientAccess.invalidPin')).toBeNull();
   });
 });

@@ -217,6 +217,39 @@ describe('rotating a gallery credential', () => {
       .send({ password: '2468', token: event.client_share_token });
     expect(currentLogin.status).toBe(200);
   });
+
+  it('mints the private link when a PIN is set on a gallery that has none', async () => {
+    // The admin card sends the PIN on its own; without a link token the PIN
+    // could never sign a client in.
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    await db('events').where({ id: eventId }).update({ client_share_token: null });
+
+    const update = await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth)
+      .send({ client_password: 'Client-Tokenless-2026!' });
+    expect(update.status).toBe(200);
+
+    const event = await db('events').where({ id: eventId }).first();
+    expect(event.client_share_token).toMatch(/^[a-f0-9]{64}$/);
+    const login = await request(app).post(`/api/auth/gallery/${slug}/client-login`)
+      .send({ password: 'Client-Tokenless-2026!', token: event.client_share_token });
+    expect(login.status).toBe(200);
+  });
+
+  it('mints the private link on the next edit of a gallery whose PIN predates it', async () => {
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    await db('events').where({ id: eventId }).update({ client_share_token: null });
+
+    const update = await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth)
+      .send({ event_name: 'Session invalidation' });
+    expect(update.status).toBe(200);
+
+    const event = await db('events').where({ id: eventId }).first();
+    expect(event.client_share_token).toMatch(/^[a-f0-9]{64}$/);
+    expect(event.client_password_changed_at).toBeNull();
+    const login = await request(app).post(`/api/auth/gallery/${slug}/client-login`)
+      .send({ password: '2468', token: event.client_share_token });
+    expect(login.status).toBe(200);
+  });
 });
 
 describe('logging out of the customer portal', () => {

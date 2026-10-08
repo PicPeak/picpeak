@@ -6253,6 +6253,7 @@
     "pinPlaceholder": "Enter your client PIN",
     "enterPin": "Please enter your client PIN",
     "invalidPin": "Invalid PIN. Please try again.",
+    "linkInvalid": "This access link is no longer valid. Ask your photographer for a new link.",
     "loginFailed": "Authentication failed. Please try again.",
     "loginButton": "Access Gallery",
     "guestHint": "Looking for the guest gallery?",

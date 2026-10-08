@@ -66,7 +66,7 @@ const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders:
 // Two token shapes reach this route (see the header):
 //   SHORT_TOKEN_RE  the read-aloud code, drawn from an unambiguous alphabet
 //                   (see transferService). Legacy shorter codes are rotated by
-//                   migration 267 and are no longer accepted.
+//                   migration 272 and are no longer accepted.
 //   LONG_TOKEN_RE   the request's primary 64-hex token.
 // TOKEN_RE is the union, used by the express-validator param check.
 const SHORT_TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;

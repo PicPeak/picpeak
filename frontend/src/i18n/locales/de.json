@@ -6044,6 +6044,7 @@
     "pinPlaceholder": "PIN eingeben",
     "enterPin": "Geben Sie die PIN ein, die Sie erhalten haben",
     "invalidPin": "Ungültige PIN. Bitte versuchen Sie es erneut.",
+    "linkInvalid": "Dieser Zugangslink ist nicht mehr gültig. Bitten Sie Ihren Fotografen um einen neuen Link.",
     "loginFailed": "Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.",
     "loginButton": "Zugang erhalten",
     "guestHint": "Nur Fotos ansehen?",
