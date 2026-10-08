@@ -44,9 +44,10 @@ async function ensureAccountRecoveryDigestColumns(knex) {
   }
 }
 
+// Returns how many outstanding (unconsumed) rows were expired.
 async function hardenTokenTable(knex, tableName, consumedColumn) {
   if (!(await knex.schema.hasTable(tableName))
-    || !(await knex.schema.hasColumn(tableName, 'token_digest'))) return;
+    || !(await knex.schema.hasColumn(tableName, 'token_digest'))) return 0;
   const rows = await knex(tableName)
     .whereNull('token_digest')
     .select('id', 'token', consumedColumn);
@@ -54,14 +55,18 @@ async function hardenTokenTable(knex, tableName, consumedColumn) {
   // epoch integers and compares by storage class; TEXT > INTEGER is always
   // true there, which would leave a supposedly expired legacy token usable.
   const expiredAt = new Date(Date.now() - 1000);
+  let expired = 0;
   for (const row of rows) {
     const tokenDigest = digest(row.token);
-    await knex(tableName).where({ id: row.id }).whereNull('token_digest').update({
+    const outstanding = row[consumedColumn] == null;
+    const updated = await knex(tableName).where({ id: row.id }).whereNull('token_digest').update({
       token: tokenDigest,
       token_digest: tokenDigest,
-      ...(row[consumedColumn] == null ? { expires_at: expiredAt } : {}),
+      ...(outstanding ? { expires_at: expiredAt } : {}),
     });
+    if (outstanding && updated) expired += 1;
   }
+  return expired;
 }
 
 async function bcryptMatches(password, hash) {
@@ -105,7 +110,7 @@ async function adminForReset(knex, row, data, leakedPassword) {
 async function rotateLegacyAdminReset(knex, row, data, hasRenderedHtml) {
   const leakedPassword = data && data.new_password;
   const admin = await adminForReset(knex, row, data, leakedPassword);
-  if (!admin) return false;
+  if (!admin) return null;
 
   const newPassword = generateSecurePassword(16);
   const passwordHash = await bcrypt.hash(newPassword, getBcryptRounds());
@@ -119,7 +124,7 @@ async function rotateLegacyAdminReset(knex, row, data, hasRenderedHtml) {
       password_changed_at: now,
       updated_at: now,
     });
-  if (changed !== 1) return false;
+  if (changed !== 1) return null;
 
   if (await knex.schema.hasTable('api_tokens')) {
     await knex('api_tokens').where({ created_by: admin.id }).whereNull('revoked_at')
@@ -147,7 +152,7 @@ async function rotateLegacyAdminReset(knex, row, data, hasRenderedHtml) {
     .where({ id: row.id, status: row.status })
     .update(update);
   if (queueUpdated !== 1) throw new Error('Pending admin reset changed during credential rotation');
-  return true;
+  return { id: admin.id, username: admin.username, email: recipientEmail };
 }
 
 async function hardenQueueRows(knex) {
@@ -191,14 +196,26 @@ async function hardenQueueRows(knex) {
     const containsRecoveryLink = JSON.stringify(recoveryRedacted) !== before;
     if (!protectedType && !containsRecoveryLink) continue;
 
-    if (row.email_type === 'admin_password_reset') {
+    // A row that reached a final state keeps only the archive mask (or
+    // nothing) in place of the temporary password. There is no credential to
+    // compare then, so it is scrubbed below without any bcrypt work.
+    if (row.email_type === 'admin_password_reset'
+      && secretValues({ new_password: data && data.new_password }).length) {
       // The SQLite migration runner is not transactional. Give every
       // password/hash + API-token + queue replacement its own transaction
       // (a savepoint when the caller is already the import transaction).
       const rotated = await knex.transaction(
         (trx) => rotateLegacyAdminReset(trx, row, data, hasRenderedHtml),
       );
-      if (rotated) continue;
+      if (rotated) {
+        // The stored plaintext was still this account's live password, so the
+        // account itself changed. Say whose, never the password.
+        console.warn('Account recovery hardening: the password of admin '
+          + `${JSON.stringify(rotated.username)} (id ${rotated.id}, ${rotated.email}) was reset by the `
+          + `security upgrade because email_queue row ${row.id} (${row.status}) stored it in plaintext. `
+          + 'A new password-reset email was queued to that address.');
+        continue;
+      }
     }
     if (row.email_type === 'admin_password_reset' && row.status === 'pending') {
       const update = {
@@ -227,7 +244,11 @@ async function hardenQueueRows(knex) {
 
 async function hardenAccountRecoveryStorage(knex) {
   for (const [tableName, consumedColumn] of TOKEN_TABLES) {
-    await hardenTokenTable(knex, tableName, consumedColumn);
+    const expired = await hardenTokenTable(knex, tableName, consumedColumn);
+    if (expired > 0) {
+      console.log(`Account recovery hardening: expired ${expired} outstanding ${tableName} row(s); `
+        + 'send those invitations or password resets again.');
+    }
   }
   await hardenQueueRows(knex);
 }

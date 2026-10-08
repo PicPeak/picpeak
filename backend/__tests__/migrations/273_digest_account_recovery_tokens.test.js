@@ -4,10 +4,11 @@ process.env.BCRYPT_ROUNDS = '4';
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
-const migration = require('../../migrations/core/268_digest_account_recovery_tokens');
+const migration = require('../../migrations/core/273_digest_account_recovery_tokens');
 const {
   decryptEmailData, encryptEmailData, isEncryptedEmailData, PROTECTED_PENDING_STATUS,
 } = require('../../src/utils/emailQueueEncryption');
+const { MASK } = require('../../src/utils/emailSecretRedaction');
 const {
   hardenAccountRecoveryStorage,
   installAccountRecoveryWriteGuards,
@@ -237,4 +238,128 @@ test('credential rotation rolls back if the protected queue replacement fails', 
   expect((await db('api_tokens').where({ id: apiTokenId }).first()).revoked_at).not.toBeNull();
   expect((await db('email_queue').where({ id: queueId }).first()).status)
     .toBe(PROTECTED_PENDING_STATUS);
+});
+
+describe('queued admin resets that already reached a final state', () => {
+  const queueReset = async (fields) => {
+    const inserted = await db('email_queue').insert({
+      recipient_email: 'tester@example.com', email_type: 'admin_password_reset',
+      status: 'sent', retry_count: 0,
+      created_at: new Date().toISOString(), sent_at: new Date().toISOString(), ...fields,
+    }).returning('id');
+    return inserted[0]?.id ?? inserted[0];
+  };
+  let warn;
+  let currentPassword;
+
+  beforeEach(async () => {
+    await db('email_queue').del();
+    currentPassword = `Current-Password-${crypto.randomBytes(4).toString('hex')}!`;
+    await db('admin_users').where({ id: adminId }).update({
+      password_hash: await bcrypt.hash(currentPassword, 4),
+      username: 'tester', email: 'tester@example.com',
+    });
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => { jest.restoreAllMocks(); });
+
+  test.each([
+    ['the archive mask', MASK],
+    ['an empty value', ''],
+  ])('a row holding %s is left alone without any bcrypt work', async (_label, stored) => {
+    const emailData = JSON.stringify({ username: 'tester', new_password: stored });
+    const id = await queueReset({ email_data: emailData });
+    const before = (await db('admin_users').where({ id: adminId }).first()).password_hash;
+    const compare = jest.spyOn(bcrypt, 'compare');
+    const hash = jest.spyOn(bcrypt, 'hash');
+
+    await hardenAccountRecoveryStorage(db);
+
+    expect(compare).not.toHaveBeenCalled();
+    expect(hash).not.toHaveBeenCalled();
+    expect((await db('admin_users').where({ id: adminId }).first()).password_hash).toBe(before);
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe('sent');
+    expect(row.email_data).toBe(emailData);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('a sent row whose plaintext is still the live password rotates it and names the admin', async () => {
+    const id = await queueReset({
+      email_data: JSON.stringify({ username: 'tester', new_password: currentPassword }),
+      rendered_html: `<p>Your temporary password is ${currentPassword}</p>`,
+    });
+
+    await hardenAccountRecoveryStorage(db);
+
+    const admin = await db('admin_users').where({ id: adminId }).first();
+    await expect(bcrypt.compare(currentPassword, admin.password_hash)).resolves.toBe(false);
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe(PROTECTED_PENDING_STATUS);
+    expect(row.email_data).not.toContain(currentPassword);
+    const replacement = decryptEmailData(row.email_type, JSON.parse(row.email_data), row.recipient_email)
+      .new_password;
+    await expect(bcrypt.compare(replacement, admin.password_hash)).resolves.toBe(true);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = warn.mock.calls[0][0];
+    expect(line).toContain(`"tester" (id ${adminId}, tester@example.com)`);
+    expect(line).toMatch(/was reset by the security upgrade/);
+    expect(line).toMatch(/new password-reset email was queued/);
+    expect(line).not.toContain(currentPassword);
+    expect(line).not.toContain(replacement);
+  });
+
+  test('a sent row whose plaintext matches no admin is scrubbed only', async () => {
+    const stale = 'Long-Gone-Temporary-Password-42!';
+    const id = await queueReset({
+      email_data: JSON.stringify({ username: 'tester', new_password: stale }),
+      rendered_html: `<p>Your temporary password is ${stale}</p>`,
+    });
+    const before = (await db('admin_users').where({ id: adminId }).first()).password_hash;
+
+    await hardenAccountRecoveryStorage(db);
+
+    expect((await db('admin_users').where({ id: adminId }).first()).password_hash).toBe(before);
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe('sent');
+    expect(JSON.parse(row.email_data).new_password).toBe(MASK);
+    expect(row.rendered_html).not.toContain(stale);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+test('logs how many outstanding rows each token table lost, without token material', async () => {
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const rawOutstanding = '1'.repeat(64);
+  const rawAccepted = '2'.repeat(64);
+  await removeAccountRecoveryWriteGuards(db);
+  await db('admin_invitations').insert([
+    {
+      email: 'outstanding@example.com', token: rawOutstanding, token_digest: null,
+      role_id: roleId, invited_by: adminId, expires_at: future,
+    },
+    {
+      email: 'accepted@example.com', token: rawAccepted, token_digest: null,
+      role_id: roleId, invited_by: adminId, expires_at: future, accepted_at: future,
+    },
+  ]);
+  const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    await hardenAccountRecoveryStorage(db);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    const line = log.mock.calls[0][0];
+    expect(line).toContain('expired 1 outstanding admin_invitations row(s)');
+    expect(line).not.toContain(rawOutstanding);
+    expect(line).not.toContain(digest(rawOutstanding));
+
+    log.mockClear();
+    await hardenAccountRecoveryStorage(db);
+    expect(log).not.toHaveBeenCalled();
+  } finally {
+    log.mockRestore();
+    await installAccountRecoveryWriteGuards(db);
+  }
 });
