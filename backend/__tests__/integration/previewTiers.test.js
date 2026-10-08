@@ -315,6 +315,10 @@ describe('preview tiers (#1095)', () => {
         .update({ media_type: 'video', mime_type: 'video/mp4' });
       const video = await db('photos').where({ id: photo.id }).first();
 
+      // Renamed JPEG bytes cannot exercise the genuine video poster path.
+      await fs.promises.writeFile(path.join(process.env.STORAGE_PATH, 'events/active', video.path),
+        require('../fixtures/admissionVideo').admissionVideo());
+
       const key = await imageProcessor.ensureThumbnailAtWidth(video, 900);
       expect(key).not.toContain('thumb_w900_');
     });

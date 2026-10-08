@@ -80,7 +80,7 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
       }
       await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
         ...mediaProcesses.inputOptions(details.format), '-ss', String(timeOffset), '-i', snapshot,
-        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', `scale=${size.replace('x', ':')}`,
+        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', `scale=${size.replace('x', ':')}`, '-pix_fmt', 'yuvj420p',
         '-threads', '1', '-filter_threads', '1', '-filter_complex_threads', '1', tmpPath], {
         memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
         cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,

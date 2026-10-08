@@ -60,6 +60,9 @@ linux('mandatory native media process boundary', () => {
       await dead(pid);
     }
   });
+  test('an ordinary wrapped FFmpeg errno is not misclassified as a native resource signal', async () => {
+    await expect(run('ordinary-error')).rejects.toMatchObject({ exitCode: 234 });
+  });
   test('queue-inclusive timeout, cancellation and stop await termination and lease writes', async () => {
     let pid;
     await expect(run('sleep', { wallMs: 100, onStart: lease => { pid = lease.pid; } })).rejects.toMatchObject({ code: 'MEDIA_TIMEOUT' });
