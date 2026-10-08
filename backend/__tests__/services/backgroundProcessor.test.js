@@ -7,6 +7,10 @@
  * race loses the UPDATE-with-guard.
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
 jest.mock('../../src/services/photoProcessor', () => ({
   processPhoto: jest.fn(),
   processUploadedPhotos: jest.fn(),
@@ -69,6 +73,17 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
 }
 
 describe('backgroundProcessor.claimNextPhoto', () => {
+  let leaseDirectory, priorLeasePath;
+  beforeAll(() => {
+    priorLeasePath = process.env.MEDIA_PROCESS_LEASE_PATH;
+    leaseDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'owned-media-claim-test-'));
+    process.env.MEDIA_PROCESS_LEASE_PATH = leaseDirectory;
+  });
+  afterAll(async () => {
+    if (priorLeasePath === undefined) delete process.env.MEDIA_PROCESS_LEASE_PATH;
+    else process.env.MEDIA_PROCESS_LEASE_PATH = priorLeasePath;
+    await fs.promises.rm(leaseDirectory, { recursive: true, force: true });
+  });
   function loadProcessor(db) {
     jest.resetModules();
     jest.doMock('../../src/database/db', () => ({ db }));
@@ -117,9 +132,11 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     let bg;
     try {
       bg = loadProcessor(db);
-      require('../../src/services/photoProcessor').processPhoto.mockImplementation(async () => { void bg.stop(); });
+      let started;
+      const processing = new Promise(resolve => { started = resolve; });
+      require('../../src/services/photoProcessor').processPhoto.mockImplementation(async () => { started(); void bg.stop(); });
       bg.start();
-      await new Promise(resolve => setImmediate(resolve));
+      await processing;
       await bg.stop();
       expect(finish).toHaveBeenCalledWith(7);
       expect(queries.some(query => query.updates?.processing_status === 'failed')).toBe(false);
