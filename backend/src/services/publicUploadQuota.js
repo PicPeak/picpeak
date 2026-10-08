@@ -26,7 +26,9 @@ const DEFAULTS = Object.freeze({
   requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 5, headroomFiles: 1024,
   requestTimeoutMs: 300000,
   gallery: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 16, hourBytes: 20 * GiB },
-  guest: { bytes: 10 * GiB, files: 5000, pendingBytes: 5 * GiB, pendingFiles: 1000, requests: 4, hourBytes: 5 * GiB },
+  // Same as the gallery: guests without an identity are bucketed by client
+  // network, and a whole venue usually shares one address.
+  guest: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 16, hourBytes: 20 * GiB },
   transfer: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 4, hourBytes: 20 * GiB },
   account: { bytes: 500 * GiB, files: 200000, pendingBytes: 50 * GiB, pendingFiles: 20000, requests: 32, hourBytes: 100 * GiB },
   // No lifetime ceiling for the whole deployment: free-disk headroom bounds it.
