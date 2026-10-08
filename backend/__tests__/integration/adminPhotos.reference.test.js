@@ -51,7 +51,8 @@ describe('Admin photos in reference mode', () => {
 
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn().mockResolvedValue('thumbnails/mock-thumb.jpg'),
-      ensureThumbnail: jest.fn()
+      ensureThumbnail: jest.fn(),
+      withProcessableImage: async localPath => ({ path: localPath, cleanup: () => {} })
     }));
 
     jest.doMock('../../src/middleware/uploadValidation', () => ({
@@ -153,6 +154,7 @@ describe('Admin photos in reference mode', () => {
     });
     await require('../../migrations/core/240_public_upload_quotas').up(db);
     await require('../../migrations/core/241_admin_upload_admission').up(db);
+    await require('../../migrations/core/268_image_work_budget').up(db);
 
     await db('events').insert({
       id: 1,
@@ -191,7 +193,7 @@ describe('Admin photos in reference mode', () => {
     const uploadResponse = await request(app)
       .post(`/api/admin/events/1/upload`)
       .field('category_id', String(categoryId))
-      .attach('photos', Buffer.from('fake image data'), 'photo.jpg');
+      .attach('photos', await require('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'white' } }).jpeg().toBuffer(), 'photo.jpg');
 
     // 202 Accepted since the upload route went async (851744c3): the files are
     // stored and a pending row is inserted, thumbnails/EXIF follow in the

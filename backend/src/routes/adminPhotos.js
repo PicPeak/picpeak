@@ -355,8 +355,13 @@ async function handleAdminPhotoUpload(req, res) {
     let counter = (parseInt(existingCount.count) || 0) + 1;
     const storage = getStorage();
 
+    const imageAdmission = require('../services/imageWorkAdmission');
+    let batchDecodedBytes = 0;
+    const preparedImages = await imageAdmission.prepareBatch(filesToUpload, req.publicUploadReservation?.signal);
     for (const file of filesToUpload) {
       let object;
+      let imageReservation;
+      let rowCommitted = false;
       let promotionSettled = false;
       try {
         const tempStats = await fs.stat(file.path);
@@ -376,6 +381,12 @@ async function handleAdminPhotoUpload(req, res) {
         const finalKey = path.posix.join(finalDestPathRel, newFilename);
         const relativePath = path.posix.join(event.slug, newFilename);
         const isVideo = isVideoMimeType(file.mimetype);
+
+        if (!isVideo) {
+          const bytes = await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
+          imageReservation = await imageAdmission.reserve(eventId, bytes, batchDecodedBytes + bytes);
+          batchDecodedBytes += bytes;
+        }
 
         // 1. Move file to its final storage key first. If the worker
         //    later picks up the photo row, the file is guaranteed to
@@ -420,8 +431,11 @@ async function handleAdminPhotoUpload(req, res) {
         const photoId = await uploadQuota.commitObject(object, 'photo', async conn => {
           const inserted = await insertPhotoWithinCap(photoData, photoCapOf(event), conn);
           if (!inserted) throw new Error('Photo cap reached');
-          return inserted[0]?.id || inserted[0];
+          const id = inserted[0]?.id || inserted[0];
+          if (imageReservation) await imageAdmission.attach(imageReservation, id, conn);
+          return id;
         });
+        rowCommitted = true;
 
         acceptedUpload(res, { video: isVideo, raw: extension.toLowerCase() === '.dng', s3: process.env.STORAGE_BACKEND === 's3' });
 
@@ -432,6 +446,9 @@ async function handleAdminPhotoUpload(req, res) {
           category_id: parsedCategoryId,
         });
       } catch (err) {
+        if (!rowCommitted && imageReservation) await imageAdmission.release(imageReservation).catch(cleanupError => {
+          logger.warn('Decoded admin image reservation retained', { error: cleanupError.message });
+        });
         if (object) {
           try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
           catch (cleanupError) {
@@ -439,7 +456,8 @@ async function handleAdminPhotoUpload(req, res) {
           }
         }
         logger.error(`Error queuing file ${file.originalname}:`, err);
-        errors.push({ filename: file.originalname, error: err.message });
+        errors.push({ filename: file.originalname, error: err.message,
+          ...(require('../services/imageResourcePolicy').isResourceError(err) ? { code: err.code } : {}) });
       }
     }
     
@@ -665,11 +683,28 @@ router.post(
         });
       }
 
-      await db('photos').where({ id: photo.id }).update({
-        processing_status: 'pending',
-        processing_error: null,
-        processing_started_at: null,
-      });
+      const imageAdmission = require('../services/imageWorkAdmission');
+      let imageReservation;
+      try {
+        if (photo.media_type !== 'video' && !photo.mime_type?.startsWith('video/')) {
+          const event = await db('events').where({ id: photo.event_id }).first();
+          const { withLocalCopy } = require('../services/imageProcessor');
+          const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
+          const key = resolvePhotoStorageKey(event, photo);
+          const inspect = localPath => imageAdmission.inspect(localPath, photo.filename);
+          const bytes = key ? await withLocalCopy(key, inspect) : await inspect(resolvePhotoFilePath(event, photo));
+          imageReservation = await imageAdmission.reserve(photo.event_id, bytes, bytes);
+        }
+        await db.transaction(async trx => {
+          const changed = await trx('photos').where({ id: photo.id, processing_status: photo.processing_status })
+            .update({ processing_status: 'pending', processing_error: null, processing_started_at: null, processing_attempts: 0 });
+          if (changed !== 1) throw new Error('Photo retry is already in progress');
+          if (imageReservation) await imageAdmission.attach(imageReservation, photo.id, trx);
+        });
+      } catch (error) {
+        if (imageReservation) await imageAdmission.release(imageReservation);
+        throw error;
+      }
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to retry photo processing');

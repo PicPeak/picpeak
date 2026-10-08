@@ -121,7 +121,7 @@ jest.mock('../../../services/publicUploadQuota', () => ({
 
 // Stub sharp so the happy-path test doesn't actually decode an image
 // (the temp file is a one-byte placeholder — see the beforeEach below).
-jest.mock('sharp', () => jest.fn(() => ({
+jest.mock('../../../services/isolatedSharp', () => jest.fn(() => ({
   metadata: jest.fn().mockResolvedValue({ width: 1920, height: 1080 }),
 })));
 

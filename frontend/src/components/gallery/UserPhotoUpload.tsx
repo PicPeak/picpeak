@@ -210,7 +210,8 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
             break;
           }
           failedCount++;
-          const reason = firstError?.error || t('upload.someFilesFailed');
+          const capacityKey = publicUploadErrorKey(firstError?.code);
+          const reason = capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed');
           toast.error(`${file.name}: ${reason}`);
           continue;
         }

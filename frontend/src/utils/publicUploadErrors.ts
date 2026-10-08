@@ -1,6 +1,13 @@
 /** Only server-defined upload capacity codes use these localized messages. */
 export function publicUploadErrorKey(code: unknown): string | null {
   switch (code) {
+    case 'IMAGE_RESOURCE_LIMIT': return 'upload.capacity.decoded';
+    case 'IMAGE_QUEUE_FULL': return 'upload.capacity.busy';
+    case 'IMAGE_TIMEOUT':
+    case 'IMAGE_CANCELLED': return 'upload.capacity.timeout';
+    case 'IMAGE_WORKER_UNAVAILABLE':
+    case 'IMAGE_ADMISSION_UNAVAILABLE':
+    case 'IMAGE_WORKER_FAILED': return 'upload.capacity.processing';
     case 'UPLOAD_REQUEST_TOO_LARGE': return 'upload.capacity.batch';
     case 'UPLOAD_LIFETIME_LIMIT': return 'upload.capacity.lifetime';
     case 'UPLOAD_PENDING_LIMIT':

@@ -130,7 +130,7 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 
 // Stub sharp so we don't actually read any image off disk.
-jest.mock('sharp', () => {
+jest.mock('../../src/services/isolatedSharp', () => {
   const mock = jest.fn(() => ({
     metadata: jest.fn(async () => ({ width: 1920, height: 1080 })),
   }));

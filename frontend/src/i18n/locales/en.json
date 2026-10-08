@@ -776,6 +776,8 @@
   },
   "upload": {
     "capacity": {
+      "decoded": "This image or batch exceeds the server's image-processing budget. Please use fewer frames, lower image dimensions, or a smaller batch.",
+      "processing": "Image processing could not complete within the server's resource limits. Please contact the owner.",
       "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
       "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",
       "busy": "Other uploads or processing jobs are using the available capacity. Please try again later.",

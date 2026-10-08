@@ -1,4 +1,5 @@
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { isResourceError } = require('./imageResourcePolicy');
 const exifr = require('exifr');
 const path = require('path');
 const fsp = require('fs').promises;
@@ -62,6 +63,7 @@ async function extractRawPreview(rawPath) {
       }
     } catch (err) {
       lastErr = err;
+      if (isResourceError(err)) { await fsp.rm(outDir, { recursive: true, force: true }).catch(() => {}); throw err; }
       // exiftool missing is a DEPLOYMENT fault, not a bad file, and it fails
       // identically for every tag — so stop rather than retrying the same
       // spawn twice more and reporting the last one as if it described the
@@ -346,6 +348,7 @@ async function generateThumbnail(imagePath, options = {}) {
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to generate thumbnail for ${sourceBasename}: ${msg}`);
+    if (isResourceError(error)) throw error;
 
     // No cleanup delete here either, for the same reason as above (#1129).
     // This was "clean up any partially uploaded object", but there cannot be
@@ -761,6 +764,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
     return thumbnailRelKey;
   } catch (error) {
     logger.error('Failed to generate video placeholder thumbnail:', error.message);
+    if (isResourceError(error)) throw error;
     return null;
   }
 }
@@ -854,6 +858,7 @@ async function generateHeroImage(imagePath, options = {}) {
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to generate hero image for ${filename}: ${msg}`);
+    if (isResourceError(error)) throw error;
     return null;
   }
 }
@@ -1058,6 +1063,7 @@ async function generatePreviewImage(imagePath, options = {}) {
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to read metadata for preview of ${filename}: ${msg}`);
+    if (isResourceError(error)) throw error;
     return null;
   }
   const isAnimated = (probe.pages || 1) > 1;
@@ -1135,6 +1141,7 @@ async function generatePreviewImage(imagePath, options = {}) {
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to generate preview image for ${filename}: ${msg}`);
+    if (isResourceError(error)) throw error;
     // A write the storage backend could not take is not a photo that has no
     // preview (issue 1785): null would send the guest to the original and
     // mark a face scan failed for good. Callers retry or answer 503.
@@ -1392,6 +1399,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       }
     });
   } catch (e) {
+    if (isResourceError(e)) throw e;
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     return null;
   }
@@ -1458,6 +1466,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
       }
     });
   } catch (e) {
+    if (isResourceError(e)) throw e;
     logger.warn(`Preview tier w${width} failed for photo ${photo.id}: ${e.message}`);
     return null;
   }
@@ -1665,6 +1674,7 @@ async function resizeToBox(inputBuffer, box, options = {}) {
     return await pipeline.toBuffer();
   } catch (e) {
     logger.warn(`resizeToBox failed (${box.width}x${box.height}), serving original: ${e.message}`);
+    if (isResourceError(e)) throw e;
     return inputBuffer;
   }
 }

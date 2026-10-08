@@ -47,6 +47,10 @@ beforeAll(async () => {
   transferApp = buildRouteApp('/api/public/transfer-upload', require('../../src/routes/publicTransferUpload'));
 }, 120000);
 beforeEach(async () => {
+  // This suite isolates compressed ingress accounting. The native decoded
+  // admission boundary has real-image controls in imageWorkAdmission.test.js.
+  jest.spyOn(require('../../src/services/imageWorkAdmission'), 'inspect').mockResolvedValue(1024);
+  await db('image_work_reservations').del();
   await db('public_upload_objects').del(); await db('public_upload_requests').del();
   await db('transfer_uploads').del(); await db('photos').del();
   await db('transfers').del(); await db('events').del();

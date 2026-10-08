@@ -776,6 +776,8 @@
   },
   "upload": {
     "capacity": {
+      "decoded": "Dieses Bild oder dieser Stapel überschreitet das Bildverarbeitungsbudget des Servers. Bitte weniger Einzelbilder, geringere Bildabmessungen oder einen kleineren Stapel verwenden.",
+      "processing": "Die Bildverarbeitung konnte innerhalb der Ressourcenlimits des Servers nicht abgeschlossen werden. Bitte den Eigentümer kontaktieren.",
       "batch": "Dieser Upload überschreitet die Stapelgrenze des Servers oder das verbleibende Kontingent. Bitte weniger oder kleinere Dateien senden oder den Eigentümer kontaktieren.",
       "lifetime": "Diese Galerie oder Dateianfrage hat ihr Upload-Kontingent erreicht. Bitte den Eigentümer kontaktieren.",
       "busy": "Andere Uploads oder Verarbeitungsaufträge belegen die verfügbare Kapazität. Bitte später erneut versuchen.",

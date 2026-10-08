@@ -1,7 +1,7 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -155,6 +155,7 @@ async function processNewPhoto(filePath) {
       }
     } catch (err) {
       logger.debug(`Could not read image dimensions for ${filename}: ${err.message}`);
+      if (require('./imageResourcePolicy').isResourceError(err)) throw err;
     }
   }
 

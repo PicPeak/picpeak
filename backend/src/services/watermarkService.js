@@ -1,4 +1,5 @@
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { isResourceError } = require('./imageResourcePolicy');
 const { orientedDimensions } = require('./imageProcessor');
 const path = require('path');
 const fs = require('fs').promises;
@@ -169,6 +170,7 @@ class WatermarkService {
           watermarkMetadata = { width: targetWidth, height: targetHeight };
         } catch (error) {
           logger.error('Error processing watermark logo:', error);
+          if (isResourceError(error)) throw error;
           watermarkBuffer = null;
         }
       }
@@ -258,6 +260,7 @@ class WatermarkService {
       return watermarkedBuffer;
     } catch (error) {
       logger.error('Error applying watermark:', error);
+      if (isResourceError(error)) throw error;
       // Return the un-watermarked input on error. Buffer inputs are already
       // in memory — readFile() would treat the Buffer as a path and throw,
       // turning a cosmetic watermark failure into a failed download.
