@@ -37,6 +37,11 @@ const {
   createExternalRelpathIndex,
   dropExternalRelpathIndex,
 } = require('./externalPhotoDedupe');
+const {
+  hardenAccountRecoveryStorage,
+  installAccountRecoveryWriteGuards,
+  removeAccountRecoveryWriteGuards,
+} = require('./accountRecoveryStorageHardening');
 
 const isPostgres = () => knexConfig.client === 'pg';
 
@@ -563,6 +568,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await trx.raw('PRAGMA defer_foreign_keys = ON');
     }
 
+    // A portable archive can predate the recovery-token storage migration.
+    // Temporarily remove the write boundary so those legacy rows can be
+    // loaded, then harden them and restore the boundary before commit.
+    await removeAccountRecoveryWriteGuards(trx);
+
     // Suspending FK enforcement does not suspend UNIQUE indexes on either
     // engine (#1162). A backup taken before migration 186 carries the
     // duplicate photo rows that migration exists to remove, so batchInsert
@@ -641,6 +651,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     if (operatorId && roleSnapshot) {
       await preserveOperatorRole(trx, operatorId, roleSnapshot);
     }
+
+    await hardenAccountRecoveryStorage(trx);
+    await installAccountRecoveryWriteGuards(trx);
 
     // Reset the pg session flag BEFORE the connection returns to the pool.
     if (isPostgres()) await trx.raw('SET session_replication_role = \'origin\'');
