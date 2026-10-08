@@ -67,7 +67,7 @@ export const AnalyticsPage: React.FC = () => {
       href={dashboardUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:opacity-80"
+      className="inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium text-accent hover:opacity-80"
     >
       <ExternalLink className="w-4 h-4" />
       {t('analytics.openDashboard')}
