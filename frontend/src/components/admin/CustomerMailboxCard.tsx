@@ -12,6 +12,7 @@ import { Save, Server, User, Lock, Eye, EyeOff, PlugZap, Inbox } from 'lucide-re
 import { Button, Card, Input, Loading } from '../common';
 import { emailService, type MailAccount } from '../../services/email.service';
 import { useMutationWithToast, useModal } from '../../hooks';
+import { mailPolicyError } from '../../utils/mailErrors';
 
 const labelCls = 'block text-sm font-medium text-body mb-1';
 const selectCls = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
@@ -41,13 +42,13 @@ export const CustomerMailboxCard: React.FC = () => {
     },
     successMessage: t('email.customerMailbox.savedToast', 'Customer mailbox saved.'),
     invalidateKeys: [['mail-accounts']],
-    errorMessage: (e: any) => e?.response?.data?.error || e.message || 'Failed',
+    errorMessage: (e: any) => mailPolicyError(e, t) || e?.response?.data?.error || e.message || 'Failed',
   });
 
   const test = useMutationWithToast({
     mutationFn: () => emailService.testMailAccount({ ...cfg, account_key: ACCOUNT_KEY }),
     successMessage: (r) => t('email.customerMailbox.testOk', 'Connected to {{folder}} — {{messages}} messages, {{unseen}} unread.', { folder: r.folder, messages: r.messages, unseen: r.unseen }),
-    errorMessage: (e: any) => e?.response?.data?.error || e.message || t('email.customerMailbox.testFailed', 'Connection failed.'),
+    errorMessage: (e: any) => mailPolicyError(e, t) || e?.response?.data?.error || e.message || t('email.customerMailbox.testFailed', 'Connection failed.'),
   });
 
   if (isLoading) return <Loading />;

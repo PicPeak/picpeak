@@ -1,5 +1,6 @@
 const { secretValues, redactEmailData, redactRenderedHtml, replaceMaskedSecrets, isSecretKey, redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink } = require('../utils/emailSecretRedaction');
 const nodemailer = require('nodemailer');
+const { smtpConnectionOptions } = require('../utils/mailConnection');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
@@ -8,6 +9,12 @@ const {
   normaliseSchedule,
 } = require('../utils/businessHours');
 const { hasColumnCached } = require('../utils/schemaCache');
+const {
+  decryptEmailData,
+  encryptEmailData,
+  isProtectedEmailType,
+  PROTECTED_PENDING_STATUS,
+} = require('../utils/emailQueueEncryption');
 const emailWebhookTransport = require('./emailWebhookTransport');
 // Migration 198 — the global email footer signature is read from the
 // business profile. No cycle: businessProfileService only pulls db + utils.
@@ -111,7 +118,7 @@ async function initializeTransporter(forceReinit = false) {
       try { transporter.close(); } catch (_) { /* best-effort */ }
     }
 
-    transporter = nodemailer.createTransport({
+    transporter = nodemailer.createTransport(smtpConnectionOptions({
       host: config.smtp_host,
       port: config.smtp_port,
       secure: config.smtp_secure,
@@ -123,10 +130,11 @@ async function initializeTransporter(forceReinit = false) {
         // Allow ignoring SSL certificate errors when tls_reject_unauthorized is false
         rejectUnauthorized: config.tls_reject_unauthorized !== false
       }
-    });
+    }));
 
     // Verify configuration
     await transporter.verify();
+    transporterError = null;
     logger.info('Email transporter initialized successfully');
     
     // Update the config hash
@@ -135,6 +143,7 @@ async function initializeTransporter(forceReinit = false) {
     return transporter;
   } catch (error) {
     logger.error('Failed to initialize email transporter:', error);
+    transporterError = error;
     transporter = null;
     lastConfigHash = null;
     return null;
@@ -1154,13 +1163,13 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     const acct = await db('mail_accounts').where({ account_key: accountKey }).first();
     if (acct && acct.smtp_host && (acct.smtp_user || acct.from_email)) {
       const nodemailer = require('nodemailer');
-      tx = nodemailer.createTransport({
+      tx = nodemailer.createTransport(smtpConnectionOptions({
         host: acct.smtp_host,
         port: parseInt(acct.smtp_port, 10) || 587,
         secure: acct.smtp_secure === true || acct.smtp_secure === 1,
         auth: acct.smtp_user && acct.smtp_pass ? { user: acct.smtp_user, pass: acct.smtp_pass } : undefined,
         tls: { rejectUnauthorized: true },
-      });
+      }));
       fromEmail = acct.from_email || acct.smtp_user;
       fromName = acct.from_name || '';
     }
@@ -1291,7 +1300,11 @@ const processorStatus = {
   lastRunAt: null,
   lastResult: null,
   lastError: null,
+  lastErrorCode: null,
 };
+// Why the transporter last failed to initialise, so a mail network-policy
+// refusal reaches System Health instead of a generic "check the settings".
+let transporterError = null;
 
 function getQueueProcessorStatus() {
   return {
@@ -1299,6 +1312,7 @@ function getQueueProcessorStatus() {
     lastRunAt: processorStatus.lastRunAt,
     lastResult: processorStatus.lastResult,
     lastError: processorStatus.lastError,
+    lastErrorCode: processorStatus.lastErrorCode,
   };
 }
 
@@ -1314,6 +1328,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
   const result = { processed: 0, sent: 0, failed: 0 };
   processorStatus.lastRunAt = new Date().toISOString();
   processorStatus.lastError = null;
+  processorStatus.lastErrorCode = null;
 
   try {
     // Try to initialize transporter if it's null (in case it failed at startup).
@@ -1328,7 +1343,10 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         logger.warn('Email transporter could not be initialized, skipping queue processing');
         // #1262 — the row stays pending with retry_count 0, so nothing in the
         // queue itself records that this pass did nothing. Say so here.
-        processorStatus.lastError = 'Email transporter could not be initialised — check the SMTP settings';
+        const refused = ['MAIL_HOST_FORBIDDEN', 'MAIL_CONFIG_INVALID'].includes(transporterError?.code);
+        processorStatus.lastError = refused ? transporterError.message
+          : 'Email transporter could not be initialised — check the SMTP settings';
+        processorStatus.lastErrorCode = refused ? transporterError.code : null;
         processorStatus.lastResult = result;
         return result;
       }
@@ -1341,7 +1359,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
       // queue split-payment emails relative to the event date.
       const now = new Date();
       const query = db('email_queue')
-        .where('status', 'pending');
+        .whereIn('status', ['pending', PROTECTED_PENDING_STATUS]);
       // Targeted single-email flush (cockpit "send now"): scope to that row
       // only, so we never force-retry other dead-lettered emails.
       if (onlyId != null) query.where('id', onlyId);
@@ -1392,6 +1410,10 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         emailData = typeof email.email_data === 'string'
           ? JSON.parse(email.email_data || '{}')
           : email.email_data || {};
+        // Account-recovery variables are ciphertext while they wait in the
+        // database. Only the delivery worker opens them, immediately before
+        // template rendering; tamper or a missing/rotated key fails closed.
+        emailData = decryptEmailData(email.email_type, emailData, email.recipient_email);
         // A re-queued row (Messages resend / retry / send now) may carry the
         // archive mask where its passwords used to be; the sentinel makes
         // the template say "not shown" instead of mailing the mask.
@@ -1403,7 +1425,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         if (hasMaskedRecoveryLink(emailData)) {
           // Status-guarded: a row cancelled since the batch was fetched
           // (e.g. a customer erasure, issue 1593) must stay cancelled.
-          await db('email_queue').where({ id: email.id, status: 'pending' }).update({
+          await db('email_queue').where({ id: email.id, status: email.status }).update({
             status: 'failed',
             error_message: 'This invitation or password-reset email cannot be sent again: its link is not kept after sending. Send a new invitation or password reset instead.',
           });
@@ -1450,7 +1472,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           // a full batch goes out after the UI says the campaign is
           // cancelled. Re-check the row still exists and is still pending.
           const stillPending = await db('email_queue')
-            .where({ id: email.id, status: 'pending' })
+            .where({ id: email.id, status: email.status })
             .first('id');
           if (!stillPending) {
             logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
@@ -1470,7 +1492,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           // the row back to 'sent' with the pre-erasure, unredacted data.
           // Re-check the row is still pending immediately before sending.
           const stillPending = await db('email_queue')
-            .where({ id: email.id, status: 'pending' })
+            .where({ id: email.id, status: email.status })
             .first('id');
           if (!stillPending) {
             logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
@@ -1506,7 +1528,7 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
         // and redacts this row (issue 1593); an unguarded update would flip
         // it back to 'sent' and restore the pre-erasure data + HTML.
         const markedSent = await db('email_queue')
-          .where({ id: email.id, status: 'pending' })
+          .where({ id: email.id, status: email.status })
           .update(sentUpdate);
         if (!markedSent) {
           logger.info(`Email ${email.id} was sent but cancelled mid-send — leaving the cancelled row as is`);
@@ -1541,10 +1563,11 @@ async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, o
           logger.error(`Email ${email.id} not sent: ${error.message}`);
           continue;
         }
-        // Increment retry count. The variables stay in the clear on
-        // failure: a row past the cap can still be re-queued (Messages
-        // "retry" resets retry_count, ignoreSchedule skips the cap) and a
-        // masked password would then be mailed out as the real one.
+        // Increment retry count without rewriting email_data. Protected
+        // account-recovery rows therefore remain encrypted; ordinary rows
+        // retain their variables because a row past the cap can still be
+        // re-queued (Messages "retry" resets retry_count, ignoreSchedule
+        // skips the cap).
         try {
           await db('email_queue')
             .where('id', email.id)
@@ -1678,8 +1701,8 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
       event_id: eventId,
       recipient_email: recipientEmail,
       email_type: emailType,
-      email_data: JSON.stringify(emailData),
-      status: 'pending',
+      email_data: JSON.stringify(encryptEmailData(emailType, emailData, recipientEmail)),
+      status: isProtectedEmailType(emailType) ? PROTECTED_PENDING_STATUS : 'pending',
       retry_count: 0,
       created_at: new Date(),
       // Explicit NULL, never the column default. The default is

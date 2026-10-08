@@ -15,6 +15,20 @@ sudo ./picpeak-setup.sh
 
 The script will automatically detect your environment and recommend the best installation method.
 
+When Docker or a supported Node.js runtime is missing, executable bootstrap
+scripts are downloaded from pinned upstream commits into a private temporary
+directory and verified against SHA-256 digests embedded in this installer before
+execution. Download, checksum, or bootstrap failures stop installation (and native
+updates stop before shutting down PicPeak); there is no unverified fallback.
+Bootstrap verification requires `curl` and `sha256sum` from `coreutils`. Fresh
+setup provisions `curl`; install missing prerequisites before using `--update`.
+Updating bootstrap pins requires reviewing the new upstream scripts and updating
+their commit URLs and digests together in `scripts/picpeak-setup.sh`.
+
+This verifies the dependency bootstrap scripts, not the initially downloaded
+PicPeak installer or every package repository/signing key they configure. Review
+the installer before running it as root and keep the host's package trust current.
+
 ## 🎯 Installation Methods
 
 ### Method 1: Docker Installation (Recommended)
@@ -68,6 +82,13 @@ sudo ./picpeak-setup.sh --native
 - ✅ Raspberry Pi OS (32-bit and 64-bit)
 - ✅ Fedora 38, 39, 40
 - ✅ RHEL/CentOS/Rocky/AlmaLinux 8, 9
+
+Native auto-install uses NodeSource's Node.js 22 repositories, which support
+64-bit `amd64`/`arm64` (RPM: `x86_64`/`aarch64`), not 32-bit Raspberry Pi OS.
+On other architectures, preinstall a compatible Node.js runtime (`>=22.12.0`),
+or use a supported 64-bit OS. An already supported Node.js version, including a
+newer major, is kept unchanged. Bootstrap pinning does not expand upstream platform
+support; EOL distributions may require an OS upgrade.
 
 ## 🛠️ Installation Options
 

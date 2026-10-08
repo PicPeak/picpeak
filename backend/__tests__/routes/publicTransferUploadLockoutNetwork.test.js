@@ -22,7 +22,7 @@ beforeAll(async () => {
 beforeEach(() => guards.badAttempts.clear());
 afterAll(async () => { if (cleanup) await cleanup(); });
 
-const probe = (ip) => request(app).get('/api/public/transfer-upload/NOSUCH1').set('X-Forwarded-For', ip);
+const probe = (ip) => request(app).get('/api/public/transfer-upload/NOSUCH1234').set('X-Forwarded-For', ip);
 
 test('bad codes from one IPv6 /64 lock the whole /64, not only the address that guessed', async () => {
   for (let i = 0; i < guards.BAD_ATTEMPT_LIMIT; i++) {

@@ -24,6 +24,7 @@ interface BackupFormData {
   backup_destination_type: 'local' | 'rsync' | 's3';
   backup_destination_path: string;
   backup_rsync_host: string;
+  backup_rsync_port: number;
   backup_rsync_user: string;
   backup_rsync_path: string;
   backup_rsync_ssh_key: string;
@@ -112,6 +113,7 @@ const INITIAL_FORM: BackupFormData = {
   backup_destination_type: 'local',
   backup_destination_path: '',
   backup_rsync_host: '',
+  backup_rsync_port: 22,
   backup_rsync_user: '',
   backup_rsync_path: '',
   backup_rsync_ssh_key: '',
@@ -293,6 +295,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
       return {
         destination_type: 'rsync',
         host: formData.backup_rsync_host,
+        port: formData.backup_rsync_port,
         user: formData.backup_rsync_user,
         path: formData.backup_rsync_path,
         ...(formData.backup_rsync_ssh_key !== SECRET_MASK
@@ -453,17 +456,32 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-body mb-1">
-                  {t('backup.configuration.fields.rsyncPath')}
-                </label>
-                <Input
-                  type="text"
-                  value={formData.backup_rsync_path}
-                  onChange={(e) => handleChange('backup_rsync_path', e.target.value)}
-                  placeholder={t('backup.configuration.fields.rsyncPathPlaceholder')}
-                  required
-                />
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-body mb-1">
+                    {t('backup.configuration.fields.rsyncPath')}
+                  </label>
+                  <Input
+                    type="text"
+                    value={formData.backup_rsync_path}
+                    onChange={(e) => handleChange('backup_rsync_path', e.target.value)}
+                    placeholder={t('backup.configuration.fields.rsyncPathPlaceholder')}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-body mb-1">
+                    {t('backup.configuration.fields.rsyncPort')}
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={Number.isNaN(formData.backup_rsync_port) ? '' : formData.backup_rsync_port}
+                    onChange={(e) => handleChange('backup_rsync_port', parseInt(e.target.value))}
+                    required
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-body mb-1">

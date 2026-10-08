@@ -19,6 +19,16 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   // team member sees the link but not these controls. Missing = owner.
   const ownsEvent = event?.can_manage_assignments !== false;
 
+  const regenerateLink = async () => {
+    try {
+      await eventsService.updateEvent(event.id, { regenerate_client_token: true });
+      toast.success(t('clientAccess.tokenRegenerated'));
+      refetchEvent();
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
   return (
     <Card padding="md">
       <h2 className="text-lg font-semibold text-heading mb-4 flex items-center gap-2">
@@ -145,20 +155,19 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   variant="ghost"
                   size="sm"
                   className="mt-2 text-xs"
-                  onClick={async () => {
-                    try {
-                      await eventsService.updateEvent(event.id, { regenerate_client_token: true });
-                      toast.success(t('clientAccess.tokenRegenerated'));
-                      refetchEvent();
-                    } catch {
-                      toast.error(t('common.error'));
-                    }
-                  }}
+                  onClick={regenerateLink}
                 >
                   {t('clientAccess.regenerateToken')}
                 </Button>
                 )}
               </div>
+            )}
+            {/* No link yet (older galleries): the PIN alone cannot sign a
+                client in, so the control that mints one stays reachable. */}
+            {!event?.client_share_token && (
+              <Button variant="ghost" size="sm" className="text-xs" onClick={regenerateLink}>
+                {t('clientAccess.regenerateToken')}
+              </Button>
             )}
           </>
         )}

@@ -22,6 +22,7 @@ const { formatBoolean } = require('../../utils/dbCompat');
 // True once the run's invoice entity is settled (paid_at set, status paid, or
 // the cumulative paid amount covers the total).
 registry.registerCondition('invoice_paid', async (ctx) => {
+  if (ctx.run.entity_type !== 'invoice') return false;
   const id = ctx.run.entity_id;
   if (!id) return false;
   const inv = await ctx.db('invoices').where({ id }).first();

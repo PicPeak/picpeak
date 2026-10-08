@@ -619,7 +619,9 @@ async function emitDueEventReminders(limit = 200) {
  * runs in one shot and the step log shows exactly what it would do, without
  * sending real customer mail or charging fees.
  */
-async function testRun(workflowId, { entityType = null, entityId = null, payload = {}, dryRun = true } = {}) {
+async function testRun(workflowId, {
+  entityType = null, entityId = null, payload = {}, dryRun = true, initiatedByAdminId = null,
+} = {}) {
   const wf = await db('workflows').where({ id: workflowId }).first();
   if (!wf) throw new Error('Workflow not found');
   const vars = { ...(payload || {}), __test: true };
@@ -631,6 +633,7 @@ async function testRun(workflowId, { entityType = null, entityId = null, payload
     trigger_event: `test:${wf.trigger_type}`,
     entity_type: entityType,
     entity_id: entityId,
+    initiated_by_admin_id: initiatedByAdminId,
     status: 'pending',
     context: JSON.stringify({ vars, crmInitiatedByAdminId: currentCrmActor()?.originAdminId || null }),
     dedup_key: dedupKey,
