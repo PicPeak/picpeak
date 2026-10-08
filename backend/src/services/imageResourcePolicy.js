@@ -31,7 +31,7 @@ function configuration() {
   const memory = effectiveMemory();
   // The backend keeps at least half of its deployment memory. Operators may
   // lower these limits, but cannot turn off the native child cap or exceed it.
-  const nativeBytes = positive('IMAGE_WORKER_MEMORY_MIB', 512, 4096) * MiB;
+  const nativeBytes = positive('IMAGE_WORKER_MEMORY_MIB', 768, 4096) * MiB;
   const available = Math.floor(memory / 2);
   const workers = Math.min(2, Math.floor(available / nativeBytes));
   const decodedBytes = positive('IMAGE_MAX_DECODED_MIB', 256, 2048) * MiB;
