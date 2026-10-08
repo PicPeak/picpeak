@@ -42,7 +42,10 @@ const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 
 const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+// The page splits one selection (up to MAX_FILES_PER_UPLOAD files) into
+// requests that each fit the per-request byte budget; bytes are bounded by
+// the upload quota, this only bounds the request count.
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 // Upload tokens are drawn from an unambiguous alphabet (see transferService).
 // Accept a small range of lengths so a future longer token still validates.
@@ -89,6 +92,8 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
       expires_at: transfer.upload_expires_at || transfer.expires_at,
       max_size_mb: maxSizeMb,
       max_files: MAX_FILES_PER_UPLOAD,
+      // Raw body budget of one request; the page batches a selection to fit.
+      max_request_bytes: await uploadQuota.requestBudget(maxSizeMb * 1024 * 1024),
       allowed_mime: Array.isArray(allowed) ? allowed : DEFAULT_ALLOWED,
     },
   });
@@ -136,7 +141,7 @@ function buildUploader(maxSizeBytes, allowed, { storage, streamHandler, maxFiles
     },
     fileFilter: (req, file, cb) => {
       if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
-      const error = new Error('This file type is not allowed');
+      const error = Object.assign(new Error('This file type is not allowed'), { expose: true });
       rejectBody(error); return cb(error);
     },
   }).array('files', maxFiles);
@@ -147,7 +152,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
   const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
   await withPublicUpload(req, res, {
-    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, fileField: 'files',
+    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, maxFileBytes: maxSizeMb * 1024 * 1024, fileField: 'files',
     fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
   }, options => buildUploader(maxSizeMb * 1024 * 1024, allowed, options), async (uploadReservation, res) => {
 
