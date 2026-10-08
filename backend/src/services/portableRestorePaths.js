@@ -5,6 +5,7 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const { getStoragePath } = require('../config/storage');
+const { AppError } = require('../utils/errors');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n]);
@@ -43,7 +44,11 @@ async function storageIdentity({ create = false } = {}) {
   if (create) await fsp.mkdir(getStoragePath(), { recursive: true, mode: 0o700 });
   const root = await fsp.realpath(getStoragePath());
   const stat = await fsp.stat(root, { bigint: true });
-  const filesystem = (await fsp.statfs(root, { bigint: true })).type;
+  let measurement;
+  try { measurement = await fsp.statfs(root, { bigint: true }); }
+  catch (_) { throw new AppError('Restore capacity measurement is unavailable', 507, 'RESTORE_CAPACITY_UNKNOWN'); }
+  if (typeof measurement?.type !== 'bigint') throw new AppError('Restore capacity measurement is unavailable', 507, 'RESTORE_CAPACITY_UNKNOWN');
+  const filesystem = measurement.type;
   if (!stat.isDirectory() || !LOCAL_FILESYSTEMS.has(filesystem)) throw unsafe('Restore requires a supported local persistent filesystem');
   const device = String(stat.dev);
   const privateRoot = path.join(root, '.picpeak-maintenance');

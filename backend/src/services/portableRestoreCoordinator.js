@@ -1,10 +1,7 @@
 'use strict';
 
-const fs = require('fs');
-const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
-const { pipeline } = require('stream/promises');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const applicationWork = require('./activeApplicationWork');
@@ -68,7 +65,7 @@ function terminalError(value) {
 }
 
 
-function createCoordinator({ database, work = applicationWork, leases, worker, stopServices,
+function createCoordinator({ database, work = applicationWork, leases, worker, ingress, stopServices,
   getStorageIdentity = restorePaths.storageIdentity,
   pollInterval = 1000, offline = false, autoPoll = true } = {}) {
   let registration = null;
@@ -85,6 +82,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
   const db = () => database || require('../database/db').db;
   const leaseService = () => leases || require('./linuxKernelLease');
   const workerService = () => worker || require('./portableRestoreWorker');
+  const ingressService = () => ingress || require('./portableRestoreIngress');
   const control = fn => work.runControl(fn);
   const read = () => control(async () => controlRow(await db()(CONTROL).where({ id: 1 }).first()));
 
@@ -109,33 +107,39 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
     const storage = await getStorageIdentity({ create: true });
     identity = { hostId: storage.identity.host, bootId: storage.identity.bootId };
     location = { ...storage, maintenance: storage.privateRoot };
-    await schema();
-    let row = await control(() => db()(CONTROL).where({ id: 1 }).first());
-    if (!row) {
-      try { await control(() => db()(CONTROL).insert({ id: 1, storage_id: location.storageId })); }
-      catch (error) { if (!(await control(() => db()(CONTROL).where({ id: 1 }).first()))) throw error; }
-    }
-    row = await read();
-    if (row.storage_id !== location.storageId) throw failure('Storage is not the authoritative shared restore mount', 'RESTORE_STORAGE_MISMATCH');
-    const instanceId = crypto.randomUUID();
-    lifetimeLease = await leaseService().acquire(path.join(location.maintenance, 'runtime', `${instanceId}.lease`));
-    const lease = descriptor(lifetimeLease);
-    registration = { instance_id: instanceId, generation: row.generation + (row.state === 'open' || row.state === 'restart_required' ? 0 : 1),
-      storage_id: location.storageId, host_id: identity.hostId, boot_id: identity.bootId, lease_json: json(lease) };
-    // Register against a locked current control row, not the pre-acquire
-    // snapshot. A cold runtime racing a new epoch cannot join an old cohort
-    // and initialize after that cohort was already declared quiescent.
-    row = await control(() => db().transaction(async trx => {
-      let query = trx(CONTROL).where({ id: 1 });
-      if (trx.client.config.client === 'pg') query = query.forUpdate();
-      const latest = controlRow(await query.first());
-      if (latest.storage_id !== location.storageId) throw failure('Restore storage identity changed');
-      registration.generation = latest.generation + (latest.state === 'open' || latest.state === 'restart_required' ? 0 : 1);
-      await trx(INSTANCES).insert(registration);
-      return latest;
-    }));
-    initialized = true;
-    if (row.state !== 'open') work.closeAdmission();
+    // Native restore preserves target control metadata while holding this same
+    // actual volume slot. No new runtime registration may be lost between its
+    // snapshot and database replacement/replay. Bootstrap requires no ordinary
+    // admission, and creates neither jobs nor a listener while waiting/denied.
+    await ingressService().withIngress(async () => {
+      await schema();
+      let row = await control(() => db()(CONTROL).where({ id: 1 }).first());
+      if (!row) {
+        try { await control(() => db()(CONTROL).insert({ id: 1, storage_id: location.storageId })); }
+        catch (error) { if (!(await control(() => db()(CONTROL).where({ id: 1 }).first()))) throw error; }
+      }
+      row = await read();
+      if (row.storage_id !== location.storageId) throw failure('Storage is not the authoritative shared restore mount', 'RESTORE_STORAGE_MISMATCH');
+      const instanceId = crypto.randomUUID();
+      lifetimeLease = await leaseService().acquire(path.join(location.maintenance, 'runtime', `${instanceId}.lease`));
+      const lease = descriptor(lifetimeLease);
+      registration = { instance_id: instanceId, generation: row.generation + (row.state === 'open' || row.state === 'restart_required' ? 0 : 1),
+        storage_id: location.storageId, host_id: identity.hostId, boot_id: identity.bootId, lease_json: json(lease) };
+      // Register against a locked current control row, not the pre-acquire
+      // snapshot. A cold runtime racing a new epoch cannot join an old cohort
+      // and initialize after that cohort was already declared quiescent.
+      row = await control(() => db().transaction(async trx => {
+        let query = trx(CONTROL).where({ id: 1 });
+        if (trx.client.config.client === 'pg') query = query.forUpdate();
+        const latest = controlRow(await query.first());
+        if (latest.storage_id !== location.storageId) throw failure('Restore storage identity changed');
+        registration.generation = latest.generation + (latest.state === 'open' || latest.state === 'restart_required' ? 0 : 1);
+        await trx(INSTANCES).insert(registration);
+        return latest;
+      }));
+      initialized = true;
+      if (row.state !== 'open') work.closeAdmission();
+    });
     // Caller creates the polling owner outside runControl. It never gives
     // timer callbacks, stopped services or normal startup that capability.
     startPolling();
@@ -174,10 +178,14 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
       .update({ ack_epoch: row.epoch }));
   }
   async function allQuiescent(row) {
-    return visitInstances({}, async instance => ((instance.instance_id === registration.instance_id || !offline)
-      && instance.ack_epoch === row.epoch) || (await proveFree(instance)) === 'free');
+    return visitInstances({}, async instance => {
+      const proof = await proveFree(instance);
+      return proof === 'free' || (proof === 'busy' && instance.ack_epoch === row.epoch
+        && (instance.instance_id === registration.instance_id || !offline));
+    });
   }
   async function validateStart({ attemptId, epoch }) {
+    await ingressService().drain();
     const row = await read();
     if (row.attempt_id !== attemptId || row.epoch !== epoch || row.owner_instance_id !== registration.instance_id
       || row.state !== 'restoring' || !(await allQuiescent(row))) throw failure('Restore worker admission was superseded');
@@ -239,7 +247,10 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
         async instance => (await proveFree(instance)) === 'free', trx);
       if (!oldGone) return;
       const newReady = await visitInstances({ generation: row.generation },
-        async instance => instance.startup_ready_epoch === row.epoch || (await proveFree(instance)) === 'free', trx);
+        async instance => {
+          const proof = await proveFree(instance);
+          return proof === 'free' || (proof === 'busy' && instance.startup_ready_epoch === row.epoch);
+        }, trx);
       if (newReady) await trx(CONTROL).where({ id: 1, revision: row.revision, state: 'restart_required', epoch: row.epoch })
         .update({ state: 'open', owner_instance_id: null, revision: row.revision + 1, updated_at: trx.fn.now() });
     }));
@@ -298,6 +309,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
   async function waitForStartupAdmission() {
     if (!initialized) throw failure();
     for (;;) {
+      if (stopping) throw failure();
       const row = await read();
       if (row.state === 'open' && row.generation === registration.generation) {
         // This is only a newly registered cold runtime, never a drained old
@@ -328,42 +340,41 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
         || !path.isAbsolute(options.migrationStorageIndexPath) || options.migrationStorageIndexPath.length > 2048))) {
       throw failure('Unsupported portable restore options', 'RESTORE_OPTIONS_INVALID', 400);
     }
-    const row = await read();
-    if (row.state !== 'open' || registration.generation !== row.generation) throw failure('A coordinated restore is already active', 'RESTORE_CONFLICT', 409);
-    if (offline && !(await visitInstances({}, async instance => instance.instance_id === registration.instance_id || (await proveFree(instance)) === 'free'))) {
-      throw failure('Offline restore requires positive terminal proof for every other runtime');
-    }
-    const attemptId = crypto.randomUUID();
-    const epoch = crypto.randomUUID();
-    const progressToken = crypto.randomBytes(32).toString('hex');
-    const lease = descriptor(await workerService().workerLeaseDescriptor({ attemptId }));
-    const expected = path.join(location.maintenance, attemptId, 'worker.lease');
-    if (lease.path !== expected) throw failure('Worker lease is outside its owned restore directory');
-    const staged = path.join(path.dirname(expected), 'request.picpeak');
-    const source = await fsp.open(archivePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    try {
-      const stat = await source.stat();
-      if (!stat.isFile() || stat.nlink !== 1 || stat.size <= 0 || stat.size > 5 * 1024 ** 3) throw failure('Uploaded restore archive is invalid', 'RESTORE_ARCHIVE_INVALID', 400);
-      await pipeline(fs.createReadStream(null, { fd: source.fd, autoClose: false }),
-        fs.createWriteStream(staged, { flags: 'wx', mode: 0o600 }));
-      const copied = await fsp.open(staged, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    const handle = await ingressService().withIngress(async () => {
+      const row = await read();
+      if (row.state !== 'open' || registration.generation !== row.generation) throw failure('A coordinated restore is already active', 'RESTORE_CONFLICT', 409);
+      if (offline && !(await visitInstances({}, async instance => instance.instance_id === registration.instance_id || (await proveFree(instance)) === 'free'))) {
+        throw failure('Offline restore requires positive terminal proof for every other runtime');
+      }
+      const attemptId = crypto.randomUUID();
+      const epoch = crypto.randomUUID();
+      const progressToken = crypto.randomBytes(32).toString('hex');
+      const lease = descriptor(await workerService().workerLeaseDescriptor({ attemptId }));
+      const expected = path.join(location.maintenance, attemptId, 'worker.lease');
+      if (lease.path !== expected) throw failure('Worker lease is outside its owned restore directory');
+      const staged = path.join(path.dirname(expected), 'request.picpeak');
+      const copied = await ingressService().copyArchive({ sourcePath: archivePath, destinationPath: staged });
       try {
-        if ((await copied.stat()).size !== stat.size || (await source.stat()).size !== stat.size) throw failure('Uploaded archive changed');
-        await copied.sync();
-      } finally { await copied.close(); }
-      await restorePaths.syncDirectory(path.dirname(staged));
-    } finally { await source.close(); }
-    if (!(await cas(row, { state: 'draining', epoch, attempt_id: attemptId, owner_instance_id: registration.instance_id,
-      archive_path: staged, operator_id: Number.isSafeInteger(operatorId) && operatorId > 0 ? operatorId : null,
-      options_json: json(options), worker_lease_json: json(lease),
-      progress_token_hash: tokenHash(progressToken), result_json: null }))) {
-      await fsp.unlink(staged);
-      throw failure('A coordinated restore is already active', 'RESTORE_CONFLICT', 409);
-    }
+        if (!(await cas(row, { state: 'draining', epoch, attempt_id: attemptId, owner_instance_id: registration.instance_id,
+          archive_path: staged, operator_id: Number.isSafeInteger(operatorId) && operatorId > 0 ? operatorId : null,
+          options_json: json(options), worker_lease_json: json(lease),
+          progress_token_hash: tokenHash(progressToken), result_json: null }))) {
+          throw failure('A coordinated restore is already active', 'RESTORE_CONFLICT', 409);
+        }
+        copied.retain();
+      } catch (error) {
+      // An uncertain remote CAS may already have claimed this exact archive.
+      // Never unlink it on an inferred preclaim failure or unavailable read.
+        try { if ((await read()).archive_path === staged) copied.retain(); }
+        catch (_) { copied.retain(); }
+        throw error;
+      }
+      return { attemptId, progressToken, state: 'draining', restartRequired: true };
+    });
     // No ordinary HTTP owner contains this control request. Launching its
     // drain cannot wait for the same request/upload to finish its own response.
     void work.runUncontrolled(tick);
-    return { attemptId, progressToken, state: 'draining', restartRequired: true };
+    return handle;
   }
   async function start(args) {
     if (offline) throw failure('Offline authority is not an HTTP restore admission');
@@ -371,41 +382,60 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
   }
   async function restoreOffline(args) {
     if (!offline) throw failure('Offline restore requires its private coordinator');
-    await initialize();
-    // Only positive lifetime-free evidence, never another live runtime's ACK,
-    // admits an offline caller. It cannot ask that runtime to stop serving.
-    if (!(await visitInstances({}, async instance => instance.instance_id === registration.instance_id || (await proveFree(instance)) === 'free'))) {
-      await stop();
-      await lifetimeLease.release();
-      throw failure('Offline restore cannot run while another runtime may be alive');
-    }
-    await waitForStartupAdmission();
-    work.closeAdmission();
-    const handle = await reserveRestore(args);
-    for (;;) {
-      await tick();
-      const row = await read();
-      if (row.attempt_id !== handle.attemptId) throw failure('Offline restore attempt was superseded');
-      if (row.state === 'restart_required' || (row.state === 'recovery_required' && !workerRunning)) {
-        const result = row.result_json ? parse(row.result_json) : {};
-        // A positively terminal failed start is followed by one supervised
-        // recovery, including the database lock proof. Give tick that owned
-        // transition even if execute's finally settled after the last tick.
-        if (row.state === 'recovery_required' && result.recoveryAttempted !== true
-          && (await workerService().probeWorkerLease(descriptor(parse(row.worker_lease_json)))) === 'free') continue;
+    try {
+      await initialize();
+      // Only positive lifetime-free evidence, never another live runtime's ACK,
+      // admits an offline caller. It cannot ask that runtime to stop serving.
+      if (!(await visitInstances({}, async instance => instance.instance_id === registration.instance_id || (await proveFree(instance)) === 'free'))) {
         await stop();
-        await work.drain();
         await lifetimeLease.release();
-        if (row.state !== 'restart_required') throw failure('Offline restore requires supervised recovery');
-        if (result.outcome === 'rolled_back') {
-          const error = terminalError(result.error);
-          throw error ? failure(error.message, error.code, error.statusCode) : failure('Restore failed; prior data was verified', 'RESTORE_ROLLED_BACK', 400);
-        }
-        return { ...summary(result), restored: true, externalPathsConverted: true, externalPathError: null,
-          outcome: result.outcome, restartRequired: true, attemptId: handle.attemptId };
+        throw failure('Offline restore cannot run while another runtime may be alive');
       }
-      if (stopping) throw failure();
-      await new Promise(resolve => work.runUncontrolled(() => setTimeout(resolve, pollInterval)));
+      await waitForStartupAdmission();
+      work.closeAdmission();
+      const handle = await reserveRestore(args);
+      for (;;) {
+        await tick();
+        const row = await read();
+        if (row.attempt_id !== handle.attemptId) throw failure('Offline restore attempt was superseded');
+        if (row.state === 'restart_required' || (row.state === 'recovery_required' && !workerRunning)) {
+          const result = row.result_json ? parse(row.result_json) : {};
+          // A positively terminal failed start is followed by one supervised
+          // recovery, including the database lock proof. Give tick that owned
+          // transition even if execute's finally settled after the last tick.
+          if (row.state === 'recovery_required' && result.recoveryAttempted !== true
+          && (await workerService().probeWorkerLease(descriptor(parse(row.worker_lease_json)))) === 'free') continue;
+          await stop();
+          await work.drain();
+          if ((await workerService().probeWorkerLease(descriptor(parse(row.worker_lease_json)))) !== 'free') {
+            throw failure('Offline worker lifetime remains unknown');
+          }
+          await lifetimeLease.release();
+          if (row.state !== 'restart_required') throw failure('Offline restore requires supervised recovery');
+          if (result.outcome === 'rolled_back') {
+            const error = terminalError(result.error);
+            throw error ? failure(error.message, error.code, error.statusCode) : failure('Restore failed; prior data was verified', 'RESTORE_ROLLED_BACK', 400);
+          }
+          return { ...summary(result), restored: true, externalPathsConverted: true, externalPathError: null,
+            outcome: result.outcome, restartRequired: true, attemptId: handle.attemptId };
+        }
+        if (stopping) throw failure();
+        await new Promise(resolve => work.runUncontrolled(() => setTimeout(resolve, pollInterval)));
+      }
+    } catch (error) {
+      await stop();
+      await work.drain();
+      await ingressService().drain();
+      // Release only a positively unclaimed private runtime. If control reads
+      // or a CAS are uncertain, or this runtime owns a fenced attempt, actual
+      // Node death / verified worker terminal remains the only release proof.
+      if (lifetimeLease) {
+        try {
+          const row = await read();
+          if (row.owner_instance_id !== registration?.instance_id || row.state === 'open') await lifetimeLease.release();
+        } catch (_) { /* Unknown durable authority keeps the runtime FD. */ }
+      }
+      throw error;
     }
   }
   async function progress(attemptId, token, authenticatedSuperAdmin = false) {
@@ -427,7 +457,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, s
     // The runtime FD deliberately remains held until actual Node lifetime
     // ends. A hung/unknown worker must not be mistaken for a dead runtime.
   }
-  return { initialize, waitForStartupAdmission, admitRequest, start, progress, tick, stop,
+  return { initialize, waitForStartupAdmission, admitRequest, admitUpload: admitRequest, start, progress, tick, stop,
     restoreOffline,
     markReady: () => { locallyReady = true; }, validateStart,
     instanceId: () => registration?.instance_id, isInitialized: () => initialized };

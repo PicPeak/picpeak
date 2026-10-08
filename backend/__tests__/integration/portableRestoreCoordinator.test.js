@@ -8,6 +8,7 @@ const knex = require('knex');
 const { createCoordinator } = require('../../src/services/portableRestoreCoordinator');
 const { createWorkRegistry } = require('../../src/services/activeApplicationWork');
 const { sameRuntimeVolume } = require('../../src/services/portableRestorePaths');
+const { fixtureIngress } = require('./helpers/restoreIngress');
 
 const engines = ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])];
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -39,7 +40,7 @@ test('same-kernel proof works without container machine-id; changed boot require
 });
 
 describe.each(engines)('durable portable coordinator (%s)', client => {
-  let db, directory, schema, storage, instances, native, worker, terminal, starts, recoveries, allGates;
+  let db, directory, schema, storage, instances, native, worker, terminal, starts, recoveries, allGates, ingress;
   const row = () => db('portable_restore_control').where({ id: 1 }).first();
   const waitState = async state => {
     for (let i = 0; i < 150; i++) {
@@ -51,7 +52,7 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
   };
   async function create({ offline = false, identity = storage, stopServices = async () => {} } = {}) {
     const work = createWorkRegistry();
-    const coordinator = createCoordinator({ database: db, work, leases: native, worker, stopServices,
+    const coordinator = createCoordinator({ database: db, work, leases: native, worker, ingress, stopServices,
       offline, getStorageIdentity: async () => identity, pollInterval: 10, autoPoll: false });
     instances.push({ coordinator, work });
     await coordinator.initialize();
@@ -67,7 +68,7 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
   }
 
   beforeAll(async () => {
-    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-coordinator-'));
+    directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-coordinator-')));
     schema = `restore_control_${process.pid}_${Date.now()}`;
     db = knex(client === 'pg' ? { client, connection: process.env.PICPEAK_PG_TEST_URL, searchPath: [schema], pool: { min: 0, max: 4 } }
       : { client, connection: { filename: path.join(directory, 'control.db') }, useNullAsDefault: true, pool: { min: 1, max: 1 } });
@@ -81,6 +82,7 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     storage = { root: directory, privateRoot: path.join(directory, '.picpeak-maintenance'), storageId: crypto.randomUUID(),
       device: '1', filesystem: '61353', identity: { bootId: crypto.randomUUID(), host: null } };
     await fs.mkdir(path.join(storage.privateRoot, 'runtime'), { recursive: true, mode: 0o700 });
+    ({ ingress } = await fixtureIngress(storage.privateRoot));
     const files = new Map();
     native = {
       async acquire(filename) {
@@ -311,6 +313,86 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     expect(starts).toHaveLength(0);
     expect((await row()).state).toBe('open');
     await a.coordinator.admitRequest();
+  });
+
+  it.each(['unshared volume', 'different host', 'replaced busy inode'])('a live %s ACK cannot admit a restore worker', async kind => {
+    const a = await create(); const b = await create();
+    const query = db('portable_restore_instances').where({ instance_id: b.coordinator.instanceId() });
+    if (kind === 'unshared volume') await query.update({ storage_id: crypto.randomUUID() });
+    if (kind === 'different host') {
+      storage.identity.host = hash('authoritative host');
+      await query.update({ host_id: hash('another host') });
+    }
+    if (kind === 'replaced busy inode') {
+      const lease = [...native.files.values()].find(value => value.path.includes(b.coordinator.instanceId())); lease.inode = 'replacement';
+    }
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await b.coordinator.tick(); await a.coordinator.tick();
+    expect((await db('portable_restore_instances').where({ instance_id: b.coordinator.instanceId() }).first()).ack_epoch).toBe((await row()).epoch);
+    expect(starts).toHaveLength(0);
+    expect((await row()).state).toBe('draining');
+  });
+
+  it('a cold runtime on an unshared volume cannot open the restart barrier with startup-ready ACK', async () => {
+    const a = await create(); await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    terminal.resolve(); await waitState('restart_required');
+    const c = await create();
+    await db('portable_restore_instances').where({ instance_id: c.coordinator.instanceId() }).update({ storage_id: crypto.randomUUID() });
+    for (const value of native.files.values()) if (value.path.includes(a.coordinator.instanceId())) value.state = 'free';
+    await c.coordinator.tick();
+    const ready = await db('portable_restore_instances').where({ instance_id: c.coordinator.instanceId() }).first();
+    expect(ready.startup_ready_epoch).toBe((await row()).epoch);
+    expect((await row()).state).toBe('restart_required');
+  });
+
+  it.each(['missing archive', 'oversize archive', 'invalid options'])('offline %s preclaim failure positively releases its private runtime', async kind => {
+    const offline = await create({ offline: true });
+    const archivePath = kind === 'missing archive' ? path.join(directory, 'nonexistent.picpeak') : await upload();
+    if (kind === 'oversize archive') await fs.truncate(archivePath, 5 * 1024 ** 3 + 1);
+    await expect(offline.coordinator.restoreOffline({ archivePath, operatorId: 10,
+      options: kind === 'invalid options' ? { unsafe: true } : {} })).rejects.toBeDefined();
+    expect(starts).toHaveLength(0); expect((await row()).state).toBe('open');
+    expect([...native.files.values()].every(value => value.state === 'free')).toBe(true);
+  });
+
+  it('pre-exec waits actual ingress terminal before durable cohort validation', async () => {
+    const a = await create(); const released = gate(); allGates.push(released);
+    let handle;
+    const uploadLifetime = ingress.withIngress(async () => {
+      handle = await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      await released.promise;
+    });
+    await waitState('restoring');
+    expect(starts).toHaveLength(1);
+    terminal.resolve();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect((await row()).state).toBe('restoring');
+    expect(await db('portable_restore_commits').count('* as count').first()).toMatchObject({ count: client === 'pg' ? '0' : 0 });
+    released.resolve(); await uploadLifetime; await waitState('restart_required');
+    expect((await row()).attempt_id).toBe(handle.attemptId);
+  });
+
+  it('full native-style ingress ownership cannot race or lose a new runtime registration', async () => {
+    await create();
+    const before = await db('portable_restore_instances').count('* as count').first();
+    // A separately constructed runtime has no internal reentrant capability.
+    const contenderIngress = await fixtureIngress(storage.privateRoot);
+    const original = contenderIngress.leases.acquire;
+    contenderIngress.leases.acquire = async filename => {
+      // Model a distinct actual process contending for the same kernel inode.
+      if (filename.endsWith('/upload.lease')) throw Object.assign(new Error('held by native restore'), { code: 'MEDIA_LEASE_BUSY' });
+      return original(filename);
+    };
+    const newcomer = createCoordinator({ database: db, work: createWorkRegistry(), leases: native, worker,
+      ingress: contenderIngress.ingress, getStorageIdentity: async () => storage, autoPoll: false });
+    await ingress.withIngress(async () => {
+      await expect(newcomer.initialize()).rejects.toMatchObject({ code: 'MEDIA_LEASE_BUSY' });
+      expect(await db('portable_restore_instances').count('* as count').first()).toEqual(before);
+      expect(newcomer.isInitialized()).toBe(false);
+    });
+    contenderIngress.leases.acquire = original;
+    await newcomer.initialize(); await newcomer.stop();
+    expect(Number((await db('portable_restore_instances').count('* as count').first()).count)).toBe(Number(before.count) + 1);
   });
 
   it('offline verified rollback rejects its sanitized typed error and retains the restart barrier', async () => {
