@@ -641,7 +641,9 @@ function installCrmAccess(client) {
 /** Numeric admin document routes deny before uploads or any side effects. */
 function requireCrmDocument(root) {
   return async (req, res, next) => {
-    if (!/^\d+$/.test(req.params.id || '')) return next();
+    // express-validator accepts a leading plus and zero-padded integers;
+    // authorize those equivalent forms before multipart side effects too.
+    if (!/^\+?\d+$/.test(req.params.id || '')) return next();
     try {
       // Preserve the route's existing domain-permission response. Without
       // that domain there is no ownership probe, including for missing IDs.
