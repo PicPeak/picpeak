@@ -535,10 +535,14 @@ async function deleteLocalBackupManifest(config, run) {
   // sits directly in the manifest directory. Requiring exactly that, rather
   // than "somewhere below it", also rules out a symlinked subdirectory that
   // points outside, which a prefix check would follow.
-  if (path.dirname(resolved) !== path.resolve(manifestDir)) {
+  // <destination>/manifests is also where a manifest lands when the configured
+  // directory was not usable (saveManifestToLocal), as is a standalone
+  // snapshot's own manifests directory.
+  if (path.dirname(resolved) !== path.resolve(manifestDir)
+      && path.dirname(resolved) !== path.resolve(destinationRoot, 'manifests')) {
     const selectedManifestDir = path.dirname(resolved);
     const snapshotRoot = path.dirname(selectedManifestDir);
-    if (config.backup_manifest_path || path.basename(selectedManifestDir) !== 'manifests'
+    if (path.basename(selectedManifestDir) !== 'manifests'
         || path.dirname(snapshotRoot) !== path.resolve(destinationRoot)
         || !STANDALONE_SNAPSHOT_RE.test(path.basename(snapshotRoot))) {
       throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');

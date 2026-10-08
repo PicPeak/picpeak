@@ -292,6 +292,26 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(fs.existsSync(sibling)).toBe(true);
       expect(fs.existsSync(legacy)).toBe(true);
     });
+    it('deletes fallback-located manifests although backup_manifest_path names another directory', async () => {
+      await setBackupSettings({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(storagePath, 'backups'),
+        backup_manifest_path: path.join(storagePath, 'not-writable', 'manifests'),
+      });
+      const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000006');
+      const nested = path.join(snapshot, 'manifests', 'm.json');
+      const shared = path.join(storagePath, 'backups', 'manifests', 'backup-manifest-rsync-fallback.json');
+      for (const file of [nested, path.join(snapshot, 'a.jpg'), shared]) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, 'bytes');
+      }
+      const standalone = await del(await insertRun({ manifest_path: nested }));
+      expect(standalone.body.artifact).toEqual({ kind: 'snapshot', status: 'deleted', removed: 1 });
+      expect(fs.existsSync(snapshot)).toBe(false);
+      const legacy = await del(await insertRun({ manifest_path: shared }));
+      expect(legacy.body.artifact).toEqual({ kind: 'manifest', status: 'deleted', removed: 1 });
+      expect(fs.existsSync(path.join(storagePath, 'backups', 'manifests'))).toBe(true);
+    });
     it('deletes the recorded snapshot of a standalone run whose manifest is kept elsewhere', async () => {
       const manifestDir = path.join(storagePath, 'external-manifests');
       await setBackupSettings({

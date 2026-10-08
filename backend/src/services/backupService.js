@@ -1273,12 +1273,37 @@ function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
   });
 }
 
+// Errors that mean "this directory cannot be used", as opposed to a failed
+// write into a usable one.
+const UNUSABLE_DIRECTORY_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EROFS']);
+
 async function saveManifestToLocal(manifest, manifestFileName, config) {
-  const manifestDir = config.backup_manifest_path
-    || path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests');
-  await fs.mkdir(manifestDir, { recursive: true });
-  const manifestPath = path.join(manifestDir, path.basename(manifestFileName));
-  await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format === 'yaml' ? 'yaml' : 'json');
+  const defaultDir = path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests');
+  const writeTo = async (manifestDir) => {
+    await fs.mkdir(manifestDir, { recursive: true });
+    const manifestPath = path.join(manifestDir, path.basename(manifestFileName));
+    await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format === 'yaml' ? 'yaml' : 'json');
+    return manifestPath;
+  };
+  let manifestPath;
+  try {
+    manifestPath = await writeTo(config.backup_manifest_path || defaultDir);
+  } catch (error) {
+    // backup_manifest_path is seeded as /backup/manifests on every install
+    // (migration 031). Where that is not writable and the backup goes
+    // elsewhere, the manifest belongs with the backup rather than nowhere.
+    if (!config.backup_manifest_path || path.resolve(config.backup_manifest_path) === path.resolve(defaultDir)
+        || !UNUSABLE_DIRECTORY_CODES.has(error.code)) {
+      throw error;
+    }
+    logger.warn(`Backup manifest directory ${config.backup_manifest_path} is not usable (${error.code}); writing the manifest to ${defaultDir} instead`);
+    try {
+      manifestPath = await writeTo(defaultDir);
+    } catch (fallbackError) {
+      throw new Error(`Cannot write the backup manifest: ${config.backup_manifest_path} is not usable (${error.code}) `
+        + `and neither is ${defaultDir} (${fallbackError.code || fallbackError.message})`);
+    }
+  }
   logger.info(`Backup manifest saved to ${manifestPath}`);
   return manifestPath;
 }
