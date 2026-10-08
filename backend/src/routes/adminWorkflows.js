@@ -102,7 +102,8 @@ async function writeGraph(trx, workflowId, version, nodes = [], edges = []) {
 router.get('/approvals', requirePermission('workflows.view'), async (req, res, next) => {
   try {
     const items = await workflows.listPendingForAdmin(req.admin);
-    res.json(items.map((a) => ({ ...a, payload: parseJson(a.payload, {}) })));
+    const parsed = items.map((a) => ({ ...a, payload: parseJson(a.payload, {}) }));
+    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'payload'));
   } catch (e) { next(e); }
 });
 
@@ -135,7 +136,8 @@ router.get('/:id/runs', requirePermission('workflows.view'), async (req, res, ne
       .select('r.*').orderBy('r.id', 'desc').limit(200);
     workflows.scopeWorkflowRunsQuery(query, req.admin, { alias: 'r', mode: 'view' });
     const runs = await query;
-    res.json(runs.map((r) => ({ ...r, context: parseJson(r.context, {}) })));
+    const parsed = runs.map((r) => ({ ...r, context: parseJson(r.context, {}) }));
+    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'context'));
   } catch (e) { next(e); }
 });
 
@@ -145,6 +147,9 @@ router.post('/:id/test-run', requirePermission('workflows.manage'), async (req, 
   try {
     const { entityType, entityId, payload, dryRun } = req.body || {};
     const normalizedEntityId = entityId != null && entityId !== '' ? Number(entityId) : null;
+    if (normalizedEntityId != null && (!Number.isInteger(normalizedEntityId) || normalizedEntityId <= 0)) {
+      return res.status(400).json({ error: 'Entity id must be a positive integer' });
+    }
     const workflow = await db('workflows').where({ id: Number(req.params.id) }).first('trigger_type');
     if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
     // Request payload is deliberately attacker-controlled.  A live run could
