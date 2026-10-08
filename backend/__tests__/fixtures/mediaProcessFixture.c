@@ -1,15 +1,40 @@
 #define _GNU_SOURCE
 #include <errno.h>
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+static void *held_thread(void *unused) { (void)unused; for (;;) pause(); return NULL; }
 int main(int argc, char **argv) {
     if (argc < 2) return 1;
     if (!strcmp(argv[1], "ordinary-error")) return 234;
+    if (!strcmp(argv[1], "untraced")) {
+        void *stack = malloc(65536); if (!stack) return 1;
+        const unsigned flags[] = { CLONE_UNTRACED, CLONE_VFORK };
+        for (unsigned n = 0; n < sizeof(flags) / sizeof(flags[0]); n++) {
+            long result = syscall(SYS_clone, CLONE_VM | CLONE_THREAD | CLONE_SIGHAND | flags[n],
+                (char *)stack + 65536, NULL, NULL, 0);
+            if (result != -1 || errno != EPERM) return 1;
+        }
+        puts("untraced clone denied"); free(stack); return 0;
+    }
+    if (!strcmp(argv[1], "threads")) {
+        pthread_attr_t attributes; pthread_attr_init(&attributes);
+        int stack_error = pthread_attr_setstacksize(&attributes, 262144);
+        if (stack_error) { fprintf(stderr, "owned stack size: %s\n", strerror(stack_error)); return 1; }
+        for (int n = 0; n < 256; n++) {
+            pthread_t thread;
+            int error = pthread_create(&thread, &attributes, held_thread, NULL);
+            if (error) { fprintf(stderr, "owned thread %d: %s\n", n, strerror(error)); return 1; }
+        }
+        return 1;
+    }
     if (!strcmp(argv[1], "limits")) {
         struct rlimit memory, cpu, file;
         getrlimit(RLIMIT_AS, &memory); getrlimit(RLIMIT_CPU, &cpu); getrlimit(RLIMIT_FSIZE, &file);
