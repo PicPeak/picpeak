@@ -235,6 +235,35 @@ describe('settings protected-key boundary (/general)', () => {
     expect(cleared.status).toBe(200);
   });
 
+  // A stale legacy snippet row must not turn the delegated Analytics save into
+  // a 403: the blank is not a tracker choice, and the save clears the row.
+  it('settings.edit role can save the Analytics tab over a stale legacy snippet, which is cleared', async () => {
+    const provider = await readSetting('analytics_tracker_provider');
+    const plant = () => db('app_settings').insert({
+      setting_key: 'analytics_custom_head_html',
+      setting_value: JSON.stringify('<script>fetch("/api/admin/users")</script>'), setting_type: 'analytics',
+    }).onConflict('setting_key').merge(['setting_value']);
+    for (const payload of [
+      { analytics_tracker_provider: provider, analytics_umami_website_id: 'site-3' },
+      { analytics_tracker_provider: provider, analytics_custom_head_html: '' },
+    ]) {
+      await plant();
+      const res = await auth(request(app).put('/api/admin/settings/analytics'), mgrTok).send(payload);
+      expect(res.status).toBe(200);
+      expect(await readSetting('analytics_custom_head_html')).toBe('');
+    }
+    // Still not a way to store a snippet, and a save without the provider leaves the row alone.
+    await plant();
+    const refused = await auth(request(app).put('/api/admin/settings/analytics'), mgrTok)
+      .send({ analytics_custom_head_html: '<script>1</script>' });
+    expect(refused.status).toBe(403);
+    const other = await auth(request(app).put('/api/admin/settings/analytics'), mgrTok)
+      .send({ analytics_umami_website_id: 'site-4' });
+    expect(other.status).toBe(200);
+    expect(await readSetting('analytics_custom_head_html')).toContain('fetch(');
+    await db('app_settings').where({ setting_key: 'analytics_custom_head_html' }).del();
+  });
+
   // Backup destinations and the manifest location are owned by
   // /admin/backup/config, which keeps them super_admin-only. The generic
   // writers refuse them loudly, whoever calls, and store nothing.

@@ -198,6 +198,10 @@ const collectUnauthorizedProtectedKeys = async (settings, adminId) => {
 // to write a protected key they don't hold; returns true if the request was
 // rejected so the route can stop.
 const rejectUnauthorizedProtectedKeys = async (settings, req, res) => {
+  // A blank legacy snippet selects no code. Drop it before the permission
+  // check so a stale stored row cannot 403 a settings.edit save; a non-empty
+  // value is still refused below, for everyone.
+  if (settings.analytics_custom_head_html === '') delete settings.analytics_custom_head_html;
   const denied = await collectUnauthorizedProtectedKeys(settings, req.admin.id);
   if (denied.length > 0) {
     res.status(403).json({
@@ -1854,6 +1858,14 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
     }
 
     // Custom snippets are rejected at the shared generic-writer boundary.
+    // The tab no longer posts the legacy snippet; saving a supported provider
+    // clears a stored one here instead. It is never served, so this needs no
+    // tracker-key permission and creates no row where none exists.
+    if (['none', 'umami', 'rybbit'].includes(req.body?.analytics_tracker_provider)) {
+      await db('app_settings')
+        .where({ setting_key: 'analytics_custom_head_html' })
+        .update({ setting_value: JSON.stringify('') });
+    }
 
     // Update or insert each setting
     const galleryPasswordPurge = await galleryPasswordPurgePlan(settings);

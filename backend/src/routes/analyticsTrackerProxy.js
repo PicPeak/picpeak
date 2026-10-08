@@ -12,6 +12,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { integrationRelay } = require('../utils/integrationHttp');
 const { clientIpForAudit } = require('../utils/clientIp');
 const { validateEvent, validCache } = require('../utils/analyticsEventPolicy');
+const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
 const router = express.Router();
 const MAX_RESPONSE_BYTES = 16 * 1024;
@@ -26,15 +27,18 @@ async function resolveUpstream() {
   if (provider === 'umami' || provider === 'rybbit') {
     const raw = await getAppSetting('analytics_' + provider + '_url', null);
     const site = await getAppSetting('analytics_' + provider + '_website_id', null);
-    try {
-      const url = new URL(raw);
-      const insecureDev = process.env.NODE_ENV !== 'production' && process.env.ANALYTICS_ALLOW_INSECURE_HTTP === 'true';
-      if ((url.protocol === 'https:' || (url.protocol === 'http:' && insecureDev))
-        && typeof site === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(site)) {
-        // Strip userinfo, query and fragment. Existing base subpaths survive.
-        value = { provider, site, base: url.origin + url.pathname.replace(/\/+$/, '') };
-      } else logger.warn('Analytics: configure an HTTPS collector and valid site ID; custom scripts are disabled');
-    } catch (_) { logger.warn('Analytics: invalid collector URL'); }
+    // No collector configured yet is a normal state, not a warning per request.
+    if (raw) {
+      try {
+        const url = new URL(raw);
+        const insecureDev = process.env.NODE_ENV !== 'production' && process.env.ANALYTICS_ALLOW_INSECURE_HTTP === 'true';
+        if ((url.protocol === 'https:' || (url.protocol === 'http:' && insecureDev))
+          && typeof site === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(site)) {
+          // Strip userinfo, query and fragment. Existing base subpaths survive.
+          value = { provider, site, base: url.origin + url.pathname.replace(/\/+$/, '') };
+        } else logger.warn('Analytics: configure an HTTPS collector and valid site ID; custom scripts are disabled');
+      } catch (_) { logger.warn('Analytics: invalid collector URL'); }
+    }
   }
   cache = { at: Date.now(), value };
   return value;
@@ -61,6 +65,9 @@ router.post('/events', express.json({ limit: '4kb', strict: true }), async (req,
     return res.sendStatus(502);
   }
   if (!upstream) return res.sendStatus(404);
+  // The site reports its own hostname; the browser's claim is never relayed.
+  let hostname = req.hostname || '';
+  try { hostname = new URL(await getFrontendBaseUrl(req)).hostname || hostname; } catch (_) { /* no public origin known */ }
   const headers = { 'content-type': 'application/json' };
   if (req.get('user-agent')) headers['user-agent'] = req.get('user-agent');
   const ip = clientIpForAudit(req);
@@ -69,7 +76,7 @@ router.post('/events', express.json({ limit: '4kb', strict: true }), async (req,
   if (upstream.provider === 'umami') {
     endpoint = '/api/send';
     payload = { type: 'event', payload: {
-      website: upstream.site, hostname: event.hostname, language: event.language,
+      website: upstream.site, hostname, language: event.language,
       screen: event.screenWidth + 'x' + event.screenHeight,
       url: event.path, title: '', referrer: '',
       ...(event.type === 'event' ? { name: event.name, data: event.data } : {}),
@@ -78,7 +85,7 @@ router.post('/events', express.json({ limit: '4kb', strict: true }), async (req,
   } else {
     endpoint = '/api/track';
     payload = {
-      site_id: upstream.site, hostname: event.hostname, pathname: event.path,
+      site_id: upstream.site, hostname, pathname: event.path,
       querystring: '', screenWidth: event.screenWidth, screenHeight: event.screenHeight,
       language: event.language, page_title: '', referrer: '',
       type: event.type === 'pageview' ? 'pageview' : 'custom_event',

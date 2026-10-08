@@ -62,7 +62,10 @@ function validateEvent(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !keys.has(k))) return null;
   if (body.type !== 'pageview' && body.type !== 'event') return null;
   const path = analyticsPath(body.path);
-  if (!path || typeof body.hostname !== 'string' || !/^[A-Za-z0-9.[\]:-]{1,100}$/.test(body.hostname)) return null;
+  // Clients still send a hostname; it is shape-checked and then dropped. The
+  // route derives the reported hostname from the site itself.
+  if (!path || (body.hostname !== undefined
+    && (typeof body.hostname !== 'string' || !/^[A-Za-z0-9.[\]:-]{1,100}$/.test(body.hostname)))) return null;
   if (typeof body.language !== 'string' || !/^[A-Za-z0-9-]{0,35}$/.test(body.language)) return null;
   if (![body.screenWidth, body.screenHeight].every(n => Number.isInteger(n) && n >= 0 && n <= 9999)) return null;
   if (body.cache !== undefined && !validCache(body.cache)) return null;
@@ -71,7 +74,8 @@ function validateEvent(body) {
     if (!EVENT_NAMES.has(body.name) || !body.data || typeof body.data !== 'object' || Array.isArray(body.data)
       || Object.entries(body.data).some(([k, v]) => !validProperty(k, v))) return null;
   }
-  return { ...body, path };
+  const { hostname: _clientHostname, ...event } = body;
+  return { ...event, path };
 }
 
 module.exports = { analyticsPath, validateEvent, validCache };
