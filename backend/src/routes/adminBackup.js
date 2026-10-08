@@ -2,8 +2,6 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
-const { clearAdminAuthCookie } = require('../utils/tokenUtils');
-const { revokeToken } = require('../utils/tokenRevocation');
 const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
@@ -358,85 +356,9 @@ router.get('/picpeak/export', adminAuth, requireSuperAdmin(), async (req, res) =
   }
 });
 
-// Multipart upload for .picpeak restore — streamed to a temp file. Runs AFTER
-// auth so an unauthenticated request can't push a large file to disk.
-const os = require('os');
-const multer = require('multer');
-const picpeakUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => cb(null, os.tmpdir()),
-    filename: (req, file, cb) => cb(null, `picpeak-upload-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.picpeak`),
-  }),
-  // CVE-2026-82333: this route only ever consumes a single unnamed file
-  // field (`backup`) — no legitimate bracket-indexed field name (e.g.
-  // `a[0]`) exists in its form. fieldArrayIndexLimit: 0 rejects any field
-  // name using array-index syntax at all, closing multer's field-parser DoS.
-  limits: { fileSize: 5 * 1024 * 1024 * 1024, fieldArrayIndexLimit: 0 }, // 5 GB — .picpeak with photos can be large
-});
-
-// Upload + restore a .picpeak onto THIS instance. DESTRUCTIVE: full override of
-// all data except the current logged-in account (the client shows an explicit
-// confirmation before calling this). Returns `usesExternalMedia` so the UI can
-// prompt the admin to reconfigure the external-media mount afterwards.
-//
-// super_admin only: the import replaces admin_users, roles and their
-// permissions from the file, so any lesser role able to run it could bring in
-// a Super Admin account of its own.
-router.post('/picpeak/import', adminAuth, requireSuperAdmin(), picpeakUpload.single('backup'), async (req, res) => {
-  const fsSync = require('fs');
-  if (!req.file) return res.status(400).json({ error: 'No backup file uploaded' });
-  const picpeakPath = req.file.path;
-  try {
-    const { importFromPicpeak } = require('../services/picpeakImportService');
-    // adminAuth populates req.admin, not req.user. Passing req.user.id here
-    // left currentAdminId undefined, so reinjectCurrentAdmin() had no account
-    // to preserve and the admin_users table was fully replaced by the backup —
-    // letting a crafted .picpeak take over every admin account (GHSA-qxfx-4493-4v8f).
-    const result = await importFromPicpeak({ picpeakPath, currentAdminId: req.admin && req.admin.id });
-
-    // The restore rewrote admin_users, so ids may have shifted. importFromPicpeak
-    // already stamped a GLOBAL session cutoff (see setSessionsValidAfter), so
-    // every JWT issued before the restore — admin, customer, gallery — now fails
-    // auth. Here we additionally give the importing admin an immediate, clean
-    // logout: revoke this token and clear the cookie so their browser drops the
-    // session at once rather than on the next 401. Cookie clear is the
-    // unconditional guarantee; revokeToken() swallows DB errors and returns
-    // false, so check the result and log loudly if the denylist write didn't
-    // land (the operator still re-logs-in, which the cookie clear forces).
-    let tokenRevoked = false;
-    try {
-      if (req.token) {
-        tokenRevoked = await revokeToken(req.token, 'picpeak-import', { adminId: req.admin && req.admin.id });
-      }
-    } catch (revokeErr) {
-      logger.warn('[picpeak-import] failed to revoke session token after restore', { error: revokeErr.message });
-    }
-    if (req.token && !tokenRevoked) {
-      logger.warn('[picpeak-import] session token was NOT added to the revocation denylist after restore; relying on cookie clear to force re-login');
-    }
-    clearAdminAuthCookie(res);
-
-    res.json({
-      success: true,
-      tables: result.tables,
-      filesRestored: result.filesRestored,
-      usesExternalMedia: result.usesExternalMedia,
-      crossEngine: result.crossEngine,
-      // False when the pre-#1163 external-path conversion failed. The rows and
-      // files are in place, but no external original resolves until it is
-      // retried — the UI must say so rather than showing a plain success.
-      externalPathsConverted: result.externalPathsConverted !== false,
-      externalPathError: result.externalPathError || null,
-      sessionInvalidated: true,
-    });
-  } catch (error) {
-    const status = error.statusCode || 500;
-    logger.error('[picpeak-import] restore failed', { error: error.message });
-    res.status(status).json({ error: error.message || 'Restore failed', validation: error.validation });
-  } finally {
-    fsSync.unlink(picpeakPath, () => {});
-  }
-});
+// Portable import is mounted by server.js at the dedicated, exact-path
+// maintenance control boundary. It must not have a second unsupervised
+// importer entrypoint in the ordinary API router.
 
 // Get backup run details
 router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req, res) => {

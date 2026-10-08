@@ -85,9 +85,15 @@ function createWorkRegistry() {
     try { return Promise.resolve(run()); } catch (error) { return Promise.reject(error); }
   });
 
-  return { track, defer, drain, runControl, isControl: () => context.getStore()?.control === true,
+  // Startup/listener/timer construction must not retain maintenance authority.
+  const runUncontrolled = run => context.run(undefined, () => {
+    try { return Promise.resolve(run()); } catch (error) { return Promise.reject(error); }
+  });
+
+  return { track, defer, drain, runControl, runUncontrolled, isControl: () => context.getStore()?.control === true,
     hasScope: () => (context.getStore()?.count || 0) > 0,
     closeAdmission: () => { closed = true; },
+    openAdmission: () => { closed = false; },
     isClosed: () => closed, pendingCount: () => pending.size };
 }
 

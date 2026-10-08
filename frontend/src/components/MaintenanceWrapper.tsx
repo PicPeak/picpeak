@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MaintenanceMode } from './MaintenanceMode';
 import { useMaintenanceMode } from '../contexts/MaintenanceContext';
 import { setMaintenanceModeCallback } from '../config/api';
+import { readRestoreHandle, RESTORE_HANDLE_EVENT } from '../services/portableBackup.service';
+import { PortableRestoreProgress } from './admin/PortableRestoreProgress';
 
 interface MaintenanceWrapperProps {
   children: React.ReactNode;
@@ -24,6 +26,7 @@ interface MaintenanceWrapperProps {
 export const MaintenanceWrapper: React.FC<MaintenanceWrapperProps> = ({ children }) => {
   const location = useLocation();
   const { isMaintenanceMode, setMaintenanceMode } = useMaintenanceMode();
+  const [restoreHandle, setRestoreHandle] = useState(readRestoreHandle);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
 
@@ -32,6 +35,14 @@ export const MaintenanceWrapper: React.FC<MaintenanceWrapperProps> = ({ children
       setMaintenanceMode(enabled);
     });
   }, [setMaintenanceMode]);
+
+  useEffect(() => {
+    const update = () => setRestoreHandle(readRestoreHandle());
+    window.addEventListener(RESTORE_HANDLE_EVENT, update);
+    return () => window.removeEventListener(RESTORE_HANDLE_EVENT, update);
+  }, []);
+
+  if (restoreHandle) return <PortableRestoreProgress handle={restoreHandle} />;
 
   if (isMaintenanceMode && !isAdminRoute) {
     return <MaintenanceMode />;

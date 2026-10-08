@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload, AlertTriangle, ShieldAlert, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { Download, Upload, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card } from '../common';
-import { api } from '../../config/api';
+import { portableBackupService } from '../../services/portableBackup.service';
 
 // Portable ".picpeak" roundtrip, split across two Backup Manager tabs:
 //   - PicpeakExportCard  → Dashboard (making a backup)
@@ -12,18 +12,6 @@ import { api } from '../../config/api';
 // The manifest is bundled inside the .picpeak, so there is no separate
 // "manifest only" download here.
 
-interface RestoreResult {
-  tables: number;
-  filesRestored: number;
-  usesExternalMedia: boolean;
-  crossEngine?: boolean;
-  sessionInvalidated?: boolean;
-  // False when the pre-#1163 external-path conversion failed. Rows and files
-  // are in place, but no external original resolves until it is retried — so
-  // this must not be presented as a plain success.
-  externalPathsConverted?: boolean;
-  externalPathError?: string | null;
-}
 
 // ── Download half (Dashboard) ────────────────────────────────────────────────
 export const PicpeakExportCard: React.FC = () => {
@@ -34,10 +22,7 @@ export const PicpeakExportCard: React.FC = () => {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const res = await api.get('/admin/backup/picpeak/export', {
-        params: { includePhotos },
-        responseType: 'blob',
-      });
+      const res = await portableBackupService.export(includePhotos);
       const cd = (res.headers['content-disposition'] as string) || '';
       const match = cd.match(/filename="?([^"]+)"?/);
       const filename = (match && match[1]) || 'picpeak-backup.picpeak';
@@ -49,7 +34,7 @@ export const PicpeakExportCard: React.FC = () => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (_) {
+    } catch {
       toast.error(t('backup.picpeak.downloadFailed', 'Could not create the backup file.'));
     } finally {
       setDownloading(false);
@@ -103,7 +88,6 @@ export const PicpeakRestoreCard: React.FC = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const [result, setResult] = useState<RestoreResult | null>(null);
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -115,24 +99,8 @@ export const PicpeakRestoreCard: React.FC = () => {
     if (!pendingFile) return;
     setRestoring(true);
     try {
-      const fd = new FormData();
-      fd.append('backup', pendingFile);
-      const res = await api.post<RestoreResult>('/admin/backup/picpeak/import', fd);
-      setResult(res.data);
+      await portableBackupService.start(pendingFile);
       setPendingFile(null);
-      if (res.data?.externalPathsConverted === false) {
-        toast.error(t('backup.picpeak.externalPathsFailed',
-          'Backup restored, but external photo paths could not be converted — those originals will not load until this is retried.'));
-      } else {
-        toast.success(t('backup.picpeak.restoreDone', 'Backup restored.'));
-      }
-      // The restore rewrote admin_users and the backend revoked our session
-      // (ids may have shifted). Send the operator to a fresh login rather than
-      // letting the now-stale token resolve to a different restored account.
-      if (res.data?.sessionInvalidated) {
-        toast.success(t('backup.picpeak.reloginRequired', 'Restore complete — please sign in again.'));
-        setTimeout(() => { window.location.href = '/admin/login'; }, 1500);
-      }
     } catch (e: any) {
       const msg = e.response?.data?.error || t('backup.picpeak.restoreFailed', 'Restore failed.');
       toast.error(msg);
@@ -160,59 +128,6 @@ export const PicpeakRestoreCard: React.FC = () => {
         {t('backup.picpeak.chooseFile', 'Choose .picpeak file…')}
       </Button>
 
-      {result && (
-        <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900/50 dark:bg-green-900/20">
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-green-600 dark:text-green-400" />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                {t('backup.picpeak.restoreDone', 'Backup restored.')}
-              </p>
-              <p className="mt-0.5 text-xs text-green-700 dark:text-green-300">
-                {t('backup.picpeak.restoreSummary', '{{tables}} tables and {{files}} files restored.', {
-                  tables: result.tables,
-                  files: result.filesRestored,
-                })}
-              </p>
-              {result.crossEngine && (
-                <p className="mt-0.5 text-xs text-green-700 dark:text-green-300">
-                  {t('backup.picpeak.crossEngineNote', 'Cross-engine restore: a SQLite backup was converted onto this PostgreSQL instance.')}
-                </p>
-              )}
-              {result.externalPathsConverted === false && (
-                <p className="mt-2 flex items-start gap-1 text-xs text-red-800 dark:text-red-300">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                  <span>
-                    {t('backup.picpeak.externalPathsFailedDetail',
-                      'External photo paths were not converted, so every referenced original is currently unreachable. Re-run the restore or the pending migrations once the cause is resolved.')}
-                    {result.externalPathError ? ` (${result.externalPathError})` : ''}
-                  </span>
-                </p>
-              )}
-              {result.usesExternalMedia && (
-                <p className="mt-2 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                  <span>
-                    {t('backup.picpeak.externalMediaNote', 'This backup references an external-media library. Make sure external-media routing is configured on this instance.')}{' '}
-                    <a
-                      href="https://github.com/PicPeak/picpeak/blob/main/README.md"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-0.5 underline"
-                    >
-                      {t('backup.picpeak.externalMediaLink', 'Setup guide')}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </span>
-                </p>
-              )}
-              <Button variant="primary" size="sm" className="mt-3" onClick={() => window.location.reload()}>
-                {t('backup.picpeak.reload', 'Reload app')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Destructive confirmation */}
       {pendingFile && (
