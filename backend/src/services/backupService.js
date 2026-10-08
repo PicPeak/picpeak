@@ -18,6 +18,7 @@ const backupManifest = require('./backupManifest');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
+const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
 
 const service = {};
@@ -868,6 +869,18 @@ async function updateFileState(filePath, checksum, size, modified) {
   }
 }
 
+// A run that fails before its manifest is written leaves no restore point,
+// only a partial copy as large as the estate. Take it away again; a failure
+// to do so must not hide why the run failed.
+async function discardPartialSnapshot(remove, location) {
+  try {
+    await remove();
+    logger.info(`Removed the partial backup snapshot ${location}`);
+  } catch (cleanupError) {
+    logger.error(`Could not remove the partial backup snapshot ${location}: ${cleanupError.message}`);
+  }
+}
+
 async function performLocalBackup(config, files, verifiedDatabaseInfo) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   // A bare "EACCES ... mkdir '/home/ubuntu'" did not say that the configured
@@ -889,50 +902,56 @@ async function performLocalBackup(config, files, verifiedDatabaseInfo) {
   const backupPath = path.resolve(destinationRoot, `backup-${crypto.randomUUID()}`);
   await fs.mkdir(backupPath);
 
-  for (const file of files) {
-    try {
-      const maxSizeMb = config.backup_max_file_size_mb || 5000;
-      if (file.size > maxSizeMb * 1024 * 1024) {
-        logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        continue;
+  let databaseInfo;
+  try {
+    for (const file of files) {
+      try {
+        const maxSizeMb = config.backup_max_file_size_mb || 5000;
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+          continue;
+        }
+
+        const checksum = await calculateChecksum(file.path);
+        file.checksum = checksum;
+
+        const destinationFile = path.join(backupPath, file.relativePath);
+        await fs.mkdir(path.dirname(destinationFile), { recursive: true });
+        await fs.copyFile(file.path, destinationFile, fs.constants.COPYFILE_FICLONE);
+        if (await calculateChecksum(destinationFile) !== checksum) {
+          throw new Error('File changed while its restore point was being created');
+        }
+        file.size = (await fs.stat(destinationFile)).size;
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          throw new Error('File grew beyond the configured backup size limit');
+        }
+
+        await updateFileState(file.relativePath, checksum, file.size, file.modified);
+
+        backedUpFiles.push(file.relativePath);
+        backedUpSize += file.size;
+      } catch (error) {
+        logger.error(`Failed to backup file ${file.relativePath}:`, error);
+        throw error;
       }
-
-      const checksum = await calculateChecksum(file.path);
-      file.checksum = checksum;
-
-      const destinationFile = path.join(backupPath, file.relativePath);
-      await fs.mkdir(path.dirname(destinationFile), { recursive: true });
-      await fs.copyFile(file.path, destinationFile);
-      if (await calculateChecksum(destinationFile) !== checksum) {
-        throw new Error('File changed while its restore point was being created');
-      }
-      file.size = (await fs.stat(destinationFile)).size;
-      if (file.size > maxSizeMb * 1024 * 1024) {
-        throw new Error('File grew beyond the configured backup size limit');
-      }
-
-      await updateFileState(file.relativePath, checksum, file.size, file.modified);
-
-      backedUpFiles.push(file.relativePath);
-      backedUpSize += file.size;
-    } catch (error) {
-      logger.error(`Failed to backup file ${file.relativePath}:`, error);
-      throw error;
     }
-  }
 
-  let databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
-  if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
-    const relativeDump = path.join('database', path.basename(verifiedDatabaseInfo.backupFile));
-    const snapshotDump = path.join(backupPath, relativeDump);
-    await fs.mkdir(path.dirname(snapshotDump), { recursive: true });
-    await fs.copyFile(verifiedDatabaseInfo.backupFile, snapshotDump);
-    const checksum = await calculateChecksum(snapshotDump);
-    if (checksum !== verifiedDatabaseInfo.checksum) {
-      throw new Error('Database dump changed while its restore point was being created');
+    databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
+    if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
+      const relativeDump = path.join('database', path.basename(verifiedDatabaseInfo.backupFile));
+      const snapshotDump = path.join(backupPath, relativeDump);
+      await fs.mkdir(path.dirname(snapshotDump), { recursive: true });
+      await fs.copyFile(verifiedDatabaseInfo.backupFile, snapshotDump, fs.constants.COPYFILE_FICLONE);
+      const checksum = await calculateChecksum(snapshotDump);
+      if (checksum !== verifiedDatabaseInfo.checksum) {
+        throw new Error('Database dump changed while its restore point was being created');
+      }
+      databaseInfo = { ...verifiedDatabaseInfo, backupFile: relativeDump,
+        size: (await fs.stat(snapshotDump)).size, checksum };
     }
-    databaseInfo = { ...verifiedDatabaseInfo, backupFile: relativeDump,
-      size: (await fs.stat(snapshotDump)).size, checksum };
+  } catch (error) {
+    await discardPartialSnapshot(() => fs.rm(backupPath, { recursive: true, force: true }), backupPath);
+    throw error;
   }
 
   return {
@@ -1155,7 +1174,7 @@ async function uploadCapturedBackupFile(client, source, key, options, maxBytes, 
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-backup-upload-'));
   try {
     const captured = path.join(directory, path.basename(source));
-    await fs.copyFile(source, captured);
+    await fs.copyFile(source, captured, fs.constants.COPYFILE_FICLONE);
     const size = (await fs.stat(captured)).size;
     if (size > maxBytes) throw new Error('File grew beyond the configured backup size limit');
     const checksum = await calculateChecksum(captured);
@@ -1172,6 +1191,8 @@ async function uploadCapturedBackupFile(client, source, key, options, maxBytes, 
 }
 
 async function performS3Backup(config, files, verifiedDatabaseInfo) {
+  let s3Client;
+  let s3Prefix;
   try {
     const bucket = config.backup_s3_bucket;
     if (!bucket || !config.backup_s3_access_key || !config.backup_s3_secret_key) {
@@ -1191,14 +1212,14 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
       ...backupS3Access(config)
     };
 
-    const s3Client = new S3StorageAdapter(s3Config);
+    s3Client = new S3StorageAdapter(s3Config);
     await s3Client.testConnection();
 
     const now = new Date();
     const datePrefix = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
     const backupId = `backup-${crypto.randomUUID()}`;
     const basePrefix = config.backup_s3_prefix ? config.backup_s3_prefix : 'backups';
-    const s3Prefix = path.posix.join(basePrefix, datePrefix, backupId);
+    s3Prefix = path.posix.join(basePrefix, datePrefix, backupId);
 
     const backedUpFiles = [];
     let backedUpSize = 0;
@@ -1293,6 +1314,9 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
     };
   } catch (error) {
     logger.error('S3 backup failed:', error);
+    if (s3Prefix) {
+      await discardPartialSnapshot(() => removeS3Snapshot(s3Client, s3Prefix), s3Prefix);
+    }
     throw error;
   }
 }
@@ -1359,6 +1383,55 @@ async function saveManifestToS3(manifest, manifestFileName, config, result) {
   const manifestPath = `s3://${result.s3Bucket}/${manifestKey}`;
   logger.info(`Backup manifest uploaded to S3: ${manifestPath}`);
   return manifestPath;
+}
+
+const DEFAULT_RETENTION_COUNT = 7;
+
+// Every local and S3 run is a complete copy, so without a limit the
+// destination grows by one estate per run. Keep the newest
+// backup_retention_count standalone snapshots of the current destination and
+// remove the older ones whole, with their history rows. 0 keeps everything.
+// Legacy trees and anything not shaped like a standalone snapshot are never
+// candidates, and a failure here never fails the backup that just succeeded.
+async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s3Client) {
+  try {
+    const raw = config.backup_retention_count;
+    const keep = raw === undefined || raw === null || raw === '' ? DEFAULT_RETENTION_COUNT : Number(raw);
+    if (!Number.isInteger(keep) || keep <= 0) return;
+
+    const runs = await db('backup_runs')
+      .where('status', 'completed')
+      .whereNotNull('manifest_path')
+      .orderBy('id', 'desc')
+      .select('id', 'manifest_path', 'statistics');
+    let kept = 0;
+    for (const run of runs) {
+      const snapshot = standaloneSnapshotOfRun(config, run);
+      if (!snapshot || snapshot.type !== destinationType) continue;
+      if (run.id === currentRunId || kept < keep) {
+        kept += 1;
+        continue;
+      }
+      try {
+        if (snapshot.type === 's3') {
+          await removeS3Snapshot(s3Client, snapshot.prefix);
+        } else {
+          await removeLocalSnapshot(snapshot.destinationRoot, snapshot.root);
+          if (snapshot.manifestFile) await fs.rm(snapshot.manifestFile, { force: true });
+        }
+        await db.transaction(async (trx) => {
+          await trx('backup_manifest').where('backup_run_id', run.id).del();
+          await trx('backup_runs').where('parent_backup_id', run.id).update({ parent_backup_id: null });
+          await trx('backup_runs').where('id', run.id).del();
+        });
+        logger.info(`Backup retention removed the restore point of run ${run.id} (${snapshot.root || snapshot.prefix})`);
+      } catch (error) {
+        logger.error(`Backup retention could not remove the restore point of run ${run.id}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    logger.error('Backup retention failed:', error);
+  }
 }
 
 async function runBackupInternal(isManual = false) {
@@ -1516,6 +1589,13 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      // Without a manifest the copy is not a restore point. manifestPath is
+      // only set once the manifest is in place, and then the snapshot stays.
+      if (!manifestPath && destinationType === 'local') {
+        await discardPartialSnapshot(() => fs.rm(result.backupPath, { recursive: true, force: true }), result.backupPath);
+      } else if (!manifestPath && destinationType === 's3') {
+        await discardPartialSnapshot(() => removeS3Snapshot(result.s3Client, result.s3Prefix), result.s3Prefix);
+      }
       throw error;
     }
 
@@ -1549,6 +1629,9 @@ async function runBackupInternal(isManual = false) {
           total_files_checked: files.length,
           average_file_size: result.backedUpCount ? Math.round(result.backedUpSize / result.backedUpCount) : 0,
           destination: destinationType,
+          // Where this run's standalone snapshot lives; retention and the
+          // delete route need it when the manifest is kept elsewhere.
+          ...(destinationType === 'local' || destinationType === 's3' ? { snapshot_path: result.backupPath } : {}),
           // Per-Stage-B-path breakdown — { [pathKey]: { count, size } }
           per_path: perPath,
           // Keep camelCase for backward compatibility
@@ -1561,6 +1644,10 @@ async function runBackupInternal(isManual = false) {
       });
 
     logger.info(`Backup completed: ${result.backedUpCount} files, ${(result.backedUpSize / 1024 / 1024).toFixed(2)} MB in ${durationSeconds}s`);
+
+    if (destinationType === 'local' || destinationType === 's3') {
+      await pruneStandaloneSnapshots(config, destinationType, runId, result.s3Client);
+    }
 
     if (normalizeBoolean(config.backup_email_on_success)) {
       const admins = await db('admin_users').where('is_active', formatBoolean(true));

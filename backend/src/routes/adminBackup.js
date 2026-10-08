@@ -15,7 +15,10 @@ const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { getStoragePath } = require('../config/storage');
 const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
-const { resolveBackupPointLocation, parseS3Location } = require('../utils/backupRestorePoint');
+const {
+  STANDALONE_SNAPSHOT_RE, isStandaloneRestorePoint, resolveBackupPointLocation, parseS3Location,
+  standaloneSnapshotOfRun, removeLocalSnapshot,
+} = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -215,6 +218,14 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
     if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_manifest_format')
         && !MANIFEST_FORMATS.has(updates.backup_manifest_format)) {
       return res.status(400).json({ error: 'backup_manifest_format must be json or yaml' });
+    }
+
+    // How many standalone restore points a local or S3 destination keeps;
+    // 0 keeps all. A whole number only: the backup prunes by it unattended.
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_retention_count')
+        && (!Number.isInteger(updates.backup_retention_count)
+          || updates.backup_retention_count < 0 || updates.backup_retention_count > 1000)) {
+      return res.status(400).json({ error: 'backup_retention_count must be a whole number between 0 and 1000' });
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
@@ -481,7 +492,9 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //
 // What "the stored artifact" is depends on the destination, and only the
 // metadata recorded on the run at backup time decides where to look, never
-// anything in the request. On every destination it is the run's own
+// anything in the request. A standalone run (backup-<uuid>) is a complete
+// copy nothing else depends on, so its whole validated snapshot directory or
+// prefix goes with it. For a legacy run it is the run's own
 // metadata, never its data files: a legacy incremental run only stores files
 // that changed since the previous one (hasFileChanged against the shared
 // backup_file_states table), so a later run's manifest points at files that
@@ -490,16 +503,14 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //          backup-summary.json, with the prefix derived from the recorded
 //          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>) and
 //          only when it sits under the configured bucket and base prefix.
-//          The data objects under the prefix stay; the retention-based S3
-//          cleanup route is what purges them.
-//   local  the manifest file, in the configured manifest directory or a
-//          validated standalone snapshot's immediate manifests directory.
-//          The data tree stays; this operation only removes history metadata.
+//          The data objects under a legacy prefix stay; the retention-based
+//          S3 cleanup route is what purges them.
+//   local  the manifest file, in the configured manifest directory. The
+//          legacy mirror under backup_destination_path stays.
 //   rsync  the local manifest as above; nothing on the remote mirror.
 // The record goes only after the artifact step succeeded or found nothing to
 // do, so the UI never reports a deletion that left storage behind.
 const backupDeleteError = (res, status, code, message) => res.status(status).json({ error: message, code });
-const STANDALONE_SNAPSHOT_RE = /^backup-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 class ArtifactOutOfScopeError extends Error {
   constructor(message) {
@@ -508,7 +519,8 @@ class ArtifactOutOfScopeError extends Error {
   }
 }
 
-async function deleteLocalBackupManifest(config, manifestPath) {
+async function deleteLocalBackupManifest(config, run) {
+  const manifestPath = run.manifest_path.trim();
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   const manifestDir = config.backup_manifest_path || path.join(destinationRoot, 'manifests');
   const resolved = path.resolve(manifestPath);
@@ -536,6 +548,16 @@ async function deleteLocalBackupManifest(config, manifestPath) {
       if (error.code === 'ENOENT') return { kind: 'manifest', status: 'missing', removed: 0 };
       throw error;
     }
+    const removed = await removeLocalSnapshot(destinationRoot, snapshotRoot);
+    return { kind: 'snapshot', status: removed ? 'deleted' : 'missing', removed: removed ? 1 : 0 };
+  }
+  // A manifest kept in backup_manifest_path: its snapshot is where the run
+  // recorded it.
+  const snapshot = standaloneSnapshotOfRun(config, run);
+  if (snapshot && snapshot.type === 'local') {
+    const removed = await removeLocalSnapshot(snapshot.destinationRoot, snapshot.root);
+    await fs.rm(resolved, { force: true });
+    return { kind: 'snapshot', status: removed ? 'deleted' : 'missing', removed: removed ? 1 : 0 };
   }
   try {
     await fs.unlink(resolved);
@@ -576,9 +598,12 @@ async function deleteS3BackupRun(config, manifestPath) {
     ...backupS3Access(config)
   });
 
-  // Only the run's metadata objects (see the comment above the route).
+  // A standalone snapshot goes whole; of a legacy run only the metadata
+  // objects (see the comment above the route).
+  const standalone = STANDALONE_SNAPSHOT_RE.test(runSegment);
+  const kind = standalone ? 'snapshot' : 'manifest';
   const keys = [];
-  for (const listPrefix of [`${runPrefix}/manifests/`, `${runPrefix}/backup-summary.json`]) {
+  for (const listPrefix of standalone ? [`${runPrefix}/`] : [`${runPrefix}/manifests/`, `${runPrefix}/backup-summary.json`]) {
     let continuationToken;
     do {
       const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
@@ -591,7 +616,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     } while (continuationToken);
   }
 
-  if (keys.length === 0) return { kind: 'manifest', status: 'missing', removed: 0 };
+  if (keys.length === 0) return { kind, status: 'missing', removed: 0 };
   const result = await s3Adapter.deleteMany(keys);
   const removed = result.Deleted ? result.Deleted.length : 0;
   const errors = result.Errors || [];
@@ -601,7 +626,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     error.removed = removed;
     throw error;
   }
-  return { kind: 'manifest', status: 'deleted', removed };
+  return { kind, status: 'deleted', removed };
 }
 
 router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async (req, res) => {
@@ -645,7 +670,7 @@ router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async 
       if (manifestPath.startsWith('s3://')) {
         artifact = await deleteS3BackupRun(config, manifestPath);
       } else if (manifestPath) {
-        artifact = await deleteLocalBackupManifest(config, manifestPath);
+        artifact = await deleteLocalBackupManifest(config, run);
       }
     } catch (error) {
       const code = error.code === 'ARTIFACT_OUT_OF_SCOPE' ? 'ARTIFACT_OUT_OF_SCOPE' : 'ARTIFACT_DELETE_FAILED';
@@ -1225,15 +1250,39 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
     
-    // List all backup files
-    const backupFiles = await s3Adapter.list('backups/', { maxKeys: 1000 });
+    // The adapter returns AWS Contents (Key, LastModified, Size), one page at
+    // a time, under the configured prefix. Objects are grouped by backup run
+    // so a run only ever goes whole, once its newest object has aged out;
+    // the newest run always stays.
+    const listPrefix = path.posix.join(config.backup_s3_prefix ? String(config.backup_s3_prefix) : 'backups', '/');
+    if (listPrefix === '/') {
+      return res.status(400).json({ error: 'S3 backup prefix is not usable for cleanup' });
+    }
+    const groups = new Map();
+    let continuationToken;
+    do {
+      const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
+      for (const file of page.Contents || []) {
+        if (typeof file.Key !== 'string' || !file.Key.startsWith(listPrefix)) continue;
+        const parts = file.Key.split('/');
+        const runAt = parts.findIndex((part) => /^backup-\d+$/.test(part) || STANDALONE_SNAPSHOT_RE.test(part));
+        const groupKey = runAt >= 0 && runAt < parts.length - 1 ? parts.slice(0, runAt + 1).join('/') : file.Key;
+        const group = groups.get(groupKey) || { run: groupKey !== file.Key, newest: 0, size: 0, keys: [] };
+        group.newest = Math.max(group.newest, new Date(file.LastModified).getTime() || Date.now());
+        group.size += file.Size || 0;
+        group.keys.push(file.Key);
+        groups.set(groupKey, group);
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    const newestRun = Math.max(...[...groups.values()].filter((group) => group.run).map((group) => group.newest));
     const filesToDelete = [];
     let totalSize = 0;
-    
-    for (const file of backupFiles.objects || []) {
-      if (file.lastModified && new Date(file.lastModified) < cutoffDate) {
-        filesToDelete.push(file.key);
-        totalSize += file.size || 0;
+    for (const group of groups.values()) {
+      if (group.newest < cutoffDate.getTime() && !(group.run && group.newest === newestRun)) {
+        filesToDelete.push(...group.keys);
+        totalSize += group.size;
       }
     }
     
@@ -1354,8 +1403,18 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
       res.attachment(`picpeak-backup-${backupRun.id}.zip`);
       archive.pipe(res);
         
-      // Add backup directory contents
-      archive.directory(backupPath, false);
+      // Add backup directory contents. A legacy run's tree is the destination
+      // root, which now also holds every standalone snapshot; those are not
+      // part of it.
+      if (isStandaloneRestorePoint(manifest)) {
+        archive.directory(backupPath, false);
+      } else {
+        for (const entry of await fs.readdir(backupPath, { withFileTypes: true })) {
+          if (STANDALONE_SNAPSHOT_RE.test(entry.name)) continue;
+          if (entry.isDirectory()) archive.directory(path.join(backupPath, entry.name), entry.name);
+          else if (entry.isFile()) archive.file(path.join(backupPath, entry.name), { name: entry.name });
+        }
+      }
         
       // Add manifest if exists
       if (backupRun.manifest_path && await fs.access(backupRun.manifest_path).then(() => true).catch(() => false)) {

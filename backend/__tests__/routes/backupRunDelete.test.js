@@ -276,17 +276,53 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(res.status).toBe(200);
       expect(fs.existsSync(manifest)).toBe(false);
     });
-    it('deletes a new standalone snapshot manifest without deleting its data', async () => {
+    it('deletes a standalone snapshot whole, and nothing beside it', async () => {
       const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000001');
+      const sibling = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000009', 'a.jpg');
+      const legacy = path.join(storagePath, 'backups', 'events', 'legacy.jpg');
       const manifest = path.join(snapshot, 'manifests', 'm.json');
-      const media = path.join(snapshot, 'a.jpg');
-      fs.mkdirSync(path.dirname(manifest), { recursive: true });
-      fs.writeFileSync(manifest, '{}');
-      fs.writeFileSync(media, 'retained snapshot');
+      for (const file of [manifest, path.join(snapshot, 'a.jpg'), sibling, legacy]) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, 'bytes');
+      }
       const res = await del(await insertRun({ manifest_path: manifest }));
       expect(res.status).toBe(200);
+      expect(res.body.artifact).toEqual({ kind: 'snapshot', status: 'deleted', removed: 1 });
+      expect(fs.existsSync(snapshot)).toBe(false);
+      expect(fs.existsSync(sibling)).toBe(true);
+      expect(fs.existsSync(legacy)).toBe(true);
+    });
+    it('deletes the recorded snapshot of a standalone run whose manifest is kept elsewhere', async () => {
+      const manifestDir = path.join(storagePath, 'external-manifests');
+      await setBackupSettings({
+        backup_destination_type: 'local',
+        backup_destination_path: path.join(storagePath, 'backups'),
+        backup_manifest_path: manifestDir,
+      });
+      const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000004');
+      const manifest = path.join(manifestDir, 'backup-manifest-external.json');
+      for (const file of [manifest, path.join(snapshot, 'a.jpg')]) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, 'bytes');
+      }
+      // A recorded path outside the destination is not followed: legacy handling.
+      const outside = path.join(storagePath, 'backup-00000000-0000-4000-8000-000000000005');
+      const stray = path.join(manifestDir, 'backup-manifest-stray.json');
+      fs.mkdirSync(outside);
+      fs.writeFileSync(stray, '{}');
+      const strayRes = await del(await insertRun({
+        manifest_path: stray, statistics: JSON.stringify({ snapshot_path: outside }),
+      }));
+      expect(strayRes.body.artifact.kind).toBe('manifest');
+      expect(fs.existsSync(outside)).toBe(true);
+
+      const res = await del(await insertRun({
+        manifest_path: manifest, statistics: JSON.stringify({ snapshot_path: snapshot }),
+      }));
+      expect(res.status).toBe(200);
+      expect(res.body.artifact.kind).toBe('snapshot');
+      expect(fs.existsSync(snapshot)).toBe(false);
       expect(fs.existsSync(manifest)).toBe(false);
-      expect(fs.readFileSync(media, 'utf8')).toBe('retained snapshot');
     });
     it('refuses a standalone snapshot manifests symlink escaping its configured root', async () => {
       const snapshot = path.join(storagePath, 'backups', 'backup-00000000-0000-4000-8000-000000000002');
@@ -357,17 +393,22 @@ describe('DELETE /api/admin/backup/runs/:id (issue 1711)', () => {
       expect(await runExists(id)).toBe(false);
       expect((await lastAudit()).metadata).not.toContain('secret');
     });
-    it('accepts the new standalone UUID prefix without widening metadata deletion', async () => {
+    it('deletes every object of a standalone UUID prefix, and only that prefix', async () => {
       await s3Settings();
       const prefix = 'backups/2026/10/07/backup-00000000-0000-4000-8000-000000000003';
-      const key = prefix + '/manifests/m.json';
+      const keys = [prefix + '/events/active/a.jpg', prefix + '/manifests/m.json', prefix + '/backup-summary.json'];
       mockS3.list
-        .mockResolvedValueOnce({ Contents: [{ Key: key }], IsTruncated: false })
-        .mockResolvedValueOnce({ Contents: [], IsTruncated: false });
-      mockS3.deleteMany.mockResolvedValue({ Deleted: [{ Key: key }], Errors: [] });
-      const res = await del(await insertRun({ manifest_path: 's3://picpeak-backups/' + key }));
+        .mockResolvedValueOnce({ Contents: [{ Key: keys[0] }], IsTruncated: true, NextContinuationToken: 'next' })
+        .mockResolvedValueOnce({
+          Contents: [{ Key: keys[1] }, { Key: keys[2] }, { Key: prefix + '-sibling/a.jpg' }], IsTruncated: false,
+        });
+      mockS3.deleteMany.mockImplementation(async (list) => ({ Deleted: list.map((Key) => ({ Key })), Errors: [] }));
+      const res = await del(await insertRun({ manifest_path: 's3://picpeak-backups/' + keys[1] }));
       expect(res.status).toBe(200);
-      expect(mockS3.deleteMany).toHaveBeenCalledWith([key]);
+      expect(res.body.artifact).toEqual({ kind: 'snapshot', status: 'deleted', removed: 3 });
+      expect(mockS3.list).toHaveBeenCalledTimes(2);
+      expect(mockS3.list).toHaveBeenCalledWith(prefix + '/', expect.anything());
+      expect(mockS3.deleteMany).toHaveBeenCalledWith(keys);
     });
 
     it.each([

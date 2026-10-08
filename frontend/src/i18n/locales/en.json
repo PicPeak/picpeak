@@ -5460,7 +5460,9 @@
         "customCronHelp": "Enter a valid cron expression (e.g., 0 3 * * *)",
         "retention": "Retention Period",
         "retentionDays": "Keep backups for",
-        "retentionHelp": "days (older backups will be automatically deleted)"
+        "retentionHelp": "days (older backups will be automatically deleted)",
+        "retentionCount": "Restore points to keep",
+        "retentionCountHelp": "Complete restore points kept at a local or S3 destination. Older ones are deleted after each successful backup. 0 keeps all of them."
       },
       "whatToBackup": {
         "title": "What to Backup",
