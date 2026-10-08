@@ -217,7 +217,9 @@ export const EventDetailsHeader: React.FC<EventDetailsHeaderProps> = ({
       },
     });
   }
-  if (!archived && !event.is_draft && hasPermission('events.archive')) {
+  // Archiving is the owner's (issue 743); an older payload without the
+  // field is read as the owner's.
+  if (!archived && !event.is_draft && hasPermission('events.archive') && event.can_manage_assignments !== false) {
     menuItems.push({
       key: 'archive',
       label: t('events.archiveEvent'),

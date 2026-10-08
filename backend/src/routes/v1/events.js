@@ -23,6 +23,7 @@ const { db, logActivity } = require('../../database/db');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const { holdsForReview, adminUploadColumns } = require('../../services/uploadReviewService');
 // GHSA-9697: migration 081 defines a token's effective permissions as the
 // INTERSECTION of the owner's role permissions and the token's scope flags.
 // requireApiScope only ever checked the scope half — so a token minted while
@@ -432,7 +433,7 @@ router.post(
     try { maxFileSizeBytes = await getMaxFileSizeBytes(); }
     catch { maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024; }
     await withPublicUpload(req, res, {
-      eventId, mode: 'admin', maxFiles: 1, fileField: 'photo',
+      eventId, mode: 'admin', accountId: req.admin.id, maxFiles: 1, maxFileBytes: maxFileSizeBytes, fileField: 'photo',
       fileExtension: file => {
         const extension = path.extname(file.originalname).toLowerCase();
         return /^\.[a-z0-9]{1,10}$/i.test(extension) ? extension : '';
@@ -510,6 +511,15 @@ async function handleV1PhotoUpload(req, res) {
     // otherwise overwrite a photo the caller never named in the URL.
     const rawReplacesId = req.body?.replaces_photo_id;
     if (rawReplacesId !== undefined && rawReplacesId !== null && rawReplacesId !== '') {
+      // Held team uploads cannot replace a published photo (issue 743).
+      if (await holdsForReview(req.admin, event)) {
+        await fs.unlink(tempPath).catch(() => {});
+        tempPath = null;
+        return res.status(403).json({
+          error: 'Uploads to this event wait for the owner\'s review; replacing a photo is not available',
+          code: 'UPLOAD_REVIEW_REQUIRED',
+        });
+      }
       const replacesId = parseInt(rawReplacesId, 10);
       if (Number.isNaN(replacesId)) {
         // Cleanup is in this route's catch block, so an early return has to
@@ -621,6 +631,7 @@ async function handleV1PhotoUpload(req, res) {
     await fs.unlink(tempPath).catch(() => {});
     tempPath = null;
 
+    const uploadColumns = await adminUploadColumns(req.admin, event);
     const photoData = {
       event_id: event.id,
       filename: finalName,
@@ -641,28 +652,31 @@ async function handleV1PhotoUpload(req, res) {
       mime_type: req.file.mimetype,
       uploaded_at: new Date().toISOString(),
       uploaded_by: 'admin',
+      // Retain uploader identity and held-review visibility with the quota commit.
+      ...uploadColumns,
       ...credit
     };
     const id = await uploadQuota.commitObject(object, 'photo', async conn => {
       const insertResult = await conn('photos').insert(photoData).returning('id');
       return insertResult[0]?.id || insertResult[0];
     });
-    try { await uploadQuota.processingComplete(id); }
-    catch (err) { logger.warn('v1 pending charge retained', { photoId: id, error: err.message }); }
 
     await logActivity('photo_uploaded', { via: 'api_v1', filename: finalName }, event.id, {
       type: 'admin', id: req.admin.id, name: req.admin.username
     });
 
-    // Webhook (#327): one event per uploaded photo so receivers get a
-    // 1:1 stream they can react to.
-    try {
-      const webhookService = require('../../services/webhookService');
-      await webhookService.fire('photo.uploaded', {
-        event: { id: event.id, slug: event.slug, event_name: event.event_name },
-        photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
-      });
-    } catch (e) { /* non-fatal */ }
+    // Held uploads fire only on approval (issue 743).
+    if (!uploadColumns.moderation_status) {
+      // Webhook (#327): one event per uploaded photo so receivers get a
+      // 1:1 stream they can react to.
+      try {
+        const webhookService = require('../../services/webhookService');
+        await webhookService.fire('photo.uploaded', {
+          event: { id: event.id, slug: event.slug, event_name: event.event_name },
+          photo: { id, filename: finalName, original_filename: req.file.originalname, size_bytes: stat.size, width, height },
+        });
+      } catch (e) { /* non-fatal */ }
+    }
 
     res.status(201).json({
       id,
@@ -948,7 +962,7 @@ router.get(
       // statements above.
       const mediaRows = pageIds.length
         ? await db('photos').where('event_id', eventId).whereIn('id', pageIds)
-          .select('id', 'media_type', 'mime_type', 'processing_status')
+          .select('id', 'media_type', 'mime_type', 'processing_status', 'moderation_status')
         : [];
       const mediaById = new Map(mediaRows.map((r) => [r.id, r]));
 
@@ -996,6 +1010,9 @@ router.get(
             // 'complete' unless the async worker is still on it. The preview
             // and download routes answer 503/422 for the other states.
             processing_status: mediaById.get(photo.id)?.processing_status ?? null,
+            // A team upload waiting for review, or rejected (issue 743): not
+            // shown to any gallery viewer until approved.
+            moderation_status: mediaById.get(photo.id)?.moderation_status ?? null,
             uploaded_at: photo.uploaded_at || null
           };
         }),

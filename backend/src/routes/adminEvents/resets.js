@@ -13,7 +13,7 @@ const { validatePasswordInContext, getBcryptRounds } = require('../../utils/pass
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
-const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const { requireEventOwner, scopeEventsQuery } = require('../../middleware/ownership');
 const { getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const { parseBooleanInput } = require('../../utils/parsers');
 const {
@@ -24,14 +24,14 @@ module.exports = (router) => {
 
 
   // Reset event password
-  router.post('/:id/reset-password', adminAuth, requirePermission(['events.edit', 'events.support']), requireEventOwnership, async (req, res) => {
+  router.post('/:id/reset-password', adminAuth, requirePermission(['events.edit', 'events.support']), requireEventOwner, async (req, res) => {
     try {
       const { id } = req.params;
       const { sendEmail = true, password: clientPassword } = req.body;
 
-      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // Ownership: the rule requireEventOwner already enforced, kept as
       // defence in depth (issue 1670, §2.4).
-      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
       }
@@ -135,14 +135,14 @@ module.exports = (router) => {
   });
 
   // Resend creation email
-  router.post('/:id/resend-email', adminAuth, requirePermission(['events.edit', 'events.support']), requireEventOwnership, async (req, res) => {
+  router.post('/:id/resend-email', adminAuth, requirePermission(['events.edit', 'events.support']), requireEventOwner, async (req, res) => {
     try {
       const { id } = req.params;
 
       // Get event details
-      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // Ownership: the rule requireEventOwner already enforced, kept as
       // defence in depth (issue 1670, §2.4).
-      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first();
 
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });

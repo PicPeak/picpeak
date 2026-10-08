@@ -91,7 +91,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
     }
 
     await withPublicUpload(req, res, {
-      eventId, guestId: uploader?.id || null, maxFiles: maxFilesPerUpload, fileField: 'photos',
+      eventId, guestId: uploader?.id || null, maxFiles: maxFilesPerUpload, maxFileBytes: maxFileSizeBytes, fileField: 'photos',
       fileLimitMessage: `File too large. Maximum size is ${Math.floor(maxFileSizeBytes / (1024 * 1024))} MB per file.`,
     }, ({ storage, streamHandler, maxFiles, rejectBody }) => multer({
       storage,
@@ -118,7 +118,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
         if (validateFileType(file.originalname, file.mimetype, allowedMimeTypes)) {
           cb(null, true);
         } else {
-          const error = new Error('Invalid file type');
+          const error = Object.assign(new Error('Invalid file type'), { expose: true });
           rejectBody(error); cb(error);
         }
       }

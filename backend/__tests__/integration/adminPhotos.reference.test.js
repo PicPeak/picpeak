@@ -141,6 +141,17 @@ describe('Admin photos in reference mode', () => {
       table.float('average_rating').defaultTo(0);
       table.integer('like_count').defaultTo(0);
       table.integer('favorite_count').defaultTo(0);
+      // Migration 269: the uploading account and the review state, which the
+      // upload writes and the list reads.
+      table.integer('uploaded_by_admin_id');
+      table.string('moderation_status', 16);
+    });
+
+    // The list joins the uploading account (migration 269).
+    await db.schema.dropTableIfExists('admin_users');
+    await db.schema.createTable('admin_users', (table) => {
+      table.increments('id').primary();
+      table.string('username');
     });
 
     await db.schema.createTable('photo_feedback', (table) => {
@@ -162,8 +173,8 @@ describe('Admin photos in reference mode', () => {
     await db.schema.createTable('app_settings', table => {
       table.string('setting_key'); table.string('setting_value');
     });
-    await require('../../migrations/core/266_public_upload_quotas').up(db);
-    await require('../../migrations/core/267_admin_upload_admission').up(db);
+    await require('../../migrations/core/276_public_upload_quotas').up(db);
+    await require('../../migrations/core/277_admin_upload_admission').up(db);
     await require('../../migrations/core/268_image_work_budget').up(db);
 
     await db('events').insert({

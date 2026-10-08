@@ -316,27 +316,25 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Commit transaction
       if (trx) await trx.commit();
       rowCommitted = true;
-      if (uploadReservation) {
-        // A failed accounting acknowledgement must retain pending capacity;
-        // it must not delete a successfully associated original.
-        await uploadQuota.processingComplete(photoId).catch(err => logger.warn('Completed upload charge remains pending', { photoId, error: err.message }));
-      }
 
       // Webhook (#327) — fires for every entry path that lands in this
-      // service: guest upload + auto-import + admin upload via API.
-      try {
-        const webhookService = require('./webhookService');
-        await webhookService.fire('photo.uploaded', {
-          event: { id: event.id, slug: event.slug, event_name: event.event_name },
-          photo: {
-            id: photoId,
-            filename: newFilename,
-            original_filename: file.originalname,
-            size_bytes: file.size,
-            uploaded_by: uploadedBy,
-          },
-        });
-      } catch (e) { /* non-fatal */ }
+      // service: guest upload + auto-import + admin upload via API. A photo
+      // held for review (issue 743) fires when it is approved instead.
+      if (!photoData.moderation_status) {
+        try {
+          const webhookService = require('./webhookService');
+          await webhookService.fire('photo.uploaded', {
+            event: { id: event.id, slug: event.slug, event_name: event.event_name },
+            photo: {
+              id: photoId,
+              filename: newFilename,
+              original_filename: file.originalname,
+              size_bytes: file.size,
+              uploaded_by: uploadedBy,
+            },
+          });
+        } catch (e) { /* non-fatal */ }
+      }
 
       // Face detection (#1074). processPhoto() — the ASYNC path — enqueues on
       // completion, but this synchronous path (chunked-upload completion,
@@ -761,7 +759,8 @@ async function processPhoto(photoId) {
   if (exifCredit) {
     await db('photos')
       .where({ id: photoId, path: photo.path, filename: photo.filename })
-      .whereNull('credit_source')
+      // An account credit (issue 743) is the fallback EXIF replaces.
+      .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'account'))
       .update({ credit_name: exifCredit, credit_source: 'exif' });
   }
 
@@ -773,19 +772,25 @@ async function processPhoto(photoId) {
       .catch((err) => logger.warn(`processPhoto: watermark queue failed for ${photoId}`, { error: err.message }));
   }
 
-  try {
-    const webhookService = require('./webhookService');
-    await webhookService.fire('photo.uploaded', {
-      event: { id: event.id, slug: event.slug, event_name: event.event_name },
-      photo: {
-        id: photo.id,
-        filename: photo.filename,
-        original_filename: photo.original_filename,
-        size_bytes: photo.size_bytes,
-      },
-    });
-  } catch (e) {
-    logger.warn(`processPhoto: webhook fire failed for ${photoId}`, { error: e.message });
+  // Held for review (issue 743): fires when it is approved instead. Read
+  // now, not from the row this run started with: an approval while the
+  // worker ran skipped this photo because it was not complete yet.
+  const { moderation_status: heldNow } = (await db('photos').where({ id: photoId }).first('moderation_status')) || {};
+  if (!heldNow) {
+    try {
+      const webhookService = require('./webhookService');
+      await webhookService.fire('photo.uploaded', {
+        event: { id: event.id, slug: event.slug, event_name: event.event_name },
+        photo: {
+          id: photo.id,
+          filename: photo.filename,
+          original_filename: photo.original_filename,
+          size_bytes: photo.size_bytes,
+        },
+      });
+    } catch (e) {
+      logger.warn(`processPhoto: webhook fire failed for ${photoId}`, { error: e.message });
+    }
   }
 
   try {

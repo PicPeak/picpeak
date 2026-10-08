@@ -46,7 +46,10 @@ export const UploadProgressBar: React.FC = () => {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3">
             <p className="truncate font-medium text-heading">
-              {phase.kind === 'transferring' && (
+              {phase.kind === 'transferring' && session.waitingForCapacity && (
+                <span data-testid="upload-waiting-for-capacity">{t('upload.adminCapacity.waiting', session.waitingForCapacity)}</span>
+              )}
+              {phase.kind === 'transferring' && !session.waitingForCapacity && (
                 <>
                   {t('upload.bar.uploading', { count: session.fileCount })}
                   {session.totalChunks > 1 && (

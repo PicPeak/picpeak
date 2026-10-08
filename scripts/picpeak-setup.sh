@@ -16,6 +16,14 @@ readonly APP_NAME="PicPeak"
 readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="22"
 readonly NODE_MIN_VERSION="22.12.0"  # backend engines: >=22.12.0 (sanitize-html 2.17.7)
+# Reviewed upstream bootstrap bytes, not digests fetched from the same server.
+# Update each immutable commit URL and its SHA-256 together after review.
+readonly DOCKER_BOOTSTRAP_URL="https://raw.githubusercontent.com/docker/docker-install/2b32480025b223ebfddae9a3a8bef09027680f53/install.sh"
+readonly DOCKER_BOOTSTRAP_SHA256="fefa50ccd50efb42f438b506fc3a88574118f314aaf2a7cd5b6e1ffb1bffcf26"
+readonly NODE_DEB_BOOTSTRAP_URL="https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/deb/setup_22.x"
+readonly NODE_DEB_BOOTSTRAP_SHA256="575583bbac2fccc0b5edd0dbc03e222d9f9dc8d724da996d22754d6411104fd1"
+readonly NODE_RPM_BOOTSTRAP_URL="https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/rpm/setup_22.x"
+readonly NODE_RPM_BOOTSTRAP_SHA256="b0ed2b9b66002e7ee802e8777cf3a92b25f1ecc0129812dc6f59a43a536810cc"
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
 readonly MIN_DISK_GB=2
@@ -304,6 +312,49 @@ die() {
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
+
+# Never execute a partial, mutable, or unverified download. The subshell owns
+# its private directory/traps, leaving the installer's logging traps untouched.
+run_verified_bootstrap() (
+    local url="$1" expected_sha256="$2" interpreter="$3"
+    local bootstrap_dir checksum original_umask
+    [[ "$url" =~ ^https://raw\.githubusercontent\.com/[^/]+/[^/]+/[0-9a-f]{40}/ ]] \
+        && [[ "$expected_sha256" =~ ^[0-9a-f]{64}$ ]] \
+        || { log_error "Invalid pinned bootstrap artifact"; return 1; }
+    case "$interpreter" in
+        sh|bash) ;;
+        *) log_error "Unsupported bootstrap interpreter"; return 1 ;;
+    esac
+    if ! command_exists curl || ! command_exists sha256sum || ! command_exists "$interpreter"; then
+        log_error "Verified bootstrap requires curl, sha256sum (coreutils), and $interpreter; install these first"
+        return 1
+    fi
+
+    original_umask=$(umask)
+    umask 077
+    bootstrap_dir=$(mktemp -d /tmp/picpeak-bootstrap.XXXXXXXX) \
+        || { log_error "Cannot create a private bootstrap directory"; return 1; }
+    trap 'rm -rf -- "$bootstrap_dir"' EXIT
+    trap 'exit 1' HUP INT TERM
+    if ! curl --disable --fail --silent --show-error --location \
+        --proto '=https' --proto-redir '=https' --max-redirs 3 \
+        --connect-timeout 10 --max-time 60 --max-filesize 1048576 \
+        --output "$bootstrap_dir/bootstrap.sh" "$url"; then
+        log_error "Pinned bootstrap download failed; nothing executed"
+        return 1
+    fi
+    checksum=$(sha256sum "$bootstrap_dir/bootstrap.sh") \
+        || { log_error "Cannot verify bootstrap checksum"; return 1; }
+    if [[ "${checksum%% *}" != "$expected_sha256" ]]; then
+        log_error "Bootstrap SHA-256 mismatch; nothing executed"
+        return 1
+    fi
+    # Private staging must not make upstream package/repository files root-only.
+    umask "$original_umask" || return 1
+    # Under `curl ... | sudo bash` stdin IS the rest of this installer; a child
+    # that reads it would swallow the lines bash has not parsed yet.
+    "$interpreter" "$bootstrap_dir/bootstrap.sh" </dev/null
+)
 
 # Write stdin to a secret-bearing file (.env) as mode 0600. The file is created
 # under a private umask so it is never observable as 0644; the chmod afterwards
@@ -614,7 +665,8 @@ install_docker() {
     
     case "$PACKAGE_MANAGER" in
         apt)
-            curl -fsSL https://get.docker.com | sh
+            run_verified_bootstrap "$DOCKER_BOOTSTRAP_URL" "$DOCKER_BOOTSTRAP_SHA256" sh \
+                || die "Docker bootstrap failed; refusing to continue"
             ;;
         dnf|yum)
             $PACKAGE_MANAGER config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -1030,11 +1082,13 @@ install_nodejs() {
     
     case "$PACKAGE_MANAGER" in
         apt)
-            curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
+            run_verified_bootstrap "$NODE_DEB_BOOTSTRAP_URL" "$NODE_DEB_BOOTSTRAP_SHA256" bash \
+                || die "Node.js bootstrap failed; refusing to continue"
             apt-get install -y nodejs
             ;;
         dnf|yum)
-            curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | bash -
+            run_verified_bootstrap "$NODE_RPM_BOOTSTRAP_URL" "$NODE_RPM_BOOTSTRAP_SHA256" bash \
+                || die "Node.js bootstrap failed; refusing to continue"
             $PACKAGE_MANAGER install -y nodejs
             ;;
     esac

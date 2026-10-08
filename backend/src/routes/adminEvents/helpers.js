@@ -192,6 +192,10 @@ async function deleteEventCascade(eventId, adminContext) {
     if (await trx.schema.hasTable('event_download_grants')) {
       await trx('event_download_grants').where('event_id', eventId).del();
     }
+    // Team assignments (migration 269): the same inert-cascade reason.
+    if (await trx.schema.hasTable('event_admin_assignments')) {
+      await trx('event_admin_assignments').where('event_id', eventId).del();
+    }
     // feedback_rate_limits.event_id is also ON DELETE CASCADE (#1585), same
     // SQLite caveat as photo_faces above — delete explicitly so an event's
     // rate-limit tracking rows don't outlive it on the SQLite path.

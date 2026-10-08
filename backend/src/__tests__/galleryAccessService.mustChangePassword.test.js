@@ -31,7 +31,7 @@ jest.mock('../utils/galleryLifecycle', () => ({
   requiresGalleryPassword: jest.fn().mockReturnValue(false),
 }));
 jest.mock('../middleware/permissions', () => ({ userHasAllPermissions: jest.fn().mockResolvedValue(true), roleEventScope: jest.fn().mockResolvedValue(null) }));
-jest.mock('../middleware/ownership', () => ({ canAccessEvent: jest.fn().mockReturnValue(true) }));
+jest.mock('../middleware/ownership', () => ({ canAccessEvent: jest.fn().mockReturnValue(true), loadAssignedEventIds: jest.fn().mockResolvedValue([]) }));
 jest.mock('../utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 
 const adminAccount = {

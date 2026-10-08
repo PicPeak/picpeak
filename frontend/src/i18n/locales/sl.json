@@ -665,7 +665,8 @@
     "confirmEmailForSsoDialog": {
       "title": "Potrdim ta e-poštni naslov za SSO?",
       "message": "Želite potrditi {{email}} kot naslov uporabnika {{name}}? Prijava z enotno prijavo, ki prispe s tem preverjenim e-poštnim naslovom, bo nato povezana s tem računom. Sam naslov se ne spremeni. Potrdite ga le, če veste, da pripada tej osebi."
-    }
+    },
+    "creditNameHelp": "Navedeno pri fotografijah, ki jih naloži ta račun, če datoteka v metapodatkih nima imena fotografa."
   },
   "systemHealth": {
     "retry": "Ponovi",
@@ -1970,8 +1971,14 @@
         "folderStructureOn": "Struktura map vklopljena",
         "folderStructureOff": "Nalaganja brez map",
         "firstLookDue": "prvi izbor, celotna galerija do {{date}}",
-        "firstLook": "prvi izbor, več sledi"
-      }
+        "firstLook": "prvi izbor, več sledi",
+        "teamMembers_one": "{{count}} član ekipe",
+        "teamMembers_two": "{{count}} člana ekipe",
+        "teamMembers_few": "{{count}} člani ekipe",
+        "teamMembers_other": "{{count}} članov ekipe",
+        "teamReview": "nalaganja ekipe se pregledujejo"
+      },
+      "passwordOwnerOnly": "Samo lastnik galerije lahko spremeni geslo ali ga izklopi."
     },
     "folders": {
       "sectionTitle": "Mape",
@@ -2051,6 +2058,19 @@
       "skippedAccounts_two": "{{count}} računa strank ne bosta obveščena — za to je potrebno dovoljenje customers.events",
       "skippedAccounts_few": "{{count}} računi strank ne bodo obveščeni — za to je potrebno dovoljenje customers.events",
       "skippedAccounts_other": "{{count}} računov strank ne bo obveščenih — za to je potrebno dovoljenje customers.events"
+    },
+    "team": {
+      "label": "Člani ekipe",
+      "help": "Skrbniški računi, dodani tukaj, lahko delajo na tej galeriji kot vi, v okviru svoje vloge. Podatki o strankah in obračunu ostanejo vaši.",
+      "removeAria": "Odstrani {{name}}",
+      "placeholder": "Iskanje skrbniških računov",
+      "loading": "Nalaganje …",
+      "loadFailed": "Skrbniških računov ni bilo mogoče naložiti.",
+      "noResults": "Ni drugih ustreznih skrbniških računov.",
+      "reviewUploads": "Preglej nalaganja članov ekipe pred objavo",
+      "reviewUploadsHelp": "Zadrži nalaganja članov ekipe, katerih vloga nima dovoljenja »Review Team Uploads«: ostanejo skrita gostom in strankam, dokler jih vi ali pregledovalec ne odobrite na zavihku Fotografije. Vloge Admin, Editor in Solo Photographer imajo to dovoljenje privzeto, zato njihova nalaganja nikoli niso zadržana.",
+      "reviewUploadsHelpMember": "Vaša nalaganja v to galerijo ostanejo skrita gostom in strankam, dokler jih lastnik ali pregledovalec ne odobri.",
+      "reviewUploadsHelpReviewer": "Nalaganja članov ekipe brez dovoljenja »Review Team Uploads« čakajo na odobritev na zavihku Fotografije. Vaša so objavljena takoj."
     }
   },
   "settings": {
@@ -2107,7 +2127,9 @@
       "timeFormatHelp": "Določa prikaz časa v skrbniških pogledih, straneh za stranke in PDF-jih. Shranjevanje ostane 24-urno (HH:mm); spremeni se samo prikaz.",
       "adminLanguage": "Vaš jezik skrbniškega dela",
       "adminLanguageHelp": "Velja za skrbniški del, samo za vas na tej napravi. Učinkuje takoj — shranjevanje ni potrebno.",
-      "customerLanguage": "Jezik galerije in gostov"
+      "customerLanguage": "Jezik galerije in gostov",
+      "accountCreditName": "Avtor fotografije",
+      "accountCreditNameHelp": "Navedeno pri fotografijah, ki jih naložite, če datoteka v metapodatkih nima imena fotografa. Pustite prazno, če ne želite navedbe."
     },
     "publicSite": {
       "badge": "Javna pristajalna stran",
@@ -2331,7 +2353,8 @@
       "firstLookKeywords": "Ključne besede",
       "firstLookKeywordsHelp": "Ločene z vejicami. Velike črke, presledki, vezaji in podčrtaji se prezrejo, zato se »FirstLook« ujema tudi s »first-look«.",
       "deliveryDays": "Rok za celotno galerijo po (dneh)",
-      "deliveryDaysHelp": "Če se prvi izbor začne brez obljubljenega datuma, je celotna galerija zapadla toliko dni po datumu dogodka."
+      "deliveryDaysHelp": "Če se prvi izbor začne brez obljubljenega datuma, je celotna galerija zapadla toliko dni po datumu dogodka.",
+      "defaultAllowDecisions": "Odobri / zavrni posamezno fotografijo"
     },
     "imageSecurity": {
       "title": "Zaščita slik",
@@ -3768,7 +3791,18 @@
       "apiPhotoDownloaded": "Izvirnik prenesen iz {{eventName}} z žetonom API #{{token_id}}",
       "apiPhotosDownloaded_one": "Žeton API »{{token_name}}« je prenesel {{count}} izvirnik iz {{eventName}}",
       "apiPhotosDownloaded_other": "Žeton API »{{token_name}}« je prenesel {{count}} izvirnikov iz {{eventName}}",
-      "apiPhotosZipDownloaded": "Žeton API »{{token_name}}« je prenesel ZIP z {{photo_count}} izvirniki iz {{eventName}}"
+      "apiPhotosZipDownloaded": "Žeton API »{{token_name}}« je prenesel ZIP z {{photo_count}} izvirniki iz {{eventName}}",
+      "eventTeamChanged": "Ekipa spremenjena za {{eventName}}",
+      "photosReviewApproved_one": "{{count}} nalaganje ekipe odobreno v {{eventName}}",
+      "photosReviewApproved_two": "{{count}} nalaganji ekipe odobreni v {{eventName}}",
+      "photosReviewApproved_few": "{{count}} nalaganja ekipe odobrena v {{eventName}}",
+      "photosReviewApproved_other": "{{count}} nalaganj ekipe odobrenih v {{eventName}}",
+      "photosReviewRejected_one": "{{count}} nalaganje ekipe zavrnjeno v {{eventName}}",
+      "photosReviewRejected_two": "{{count}} nalaganji ekipe zavrnjeni v {{eventName}}",
+      "photosReviewRejected_few": "{{count}} nalaganja ekipe zavrnjena v {{eventName}}",
+      "photosReviewRejected_other": "{{count}} nalaganj ekipe zavrnjenih v {{eventName}}",
+      "photoDecision": "Fotografija odobrena ali zavrnjena v {{eventName}}",
+      "guestFeedbackDecision": "Gost je odobril ali zavrnil fotografijo v {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Vsa obvestila so označena kot prebrana",
@@ -3848,7 +3882,9 @@
         "filterLabel": "Filtriraj po avtorju",
         "filterAll": "Vsa imena",
         "filterNone": "Brez imena"
-      }
+      },
+      "approvedBy": "Odobreno: {{value}}",
+      "rejectedBy": "Zavrnjeno: {{value}}"
     },
     "events": {
       "tabs": {
@@ -4138,7 +4174,18 @@
       "delivery_first_look_started": "Prvi izbor začet za {{eventName}}",
       "delivery_completed": "Celotna galerija dostavljena: {{eventName}}",
       "delivery_due_soon": "Rok za celotno galerijo {{eventName}} se bliža",
-      "delivery_overdue": "Celotna galerija {{eventName}} zamuja"
+      "delivery_overdue": "Celotna galerija {{eventName}} zamuja",
+      "photo_decision": "Fotografija odobrena ali zavrnjena v {{eventName}}",
+      "guest_feedback_decision": "Gost je odobril ali zavrnil fotografijo v {{eventName}}",
+      "event_team_changed": "Ekipa spremenjena za {{eventName}}",
+      "photos_review_approved_one": "{{count}} nalaganje ekipe odobreno v {{eventName}}",
+      "photos_review_approved_two": "{{count}} nalaganji ekipe odobreni v {{eventName}}",
+      "photos_review_approved_few": "{{count}} nalaganja ekipe odobrena v {{eventName}}",
+      "photos_review_approved_other": "{{count}} nalaganj ekipe odobrenih v {{eventName}}",
+      "photos_review_rejected_one": "{{count}} nalaganje ekipe zavrnjeno v {{eventName}}",
+      "photos_review_rejected_two": "{{count}} nalaganji ekipe zavrnjeni v {{eventName}}",
+      "photos_review_rejected_few": "{{count}} nalaganja ekipe zavrnjena v {{eventName}}",
+      "photos_review_rejected_other": "{{count}} nalaganj ekipe zavrnjenih v {{eventName}}"
     },
     "people": {
       "title": "Osebe v tej galeriji",
@@ -5312,7 +5359,9 @@
       "enableRateLimiting": "Omogoči omejevanje hitrosti",
       "rateLimitingDesc": "Prepreči neželeno pošiljanje z omejevanjem pogostosti povratnih informacij",
       "timeWindow": "Časovno okno (minute)",
-      "maxRequests": "Največ zahtev"
+      "maxRequests": "Največ zahtev",
+      "decisions": "Odobri / zavrni posamezno fotografijo",
+      "decisionsDesc": "Gostje vsako fotografijo odobrijo ali zavrnejo, po želji z razlogom. Po njihovi odločitvi lahko filtrirate in izvažate"
     },
     "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
     "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
@@ -5335,7 +5384,8 @@
       "like": "Všečki",
       "comment": "Komentarji",
       "favorite": "Priljubljene",
-      "reaction": "Odzivi"
+      "reaction": "Odzivi",
+      "decision": "Odobri / zavrni"
     },
     "allStatuses": "Vsa stanja",
     "status": {
@@ -5413,7 +5463,25 @@
     "removeColorLabel": "Odstrani oznako {{color}}",
     "setColorLabel": "Označi kot {{color}}",
     "markedAs": "Označeno kot {{color}}",
-    "alsoMarkedBy": "Označili tudi drugi: {{colors}}"
+    "alsoMarkedBy": "Označili tudi drugi: {{colors}}",
+    "decisions": {
+      "approved": "Odobreno",
+      "rejected": "Zavrnjeno"
+    },
+    "totalDecisions": "Odobreno / zavrnjeno",
+    "decisionsTitle": "Odobri / zavrni",
+    "decisionApprove": "Odobri",
+    "decisionReject": "Zavrni",
+    "decisionClear": "Prekliči odločitev",
+    "decisionReasonEdit": "Zakaj? (neobvezno)",
+    "decisionReasonLabel": "Zakaj zavračate to fotografijo? (neobvezno)",
+    "decisionReasonPlaceholder": "npr. zaprte oči, ni moja najboljša stran",
+    "decisionReasonSave": "Shrani razlog",
+    "decisionReasonBlocked": "Vaš razlog vsebuje besede, ki tukaj niso dovoljene.",
+    "decisionError": "Odločitve ni bilo mogoče shraniti",
+    "decisionType": "vašo odločitev",
+    "youApproved": "To fotografijo ste odobrili",
+    "youRejected": "To fotografijo ste zavrnili"
   },
   "filter": {
     "feedbackFilters": "Filtri povratnih informacij",
@@ -5436,7 +5504,11 @@
     "colorLabels": "Barvne oznake",
     "showOnlyColor": "Prikaži samo {{color}}",
     "myColorLabels": "Vaše oznake",
-    "showOnlyMyColor": "Prikaži samo moje oznake {{color}}"
+    "showOnlyMyColor": "Prikaži samo moje oznake {{color}}",
+    "decisions": "Odobri / zavrni",
+    "decisionApproved": "Odobreno",
+    "decisionRejected": "Zavrnjeno",
+    "decisionUndecided": "Neodločeno"
   },
   "setup": {
     "title": "Dobrodošli v PicPeaku",
@@ -5856,6 +5928,39 @@
       "waitingForAdmin_two": "Zahteve za mape, ki čakajo na skrbnika: {{count}}. Do takrat so njihove fotografije ({{photos}}) v najbližji obstoječi mapi.",
       "waitingForAdmin_few": "Zahteve za mape, ki čakajo na skrbnika: {{count}}. Do takrat so njihove fotografije ({{photos}}) v najbližji obstoječi mapi.",
       "waitingForAdmin_other": "Zahteve za mape, ki čakajo na skrbnika: {{count}}. Do takrat so njihove fotografije ({{photos}}) v najbližji obstoječi mapi."
+    },
+    "review": {
+      "pendingOwner_one": "{{count}} nalaganje vaše ekipe čaka na vaš pregled",
+      "pendingOwner_two": "{{count}} nalaganji vaše ekipe čakata na vaš pregled",
+      "pendingOwner_few": "{{count}} nalaganja vaše ekipe čakajo na vaš pregled",
+      "pendingOwner_other": "{{count}} nalaganj vaše ekipe čaka na vaš pregled",
+      "pendingMember_one": "{{count}} nalaganje ekipe čaka na pregled lastnika",
+      "pendingMember_two": "{{count}} nalaganji ekipe čakata na pregled lastnika",
+      "pendingMember_few": "{{count}} nalaganja ekipe čakajo na pregled lastnika",
+      "pendingMember_other": "{{count}} nalaganj ekipe čaka na pregled lastnika",
+      "nonePending": "Nobeno nalaganje ne čaka na pregled.",
+      "filterPending": "Čaka na pregled ({{count}})",
+      "filterRejected": "Zavrnjene ({{count}})",
+      "showAll": "Vse fotografije",
+      "approve": "Odobri",
+      "reject": "Zavrni",
+      "approved_one": "{{count}} fotografija odobrena in objavljena",
+      "approved_two": "{{count}} fotografiji odobreni in objavljeni",
+      "approved_few": "{{count}} fotografije odobrene in objavljene",
+      "approved_other": "{{count}} fotografij odobrenih in objavljenih",
+      "rejected_one": "{{count}} fotografija zavrnjena",
+      "rejected_two": "{{count}} fotografiji zavrnjeni",
+      "rejected_few": "{{count}} fotografije zavrnjene",
+      "rejected_other": "{{count}} fotografij zavrnjenih",
+      "failed": "Fotografij ni bilo mogoče pregledati",
+      "pendingBadge": "Čaka na pregled",
+      "rejectedBadge": "Zavrnjena",
+      "uploadedBy": "Naložil(a) {{name}}",
+      "hiddenUntilApproved": "Skrita gostom in strankam do odobritve",
+      "skippedOnShow_one": "{{count}} fotografija čaka na pregled in ostane skrita do odobritve",
+      "skippedOnShow_two": "{{count}} fotografiji čakata na pregled in ostaneta skriti do odobritve",
+      "skippedOnShow_few": "{{count}} fotografije čakajo na pregled in ostanejo skrite do odobritve",
+      "skippedOnShow_other": "{{count}} fotografij čaka na pregled in ostane skritih do odobritve"
     }
   },
   "customer": {

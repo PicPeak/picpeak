@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { seesAllEvents } = require('../middleware/ownership');
+const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
 const { sanitizeDays } = require('../utils/sqlSecurity');
 const { formatBoolean, whereTimestamp } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
@@ -46,12 +46,12 @@ function normaliseDateKey(value) {
  */
 function isScopedAdmin(admin) {
   // Mirrors the events list: every role except super_admin and admin is
-  // limited to its own events plus ownerless ones.
+  // limited to its own events, assigned ones and ownerless ones.
   return !seesAllEvents(admin);
 }
 
 /**
- * Restrict `query` to the caller's own events.
+ * Restrict `query` to the caller's own and assigned events.
  *
  * Uses a SUBQUERY rather than materialising the id list. An editor owning more
  * events than the driver's bind-parameter limit (~999 on SQLite, 65535 on
@@ -61,8 +61,7 @@ function isScopedAdmin(admin) {
  */
 function applyEventScope(query, admin, column) {
   if (!isScopedAdmin(admin)) return query;
-  return query.whereIn(column, db('events').select('id')
-    .where((q) => q.whereNull('created_by').orWhere('created_by', admin.id)));
+  return query.whereIn(column, scopeEventsQuery(db('events').select('id'), admin));
 }
 
 // Get dashboard statistics
