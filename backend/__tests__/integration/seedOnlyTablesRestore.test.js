@@ -32,14 +32,12 @@ it('preserves seed-only tables the archive predates, while still clearing a genu
   await db.schema.dropTable('ledger_accounts');
   await db.schema.dropTable('customer_group_members');
   await db.schema.dropTable('customer_groups');
-  await db.schema.dropTable('image_work_lock');
 
   const { filePath, manifest } = await createPicpeak({ includeFiles: false, outDir: `${tmpDir}/archives-seed-only` });
   expect(Object.hasOwn(manifest.tables, 'product_usage_state')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'ledger_accounts')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'vat_codes')).toBe(false);
   expect(Object.hasOwn(manifest.tables, 'customer_groups')).toBe(false);
-  expect(Object.hasOwn(manifest.tables, 'image_work_lock')).toBe(false);
 
   // This instance is on a schema that HAS all of these tables (the archive
   // predates them, this instance doesn't) — recreate them via their
@@ -47,7 +45,6 @@ it('preserves seed-only tables the archive predates, while still clearing a genu
   await require('../../migrations/core/201_product_usage').up(db);
   await require('../../migrations/core/129_create_ledger_accounts_and_vat_codes').up(db);
   await require('../../migrations/core/226_customer_groups').up(db);
-  await require('../../migrations/core/268_image_work_budget').up(db);
 
   // Also seed a local customer_groups row — the genuine user-data case
   // that must still be cleared by the restore (no regression on #1586).
@@ -74,7 +71,6 @@ it('preserves seed-only tables the archive predates, while still clearing a genu
   expect(usageRowAfter.id).toBe(1);
   expect(await db('ledger_accounts')).toHaveLength(ledgerAccountsBefore.length);
   expect(await db('vat_codes')).toHaveLength(vatCodesBefore.length);
-  expect(await db('image_work_lock').where({ id: 1 }).first()).toEqual({ id: 1, revision: 0 });
 
   // Genuine user-data table: still correctly cleared (not regressed).
   expect(await db('customer_groups')).toEqual([]);

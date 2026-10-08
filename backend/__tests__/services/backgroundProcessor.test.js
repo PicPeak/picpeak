@@ -19,7 +19,7 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
   const queries = [];
 
   const builder = () => {
-    const recorded = { wheres: [], updates: null, ordered: false, locked: false, skipped: false, deleted: false };
+    const recorded = { wheres: [], updates: null, ordered: false, locked: false, skipped: false };
     queries.push(recorded);
     const chain = {
       where: jest.fn(function (...args) {
@@ -47,7 +47,6 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
         recorded.updates = data;
         return updateResult;
       }),
-      delete: jest.fn(async function () { recorded.deleted = true; return 1; }),
     };
     return chain;
   };
@@ -86,41 +85,10 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     expect(queries[0].skipped).toBe(true);
     // The second query is the status update.
     expect(queries[1].updates.processing_status).toBe('processing');
-    expect(queries[1].updates.processing_attempts).toBe(1);
     // An ISO string, not a Date: on SQLite the column holds whatever the
     // driver bound, and a Date bound inside Jest lands as "[object Object]"
     // (CLAUDE.md). The janitor compares against the same shape.
     expect(queries[1].updates.processing_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-  });
-
-  it.each(['pg', 'sqlite3'])('ends the finite automatic retry cycle on %s without starting native work', async clientName => {
-    const { db, queries } = makeFakeDb({ pendingRow: { id: 7, processing_attempts: 2 }, clientName });
-    const bg = loadProcessor(db);
-    expect(await bg.claimNextPhoto()).toBeNull();
-    expect(queries[1].updates.processing_status).toBe('failed');
-    expect(queries[2].deleted).toBe(true);
-    expect(require('../../src/services/photoProcessor').processPhoto).not.toHaveBeenCalled();
-  });
-
-  it('retains accounting failures without turning a completed photo into failed/retryable work', async () => {
-    const { db, queries } = makeFakeDb({ pendingRow: { id: 7 } });
-    const finish = jest.fn().mockRejectedValue(new Error('capacity cleanup unavailable'));
-    jest.doMock('../../src/services/imageWorkAdmission', () => ({ finish }));
-    process.env.UPLOAD_PROCESSOR_CONCURRENCY = '1';
-    let bg;
-    try {
-      bg = loadProcessor(db);
-      require('../../src/services/photoProcessor').processPhoto.mockImplementation(async () => { void bg.stop(); });
-      bg.start();
-      await new Promise(resolve => setImmediate(resolve));
-      await bg.stop();
-      expect(finish).toHaveBeenCalledWith(7);
-      expect(queries.some(query => query.updates?.processing_status === 'failed')).toBe(false);
-    } finally {
-      if (bg) await bg.stop();
-      delete process.env.UPLOAD_PROCESSOR_CONCURRENCY;
-      jest.dontMock('../../src/services/imageWorkAdmission');
-    }
   });
 
   it('returns null when the SQLite UPDATE-with-guard loses the race', async () => {

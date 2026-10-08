@@ -31,8 +31,13 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhoto } = require('./photoProcessor');
-const imageAdmission = require('./imageWorkAdmission');
-const MAX_ATTEMPTS = 2;
+const { isTransient } = require('./imageResourcePolicy');
+// A photo is claimed at most this many times before it is recorded as failed:
+// claims that ended in a transient image-worker refusal (busy, unavailable,
+// deadline) and claims the janitor recovered from a process that died.
+const MAX_ATTEMPTS = 5;
+const RETRY_BACKOFF_MS = 15000;
+const exhausted = { processing_status: 'failed', processing_error: `Image processing did not complete after ${MAX_ATTEMPTS} attempts` };
 
 const POLL_INTERVAL_MS = parseInt(process.env.UPLOAD_PROCESSOR_POLL_MS || '1000', 10);
 
@@ -87,19 +92,37 @@ function isPostgres() {
  * processing_started_at is set so the janitor can recover it.
  */
 async function claimNextPhoto() {
+  const outcome = await claim();
+  if (!outcome?.exhausted) return outcome;
+  // Outside the claim transaction: SQLite has one connection.
+  await releasePendingHold(outcome.exhausted);
+  return null;
+}
+
+function releasePendingHold(photoId) {
+  // A failed photo is no longer queued work: free its public-upload
+  // pending hold (the lifetime charge for its original stays).
+  return require('./publicUploadQuota').releasePending(photoId).catch((releaseErr) => {
+    logger.warn(`backgroundProcessor: pending hold of photo ${photoId} not released`, { error: releaseErr.message });
+  });
+}
+
+async function claim() {
+  // A photo put back after a transient refusal is not due before its time.
+  const due = (query) => query.whereNull('processing_retry_at').orWhere('processing_retry_at', '<=', new Date().toISOString());
   if (isPostgres()) {
     return db.transaction(async (trx) => {
       const row = await trx('photos')
         .where('processing_status', 'pending')
+        .where(due)
         .orderBy('id', 'asc')
         .forUpdate()
         .skipLocked()
         .first();
       if (!row) return null;
       if (Number(row.processing_attempts || 0) >= MAX_ATTEMPTS) {
-        await trx('photos').where('id', row.id).update({ processing_status: 'failed', processing_error: 'Image processing retry limit reached' });
-        await trx('image_work_reservations').where({ photo_id: row.id }).delete();
-        return null;
+        await trx('photos').where('id', row.id).update(exhausted);
+        return { exhausted: row.id };
       }
       await trx('photos').where('id', row.id).update({
         processing_status: 'processing',
@@ -115,13 +138,13 @@ async function claimNextPhoto() {
   return db.transaction(async (trx) => {
     const row = await trx('photos')
       .where('processing_status', 'pending')
+      .where(due)
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;
     if (Number(row.processing_attempts || 0) >= MAX_ATTEMPTS) {
-      await trx('photos').where({ id: row.id, processing_status: 'pending' }).update({ processing_status: 'failed', processing_error: 'Image processing retry limit reached' });
-      await trx('image_work_reservations').where({ photo_id: row.id }).delete();
-      return null;
+      const failed = await trx('photos').where({ id: row.id, processing_status: 'pending' }).update(exhausted);
+      return failed > 0 ? { exhausted: row.id } : null;
     }
     const updated = await trx('photos')
       .where({ id: row.id, processing_status: 'pending' })
@@ -152,12 +175,25 @@ async function workerLoop(workerIdx) {
 
     try {
       await processPhoto(claimed.id);
-      // A completed photo must not become retryable because capacity cleanup
-      // failed. Retaining its charge is conservative; reprocessing is not.
-      await imageAdmission.finish(claimed.id).catch(error => {
-        logger.warn('Completed image work charge retained', { photoId: claimed.id, error: error.message });
-      });
     } catch (err) {
+      const attempts = Number(claimed.processing_attempts || 0) + 1;
+      if (isTransient(err) && attempts < MAX_ATTEMPTS) {
+        // "Not now" from the image worker says nothing about this photo: it
+        // goes back to pending and is due again after a growing pause. Only
+        // the last allowed attempt records the refusal as the failure.
+        logger.warn(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} requeued (${err.code}, attempt ${attempts} of ${MAX_ATTEMPTS})`, { error: err.message });
+        try {
+          await db('photos').where({ id: claimed.id, processing_status: 'processing' }).update({
+            processing_status: 'pending',
+            processing_started_at: null,
+            processing_retry_at: new Date(Date.now() + RETRY_BACKOFF_MS * attempts).toISOString(),
+          });
+        } catch (updateErr) {
+          // Left in 'processing': the janitor puts it back.
+          logger.error(`backgroundProcessor[${workerIdx}]: failed to requeue photo ${claimed.id}`, { error: updateErr.message });
+        }
+        continue;
+      }
       logger.error(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} failed`, {
         error: err.message,
         stack: err.stack,
@@ -167,12 +203,7 @@ async function workerLoop(workerIdx) {
           processing_status: 'failed',
           processing_error: String(err.message || err).slice(0, 1000),
         });
-        await imageAdmission.finish(claimed.id);
-        // A failed photo is no longer queued work: free its public-upload
-        // pending hold (the lifetime charge for its original stays).
-        await require('./publicUploadQuota').releasePending(claimed.id).catch((releaseErr) => {
-          logger.warn(`backgroundProcessor[${workerIdx}]: pending hold of photo ${claimed.id} not released`, { error: releaseErr.message });
-        });
+        await releasePendingHold(claimed.id);
       } catch (updateErr) {
         logger.error(`backgroundProcessor[${workerIdx}]: failed to mark photo ${claimed.id} as failed`, {
           error: updateErr.message,
@@ -192,8 +223,6 @@ async function janitorLoop() {
       // process that died mid-flight sorts below any text and is reset too,
       // which is the right outcome for it.
       const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
-      // An interrupted writer is retried at most once. Do not release its
-      // decoded reservation on age alone: a live child may still hold it.
       const reset = await db('photos')
         .where('processing_status', 'processing')
         .where('processing_started_at', '<', cutoff)
