@@ -9,9 +9,10 @@ const path = require('path');
 const { bootCrmDb } = require('./helpers/crmDb');
 const { createWorkRegistry } = require('../../src/services/activeApplicationWork');
 const { createApplicationWorkMiddleware, ownRouteHandlers } = require('../../src/middleware/applicationWork');
+const { fixtureIngress } = require('./helpers/restoreIngress');
 
 describe('exact portable restore control admission', () => {
-  let db, cleanup, app, work, restore, uploadRoot, superId, adminId, inactiveId;
+  let db, cleanup, app, work, restore, uploadRoot, superId, adminId, inactiveId, ingress;
   const attemptId = crypto.randomUUID();
   const capability = 'c'.repeat(64);
   const token = (id, type = 'admin') => jwt.sign({ id, type, role: 'super_admin' }, process.env.JWT_SECRET,
@@ -19,7 +20,9 @@ describe('exact portable restore control admission', () => {
   beforeAll(async () => {
     let tmpDir;
     ({ db, cleanup, tmpDir } = await bootCrmDb());
-    uploadRoot = path.join(tmpDir, 'control-uploads'); await fs.mkdir(uploadRoot, { mode: 0o700 });
+    uploadRoot = path.join(tmpDir, 'control-uploads');
+    const fixture = await fixtureIngress(uploadRoot);
+    ingress = fixture.ingress; uploadRoot = fixture.storage.privateRoot;
     const superRole = await db('roles').where({ name: 'super_admin' }).first();
     const ordinaryRole = await db('roles').where({ name: 'admin' }).first();
     const users = await db('admin_users').insert([
@@ -32,6 +35,7 @@ describe('exact portable restore control admission', () => {
   beforeEach(() => {
     work = createWorkRegistry(); work.closeAdmission();
     restore = {
+      admitUpload: jest.fn(async () => {}),
       start: jest.fn(async () => ({ attemptId, progressToken: capability, state: 'draining' })),
       progress: jest.fn(async (id, token, superAdmin) => {
         if (id !== attemptId || (token !== capability && !superAdmin)) {
@@ -42,7 +46,7 @@ describe('exact portable restore control admission', () => {
       }),
     };
     app = express();
-    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter({ work, restore, uploadRoot }));
+    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter({ work, restore, ingress }));
     app.use(createApplicationWorkMiddleware({ work, admitRequest: () => { throw new Error('should never admit'); } }));
     app.all('*', (_req, res) => res.json({ ordinary: true }));
     ownRouteHandlers(app, work);
@@ -57,7 +61,7 @@ describe('exact portable restore control admission', () => {
     if (auth) call = call.set('Authorization', `Bearer ${auth()}`);
     await call.expect(status);
     expect(restore.start).not.toHaveBeenCalled();
-    expect(await fs.readdir(uploadRoot)).toEqual([]);
+    expect((await fs.readdir(uploadRoot)).filter(name => name !== 'upload.lease' && name !== 'uploads')).toEqual([]);
   });
 
   it('admits real live typed SuperAdmin, not JWT/body role strings, and does not drain its own upload response', async () => {
@@ -65,13 +69,30 @@ describe('exact portable restore control admission', () => {
     expect(response.body).toMatchObject({ attemptId, progressToken: capability });
     expect(restore.start).toHaveBeenCalledWith({ archivePath: expect.stringContaining(uploadRoot), operatorId: superId, options: {} });
     expect(work.pendingCount()).toBe(0);
-    expect(await fs.readdir(uploadRoot)).toEqual([]);
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads'))).toEqual([]);
   });
 
   it('rejects malformed extra multipart options rather than granting a broad worker argument shape', async () => {
     await request(app).post('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`)
       .field('options[force]', 'true').attach('backup', Buffer.from('fixture'), 'test.picpeak').expect(400);
     expect(restore.start).not.toHaveBeenCalled();
+  });
+
+  it('checks fresh ready/open admission before any multipart file parsing', async () => {
+    restore.admitUpload.mockRejectedValue(Object.assign(new Error('fenced'), { code: 'RESTORE_MAINTENANCE', statusCode: 503 }));
+    await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`).expect(503);
+    expect(restore.start).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads'))).toEqual([]);
+  });
+
+  it.each(['two files', 'long field name', 'wrong field', 'ordinary field'])('bounded multipart rejects %s without starting a worker', async kind => {
+    let call = request(app).post('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`);
+    if (kind === 'ordinary field') call = call.field('operatorId', String(superId));
+    call = call.attach(kind === 'long field name' ? 'a'.repeat(101) : kind === 'wrong field' ? 'other' : 'backup', Buffer.from('fixture'), 'test.picpeak');
+    if (kind === 'two files') call = call.attach('backup', Buffer.from('second fixture'), 'second.picpeak');
+    await call.expect(400);
+    expect(restore.start).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads'))).toEqual([]);
   });
 
   it('the one-attempt read-only capability survives invalid sessions and remains sanitized/no-store', async () => {

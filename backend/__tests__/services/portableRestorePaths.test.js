@@ -54,6 +54,12 @@ linux('actual Linux private restore hierarchy', () => {
     await expect(restorePaths.storageIdentity()).rejects.toMatchObject({ code: 'RESTORE_STORAGE_UNSAFE' });
     await expect(restorePaths.attemptDirectory('../foreign', { create: true })).rejects.toMatchObject({ code: 'RESTORE_STORAGE_UNSAFE' });
   });
+  it.each([undefined, { bavail: 1n, bsize: 4n }])('unknown statfs never fabricates unlimited capacity and retains typed 507', async measurement => {
+    const observe = jest.spyOn(fs, 'statfs').mockResolvedValue(measurement);
+    try {
+      await expect(restorePaths.storageIdentity({ create: true })).rejects.toMatchObject({ code: 'RESTORE_CAPACITY_UNKNOWN', statusCode: 507 });
+    } finally { observe.mockRestore(); }
+  });
 });
 
 it('unsupported OS never creates an implicit non-native maintenance authority', async () => {

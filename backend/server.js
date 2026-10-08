@@ -264,6 +264,7 @@ const corsOptions = {
 // caller-header exemption to ordinary admission. It also precedes health,
 // analytics, body parsing, static rendering and every application API.
 app.use(require('./src/routes/portableRestoreControl').createRestoreControlRouter({ cors: cors(corsOptions) }));
+app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter());
 app.use(createApplicationWorkMiddleware({ admitRequest: () => restoreCoordinator.admitRequest() }));
 app.use('/api', cors(corsOptions));
 // Handle preflight explicitly for API paths
@@ -1151,11 +1152,21 @@ async function stopServer() {
 // Initialize services
 async function startServer() {
   try {
-    // Durable recovery and actual Node-lifetime registration precede ordinary
-    // startup. Cached maintenance settings are not restoration authority.
+    // Durable recovery and actual Node-lifetime registration come before any
+    // ordinary initialization or jobs. Control tables are excluded
+    // from portable replacement; cached maintenance settings are not a fence.
     await restoreCoordinator.initialize();
     enableApplicationWorkOwnership();
     ownRouteHandlers(app);
+    // Cold recovery must retain the exact progress route and bundled shell.
+    // Ordinary APIs, health, storage and dynamic rendering remain default-deny
+    // until the durable startup barrier and normal initialization complete.
+    await applicationWork.runUncontrolled(() => new Promise((resolve, reject) => {
+      const listener = app.listen(PORT, () => { listener.removeListener('error', reject); resolve(); });
+      httpServer = listener;
+      listener.once('error', reject);
+    }));
+    logger.info(`Maintenance control listener running on port ${PORT}`);
     await restoreCoordinator.waitForStartupAdmission();
     await applicationWork.track('runtime startup', async () => {
       // Initialize database
@@ -1370,25 +1381,24 @@ async function startServer() {
       require('./src/services/faceQueue').start();
 
       restoreCoordinator.markReady();
-      httpServer = await applicationWork.runUncontrolled(() => app.listen(PORT, () => {
-        logger.info(`Server running on port ${PORT}`);
-        logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
-        logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
-        // First-run banner. Print the TOKEN ITSELF only when the 0600 token file
-        // could not be written — otherwise this lands a live first-admin
-        // credential in `docker logs` / journald, which is the leak GHSA-r794's
-        // sweep turned up. When the file exists we point at it instead.
-        if (setupToken) {
-          const url = `${process.env.ADMIN_URL || 'http://localhost:3000'}/admin`;
-          const line = '='.repeat(64);
-          const secretLine = setupTokenFile
-            ? `  Setup token saved to:  ${setupTokenFile}\n  (read it there — deliberately not printed)`
-            : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
-          console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
-        }
-      }));
+      logger.info(`Server running on port ${PORT}`);
+      logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
+      logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
+      // First-run banner. Print the TOKEN ITSELF only when the 0600 token file
+      // could not be written — otherwise this lands a live first-admin
+      // credential in `docker logs` / journald, which is the leak GHSA-r794's
+      // sweep turned up. When the file exists we point at it instead.
+      if (setupToken) {
+        const url = `${process.env.ADMIN_URL || 'http://localhost:3000'}/admin`;
+        const line = '='.repeat(64);
+        const secretLine = setupTokenFile
+          ? `  Setup token saved to:  ${setupTokenFile}\n  (read it there — deliberately not printed)`
+          : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
+        console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
+      }
     });
   } catch (error) {
+    if (shutdownPromise) { await shutdownPromise; return; }
     logger.error('Failed to start server:', error);
     await stopServer();
     process.exitCode = 1;
