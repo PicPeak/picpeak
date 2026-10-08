@@ -179,7 +179,7 @@ describe('external media source ownership', () => {
   });
 
   test('guarded migration repeats without granting historical source paths', async () => {
-    const migration = require('../../migrations/core/261_external_media_source_owners');
+    const migration = require('../../migrations/core/269_external_media_source_owners');
     const before = await db('external_media_sources').orderBy('id');
     await migration.up(db); await migration.up(db);
     expect(await db('external_media_sources').orderBy('id')).toEqual(before);
