@@ -483,6 +483,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           <ColorLabelBadge
             colorLabel={photo.my_color_label}
             otherColorLabels={photo.other_color_labels}
+            decision={photo.my_decision}
           />
 
           <FirstLookBadge photo={photo} className={firstLookClassName} />

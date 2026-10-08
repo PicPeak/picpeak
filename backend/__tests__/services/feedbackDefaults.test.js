@@ -79,6 +79,8 @@ describe('resolveEventFeedbackDefaults (#1044)', () => {
       // Colour labels are opt-in so no existing gallery grows a colour bar
       // on upgrade.
       allow_color_labels: false,
+      // Approve / reject (issue 744): opt-in for the same reason.
+      allow_decisions: false,
       keybind_mode: 'colors',
     });
   });
@@ -131,6 +133,7 @@ describe('applyFeedbackDefaults (#1044)', () => {
     allow_comments: true,
     allow_reactions: true,
     allow_color_labels: false,
+    allow_decisions: false,
     keybind_mode: 'colors',
   };
 

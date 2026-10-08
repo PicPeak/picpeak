@@ -37,4 +37,12 @@ describe('isPhotoHiddenFromViewer', () => {
   it('is null-safe', () => {
     expect(isPhotoHiddenFromViewer(null, 'guest')).toBe(false);
   });
+
+  it('blocks a photo under review from every viewer, clients included (migration 269)', () => {
+    for (const status of ['pending', 'rejected']) {
+      expect(isPhotoHiddenFromViewer({ visibility: 'hidden', moderation_status: status }, 'client')).toBe(true);
+      expect(isPhotoHiddenFromViewer({ visibility: 'hidden', moderation_status: status }, 'guest')).toBe(true);
+    }
+    expect(isPhotoHiddenFromViewer({ visibility: 'hidden', moderation_status: null }, 'client')).toBe(false);
+  });
 });

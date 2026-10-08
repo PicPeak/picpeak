@@ -26,14 +26,16 @@ const schema = Joi.object({
   hero_logo_size: Joi.string().valid('small', 'medium', 'large', 'xlarge').allow(null),
   hero_logo_position: Joi.string().valid('top', 'center', 'bottom'),
   customer_account_ids: Joi.array().items(Joi.number().integer().min(1)),
+  // Team members (issue 743); eventAdminAssignmentsService checks they exist.
+  assigned_admin_ids: Joi.array().items(Joi.number().integer().min(1)),
   source_mode: Joi.string().valid('managed', 'reference'),
   external_path: Joi.string().max(1024).allow('', null),
   ...Object.fromEntries(['is_draft', 'require_password', 'allow_downloads', 'allow_user_uploads',
     'disable_right_click', 'watermark_downloads', 'enable_devtools_protection', 'use_canvas_rendering',
     'feedback_enabled', 'allow_ratings', 'allow_likes', 'allow_comments', 'allow_favorites',
-    'allow_reactions', 'allow_color_labels', 'require_name_email', 'moderate_comments',
+    'allow_reactions', 'allow_color_labels', 'allow_decisions', 'require_name_email', 'moderate_comments',
     'show_feedback_to_guests', 'client_access_enabled', 'og_image_share_enabled', 'show_credits_to_guests',
-    'custom_theme_enabled', 'external_watch', 'import_now']
+    'custom_theme_enabled', 'external_watch', 'import_now', 'review_contributor_uploads']
     .map(key => [key, Joi.boolean().truthy(1, '1').falsy(0, '0')])),
   hero_logo_visible: Joi.boolean().truthy(1, '1').falsy(0, '0').allow(null),
 }).unknown(true);

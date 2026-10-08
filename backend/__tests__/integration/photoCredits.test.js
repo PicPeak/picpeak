@@ -386,6 +386,8 @@ describe('Photo credits (issue 1561)', () => {
       const open = await addPhoto(event, { uploaded_by: 'admin' }, artistJpeg);
       const guest = await addPhoto(event, { uploaded_by: 'guest' }, artistJpeg);
       const manual = await addPhoto(event, { credit_source: 'manual', credit_name: 'Fixed' }, artistJpeg);
+      // The uploading account's fallback name (issue 743) yields to the file's.
+      const account = await addPhoto(event, { uploaded_by: 'admin', credit_source: 'account', credit_name: 'Studio Account' }, artistJpeg);
 
       const res = await admin(request(app).post('/api/admin/photos/repair-credits'));
       expect(res.status).toBe(200);
@@ -404,6 +406,8 @@ describe('Photo credits (issue 1561)', () => {
       expect((await db('photos').where({ id: open }).first()).credit_name).toBe('Studio Lumen');
       expect((await db('photos').where({ id: guest }).first()).credit_name).toBeNull();
       expect((await db('photos').where({ id: manual }).first()).credit_name).toBe('Fixed');
+      expect(await db('photos').where({ id: account }).first())
+        .toMatchObject({ credit_name: 'Studio Lumen', credit_source: 'exif' });
     }, 30000);
   });
 
@@ -470,7 +474,9 @@ describe('Photo credits (issue 1561)', () => {
       await addPhoto(event, { credit_name: '=O\'Brien', credit_source: 'manual' });
 
       const csv = await exporter.exportPhotos(event.id, null, 'csv');
-      expect(csv.content.split('\n')[0].endsWith(',credit')).toBe(true);
+      // A named column, not the last one: later columns append after it
+      // (approved / rejected, issue 744).
+      expect(csv.content.split('\n')[0].split(',')).toContain('credit');
       expect(csv.content).toContain('"Anna & Co"');
       // An apostrophe in a name reaches the CSV formula-neutralised and quoted.
       expect(csv.content).toContain('"\'=O\'Brien"');

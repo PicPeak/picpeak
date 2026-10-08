@@ -136,6 +136,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       <ColorLabelBadge
         colorLabel={photo.my_color_label}
         otherColorLabels={photo.other_color_labels}
+        decision={photo.my_decision}
       />
 
       {/* Overlay */}

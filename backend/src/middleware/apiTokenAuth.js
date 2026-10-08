@@ -4,6 +4,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { isMissingRolesSchema } = require('../utils/dbErrors');
 const logger = require('../utils/logger');
 const { roleEventScope } = require('./permissions');
+const { loadAssignedEventIds } = require('./ownership');
 
 const TOKEN_PREFIX = 'pp_live_';
 const VALID_SCOPES = ['read', 'write', 'admin'];
@@ -127,7 +128,8 @@ async function apiTokenAuth(req, res, next) {
       email: admin.email,
       roleId: admin.role_id,
       roleName: admin.role_name,
-      eventScope: await roleEventScope(admin.role_name)
+      eventScope: await roleEventScope(admin.role_name),
+      assignedEventIds: await loadAssignedEventIds(admin.id)
     };
     req.apiToken = {
       id: row.id,

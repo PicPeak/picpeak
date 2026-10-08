@@ -13,13 +13,17 @@ const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormaliza
 const { formatBoolean } = require('../utils/dbCompat');
 const { hasColumnCached } = require('../utils/schemaCache');
 const mfaService = require('../services/mfaService');
+const { accountCreditName } = require('../services/photoCredit');
 const router = express.Router();
 
 // Get admin profile
 router.get('/profile', adminAuth, handleAsync(async (req, res) => {
+  const columns = ['id', 'username', 'email', 'last_login', 'last_login_ip', 'created_at', 'updated_at', 'must_change_password as mustChangePassword'];
+  // Photo credit for this account's uploads (issue 743, migration 269).
+  if (await hasColumnCached('admin_users', 'credit_name')) columns.push('credit_name as creditName');
   const admin = await db('admin_users')
     .where('id', req.admin.id)
-    .select('id', 'username', 'email', 'last_login', 'last_login_ip', 'created_at', 'updated_at', 'must_change_password as mustChangePassword')
+    .select(columns)
     .first();
 
   if (!admin) {
@@ -71,6 +75,14 @@ router.put('/profile', [
   }
 
   const updates = { username, email, updated_at: new Date() };
+  // The name this account's uploads are credited with when a file carries no
+  // EXIF name (issue 743). Optional; absent leaves it as it is.
+  if (Object.prototype.hasOwnProperty.call(req.body, 'credit_name')
+    && await hasColumnCached('admin_users', 'credit_name')) {
+    const credit = accountCreditName(req.body.credit_name);
+    if (credit.error) throw new ValidationError(credit.error);
+    updates.credit_name = credit.value;
+  }
   // A self-typed email is not proof of owning the address, so it must not let
   // a later SSO login link to this account by email (oidcService,
   // migration 227). A super_admin's own change stays trusted.
@@ -90,9 +102,11 @@ router.put('/profile', [
     { type: 'admin', id: adminId, name: req.admin.username }
   );
 
+  const updatedColumns = ['id', 'username', 'email', 'must_change_password as mustChangePassword'];
+  if (await hasColumnCached('admin_users', 'credit_name')) updatedColumns.push('credit_name as creditName');
   const updatedAdmin = await db('admin_users')
     .where('id', adminId)
-    .select('id', 'username', 'email', 'must_change_password as mustChangePassword')
+    .select(updatedColumns)
     .first();
 
   successResponse(res, {

@@ -1,6 +1,6 @@
 const { db } = require('../database/db');
 const { userHasAllPermissions, roleEventScope } = require('../middleware/permissions');
-const { canAccessEvent } = require('../middleware/ownership');
+const { canAccessEvent, loadAssignedEventIds } = require('../middleware/ownership');
 const { assertGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
 const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 const { AppError } = require('../utils/errors');
@@ -51,6 +51,7 @@ class GalleryAccessService {
       }
       const principal = {
         id: account.id, roleName: account.role_name, eventScope: await roleEventScope(account.role_name),
+        assignedEventIds: await loadAssignedEventIds(account.id),
       };
       if (!canAccessEvent(principal, event)
         || !await userHasAllPermissions(account.id, ['events.view', 'photos.view'])) {

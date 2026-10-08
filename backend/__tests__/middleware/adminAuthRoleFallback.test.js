@@ -16,6 +16,11 @@ const jwt = require('jsonwebtoken');
 jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() }));
+// Gallery assignments (migration 269) are not what this suite is about.
+jest.mock('../../src/middleware/ownership', () => ({
+  ...jest.requireActual('../../src/middleware/ownership'),
+  loadAssignedEventIds: jest.fn().mockResolvedValue([]),
+}));
 
 // The joined query throws whatever the test stages; the role-less fallback
 // query (no .leftJoin) always succeeds, which is what made the original bug

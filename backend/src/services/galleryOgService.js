@@ -226,6 +226,8 @@ async function buildOgMetadata(slug, requestPath) {
   if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event)) {
     const heroPhoto = await db('photos')
       .where({ id: event.hero_photo_id, event_id: event.id })
+      // Never a team upload still under review (issue 743).
+      .whereNull('moderation_status')
       .select('id', 'thumbnail_path')
       .first();
     if (heroPhoto && heroPhoto.thumbnail_path) {
@@ -329,6 +331,7 @@ async function handleGalleryOgCover(req, res) {
 
     const photo = await db('photos')
       .where({ id: event.hero_photo_id, event_id: event.id })
+      .whereNull('moderation_status')
       .first();
     if (!photo) {
       res.status(404).type('text/plain').send('Cover not available');

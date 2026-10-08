@@ -6,6 +6,8 @@ import {
   Star, 
   Heart, 
   Smile,
+  ThumbsUp,
+  ThumbsDown,
   TrendingUp,
   Filter,
   Download,
@@ -217,6 +219,7 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                 <option value="comment">{t('feedback.types.comment', 'Comments')}</option>
                 <option value="favorite">{t('feedback.types.favorite', 'Favorites')}</option>
                 <option value="reaction">{t('feedback.types.reaction', 'Reactions')}</option>
+                <option value="decision">{t('feedback.types.decision', 'Approve / reject')}</option>
               </select>
               <select
                 value={feedbackFilter.status}
@@ -263,6 +266,19 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                             {item.feedback_type === 'comment' && <MessageSquare className="w-4 h-4 text-blue-500" />}
                             {item.feedback_type === 'reaction' && item.reaction && (
                               <span className="text-base leading-none">{item.reaction}</span>
+                            )}
+                            {/* Approve / reject (issue 744); the reason is the comment_text below. */}
+                            {item.feedback_type === 'decision' && item.decision === 'approved' && (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">
+                                <ThumbsUp className="w-4 h-4" aria-hidden="true" />
+                                {t('feedback.decisions.approved', 'Approved')}
+                              </span>
+                            )}
+                            {item.feedback_type === 'decision' && item.decision === 'rejected' && (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-red-700 dark:text-red-400">
+                                <ThumbsDown className="w-4 h-4" aria-hidden="true" />
+                                {t('feedback.decisions.rejected', 'Rejected')}
+                              </span>
                             )}
                             <span className="font-medium text-sm">
                               {item.guest_name || t('feedback.anonymous', 'Anonymous')}
@@ -450,6 +466,24 @@ export const EventFeedbackPanel: React.FC<{ eventId: string }> = ({ eventId }) =
                     )}
                   </div>
                 </Card>
+                {/* Approve / reject (issue 744), once any guest has decided. */}
+                {((analytics.summary.total_approved || 0) + (analytics.summary.total_rejected || 0)) > 0 && (
+                  <Card>
+                    <div className="p-6">
+                      <div className="flex items-center gap-4 mb-2">
+                        <div className="flex items-center gap-2">
+                          <ThumbsUp className="w-6 h-6 text-green-600 dark:text-green-400" aria-hidden="true" />
+                          <p className="text-2xl font-bold">{analytics.summary.total_approved || 0}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <ThumbsDown className="w-6 h-6 text-red-600 dark:text-red-400" aria-hidden="true" />
+                          <p className="text-2xl font-bold">{analytics.summary.total_rejected || 0}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-soft">{t('feedback.totalDecisions', 'Approved / rejected')}</p>
+                    </div>
+                  </Card>
+                )}
                 <Card>
                   <div className="p-6">
                     <div className="flex items-center gap-3 mb-2">

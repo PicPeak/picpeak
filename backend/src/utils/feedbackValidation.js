@@ -4,6 +4,7 @@ const validator = require('validator');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('./emailNormalization');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { COLOR_LABELS } = require('../constants/colorLabels');
+const { PHOTO_DECISIONS, DECISION_REASON_MAX_LENGTH } = require('../constants/photoDecisions');
 const { KEYBIND_MODES } = require('../services/feedbackDefaults');
 
 /**
@@ -138,7 +139,7 @@ function getValidationRules(feedbackType) {
  */
 const validateFeedbackSubmission = [
   body('feedback_type')
-    .isIn(['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label'])
+    .isIn(['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label', 'decision'])
     .withMessage('Invalid feedback type'),
 
   // Conditional validation based on feedback type. 0 clears the guest's
@@ -163,6 +164,23 @@ const validateFeedbackSubmission = [
     .if(body('feedback_type').equals('color_label'))
     .custom((value) => COLOR_LABELS.includes(value))
     .withMessage('Invalid color label'),
+
+  // Approve / reject (issue 744). The reason is optional and travels in
+  // comment_text; omitting it entirely is what lets the same decision again
+  // toggle off, so it is only sanitised when present.
+  body('decision')
+    .if(body('feedback_type').equals('decision'))
+    .custom((value) => PHOTO_DECISIONS.includes(value))
+    .withMessage('Invalid decision'),
+  body('comment_text')
+    .if(body('feedback_type').equals('decision'))
+    .optional({ nullable: true })
+    .isString()
+    .withMessage('Reason must be text')
+    .trim()
+    .isLength({ max: DECISION_REASON_MAX_LENGTH })
+    .withMessage(`Reason must be at most ${DECISION_REASON_MAX_LENGTH} characters`)
+    .customSanitizer(value => sanitizeComment(value)),
   
   body('comment_text')
     .if(body('feedback_type').equals('comment'))
@@ -207,6 +225,7 @@ const validateFeedbackSettings = [
   body('allow_favorites').optional().isBoolean(),
   body('allow_reactions').optional().isBoolean(),
   body('allow_color_labels').optional().isBoolean(),
+  body('allow_decisions').optional().isBoolean(),
   body('keybind_mode').optional().isIn(KEYBIND_MODES)
     .withMessage(`keybind_mode must be one of: ${KEYBIND_MODES.join(', ')}`),
   body('require_name_email').optional().isBoolean(),

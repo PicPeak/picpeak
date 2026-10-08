@@ -71,7 +71,8 @@
     "confirmCancelInvitation": {
       "title": "Uitnodiging annuleren",
       "message": "Weet u zeker dat u de uitnodiging voor {{email}} wilt annuleren?"
-    }
+    },
+    "creditNameHelp": "Wordt vermeld bij foto's die dit account uploadt als het bestand geen fotografennaam in de metadata heeft."
   },
   "common": {
     "loading": "Laden...",
@@ -842,8 +843,12 @@
         "folderStructureOn": "Mapstructuur aan",
         "folderStructureOff": "Uploads zonder mappen",
         "firstLookDue": "eerste selectie, volledige galerie uiterlijk {{date}}",
-        "firstLook": "eerste selectie, meer volgt"
-      }
+        "firstLook": "eerste selectie, meer volgt",
+        "teamMembers_one": "{{count}} teamlid",
+        "teamMembers_other": "{{count}} teamleden",
+        "teamReview": "teamuploads worden gecontroleerd"
+      },
+      "passwordOwnerOnly": "Alleen de eigenaar van de galerij kan het wachtwoord wijzigen of uitschakelen."
     },
     "folders": {
       "sectionTitle": "Mappen",
@@ -903,6 +908,19 @@
       "structureApplied_other": "{{count}} foto's naar mappen verplaatst",
       "structureNothing": "Alle foto's uit een submap staan al in een map",
       "structureFailed": "De mapstructuur kon niet worden toegepast"
+    },
+    "team": {
+      "label": "Teamleden",
+      "help": "Beheerdersaccounts die hier zijn toegevoegd, kunnen net als u aan deze galerij werken, binnen wat hun rol toestaat. Klant- en factuurgegevens blijven van u.",
+      "removeAria": "{{name}} verwijderen",
+      "placeholder": "Beheerdersaccounts zoeken",
+      "loading": "Laden…",
+      "loadFailed": "De beheerdersaccounts konden niet worden geladen.",
+      "noResults": "Geen andere beheerdersaccounts gevonden.",
+      "reviewUploads": "Uploads van teamleden controleren voordat ze worden gepubliceerd",
+      "reviewUploadsHelp": "Houdt uploads tegen van teamleden wier rol de machtiging „Review Team Uploads” niet heeft: ze blijven verborgen voor gasten en klanten totdat u of een beoordelaar ze goedkeurt op het tabblad Foto's. De rollen Admin, Editor en Solo Photographer hebben die machtiging standaard, dus hun uploads worden nooit tegengehouden.",
+      "reviewUploadsHelpMember": "Uw uploads naar deze galerij blijven verborgen voor gasten en klanten totdat de eigenaar of een beoordelaar ze goedkeurt.",
+      "reviewUploadsHelpReviewer": "Uploads van teamleden zonder de machtiging „Review Team Uploads” wachten op goedkeuring op het tabblad Foto's. Die van u worden direct gepubliceerd."
     }
   },
   "settings": {
@@ -947,7 +965,9 @@
       "accountSaveSuccess": "Accountgegevens bijgewerkt",
       "adminLanguage": "Jouw beheertaal",
       "adminLanguageHelp": "Geldt voor het beheergedeelte, alleen voor jou op dit apparaat. Werkt direct — opslaan is niet nodig.",
-      "customerLanguage": "Taal voor galerie en gasten"
+      "customerLanguage": "Taal voor galerie en gasten",
+      "accountCreditName": "Fotocredit",
+      "accountCreditNameHelp": "Wordt vermeld bij foto's die je uploadt als het bestand geen fotografennaam in de metadata heeft. Laat leeg voor geen credit."
     },
     "publicSite": {
       "badge": "Openbare landingspagina",
@@ -1144,7 +1164,8 @@
       "firstLookKeywords": "Trefwoorden",
       "firstLookKeywordsHelp": "Gescheiden door komma's. Hoofdletters, spaties, streepjes en underscores worden genegeerd, dus „FirstLook” past ook op „first-look”.",
       "deliveryDays": "Volledige galerie verschuldigd na (dagen)",
-      "deliveryDaysHelp": "Als een eerste selectie start zonder toegezegde datum, is de volledige galerie zoveel dagen na de evenementdatum verschuldigd."
+      "deliveryDaysHelp": "Als een eerste selectie start zonder toegezegde datum, is de volledige galerie zoveel dagen na de evenementdatum verschuldigd.",
+      "defaultAllowDecisions": "Goedkeuren / afwijzen per foto"
     },
     "imageSecurity": {
       "title": "Afbeeldingsbeveiliging",
@@ -1900,7 +1921,14 @@
       "categoryHeroUpdated": "Categorie hero-foto bijgewerkt",
       "publicSiteResetToDefault": "Publieke site teruggezet naar standaard",
       "cmsPageLogoUploaded": "CMS-pagina-logo geüpload: {{slug}}",
-      "adminPasswordResetByAdmin": "Beheerderswachtwoord door andere beheerder gereset: {{username}}"
+      "adminPasswordResetByAdmin": "Beheerderswachtwoord door andere beheerder gereset: {{username}}",
+      "eventTeamChanged": "Team gewijzigd voor {{eventName}}",
+      "photosReviewApproved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
+      "photosReviewApproved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
+      "photosReviewRejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
+      "photosReviewRejected_other": "{{count}} teamuploads afgewezen in {{eventName}}",
+      "photoDecision": "Foto goedgekeurd of afgewezen in {{eventName}}",
+      "guestFeedbackDecision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Alle meldingen als gelezen gemarkeerd",
@@ -1962,7 +1990,9 @@
         "filterLabel": "Filteren op maker",
         "filterAll": "Alle namen",
         "filterNone": "Geen naam"
-      }
+      },
+      "approvedBy": "Goedgekeurd: {{value}}",
+      "rejectedBy": "Afgewezen: {{value}}"
     },
     "events": {
       "tabs": {
@@ -2160,7 +2190,14 @@
       "delivery_first_look_started": "Eerste selectie gestart voor {{eventName}}",
       "delivery_completed": "Volledige galerie geleverd: {{eventName}}",
       "delivery_due_soon": "Volledige galerie voor {{eventName}} is bijna verschuldigd",
-      "delivery_overdue": "Volledige galerie voor {{eventName}} is te laat"
+      "delivery_overdue": "Volledige galerie voor {{eventName}} is te laat",
+      "photo_decision": "Foto goedgekeurd of afgewezen in {{eventName}}",
+      "guest_feedback_decision": "Gast heeft een foto goedgekeurd of afgewezen in {{eventName}}",
+      "event_team_changed": "Team gewijzigd voor {{eventName}}",
+      "photos_review_approved_one": "{{count}} teamupload goedgekeurd in {{eventName}}",
+      "photos_review_approved_other": "{{count}} teamuploads goedgekeurd in {{eventName}}",
+      "photos_review_rejected_one": "{{count}} teamupload afgewezen in {{eventName}}",
+      "photos_review_rejected_other": "{{count}} teamuploads afgewezen in {{eventName}}"
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
     "storageUnavailable": "niet beschikbaar",
@@ -2900,7 +2937,9 @@
       "keybindColors": "Alleen kleuren (eenvoudigst)",
       "keybindColorsDesc": "1 = groen (1e keuze), 2 = geel (2e keuze), 3 = rood (afgewezen)",
       "keybindLightroom": "Lightroom-standaard",
-      "keybindLightroomDesc": "1-5 geven sterren, 6-9 geven rood / geel / groen / blauw"
+      "keybindLightroomDesc": "1-5 geven sterren, 6-9 geven rood / geel / groen / blauw",
+      "decisions": "Goedkeuren / afwijzen per foto",
+      "decisionsDesc": "Gasten keuren elke foto goed of wijzen hem af, eventueel met een reden. Jij filtert en exporteert op hun beslissing"
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",
@@ -2923,7 +2962,8 @@
       "like": "Likes",
       "comment": "Opmerkingen",
       "favorite": "Favorieten",
-      "reaction": "Reacties"
+      "reaction": "Reacties",
+      "decision": "Goedkeuren / afwijzen"
     },
     "allStatuses": "Alle statussen",
     "status": {
@@ -2990,7 +3030,25 @@
     "removeColorLabel": "Label {{color}} verwijderen",
     "setColorLabel": "Markeren als {{color}}",
     "markedAs": "Gemarkeerd als {{color}}",
-    "alsoMarkedBy": "Ook door anderen gemarkeerd: {{colors}}"
+    "alsoMarkedBy": "Ook door anderen gemarkeerd: {{colors}}",
+    "decisions": {
+      "approved": "Goedgekeurd",
+      "rejected": "Afgewezen"
+    },
+    "totalDecisions": "Goedgekeurd / afgewezen",
+    "decisionsTitle": "Goedkeuren / afwijzen",
+    "decisionApprove": "Goedkeuren",
+    "decisionReject": "Afwijzen",
+    "decisionClear": "Je beslissing intrekken",
+    "decisionReasonEdit": "Waarom? (optioneel)",
+    "decisionReasonLabel": "Waarom wijs je deze foto af? (optioneel)",
+    "decisionReasonPlaceholder": "bijv. ogen dicht, niet mijn beste kant",
+    "decisionReasonSave": "Reden opslaan",
+    "decisionReasonBlocked": "Je reden bevat woorden die hier niet zijn toegestaan.",
+    "decisionError": "Je beslissing kon niet worden opgeslagen",
+    "decisionType": "je beslissing",
+    "youApproved": "Je hebt deze foto goedgekeurd",
+    "youRejected": "Je hebt deze foto afgewezen"
   },
   "filter": {
     "feedbackFilters": "Feedbackfilters",
@@ -3013,7 +3071,11 @@
     "colorLabels": "Kleurlabels",
     "showOnlyColor": "Alleen {{color}} tonen",
     "myColorLabels": "Jouw markeringen",
-    "showOnlyMyColor": "Alleen mijn {{color}} markeringen tonen"
+    "showOnlyMyColor": "Alleen mijn {{color}} markeringen tonen",
+    "decisions": "Goedkeuren / afwijzen",
+    "decisionApproved": "Goedgekeurd",
+    "decisionRejected": "Afgewezen",
+    "decisionUndecided": "Onbeslist"
   },
   "export": {
     "button": "Exporteren",
@@ -3162,6 +3224,29 @@
       "showWaiting": "Wachtende foto's tonen",
       "waitingForAdmin_one": "{{count}} mapaanvraag wacht op een beheerder. Tot die tijd staan de {{photos}} foto's in de dichtstbijzijnde bestaande map.",
       "waitingForAdmin_other": "{{count}} mapaanvragen wachten op een beheerder. Tot die tijd staan de {{photos}} foto's in de dichtstbijzijnde bestaande map."
+    },
+    "review": {
+      "pendingOwner_one": "{{count}} upload van uw team wacht op uw controle",
+      "pendingOwner_other": "{{count}} uploads van uw team wachten op uw controle",
+      "pendingMember_one": "{{count}} teamupload wacht op controle door de eigenaar",
+      "pendingMember_other": "{{count}} teamuploads wachten op controle door de eigenaar",
+      "nonePending": "Er wachten geen uploads op controle.",
+      "filterPending": "Te controleren ({{count}})",
+      "filterRejected": "Afgewezen ({{count}})",
+      "showAll": "Alle foto's",
+      "approve": "Goedkeuren",
+      "reject": "Afwijzen",
+      "approved_one": "{{count}} foto goedgekeurd en gepubliceerd",
+      "approved_other": "{{count}} foto's goedgekeurd en gepubliceerd",
+      "rejected_one": "{{count}} foto afgewezen",
+      "rejected_other": "{{count}} foto's afgewezen",
+      "failed": "De foto's konden niet worden gecontroleerd",
+      "pendingBadge": "Te controleren",
+      "rejectedBadge": "Afgewezen",
+      "uploadedBy": "Geüpload door {{name}}",
+      "hiddenUntilApproved": "Verborgen voor gasten en klanten tot goedkeuring",
+      "skippedOnShow_one": "{{count}} foto wacht op controle en blijft verborgen tot goedkeuring",
+      "skippedOnShow_other": "{{count}} foto's wachten op controle en blijven verborgen tot goedkeuring"
     }
   },
   "customer": {
