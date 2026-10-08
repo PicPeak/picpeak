@@ -118,11 +118,50 @@ describe('standard manifest authentication defaults', () => {
     const manifest = base();
     manifest.verification.checksum_algorithm = 'hmac-sha256';
     manifest.verification.total_checksum = backupManifest.calculateManifestChecksum(manifest, { keyed: key });
+    process.env.BACKUP_MANIFEST_KEY = 'e9'.repeat(32);
     expect(backupManifest.verifyManifestChecksum(manifest).valid).toBe(false);
     process.env.BACKUP_MANIFEST_LEGACY_KEY = key;
     expect(backupManifest.verifyManifestChecksum(manifest)).toMatchObject({ valid: true, authenticated: true });
     manifest.files.manifest[0].checksum = 'd3'.repeat(32);
     expect(backupManifest.verifyManifestChecksum(manifest).valid).toBe(false);
+  });
+
+  // Before v3 any BACKUP_MANIFEST_KEY string was the HMAC key. An upgrade
+  // must not strand the backups such a key signed, wherever it is retained.
+  it.each([
+    ['still in BACKUP_MANIFEST_KEY', 'BACKUP_MANIFEST_KEY'],
+    ['moved to BACKUP_MANIFEST_LEGACY_KEY', 'BACKUP_MANIFEST_LEGACY_KEY'],
+  ])('verifies a pre-v3 manifest signed with a short passphrase key %s, and never signs with it', (_label, variable) => {
+    const passphrase = 'my backup pass';
+    const manifest = base();
+    manifest.verification.checksum_algorithm = 'hmac-sha256';
+    manifest.verification.total_checksum = backupManifest.calculateManifestChecksum(manifest, { keyed: passphrase });
+    delete process.env.BACKUP_MANIFEST_KEY;
+    process.env[variable] = passphrase;
+    expect(backupManifest.verifyManifestChecksum(manifest)).toMatchObject({ valid: true, authenticated: true });
+    manifest.files.manifest[0].checksum = 'd3'.repeat(32);
+    expect(backupManifest.verifyManifestChecksum(manifest).valid).toBe(false);
+    if (variable === 'BACKUP_MANIFEST_KEY') expect(() => backupManifest.signManifest(base())).toThrow(/64 hex digits/);
+  });
+
+  it('lets inspection read an intact pre-authentication manifest, flagged, while restore still refuses it', () => {
+    const manifest = base();
+    manifest.verification.total_checksum = backupManifest.calculateManifestChecksum(manifest, { keyed: false });
+    expect(() => backupManifest.validateManifest(manifest)).toThrow(/BACKUP_MANIFEST_RECOVERY_SHA256/);
+    expect(() => backupManifest.validateManifest(manifest, { allowRecovery: true })).toThrow(/BACKUP_MANIFEST_RECOVERY_REASON/);
+    expect(() => backupManifest.validateManifest(manifest, { inspect: true })).not.toThrow();
+    expect(backupManifest.getAuthentication(manifest)).toMatchObject({ valid: false, authenticated: false, legacy: true });
+  });
+
+  it('does not let inspection read a damaged or downgraded manifest as legacy', () => {
+    const damaged = base();
+    damaged.verification.total_checksum = backupManifest.calculateManifestChecksum(damaged, { keyed: false });
+    damaged.files.manifest[0].path = 'events/other.jpg';
+    expect(() => backupManifest.validateManifest(damaged, { inspect: true })).toThrow(/not authenticated/);
+    const downgraded = backupManifest.signManifest(base());
+    downgraded.verification.checksum_algorithm = 'sha256';
+    downgraded.verification.total_checksum = backupManifest.calculateManifestChecksum(downgraded, { keyed: false });
+    expect(() => backupManifest.validateManifest(downgraded, { inspect: true })).toThrow(/not authenticated/);
   });
 
   it('never enables the legacy under-covering serializer in compatibility mode', () => {

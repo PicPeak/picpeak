@@ -209,6 +209,69 @@ it('the public selective workflow verifies manifest metadata and records success
     expect(fs.existsSync(stage.dump)).toBe(false);
   });
 
+  // restore_max_file_size_mb caps one media object; a database dump larger
+  // than it restored before the dump was staged, and must still.
+  it('does not apply the per-file media cap to the database dump', async () => {
+    const where = { setting_key: 'restore_max_file_size_mb', setting_type: 'restore' };
+    const before = await db('app_settings').where(where).first();
+    if (before) await db('app_settings').where(where).update({ setting_value: '0.000001' });
+    else await db('app_settings').insert({ ...where, setting_value: '0.000001' });
+    try {
+      expect(await internal.getRestoreMaxFileBytes()).toBe(1);
+      const source = path.join(root, 'large.sql.gz');
+      fs.writeFileSync(source, 'a dump far above one byte');
+      const stage = await internal.stageDatabaseDump(source, sha('a dump far above one byte'), root);
+      expect(fs.readFileSync(stage.dump, 'utf8')).toBe('a dump far above one byte');
+      await stage.cleanup();
+    } finally {
+      if (before) await db('app_settings').where(where).update({ setting_value: before.setting_value });
+      else await db('app_settings').where(where).del();
+    }
+  });
+
+  it('shows a pre-authentication manifest to inspection and health as legacy, and names the override when restore refuses it', async () => {
+    const backupService = require('../../src/services/backupService');
+    // The fixture carries only what authentication reads, not the report's fields.
+    jest.spyOn(backupManifest, 'generateSummaryReport').mockReturnValue('summary');
+    const manifest = base(file());
+    manifest.manifest.version = '2.0';
+    manifest.verification.checksum_algorithm = 'sha256';
+    manifest.verification.total_checksum = backupManifest.calculateManifestChecksum(manifest, { keyed: false });
+    const target = writeManifest(manifest, 'legacy-manifest.json');
+    const inserted = await db('backup_runs').insert({
+      started_at: new Date().toISOString(), completed_at: new Date().toISOString(),
+      status: 'completed', backup_type: 'manual', manifest_path: target,
+    }).returning('id');
+    const runId = inserted[0]?.id || inserted[0];
+    try {
+      const shown = await backupService.getBackupManifest(runId);
+      expect(shown.authenticated).toBe(false);
+      expect(shown.manifest.files.manifest[0].path).toBe('events/a.jpg');
+      expect(await backupService.validateBackupManifest(target)).toMatchObject({
+        valid: false, authentication: { authenticated: false, state: 'legacy' },
+      });
+      const service = new RestoreService();
+      const sink = jest.spyOn(service, 'performFilesRestore');
+      await expect(service.restore({ source: root, manifestPath: target, restoreType: 'files', force: true }))
+        .rejects.toThrow(/BACKUP_MANIFEST_RECOVERY_SHA256/);
+      expect(sink).not.toHaveBeenCalled();
+      // A signed manifest is shown as authenticated through the same call.
+      await db('backup_runs').where('id', runId).update({ manifest_path: writeManifest(backupManifest.signManifest(base(file())), 'signed-manifest.json') });
+      expect((await backupService.getBackupManifest(runId)).authenticated).toBe(true);
+    } finally {
+      await db('backup_runs').where('id', runId).del();
+    }
+  });
+
+  it('writes both restore run timestamps as ISO text', async () => {
+    const manifest = backupManifest.signManifest(base(file()));
+    await new RestoreService().restore({ source: root, manifestPath: writeManifest(manifest), restoreType: 'files', dryRun: true, force: true });
+    const row = await db('restore_runs').orderBy('id', 'desc').first();
+    for (const column of ['started_at', 'completed_at']) {
+      expect(row[column]).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
+    }
+  });
+
   it('cleans up a captured dump with a bad checksum before decompression/replay', async () => {
     const source = path.join(root, 'bad.sql.gz');
     fs.writeFileSync(source, 'wrong dump');

@@ -272,7 +272,9 @@ export const SystemHealthPage: React.FC = () => {
               </p>
               <p className="text-sm text-body mt-1">
                 {t(data.backupAuthentication.latestManifest.authenticated
-                  ? 'systemHealth.backupAuthentication.verified' : 'systemHealth.backupAuthentication.unverified')}
+                  ? 'systemHealth.backupAuthentication.verified'
+                  : data.backupAuthentication.latestManifest.state === 'legacy'
+                    ? 'systemHealth.backupAuthentication.legacy' : 'systemHealth.backupAuthentication.unverified')}
               </p>
               <p className="text-xs text-soft mt-2">{t('systemHealth.backupAuthentication.hint')}</p>
             </div>

@@ -28,12 +28,12 @@ describe('System Health backup authenticity', () => {
     stuckEmails: [], waitingEmails: [], counts: { stuckEmails: 0, waitingEmails: 0 },
   } }));
   afterEach(cleanup);
-  const show = (ready: boolean, authenticated: boolean) => {
+  const show = (ready: boolean, authenticated: boolean, state?: string) => {
     query.mockReturnValue({ isLoading: false, data: {
       stuckEmails: [], waitingEmails: [], counts: { stuckEmails: 0, waitingEmails: 0 },
       backupAuthentication: {
         signingKey: { ready, source: ready ? 'env' : 'missing', keyId: ready ? '1234567890abcdef' : null },
-        latestManifest: { authenticated },
+        latestManifest: { authenticated, state },
       },
     } });
     render(<SystemHealthPage />);
@@ -50,6 +50,13 @@ describe('System Health backup authenticity', () => {
     show(true, false);
     expect(screen.getByText(en.systemHealth.backupAuthentication.unverified)).toBeInTheDocument();
     expect(screen.queryByText(en.systemHealth.backupAuthentication.verified)).not.toBeInTheDocument();
+  });
+
+  it('tells a manifest that only predates authentication apart from an unverified one', () => {
+    show(true, false, 'legacy');
+    expect(screen.getByText(en.systemHealth.backupAuthentication.legacy)).toBeInTheDocument();
+    expect(screen.queryByText(en.systemHealth.backupAuthentication.unverified)).not.toBeInTheDocument();
+    expect(en.systemHealth.backupAuthentication.hint).toMatch(/off this host, with whoever keeps the backups/);
   });
 
   it('reports missing/invalid key readiness without offering a normal force bypass', () => {

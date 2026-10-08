@@ -273,10 +273,18 @@ async function stageDatabaseDump(source, expectedChecksum, tempDir, { allowUnver
   const dump = path.join(dir, source.endsWith('.gz') ? 'dump.gz' : 'dump.db');
   try {
     await fs.chmod(dir, 0o700);
-    const maxBytes = await getRestoreMaxFileBytes();
+    // restore_max_file_size_mb is the ceiling for one media object out of
+    // the manifest. The dump is the whole database in one file and restored
+    // at any size before it was staged here, so it is bounded by its own
+    // measured size and by the room in the staging volume instead.
+    const { size } = await fs.lstat(source);
+    const { bavail, bsize } = await fs.statfs(dir);
+    if (size > bavail * bsize) {
+      throw new Error(`The database dump is ${size} bytes but only ${bavail * bsize} bytes are free in ${tempDir} to stage it`);
+    }
     const root = await fs.realpath(path.dirname(source));
-    const handle = await openRestoreSource(root, path.basename(source), maxBytes);
-    await writeBounded(handle.createReadStream(), dump, maxBytes, 'Database dump');
+    const handle = await openRestoreSource(root, path.basename(source), size);
+    await writeBounded(handle.createReadStream(), dump, size, 'Database dump');
     await verifyDatabaseDumpChecksum(dump, expectedChecksum, warn, { allowUnverified });
     return { dump, cleanup: () => fs.rm(dir, { recursive: true, force: true }) };
   } catch (error) {
@@ -429,7 +437,7 @@ class RestoreService {
         this.log('info', 'Dry run completed successfully');
         
         await db('restore_runs').where('id', runId).update({
-          completed_at: new Date(),
+          completed_at: new Date().toISOString(),
           status: 'completed',
           statistics: JSON.stringify({
             dryRun: true,
@@ -711,7 +719,7 @@ class RestoreService {
 
       // Update restore run record
       await persistRestoreRun(restoreRun, {
-        completed_at: endTime,
+        completed_at: endTime.toISOString(),
         status: 'completed',
         // Default for the column is `false`. Without this line, every
         // SUCCESSFUL restore ends up with `status='completed',
@@ -801,7 +809,7 @@ class RestoreService {
             : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
           : `${error.message} (no pre-restore backup available — destination may be partial)`;
         await persistRestoreRun(restoreRun, {
-          completed_at: new Date(),
+          completed_at: new Date().toISOString(),
           status: 'failed',
           error_message: failureMessage,
           was_rollback_attempted: rollbackAttempted,
