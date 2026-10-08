@@ -94,6 +94,8 @@ const watched = new Map();
 // Folders reported missing, so the reconcile loop logs each once rather than
 // once a minute until the mount comes back.
 const missingLogged = new Set();
+// Events whose watcher was refused, so the warning is logged once per process.
+const refusedLogged = new Set();
 let reconcileTimer = null;
 let sweepTimer = null;
 let started = false;
@@ -298,7 +300,14 @@ async function reconcile() {
       await externalAccess.authorizeImport(event.id, event.external_path, { automatic: true });
       wanted.set(event.id, event);
     } catch (error) {
-      logger.debug('[externalMediaWatcher] source no longer authorized', { eventId: event.id, error: error.message });
+      // The gallery stops importing here, and nothing in the admin UI says
+      // so: tell the operator once, with what to change.
+      if (!refusedLogged.has(event.id)) {
+        refusedLogged.add(event.id);
+        logger.warn(`[externalMediaWatcher] event ${event.id} (${event.slug}): not watching '${event.external_path}' (${error.message}). `
+          + 'The gallery needs an active owner with the photos.upload permission, and a folder inside EXTERNAL_MEDIA_ROOT; '
+          + 'a SuperAdmin can assign the folder to that owner under External source owners in the gallery\'s folder picker, or re-save the gallery\'s Photo source.');
+      }
     }
   }
 
@@ -371,6 +380,7 @@ async function stopExternalMediaWatcher() {
     await stopWatching(eventId);
   }
   missingLogged.clear();
+  refusedLogged.clear();
   started = false;
 }
 

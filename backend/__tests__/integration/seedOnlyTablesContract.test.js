@@ -19,7 +19,7 @@ const { bootCrmDb } = require('./helpers/crmDb');
 // Some also re-seed at runtime (roles/permissions via _permissionsBoot.js,
 // backup_paths via _backupPathsBoot.js), a second, independent reason.
 const SEEDED_BUT_NOT_SEED_ONLY = new Set([
-  'external_media_source_lock',    // 261; assignment/revocation reseed the lock at runtime after an older restore
+  'external_media_source_lock',    // 274; assignment/revocation reseed the lock at runtime after an older restore
   'migrations',                   // migration ledger itself (runner bookkeeping)
   'app_settings',                 // db.js base schema
   'cms_pages',                    // db.js base schema

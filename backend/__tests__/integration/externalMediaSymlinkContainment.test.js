@@ -36,12 +36,14 @@ describe('external media symlink containment', () => {
     //   inside/linked.jpg      -> outside/secret.jpg       (file link)
     //   inside/nested-link/    -> outside/                 (dir link, nested)
     //   link/                  -> outside/                 (dir link, top level)
+    //   alias/                 -> inside/                  (dir link that stays inside the root)
     // outside/secret.jpg
     await touch(path.join(mediaRoot, 'inside', 'a.jpg'));
     await touch(path.join(outside, 'secret.jpg'));
     await fs.promises.symlink(path.join(outside, 'secret.jpg'), path.join(mediaRoot, 'inside', 'linked.jpg'));
     await fs.promises.symlink(outside, path.join(mediaRoot, 'inside', 'nested-link'));
     await fs.promises.symlink(outside, path.join(mediaRoot, 'link'));
+    await fs.promises.symlink(path.join(mediaRoot, 'inside'), path.join(mediaRoot, 'alias'));
 
     process.env.NODE_ENV = 'test';
     process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'data', 'db.sqlite');
@@ -56,9 +58,11 @@ describe('external media symlink containment', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
     jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
@@ -144,9 +148,27 @@ describe('external media symlink containment', () => {
       const rows = await db('photos').where({ event_id: eventId });
       expect(rows.map((r) => r.external_relpath)).toEqual([path.join('inside', 'a.jpg')]);
     });
+
+    it('imports the folder a gallery is already bound to through a link that stays inside the root', async () => {
+      const eventId = await seedEvent();
+      await db('events').where({ id: eventId }).update({ external_path: 'alias' });
+      const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'alias', recursive: true });
+      expect(result.imported).toBe(1);
+      const rows = await db('photos').where({ event_id: eventId });
+      expect(rows.map((r) => r.external_relpath)).toEqual([path.join('alias', 'a.jpg')]);
+      // Bound or not, a link that leaves the root is refused.
+      await db('events').where({ id: eventId }).update({ external_path: 'link' });
+      await expect(importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'link' }))
+        .rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
+    });
   });
 
   describe('reading an imported photo', () => {
+    it('resolves a stored path that runs through a link staying inside the root', () => {
+      expect(resolveExternalPhotoPath({ external_relpath: 'alias/a.jpg' }))
+        .toBe(path.join(path.resolve(mediaRoot), 'alias', 'a.jpg'));
+    });
+
     it('refuses a stored path that now leads through a link', async () => {
       expect(() => resolveExternalPhotoPath({ external_relpath: 'link/secret.jpg' }))
         .toThrow('Path traversal attempt detected');

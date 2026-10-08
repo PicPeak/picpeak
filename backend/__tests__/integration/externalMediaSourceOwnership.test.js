@@ -8,7 +8,7 @@ const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('./h
 const { formatBoolean } = require('../../src/utils/dbCompat');
 
 describe('external media source ownership', () => {
-  let db, cleanup, tmp, app, rootId, aliceId, bobId, rootToken, aliceToken, bobToken, access, importer, watcher;
+  let db, cleanup, tmp, app, rootId, aliceId, bobId, danaId, rootToken, aliceToken, bobToken, danaToken, access, importer, watcher;
   let sequence = 0;
   const call = (method, url, token = aliceToken, body) => {
     const req = request(app)[method](url).set('Authorization', `Bearer ${token}`);
@@ -42,16 +42,20 @@ describe('external media source ownership', () => {
     ({ adminId: rootId } = await seedMinimal(db));
     await assignAdminRole(db, rootId);
     const [{ id: roleId }] = await db('roles').insert({ name: 'external_source_test', display_name: 'External source test' }).returning('id');
-    const permissions = await db('permissions').whereIn('name', ['photos.view', 'photos.upload', 'photos.download', 'events.edit', 'events.manage_all']).select('id');
+    const permissions = await db('permissions').whereIn('name', ['photos.view', 'photos.upload', 'photos.download', 'events.edit', 'events.manage_all']).select('id', 'name');
     for (const p of permissions) await db('role_permissions').insert({ role_id: roleId, permission_id: p.id });
-    const addAdmin = async (username) => {
+    const addAdmin = async (username, role_id = roleId) => {
       const [{ id }] = await db('admin_users').insert({
-        username, email: `${username}@fixture.invalid`, password_hash: 'x', role_id: roleId, is_active: formatBoolean(true), must_change_password: formatBoolean(false),
+        username, email: `${username}@fixture.invalid`, password_hash: 'x', role_id, is_active: formatBoolean(true), must_change_password: formatBoolean(false),
       }).returning('id');
       return id;
     };
     aliceId = await addAdmin('acl-alice'); bobId = await addAdmin('acl-bob');
-    rootToken = mintAdminToken(rootId); aliceToken = mintAdminToken(aliceId); bobToken = mintAdminToken(bobId);
+    // Dana holds no source grant, and a role without events.manage_all.
+    const [{ id: scopedRoleId }] = await db('roles').insert({ name: 'external_source_scoped', display_name: 'External source scoped' }).returning('id');
+    for (const p of permissions.filter((row) => row.name !== 'events.manage_all')) await db('role_permissions').insert({ role_id: scopedRoleId, permission_id: p.id });
+    danaId = await addAdmin('acl-dana', scopedRoleId);
+    rootToken = mintAdminToken(rootId); aliceToken = mintAdminToken(aliceId); bobToken = mintAdminToken(bobId); danaToken = mintAdminToken(danaId);
     app = express(); app.use(express.json());
     app.use('/external', require('../../src/routes/adminExternalMedia'));
     app.use('/events', require('../../src/routes/adminEvents'));
@@ -63,6 +67,8 @@ describe('external media source ownership', () => {
       await fs.mkdir(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', name, 'batch'), { recursive: true });
       await fs.writeFile(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', name, 'batch', 'control.jpg'), jpeg);
     }
+    await fs.mkdir(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'unassigned', '2026-05-01 12:00'), { recursive: true });
+    await fs.writeFile(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'unassigned', '2026-05-01 12:00', 'late.jpg'), jpeg);
     await access.assignSource(rootId, 'tenants/alice', aliceId);
     await access.assignSource(rootId, 'tenants/bob', bobId);
   });
@@ -102,9 +108,18 @@ describe('external media source ownership', () => {
     expect(after).toBe(before); expect((await fs.stat(after)).size).toBeGreaterThan(0);
   });
 
-  test('gallery-wide management and ownerless destination fallback cannot forward source originals', async () => {
-    expect((await importInto(await event(bobId), 'tenants/alice')).status).toBe(403);
-    expect((await importInto(await event(null), 'tenants/alice')).status).toBe(403);
+  test('whoever may manage a gallery may import from the folder it is already bound to, never bind a foreign one', async () => {
+    // Alice's role holds events.manage_all; Dana's does not.
+    const bobs = await event(bobId, { source_mode: 'reference', external_path: 'tenants/bob' });
+    expect((await importInto(bobs, 'tenants/bob')).status).toBe(200);
+    expect((await importInto(bobs, 'tenants/unassigned')).status).toBe(403);
+    expect((await db('events').where({ id: bobs }).first()).external_path).toBe('tenants/bob');
+    expect((await importInto(bobs, 'tenants/bob', danaToken)).status).toBe(403);
+    await expect(access.authorizeImport(bobs, 'tenants/bob', { actor: { type: 'admin', id: danaId } })).rejects.toMatchObject({ statusCode: 403 });
+    // An ownerless gallery is everyone's to manage, as on the event routes.
+    const ownerless = await event(null, { source_mode: 'reference', external_path: 'tenants/bob' });
+    expect((await importInto(ownerless, 'tenants/bob', danaToken)).status).toBe(200);
+    expect((await importInto(ownerless, 'tenants/unassigned', danaToken)).status).toBe(403);
     expect((await importInto(await event(bobId), 'tenants/alice', rootToken)).status).toBe(200);
   });
 
@@ -153,23 +168,63 @@ describe('external media source ownership', () => {
     await watcher.stopExternalMediaWatcher();
   });
 
-  test('automatic imports derive the live destination owner, not a claimed system/root actor', async () => {
-    const id = await event(aliceId, { source_mode: 'reference', external_path: 'tenants/bob', external_watch: 1 });
-    await expect(importer.importExternalFolder({ eventId: id, externalPath: 'tenants/bob', automatic: true, actor: { type: 'admin', id: rootId } }))
-      .rejects.toMatchObject({ statusCode: 403 });
+  test('a gallery keeps watching and importing the folder it was bound to before source grants', async () => {
+    // Nobody holds a grant on tenants/unassigned: the binding predates them.
+    const owned = await event(danaId, { source_mode: 'reference', external_path: 'tenants/unassigned/batch', external_watch: 1 });
+    const ownerless = await event(null, { source_mode: 'reference', external_path: 'tenants/unassigned/batch', external_watch: 1 });
+    await expect(importer.importExternalFolder({ eventId: owned, externalPath: 'tenants/unassigned/batch', automatic: true }))
+      .resolves.toMatchObject({ imported: 1 });
     await watcher.reconcile();
-    expect(watcher.watchedEventIds()).not.toContain(id);
+    expect(watcher.watchedEventIds()).toEqual(expect.arrayContaining([owned, ownerless]));
+    expect(await db('photos').where({ event_id: ownerless })).toHaveLength(1);
+    expect((await importInto(owned, 'tenants/unassigned/batch', danaToken)).status).toBe(200);
     await watcher.stopExternalMediaWatcher();
   });
 
-  test('revoking or transferring a source stops later imports and watcher registration without deleting existing galleries', async () => {
+  test('an automatic import of any other folder still needs the owner’s grant, whatever actor is claimed', async () => {
+    const id = await event(aliceId, { source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
+    await expect(importer.importExternalFolder({ eventId: id, externalPath: 'tenants/bob', automatic: true, actor: { type: 'admin', id: rootId } }))
+      .rejects.toMatchObject({ statusCode: 403 });
+    const ownerless = await event(null, { source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
+    await expect(importer.importExternalFolder({ eventId: ownerless, externalPath: 'tenants/bob', automatic: true }))
+      .rejects.toMatchObject({ statusCode: 403 });
+    // A managed gallery has no binding to fall back on.
+    const managed = await event(danaId, { source_mode: 'managed', external_path: 'tenants/unassigned' });
+    await expect(access.authorizeImport(managed, 'tenants/unassigned', { automatic: true })).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  test('a refused watcher is reported once, at warn, with the gallery and the folder', async () => {
+    const logger = require('../../src/utils/logger');
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const id = await event(aliceId, { slug: 'acl-refused-watch', source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
+    await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(false) });
+    try {
+      await watcher.reconcile();
+      await watcher.reconcile();
+      expect(watcher.watchedEventIds()).not.toContain(id);
+      const lines = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes(`event ${id} (acl-refused-watch)`));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('\'tenants/alice\'');
+      expect(lines[0]).toContain('External source owners');
+    } finally {
+      await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(true) });
+      await db('events').where({ id }).update({ external_watch: formatBoolean(false) });
+      warn.mockRestore();
+      await watcher.stopExternalMediaWatcher();
+    }
+  });
+
+  test('revoking or transferring a source stops browsing and new bindings, not the galleries already bound to it', async () => {
     const id = await event(aliceId, { source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
     expect((await importInto(id, 'tenants/alice')).status).toBe(200);
     await watcher.reconcile(); expect(watcher.watchedEventIds()).toContain(id);
     expect((await source('tenants/alice', bobId)).status).toBe(200);
     try {
-      expect((await importInto(id, 'tenants/alice')).status).toBe(403);
-      await watcher.reconcile(); expect(watcher.watchedEventIds()).not.toContain(id);
+      expect((await call('get', '/external/list?path=tenants/alice')).status).toBe(403);
+      expect((await importInto(await event(aliceId), 'tenants/alice')).status).toBe(403);
+      expect((await importInto(id, 'tenants/alice/batch')).status).toBe(403);
+      expect((await importInto(id, 'tenants/alice')).status).toBe(200);
+      await watcher.reconcile(); expect(watcher.watchedEventIds()).toContain(id);
       expect(await db('photos').where({ event_id: id })).toHaveLength(1);
       expect((await call('get', '/external/list', bobToken)).body.entries).toHaveLength(2);
     } finally {
@@ -179,7 +234,7 @@ describe('external media source ownership', () => {
   });
 
   test('guarded migration repeats without granting historical source paths', async () => {
-    const migration = require('../../migrations/core/269_external_media_source_owners');
+    const migration = require('../../migrations/core/274_external_media_source_owners');
     const before = await db('external_media_sources').orderBy('id');
     await migration.up(db); await migration.up(db);
     expect(await db('external_media_sources').orderBy('id')).toEqual(before);
@@ -207,8 +262,6 @@ describe('external media source ownership', () => {
   test('a granted root replaced with a symlink into another tenant fails closed', async () => {
     const eventId = await event(aliceId);
     expect((await importInto(eventId, 'tenants/alice')).status).toBe(200);
-    const photo = await db('photos').where({ event_id: eventId }).first();
-    const gallery = await db('events').where({ id: eventId }).first();
     const original = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'alice');
     const parked = path.join(tmp, 'parked-alice');
     await fs.rename(original, parked);
@@ -216,7 +269,6 @@ describe('external media source ownership', () => {
     try {
       expect((await call('get', '/external/list?path=tenants/alice')).status).toBe(403);
       expect((await importInto(await event(aliceId), 'tenants/alice')).status).toBe(403);
-      expect(() => require('../../src/services/photoResolver').resolvePhotoFilePath(gallery, photo)).toThrow();
     } finally { await fs.unlink(original); await fs.rename(parked, original); }
   });
 
@@ -245,7 +297,95 @@ describe('external media source ownership', () => {
       .rejects.toMatchObject({ statusCode: 403 });
     const created = await createEvent({ ...body, external_path: 'tenants/alice' }, { actor: { id: aliceId } });
     expect((await call('post', `/external/events/${created.id}/import-external`, aliceToken, {})).status).toBe(200);
-    await db('events').where({ id: created.id }).update({ external_path: 'tenants/bob' });
-    expect((await call('post', `/external/events/${created.id}/import-external`, aliceToken, {})).status).toBe(403);
+    expect((await call('post', `/external/events/${created.id}/import-external`, aliceToken, { external_path: 'tenants/bob' })).status).toBe(403);
+    expect((await db('events').where({ id: created.id }).first()).external_path).toBe('tenants/alice');
+  });
+
+  test('saving a reference gallery without changing its folder needs no source grant', async () => {
+    const id = await event(danaId, { source_mode: 'reference', external_path: 'tenants/unassigned', external_watch: 1 });
+    const expires = new Date(Date.now() + 7 * 86400000).toISOString();
+    // What the event form sends: the source fields ride along on every save.
+    const saved = await call('put', `/events/${id}`, danaToken, {
+      event_name: 'Renamed', expires_at: expires, source_mode: 'reference', external_path: 'tenants/unassigned', external_watch: true,
+    });
+    expect(saved.status).toBe(200);
+    let row = await db('events').where({ id }).first();
+    expect(row.event_name).toBe('Renamed');
+    expect(new Date(row.expires_at).toISOString()).toBe(expires);
+    expect(row.external_path).toBe('tenants/unassigned'); expect(Boolean(row.external_watch)).toBe(true);
+
+    const moved = await call('put', `/events/${id}`, danaToken, { event_name: 'Moved', source_mode: 'reference', external_path: 'tenants/bob', external_watch: true });
+    expect(moved.status).toBe(403);
+    row = await db('events').where({ id }).first();
+    expect(row.event_name).toBe('Renamed'); expect(row.external_path).toBe('tenants/unassigned');
+
+    // Switching a managed gallery to a folder is a new binding, even to a path left on the row.
+    const managed = await event(danaId, { source_mode: 'managed', external_path: 'tenants/unassigned' });
+    expect((await call('put', `/events/${managed}`, danaToken, { source_mode: 'reference', external_path: 'tenants/unassigned' })).status).toBe(403);
+    // Back to managed uploads asks for nothing.
+    expect((await call('put', `/events/${id}`, danaToken, { source_mode: 'managed' })).status).toBe(200);
+    expect((await db('events').where({ id }).first()).external_path).toBeNull();
+  });
+
+  test('paths stored before source grants keep working: a leading slash and a colon in a folder name', async () => {
+    expect(access.normalizeSourcePath('/tenants//unassigned/', { stored: true })).toBe('tenants/unassigned');
+    expect(access.normalizeSourcePath('tenants/unassigned/2026-05-01 12:00', { stored: true })).toBe('tenants/unassigned/2026-05-01 12:00');
+    for (const value of ['tenants\\bob', 'tenants/../bob', 'tenants/\u0007bob']) {
+      expect(() => access.normalizeSourcePath(value, { stored: true })).toThrow('Invalid external media path');
+    }
+    for (const value of ['/tenants/alice', 'tenants/alice/12:00', 'C:\\tenants', 'tenants/../alice']) {
+      expect(() => access.normalizeSourcePath(value)).toThrow('Invalid external media path');
+    }
+
+    const stored = '/tenants/unassigned/2026-05-01 12:00';
+    const id = await event(danaId, { source_mode: 'reference', external_path: stored, external_watch: 1 });
+    // The form re-sends the stored spelling; the watcher reads it off the row.
+    expect((await call('put', `/events/${id}`, danaToken, { event_name: 'Colon', source_mode: 'reference', external_path: stored, external_watch: true })).status).toBe(200);
+    expect((await db('events').where({ id }).first()).external_path).toBe(stored);
+    await expect(importer.importExternalFolder({ eventId: id, externalPath: stored, automatic: true })).resolves.toMatchObject({ imported: 1 });
+    expect((await db('photos').where({ event_id: id }).first()).external_relpath).toBe(path.join('tenants', 'unassigned', '2026-05-01 12:00', 'late.jpg'));
+    expect((await importInto(id, stored, danaToken)).status).toBe(200);
+    // The same spelling as new input, on a gallery that is not bound to it, stays refused.
+    expect((await importInto(await event(danaId), stored, rootToken)).status).toBe(400);
+  });
+
+  test('an import authorises its source per run, not per file', async () => {
+    const folder = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'alice', 'many');
+    await fs.mkdir(folder, { recursive: true });
+    const jpeg = await fs.readFile(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'alice', 'batch', 'control.jpg'));
+    for (let i = 0; i < 6; i += 1) await fs.writeFile(path.join(folder, `many-${i}.jpg`), jpeg);
+    const authorize = jest.spyOn(access, 'authorizeImport');
+    try {
+      const id = await event(aliceId);
+      await expect(importer.importExternalFolder({ eventId: id, externalPath: 'tenants/alice/many', actor: { type: 'admin', id: aliceId } }))
+        .resolves.toMatchObject({ imported: 6 });
+      // Once at the start, once before the event row is written.
+      expect(authorize).toHaveBeenCalledTimes(2);
+
+      // Past the time budget it is checked again, and a refusal stops the run.
+      authorize.mockClear();
+      const realNow = Date.now;
+      let skew = 0;
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + (skew += 31000));
+      try {
+        const again = await event(aliceId);
+        await expect(importer.importExternalFolder({ eventId: again, externalPath: 'tenants/alice/many', actor: { type: 'admin', id: aliceId } }))
+          .resolves.toMatchObject({ imported: 6 });
+      } finally { now.mockRestore(); }
+      expect(authorize.mock.calls.length).toBeGreaterThan(2);
+    } finally {
+      authorize.mockRestore();
+      await fs.rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  test('source assignment routes stop a non-SuperAdmin before the service is reached', async () => {
+    const assign = jest.spyOn(access, 'assignSource');
+    const revoke = jest.spyOn(access, 'revokeSource');
+    try {
+      expect((await source('tenants/unassigned', aliceId, aliceToken)).status).toBe(403);
+      expect((await call('delete', '/external/sources/1', aliceToken)).status).toBe(403);
+      expect(assign).not.toHaveBeenCalled(); expect(revoke).not.toHaveBeenCalled();
+    } finally { assign.mockRestore(); revoke.mockRestore(); }
   });
 });

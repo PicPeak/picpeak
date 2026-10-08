@@ -1466,22 +1466,43 @@ module.exports = (router) => {
         return res.status(400).json({ error: 'external_path is required when source_mode is reference' });
       }
 
-      if (updates.external_path || updates.source_mode === 'reference' || Boolean(updates.external_watch)) {
-        const currentSource = await db('events').where({ id }).first('external_path', 'external_watch');
-        const selectedPath = updates.external_path ?? currentSource?.external_path;
-        const willWatch = Object.prototype.hasOwnProperty.call(updates, 'external_watch')
-          ? Boolean(updates.external_watch) : Boolean(currentSource?.external_watch);
+      // The event form re-sends the source fields with every save. Only a save
+      // that points the gallery at another folder is a source decision and
+      // needs access to that folder; renaming a reference gallery or moving
+      // its expiry must not. Fields that repeat what is stored are dropped, so
+      // the rest of the save goes through on events.edit alone.
+      const sourceFields = ['source_mode', 'external_path', 'external_watch']
+        .filter((key) => Object.prototype.hasOwnProperty.call(updates, key));
+      if (sourceFields.length > 0) {
+        const stored = await db('events').where({ id }).first('source_mode', 'external_path', 'external_watch');
+        const storedMode = stored?.source_mode === 'reference' ? 'reference' : 'managed';
+        const sendsPath = sourceFields.includes('external_path');
+        // Compared the way a stored path is read: `/clients/a` on the row
+        // and `clients/a` in the request are the same folder.
+        const pathChanges = sendsPath && !externalAccess.sameSourcePath(updates.external_path, stored?.external_path);
+        const becomesReference = updates.source_mode === 'reference' && storedMode !== 'reference';
+        const nextPath = sendsPath ? updates.external_path : stored?.external_path;
         try {
-          const access = await externalAccess.authorizeImport(id, selectedPath, {
-            actor: { type: 'admin', id: req.admin.id },
-            permission: willWatch ? 'photos.upload' : 'photos.view',
-          });
-          if (Object.prototype.hasOwnProperty.call(updates, 'external_path')) updates.external_path = access.relativePath;
+          if (nextPath && (pathChanges || becomesReference)) {
+            const willWatch = sourceFields.includes('external_watch')
+              ? Boolean(updates.external_watch) : Boolean(stored?.external_watch);
+            const access = await externalAccess.authorizeImport(id, nextPath, {
+              actor: { type: 'admin', id: req.admin.id },
+              permission: willWatch ? 'photos.upload' : 'photos.view',
+            });
+            updates.external_path = access.relativePath;
+          } else if (sendsPath && !pathChanges) {
+            delete updates.external_path;
+          }
         } catch (error) {
           if (error instanceof externalAccess.ExternalMediaAccessError || error.code === 'PATH_OUTSIDE_BASE') {
             return res.status(error.statusCode || 400).json({ error: error.message });
           }
           throw error;
+        }
+        if (updates.source_mode === storedMode) delete updates.source_mode;
+        if (sourceFields.includes('external_watch') && Boolean(updates.external_watch) === Boolean(stored?.external_watch)) {
+          delete updates.external_watch;
         }
       }
 

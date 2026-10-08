@@ -128,6 +128,10 @@ async function existingRelpaths(eventId, relpaths) {
 const MAX_WALK_DEPTH = 16;
 const MAX_WALK_ENTRIES = 100000;
 
+// How often a running import authorises its source again.
+const REAUTHORIZE_EVERY_FILES = 500;
+const REAUTHORIZE_EVERY_MS = 30000;
+
 // Helper to recursively collect files under a directory, filtered by extension.
 // `budget` is shared across the recursion: entries left to look at, and
 // whether a bound was hit.
@@ -198,12 +202,11 @@ async function importExternalFolder({
   automatic = false,
   settleMs = 0,
 }) {
-  const external_path = externalAccess.normalizeSourcePath(externalPath);
-
   // Load event
   const event = await db('events').where('id', eventId).first();
   if (!event) throw new EventNotFoundError(eventId);
-  let access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+  let access = await externalAccess.authorizeImport(eventId, externalPath, { actor, automatic });
+  const external_path = access.relativePath;
   const mirrorFolders = parseBooleanInput(event.folder_structure, false);
   const firstLookKeywords = await folderTree.getFirstLookKeywords();
   const folderIdByPath = new Map();
@@ -238,8 +241,7 @@ async function importExternalFolder({
       .select('source_mode', 'external_path', 'external_watch', 'is_active', 'is_archived')
       .first();
     return Boolean(now)
-      && now.source_mode === 'reference'
-      && (now.external_path || '') === String(external_path)
+      && externalAccess.isStoredBinding(now, external_path)
       && Boolean(now.external_watch)
       && Boolean(now.is_active)
       && !now.is_archived;
@@ -369,6 +371,11 @@ async function importExternalFolder({
 
     if (lost) throw new ImportInProgressError(eventId);
     access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+    // From here the source is authorised again every REAUTHORIZE_EVERY_FILES
+    // files or REAUTHORIZE_EVERY_MS, whichever comes first, not per file: each
+    // check is several queries and realpaths, and a run can be 100000 files.
+    let authorizedAt = Date.now();
+    let filesSinceAuthorized = 0;
 
     if (automatic) {
       // Follow the row, never write it. Writing source_mode/external_path
@@ -445,8 +452,12 @@ async function importExternalFolder({
 
     // Insert photos
     for (const f of dedupeMap.values()) {
-      access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
-      await externalAccess.authorizeSelectedFile(access, f.full);
+      filesSinceAuthorized += 1;
+      if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
+        await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+        authorizedAt = Date.now();
+        filesSinceAuthorized = 0;
+      }
       considered += 1;
       if (lost) {
         // Either another process took the claim over — it is walking this
@@ -549,8 +560,6 @@ async function importExternalFolder({
         }
 
         let inserted;
-        access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
-        await externalAccess.authorizeSelectedFile(access, f.full);
         try {
           inserted = await insertPhotoWithinCap({
             event_id: eventId,

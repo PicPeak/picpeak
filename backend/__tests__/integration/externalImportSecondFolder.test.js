@@ -46,9 +46,11 @@ describe('a second external import (#1163)', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
     jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));

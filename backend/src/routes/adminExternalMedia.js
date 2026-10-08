@@ -1,6 +1,6 @@
 const express = require('express');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { db } = require('../database/db');
 const { list } = require('../services/externalMediaService');
@@ -53,7 +53,7 @@ router.get('/sources', adminAuth, requirePermission('photos.view'), async (req, 
 
 // Assignment, transfer and revocation are instance-owner actions. Gallery-wide
 // permissions do not grant ownership of the external mount.
-router.put('/sources', adminAuth, async (req, res) => {
+router.put('/sources', adminAuth, requireSuperAdmin(), async (req, res) => {
   try {
     const source = await externalAccess.assignSource(req.admin.id, req.body?.path, req.body?.owner_id);
     res.json({ source });
@@ -62,7 +62,7 @@ router.put('/sources', adminAuth, async (req, res) => {
   }
 });
 
-router.delete('/sources/:sourceId', adminAuth, async (req, res) => {
+router.delete('/sources/:sourceId', adminAuth, requireSuperAdmin(), async (req, res) => {
   try {
     const id = Number(req.params.sourceId);
     if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid source ID' });

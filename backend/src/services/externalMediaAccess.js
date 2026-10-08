@@ -3,6 +3,8 @@ const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { parseBoolean } = require('../utils/dbCompat');
 const { safePathJoin, assertRealpathUnder } = require('../utils/fileSecurityUtils');
+const ownership = require('../middleware/ownership');
+const { roleEventScope } = require('../middleware/permissions');
 
 class ExternalMediaAccessError extends Error {
   constructor(message = 'External media access denied', statusCode = 403) {
@@ -12,9 +14,13 @@ class ExternalMediaAccessError extends Error {
   }
 }
 
-function normalizeSourcePath(value) {
-  if (typeof value !== 'string' || value.length > 1024
-    || value.startsWith('/') || /[\\\\:]/.test(value)
+// `stored` reads a path already saved on an event. Before source grants the
+// event form only trimmed it, so `/clients/a` and `2026-05-01 12:00` are on
+// existing rows: a leading slash is dropped and `:` (no separator on Linux) is
+// let through. New input stays strict.
+function normalizeSourcePath(value, { stored = false } = {}) {
+  if (typeof value !== 'string' || value.length > 1024 || value.includes('\\')
+    || (!stored && (value.startsWith('/') || value.includes(':')))
     || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) {
     throw new ExternalMediaAccessError('Invalid external media path', 400);
   }
@@ -23,6 +29,37 @@ function normalizeSourcePath(value) {
     throw new ExternalMediaAccessError('Invalid external media path', 400);
   }
   return segments.join('/');
+}
+
+// The folder an event's Photo source points at, normalised; null for a managed
+// gallery, an unreadable path or the mount itself.
+function storedBinding(event) {
+  if (event?.source_mode !== 'reference' || !event.external_path) return null;
+  try {
+    return normalizeSourcePath(event.external_path, { stored: true }) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Whether two paths, read the way a stored one is, name the same folder.
+function sameSourcePath(a, b) {
+  if ((a || '') === (b || '')) return true;
+  try {
+    return normalizeSourcePath(a || '', { stored: true }) === normalizeSourcePath(b || '', { stored: true });
+  } catch (_) {
+    return false;
+  }
+}
+
+function isStoredBinding(event, value) {
+  const bound = storedBinding(event);
+  if (bound === null) return false;
+  try {
+    return normalizeSourcePath(value, { stored: true }) === bound;
+  } catch (_) {
+    return false;
+  }
 }
 
 const contains = (base, candidate) => candidate === base || candidate.startsWith(base + '/');
@@ -81,22 +118,58 @@ async function authorizeSource(adminId, value, permission = 'photos.view') {
   return { admin, relativePath, target, sourceRoot, sourceId: source?.id ?? null };
 }
 
+// Stored binding of this event: the folder the gallery already points at was
+// chosen by an admin who was allowed to choose it, under the rules of the day
+// (before source grants, any admin with the picker). Importing, rescanning and
+// watching that same folder for that same gallery asks for no grant, so an
+// upgrade or a later revocation does not strand a gallery. Grants gate new
+// bindings and browsing. Only the filesystem is checked: the folder, followed
+// through any link, must still be inside the mount, and every file inside the
+// folder (authorizeSelectedFile).
+async function authorizeStoredBinding(event) {
+  const root = rootPath();
+  const relativePath = storedBinding(event);
+  const target = safePathJoin(root, relativePath);
+  await assertRealpathUnder(root, target);
+  return { relativePath, target, sourceRoot: target, sourceId: null, storedBinding: true };
+}
+
+// The rule the event routes enforce (requireEventOwnership), on a principal
+// read from the database.
+async function mayManageEvent(admin, event) {
+  return ownership.canAccessEvent({
+    id: admin.id,
+    roleName: admin.roleName,
+    eventScope: await roleEventScope(admin.roleName),
+    // Gallery team assignments (PR 1858), where that helper exists.
+    assignedEventIds: await ownership.loadAssignedEventIds?.(admin.id),
+  }, event);
+}
+
 async function authorizeImport(eventId, value, { actor = null, automatic = false, permission = 'photos.upload' } = {}) {
   const event = await db('events').where('id', eventId).first();
   if (!event) throw new ExternalMediaAccessError('Event not found', 404);
-  // A system watcher is a deputy for the current owner, never a global root.
-  const adminId = automatic ? event.created_by : (actor?.type === 'admin' ? actor.id : null);
-  const admin = await principal(adminId, permission);
-  if (admin.roleName !== 'super_admin' && Number(event.created_by) !== Number(admin.id)) {
-    throw new ExternalMediaAccessError();
+  const bound = isStoredBinding(event, value);
+  let admin = null;
+  if (automatic) {
+    // A system watcher is a deputy for the gallery's creator, never a global
+    // root. An ownerless gallery has no one to stand in for, and its watcher
+    // only ever follows the folder the gallery is already bound to.
+    if (event.created_by != null || !bound) admin = await principal(event.created_by, permission);
+  } else {
+    admin = await principal(actor?.type === 'admin' ? actor.id : null, permission);
+    if (!(await mayManageEvent(admin, event))) throw new ExternalMediaAccessError();
   }
+  if (bound) return { ...(await authorizeStoredBinding(event)), admin, event };
   const access = await authorizeSource(admin.id, value, permission);
   return { ...access, event };
 }
 
 async function authorizeSelectedFile(access, filePath) {
   await assertRealpathUnder(access.sourceRoot, filePath);
-  await assertCanonicalTarget(filePath);
+  // A stored binding may run through a directory link that stays inside the
+  // mount; containment above is the check there.
+  if (!access.storedBinding) await assertCanonicalTarget(filePath);
 }
 
 async function listSources(adminId) {
@@ -157,6 +230,6 @@ async function ownerChoices(adminId) {
 }
 
 module.exports = {
-  ExternalMediaAccessError, normalizeSourcePath, principal, ownedSources, authorizeSource,
+  ExternalMediaAccessError, normalizeSourcePath, storedBinding, isStoredBinding, sameSourcePath, principal, ownedSources, authorizeSource,
   authorizeImport, authorizeSelectedFile, listSources, assignSource, revokeSource, ownerChoices,
 };

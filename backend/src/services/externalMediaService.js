@@ -141,19 +141,6 @@ function resolveExternalPhotoPath(photo) {
   // Imports never follow a symlink (see externalImportService), but the row
   // is read long after the import, and the tree can have changed under it.
   assertRealpathUnderSync(root, resolved);
-  // A photo is read long after import. A link to another source *inside*
-  // the mount is still a cross-source escape; global containment alone misses it.
-  try {
-    const canonicalRoot = fsSync.realpathSync(root);
-    const canonicalTarget = fsSync.realpathSync(resolved);
-    if (path.relative(path.resolve(root), resolved) !== path.relative(canonicalRoot, canonicalTarget)) {
-      const error = new Error('Invalid external media path');
-      error.code = 'PATH_OUTSIDE_BASE';
-      throw error;
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
-  }
   return resolved;
 }
 
