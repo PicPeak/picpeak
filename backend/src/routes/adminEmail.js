@@ -2,7 +2,7 @@ const { changedFields } = require('../usage/adoptionEvidence');
 const express = require('express');
 const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const nodemailer = require('nodemailer');
-const { smtpConnectionOptions, isMailHostAllowed } = require('../utils/mailConnection');
+const { smtpConnectionOptions, mailHostRejection } = require('../utils/mailConnection');
 const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
@@ -82,9 +82,8 @@ router.post('/config', [
     // Validate SMTP host is not a private/internal address (SSRF protection).
     // Resolves DNS so a public-looking hostname pointing at an internal IP
     // is caught, not just literal private addresses (#GHSA-ch64).
-    if (!(await isMailHostAllowed('smtp', smtp_host, smtp_port))) {
-      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-    }
+    const smtpRejected = await mailHostRejection('smtp', smtp_host, smtp_port);
+    if (smtpRejected) return res.status(400).json(smtpRejected);
 
     // Check if config exists
     const existingConfig = await db('email_configs').first();
@@ -172,9 +171,8 @@ router.post('/incoming-config', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body;
-    if (!(await isMailHostAllowed('imap', imap_host, imap_port))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-    }
+    const imapRejected = await mailHostRejection('imap', imap_host, imap_port);
+    if (imapRejected) return res.status(400).json(imapRejected);
     const existing = await db('email_configs').first();
     // Same rule as SMTP: the poller would log in to the new server with it.
     if (existing?.imap_pass && isMaskedOrBlank(imap_pass)
@@ -209,9 +207,8 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.edit
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body || {};
     if (imap_host) {
-      if (!(await isMailHostAllowed('imap', imap_host, imap_port || 993))) {
-        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-      }
+      const imapRejected = await mailHostRejection('imap', imap_host, imap_port || 993);
+      if (imapRejected) return res.status(400).json(imapRejected);
     }
     const emailIntakeService = require('../services/emailIntakeService');
     const folders = await emailIntakeService.listFolders(
@@ -231,9 +228,8 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.edit'),
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body || {};
     if (imap_host) {
-      if (!(await isMailHostAllowed('imap', imap_host, imap_port || 993))) {
-        return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-      }
+      const imapRejected = await mailHostRejection('imap', imap_host, imap_port || 993);
+      if (imapRejected) return res.status(400).json(imapRejected);
     }
     const emailIntakeService = require('../services/emailIntakeService');
     const result = await emailIntakeService.testConnection(
@@ -422,12 +418,10 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
     if (!b.account_key) return res.status(400).json({ error: 'account_key is required' });
     // SSRF guard — mirror /config + /incoming-config: neither the IMAP nor the
     // SMTP host may point at a private/internal address.
-    if (b.imap_host && !(await isMailHostAllowed('imap', b.imap_host, b.imap_port || 993))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-    }
-    if (b.smtp_host && !(await isMailHostAllowed('smtp', b.smtp_host, b.smtp_port || 587))) {
-      return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-    }
+    const imapRejected = b.imap_host && await mailHostRejection('imap', b.imap_host, b.imap_port || 993);
+    if (imapRejected) return res.status(400).json(imapRejected);
+    const smtpRejected = b.smtp_host && await mailHostRejection('smtp', b.smtp_host, b.smtp_port || 587);
+    if (smtpRejected) return res.status(400).json(smtpRejected);
     const patch = {
       label: b.label || null,
       imap_host: b.imap_host || null,
@@ -482,9 +476,8 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
 router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email.edit'), async (req, res) => {
   try {
     const b = req.body || {};
-    if (b.imap_host && !(await isMailHostAllowed('imap', b.imap_host, b.imap_port || 993))) {
-      return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address without deployment approval', code: 'MAIL_HOST_FORBIDDEN' });
-    }
+    const imapRejected = b.imap_host && await mailHostRejection('imap', b.imap_host, b.imap_port || 993);
+    if (imapRejected) return res.status(400).json(imapRejected);
     let pass = b.imap_pass;
     if (isMaskedOrBlank(pass)) {
       // The stored password only for the server it was saved for.

@@ -3795,6 +3795,7 @@
     "networkPolicyHelp": "SMTP and IMAP connections validate every DNS answer and retain hostname TLS verification. Private mail servers require an exact deployment approval in MAIL_PRIVATE_ENDPOINTS.",
     "networkPolicyForbidden": "Mail destination blocked. Private mail servers require an exact protocol/host/port approval in MAIL_PRIVATE_ENDPOINTS. Metadata and reserved destinations are never allowed.",
     "networkPolicyInvalid": "Invalid mail host, port or MAIL_PRIVATE_ENDPOINTS approval. Use a hostname or IP and an exact mail endpoint with an explicit port.",
+    "networkPolicyUnresolved": "The mail host name could not be resolved. Check the hostname.",
     "smtpHost": "SMTP Host",
     "fromEmail": "From Email",
     "fromName": "From Name",

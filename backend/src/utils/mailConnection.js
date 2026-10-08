@@ -3,6 +3,7 @@ const net = require('net');
 const { domainToASCII } = require('url');
 const ipaddr = require('ipaddr.js');
 const { isPrivateIP } = require('./networkValidation');
+const logger = require('./logger');
 
 function policyError(message, code = 'MAIL_HOST_FORBIDDEN') {
   const error = new Error(message);
@@ -21,7 +22,8 @@ function hostname(value) {
     throw policyError('Invalid mail hostname', 'MAIL_CONFIG_INVALID');
   }
   const host = domainToASCII(value.toLowerCase().replace(/\.$/, ''));
-  if (!host || host.length > 253 || !host.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) {
+  // Underscores are not valid in public DNS but are in compose service names.
+  if (!host || host.length > 253 || !host.split('.').every(label => /^[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?$/.test(label))) {
     throw policyError('Invalid mail hostname', 'MAIL_CONFIG_INVALID');
   }
   return host;
@@ -37,25 +39,49 @@ function endpoint(protocol, host, value) {
 
 // Deployment-owned approvals, never accepted from a settings row or request.
 // Bind the exception to one protocol, canonical host and explicit port.
+// Parsed once per environment value. A malformed entry approves nothing and is
+// logged once; it must not refuse mail to every other host.
+let approvals = { key: null, endpoints: new Set() };
 function privateEndpoints() {
-  return new Set((process.env.MAIL_PRIVATE_ENDPOINTS || '').split(',').filter(value => value.trim()).map(value => {
-    let url;
-    try { url = new URL(value.trim()); } catch { throw policyError('Invalid MAIL_PRIVATE_ENDPOINTS', 'MAIL_CONFIG_INVALID'); }
-    if (url.username || url.password || (url.pathname && url.pathname !== '/') || url.search || url.hash || !url.port) {
-      throw policyError('MAIL_PRIVATE_ENDPOINTS requires mail endpoints with an explicit port and no credentials/path', 'MAIL_CONFIG_INVALID');
+  const key = [process.env.MAIL_PRIVATE_ENDPOINTS, process.env.SMTP_HOST, process.env.SMTP_PORT].join('\n');
+  if (key === approvals.key) return approvals.endpoints;
+  const endpoints = new Set();
+  for (const value of (process.env.MAIL_PRIVATE_ENDPOINTS || '').split(',').map(entry => entry.trim()).filter(Boolean)) {
+    try {
+      const url = new URL(value);
+      if (url.username || url.password || (url.pathname && url.pathname !== '/') || url.search || url.hash || !url.port) {
+        throw policyError('MAIL_PRIVATE_ENDPOINTS requires mail endpoints with an explicit port and no credentials/path', 'MAIL_CONFIG_INVALID');
+      }
+      endpoints.add(endpoint(url.protocol.slice(0, -1), hostname(url.hostname), url.port));
+    } catch {
+      logger.error(`Ignoring invalid MAIL_PRIVATE_ENDPOINTS entry "${value.replace(/\/\/[^/@]*@/, '//***@')}": expected smtp://host:port or imap://host:port without credentials or path`);
     }
-    return endpoint(url.protocol.slice(0, -1), hostname(url.hostname), url.port);
-  }));
+  }
+  // SMTP_HOST/SMTP_PORT in the deployment environment (what the first migration
+  // seeds the SMTP row from) is the operator's own choice of server, so that
+  // exact endpoint needs no second approval. Same default port as the seed.
+  if (process.env.SMTP_HOST) {
+    try {
+      endpoints.add(endpoint('smtp', hostname(process.env.SMTP_HOST), process.env.SMTP_PORT || 1025));
+    } catch { /* not a usable mail endpoint: approves nothing */ }
+  }
+  approvals = { key, endpoints };
+  return endpoints;
 }
+
+// ipaddr.js files deprecated site-local addresses under plain unicast.
+const SITE_LOCAL = ipaddr.parseCIDR('fec0::/10');
 
 function assertAddress(address, allowPrivate) {
   if (typeof address !== 'string' || !net.isIP(address) || address.includes('%')) throw policyError('Invalid mail destination address');
   const parsed = ipaddr.process(address);
-  // AWS and Google IPv6 metadata endpoints are ULA, not link-local. Never except them.
-  if (['fd00:ec2::254', 'fd20:ce::254'].includes(parsed.toString())) throw policyError('Mail instance metadata destinations are forbidden');
-  const range = parsed.range();
+  // AWS and Google IPv6 metadata endpoints are ULA and Alibaba's is in the
+  // CGNAT block, not link-local. Never except them.
+  if (['fd00:ec2::254', 'fd20:ce::254', '100.100.100.200'].includes(parsed.toString())) throw policyError('Mail instance metadata destinations are forbidden');
+  const range = parsed.kind() === 'ipv6' && parsed.match(SITE_LOCAL) ? 'private' : parsed.range();
   if (range === 'unicast' && !isPrivateIP(address)) return;
-  if (allowPrivate && ['private', 'loopback', 'uniqueLocal'].includes(range)) return;
+  // carrierGradeNat is where Tailscale and similar overlays put a relay.
+  if (allowPrivate && ['private', 'loopback', 'uniqueLocal', 'carrierGradeNat'].includes(range)) return;
   throw policyError('Mail host resolves to a forbidden address; private mail servers require an exact MAIL_PRIVATE_ENDPOINTS approval');
 }
 
@@ -94,12 +120,21 @@ function mailSocketOptions(protocol, value, port) {
   return { host, servername: net.isIP(host) ? undefined : host, lookup };
 }
 
-async function isMailHostAllowed(protocol, host, port) {
+// Preflight for the admin routes: null when the host may be used, otherwise
+// the 400 body. A name that does not resolve is a typo rather than a policy
+// refusal and says so; a private and a forbidden destination stay one answer.
+async function mailHostRejection(protocol, host, port) {
   try {
     const policy = mailSocketOptions(protocol, host, port);
     if (!net.isIP(policy.host)) await new Promise((resolve, reject) => policy.lookup(policy.host, { all: true }, error => error ? reject(error) : resolve()));
-    return true;
-  } catch { return false; }
+    return null;
+  } catch (error) {
+    const label = String(protocol).toUpperCase();
+    if (['ENOTFOUND', 'EAI_AGAIN'].includes(error.code)) {
+      return { error: `${label} host could not be resolved. Check the hostname.`, code: 'MAIL_HOST_UNRESOLVED' };
+    }
+    return { error: `${label} host cannot point to a private or internal network address without deployment approval`, code: 'MAIL_HOST_FORBIDDEN' };
+  }
 }
 
 /** Nodemailer ignores ordinary lookup options. Supply a connected raw socket;
@@ -132,4 +167,4 @@ function smtpConnectionOptions(options) {
     tls: { ...options.tls, host, servername: net.isIP(host) ? undefined : host }, getSocket };
 }
 
-module.exports = { mailSocketOptions, smtpConnectionOptions, isMailHostAllowed };
+module.exports = { mailSocketOptions, smtpConnectionOptions, mailHostRejection };

@@ -128,6 +128,7 @@ async function initializeTransporter(forceReinit = false) {
 
     // Verify configuration
     await transporter.verify();
+    transporterError = null;
     logger.info('Email transporter initialized successfully');
     
     // Update the config hash
@@ -136,6 +137,7 @@ async function initializeTransporter(forceReinit = false) {
     return transporter;
   } catch (error) {
     logger.error('Failed to initialize email transporter:', error);
+    transporterError = error;
     transporter = null;
     lastConfigHash = null;
     return null;
@@ -1209,7 +1211,11 @@ const processorStatus = {
   lastRunAt: null,
   lastResult: null,
   lastError: null,
+  lastErrorCode: null,
 };
+// Why the transporter last failed to initialise, so a mail network-policy
+// refusal reaches System Health instead of a generic "check the settings".
+let transporterError = null;
 
 function getQueueProcessorStatus() {
   return {
@@ -1217,6 +1223,7 @@ function getQueueProcessorStatus() {
     lastRunAt: processorStatus.lastRunAt,
     lastResult: processorStatus.lastResult,
     lastError: processorStatus.lastError,
+    lastErrorCode: processorStatus.lastErrorCode,
   };
 }
 
@@ -1225,6 +1232,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
   const result = { processed: 0, sent: 0, failed: 0 };
   processorStatus.lastRunAt = new Date().toISOString();
   processorStatus.lastError = null;
+  processorStatus.lastErrorCode = null;
 
   try {
     // Try to initialize transporter if it's null (in case it failed at startup).
@@ -1239,7 +1247,10 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         logger.warn('Email transporter could not be initialized, skipping queue processing');
         // #1262 — the row stays pending with retry_count 0, so nothing in the
         // queue itself records that this pass did nothing. Say so here.
-        processorStatus.lastError = 'Email transporter could not be initialised — check the SMTP settings';
+        const refused = ['MAIL_HOST_FORBIDDEN', 'MAIL_CONFIG_INVALID'].includes(transporterError?.code);
+        processorStatus.lastError = refused ? transporterError.message
+          : 'Email transporter could not be initialised — check the SMTP settings';
+        processorStatus.lastErrorCode = refused ? transporterError.code : null;
         processorStatus.lastResult = result;
         return result;
       }

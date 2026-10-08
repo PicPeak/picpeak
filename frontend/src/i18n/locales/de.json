@@ -4307,6 +4307,7 @@
     "networkPolicyHelp": "SMTP- und IMAP-Verbindungen prüfen alle DNS-Antworten und behalten die TLS-Prüfung des Hostnamens bei. Private Mailserver benötigen eine genaue Freigabe in MAIL_PRIVATE_ENDPOINTS in der Bereitstellungskonfiguration.",
     "networkPolicyForbidden": "Mailziel blockiert. Private Mailserver benötigen eine genaue Protokoll-/Host-/Port-Freigabe in MAIL_PRIVATE_ENDPOINTS. Metadaten- und reservierte Ziele sind nie erlaubt.",
     "networkPolicyInvalid": "Ungültiger Mailhost, Port oder MAIL_PRIVATE_ENDPOINTS-Eintrag. Verwenden Sie einen Hostnamen oder eine IP und einen genauen Mailendpunkt mit explizitem Port.",
+    "networkPolicyUnresolved": "Der Name des Mailhosts konnte nicht aufgelöst werden. Bitte den Hostnamen prüfen.",
     "smtpHost": "SMTP-Host",
     "fromEmail": "Absender-E-Mail",
     "fromName": "Absendername",

@@ -21,6 +21,7 @@ import { useStatusTab } from '../hooks/useStatusTab';
 import { UpdateNotificationSettings } from '../components/UpdateNotificationSettings';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../hooks/usePermission';
+import { mailPolicyMessage } from '../../../utils/mailErrors';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
 
@@ -607,7 +608,7 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                     : systemStatus?.services?.emailProcessor?.status === 'degraded'
                       ? t('settings.systemStatus.emailProcessorDegraded',
                         'Running, but the last pass could not send: {{error}}',
-                        { error: systemStatus?.services?.emailProcessor?.lastError })
+                        { error: mailPolicyMessage(systemStatus?.services?.emailProcessor?.lastErrorCode, t) || systemStatus?.services?.emailProcessor?.lastError })
                       : t('settings.systemStatus.emailProcessorDesc')}
                 </p>
               </div>
