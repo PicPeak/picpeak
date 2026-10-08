@@ -36,7 +36,7 @@ linux('hard-capped native image runner', () => {
     const result = spawnSync('/bin/sh', ['-c',
       'ulimit -v "$1" || exit 125; exec "$2" --jitless --no-expose-wasm --max-old-space-size=64 --eval "$3"',
       'picpeak-image-limit-test', String(configuration().nativeBytes / 1024), process.execPath,
-      'try { Buffer.alloc(600 * 1024 * 1024); process.exit(2); } catch (_) { process.exit(0); }'],
+      `try { Buffer.alloc(${configuration().nativeBytes + 64 * 1024 * 1024}); process.exit(2); } catch (_) { process.exit(0); }`],
     { timeout: 30000, env: { ...process.env, MALLOC_ARENA_MAX: '2' } });
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(0);
@@ -58,6 +58,14 @@ linux('hard-capped native image runner', () => {
     expect(transformed.height).toBe(300);
     expect([undefined, 1]).toContain(transformed.orientation);
     expect(Buffer.isBuffer(transformed.exif)).toBe(true);
+    // Full-resolution watermarking cannot use the thumbnail's shrink-on-load
+    // optimization. Preserve this legitimate source under the hard cap too.
+    const overlay = Buffer.from('<svg width="10" height="10"><rect width="10" height="10" fill="red"/></svg>');
+    const watermarked = await sharp(input).rotate().composite([{ input: overlay, left: 0, top: 0 }])
+      .keepMetadata().jpeg({ quality: 100, mozjpeg: true }).toBuffer();
+    const watermarkedMetadata = await sharp(watermarked).metadata();
+    expect(watermarkedMetadata).toMatchObject({ width: 4672, height: 7008 });
+    expect(Buffer.isBuffer(watermarkedMetadata.exif)).toBe(true);
   });
 
   test('bounds all frames before animated decode while preserving ordinary animation', async () => {
