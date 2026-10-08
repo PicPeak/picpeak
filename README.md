@@ -246,6 +246,38 @@ We love contributions! PicPeak is built by photographers, for photographers — 
 
 Found a security issue? Please open a [security issue](https://github.com/PicPeak/picpeak/issues/new?labels=security). See [SECURITY.md](SECURITY.md) for the policy.
 
+## Analytics integration security
+
+Settings → Analytics supports Umami and Rybbit through PicPeak-owned, data-only
+event forwarding. Third-party scripts and legacy custom HTML snippets are never
+executed or sent to visitors. Existing custom configurations are disabled; choose
+Umami, Rybbit or None and save to clear the old snippet. Configure collectors in
+the admin settings; the former build-time `VITE_UMAMI_*` variables are no longer read.
+
+Gallery page views and supported download/search/protection events remain
+tracked. Gallery capability suffixes are redacted regardless of token length;
+query strings, fragments, page titles, referrers, account/photo identifiers and
+free-text event properties are not collected. Administrator, customer portal,
+client-access login, short-link, slideshow and other capability pages are excluded.
+Do Not Track and Global Privacy Control are respected. Visitor IP and User-Agent
+still reach the chosen collector for device/location attribution. Vendor-only
+auto-capture, session replay and feature flags are not supported.
+
+Optional dashboard embeds require an unrelated HTTPS host outside PicPeak's
+authentication cookie domain. Same-host alternate ports and collectors covered
+by `COOKIE_DOMAIN` are blocked. Embedding stays disabled if the authenticated
+settings response cannot confirm the cookie scope; built-in statistics remain
+available. Embeds also require browser support for credentialless iframes,
+isolate all cookies/storage across redirects, and disallow popups. Unsupported
+browsers use built-in statistics, without an ordinary-iframe fallback. Your
+frame CSP must separately permit an eligible dashboard.
+
+Production collectors must use HTTPS. Migrate HTTP collectors to HTTPS before
+upgrading. Local HTTP testing requires `ANALYTICS_ALLOW_INSECURE_HTTP=true` in a
+non-production backend; it never enables HTTP in production. For an internal
+HTTPS collector, explicitly approve its exact origin with
+`INTEGRATION_PRIVATE_ORIGINS`; each connection is still address-checked.
+
 ## ☕ Support the Project
 
 PicPeak is free, open source, and self-hostable forever. If it saves you time or replaces a paid subscription, consider [buying me a coffee](https://buymeacoffee.com/theluap) — it directly funds new features, bug fixes, and keeping the demo + docs running. You can also ⭐ star the repo, share it, file good bug reports, or open a PR.

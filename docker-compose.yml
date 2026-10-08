@@ -275,9 +275,6 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=${VITE_API_URL:-/api}
-        - VITE_UMAMI_URL=${VITE_UMAMI_URL:-}
-        - VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID:-}
-        - VITE_UMAMI_SHARE_URL=${VITE_UMAMI_SHARE_URL:-}
     container_name: picpeak-frontend
     restart: unless-stopped
     environment:
