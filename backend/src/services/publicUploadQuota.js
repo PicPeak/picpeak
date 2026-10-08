@@ -21,16 +21,27 @@ const DEFAULTS = Object.freeze({
   account: { bytes: 50 * GiB, files: 20000, pendingBytes: GiB, pendingFiles: 500, requests: 4, hourBytes: 2 * GiB, hourRequests: 600 },
   deployment: { bytes: 200 * GiB, files: 100000, pendingBytes: 2 * GiB, pendingFiles: 1000, requests: 8, hourBytes: 4 * GiB, hourRequests: 1200 },
 });
+// Private upload ingress has no anonymous-guest bucket. All physical/lifetime
+// claims still share the same authoritative ledger and serialization lock.
+const ADMIN_DEFAULTS = {
+  // Each fair-share slot retains the supported 2000-file setting. The raw
+  // byte ceiling, pending-byte limits and session limits bound large batches.
+  gallery: { bytes: 100 * GiB, files: 20000, pendingBytes: 2 * GiB, pendingFiles: 4000, requests: 2, hourBytes: 10 * GiB, hourRequests: 600 },
+  account: { bytes: 500 * GiB, files: 100000, pendingBytes: 4 * GiB, pendingFiles: 8000, requests: 4, hourBytes: 20 * GiB, hourRequests: 1200 },
+  deployment: { bytes: 1024 * GiB, files: 500000, pendingBytes: 8 * GiB, pendingFiles: 16000, requests: 8, hourBytes: 50 * GiB, hourRequests: 2400 },
+};
 const scopeNames = ['gallery', 'guest', 'transfer', 'account', 'deployment'];
 const capNames = ['bytes', 'files', 'pendingBytes', 'pendingFiles', 'requests', 'hourBytes', 'hourRequests'];
 
-function configuration() {
-  const result = JSON.parse(JSON.stringify(DEFAULTS));
-  const raw = process.env.PUBLIC_UPLOAD_LIMITS_JSON;
+function configuration(mode = 'public') {
+  if (!['public', 'admin'].includes(mode)) throw new Error('Invalid upload admission mode');
+  const result = JSON.parse(JSON.stringify({ ...DEFAULTS, ...(mode === 'admin' ? ADMIN_DEFAULTS : {}) }));
+  const variable = mode === 'admin' ? 'ADMIN_UPLOAD_LIMITS_JSON' : 'PUBLIC_UPLOAD_LIMITS_JSON';
+  const raw = process.env[variable];
   if (!raw) return result;
-  if (raw.length > 8192) throw new Error('Invalid PUBLIC_UPLOAD_LIMITS_JSON');
+  if (raw.length > 8192) throw new Error(`Invalid ${variable}`);
   const overrides = JSON.parse(raw);
-  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) throw new Error('Invalid PUBLIC_UPLOAD_LIMITS_JSON');
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) throw new Error(`Invalid ${variable}`);
   const scalar = ['requestBytes', 'headroomBytes', 'headroomPercent', 'headroomFiles', 'requestTimeoutMs'];
   for (const [key, value] of Object.entries(overrides)) {
     if (scalar.includes(key)) {
@@ -39,7 +50,7 @@ function configuration() {
         throw new Error(`Invalid public upload limit: ${key}`);
       }
       result[key] = value;
-    } else if (scopeNames.includes(key) && value && typeof value === 'object' && !Array.isArray(value)) {
+    } else if (scopeNames.includes(key) && (mode !== 'admin' || !['guest', 'transfer'].includes(key)) && value && typeof value === 'object' && !Array.isArray(value)) {
       for (const [cap, limit] of Object.entries(value)) {
         if (!capNames.includes(cap) || !Number.isSafeInteger(limit) || limit <= 0 || limit > 1024 * GiB) {
           throw new Error(`Invalid public upload limit: ${key}.${cap}`);
@@ -78,7 +89,26 @@ function filter(query, scope, values) {
 
 async function sum(query) {
   const row = await query.sum('bytes as bytes').sum('files as files').first();
-  return { bytes: Number(row?.bytes || 0), files: Number(row?.files || 0) };
+  return usage(row);
+}
+
+function usage(row) {
+  const result = { bytes: Number(row?.bytes || 0), files: Number(row?.files || 0) };
+  if (Object.values(result).some(value => !Number.isSafeInteger(value) || value < 0)) {
+    throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
+  }
+  return result;
+}
+
+async function physicalSum(query, local, objects = false) {
+  // Aggregate in the database; uncertain objects can outlive catalogue rows.
+  // NULL is an old claim, not permission to forget its future physical copy.
+  const copies = objects ? (local ? 1 : 0) : (local ? 2 : 1);
+  const row = await query.sum({
+    bytes: db.raw('COALESCE(??, ?? * ?)', ['staging_bytes', 'bytes', copies]),
+    files: db.raw('COALESCE(??, ?? * ?)', ['staging_files', 'files', copies]),
+  }).first();
+  return usage(row);
 }
 
 // Existing media remain charged too. Ledger-associated rows are excluded here
@@ -136,35 +166,40 @@ async function headroom(trx, bytes, limits, directory = tempRoot(), files = 0) {
   }
   const free = Number(stat.bavail) * Number(stat.bsize);
   const total = Number(stat.blocks) * Number(stat.bsize);
-  const other = await sum(trx('public_upload_requests').where({ active: 1 }));
-  const promoting = getStorage().kind() === 'local'
-    ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0, files: 0 };
+  const local = getStorage().kind() === 'local';
+  const other = await physicalSum(trx('public_upload_requests').where({ active: 1 }), local);
+  const promoting = await physicalSum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain']), local, true);
   const active = await trx('public_upload_requests').where({ active: 1 }).count('id as count').first();
+  const activeCount = Number(active?.count || 0);
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
-  const copies = getStorage().kind() === 'local' ? 2 : 1;
   const floor = Math.max(limits.headroomBytes, Math.ceil(total * limits.headroomPercent / 100));
-  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - copies * (bytes + other.bytes + promoting.bytes) < floor
-    || !Number.isSafeInteger(freeFiles) || freeFiles - copies * (files + other.files + promoting.files) - Number(active?.count || 0) - 1 < limits.headroomFiles) {
+  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - bytes - other.bytes - promoting.bytes < floor
+    || !Number.isSafeInteger(activeCount) || activeCount < 0
+    || !Number.isSafeInteger(freeFiles) || freeFiles - files - other.files - promoting.files - activeCount - 1 < limits.headroomFiles) {
     throw refusal('UPLOAD_STORAGE_LOW', 507);
   }
 }
 
-async function begin({ eventId = null, guestId = null, transferId = null, maxFiles }) {
-  const limits = configuration();
+async function begin({ eventId = null, guestId = null, transferId = null, maxFiles, mode = 'public', requestedBytes = null, stagingFiles = null }) {
+  const limits = configuration(mode);
+  if (!Number.isSafeInteger(maxFiles) || maxFiles < 1) throw new Error('Invalid upload file allowance');
+  if (mode === 'admin' && (!Number.isSafeInteger(eventId) || eventId < 1 || transferId || guestId)) throw new Error('Invalid private upload scope');
+  if (requestedBytes !== null && (mode !== 'admin' || !Number.isSafeInteger(requestedBytes) || requestedBytes <= 0)) throw new Error('Invalid exact upload reservation');
+  if (stagingFiles !== null && (!Number.isSafeInteger(stagingFiles) || stagingFiles < maxFiles)) throw new Error('Invalid staging inode reservation');
   await fs.mkdir(tempRoot(), { recursive: true, mode: 0o700 });
   const session = await locked(async trx => {
     const ownerTable = eventId ? 'events' : 'transfers';
     const owner = await trx(ownerTable).where({ id: eventId || transferId }).first('created_by');
     if (!owner) throw refusal('UPLOAD_TARGET_GONE', 404);
     const values = { event_id: eventId, transfer_id: transferId, account_id: owner.created_by ?? null,
-      guest_scope: eventId ? `${eventId}:${guestId || 'anonymous'}` : null };
+      guest_scope: eventId && mode === 'public' ? `${eventId}:${guestId || 'anonymous'}` : null };
     const setting = await trx('app_settings').where({ setting_key: 'general_max_upload_batch_size_mb' }).first('setting_value');
     let batchMb;
     try { batchMb = Number(JSON.parse(setting?.setting_value)); } catch (_) { batchMb = NaN; }
-    let bytes = Math.min(limits.requestBytes, Number.isFinite(batchMb) && batchMb > 0 ? Math.floor(batchMb * MiB) : limits.requestBytes);
+    let bytes = requestedBytes ?? Math.min(limits.requestBytes, Number.isFinite(batchMb) && batchMb > 0 ? Math.floor(batchMb * MiB) : limits.requestBytes);
     let files = maxFiles;
-    const scopes = [eventId ? 'gallery' : 'transfer', ...(eventId ? ['guest'] : []), 'account', 'deployment'];
+    const scopes = [eventId ? 'gallery' : 'transfer', ...(eventId && mode === 'public' ? ['guest'] : []), 'account', 'deployment'];
     for (const scope of scopes) {
       const cap = limits[scope];
       const base = await catalogue(trx, scope, values);
@@ -172,7 +207,7 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
       const held = await sum(filter(trx('public_upload_requests').where({ active: 1 }), scope, values));
       const pending = await sum(filter(trx('public_upload_objects').where({ pending: 1 }), scope, values));
       const active = await filter(trx('public_upload_requests').where({ active: 1 }), scope, values).count('id as count').first();
-      const rate = await filter(trx('public_upload_requests').where('created_at', '>=', new Date(Date.now() - 3600000).toISOString()), scope, values)
+      const rate = await filter(trx('public_upload_requests').where({ upload_kind: mode }).where('created_at', '>=', new Date(Date.now() - 3600000).toISOString()), scope, values)
         .sum('rate_bytes as bytes').count('id as count').first();
       if (Number(active?.count || 0) >= cap.requests) throw refusal('UPLOAD_CONCURRENCY_LIMIT');
       if (Number(rate?.count || 0) >= cap.hourRequests) throw refusal('UPLOAD_REQUEST_RATE_LIMIT');
@@ -190,11 +225,19 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
       files = Math.min(files, quotaFiles, pendingFiles, Math.ceil(cap.pendingFiles / cap.requests));
     }
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(files) || files <= 0) throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
-    await headroom(trx, bytes, limits, tempRoot(), files);
+    if (requestedBytes !== null && bytes < requestedBytes) throw refusal('UPLOAD_PENDING_LIMIT');
+    // Chunk receipt and merge are never concurrent with promotion, but need
+    // two copies even on S3. Multipart needs a second copy only locally.
+    const copies = requestedBytes !== null || getStorage().kind() === 'local' ? 2 : 1;
+    const physicalBytes = copies * bytes;
+    const physicalFiles = stagingFiles ?? copies * files;
+    await headroom(trx, physicalBytes, limits, tempRoot(), physicalFiles);
     const row = { id: crypto.randomUUID(), ...values, bytes, files, rate_bytes: bytes, active: 1, host: os.hostname(), pid: process.pid,
+      upload_kind: mode, upload_shape: requestedBytes === null ? 'multipart' : 'chunked',
+      staging_bytes: physicalBytes, staging_files: physicalFiles,
       created_at: new Date().toISOString() };
     await trx('public_upload_requests').insert(row);
-    return { ...row, limits, dir: stagingPath(row.id), receivedBytes: 0 };
+    return { ...row, limits, dir: stagingPath(row.id), receivedBytes: 0, chunked: requestedBytes !== null };
   });
   try {
     await fs.mkdir(session.dir, { mode: 0o700 });
@@ -202,6 +245,72 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
     await finish(session); throw err;
   }
   return session;
+}
+
+// Only after every temporary writer has settled. Resident bytes are visible
+// in statfs already; the physical hold now covers only a future local copy.
+async function staged(session, bytes, files) {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || !Number.isSafeInteger(files) || files < 0) throw new Error('Invalid staged usage');
+  const local = getStorage().kind() === 'local';
+  await locked(async trx => {
+    if (await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({
+      staging_bytes: local ? bytes : 0, staging_files: local ? files : 0,
+    }) !== 1) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+  });
+}
+
+// Chunk writers are serialized per session. Keep room for all remaining
+// chunks, retries or a merge until that phase has definitively finished.
+async function stagedChunks(session, bytes, files) {
+  if (!session.chunked || !Number.isSafeInteger(bytes) || bytes < 0 || bytes > session.bytes || !Number.isSafeInteger(files) || files < 0) {
+    throw new Error('Invalid chunked staging usage');
+  }
+  await locked(async trx => {
+    if (await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({
+      staging_bytes: Math.max(0, Number(session.staging_bytes) - bytes),
+      staging_files: Math.max(0, Number(session.staging_files) - files),
+    }) !== 1) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+  });
+}
+
+async function reserveChunkIngress(session, bytes) {
+  if (!session.chunked || !Number.isSafeInteger(bytes) || bytes <= 0) throw new Error('Invalid chunk ingress allowance');
+  return locked(async trx => {
+    const parent = await trx('public_upload_requests').where({ id: session.id, active: 1 }).first();
+    if (!parent) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+    await headroom(trx, 0, session.limits);
+    const now = new Date().toISOString();
+    const hour = new Date(Date.now() - 3600000).toISOString();
+    const remaining = Math.min(Number(parent.rate_bytes), bytes);
+    // PostgreSQL returns a Date; SQLite returns an ISO string.
+    const parentInWindow = new Date(parent.created_at).getTime() >= Date.parse(hour);
+    for (const scope of ['gallery', 'account', 'deployment']) {
+      const rate = await filter(trx('public_upload_requests').where({ upload_kind: 'admin' }).where('created_at', '>=', hour), scope, parent)
+        .sum('rate_bytes as bytes').count('id as count').first();
+      const cap = session.limits[scope];
+      if (Number(rate?.count || 0) >= cap.hourRequests) throw refusal('UPLOAD_REQUEST_RATE_LIMIT');
+      if (Number(rate?.bytes || 0) + bytes - (parentInWindow ? remaining : 0) > cap.hourBytes) throw refusal('UPLOAD_BYTE_RATE_LIMIT');
+    }
+    await trx('public_upload_requests').where({ id: parent.id }).update({ rate_bytes: Number(parent.rate_bytes) - remaining });
+    const row = { id: crypto.randomUUID(), event_id: parent.event_id, guest_scope: null, transfer_id: null, account_id: parent.account_id,
+      upload_kind: 'admin', upload_shape: 'chunk', bytes: 0, files: 0, staging_bytes: 0, staging_files: 0, rate_bytes: bytes, active: 0, host: parent.host, pid: parent.pid, created_at: now };
+    await trx('public_upload_requests').insert(row);
+    return row;
+  });
+}
+
+async function settleChunkIngress(row, receivedBytes) {
+  if (!Number.isSafeInteger(receivedBytes) || receivedBytes < 0) throw new Error('Invalid received chunk bytes');
+  await db('public_upload_requests').where({ id: row.id, active: 0 }).update({ rate_bytes: receivedBytes });
+}
+
+// A resumable lease may be idle for hours while unrelated disk users change.
+// Recheck the actual staging mount before creating its merge copy as well.
+async function prepareChunkMerge(session) {
+  await locked(async trx => {
+    if (!(await trx('public_upload_requests').where({ id: session.id, active: 1 }).first())) throw refusal('UPLOAD_RESERVATION_LOST', 409);
+    await headroom(trx, 0, session.limits);
+  });
 }
 
 async function prepareObject(session, key, size) {
@@ -217,9 +326,12 @@ async function prepareObject(session, key, size) {
       await headroom(trx, 0, session.limits, path.dirname(storage.resolveLocalPath(key)));
     } else await headroom(trx, 0, session.limits);
     const object = { id: crypto.randomUUID(), request_id: session.id, object_key: key, bytes: size, files: 1,
+      staging_bytes: storage.kind() === 'local' ? size : 0, staging_files: storage.kind() === 'local' ? 1 : 0,
       event_id: request.event_id, guest_scope: request.guest_scope, transfer_id: request.transfer_id, account_id: request.account_id };
     await trx('public_upload_objects').insert(object);
-    await trx('public_upload_requests').where({ id: session.id }).update({ bytes: Number(request.bytes) - size, files: request.files - 1 });
+    await trx('public_upload_requests').where({ id: session.id }).update({ bytes: Number(request.bytes) - size, files: request.files - 1,
+      staging_bytes: Math.max(0, Number(request.staging_bytes) - Number(object.staging_bytes)),
+      staging_files: Math.max(0, Number(request.staging_files) - Number(object.staging_files)) });
     return { ...object, isCancelled: session.isCancelled };
   });
 }
@@ -231,7 +343,8 @@ async function commitObject(object, type, writeRow) {
     if (object.isCancelled?.()) throw refusal('UPLOAD_CANCELLED', 400);
     const id = await writeRow(trx);
     if (!Number.isInteger(Number(id)) || Number(id) <= 0) throw new Error('Upload row was not inserted');
-    await trx('public_upload_objects').where({ id: object.id }).update({ state: 'stored', reference_type: type, reference_id: id, pending: type === 'photo' ? 1 : 0 });
+    await trx('public_upload_objects').where({ id: object.id }).update({ state: 'stored', reference_type: type, reference_id: id, pending: type === 'photo' ? 1 : 0,
+      staging_bytes: 0, staging_files: 0 });
     return id;
   });
 }
@@ -269,7 +382,8 @@ async function finish(session) {
     return false;
   }
   await locked(async trx => {
-    await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({ active: 0, bytes: 0, files: 0, rate_bytes: session.receivedBytes });
+    await trx('public_upload_requests').where({ id: session.id, active: 1 }).update({ active: 0, bytes: 0, files: 0, staging_bytes: 0, staging_files: 0,
+      rate_bytes: session.upload_shape === 'chunked' ? 0 : session.receivedBytes });
     await trx('public_upload_requests').where({ active: 0 }).where('created_at', '<', new Date(Date.now() - 86400000).toISOString()).del();
   });
   return true;
@@ -290,4 +404,4 @@ async function cleanupAbandoned() {
   }
 }
 
-module.exports = { begin, prepareObject, commitObject, failedObject, finish, processingComplete, cleanupAbandoned, configuration, refusal };
+module.exports = { begin, staged, stagedChunks, reserveChunkIngress, settleChunkIngress, prepareChunkMerge, prepareObject, commitObject, failedObject, finish, processingComplete, cleanupAbandoned, configuration, refusal };

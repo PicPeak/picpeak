@@ -206,6 +206,7 @@ test('zero-byte rejected requests cannot grow the ledger past its hourly count c
   limits({ deployment: { hourRequests: 1 } });
   const first = await transferRequest().set('Content-Type', 'application/octet-stream').send('');
   expect(first.status).toBe(400);
+  await waitSettled();
   expect(Number((await db('public_upload_requests').first()).rate_bytes)).toBe(0);
   const second = await transferRequest().set('Content-Type', 'application/octet-stream').send('');
   expect(second.status).toBe(429); expect(second.body.code).toBe('UPLOAD_REQUEST_RATE_LIMIT');

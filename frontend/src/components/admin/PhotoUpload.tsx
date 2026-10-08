@@ -11,6 +11,8 @@ import { useTranslation } from 'react-i18next';
 import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 import { useUploadProgress } from '../../hooks/useUploadProgress';
 import { photosService } from '../../services/photos.service';
+import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
+import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 interface PhotoUploadProps {
   eventId: number;
@@ -250,6 +252,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     const MAX_FILES_PER_CHUNK = Math.max(1, Math.min(50, maxFilesPerUpload)); // Max 50 files per chunk
     const maxBatchSizeMb = Number(settings?.general_max_upload_batch_size_mb) || 95;
     const MAX_BYTES_PER_CHUNK = maxBatchSizeMb * 1024 * 1024;
+    const payloadBudget = uploadMultipartBudget(MAX_BYTES_PER_CHUNK);
 
     // Split: large singles use resumable/chunked API; the rest keep the proven multipart path.
     const largeFiles = selectedFiles.filter((f) =>
@@ -281,7 +284,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     for (const file of smallFiles) {
       // Start a new chunk if adding this file would exceed limits
       if (currentChunk.length >= MAX_FILES_PER_CHUNK ||
-          (currentChunkSize + file.size > MAX_BYTES_PER_CHUNK && currentChunk.length > 0)) {
+          (currentChunkSize + file.size > payloadBudget && currentChunk.length > 0)) {
         chunks.push(currentChunk);
         currentChunk = [];
         currentChunkSize = 0;
@@ -309,6 +312,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     // so we can settle immediately when nothing is left in the async worker.
     let largeSucceeded = 0;
     let unitIndex = 0;
+    let capacityRefused = false;
 
     try {
       // --- Large files: existing backend chunked-upload (10MB parts) ---
@@ -347,17 +351,25 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
           if (onUploadComplete) onUploadComplete();
         } catch (error: any) {
           console.error(`Error uploading large file ${file.name}:`, error);
-          const reason =
+          const capacityKey = publicUploadErrorKey(error?.response?.data?.code);
+          const reason = capacityKey ? t(capacityKey) :
             error?.response?.data?.error ||
             error?.message ||
             t('upload.failures.transferReason', 'Transfer failed');
           collected.push({ filename: file.name, reason, kind: 'transfer' });
+          if (capacityKey) {
+            capacityRefused = true;
+            const unsent = [...largeFilesToUpload.slice(li + 1), ...chunks.flat()];
+            collected.push(...unsent.map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+            break;
+          }
         }
         unitIndex += 1;
       }
 
       // --- Small files: existing multipart batch path ---
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        if (capacityRefused) break;
         setCurrentChunk(unitIndex + 1);
         const chunk = chunks[chunkIndex];
         const formData = new FormData();
@@ -444,7 +456,8 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
           }
         } catch (error: any) {
           console.error(`Error uploading chunk ${chunkIndex + 1}:`, error);
-          const reason =
+          const capacityKey = publicUploadErrorKey(error?.response?.data?.code);
+          const reason = capacityKey ? t(capacityKey) :
             error?.response?.data?.error ||
             error?.message ||
             t('upload.failures.transferReason', 'Transfer failed');
@@ -452,7 +465,12 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
             ...chunk.map((f) => ({ filename: f.name, reason, kind: 'transfer' as const }))
           );
 
-          // Continue with next chunk even if one fails
+          if (capacityKey) {
+            collected.push(...chunks.slice(chunkIndex + 1).flat()
+              .map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+            break;
+          }
+          // Ordinary per-file/transport failures still allow later batches.
         }
         unitIndex += 1;
       }

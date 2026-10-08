@@ -118,7 +118,7 @@ async function preUploadGuard(req, res, next) {
   }
 }
 
-function buildUploader(maxSizeBytes, allowed, { storage, streamHandler, maxFiles }) {
+function buildUploader(maxSizeBytes, allowed, { storage, streamHandler, maxFiles, rejectBody }) {
   return multer({
     storage,
     streamHandler,
@@ -136,7 +136,8 @@ function buildUploader(maxSizeBytes, allowed, { storage, streamHandler, maxFiles
     },
     fileFilter: (req, file, cb) => {
       if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
-      return cb(new Error('This file type is not allowed'));
+      const error = new Error('This file type is not allowed');
+      rejectBody(error); return cb(error);
     },
   }).array('files', maxFiles);
 }
@@ -146,7 +147,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
   const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
   await withPublicUpload(req, res, {
-    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD,
+    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, fileField: 'files',
     fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
   }, options => buildUploader(maxSizeMb * 1024 * 1024, allowed, options), async (uploadReservation, res) => {
 
