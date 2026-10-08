@@ -309,6 +309,17 @@ class RestoreService {
       }));
   }
 
+  // Only the trusted install-from-backup boot hook uses this entry point.
+  // It runs before readiness and before ordinary writers/background jobs.
+  // Neither HTTP options nor actor labels can choose startup admission.
+  async restoreDuringStartup(options) {
+    return applicationWork.track('native-startup-restore', () =>
+      require('./portableRestoreIngress').withIngress(async () => {
+        await require('./portableRestoreCoordinator').admitStartupRestore();
+        return this.performRestore(options);
+      }));
+  }
+
   async performRestore(options) {
     if (this.isRunning) {
       throw new Error('Restore operation already in progress');

@@ -197,7 +197,7 @@ async function tryInstallFromBackup(db, logger) {
 
   try {
     const { restoreService } = require('./restoreService');
-    const result = await restoreService.restore({
+    const result = await restoreService.restoreDuringStartup({
       source: 'local',
       manifestPath: trigger.manifestPath,
       restoreType: 'full',

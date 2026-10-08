@@ -6,7 +6,8 @@ jest.mock('../../src/services/portableRestoreIngress', () => ({
   withIngress: jest.fn(run => run()),
 }), { virtual: true });
 jest.mock('../../src/services/portableRestoreCoordinator', () => ({
-  admitUpload: jest.fn(async () => {}), enterUnstartedServerFixtureContext: jest.fn(),
+  admitUpload: jest.fn(async () => {}), admitStartupRestore: jest.fn(async () => {}),
+  enterUnstartedServerFixtureContext: jest.fn(),
 }));
 jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn() }));
 
@@ -59,5 +60,17 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     await expect(service.restore({})).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
     expect(ingress.withIngress).not.toHaveBeenCalled();
     expect(service.performRestore).not.toHaveBeenCalled();
+  });
+
+  test('trusted boot restore uses its separate durable admission, never actor options', async () => {
+    const service = new RestoreService();
+    service.performRestore = jest.fn(async () => ({ success: true }));
+    await expect(service.restoreDuringStartup({ actor: { type: 'arbitrary' } })).resolves.toEqual({ success: true });
+    expect(coordinator.admitStartupRestore).toHaveBeenCalledTimes(1);
+    expect(coordinator.admitUpload).not.toHaveBeenCalled();
+    jest.clearAllMocks();
+    await service.restore({ actor: { type: 'install-from-backup' } });
+    expect(coordinator.admitUpload).toHaveBeenCalledTimes(1);
+    expect(coordinator.admitStartupRestore).not.toHaveBeenCalled();
   });
 });
