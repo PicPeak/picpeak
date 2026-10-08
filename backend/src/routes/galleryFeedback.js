@@ -34,6 +34,7 @@ router.get('/:slug/feedback-settings',
         allow_favorites: Boolean(settings.allow_favorites),
         allow_reactions: Boolean(settings.allow_reactions),
         allow_color_labels: Boolean(settings.allow_color_labels),
+        allow_decisions: Boolean(settings.allow_decisions),
         // Which lightbox shortcut scheme this gallery uses (#1044).
         keybind_mode: settings.keybind_mode || 'colors',
         require_name_email: Boolean(settings.require_name_email),
@@ -124,9 +125,12 @@ router.get('/:slug/photos/:photoId/feedback',
         }
       });
       
-      // Filter based on what guests should see
-      const visibleFeedback = settings.show_feedback_to_guests ? allFeedback : 
-        allFeedback.filter(f => f.is_mine);
+      // Filter based on what guests should see. A decision's reason (issue
+      // 744) is addressed to the photographer, not to the other guests:
+      // sharing feedback shows that someone rejected the photo, not why.
+      const visibleFeedback = (settings.show_feedback_to_guests ? allFeedback :
+        allFeedback.filter(f => f.is_mine))
+        .map(f => (f.feedback_type === 'decision' && !f.is_mine ? { ...f, comment_text: null } : f));
       
       // Every aggregate is other guests' feedback, so all of them are gated
       // on show_feedback_to_guests — the photo list already hides like_count
@@ -147,6 +151,8 @@ router.get('/:slug/photos/:photoId/feedback',
           favorite_count: shareAggregates ? (photo.favorite_count || 0) : 0,
           reaction_count: shareAggregates ? (photo.reaction_count || 0) : 0,
           color_label_count: shareAggregates ? (photo.color_label_count || 0) : 0,
+          approved_count: shareAggregates ? (photo.approved_count || 0) : 0,
+          rejected_count: shareAggregates ? (photo.rejected_count || 0) : 0,
           comment_count: shareAggregates
             ? await db('photo_feedback')
               .where({
@@ -186,7 +192,10 @@ router.get('/:slug/photos/:photoId/feedback',
           // are other people's data) stay hidden.
           color_label: settings.identity_mode === 'shared'
             ? sharedColorLabel
-            : (guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null)
+            : (guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null),
+          // Approve / reject (issue 744) and the reason the guest gave.
+          decision: guestFeedback.find(f => f.feedback_type === 'decision')?.decision || null,
+          decision_reason: guestFeedback.find(f => f.feedback_type === 'decision')?.comment_text || null
         }
       });
     } catch (error) {
@@ -241,7 +250,8 @@ router.post('/:slug/photos/:photoId/feedback',
         comment: settings.allow_comments,
         favorite: settings.allow_favorites,
         reaction: settings.allow_reactions,
-        color_label: settings.allow_color_labels
+        color_label: settings.allow_color_labels,
+        decision: settings.allow_decisions
       };
 
       if (!typeAllowed[feedbackType]) {
@@ -287,6 +297,7 @@ router.post('/:slug/photos/:photoId/feedback',
         comment_text: req.body.comment_text,
         reaction: req.body.reaction,
         color_label: req.body.color_label,
+        decision: req.body.decision,
         // Read by the service to route a colour label to the photo's one
         // shared slot instead of the guest's own row (#1197). Passed rather
         // than re-fetched: the settings are already in hand here.
@@ -338,6 +349,19 @@ router.post('/:slug/photos/:photoId/feedback',
         }
       }
       
+      // A decision's reason (issue 744) is read only by the photographer, so
+      // the word filter's hold-for-review tier does not apply — but a
+      // `block` word is refused here exactly as it is in a comment.
+      if (feedbackType === 'decision' && feedbackData.comment_text) {
+        const moderationResult = await feedbackModeration.moderateText(feedbackData.comment_text);
+        if (moderationResult.blocked) {
+          return res.status(400).json({
+            error: 'Your comment contains words that are not allowed here.',
+            code: 'COMMENT_BLOCKED'
+          });
+        }
+      }
+
       // Submit feedback
       const result = await feedbackService.submitFeedback(
         photoId,
@@ -375,6 +399,8 @@ router.post('/:slug/photos/:photoId/feedback',
       // Log activity
       await logActivity(`guest_feedback_${feedbackType}`, {
         photo_id: photoId,
+        // Which way the guest decided (issue 744), for the bell and the feed.
+        ...(feedbackType === 'decision' ? { decision: req.body.decision } : {}),
         result
       }, event.id, {
         type: 'guest',
@@ -447,6 +473,7 @@ router.get('/:slug/feedback-summary',
           allow_favorites: settings.allow_favorites,
           allow_reactions: settings.allow_reactions,
           allow_color_labels: settings.allow_color_labels,
+          allow_decisions: settings.allow_decisions,
           keybind_mode: settings.keybind_mode || 'colors'
         },
         summary: guestSummary
@@ -513,6 +540,7 @@ router.get('/:slug/my-feedback',
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
           'photo_feedback.color_label',
+          'photo_feedback.decision',
           'photo_feedback.is_approved',
           'photo_feedback.created_at',
           'photo_feedback.updated_at',

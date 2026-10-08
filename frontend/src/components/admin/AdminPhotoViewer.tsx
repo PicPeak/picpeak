@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
 import React, { useEffect, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -77,6 +77,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   });
 
   const comments = (feedbackData?.feedback ?? []).filter((item): item is PhotoFeedback => item.feedback_type === 'comment');
+  // Approve / reject (issue 744): who decided which way, and why. Hidden rows
+  // are not counted anywhere else either.
+  const decisions = (feedbackData?.feedback ?? []).filter((item) => item.feedback_type === 'decision' && !item.is_hidden);
 
   const goToPrevious = () => {
     setCurrentIndex((prev) => (prev > 0 ? prev - 1 : photos.length - 1));
@@ -729,8 +732,35 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 </div>
               )}
               
+              {/* Approve / reject (issue 744), with the guest and the reason. */}
+              {decisions.length > 0 && (
+                <div className="mt-4 space-y-2" data-testid="admin-photo-decisions">
+                  <h5 className="text-xs font-medium text-neutral-400 uppercase tracking-wide">
+                    {t('feedback.decisionsTitle', 'Approve / reject')}
+                  </h5>
+                  {decisions.map((item) => (
+                    <div key={item.id} className="bg-neutral-800 rounded-lg p-3">
+                      <div className="flex items-center gap-2">
+                        {item.decision === 'approved' ? (
+                          <ThumbsUp className="w-4 h-4 text-green-400" aria-label={t('feedback.decisions.approved', 'Approved')} />
+                        ) : (
+                          <ThumbsDown className="w-4 h-4 text-red-400" aria-label={t('feedback.decisions.rejected', 'Rejected')} />
+                        )}
+                        <span className="text-sm font-medium text-white">
+                          {item.guest_name || t('feedback.anonymous', 'Anonymous')}
+                        </span>
+                        <span className="text-xs text-neutral-400 ml-auto">{fmtDateTime(item.created_at)}</span>
+                      </div>
+                      {item.comment_text && (
+                        <p className="text-sm text-neutral-300 mt-2 break-words [overflow-wrap:anywhere]">{item.comment_text}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* No feedback message */}
-              {comments.length === 0 && (
+              {comments.length === 0 && decisions.length === 0 && (
                 <p className="text-neutral-400 text-sm">No feedback for this photo yet.</p>
               )}
             </div>

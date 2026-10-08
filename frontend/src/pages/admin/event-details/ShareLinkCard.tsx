@@ -62,8 +62,12 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
   const revealGeneration = useRef(0);
   // Show / reset the password and resend the email are client help: the
   // routes accept events.edit or events.support, on galleries this admin may
-  // act on.
-  const canHelpClient = useAnyPermission(['events.edit', 'events.support']) && !event.share_secrets_hidden;
+  // act on — and only the owner's (issue 743): an assigned team member gets
+  // 403 from all three, so they are not offered. An older payload without
+  // can_manage_assignments is read as the owner's.
+  const canHelpClient = useAnyPermission(['events.edit', 'events.support'])
+    && !event.share_secrets_hidden
+    && event.can_manage_assignments !== false;
 
   // #1271 — "Show password" only exists while the admin has opted into
   // recoverable storage in Settings → Security. Off is the default; the

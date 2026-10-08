@@ -126,6 +126,7 @@ export const EventDetailsPage: React.FC = () => {
     hasComments: false,
     colorLabels: [],
     myColorLabels: [],
+    decisions: [],
     logic: 'AND'
   });
 
@@ -173,6 +174,7 @@ export const EventDetailsPage: React.FC = () => {
     minRating: feedbackFilters.minRating ?? undefined,
     colorLabels: feedbackFilters.colorLabels?.length ? feedbackFilters.colorLabels : undefined,
     myColorLabels: feedbackFilters.myColorLabels?.length ? feedbackFilters.myColorLabels : undefined,
+    decisions: feedbackFilters.decisions?.length ? feedbackFilters.decisions : undefined,
     logic: feedbackFilters.logic,
   }), [photoFilters, feedbackFilters]);
 

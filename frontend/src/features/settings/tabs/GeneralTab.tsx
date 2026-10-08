@@ -1,5 +1,5 @@
 import React from 'react';
-import { Globe, Mail, User } from 'lucide-react';
+import { Camera, Globe, Mail, User } from 'lucide-react';
 import { Card, Input, Loading } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
@@ -20,9 +20,9 @@ interface GeneralTabProps {
   onDiscard: () => void;
   accountDirty: boolean;
   onDiscardAccount: () => void;
-  accountForm: { username: string; email: string };
+  accountForm: { username: string; email: string; creditName: string };
   accountErrors: Record<string, string>;
-  handleAccountChange: (field: 'username' | 'email') => (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleAccountChange: (field: 'username' | 'email' | 'creditName') => (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleAccountSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
   updateAdminProfileMutation: { isPending: boolean };
   adminProfileLoading: boolean;
@@ -108,6 +108,24 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               />
               <p className="text-xs text-muted mt-1">
                 {t('settings.general.accountEmailHelp')}
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="admin-account-credit-name" className="block text-sm font-medium text-body mb-1">
+                {t('settings.general.accountCreditName', 'Photo credit')}
+              </label>
+              <Input
+                id="admin-account-credit-name"
+                type="text"
+                value={accountForm.creditName}
+                onChange={handleAccountChange('creditName')}
+                maxLength={100}
+                leftIcon={<Camera className="w-5 h-5 text-neutral-400" />}
+                error={accountErrors.credit_name}
+              />
+              <p className="text-xs text-muted mt-1">
+                {t('settings.general.accountCreditNameHelp', 'Credited on photos you upload when the file has no photographer name in its metadata. Leave empty for no credit.')}
               </p>
             </div>
 

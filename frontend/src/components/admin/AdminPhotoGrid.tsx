@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound } from 'lucide-react';
+import { Check, ClipboardCheck, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, FolderInput, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -44,7 +44,12 @@ interface AdminPhotoGridProps {
   sortBy?: PhotoSortKey;
   sortOrder?: 'asc' | 'desc';
   onSortChange?: (sort: PhotoSortKey, order: 'asc' | 'desc') => void;
+  /** The gallery's owner may approve or reject team members' uploads (issue 743). */
+  canModerate?: boolean;
 }
+
+// The moderation route takes this many photo ids per request (issue 743).
+const MODERATION_BATCH = 500;
 
 export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   photos,
@@ -56,7 +61,8 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   folders = [],
   sortBy,
   sortOrder,
-  onSortChange
+  onSortChange,
+  canModerate = false
 }) => {
   const { t } = useTranslation();
   const { format: formatDate } = useLocalizedDate();
@@ -349,6 +355,61 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     }
   };
 
+  // Review of team members' uploads (issue 743): approve publishes them,
+  // reject keeps them hidden. Photos not under review are left alone.
+  const [isModerating, setIsModerating] = useState(false);
+  const selectionUnderReview = photos.some((p) => selectedPhotos.has(p.id) && p.moderation_status);
+  const handleModerate = async (action: 'approve' | 'reject') => {
+    const selectedIds = photos.filter((p) => selectedPhotos.has(p.id) && p.moderation_status).map((p) => p.id);
+    if (selectedIds.length === 0) return;
+    setIsModerating(true);
+    try {
+      let updated = 0;
+      for (let i = 0; i < selectedIds.length; i += MODERATION_BATCH) {
+        updated += (await photosService.moderatePhotos(eventId, selectedIds.slice(i, i + MODERATION_BATCH), action)).updated;
+      }
+      toast.success(action === 'approve'
+        ? t('photos.review.approved', { count: updated })
+        : t('photos.review.rejected', { count: updated }));
+      setSelectedPhotos(new Set());
+      setAnchor(null);
+      setIsSelectionMode(false);
+      onSelectionChange?.([]);
+      queryClient.invalidateQueries({ queryKey: ['admin-event-photos'] });
+      onPhotosDeleted(); // Refresh the photo list
+    } catch (error: unknown) {
+      const e = error as { response?: { data?: { error?: string } } };
+      toast.error(e.response?.data?.error || t('photos.review.failed', 'The photos could not be reviewed'));
+    } finally {
+      setIsModerating(false);
+    }
+  };
+
+  // "Pending review" / "Rejected" with who uploaded it, on tiles and rows.
+  const reviewBadge = (photo: AdminPhoto, tone: 'solid' | 'soft') => {
+    if (!photo.moderation_status) return null;
+    const pending = photo.moderation_status === 'pending';
+    const colors = tone === 'solid'
+      ? (pending ? 'bg-amber-500/90 text-white' : 'bg-red-500/90 text-white')
+      : (pending
+        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+        : 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300');
+    const uploader = photo.uploaded_by_admin?.username;
+    return (
+      <span
+        className={`inline-flex max-w-full items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${colors}`}
+        title={(uploader
+          ? t('photos.review.uploadedBy', 'Uploaded by {{name}}', { name: uploader })
+          : t('photos.review.hiddenUntilApproved', 'Hidden from guests and clients until approved')) as string}
+        data-testid={`admin-photo-review-badge-${photo.id}`}
+      >
+        <ClipboardCheck className="w-3 h-3 shrink-0" />
+        <span className="shrink-0">{pending ? t('photos.review.pendingBadge', 'Pending review') : t('photos.review.rejectedBadge', 'Rejected')}</span>
+        {uploader && <span className="min-w-0 truncate font-normal opacity-90">· {uploader}</span>}
+      </span>
+    );
+  };
+
   const handleSetCredit = async (creditName: string | null) => {
     setIsUpdatingCredit(true);
     try {
@@ -442,8 +503,17 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                       size="sm"
                       onClick={async () => {
                         try {
-                          await photosService.bulkUpdatePhotos(eventId, Array.from(selectedPhotos), { visibility: 'visible' });
-                          toast.success(t('admin.photos.visibleSuccess', 'Photos visible'));
+                          const ids = Array.from(selectedPhotos);
+                          const result = await photosService.bulkUpdatePhotos(eventId, ids, { visibility: 'visible' });
+                          // Photos under review only go public through approval (issue 743);
+                          // the success line is only true for the ones that changed.
+                          const skipped = result?.skipped_under_review ?? 0;
+                          if (skipped < ids.length) {
+                            toast.success(t('admin.photos.visibleSuccess', 'Photos visible'));
+                          }
+                          if (skipped > 0) {
+                            toast.info(t('photos.review.skippedOnShow', { count: skipped }));
+                          }
                           onPhotosDeleted();
                         } catch { toast.error(t('common.error')); }
                       }}
@@ -452,6 +522,30 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                       {t('admin.photos.showSelected', 'Show')}
                     </Button>
                   </PermissionGate>
+                  {/* The owner (photos.edit) or a reviewer (photos.review); canModerate
+                      is the server's per-gallery answer (issue 743). */}
+                  {canModerate && selectionUnderReview && (
+                    <PermissionGate permissions={['photos.edit', 'photos.review']}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleModerate('approve')}
+                        disabled={isModerating}
+                        leftIcon={<Check className="w-4 h-4" />}
+                      >
+                        {t('photos.review.approve', 'Approve')}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleModerate('reject')}
+                        disabled={isModerating}
+                        leftIcon={<X className="w-4 h-4" />}
+                      >
+                        {t('photos.review.reject', 'Reject')}
+                      </Button>
+                    </PermissionGate>
+                  )}
                   <PermissionGate permission="photos.delete">
                     <button
                       onClick={handleDeleteSelected}
@@ -519,6 +613,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           const commentCount = photo.comment_count ?? 0;
           const averageRating = photo.average_rating ?? 0;
           const likeCount = photo.like_count ?? 0;
+          // Approve / reject tallies across guests (issue 744).
+          const approvedCount = photo.approved_count ?? 0;
+          const rejectedCount = photo.rejected_count ?? 0;
           const isVideo = (photo.media_type === 'video') ||
             (photo.mime_type && photo.mime_type.startsWith('video/')) ||
             photo.type === 'video';
@@ -557,7 +654,12 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                 view's row badges — icon + short label, tooltip carrying the
                 explanation. It shares the top-left corner with the category
                 badge, so that one drops a row while this is showing. */}
-            {isHidden && (
+            {photo.moderation_status && (
+              <div className="absolute top-2 left-2 z-20 flex max-w-[calc(100%-3rem)]">
+                {reviewBadge(photo, 'solid')}
+              </div>
+            )}
+            {isHidden && !photo.moderation_status && (
               <div
                 className="absolute top-2 left-2 z-20"
                 data-testid={`admin-photo-hidden-badge-${photo.id}`}
@@ -783,8 +885,26 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
             )}
 
             {/* Feedback Indicators (moved to bottom-right to avoid covering category) */}
-            {(commentCount > 0 || averageRating > 0 || likeCount > 0) && (
+            {(commentCount > 0 || averageRating > 0 || likeCount > 0 || approvedCount > 0 || rejectedCount > 0) && (
               <div className="absolute bottom-2 right-2 flex items-center gap-1 z-10">
+                {approvedCount > 0 && (
+                  <div
+                    className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1"
+                    title={t('admin.photos.approvedBy', 'Approved: {{value}}', { value: approvedCount })}
+                  >
+                    <ThumbsUp className="w-3.5 h-3.5 text-green-600" aria-hidden="true" />
+                    <span className="text-xs font-medium text-neutral-700">{approvedCount}</span>
+                  </div>
+                )}
+                {rejectedCount > 0 && (
+                  <div
+                    className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1"
+                    title={t('admin.photos.rejectedBy', 'Rejected: {{value}}', { value: rejectedCount })}
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5 text-red-600" aria-hidden="true" />
+                    <span className="text-xs font-medium text-neutral-700">{rejectedCount}</span>
+                  </div>
+                )}
                 {averageRating > 0 && (
                   <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`Rating: ${Number(averageRating).toFixed(1)}`}>
                     <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
@@ -931,7 +1051,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                               </button>
                             </span>
                           )}
-                          {isHidden && (
+                          {photo.moderation_status && (
+                            <span className="flex-shrink-0">{reviewBadge(photo, 'soft')}</span>
+                          )}
+                          {isHidden && !photo.moderation_status && (
                             <span
                               className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[10px] font-medium"
                               title={t('admin.photos.hiddenTooltip', 'Hidden from guests — this photo is not shown in the client gallery.') as string}

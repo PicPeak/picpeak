@@ -60,7 +60,9 @@ export function buildActivityParams(activity: Activity): Record<string, unknown>
   const t = i18n.t;
   return {
     ...activity.metadata,
-    eventName: activity.eventName || t('common.unknown'),
+    // Team and review lines (issue 743) also record the name, which outlives
+    // a deleted gallery.
+    eventName: activity.eventName || activity.metadata?.eventName || t('common.unknown'),
     email: activity.metadata?.email || activity.actorName || '',
     count: activity.metadata?.count || 0,
     template: activity.metadata?.template_key || '',

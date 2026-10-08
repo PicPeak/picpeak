@@ -46,6 +46,11 @@ jest.mock('../../src/database/db', () => {
 });
 jest.mock('../../src/middleware/permissions', () => ({ userHasAllPermissions: jest.fn().mockResolvedValue(true), roleEventScope: jest.fn().mockResolvedValue(null) }));
 jest.mock('../../src/utils/logger', () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
+// Gallery assignments (migration 269) are not what this suite is about.
+jest.mock('../../src/middleware/ownership', () => ({
+  ...jest.requireActual('../../src/middleware/ownership'),
+  loadAssignedEventIds: jest.fn().mockResolvedValue([]),
+}));
 jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn(async () => mockFake.revoked) }));
 jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn(async () => mockFake.beforeCutoff) }));
 jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrlSync: () => 'https://photos.example.com' }));

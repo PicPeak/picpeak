@@ -665,7 +665,8 @@
     "confirmEmailForSsoDialog": {
       "title": "Diese E-Mail für SSO bestätigen?",
       "message": "{{email}} als Adresse von {{name}} bestätigen? Eine Single-Sign-on-Anmeldung mit dieser verifizierten E-Mail-Adresse wird danach mit diesem Konto verknüpft. Die Adresse selbst wird nicht geändert. Bestätigen Sie nur, wenn Sie wissen, dass sie dieser Person gehört."
-    }
+    },
+    "creditNameHelp": "Wird bei Uploads dieses Kontos als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält."
   },
   "systemHealth": {
     "retry": "Erneut versuchen",
@@ -2706,10 +2707,14 @@
         "folderStructureOn": "Ordnerstruktur an",
         "folderStructureOff": "Uploads ohne Ordner",
         "firstLookDue": "erste Auswahl, vollständige Galerie bis {{date}}",
-        "firstLook": "erste Auswahl, mehr folgt"
+        "firstLook": "erste Auswahl, mehr folgt",
+        "teamMembers_one": "{{count}} Teammitglied",
+        "teamMembers_other": "{{count}} Teammitglieder",
+        "teamReview": "Team-Uploads werden geprüft"
       },
       "undoSection": "Diesen Bereich zurücksetzen",
-      "delivery": "Ordner & Auslieferung"
+      "delivery": "Ordner & Auslieferung",
+      "passwordOwnerOnly": "Nur der Besitzer der Galerie kann das Passwort ändern oder ausschalten."
     },
     "folders": {
       "sectionTitle": "Ordner",
@@ -2779,6 +2784,19 @@
       "whatsapp": "WhatsApp",
       "skippedAccounts_one": "{{count}} Kundenkonto wird nicht benachrichtigt — dafür ist die Berechtigung customers.events nötig",
       "skippedAccounts_other": "{{count}} Kundenkonten werden nicht benachrichtigt — dafür ist die Berechtigung customers.events nötig"
+    },
+    "team": {
+      "label": "Teammitglieder",
+      "help": "Hier hinzugefügte Admin-Konten können an dieser Galerie wie Sie arbeiten, im Rahmen ihrer Rolle. Kunden- und Abrechnungsdaten bleiben bei Ihnen.",
+      "removeAria": "{{name}} entfernen",
+      "placeholder": "Admin-Konten suchen",
+      "loading": "Wird geladen …",
+      "loadFailed": "Die Admin-Konten konnten nicht geladen werden.",
+      "noResults": "Keine weiteren Admin-Konten gefunden.",
+      "reviewUploads": "Uploads von Teammitgliedern vor der Veröffentlichung prüfen",
+      "reviewUploadsHelp": "Betrifft Uploads von Teammitgliedern, deren Rolle die Berechtigung „Review Team Uploads“ nicht hat: Sie bleiben für Gäste und Kunden verborgen, bis Sie oder eine prüfende Person sie im Tab Fotos freigeben. Die Rollen Admin, Editor und Solo Photographer haben diese Berechtigung standardmäßig, ihre Uploads werden nie zurückgehalten.",
+      "reviewUploadsHelpMember": "Ihre Uploads in diese Galerie bleiben für Gäste und Kunden verborgen, bis der Galerie-Inhaber oder eine prüfende Person sie freigibt.",
+      "reviewUploadsHelpReviewer": "Uploads von Teammitgliedern ohne die Berechtigung „Review Team Uploads“ warten im Tab Fotos auf Freigabe. Ihre eigenen werden sofort veröffentlicht."
     }
   },
   "settings": {
@@ -2835,7 +2853,9 @@
       "timeFormatHelp": "Steuert die Darstellung von Uhrzeiten in der Administration, auf kundenseitigen Seiten und in PDFs. Gespeichert wird weiterhin im 24-Stunden-Format (HH:mm) — nur die Anzeige ändert sich.",
       "adminLanguage": "Ihre Admin-Sprache",
       "adminLanguageHelp": "Gilt für den Admin-Bereich, nur für Sie auf diesem Gerät. Die Änderung wirkt sofort — Speichern ist nicht nötig.",
-      "customerLanguage": "Sprache für Galerie & Gäste"
+      "customerLanguage": "Sprache für Galerie & Gäste",
+      "accountCreditName": "Fotografen-Credit",
+      "accountCreditNameHelp": "Wird bei Ihren Uploads als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält. Leer lassen für keinen Credit."
     },
     "publicSite": {
       "badge": "Öffentliche Landingpage",
@@ -2993,7 +3013,8 @@
       "firstLookKeywords": "Stichwörter",
       "firstLookKeywordsHelp": "Durch Kommas getrennt. Groß-/Kleinschreibung, Leerzeichen, Binde- und Unterstriche werden ignoriert, „FirstLook“ passt also auch auf „first-look“.",
       "deliveryDays": "Vollständige Galerie fällig nach (Tagen)",
-      "deliveryDaysHelp": "Startet eine erste Auswahl ohne zugesagtes Datum, ist die vollständige Galerie so viele Tage nach dem Eventdatum fällig."
+      "deliveryDaysHelp": "Startet eine erste Auswahl ohne zugesagtes Datum, ist die vollständige Galerie so viele Tage nach dem Eventdatum fällig.",
+      "defaultAllowDecisions": "Freigabe / Ablehnung pro Foto"
     },
     "imageSecurity": {
       "title": "Bildschutz",
@@ -4755,7 +4776,14 @@
       "apiPhotoDownloaded": "Original aus {{eventName}} mit API-Token #{{token_id}} heruntergeladen",
       "apiPhotosDownloaded_one": "API-Token „{{token_name}}“ hat {{count}} Original aus {{eventName}} heruntergeladen",
       "apiPhotosDownloaded_other": "API-Token „{{token_name}}“ hat {{count}} Originale aus {{eventName}} heruntergeladen",
-      "apiPhotosZipDownloaded": "API-Token „{{token_name}}“ hat ein ZIP mit {{photo_count}} Originalen aus {{eventName}} heruntergeladen"
+      "apiPhotosZipDownloaded": "API-Token „{{token_name}}“ hat ein ZIP mit {{photo_count}} Originalen aus {{eventName}} heruntergeladen",
+      "eventTeamChanged": "Team geändert für {{eventName}}",
+      "photosReviewApproved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
+      "photosReviewApproved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
+      "photosReviewRejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
+      "photosReviewRejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt",
+      "photoDecision": "Foto freigegeben oder abgelehnt in {{eventName}}",
+      "guestFeedbackDecision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4839,7 +4867,9 @@
         "filterLabel": "Nach Urheber filtern",
         "filterAll": "Alle Namen",
         "filterNone": "Kein Name"
-      }
+      },
+      "approvedBy": "Freigegeben: {{value}}",
+      "rejectedBy": "Abgelehnt: {{value}}"
     },
     "events": {
       "tabs": {
@@ -5138,7 +5168,14 @@
       "self_update_request_failed": "In-App-Update nicht gestartet: Die Anfrage konnte nicht abgelegt werden",
       "self_update_expired": "In-App-Update-Anfrage zurückgezogen: Der Updater hat sie nicht übernommen",
       "self_update_withdrawn": "In-App-Update-Anfrage abgebrochen",
-      "self_update_finished": "In-App-Update beendet: {{state}} ({{from_version}} → {{to_version}})"
+      "self_update_finished": "In-App-Update beendet: {{state}} ({{from_version}} → {{to_version}})",
+      "photo_decision": "Foto freigegeben oder abgelehnt in {{eventName}}",
+      "guest_feedback_decision": "Gast hat ein Foto freigegeben oder abgelehnt in {{eventName}}",
+      "event_team_changed": "Team geändert für {{eventName}}",
+      "photos_review_approved_one": "{{count}} Team-Upload in {{eventName}} freigegeben",
+      "photos_review_approved_other": "{{count}} Team-Uploads in {{eventName}} freigegeben",
+      "photos_review_rejected_one": "{{count}} Team-Upload in {{eventName}} abgelehnt",
+      "photos_review_rejected_other": "{{count}} Team-Uploads in {{eventName}} abgelehnt"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -5368,6 +5405,10 @@
     "subtitle": "E-Mail-Einstellungen für Benachrichtigungen konfigurieren",
     "loadingSettings": "E-Mail-Einstellungen werden geladen...",
     "smtpConfiguration": "SMTP-Konfiguration",
+    "networkPolicyHelp": "SMTP- und IMAP-Verbindungen prüfen alle DNS-Antworten und behalten die TLS-Prüfung des Hostnamens bei. Private Mailserver benötigen eine genaue Freigabe in MAIL_PRIVATE_ENDPOINTS in der Bereitstellungskonfiguration.",
+    "networkPolicyForbidden": "Mailziel blockiert. Private Mailserver benötigen eine genaue Protokoll-/Host-/Port-Freigabe in MAIL_PRIVATE_ENDPOINTS. Metadaten- und reservierte Ziele sind nie erlaubt.",
+    "networkPolicyInvalid": "Ungültiger Mailhost, Port oder MAIL_PRIVATE_ENDPOINTS-Eintrag. Verwenden Sie einen Hostnamen oder eine IP und einen genauen Mailendpunkt mit explizitem Port.",
+    "networkPolicyUnresolved": "Der Name des Mailhosts konnte nicht aufgelöst werden. Bitte den Hostnamen prüfen.",
     "smtpHost": "SMTP-Host",
     "fromEmail": "Absender-E-Mail",
     "fromName": "Absendername",
@@ -5818,7 +5859,9 @@
       "enableRateLimiting": "Ratenbegrenzung aktivieren",
       "rateLimitingDesc": "Spam durch Begrenzung der Feedback-Häufigkeit verhindern",
       "timeWindow": "Zeitfenster (Minuten)",
-      "maxRequests": "Maximale Anfragen"
+      "maxRequests": "Maximale Anfragen",
+      "decisions": "Freigabe / Ablehnung pro Foto",
+      "decisionsDesc": "Gäste geben jedes Foto frei oder lehnen es ab, auf Wunsch mit Begründung. Du filterst und exportierst nach ihrer Entscheidung"
     },
     "moderated": "Feedback moderiert",
     "deleted": "Feedback gelöscht",
@@ -5838,7 +5881,8 @@
       "like": "Likes",
       "comment": "Kommentare",
       "favorite": "Favoriten",
-      "reaction": "Reaktionen"
+      "reaction": "Reaktionen",
+      "decision": "Freigabe / Ablehnung"
     },
     "allStatuses": "Alle Status",
     "status": {
@@ -5916,7 +5960,25 @@
     "removeColorLabel": "Markierung {{color}} entfernen",
     "setColorLabel": "Als {{color}} markieren",
     "markedAs": "Markiert als {{color}}",
-    "alsoMarkedBy": "Auch von anderen markiert: {{colors}}"
+    "alsoMarkedBy": "Auch von anderen markiert: {{colors}}",
+    "decisions": {
+      "approved": "Freigegeben",
+      "rejected": "Abgelehnt"
+    },
+    "totalDecisions": "Freigegeben / abgelehnt",
+    "decisionsTitle": "Freigabe / Ablehnung",
+    "decisionApprove": "Freigeben",
+    "decisionReject": "Ablehnen",
+    "decisionClear": "Entscheidung zurücknehmen",
+    "decisionReasonEdit": "Warum? (optional)",
+    "decisionReasonLabel": "Warum lehnst du dieses Foto ab? (optional)",
+    "decisionReasonPlaceholder": "z. B. Augen zu, nicht meine beste Seite",
+    "decisionReasonSave": "Grund speichern",
+    "decisionReasonBlocked": "Dein Grund enthält Wörter, die hier nicht erlaubt sind.",
+    "decisionError": "Deine Entscheidung konnte nicht gespeichert werden",
+    "decisionType": "deine Entscheidung",
+    "youApproved": "Du hast dieses Foto freigegeben",
+    "youRejected": "Du hast dieses Foto abgelehnt"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",
@@ -5939,7 +6001,11 @@
     "colorLabels": "Farbmarkierungen",
     "showOnlyColor": "Nur {{color}} anzeigen",
     "myColorLabels": "Ihre Markierungen",
-    "showOnlyMyColor": "Nur meine Markierungen in {{color}} anzeigen"
+    "showOnlyMyColor": "Nur meine Markierungen in {{color}} anzeigen",
+    "decisions": "Freigabe / Ablehnung",
+    "decisionApproved": "Freigegeben",
+    "decisionRejected": "Abgelehnt",
+    "decisionUndecided": "Offen"
   },
   "export": {
     "button": "Exportieren",
@@ -6365,6 +6431,29 @@
       "showWaiting": "Wartende Fotos anzeigen",
       "waitingForAdmin_one": "{{count}} Ordneranfrage wartet auf einen Admin. Bis dahin liegen die {{photos}} Fotos im nächstgelegenen vorhandenen Ordner.",
       "waitingForAdmin_other": "{{count}} Ordneranfragen warten auf einen Admin. Bis dahin liegen die {{photos}} Fotos im nächstgelegenen vorhandenen Ordner."
+    },
+    "review": {
+      "pendingOwner_one": "{{count}} Upload aus Ihrem Team wartet auf Ihre Prüfung",
+      "pendingOwner_other": "{{count}} Uploads aus Ihrem Team warten auf Ihre Prüfung",
+      "pendingMember_one": "{{count}} Team-Upload wartet auf die Prüfung durch den Inhaber",
+      "pendingMember_other": "{{count}} Team-Uploads warten auf die Prüfung durch den Inhaber",
+      "nonePending": "Keine Uploads warten auf Prüfung.",
+      "filterPending": "Zu prüfen ({{count}})",
+      "filterRejected": "Abgelehnt ({{count}})",
+      "showAll": "Alle Fotos",
+      "approve": "Freigeben",
+      "reject": "Ablehnen",
+      "approved_one": "{{count}} Foto freigegeben und veröffentlicht",
+      "approved_other": "{{count}} Fotos freigegeben und veröffentlicht",
+      "rejected_one": "{{count}} Foto abgelehnt",
+      "rejected_other": "{{count}} Fotos abgelehnt",
+      "failed": "Die Fotos konnten nicht geprüft werden",
+      "pendingBadge": "Zu prüfen",
+      "rejectedBadge": "Abgelehnt",
+      "uploadedBy": "Hochgeladen von {{name}}",
+      "hiddenUntilApproved": "Für Gäste und Kunden verborgen, bis es freigegeben ist",
+      "skippedOnShow_one": "{{count}} Foto wartet auf Prüfung und bleibt verborgen, bis es freigegeben ist",
+      "skippedOnShow_other": "{{count}} Fotos warten auf Prüfung und bleiben verborgen, bis sie freigegeben sind"
     }
   },
   "customer": {
