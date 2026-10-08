@@ -13,8 +13,10 @@ const { getBcryptRounds } = require('../utils/passwordValidation');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
+const { accountCreditName } = require('./photoCredit');
 const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { capabilityTokenColumns, digestCapabilityToken } = require('../utils/capabilityToken');
 
 /**
  * Create a new admin user invitation
@@ -72,7 +74,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
 
   const [invitationId] = await db('admin_invitations').insert({
     email,
-    token,
+    ...capabilityTokenColumns(token),
     role_id: roleId,
     invited_by: invitedById,
     expires_at: expiresAt,
@@ -114,7 +116,7 @@ async function createInvitation({ email, roleId, invitedById, inviterRoleName })
  */
 async function acceptInvitation({ token, username, password }) {
   const invitation = await db('admin_invitations')
-    .where('token', token)
+    .where('token_digest', digestCapabilityToken(token))
     .whereNull('accepted_at')
     .where('expires_at', '>', new Date())
     .first();
@@ -142,6 +144,15 @@ async function acceptInvitation({ token, username, password }) {
 
   // Create user in transaction
   const result = await db.transaction(async (trx) => {
+    // Claim before creating the account. Concurrent submissions may both read
+    // the pending row above, but only one conditional update can consume it.
+    const claimed = await trx('admin_invitations')
+      .where('id', invitation.id)
+      .whereNull('accepted_at')
+      .where('expires_at', '>', new Date())
+      .update({ accepted_at: new Date() });
+    if (claimed !== 1) throw new ValidationError('Invalid or expired invitation');
+
     const [userId] = await trx('admin_users').insert({
       username,
       email: invitation.email,
@@ -161,7 +172,6 @@ async function acceptInvitation({ token, username, password }) {
     await trx('admin_invitations')
       .where('id', invitation.id)
       .update({
-        accepted_at: new Date(),
         accepted_user_id: id
       });
 
@@ -207,6 +217,10 @@ async function getAllAdminUsers() {
   if (await hasColumnCached('admin_users', 'email_link_eligible')) {
     columns.push('admin_users.email_link_eligible');
   }
+  // Photo credit for the account's uploads (issue 743, migration 269).
+  if (await hasColumnCached('admin_users', 'credit_name')) {
+    columns.push('admin_users.credit_name');
+  }
   return db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
     .leftJoin('admin_users as creator', 'creator.id', 'admin_users.created_by')
@@ -235,6 +249,10 @@ async function getAdminUserById(id) {
   ];
   if (await hasColumnCached('admin_users', 'email_link_eligible')) {
     columns.push('admin_users.email_link_eligible');
+  }
+  // Photo credit for the account's uploads (issue 743, migration 269).
+  if (await hasColumnCached('admin_users', 'credit_name')) {
+    columns.push('admin_users.credit_name');
   }
   const user = await db('admin_users')
     .leftJoin('roles', 'roles.id', 'admin_users.role_id')
@@ -371,6 +389,14 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
     }
 
     allowedUpdates.role_id = updates.role_id;
+  }
+
+  // The name the account's uploads are credited with when a file carries no
+  // EXIF name (issue 743).
+  if (updates.credit_name !== undefined && await hasColumnCached('admin_users', 'credit_name')) {
+    const credit = accountCreditName(updates.credit_name);
+    if (credit.error) throw new ValidationError(credit.error);
+    allowedUpdates.credit_name = credit.value;
   }
 
   allowedUpdates.updated_at = new Date();
@@ -605,8 +631,17 @@ async function deleteAdminUser(id, deletedById) {
   // PostgreSQL, explicit for SQLite, which runs without PRAGMA foreign_keys —
   // in the same transaction as the account, so a refused delete (a NO ACTION
   // FK still pointing at the user) leaves their bell state intact.
+  // Their gallery assignments (migration 269) the same way: CASCADE, SET NULL
+  // on assigned_by and on the photos they uploaded.
   await db.transaction(async (trx) => {
     await trx('notification_dismissals').where('admin_id', id).del();
+    if (await trx.schema.hasTable('event_admin_assignments')) {
+      await trx('event_admin_assignments').where('admin_user_id', id).del();
+      await trx('event_admin_assignments').where('assigned_by', id).update({ assigned_by: null });
+    }
+    if (await trx.schema.hasColumn('photos', 'uploaded_by_admin_id')) {
+      await trx('photos').where('uploaded_by_admin_id', id).update({ uploaded_by_admin_id: null });
+    }
     await deleteWithAccountingHistory(trx, 'admin_users', { id },
       { actor: deletedById, source: 'admin_user.delete' });
   });
@@ -718,7 +753,13 @@ async function cancelInvitation(id, cancelledById) {
   await assertActorReachesRole(cancelledById, invitation.role_id,
     'You can only cancel invitations to roles within your own permissions');
 
-  await db('admin_invitations').where('id', id).del();
+  const cancelled = await db('admin_invitations')
+    .where('id', id)
+    .whereNull('accepted_at')
+    .del();
+  if (cancelled !== 1) {
+    throw new ConflictError('This invitation has already been accepted');
+  }
 
   await logActivity('admin_invitation_cancelled',
     { invitationId: id, email: invitation.email },
@@ -737,7 +778,7 @@ async function cancelInvitation(id, cancelledById) {
 async function validateInvitationToken(token) {
   const invitation = await db('admin_invitations')
     .join('roles', 'roles.id', 'admin_invitations.role_id')
-    .where('admin_invitations.token', token)
+    .where('admin_invitations.token_digest', digestCapabilityToken(token))
     .whereNull('admin_invitations.accepted_at')
     .where('admin_invitations.expires_at', '>', new Date())
     .select(

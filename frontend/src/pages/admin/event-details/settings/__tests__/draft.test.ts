@@ -43,6 +43,25 @@ describe('event settings draft', () => {
     expect(payload).toEqual({ welcome_message: 'Hi', photo_cap: 50 });
   });
 
+  it('sends the team and the review switch only when the owner changed them (issue 743)', () => {
+    const base = eventFieldsFromEvent({
+      ...EVENT,
+      assigned_admins: [{ id: 7, username: 'anna', role_name: 'Team Photographer' }],
+      review_contributor_uploads: 0,
+    } as unknown as Event, branding);
+    expect(base.assigned_admins.map((a) => a.id)).toEqual([7]);
+    expect(base.review_contributor_uploads).toBe(false);
+    // A team member's save of other fields never carries them.
+    expect(eventUpdatePayload({ ...base, welcome_message: 'Hi' }, base, t)).toEqual({ welcome_message: 'Hi' });
+
+    const payload = eventUpdatePayload({
+      ...base,
+      assigned_admins: [...base.assigned_admins, { id: 9, username: 'ben', role_name: null }],
+      review_contributor_uploads: true,
+    }, base, t);
+    expect(payload).toEqual({ assigned_admin_ids: [7, 9], review_contributor_uploads: true });
+  });
+
   it('switching custom styling off keeps the stored theme untouched', () => {
     const on = eventFieldsFromEvent({ ...EVENT, custom_theme_enabled: true } as Event, branding);
     const payload = eventUpdatePayload({ ...on, custom_theme_enabled: false }, on, t);

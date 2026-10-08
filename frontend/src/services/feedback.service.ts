@@ -13,6 +13,13 @@ export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 export const COLOR_LABELS = ['red', 'yellow', 'green', 'blue', 'purple'] as const;
 export type ColorLabel = (typeof COLOR_LABELS)[number];
 
+// Approve / reject per photo (issue 744). Mirrored in
+// backend/src/constants/photoDecisions.js — update both together.
+export const PHOTO_DECISIONS = ['approved', 'rejected'] as const;
+export type PhotoDecision = (typeof PHOTO_DECISIONS)[number];
+/** Longest reason a guest can give for a decision (DECISION_REASON_MAX_LENGTH). */
+export const DECISION_REASON_MAX_LENGTH = 500;
+
 /** Which lightbox keyboard scheme a gallery uses. */
 export type KeybindMode = 'colors' | 'lightroom';
 
@@ -64,6 +71,8 @@ export interface FeedbackSettings {
   allow_favorites: boolean;
   allow_reactions: boolean;
   allow_color_labels: boolean;
+  /** Approve / reject per photo (issue 744). Off unless switched on. */
+  allow_decisions?: boolean;
   /** Which lightbox shortcut scheme this gallery uses (#1044). */
   keybind_mode?: KeybindMode;
   require_name_email: boolean;
@@ -83,12 +92,14 @@ export interface PhotoFeedback {
   id: number;
   photo_id: number;
   event_id: number;
-  feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label';
+  feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label' | 'decision';
   rating?: number;
   comment_text?: string;
   comment?: string;
   reaction?: string;
   color_label?: ColorLabel | null;
+  /** On decision rows (issue 744); the reason is in comment_text. */
+  decision?: PhotoDecision | null;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;
@@ -108,6 +119,8 @@ export interface FeedbackSummary {
   favorite_count: number;
   reaction_count?: number;
   color_label_count?: number;
+  approved_count?: number;
+  rejected_count?: number;
   comment_count: number;
 }
 
@@ -117,6 +130,9 @@ export interface MyFeedback {
   favorited: boolean;
   reaction?: string | null;
   color_label?: ColorLabel | null;
+  /** The viewer's approve / reject (issue 744) and the reason they gave. */
+  decision?: PhotoDecision | null;
+  decision_reason?: string | null;
 }
 
 export interface FeedbackResponse {
@@ -143,6 +159,9 @@ export interface FeedbackAnalytics {
     total_comments: number;
     total_favorites: number;
     total_reactions?: number;
+    total_color_labels?: number;
+    total_approved?: number;
+    total_rejected?: number;
     pending_moderation: number;
   };
   topRated: Array<{
@@ -264,11 +283,12 @@ class FeedbackService {
   }
 
   async submitFeedback(slug: string, photoId: string, feedback: {
-    feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label';
+    feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label' | 'decision';
     rating?: number;
     comment_text?: string;
     reaction?: string;
     color_label?: ColorLabel;
+    decision?: PhotoDecision;
     guest_name?: string;
     guest_email?: string;
   }) {

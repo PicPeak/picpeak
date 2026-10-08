@@ -56,7 +56,7 @@ const {
 // service calls them.
 function chain(result) {
   const q = {};
-  ['where', 'whereIn', 'andWhere', 'select', 'orderBy', 'limit', 'first']
+  ['where', 'whereIn', 'whereNull', 'andWhere', 'select', 'orderBy', 'limit', 'first']
     .forEach((m) => { q[m] = jest.fn().mockReturnValue(q); });
   q.first = jest.fn().mockResolvedValue(result?.first);
   q.then = (resolve) => Promise.resolve(result?.rows ?? []).then(resolve);

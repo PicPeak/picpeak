@@ -2,7 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { seesAllEvents } = require('../middleware/ownership');
+const { seesAllEvents, scopeEventsQuery } = require('../middleware/ownership');
 const logger = require('../utils/logger');
 const { toUtcIso } = require('../utils/queueTimestamps');
 // Per-request audit rows that have a summary row of their own in the bell.
@@ -13,14 +13,14 @@ const router = express.Router();
  * Restrict an activity_logs query to the rows the caller may see — the same
  * scope the dashboard activity feed applies (adminDashboard.applyEventScope):
  * every role except super_admin and the roles that see all events is limited
- * to its own events plus ownerless ones. `activity_logs.event_id` is NULLABLE;
+ * to its own events, the ones it is assigned to and ownerless ones
+ * (ownership.scopeEventsQuery). `activity_logs.event_id` is NULLABLE;
  * system-level entries (logins, settings changes) carry no event and are
  * deliberately excluded for a scoped caller rather than shown.
  */
 function scopeToVisibleEvents(query, admin) {
   if (seesAllEvents(admin)) return query;
-  return query.whereIn('activity_logs.event_id', db('events').select('id')
-    .where((q) => q.whereNull('created_by').orWhere('created_by', admin.id)));
+  return query.whereIn('activity_logs.event_id', scopeEventsQuery(db('events').select('id'), admin));
 }
 
 /**

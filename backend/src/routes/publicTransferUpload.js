@@ -65,13 +65,13 @@ const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders:
 
 // Two token shapes reach this route (see the header):
 //   SHORT_TOKEN_RE  the read-aloud code, drawn from an unambiguous alphabet
-//                   (see transferService). A range of lengths so codes issued
-//                   by older releases still validate.
+//                   (see transferService). Legacy shorter codes are rotated by
+//                   migration 272 and are no longer accepted.
 //   LONG_TOKEN_RE   the request's primary 64-hex token.
 // TOKEN_RE is the union, used by the express-validator param check.
-const SHORT_TOKEN_RE = /^[A-Za-z0-9]{4,16}$/;
+const SHORT_TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 const LONG_TOKEN_RE = /^[a-f0-9]{64}$/;
-const TOKEN_RE = /^([A-Za-z0-9]{4,16}|[a-f0-9]{64})$/;
+const TOKEN_RE = /^([A-Za-z0-9]{10,16}|[a-f0-9]{64})$/;
 
 async function loadUploadTransfer(req, res) {
   // Keyed like the limiters above: an IPv6 /64 counts as one client, so a

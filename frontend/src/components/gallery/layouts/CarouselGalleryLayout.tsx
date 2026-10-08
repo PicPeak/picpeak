@@ -111,6 +111,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
         <ColorLabelBadge
           colorLabel={currentPhoto.my_color_label}
           otherColorLabels={currentPhoto.other_color_labels}
+          decision={currentPhoto.my_decision}
           position="bottom-4 left-4"
         />
 
@@ -305,6 +306,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 <ColorLabelBadge
                   colorLabel={photo.my_color_label}
                   otherColorLabels={photo.other_color_labels}
+                  decision={photo.my_decision}
                   size="sm"
                   position="top-1 left-1"
                 />

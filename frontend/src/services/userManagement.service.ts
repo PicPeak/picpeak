@@ -44,6 +44,7 @@ function transformUser(user: any): AdminUser {
     roleName: user.roleName ?? user.role_name,
     roleDisplayName: user.roleDisplayName ?? user.role_display_name,
     createdByUsername: user.createdByUsername ?? user.created_by_username,
+    creditName: user.creditName ?? user.credit_name ?? null,
     emailLinkEligible: user.emailLinkEligible ?? user.email_link_eligible,
   };
 }
@@ -108,6 +109,8 @@ interface UpdateUserData {
    * confirmed for SSO email linking (`email_link_eligible`, migration 227).
    */
   email?: string;
+  /** Photo credit for the account's uploads (issue 743); null clears it. */
+  creditName?: string | null;
 }
 
 interface UpdateUserResponse {
@@ -197,6 +200,7 @@ export const userManagementService = {
     const payload: Record<string, unknown> = {};
     if (data.roleId !== undefined) payload.role_id = data.roleId;
     if (data.email !== undefined) payload.email = data.email;
+    if (data.creditName !== undefined) payload.credit_name = data.creditName;
     const response = await api.put<UpdateUserResponse>(`/admin/users/${id}`, payload);
     return transformUser(response.data.user);
   },

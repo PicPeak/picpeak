@@ -12,6 +12,10 @@
  * mint, secure-download) shipped without it — letting ordinary guests reach
  * hidden/client-only photos. These helpers centralise the rule so every
  * sink applies exactly the same predicate.
+ *
+ * A photo under review (moderation_status 'pending' or 'rejected', migration
+ * 269) is a contributor upload the event owner has not published yet. It is
+ * stored hidden, and kept from clients as well: no gallery viewer sees it.
  */
 
 // PIN-clients see hidden photos; everyone else does not.
@@ -20,12 +24,13 @@ function canSeeHiddenPhotos(accessLevel) {
 }
 
 /**
- * Append the guest visibility filter to a knex `photos` query. No-op for
- * clients. NULL visibility is treated as visible (pre-migration default).
- * The query must reference the table as `photos` (all call sites do).
+ * Append the viewer's visibility filter to a knex `photos` query: clients
+ * skip only the photos under review, everyone else sees visible photos. NULL
+ * visibility is treated as visible (pre-migration default). The query must
+ * reference the table as `photos` (all call sites do).
  */
 function applyPhotoVisibilityFilter(query, accessLevel) {
-  if (canSeeHiddenPhotos(accessLevel)) return query;
+  if (canSeeHiddenPhotos(accessLevel)) return query.whereNull('photos.moderation_status');
   return query.where(function () {
     this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
   });
@@ -36,7 +41,9 @@ function applyPhotoVisibilityFilter(query, accessLevel) {
  * at the given access level. Mirrors the inline guards in gallery.js.
  */
 function isPhotoHiddenFromViewer(photo, accessLevel) {
-  return !!photo && photo.visibility === 'hidden' && !canSeeHiddenPhotos(accessLevel);
+  if (!photo) return false;
+  if (photo.moderation_status != null) return true;
+  return photo.visibility === 'hidden' && !canSeeHiddenPhotos(accessLevel);
 }
 
 module.exports = {

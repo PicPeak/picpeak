@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Folders, FolderTree, Upload } from 'lucide-react';
+import { AlertCircle, ClipboardCheck, Folders, FolderTree, Upload } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card, Loading } from '../../../components/common';
 import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu, EventCategoryManager } from '../../../components/admin';
@@ -91,6 +91,29 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   const showFolderBar = folders.length > 0 || folderRequests.length > 0 || folderFilter !== undefined || folderBarOpened;
   const pendingPhotoCount = folderRequests.reduce((sum, r) => sum + r.photo_count, 0);
 
+  // Review of team members' uploads (issue 743). The owner or a holder of
+  // photos.review approves or rejects; a team member sees that their uploads
+  // are waiting.
+  const canModerate = event.can_review_uploads === true;
+  const { data: moderation } = useQuery({
+    queryKey: ['admin-event-photos', id, 'moderation'],
+    queryFn: () => photosService.getModerationCounts(eventId),
+    enabled: Number.isFinite(eventId),
+  });
+
+  // Deleting, hiding/showing or reviewing photos from this tab changes the
+  // review bar's counts too, so every refresh also re-reads them.
+  const refreshAfterPhotoChange = () => {
+    refetchPhotos();
+    queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
+    queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
+    queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id, 'moderation'] });
+  };
+  const moderationFilter = photoFilters.moderation;
+  const setModerationFilter = (value: PhotoFilterParams['moderation']) =>
+    setPhotoFilters((prev) => ({ ...prev, moderation: value }));
+  const showReviewBar = (moderation?.pending ?? 0) > 0 || (moderation?.rejected ?? 0) > 0 || !!moderationFilter;
+
   // The open folder was deleted or moved away elsewhere: fall back to all photos.
   useEffect(() => {
     if (typeof folderFilter === 'number' && folderTree && !folders.some((f) => f.id === folderFilter)) {
@@ -117,6 +140,47 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
 
       {event.source_mode === 'reference' && event.external_path && (
         <ExternalSourceBar event={event} onChangeFolder={onChangeFolder} />
+      )}
+
+      {showReviewBar && (
+        <div
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3"
+          data-testid="photo-review-bar"
+        >
+          <p className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <ClipboardCheck className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            {(moderation?.pending ?? 0) > 0
+              ? (canModerate
+                ? t('photos.review.pendingOwner', { count: moderation?.pending ?? 0 })
+                : t('photos.review.pendingMember', { count: moderation?.pending ?? 0 }))
+              : t('photos.review.nonePending', 'No uploads are waiting for review.')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={moderationFilter === 'pending' ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={() => setModerationFilter(moderationFilter === 'pending' ? undefined : 'pending')}
+              aria-pressed={moderationFilter === 'pending'}
+            >
+              {t('photos.review.filterPending', { count: moderation?.pending ?? 0 })}
+            </Button>
+            {(moderation?.rejected ?? 0) > 0 && (
+              <Button
+                variant={moderationFilter === 'rejected' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setModerationFilter(moderationFilter === 'rejected' ? undefined : 'rejected')}
+                aria-pressed={moderationFilter === 'rejected'}
+              >
+                {t('photos.review.filterRejected', { count: moderation?.rejected ?? 0 })}
+              </Button>
+            )}
+            {moderationFilter && (
+              <Button variant="ghost" size="sm" onClick={() => setModerationFilter(undefined)}>
+                {t('photos.review.showAll', 'All photos')}
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       <FolderRequestsPanel
@@ -255,17 +319,14 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           photos={photos}
           eventId={parseInt(id!)}
           onPhotoClick={(photo, index) => setSelectedPhoto({ photo, index })}
-          onPhotosDeleted={() => {
-            refetchPhotos();
-            queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
-          }}
+          onPhotosDeleted={refreshAfterPhotoChange}
           onSelectionChange={setSelectedPhotoIds}
           categories={filterCategories}
           folders={folders}
           sortBy={photoFilters.sort ?? 'date'}
           sortOrder={photoFilters.order ?? 'desc'}
           onSortChange={(sort, order) => setPhotoFilters(prev => ({ ...prev, sort, order }))}
+          canModerate={canModerate}
         />
       )}
 
@@ -277,9 +338,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
           eventId={parseInt(id!)}
           onClose={() => setSelectedPhoto(null)}
           onPhotoDeleted={() => {
-            refetchPhotos();
-            queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-            queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
+            refreshAfterPhotoChange();
             setSelectedPhoto(null);
           }}
           categories={filterCategories}
