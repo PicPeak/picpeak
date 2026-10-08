@@ -7,12 +7,8 @@
  */
 const { db } = require('../../database/db');
 const {
-  canAccessEvent, seesAllEvents, ownedProjectsSubquery,
+  canAccessEvent, managesAllEvents, seesAllEvents, ownedProjectsSubquery,
 } = require('../../middleware/ownership');
-
-function managesAllEvents(admin) {
-  return admin?.roleName === 'super_admin' || admin?.eventScope?.manageAll === true;
-}
 
 function hasGlobalAccess(admin, mode) {
   return mode === 'manage' ? managesAllEvents(admin) : seesAllEvents(admin);
@@ -189,6 +185,8 @@ function accessibleDocumentRequestExists(requestIdColumn, admin) {
  * Apply the workflow entity boundary to a query whose FROM/JOIN set includes
  * workflow_runs under `alias`.  Unknown and ownerless non-event entities fail
  * closed; ownerless events retain the established legacy-event rule.
+ * A legacy run with no initiator and no resolvable entity matches no branch
+ * and stays visible to super_admin only.
  */
 function scopeWorkflowRunsQuery(query, admin, { alias = 'workflow_runs', mode = 'view' } = {}) {
   if (admin?.roleName === 'super_admin') return query;
@@ -348,8 +346,38 @@ async function canAccessWorkflowRun(admin, runId, { mode = 'view' } = {}) {
   return Boolean(await query.first());
 }
 
+// Run vars that open a gallery on their own: galleryLink is the share URL,
+// which embeds the share token (gallery.published / expiring / completed).
+const RUN_BEARER_SECRET_VARS = ['galleryLink'];
+
+/**
+ * Run or approval rows without the gallery link in `row[field].vars` when the
+ * run belongs to an event the admin reads but cannot act on, the rule
+ * withoutForeignEventSecrets applies to the event itself. `field` must already
+ * be parsed. One events lookup for the whole page.
+ */
+async function withoutForeignRunSecrets(rows, admin, field) {
+  if (admin?.roleName === 'super_admin') return rows;
+  const eventIds = [...new Set(rows
+    .filter((row) => row.entity_type === 'event' && row.entity_id != null)
+    .map((row) => Number(row.entity_id)))];
+  if (!eventIds.length) return rows;
+  const events = await db('events').whereIn('id', eventIds).select('id', 'created_by');
+  const actionable = new Set(events
+    .filter((event) => canAccessEvent(admin, event)).map((event) => Number(event.id)));
+  return rows.map((row) => {
+    if (row.entity_type !== 'event' || actionable.has(Number(row.entity_id))) return row;
+    const vars = row[field]?.vars;
+    if (!vars || typeof vars !== 'object') return row;
+    const copy = { ...vars };
+    for (const key of RUN_BEARER_SECRET_VARS) delete copy[key];
+    return { ...row, [field]: { ...row[field], vars: copy } };
+  });
+}
+
 module.exports = {
   canAccessWorkflowEntity,
   canAccessWorkflowRun,
   scopeWorkflowRunsQuery,
+  withoutForeignRunSecrets,
 };

@@ -281,6 +281,57 @@ describe('admin workflows API', () => {
     expect(JSON.stringify(approvals.body)).not.toContain('page-foreign');
   });
 
+  test('hides the gallery link of a run on an event the caller can read but not act on', async () => {
+    const foreignLink = 'https://example.com/gallery/workflow-foreign/foreign-share-token';
+    const ownLink = 'https://example.com/gallery/workflow-own/own-share-token';
+    const insertLinkedRun = async (eventId, marker, galleryLink) => {
+      const vars = { marker, eventName: marker, galleryLink };
+      const rows = await db('workflow_runs').insert({
+        workflow_id: createdId, version: 2, trigger_event: 'gallery.published',
+        entity_type: 'event', entity_id: eventId, status: 'waiting', current_node: 'n2',
+        context: JSON.stringify({ vars }), dedup_key: `scope:${marker}`,
+      }).returning('id');
+      const runId = rows[0]?.id ?? rows[0];
+      await db('workflow_approvals').insert({
+        run_id: runId, node_key: 'n2', type: 'payment_confirm', status: 'pending',
+        token_hash: marker.padEnd(64, '0'), payload: JSON.stringify({ prompt: 'Confirm?', vars }),
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        // Newer than the paging fixtures above, so it is on the first page.
+        created_at: '2031-01-01T00:00:00.000Z',
+      });
+      return runId;
+    };
+    const foreignRunId = await insertLinkedRun(foreignEventId, 'link-foreign', foreignLink);
+    const ownRunId = await insertLinkedRun(ownEventId, 'link-own', ownLink);
+    const runVars = (res, runId) => res.body.find((run) => run.id === runId).context.vars;
+    const approvalVars = (res, runId) => res.body
+      .find((approval) => approval.run_id === runId).payload.vars;
+
+    const viewer = await request(app).get(`/api/admin/workflows/${createdId}/runs`).set(auth(viewAllToken));
+    expect(viewer.status).toBe(200);
+    expect(runVars(viewer, foreignRunId)).toEqual({ marker: 'link-foreign', eventName: 'link-foreign' });
+    expect(JSON.stringify(viewer.body)).not.toContain('foreign-share-token');
+    const viewerApprovals = await request(app).get('/api/admin/workflows/approvals').set(auth(viewAllToken));
+    expect(viewerApprovals.status).toBe(200);
+    expect(approvalVars(viewerApprovals, foreignRunId))
+      .toEqual({ marker: 'link-foreign', eventName: 'link-foreign' });
+    expect(JSON.stringify(viewerApprovals.body)).not.toContain('foreign-share-token');
+
+    const owner = await request(app).get(`/api/admin/workflows/${createdId}/runs`).set(auth(scopedToken));
+    expect(runVars(owner, ownRunId).galleryLink).toBe(ownLink);
+    const ownerApprovals = await request(app).get('/api/admin/workflows/approvals').set(auth(scopedToken));
+    expect(approvalVars(ownerApprovals, ownRunId).galleryLink).toBe(ownLink);
+
+    const superAdmin = await request(app).get(`/api/admin/workflows/${createdId}/runs`).set(auth(token));
+    expect(runVars(superAdmin, foreignRunId).galleryLink).toBe(foreignLink);
+    const superApprovals = await request(app).get('/api/admin/workflows/approvals').set(auth(token));
+    expect(approvalVars(superApprovals, foreignRunId).galleryLink).toBe(foreignLink);
+
+    // events.manage_all may act on the event, so the link is its to read.
+    const manager = await request(app).get(`/api/admin/workflows/${createdId}/runs`).set(auth(manageAllToken));
+    expect(runVars(manager, foreignRunId).galleryLink).toBe(foreignLink);
+  });
+
   test('gallery-wide permissions do not expand into CRM workflow authority', async () => {
     const viewSteps = await request(app)
       .get(`/api/admin/workflows/runs/${foreignEventRunId}/steps`).set(auth(viewAllToken));
@@ -551,6 +602,11 @@ describe('admin workflows API', () => {
       .set(auth(scopedToken))
       .send({ entityType: 'invoice', entityId: ownEventId, dryRun: true });
     expect(mismatched.status).toBe(400);
+    for (const entityId of ['abc', '1.5', -1]) {
+      const malformed = await request(app).post(`/api/admin/workflows/${createdId}/test-run`)
+        .set(auth(scopedToken)).send({ entityId, dryRun: true });
+      expect(malformed.status).toBe(400);
+    }
     const unboundLive = await request(app).post(`/api/admin/workflows/${createdId}/test-run`)
       .set(auth(scopedToken)).send({ dryRun: false, payload: { recipient: 'victim@example.com' } });
     expect(unboundLive.status).toBe(400);
