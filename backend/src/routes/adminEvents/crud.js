@@ -22,6 +22,7 @@ const { errorResponse, safeValidationErrors } = require('../../utils/routeHelper
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
+const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
@@ -1375,7 +1376,7 @@ module.exports = (router) => {
       // canonical one is dropped here, before the guard.
       for (const key of Object.keys(updates)) {
         const lower = key.toLowerCase();
-        if ((lower === 'external_watch' || lower === 'external_path') && key !== lower) delete updates[key];
+        if (['external_watch', 'external_path', 'source_mode'].includes(lower) && key !== lower) delete updates[key];
       }
 
       // Folder watcher opt-in (issue 1187). Written through formatBoolean
@@ -1413,6 +1414,46 @@ module.exports = (router) => {
 
       if (updates.source_mode === 'reference' && (updates.external_path === null || updates.external_path === undefined)) {
         return res.status(400).json({ error: 'external_path is required when source_mode is reference' });
+      }
+
+      // The event form re-sends the source fields with every save. Only a save
+      // that points the gallery at another folder is a source decision and
+      // needs access to that folder; renaming a reference gallery or moving
+      // its expiry must not. Fields that repeat what is stored are dropped, so
+      // the rest of the save goes through on events.edit alone.
+      const sourceFields = ['source_mode', 'external_path', 'external_watch']
+        .filter((key) => Object.prototype.hasOwnProperty.call(updates, key));
+      if (sourceFields.length > 0) {
+        const stored = await db('events').where({ id }).first('source_mode', 'external_path', 'external_watch');
+        const storedMode = stored?.source_mode === 'reference' ? 'reference' : 'managed';
+        const sendsPath = sourceFields.includes('external_path');
+        // Compared normalised: `/clients/a` on the row and `clients/a` in the
+        // request are the same folder.
+        const pathChanges = sendsPath && !externalAccess.sameSourcePath(updates.external_path, stored?.external_path);
+        const becomesReference = updates.source_mode === 'reference' && storedMode !== 'reference';
+        const nextPath = sendsPath ? updates.external_path : stored?.external_path;
+        try {
+          if (nextPath && (pathChanges || becomesReference)) {
+            const willWatch = sourceFields.includes('external_watch')
+              ? Boolean(updates.external_watch) : Boolean(stored?.external_watch);
+            const access = await externalAccess.authorizeImport(id, nextPath, {
+              actor: { type: 'admin', id: req.admin.id },
+              permission: willWatch ? 'photos.upload' : 'photos.view',
+            });
+            updates.external_path = access.relativePath;
+          } else if (sendsPath && !pathChanges) {
+            delete updates.external_path;
+          }
+        } catch (error) {
+          if (error instanceof externalAccess.ExternalMediaAccessError || error.code === 'PATH_OUTSIDE_BASE') {
+            return res.status(error.statusCode || 400).json({ error: error.message });
+          }
+          throw error;
+        }
+        if (updates.source_mode === storedMode) delete updates.source_mode;
+        if (sourceFields.includes('external_watch') && Boolean(updates.external_watch) === Boolean(stored?.external_watch)) {
+          delete updates.external_watch;
+        }
       }
 
       // Plaintexts to remember after the row is written (#1271); each key is

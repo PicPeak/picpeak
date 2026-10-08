@@ -1,4 +1,16 @@
 {
+  "externalSources": {
+    "title": "Eigentümer externer Quellen",
+    "info": "Nur der SuperAdmin kann einen Quellordner zuweisen oder übertragen. Unterordner gehören demselben Eigentümer; Quellordner dürfen sich nicht überschneiden.",
+    "owner": "Eigentümer der Quelle",
+    "chooseOwner": "Konto auswählen",
+    "assign": "Ausgewählten Ordner diesem Eigentümer zuweisen",
+    "revoke": "Zugriff entziehen",
+    "confirmRevoke": "Zugriff auf {{path}} entziehen? Vorhandene Galeriefotos werden nicht gelöscht.",
+    "unassigned": "Nur SuperAdmin",
+    "noSources": "Dir sind keine externen Quellordner zugewiesen. Bitte den SuperAdmin, einen Ordner zuzuweisen.",
+    "error": "Die Quellenzuweisung konnte nicht geändert werden. Prüfe, ob der Ordner existiert und keine andere Quelle überschneidet."
+  },
   "productUsagePrompt": {
     "title": "PicPeak mitgestalten?",
     "intro": "Helfen Sie, PicPeak mit freiwilligen Produktnutzungsberichten weiterzuentwickeln. Prüfen Sie vor Ihrer Entscheidung, welche pseudonymen Daten geteilt werden, wer sie sehen kann und wohin sie gesendet werden."
