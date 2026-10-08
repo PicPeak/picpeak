@@ -19,6 +19,7 @@ process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-invite
 
 const request = require('supertest');
 const crypto = require('crypto');
+const { capabilityTokenColumns } = require('../../src/utils/capabilityToken');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('../integration/helpers/crmDb');
@@ -36,7 +37,7 @@ describe('DELETE /api/admin/users/invitations/:id — target reach', () => {
     return ins[0]?.id ?? ins[0];
   };
   const mkInvitation = (email, role_id, extra = {}) => insertId('admin_invitations', {
-    email, token: crypto.randomBytes(32).toString('hex'), role_id, invited_by: superId,
+    email, ...capabilityTokenColumns(crypto.randomBytes(32).toString('hex')), role_id, invited_by: superId,
     expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
     created_at: new Date().toISOString(), ...extra,
   });

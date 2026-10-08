@@ -61,6 +61,17 @@ describe('BackupConfiguration rsync SSH key', () => {
     expect(toastApi.error).toHaveBeenCalledWith('backup.configuration.messages.rsyncSshKeyNotPath');
   });
 
+  it('offers SSH port 22 and saves another one as a number', async () => {
+    const onSave = renderForm('/app/data/ssh/backup_ed25519');
+    const port = document.querySelector('input[max="65535"]') as HTMLInputElement;
+    expect(port).toHaveValue(22);
+    expect(port).toBeRequired();
+    await userEvent.clear(port);
+    await userEvent.type(port, '2222');
+    await save();
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ backup_rsync_port: 2222 }));
+  });
+
   it('explains a stored pasted key and still lets the form save around it', async () => {
     const onSave = renderForm('••••••••');
     expect(screen.getByText('backup.configuration.fields.rsyncSshKeyStoredNotPath')).toBeInTheDocument();

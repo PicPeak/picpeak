@@ -153,7 +153,7 @@ jobs:
           # /health is what docker's HEALTHCHECK polls, but hit it
           # directly to confirm the response shape matches what the
           # frontend + reverse proxy expect.
-          body=$(docker exec picpeak-smoke-bk wget -qO- http://localhost:3000/health)
+          body=$(docker exec picpeak-smoke-bk wget -qO- http://127.0.0.1:3000/health)
           echo "/health => $body"
           echo "$body" | grep -q '"status":"ok"' || {
             echo "FAIL: /health did not return status:ok"

@@ -7,7 +7,7 @@ const { resolveSqliteFilename } = require('./src/utils/sqlitePath');
 // The development and production blocks used to carry different host/user/
 // database defaults, so a process that probed or migrated against one could
 // hand over to a process that opened another.
-const { pgConnectionFromEnv } = require('./src/utils/pgConnection');
+const { pgConnectionFromEnv, pgSslFromEnv } = require('./src/utils/pgConnection');
 
 const sqliteConnection = (filenameEnv) => ({
   filename: resolveSqliteFilename(filenameEnv)
@@ -54,7 +54,8 @@ const config = {
             port: process.env.DB_PORT || 5432,
             user: process.env.DB_USER || 'postgres',
             password: process.env.DB_PASSWORD || 'postgres',
-            database: process.env.DB_NAME || 'photo_sharing_test'
+            database: process.env.DB_NAME || 'photo_sharing_test',
+            ssl: pgSslFromEnv()
           }
         : sqliteConnection(process.env.TEST_DATABASE_PATH || './data/photo_sharing_test.db')
     };

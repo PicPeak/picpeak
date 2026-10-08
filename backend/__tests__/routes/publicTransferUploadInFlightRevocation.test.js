@@ -10,7 +10,7 @@
  * route now reloads the row after the body is parsed and re-runs the same
  * predicate before anything becomes permanent; on refusal the temp files go.
  *
- * Stable shape: transfers carry a 6-char upload_token (no send/request split),
+ * Stable shape: transfers carry a 10-char upload_token (no send/request split),
  * and assertUploadable reads deleted_at, allow_uploads and the upload expiry.
  *
  * The window is reproduced by letting the pre-body lookup return the live row
@@ -24,7 +24,7 @@ const path = require('path');
 const request = require('supertest');
 const { bootCrmDb, buildRouteApp } = require('../integration/helpers/crmDb');
 
-const TOKEN = 'UPLD7K';
+const TOKEN = 'UPLD7K2345';
 const DOWNLOAD_TOKEN = 'd'.repeat(64);
 let db; let cleanup; let app; let transferService; let transferId;
 
@@ -79,9 +79,24 @@ it('stores the files of a transfer that stays eligible', async () => {
   await db('transfer_uploads').where({ transfer_id: transferId }).del();
 });
 
+it('rejects a legacy six-character upload code before any lookup or disk write', async () => {
+  const lookup = jest.spyOn(transferService, 'getTransferByUploadToken');
+
+  const res = await request(app)
+    .post('/api/public/transfer-upload/ABC234')
+    .attach('files', Buffer.from('%PDF-1.4 bytes'), 'contract.pdf');
+
+  expect(res.status).toBe(400);
+  expect(lookup).not.toHaveBeenCalled();
+  expect(await db('transfer_uploads').where({ transfer_id: transferId })).toHaveLength(0);
+  expect(tempFiles()).toHaveLength(0);
+});
+
 it.each([
   ['expires', 410, 'UPLOAD_EXPIRED', () => db('transfers').where({ id: transferId })
     .update({ upload_expires_at: new Date(Date.now() - 1000).toISOString() })],
+  ['is disabled', 403, 'UPLOADS_DISABLED', () => db('transfers').where({ id: transferId })
+    .update({ is_active: false })],
   ['stops taking uploads', 403, 'UPLOADS_DISABLED', () => db('transfers').where({ id: transferId })
     .update({ allow_uploads: false })],
   ['is deleted', 404, 'NOT_FOUND', () => db('transfers').where({ id: transferId })

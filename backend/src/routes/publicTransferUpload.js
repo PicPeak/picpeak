@@ -1,7 +1,7 @@
 /**
  * Public → Transfer upload routes (PicTransfer client uploads, #997).
  *
- * Mounted at /api/public/transfer-upload. NO authentication — a short (6-char)
+ * Mounted at /api/public/transfer-upload. NO authentication — a short (10-char)
  * upload token in the link is the only secret. This lets a photographer send a
  * client "here's a code, upload your logo / files here". Because the token is
  * low-entropy, brute force is mitigated by a tight per-route rate limiter plus
@@ -48,20 +48,20 @@ const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: t
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 // Upload tokens are drawn from an unambiguous alphabet (see transferService).
-// Accept a small range of lengths so a future longer token still validates.
-const TOKEN_RE = /^[A-Za-z0-9]{4,16}$/;
+// Legacy shorter codes are rotated by migration 241 and rejected afterward.
+const TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 
 async function loadUploadTransfer(req, res) {
   const ip = clientIpForAudit(req);
+  const token = req.params.token;
+  if (!token || !TOKEN_RE.test(token)) {
+    res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
+    return null;
+  }
   // Short upload codes retain their pre-lookup lockout, isolated from the
   // high-entropy document links so one surface cannot disable the other.
   if (tokenLock.isIpLocked(ip, 'transfer_uploads')) {
     res.status(429).json({ error: 'Too many invalid attempts. Try again later.', code: 'TOKEN_LOOKUP_LOCKED' });
-    return null;
-  }
-  const token = req.params.token;
-  if (!token || !TOKEN_RE.test(token)) {
-    res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
     return null;
   }
   const transfer = await transferService.getTransferByUploadToken(token);
