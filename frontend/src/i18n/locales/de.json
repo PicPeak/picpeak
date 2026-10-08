@@ -784,6 +784,14 @@
       "timeout": "Der Upload hat zu lange gedauert. Bitte einen kleineren Stapel versuchen.",
       "gone": "Diese Galerie oder Dateianfrage existiert nicht mehr."
     },
+    "adminCapacity": {
+      "batch": "Dieser Upload ist größer, als der Server in einer Anfrage annimmt. Verringern Sie die Upload-Batchgröße in den Einstellungen.",
+      "busy": "Der Server war durchgehend mit anderen Uploads ausgelastet und hatte nicht rechtzeitig Platz für diese Dateien. Laden Sie sie gleich noch einmal hoch.",
+      "storage": "Auf dem Server ist zu wenig Speicherplatz frei. Schaffen Sie Platz und laden Sie diese Dateien dann erneut hoch.",
+      "unavailable": "Der Server konnte keinen Platz für diesen Upload reservieren. Prüfen Sie das Serverprotokoll und ADMIN_UPLOAD_LIMITS_JSON.",
+      "timeout": "Der Upload hat zu lange gedauert und wurde abgebrochen. Prüfen Sie die Verbindung und laden Sie diese Dateien erneut hoch.",
+      "waiting": "Warten auf freie Upload-Kapazität des Servers (Versuch {{attempt}} von {{total}})…"
+    },
     "photoCategory": "Fotokategorie",
     "noCategory": "Keine Kategorie",
     "eventSpecific": "(Veranstaltungsspezifisch)",
