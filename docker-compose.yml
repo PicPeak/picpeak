@@ -54,7 +54,7 @@ services:
       # Trust exactly the immediately connected frontend nginx hop. Trusting
       # all private ranges lets a LAN client extend and spoof the XFF chain.
       # A reverse proxy on the host in front of the frontend makes it 2.
-      - TRUST_PROXY=${TRUST_PROXY:-1}
+      - TRUST_PROXY=${TRUST_PROXY:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-auto}
       - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - JWT_SECRET=${JWT_SECRET:-}
