@@ -1419,6 +1419,12 @@ async function startServer() {
     // sharp/ffmpeg/EXIF pipeline off the request thread.
     backgroundProcessor.start();
 
+    // Public upload leases: heartbeat this process's live requests and reap
+    // the ones a dead process left behind, now and every 30 s.
+    const publicUploadQuota = require('./src/services/publicUploadQuota');
+    publicUploadQuota.startMaintenance();
+    publicUploadQuota.cleanupAbandoned().catch((err) => logger.warn('Public upload reaper failed at boot', { error: err.message }));
+
     // Face detection (#1074). Starts alongside the photo processor but stays
     // idle — every worker tick re-checks the `faces` feature flag, which is
     // off by default. It is safe to start unconditionally precisely because

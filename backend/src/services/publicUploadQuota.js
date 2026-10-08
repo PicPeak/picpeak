@@ -1,6 +1,8 @@
-/** Persistent admission for public capabilities. Charges are lifetime ingress,
- * not catalogue occupancy: deleting a row must not regenerate a public link's
- * allowance or erase an orphan. No TTL can release a still-live writer. */
+/** Persistent admission for public capabilities. Charges are lifetime ingress
+ * through PUBLIC endpoints only (the ledger, plus guest/transfer uploads that
+ * predate it); photographer, admin, API and import content never counts.
+ * Deleting a ledger-charged row does not regenerate a public link's allowance.
+ * A live writer keeps its reservation by heartbeat, not by host or pid. */
 const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
@@ -12,17 +14,26 @@ const logger = require('../utils/logger');
 
 const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
+const UNLIMITED = Number.MAX_SAFE_INTEGER;
+const HEARTBEAT_MS = 30000;
+// Ten missed heartbeats. Independent of requestTimeoutMs: a live request is
+// kept by its process's timer however long its body is allowed to take.
+const STALE_MS = 5 * 60000;
+const LEGACY_TTL_MS = 60000;
+// Multipart boundaries and part headers ride on top of the file bytes.
+const FRAMING_BYTES = MiB;
 const DEFAULTS = Object.freeze({
   requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 5, headroomFiles: 1024,
   requestTimeoutMs: 300000,
-  gallery: { bytes: 5 * GiB, files: 2000, pendingBytes: 512 * MiB, pendingFiles: 100, requests: 2, hourBytes: GiB, hourRequests: 120 },
-  guest: { bytes: GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 256 * MiB, hourRequests: 120 },
-  transfer: { bytes: 2 * GiB, files: 500, pendingBytes: 256 * MiB, pendingFiles: 50, requests: 2, hourBytes: 512 * MiB, hourRequests: 120 },
-  account: { bytes: 50 * GiB, files: 20000, pendingBytes: GiB, pendingFiles: 500, requests: 4, hourBytes: 2 * GiB, hourRequests: 600 },
-  deployment: { bytes: 200 * GiB, files: 100000, pendingBytes: 2 * GiB, pendingFiles: 1000, requests: 8, hourBytes: 4 * GiB, hourRequests: 1200 },
+  gallery: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 16, hourBytes: 20 * GiB },
+  guest: { bytes: 10 * GiB, files: 5000, pendingBytes: 5 * GiB, pendingFiles: 1000, requests: 4, hourBytes: 5 * GiB },
+  transfer: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 4, hourBytes: 20 * GiB },
+  account: { bytes: 500 * GiB, files: 200000, pendingBytes: 50 * GiB, pendingFiles: 20000, requests: 32, hourBytes: 100 * GiB },
+  // No lifetime ceiling for the whole deployment: free-disk headroom bounds it.
+  deployment: { bytes: UNLIMITED, files: UNLIMITED, pendingBytes: 100 * GiB, pendingFiles: 50000, requests: 64, hourBytes: 200 * GiB },
 });
 const scopeNames = ['gallery', 'guest', 'transfer', 'account', 'deployment'];
-const capNames = ['bytes', 'files', 'pendingBytes', 'pendingFiles', 'requests', 'hourBytes', 'hourRequests'];
+const capNames = ['bytes', 'files', 'pendingBytes', 'pendingFiles', 'requests', 'hourBytes'];
 
 function configuration() {
   const result = JSON.parse(JSON.stringify(DEFAULTS));
@@ -34,14 +45,14 @@ function configuration() {
   const scalar = ['requestBytes', 'headroomBytes', 'headroomPercent', 'headroomFiles', 'requestTimeoutMs'];
   for (const [key, value] of Object.entries(overrides)) {
     if (scalar.includes(key)) {
-      const maximum = key === 'headroomPercent' ? 50 : key === 'requestTimeoutMs' ? 3600000 : 1024 * GiB;
+      const maximum = key === 'headroomPercent' ? 50 : key === 'requestTimeoutMs' ? 3600000 : UNLIMITED;
       if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
         throw new Error(`Invalid public upload limit: ${key}`);
       }
       result[key] = value;
     } else if (scopeNames.includes(key) && value && typeof value === 'object' && !Array.isArray(value)) {
       for (const [cap, limit] of Object.entries(value)) {
-        if (!capNames.includes(cap) || !Number.isSafeInteger(limit) || limit <= 0 || limit > 1024 * GiB) {
+        if (!capNames.includes(cap) || !Number.isSafeInteger(limit) || limit <= 0) {
           throw new Error(`Invalid public upload limit: ${key}.${cap}`);
         }
         result[key][cap] = limit;
@@ -59,6 +70,7 @@ function refusal(code, status = 429) {
 
 // A write FIRST on SQLite avoids a deferred read -> write upgrade race.
 // PostgreSQL's UPDATE takes the same singleton row lock across all replicas.
+// Held for ledger reads and writes only, never across file I/O.
 function locked(fn) {
   return db.transaction(async trx => {
     if (await trx('public_upload_lock').where({ id: 1 }).update({ revision: 0 }) !== 1) {
@@ -77,46 +89,64 @@ function filter(query, scope, values) {
 }
 
 async function sum(query) {
-  const row = await query.sum('bytes as bytes').sum('files as files').first();
-  return { bytes: Number(row?.bytes || 0), files: Number(row?.files || 0) };
+  const row = await query.sum('bytes as bytes').sum('files as files').count('id as count').first();
+  return { bytes: Number(row?.bytes || 0), files: Number(row?.files || 0), count: Number(row?.count || 0) };
 }
 
-// Existing media remain charged too. Ledger-associated rows are excluded here
-// (their independent lifetime charge already survives archival/deletion).
-async function catalogue(trx, scope, values) {
-  let photos = trx('photos as p').join('events as e', 'e.id', 'p.event_id')
-    .whereNotExists(trx('public_upload_objects as o').select('o.id')
-      .where('o.reference_type', 'photo').whereColumn('o.reference_id', 'p.id'))
-    .where(q => q.whereNull('e.source_mode').orWhereNot('e.source_mode', 'reference'));
-  let uploads = trx('transfer_uploads as u').join('transfers as t', 't.id', 'u.transfer_id')
-    .whereNotExists(trx('public_upload_objects as o').select('o.id')
-      .where('o.reference_type', 'transfer').whereColumn('o.reference_id', 'u.id'));
-  let archives = trx('events as e').whereNotNull('e.archive_path');
-  if (scope === 'guest') return { bytes: 0, files: 0 }; // legacy stable has no guest identity
-  if (scope === 'gallery') {
-    photos = photos.where('e.id', values.event_id);
-    archives = archives.where('e.id', values.event_id);
-  } else if (scope === 'transfer') {
-    uploads = uploads.where('t.id', values.transfer_id);
-  } else if (scope === 'account') {
-    for (const [query, column] of [[photos, 'e.created_by'], [uploads, 't.created_by'], [archives, 'e.created_by']]) {
-      if (values.account_id == null) query.whereNull(column); else query.where(column, values.account_id);
-    }
-  }
+/** The largest raw body one request may send. A single file of the admin's
+ * configured maximum always fits, whatever the batch setting or ceiling. */
+async function requestBudget(maxFileBytes = 0, limits = configuration()) {
+  const setting = await db('app_settings').where({ setting_key: 'general_max_upload_batch_size_mb' }).first('setting_value');
+  let batchMb;
+  try { batchMb = Number(JSON.parse(setting?.setting_value)); } catch (_) { batchMb = NaN; }
+  const batch = Number.isFinite(batchMb) && batchMb > 0 ? Math.floor(batchMb * MiB) : limits.requestBytes;
+  const oneFile = Number.isFinite(maxFileBytes) && maxFileBytes > 0 ? Math.ceil(maxFileBytes) + FRAMING_BYTES : 0;
+  return Math.max(Math.min(limits.requestBytes, batch), oneFile);
+}
+
+// Public uploads that predate the ledger: guest-marked photos and file-request
+// uploads. Ledger-associated rows are excluded (their own charge survives
+// deletion). Read outside the lock and cached: new uploads only ever land in
+// the ledger, so a stale value can only over-count.
+const legacyCache = new Map();
+async function legacyCharge(scope, values, cap) {
+  // Guests had no identity before the ledger; an unlimited scope needs no sum.
+  if (scope === 'guest' || (cap.bytes === UNLIMITED && cap.files === UNLIMITED)) return { bytes: 0, files: 0 };
+  const key = `${scope}:${{ gallery: values.event_id, transfer: values.transfer_id, account: values.account_id }[scope] ?? ''}`;
+  const hit = legacyCache.get(key);
+  if (hit && Date.now() - hit.at < LEGACY_TTL_MS) return hit.total;
   const total = { bytes: 0, files: 0 };
+  const add = async query => {
+    const row = await query.first();
+    total.bytes += Number(row?.bytes || 0); total.files += Number(row?.files || 0);
+  };
+  const uncharged = (type, column) => db('public_upload_objects as o').select('o.id')
+    .where('o.reference_type', type).whereColumn('o.reference_id', column);
   if (scope !== 'transfer') {
-    const p = await photos.sum('p.size_bytes as bytes').count('p.id as files').first();
-    const a = await archives.sum('e.archive_size as bytes').count('e.id as files').first();
-    total.bytes += Number(p?.bytes || 0) + Number(a?.bytes || 0);
-    total.files += Number(p?.files || 0) + Number(a?.files || 0);
+    const photos = db('photos as p').where('p.uploaded_by', 'guest').whereNotExists(uncharged('photo', 'p.id'))
+      .sum('p.size_bytes as bytes').count('p.id as files');
+    if (scope === 'gallery') photos.where('p.event_id', values.event_id);
+    else if (scope === 'account') {
+      photos.join('events as e', 'e.id', 'p.event_id');
+      if (values.account_id == null) photos.whereNull('e.created_by'); else photos.where('e.created_by', values.account_id);
+    }
+    await add(photos);
   }
   if (scope !== 'gallery') {
-    const u = await uploads.sum('u.size_bytes as bytes').count('u.id as files').first();
-    total.bytes += Number(u?.bytes || 0); total.files += Number(u?.files || 0);
+    const uploads = db('transfer_uploads as u').whereNotExists(uncharged('transfer', 'u.id'))
+      .sum('u.size_bytes as bytes').count('u.id as files');
+    if (scope === 'transfer') uploads.where('u.transfer_id', values.transfer_id);
+    else if (scope === 'account') {
+      uploads.join('transfers as t', 't.id', 'u.transfer_id');
+      if (values.account_id == null) uploads.whereNull('t.created_by'); else uploads.where('t.created_by', values.account_id);
+    }
+    await add(uploads);
   }
   if (!Number.isSafeInteger(total.bytes) || !Number.isSafeInteger(total.files) || total.bytes < 0) {
     throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
   }
+  if (legacyCache.size >= 1000) legacyCache.clear();
+  legacyCache.set(key, { at: Date.now(), total });
   return total;
 }
 
@@ -126,76 +156,98 @@ function stagingPath(id) {
   return path.join(tempRoot(), id);
 }
 
-async function headroom(trx, bytes, limits, directory = tempRoot(), files = 0) {
-  let stat;
+async function diskStat(directory) {
   for (;;) {
-    try { stat = await fs.statfs(directory); break; } catch (err) {
+    try { return await fs.statfs(directory); } catch (err) {
       if (err.code !== 'ENOENT' || path.dirname(directory) === directory) throw err;
       directory = path.dirname(directory);
     }
   }
+}
+
+async function headroom(trx, stat, bytes, limits, files = 0) {
   const free = Number(stat.bavail) * Number(stat.bsize);
   const total = Number(stat.blocks) * Number(stat.bsize);
   const other = await sum(trx('public_upload_requests').where({ active: 1 }));
   const promoting = getStorage().kind() === 'local'
     ? await sum(trx('public_upload_objects').whereIn('state', ['promoting', 'uncertain'])) : { bytes: 0, files: 0 };
-  const active = await trx('public_upload_requests').where({ active: 1 }).count('id as count').first();
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
   const copies = getStorage().kind() === 'local' ? 2 : 1;
   const floor = Math.max(limits.headroomBytes, Math.ceil(total * limits.headroomPercent / 100));
   if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - copies * (bytes + other.bytes + promoting.bytes) < floor
-    || !Number.isSafeInteger(freeFiles) || freeFiles - copies * (files + other.files + promoting.files) - Number(active?.count || 0) - 1 < limits.headroomFiles) {
+    || !Number.isSafeInteger(freeFiles) || freeFiles - copies * (files + other.files + promoting.files) - other.count - 1 < limits.headroomFiles) {
     throw refusal('UPLOAD_STORAGE_LOW', 507);
   }
 }
 
-async function begin({ eventId = null, guestId = null, transferId = null, maxFiles }) {
+// What one scope still has room for. `held` is every active request's
+// reservation, this request's own included once it exists.
+async function room(trx, scope, values, cap, legacy) {
+  const objects = await sum(filter(trx('public_upload_objects'), scope, values));
+  const held = await sum(filter(trx('public_upload_requests').where({ active: 1 }), scope, values));
+  const pending = await sum(filter(trx('public_upload_objects').where({ pending: 1 }), scope, values));
+  return {
+    active: held.count,
+    bytes: cap.bytes - legacy.bytes - objects.bytes - held.bytes,
+    files: cap.files - legacy.files - objects.files - held.files,
+    pendingBytes: cap.pendingBytes - pending.bytes - held.bytes,
+    pendingFiles: cap.pendingFiles - pending.files - held.files,
+  };
+}
+
+const scopesOf = values => [values.event_id ? 'gallery' : 'transfer', ...(values.event_id ? ['guest'] : []), 'account', 'deployment'];
+
+// Requests this process is still serving; the heartbeat keeps their lease.
+const live = new Set();
+
+/** `declaredBytes` is the request's Content-Length when it has one: the
+ * reservation is then what the request will actually send, not the ceiling.
+ * One file is reserved; reserveFile() adds one per further file part. */
+async function begin({ eventId = null, guestId = null, clientKey = null, transferId = null, maxFiles, maxFileBytes = 0, declaredBytes = null }) {
   const limits = configuration();
   await fs.mkdir(tempRoot(), { recursive: true, mode: 0o700 });
+  const owner = await db(eventId ? 'events' : 'transfers').where({ id: eventId || transferId }).first('created_by');
+  if (!owner) throw refusal('UPLOAD_TARGET_GONE', 404);
+  // A guest without an identity is bucketed by client network, so strangers
+  // do not share one allowance and one concurrency slot per gallery.
+  const guest = guestId || (clientKey ? `ip:${clientKey}` : 'anonymous');
+  const values = { event_id: eventId, transfer_id: transferId, account_id: owner.created_by ?? null,
+    guest_scope: eventId ? `${eventId}:${guest}`.slice(0, 80) : null };
+  const ceiling = await requestBudget(maxFileBytes, limits);
+  if (declaredBytes != null && declaredBytes > ceiling) throw refusal('UPLOAD_REQUEST_TOO_LARGE', 413);
+  const scopes = scopesOf(values);
+  const legacy = {};
+  for (const scope of scopes) legacy[scope] = await legacyCharge(scope, values, limits[scope]);
+  const stat = await diskStat(tempRoot());
   const session = await locked(async trx => {
-    const ownerTable = eventId ? 'events' : 'transfers';
-    const owner = await trx(ownerTable).where({ id: eventId || transferId }).first('created_by');
-    if (!owner) throw refusal('UPLOAD_TARGET_GONE', 404);
-    const values = { event_id: eventId, transfer_id: transferId, account_id: owner.created_by ?? null,
-      guest_scope: eventId ? `${eventId}:${guestId || 'anonymous'}` : null };
-    const setting = await trx('app_settings').where({ setting_key: 'general_max_upload_batch_size_mb' }).first('setting_value');
-    let batchMb;
-    try { batchMb = Number(JSON.parse(setting?.setting_value)); } catch (_) { batchMb = NaN; }
-    let bytes = Math.min(limits.requestBytes, Number.isFinite(batchMb) && batchMb > 0 ? Math.floor(batchMb * MiB) : limits.requestBytes);
-    let files = maxFiles;
-    const scopes = [eventId ? 'gallery' : 'transfer', ...(eventId ? ['guest'] : []), 'account', 'deployment'];
+    let bytes = ceiling;
     for (const scope of scopes) {
       const cap = limits[scope];
-      const base = await catalogue(trx, scope, values);
-      const objects = await sum(filter(trx('public_upload_objects'), scope, values));
-      const held = await sum(filter(trx('public_upload_requests').where({ active: 1 }), scope, values));
-      const pending = await sum(filter(trx('public_upload_objects').where({ pending: 1 }), scope, values));
-      const active = await filter(trx('public_upload_requests').where({ active: 1 }), scope, values).count('id as count').first();
+      const left = await room(trx, scope, values, cap, legacy[scope]);
       const rate = await filter(trx('public_upload_requests').where('created_at', '>=', new Date(Date.now() - 3600000).toISOString()), scope, values)
-        .sum('rate_bytes as bytes').count('id as count').first();
-      if (Number(active?.count || 0) >= cap.requests) throw refusal('UPLOAD_CONCURRENCY_LIMIT');
-      if (Number(rate?.count || 0) >= cap.hourRequests) throw refusal('UPLOAD_REQUEST_RATE_LIMIT');
-      const quotaBytes = cap.bytes - base.bytes - objects.bytes - held.bytes;
-      const quotaFiles = cap.files - base.files - objects.files - held.files;
-      const pendingBytes = cap.pendingBytes - pending.bytes - held.bytes;
-      const pendingFiles = cap.pendingFiles - pending.files - held.files;
+        .sum('rate_bytes as bytes').first();
+      if (left.active >= cap.requests) throw refusal('UPLOAD_CONCURRENCY_LIMIT');
       const rateBytes = cap.hourBytes - Number(rate?.bytes || 0);
-      if (quotaBytes <= 0 || quotaFiles <= 0) throw refusal('UPLOAD_LIFETIME_LIMIT');
-      if (pendingBytes <= 0 || pendingFiles <= 0) throw refusal('UPLOAD_PENDING_LIMIT');
+      if (left.bytes <= 0 || left.files <= 0) throw refusal('UPLOAD_LIFETIME_LIMIT');
+      // Pending work only needs SOME room: clamping the body to it would
+      // refuse a single allowed file whenever the backlog is nearly full.
+      if (left.pendingBytes <= 0 || left.pendingFiles <= 0) throw refusal('UPLOAD_PENDING_LIMIT');
       if (rateBytes <= 0) throw refusal('UPLOAD_BYTE_RATE_LIMIT');
-      // Leave capacity for the configured number of simultaneous requests,
-      // rather than reserving every pending slot for the first small upload.
-      bytes = Math.min(bytes, quotaBytes, pendingBytes, Math.ceil(cap.pendingBytes / cap.requests), rateBytes);
-      files = Math.min(files, quotaFiles, pendingFiles, Math.ceil(cap.pendingFiles / cap.requests));
+      bytes = Math.min(bytes, left.bytes, rateBytes);
     }
-    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(files) || files <= 0) throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
-    await headroom(trx, bytes, limits, tempRoot(), files);
-    const row = { id: crypto.randomUUID(), ...values, bytes, files, rate_bytes: bytes, active: 1, host: os.hostname(), pid: process.pid,
-      created_at: new Date().toISOString() };
+    if (declaredBytes != null) {
+      if (declaredBytes > bytes) throw refusal('UPLOAD_REQUEST_TOO_LARGE', 413);
+      bytes = Math.max(declaredBytes, 1);
+    }
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(maxFiles) || maxFiles <= 0) throw refusal('UPLOAD_QUOTA_UNAVAILABLE', 503);
+    await headroom(trx, stat, bytes, limits, 1);
+    const row = { id: crypto.randomUUID(), ...values, bytes, files: 1, rate_bytes: bytes, active: 1, host: os.hostname(), pid: process.pid,
+      heartbeat_at: Date.now(), created_at: new Date().toISOString() };
     await trx('public_upload_requests').insert(row);
-    return { ...row, limits, dir: stagingPath(row.id), receivedBytes: 0 };
+    return { ...row, limits, legacy, maxFiles, stagedFiles: 0, dir: stagingPath(row.id), receivedBytes: 0 };
   });
+  live.add(session.id);
   try {
     await fs.mkdir(session.dir, { mode: 0o700 });
   } catch (err) {
@@ -204,18 +256,35 @@ async function begin({ eventId = null, guestId = null, transferId = null, maxFil
   return session;
 }
 
+/** Call once per file part before staging it. The first uses the admission
+ * reservation; each further one must find lifetime and pending room. */
+async function reserveFile(session) {
+  session.stagedFiles += 1;
+  if (session.stagedFiles === 1) return;
+  await locked(async trx => {
+    for (const scope of scopesOf(session)) {
+      const left = await room(trx, scope, session, session.limits[scope], session.legacy[scope]);
+      if (left.files <= 0) throw refusal('UPLOAD_LIFETIME_LIMIT');
+      if (left.pendingFiles <= 0) throw refusal('UPLOAD_PENDING_LIMIT');
+    }
+    if (await trx('public_upload_requests').where({ id: session.id, active: 1 }).increment('files', 1) !== 1) {
+      throw refusal('UPLOAD_RESERVATION_LOST', 409);
+    }
+  });
+  session.files += 1;
+}
+
 async function prepareObject(session, key, size) {
   if (session.isCancelled?.()) throw refusal('UPLOAD_CANCELLED', 400);
   if (!Number.isSafeInteger(size) || size <= 0) throw new Error('Invalid uploaded file size');
+  const storage = getStorage();
+  // Recheck the actual destination mount immediately before promotion; it
+  // may differ from the staging mount or have other writers since admission.
+  const stat = await diskStat(storage.kind() === 'local' ? path.dirname(storage.resolveLocalPath(key)) : tempRoot());
   return locked(async trx => {
     const request = await trx('public_upload_requests').where({ id: session.id, active: 1 }).first();
     if (!request || Number(request.bytes) < size || request.files < 1) throw refusal('UPLOAD_RESERVATION_LOST', 409);
-    const storage = getStorage();
-    // Recheck the actual destination mount immediately before promotion; it
-    // may differ from the staging mount or have other writers since admission.
-    if (storage.kind() === 'local') {
-      await headroom(trx, 0, session.limits, path.dirname(storage.resolveLocalPath(key)));
-    } else await headroom(trx, 0, session.limits);
+    await headroom(trx, stat, 0, session.limits);
     const object = { id: crypto.randomUUID(), request_id: session.id, object_key: key, bytes: size, files: 1,
       event_id: request.event_id, guest_scope: request.guest_scope, transfer_id: request.transfer_id, account_id: request.account_id };
     await trx('public_upload_objects').insert(object);
@@ -261,7 +330,9 @@ async function failedObject(object, { storage, settled }) {
 
 async function finish(session) {
   // Call ONLY after all temp writers and durable promotions have settled.
-  // A failed deletion keeps both capacity and admission slots reserved.
+  // A failed deletion keeps both capacity and admission slots reserved; the
+  // reaper retries it once the lease lapses.
+  live.delete(session.id);
   try {
     await fs.rm(session.dir, { recursive: true, force: true });
   } catch (err) {
@@ -275,19 +346,55 @@ async function finish(session) {
   return true;
 }
 
-async function processingComplete(photoId) {
-  // Never called from a janitor or a failed worker. No age-based releases.
+/** The photo left the processing queue (complete or terminally failed): its
+ * work hold ends, its lifetime charge stays. */
+async function releasePending(photoId) {
   await db('public_upload_objects').where({ reference_type: 'photo', reference_id: photoId, state: 'stored' }).update({ pending: 0 });
 }
 
+// A pending photo that was deleted, or failed without reaching the call
+// above, is no longer queued work either.
+async function reconcilePending() {
+  await db('public_upload_objects').where({ pending: 1, state: 'stored', reference_type: 'photo' })
+    .whereNotExists(db('photos as p').select('p.id').whereColumn('p.id', 'public_upload_objects.reference_id')
+      .whereIn('p.processing_status', ['pending', 'processing']))
+    .update({ pending: 0 });
+}
+
+async function heartbeat() {
+  if (live.size) await db('public_upload_requests').whereIn('id', [...live]).where({ active: 1 }).update({ heartbeat_at: Date.now() });
+}
+
+/** Release requests whose lease lapsed: their process died mid-upload. Host
+ * and pid prove nothing (a recreated container has a new hostname, a
+ * restarted one reuses its pid), so only the heartbeat decides. */
 async function cleanupAbandoned() {
-  const rows = await db('public_upload_requests').where({ active: 1, host: os.hostname() }).whereNot('pid', process.pid).limit(100);
+  const rows = await db('public_upload_requests').where({ active: 1 }).where('heartbeat_at', '<', Date.now() - STALE_MS).limit(100);
   for (const row of rows) {
-    try { process.kill(row.pid, 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
-    // Only this dead local Node producer wrote this private staging directory.
-    // An uncertain remote PUT remains in the object ledger after this cleanup.
+    if (live.has(row.id)) continue;
+    // Removes the staging directory when it is under this process's staging
+    // root. An uncertain remote PUT remains in the object ledger regardless.
     await finish({ ...row, dir: stagingPath(row.id), receivedBytes: Number(row.rate_bytes) });
   }
 }
 
-module.exports = { begin, prepareObject, commitObject, failedObject, finish, processingComplete, cleanupAbandoned, configuration, refusal };
+let maintenance = null;
+/** Started once at boot: keeps this process's leases and runs the reapers. */
+function startMaintenance() {
+  if (maintenance) return;
+  maintenance = setInterval(() => {
+    heartbeat().then(cleanupAbandoned).then(reconcilePending)
+      .catch(err => logger.warn('Public upload maintenance failed', { error: err.message }));
+  }, HEARTBEAT_MS);
+  maintenance.unref();
+}
+function stopMaintenance() {
+  clearInterval(maintenance);
+  maintenance = null;
+}
+
+module.exports = {
+  begin, reserveFile, prepareObject, commitObject, failedObject, finish, releasePending, processingComplete: releasePending,
+  reconcilePending, heartbeat, cleanupAbandoned, startMaintenance, stopMaintenance, requestBudget, configuration, refusal,
+  STALE_MS, _legacyCache: legacyCache,
+};

@@ -826,9 +826,10 @@
       "batch": "Dieser Upload überschreitet die Stapelgrenze des Servers oder das verbleibende Kontingent. Bitte weniger oder kleinere Dateien senden oder den Eigentümer kontaktieren.",
       "lifetime": "Diese Galerie oder Dateianfrage hat ihr Upload-Kontingent erreicht. Bitte den Eigentümer kontaktieren.",
       "busy": "Andere Uploads oder Verarbeitungsaufträge belegen die verfügbare Kapazität. Bitte später erneut versuchen.",
-      "rate": "Die Upload-Daten- oder Anfragegrenze für diese Stunde wurde erreicht. Bitte später erneut versuchen.",
+      "rate": "Die Upload-Datengrenze für diese Stunde wurde erreicht. Bitte später erneut versuchen.",
       "unavailable": "Die Speicherkapazität für Uploads ist nicht verfügbar. Bitte den Eigentümer kontaktieren.",
-      "timeout": "Der Upload hat zu lange gedauert. Bitte einen kleineren Stapel versuchen."
+      "timeout": "Der Upload hat zu lange gedauert. Bitte einen kleineren Stapel versuchen.",
+      "gone": "Diese Galerie oder Dateianfrage existiert nicht mehr."
     },
     "photoCategory": "Fotokategorie",
     "noCategory": "Keine Kategorie",
