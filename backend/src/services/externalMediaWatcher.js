@@ -57,7 +57,7 @@ const chokidar = require('chokidar');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
-const { resolveExternalPath } = require('./externalMediaService');
+const externalAccess = require('./externalMediaAccess');
 const {
   importExternalFolder,
   ImportInProgressError,
@@ -193,7 +193,7 @@ function scheduleImport(eventId) {
 async function startWatching(event) {
   let absPath;
   try {
-    absPath = resolveExternalPath({ external_path: event.external_path }, '');
+    absPath = (await externalAccess.authorizeImport(event.id, event.external_path, { automatic: true })).target;
   } catch (err) {
     // A path outside EXTERNAL_MEDIA_ROOT cannot be watched, and should not
     // have been saved. Log and leave it; nothing to clean up.
@@ -217,6 +217,7 @@ async function startWatching(event) {
   missingLogged.delete(event.id);
 
   const watcher = chokidar.watch(absPath, {
+    followSymlinks: false,
     // The sweep and the first reconcile cover what is already there; firing
     // 'add' for every existing file on boot would schedule an import of a
     // folder that was just imported.
@@ -285,7 +286,15 @@ async function reconcile() {
     return;
   }
 
-  const wanted = new Map(events.map((e) => [e.id, e]));
+  const wanted = new Map();
+  for (const event of events) {
+    try {
+      await externalAccess.authorizeImport(event.id, event.external_path, { automatic: true });
+      wanted.set(event.id, event);
+    } catch (error) {
+      logger.debug('[externalMediaWatcher] source no longer authorized', { eventId: event.id, error: error.message });
+    }
+  }
 
   for (const eventId of [...watched.keys()]) {
     const next = wanted.get(eventId);

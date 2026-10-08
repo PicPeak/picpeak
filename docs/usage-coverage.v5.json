@@ -761,9 +761,12 @@
       "signals": [
         "share_mounts"
       ],
-      "reason": "Only admin import operation; status/list/browse are not use. Snapshot checks external-path presence, never reports a path.",
+      "reason": "Only admin import operation is use; status, browsing and source-owner assignment/revocation are excluded. Snapshot checks external-path presence, never reports a path or owner.",
       "route_signatures": [
         "GET /list",
+        "GET /sources",
+        "PUT /sources",
+        "DELETE /sources/:sourceId",
         "POST /events/:id/import-external"
       ]
     },

@@ -73,6 +73,7 @@ describe('external media symlink containment', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     ({ list, resolveExternalPhotoPath } = require('../../src/services/externalMediaService'));
     ({ importExternalFolder } = require('../../src/services/externalImportService'));
 
@@ -104,15 +105,15 @@ describe('external media symlink containment', () => {
 
   describe('browsing', () => {
     it('does not list a link, to a directory or a file', async () => {
-      const top = await list('');
+      const top = await list('', { id: 1 });
       expect(top.entries.map((e) => e.name)).toEqual(['inside']);
-      const inside = await list('inside');
+      const inside = await list('inside', { id: 1 });
       expect(inside.entries.map((e) => e.name)).toEqual(['a.jpg']);
     });
 
     it('refuses to list through a link', async () => {
-      await expect(list('link')).rejects.toThrow('Path traversal attempt detected');
-      await expect(list('inside/nested-link')).rejects.toThrow('Path traversal attempt detected');
+      await expect(list('link', { id: 1 })).rejects.toThrow('Path traversal attempt detected');
+      await expect(list('inside/nested-link', { id: 1 })).rejects.toThrow('Path traversal attempt detected');
       const res = await request(app).get('/api/admin/external-media/list').query({ path: 'link' });
       expect(res.status).toBe(400);
     });
@@ -132,13 +133,13 @@ describe('external media symlink containment', () => {
 
     it('refuses a folder reached through a nested link', async () => {
       const eventId = await seedEvent();
-      await expect(importExternalFolder({ eventId, externalPath: 'inside/nested-link' }))
+      await expect(importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'inside/nested-link' }))
         .rejects.toMatchObject({ code: 'PATH_OUTSIDE_BASE' });
     });
 
     it('walks a real folder recursively without following the links inside it', async () => {
       const eventId = await seedEvent();
-      const result = await importExternalFolder({ eventId, externalPath: 'inside', recursive: true });
+      const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'inside', recursive: true });
       expect(result.imported).toBe(1);
       const rows = await db('photos').where({ event_id: eventId });
       expect(rows.map((r) => r.external_relpath)).toEqual([path.join('inside', 'a.jpg')]);

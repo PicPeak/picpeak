@@ -22,6 +22,7 @@ const { errorResponse, safeValidationErrors } = require('../../utils/routeHelper
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
+const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
@@ -1375,7 +1376,7 @@ module.exports = (router) => {
       // canonical one is dropped here, before the guard.
       for (const key of Object.keys(updates)) {
         const lower = key.toLowerCase();
-        if ((lower === 'external_watch' || lower === 'external_path') && key !== lower) delete updates[key];
+        if (['external_watch', 'external_path', 'source_mode'].includes(lower) && key !== lower) delete updates[key];
       }
 
       // Folder watcher opt-in (issue 1187). Written through formatBoolean
@@ -1413,6 +1414,25 @@ module.exports = (router) => {
 
       if (updates.source_mode === 'reference' && (updates.external_path === null || updates.external_path === undefined)) {
         return res.status(400).json({ error: 'external_path is required when source_mode is reference' });
+      }
+
+      if (updates.external_path || updates.source_mode === 'reference' || Boolean(updates.external_watch)) {
+        const currentSource = await db('events').where({ id }).first('external_path', 'external_watch');
+        const selectedPath = updates.external_path ?? currentSource?.external_path;
+        const willWatch = Object.prototype.hasOwnProperty.call(updates, 'external_watch')
+          ? Boolean(updates.external_watch) : Boolean(currentSource?.external_watch);
+        try {
+          const access = await externalAccess.authorizeImport(id, selectedPath, {
+            actor: { type: 'admin', id: req.admin.id },
+            permission: willWatch ? 'photos.upload' : 'photos.view',
+          });
+          if (Object.prototype.hasOwnProperty.call(updates, 'external_path')) updates.external_path = access.relativePath;
+        } catch (error) {
+          if (error instanceof externalAccess.ExternalMediaAccessError || error.code === 'PATH_OUTSIDE_BASE') {
+            return res.status(error.statusCode || 400).json({ error: error.message });
+          }
+          throw error;
+        }
       }
 
       // Plaintexts to remember after the row is written (#1271); each key is
