@@ -23,6 +23,9 @@ exports.up = async function(knex) {
         t.bigInteger('rate_bytes').notNullable();
         t.string('host', 255).notNullable();
         t.integer('pid').notNullable();
+        // Epoch ms, refreshed while the request is live. A row whose lease
+        // lapsed is abandoned whatever host or pid wrote it.
+        t.bigInteger('heartbeat_at').notNullable().index();
       } else {
         t.string('request_id', 36).notNullable().index();
         t.text('object_key').notNullable();

@@ -776,15 +776,28 @@
   },
   "upload": {
     "capacity": {
-      "decoded": "Diese Medien oder dieser Stapel überschreiten das Verarbeitungsbudget des Servers. Bitte weniger Einzelbilder, geringere Abmessungen, kürzere Videos oder einen kleineren Stapel verwenden.",
-      "signature": "Diese Datei enthält kein unterstütztes Video oder RAW-Bild. Bitte die ursprüngliche Mediendatei hochladen.",
+      "decoded": "Dieses Bild überschreitet die Bildverarbeitungsgrenzen des Servers.",
+      "imagePixels": "Dieses Bild ist größer als die {{max}} Megapixel, die dieser Server verarbeitet.",
+      "imageDimension": "Dieses Bild ist länger als die {{max}} px je Seite, die dieser Server verarbeitet.",
+      "imageFrames": "Diese Animation hat mehr als die {{max}} Einzelbilder, die dieser Server verarbeitet.",
+      "imageFileSize": "Diese Bilddatei ist größer als die {{max}} MB, die dieser Server verarbeitet.",
+      "imageMemory": "Dieses Bild benötigt mehr Arbeitsspeicher als die {{max}} MB, die dieser Server der Bildverarbeitung gibt.",
       "processing": "Die Bildverarbeitung konnte innerhalb der Ressourcenlimits des Servers nicht abgeschlossen werden. Bitte den Eigentümer kontaktieren.",
       "batch": "Dieser Upload überschreitet die Stapelgrenze des Servers oder das verbleibende Kontingent. Bitte weniger oder kleinere Dateien senden oder den Eigentümer kontaktieren.",
       "lifetime": "Diese Galerie oder Dateianfrage hat ihr Upload-Kontingent erreicht. Bitte den Eigentümer kontaktieren.",
       "busy": "Andere Uploads oder Verarbeitungsaufträge belegen die verfügbare Kapazität. Bitte später erneut versuchen.",
-      "rate": "Die Upload-Daten- oder Anfragegrenze für diese Stunde wurde erreicht. Bitte später erneut versuchen.",
+      "rate": "Die Upload-Datengrenze für diese Stunde wurde erreicht. Bitte später erneut versuchen.",
       "unavailable": "Die Speicherkapazität für Uploads ist nicht verfügbar. Bitte den Eigentümer kontaktieren.",
-      "timeout": "Der Upload hat zu lange gedauert. Bitte einen kleineren Stapel versuchen."
+      "timeout": "Der Upload hat zu lange gedauert. Bitte einen kleineren Stapel versuchen.",
+      "gone": "Diese Galerie oder Dateianfrage existiert nicht mehr."
+    },
+    "adminCapacity": {
+      "batch": "Dieser Upload ist größer, als der Server in einer Anfrage annimmt. Verringern Sie die Upload-Batchgröße in den Einstellungen.",
+      "busy": "Der Server war durchgehend mit anderen Uploads ausgelastet und hatte nicht rechtzeitig Platz für diese Dateien. Laden Sie sie gleich noch einmal hoch.",
+      "storage": "Auf dem Server ist zu wenig Speicherplatz frei. Schaffen Sie Platz und laden Sie diese Dateien dann erneut hoch.",
+      "unavailable": "Der Server konnte keinen Platz für diesen Upload reservieren. Prüfen Sie das Serverprotokoll und ADMIN_UPLOAD_LIMITS_JSON.",
+      "timeout": "Der Upload hat zu lange gedauert und wurde abgebrochen. Prüfen Sie die Verbindung und laden Sie diese Dateien erneut hoch.",
+      "waiting": "Warten auf freie Upload-Kapazität des Servers (Versuch {{attempt}} von {{total}})…"
     },
     "photoCategory": "Fotokategorie",
     "noCategory": "Keine Kategorie",

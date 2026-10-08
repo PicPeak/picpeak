@@ -1,168 +1,45 @@
 /**
  * Unit tests for backgroundProcessor.claimNextPhoto.
  *
- * Mocks the db so we don't need a live postgres/sqlite — focuses on
- * the claim contract: returns null when no rows, returns row + flips
- * status to 'processing' when one is available, returns null when a
- * race loses the UPDATE-with-guard.
+ * The claim itself (SKIP LOCKED on Postgres, the status-guarded UPDATE on
+ * SQLite, the due time, the attempt limit) lives in mediaAttemptService and
+ * is exercised against a real database in
+ * __tests__/integration/mediaAttempts.test.js and
+ * backgroundProcessorRetry.test.js. Here: what the photo queue does with it.
  */
-
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 jest.mock('../../src/services/photoProcessor', () => ({
   processPhoto: jest.fn(),
   processUploadedPhotos: jest.fn(),
   queueFilesForProcessing: jest.fn(),
 }));
-jest.mock('../../src/services/linuxKernelLease', () => ({
-  acquire: jest.fn(async () => ({ device: '1', inode: '2', filesystem: '3', release: jest.fn(async () => {}) })),
-}));
-jest.mock('../../src/services/linuxProcessLease', () => ({ currentIdentity: async () => ({ host: 'fixture' }) }));
+jest.mock('../../src/database/db', () => ({ db: Object.assign(jest.fn(), { client: { config: { client: 'sqlite3' } } }) }));
+jest.mock('../../src/services/mediaAttemptService', () => ({ MAX_ATTEMPTS: 5, claimNext: jest.fn(), execute: jest.fn(), recover: jest.fn(), cancel: jest.fn() }));
+jest.mock('../../src/services/publicUploadQuota', () => ({ releasePending: jest.fn(async () => {}) }));
 
-// Build a fake knex instance whose .transaction() takes a callback we can
-// drive from the test, and whose query-builder records calls.
-function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } = {}) {
-  const queries = [];
-
-  const builder = table => {
-    const recorded = { wheres: [], updates: null, ordered: false, locked: false, skipped: false, deleted: false };
-    queries.push(recorded);
-    const chain = {
-      where: jest.fn(function (...args) {
-        recorded.wheres.push(args);
-        return chain;
-      }),
-      orderBy: jest.fn(function () {
-        recorded.ordered = true;
-        return chain;
-      }),
-      forUpdate: jest.fn(function () {
-        recorded.locked = true;
-        return chain;
-      }),
-      skipLocked: jest.fn(function () {
-        recorded.skipped = true;
-        return chain;
-      }),
-      first: jest.fn(async function () {
-        // Only the SELECT chain returns the pending row; the UPDATE chain
-        // never calls .first().
-        return table === 'photos' && pendingRow ? { ...pendingRow } : null;
-      }),
-      update: jest.fn(async function (data) {
-        recorded.updates = data;
-        return updateResult;
-      }),
-      delete: jest.fn(async function () { recorded.deleted = true; return 1; }),
-      insert: jest.fn(async () => 1),
-      then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
-    };
-    return chain;
-  };
-
-  const trxFn = (table) => builder(table);
-  trxFn.client = { config: { client: clientName } };
-  trxFn.transaction = async (cb) => cb(trxFn);
-  trxFn.fn = { now: () => 'fixture-now' };
-
-  // Top-level db('photos') returns same builder for the janitor test path.
-  const db = trxFn;
-  return { db, queries };
-}
+const mediaAttempts = require('../../src/services/mediaAttemptService');
+const publicUploadQuota = require('../../src/services/publicUploadQuota');
+const bg = require('../../src/services/backgroundProcessor');
 
 describe('backgroundProcessor.claimNextPhoto', () => {
-  let leaseDirectory, priorLeasePath;
-  beforeAll(() => {
-    priorLeasePath = process.env.MEDIA_PROCESS_LEASE_PATH;
-    leaseDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'owned-media-claim-test-'));
-    process.env.MEDIA_PROCESS_LEASE_PATH = leaseDirectory;
-  });
-  afterAll(async () => {
-    if (priorLeasePath === undefined) delete process.env.MEDIA_PROCESS_LEASE_PATH;
-    else process.env.MEDIA_PROCESS_LEASE_PATH = priorLeasePath;
-    await fs.promises.rm(leaseDirectory, { recursive: true, force: true });
-  });
-  function loadProcessor(db) {
-    jest.resetModules();
-    jest.doMock('../../src/database/db', () => ({ db }));
-    return require('../../src/services/backgroundProcessor');
-  }
+  beforeEach(() => jest.clearAllMocks());
 
-  it('returns null when there are no pending photos (postgres path)', async () => {
-    const { db } = makeFakeDb({ pendingRow: null, clientName: 'pg' });
-    const bg = loadProcessor(db);
-    const result = await bg.claimNextPhoto();
-    expect(result).toBeNull();
+  it('claims the next photo through the shared attempt claim', async () => {
+    const row = { id: 42, processing_status: 'processing', processing_attempt_id: 'a', processing_attempts: 1 };
+    mediaAttempts.claimNext.mockResolvedValue(row);
+    expect(await bg.claimNextPhoto()).toBe(row);
+    expect(mediaAttempts.claimNext).toHaveBeenCalledWith('photo');
   });
 
-  it('returns the claimed row and flips status (postgres path)', async () => {
-    const pendingRow = { id: 42, processing_status: 'pending' };
-    const { db, queries } = makeFakeDb({ pendingRow, clientName: 'pg' });
-    const bg = loadProcessor(db);
-    const result = await bg.claimNextPhoto();
-    expect(result).toMatchObject({ ...pendingRow, processing_status: 'processing', processing_attempt_id: expect.any(String) });
-    // The first query is the SELECT FOR UPDATE SKIP LOCKED.
-    expect(queries.some(query => query.locked && query.skipped)).toBe(true);
-    // The second query is the status update.
-    const update = queries.find(query => query.updates);
-    expect(update.updates.processing_status).toBe('processing');
-    expect(update.updates.processing_attempts).toBe(1);
-    // An ISO string, not a Date: on SQLite the column holds whatever the
-    // driver bound, and a Date bound inside Jest lands as "[object Object]"
-    // (CLAUDE.md). The janitor compares against the same shape.
-    expect(update.updates.processing_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-  });
-
-  it.each(['pg', 'sqlite3'])('ends the finite automatic retry cycle on %s without starting native work', async clientName => {
-    const { db, queries } = makeFakeDb({ pendingRow: { id: 7, processing_attempts: 2 }, clientName });
-    const bg = loadProcessor(db);
+  it('returns null when there are no pending photos', async () => {
+    mediaAttempts.claimNext.mockResolvedValue(null);
     expect(await bg.claimNextPhoto()).toBeNull();
-    expect(queries.find(query => query.updates).updates.processing_status).toBe('failed');
-    expect(queries.filter(query => query.deleted)).toHaveLength(2);
-    expect(require('../../src/services/photoProcessor').processPhoto).not.toHaveBeenCalled();
+    expect(publicUploadQuota.releasePending).not.toHaveBeenCalled();
   });
 
-  it('retains accounting failures without turning a completed photo into failed/retryable work', async () => {
-    const { db, queries } = makeFakeDb({ pendingRow: { id: 7 } });
-    const finish = jest.fn().mockRejectedValue(new Error('capacity cleanup unavailable'));
-    jest.doMock('../../src/services/imageWorkAdmission', () => ({ finish }));
-    process.env.UPLOAD_PROCESSOR_CONCURRENCY = '1';
-    let bg;
-    try {
-      bg = loadProcessor(db);
-      let started;
-      const processing = new Promise(resolve => { started = resolve; });
-      require('../../src/services/photoProcessor').processPhoto.mockImplementation(async () => { started(); void bg.stop(); });
-      bg.start();
-      await processing;
-      await bg.stop();
-      expect(finish).toHaveBeenCalledWith(7);
-      expect(queries.some(query => query.updates?.processing_status === 'failed')).toBe(false);
-    } finally {
-      if (bg) await bg.stop();
-      delete process.env.UPLOAD_PROCESSOR_CONCURRENCY;
-      jest.dontMock('../../src/services/imageWorkAdmission');
-    }
-  });
-
-  it('returns null when the SQLite UPDATE-with-guard loses the race', async () => {
-    const pendingRow = { id: 7 };
-    const { db } = makeFakeDb({ pendingRow, clientName: 'better-sqlite3', updateResult: 0 });
-    const bg = loadProcessor(db);
-    const result = await bg.claimNextPhoto();
-    expect(result).toBeNull();
-  });
-
-  it('returns the row when SQLite UPDATE-with-guard wins', async () => {
-    const pendingRow = { id: 7 };
-    const { db, queries } = makeFakeDb({ pendingRow, clientName: 'better-sqlite3', updateResult: 1 });
-    const bg = loadProcessor(db);
-    const result = await bg.claimNextPhoto();
-    expect(result).toMatchObject({ ...pendingRow, processing_status: 'processing', processing_attempt_id: expect.any(String) });
-    // SQLite path: no FOR UPDATE / SKIP LOCKED.
-    expect(queries[0].locked).toBe(false);
-    expect(queries[0].skipped).toBe(false);
+  it('frees the pending upload hold of a photo that used up its attempts, and claims nothing', async () => {
+    mediaAttempts.claimNext.mockResolvedValue({ exhausted: 7 });
+    expect(await bg.claimNextPhoto()).toBeNull();
+    expect(publicUploadQuota.releasePending).toHaveBeenCalledWith(7);
   });
 });

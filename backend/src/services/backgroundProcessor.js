@@ -31,15 +31,28 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhoto } = require('./photoProcessor');
-const imageAdmission = require('./imageWorkAdmission');
-const mediaAdmission = require('./mediaWorkAdmission');
+const { isTransient } = require('./imageResourcePolicy');
 const mediaAttempts = require('./mediaAttemptService');
+// A photo is claimed at most this many times before it is recorded as failed:
+// claims that ended in a transient image-worker refusal (busy, unavailable,
+// deadline) and claims the janitor recovered from a process that died.
+const { MAX_ATTEMPTS } = mediaAttempts;
+const RETRY_BACKOFF_MS = 15000;
 
 const POLL_INTERVAL_MS = parseInt(process.env.UPLOAD_PROCESSOR_POLL_MS || '1000', 10);
 
-// Keep the existing host-aware default for worker-loop scheduling. Actual
-// native admission is enforced separately by the shared cgroup/host-memory
-// pool, hard child limits and durable decoded-work reservations.
+// Soft default: two worker loops × sharp.concurrency(2) means up to four
+// libvips threads can decode full-resolution photos in parallel. Each decode
+// holds the full uncompressed frame in RAM — a 24MP photo is ~96MB before
+// resize. On a 2GB VPS (the documented but barely-viable minimum) one busy
+// batch is enough to OOM-kill the backend and surface as 503s on thumbnails
+// (#628). When the host reports < 3GB total memory AND the admin hasn't set
+// an explicit override, drop the default to 1 and log a one-shot warning
+// naming the override env var. Explicit env-var setters keep their value.
+//
+// os.totalmem() reports container memory under cgroup v2 (Docker / k8s) and
+// host memory on bare metal — accurate enough for this decision in either
+// deployment shape.
 function pickDefaultConcurrency() {
   if (process.env.UPLOAD_PROCESSOR_CONCURRENCY !== undefined) {
     return parseInt(process.env.UPLOAD_PROCESSOR_CONCURRENCY, 10);
@@ -56,7 +69,7 @@ function pickDefaultConcurrency() {
   return 2;
 }
 
-const CONCURRENCY = Math.min(8, Math.max(1, pickDefaultConcurrency() || 1));
+const CONCURRENCY = Math.max(1, pickDefaultConcurrency());
 const STUCK_TIMEOUT_MS = Math.max(600000, parseInt(process.env.UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS || '600000', 10) || 600000);
 const JANITOR_INTERVAL_MS = 60 * 1000;
 
@@ -74,6 +87,24 @@ const sleep = ms => waits.sleep(ms);
  * processing_started_at is set so the janitor can recover it.
  */
 async function claimNextPhoto() {
+  const outcome = await claim();
+  if (!outcome?.exhausted) return outcome;
+  // Outside the claim transaction: SQLite has one connection.
+  await releasePendingHold(outcome.exhausted);
+  return null;
+}
+
+function releasePendingHold(photoId) {
+  // A failed photo is no longer queued work: free its public-upload
+  // pending hold (the lifetime charge for its original stays).
+  return require('./publicUploadQuota').releasePending(photoId).catch((releaseErr) => {
+    logger.warn(`backgroundProcessor: pending hold of photo ${photoId} not released`, { error: releaseErr.message });
+  });
+}
+
+// The claim itself (due time, attempt limit, SKIP LOCKED on Postgres) is
+// shared with the web-rendition queue; it also gives the claim its id.
+function claim() {
   return mediaAttempts.claimNext('photo');
 }
 
@@ -95,27 +126,42 @@ async function workerLoop(workerIdx) {
 
     try {
       await mediaAttempts.execute(claimed, 'photo', () => processPhoto(claimed.id));
-      // A completed photo must not become retryable because capacity cleanup
-      // failed. Retaining its charge is conservative; reprocessing is not.
-      const row = await db('photos').where({ id: claimed.id, processing_attempt_id: claimed.processing_attempt_id }).first();
-      if (row && !['pending', 'processing'].includes(row.web_status)) await Promise.all([imageAdmission.finish(claimed.id), mediaAdmission.finish(claimed.id)]).catch(error => {
-        logger.warn('Completed image work charge retained', { photoId: claimed.id, error: error.message });
-      });
     } catch (err) {
+      // Every write below is fenced on this worker's own attempt: a row that
+      // was replaced, retried or recovered meanwhile keeps its new state.
+      const mine = { id: claimed.id, processing_status: 'processing', processing_attempt_id: claimed.processing_attempt_id };
+      if (err.code === 'MEDIA_SUPERSEDED') continue;
+      const attempts = Number(claimed.processing_attempts || 0);
+      // A shutdown is not an attempt: the photo is due again at once.
+      const paused = !running && /_CANCELLED$/.test(err.code || '');
+      if (paused || (isTransient(err) && attempts < MAX_ATTEMPTS)) {
+        // "Not now" from the image worker says nothing about this photo: it
+        // goes back to pending and is due again after a growing pause. Only
+        // the last allowed attempt records the refusal as the failure.
+        logger.warn(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} requeued (${err.code}, attempt ${attempts} of ${MAX_ATTEMPTS})`, { error: err.message });
+        try {
+          await db('photos').where(mine).update({
+            processing_status: 'pending',
+            processing_started_at: null,
+            ...(paused ? { processing_attempts: Math.max(0, attempts - 1), processing_retry_at: null }
+              : { processing_retry_at: new Date(Date.now() + RETRY_BACKOFF_MS * attempts).toISOString() }),
+          });
+        } catch (updateErr) {
+          // Left in 'processing': the janitor puts it back.
+          logger.error(`backgroundProcessor[${workerIdx}]: failed to requeue photo ${claimed.id}`, { error: updateErr.message });
+        }
+        continue;
+      }
       logger.error(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} failed`, {
         error: err.message,
         stack: err.stack,
       });
       try {
-        if (!(await db('media_process_attempts').where({ id: claimed.processing_attempt_id, state: 'terminated' }).first())) continue;
-        const paused = !running && /_CANCELLED$/.test(err.code || '');
-        const updated = await db('photos').where({ id: claimed.id, processing_attempt_id: claimed.processing_attempt_id,
-          processing_status: 'processing', path: claimed.path, filename: claimed.filename }).update({
-          processing_status: paused ? 'pending' : 'failed',
-          ...(paused ? { processing_attempts: Math.max(0, Number(claimed.processing_attempts) - 1), processing_started_at: null } : {}),
+        const failed = await db('photos').where(mine).update({
+          processing_status: 'failed',
           processing_error: String(err.message || err).slice(0, 1000),
         });
-        if (updated && !paused) await Promise.all([imageAdmission.finish(claimed.id), mediaAdmission.finish(claimed.id)]);
+        if (failed) await releasePendingHold(claimed.id);
       } catch (updateErr) {
         logger.error(`backgroundProcessor[${workerIdx}]: failed to mark photo ${claimed.id} as failed`, {
           error: updateErr.message,
@@ -128,15 +174,12 @@ async function workerLoop(workerIdx) {
 async function janitorLoop() {
   while (running) {
     try {
-      // Written as ISO above, compared as ISO here: on SQLite the column is
-      // whatever text or number the writer bound, and a Date bound inside
-      // Jest arrives as "[object Object]" (CLAUDE.md), so both sides use the
-      // same string shape. A row still holding the old numeric shape from a
-      // process that died mid-flight sorts below any text and is reset too,
-      // which is the right outcome for it.
+      // Claims write ISO text and this compares ISO text. A row still holding
+      // the numeric shape an earlier version bound (a Date, on SQLite) is from
+      // a process that is gone: it sorts below any text and is reset too.
       const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
-      // An interrupted writer is retried at most once. Do not release its
-      // decoded reservation on age alone: a live child may still hold it.
+      // By that age for a row without an attempt record; sooner where the
+      // kernel shows the worker is gone, later while it is still at work.
       const reset = await mediaAttempts.recover('photo', cutoff);
       if (reset > 0) {
         logger.warn(
@@ -181,11 +224,11 @@ function stop() {
   if (stopping) return stopping;
   if (!running) return Promise.resolve();
   running = false;
+  // A photo in flight is told to stop and goes back to pending without
+  // losing an attempt; its worker still drains before the database closes.
   mediaAttempts.cancel('photo');
-  // Interrupt idle/backoff waits only. Claims, processing and janitor work
-  // already in flight still drain before the database can be closed.
   waits.cancel();
-  stopping = Promise.all([...workerHandles, janitorHandle].filter(Boolean)).then(() => mediaAttempts.assertDrained('photo')).finally(() => {
+  stopping = Promise.all([...workerHandles, janitorHandle].filter(Boolean)).finally(() => {
     workerHandles = [];
     janitorHandle = null;
     waits = null;

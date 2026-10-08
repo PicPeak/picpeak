@@ -116,3 +116,63 @@ describe('adding files to an existing transfer', () => {
     expect(extras).toHaveLength(2);
   });
 });
+
+// Both multer routes take the authenticated upload admission: a concurrency
+// slot and the free-disk check, released once the files are stored.
+describe('authenticated upload admission', () => {
+  const fs = require('fs');
+  let quota; let transferId;
+
+  beforeAll(async () => {
+    // After bootCrmDb: the service opens the database when it is loaded.
+    quota = require('../../src/services/publicUploadQuota');
+    const res = await create().field('kind', 'send')
+      .attach('files', Buffer.from('good'), { filename: 'album.pdf', contentType: 'application/pdf' });
+    transferId = res.body.transfer.id;
+  });
+  // The slot is released just after the response is written.
+  const settled = async () => {
+    for (let n = 0; n < 200 && await db('public_upload_requests').where({ active: 1 }).first(); n++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+  afterEach(async () => { delete process.env.ADMIN_UPLOAD_LIMITS_JSON; jest.restoreAllMocks(); await settled(); });
+
+  const addFiles = () => request(adminApp)
+    .post(`/api/admin/transfers/${transferId}/upload-files`)
+    .set('Authorization', `Bearer ${token}`)
+    .attach('files', Buffer.from('more'), { filename: 'd.pdf', contentType: 'application/pdf' });
+  const createSend = () => create().field('kind', 'send')
+    .attach('files', Buffer.from('good'), { filename: 'album.pdf', contentType: 'application/pdf' });
+
+  it('records each accepted upload as a released authenticated request', async () => {
+    await db('public_upload_requests').del();
+    expect((await addFiles()).status).toBe(200);
+    expect((await createSend()).status).toBe(201);
+    await settled();
+    const rows = await db('public_upload_requests');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row).toMatchObject({ upload_kind: 'admin', active: 0, bytes: 0, rate_bytes: 0 });
+  });
+
+  it.each([['create', createSend], ['upload-files', addFiles]])('refuses %s while every slot is taken, then admits it', async (_name, send) => {
+    process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"requests":1}';
+    const held = await quota.begin({ mode: 'admin', accountId: 999, maxFiles: 1, requestedBytes: 10 });
+    const before = await db('transfer_extra_files').count('* as c').first();
+    const refused = await send();
+    expect(refused.status).toBe(429);
+    expect(refused.body.code).toBe('UPLOAD_CONCURRENCY_LIMIT');
+    expect(refused.body.error).not.toMatch(/gallery owner/);
+    expect(Number((await db('transfer_extra_files').count('* as c').first()).c)).toBe(Number(before.c));
+    await quota.finish(held);
+    await settled();
+    expect((await send()).status).toBeLessThan(300);
+  });
+
+  it('refuses an upload the disk has no headroom for', async () => {
+    jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4096, blocks: 1000000, ffree: 100000 });
+    const res = await addFiles();
+    expect(res.status).toBe(507);
+    expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
+  });
+});
