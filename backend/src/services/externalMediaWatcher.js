@@ -57,7 +57,7 @@ const chokidar = require('chokidar');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
-const { resolveExternalPath } = require('./externalMediaService');
+const externalAccess = require('./externalMediaAccess');
 const {
   importExternalFolder,
   ImportInProgressError,
@@ -94,6 +94,8 @@ const watched = new Map();
 // Folders reported missing, so the reconcile loop logs each once rather than
 // once a minute until the mount comes back.
 const missingLogged = new Set();
+// Events whose watcher was refused, so the warning is logged once per process.
+const refusedLogged = new Set();
 let reconcileTimer = null;
 let sweepTimer = null;
 let started = false;
@@ -199,7 +201,7 @@ function scheduleImport(eventId) {
 async function startWatching(event) {
   let absPath;
   try {
-    absPath = resolveExternalPath({ external_path: event.external_path }, '');
+    absPath = (await externalAccess.authorizeImport(event.id, event.external_path, { automatic: true })).target;
   } catch (err) {
     // A path outside EXTERNAL_MEDIA_ROOT cannot be watched, and should not
     // have been saved. Log and leave it; nothing to clean up.
@@ -223,6 +225,7 @@ async function startWatching(event) {
   missingLogged.delete(event.id);
 
   const watcher = chokidar.watch(absPath, {
+    followSymlinks: false,
     // The sweep and the first reconcile cover what is already there; firing
     // 'add' for every existing file on boot would schedule an import of a
     // folder that was just imported.
@@ -291,7 +294,22 @@ async function reconcile() {
     return;
   }
 
-  const wanted = new Map(events.map((e) => [e.id, e]));
+  const wanted = new Map();
+  for (const event of events) {
+    try {
+      await externalAccess.authorizeImport(event.id, event.external_path, { automatic: true });
+      wanted.set(event.id, event);
+    } catch (error) {
+      // The gallery stops importing here, and nothing in the admin UI says
+      // so: tell the operator once, with what to change.
+      if (!refusedLogged.has(event.id)) {
+        refusedLogged.add(event.id);
+        logger.warn(`[externalMediaWatcher] event ${event.id} (${event.slug}): not watching '${event.external_path}' (${error.message}). `
+          + 'The folder must be a readable path inside EXTERNAL_MEDIA_ROOT that no link leads out of; '
+          + 'choose the folder again under the gallery\'s Photo source to fix it.');
+      }
+    }
+  }
 
   for (const eventId of [...watched.keys()]) {
     const next = wanted.get(eventId);
@@ -362,6 +380,7 @@ async function stopExternalMediaWatcher() {
     await stopWatching(eventId);
   }
   missingLogged.clear();
+  refusedLogged.clear();
   started = false;
 }
 

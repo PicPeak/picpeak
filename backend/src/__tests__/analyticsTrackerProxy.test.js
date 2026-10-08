@@ -1,312 +1,229 @@
-/**
- * Contract tests for the same-origin analytics-tracker proxy.
- *
- * The proxy exists so an admin-configured self-hosted Umami/Rybbit instance
- * actually loads under the shipped `script-src 'self'` / `connect-src 'self'`
- * CSP without anyone hand-editing nginx.conf. Because the upstream base URL
- * comes from an admin-editable setting, most of what is pinned here is the
- * SSRF/abuse boundary rather than the happy path: which paths are reachable,
- * which headers cross the boundary, and what a hostile upstream can make the
- * browser see.
- */
-
 const express = require('express');
 const request = require('supertest');
-
 const settings = {};
-
-jest.mock('../utils/appSettings', () => ({
-  getAppSetting: jest.fn(async (key, defaultValue = null) => (
-    Object.prototype.hasOwnProperty.call(settings, key) ? settings[key] : defaultValue
-  )),
-}));
-
-const mockIsHostAllowed = jest.fn(async () => true);
-jest.mock('../utils/networkValidation', () => ({ isHostAllowed: (...a) => mockIsHostAllowed(...a) }));
-
-// The outbound request goes through integrationHttp's pinned relay; its
-// connection-time DNS policy has its own tests (integrationHttp.test.js and
-// routes/analyticsTrackerProxyPinned.test.js). Here it is the seam that shows
-// what the proxy asks for and what it does with the answer.
 const mockRelay = jest.fn();
-jest.mock('../utils/integrationHttp', () => ({ integrationRelay: (...a) => mockRelay(...a) }));
-
-jest.mock('../utils/logger', () => ({
-  warn: jest.fn(), debug: jest.fn(), info: jest.fn(), error: jest.fn(),
+jest.mock('../utils/appSettings', () => ({
+  getAppSetting: jest.fn(async (key, fallback = null) => Object.hasOwn(settings, key) ? settings[key] : fallback),
 }));
-
+jest.mock('../utils/integrationHttp', () => ({ integrationRelay: (...args) => mockRelay(...args) }));
+jest.mock('../utils/logger', () => ({ warn: jest.fn(), debug: jest.fn() }));
+const mockSiteUrl = jest.fn();
+jest.mock('../utils/frontendUrl', () => ({ getFrontendBaseUrl: (...args) => mockSiteUrl(...args) }));
+const SITE = '11111111-1111-4111-8111-111111111111';
+const EVENT = { type: 'pageview', path: '/gallery/wedding/short-secret?token=QUERY#HASH',
+  hostname: 'picpeak.example', language: 'de-DE', screenWidth: 1920, screenHeight: 1080 };
+const savedEnv = { NODE_ENV: process.env.NODE_ENV, ANALYTICS_ALLOW_INSECURE_HTTP: process.env.ANALYTICS_ALLOW_INSECURE_HTTP };
 function buildApp() {
-  // Fresh require per test: the route memoises the resolved upstream for 30s.
   jest.resetModules();
   const app = express();
   app.use('/api/analytics/tracker', require('../routes/analyticsTrackerProxy'));
   return app;
 }
-
-function upstreamReply(body, { status = 200, contentType = 'text/javascript', headers = {} } = {}) {
-  return { status, headers: { 'content-type': contentType, ...headers }, body: Buffer.from(body) };
+function configured(provider = 'umami') {
+  settings.analytics_tracker_provider = provider;
+  settings['analytics_' + provider + '_url'] = 'https://collector.example/base/';
+  settings['analytics_' + provider + '_website_id'] = SITE;
 }
-
-const relayMock = mockRelay;
-
+function post(app = buildApp(), data = EVENT) { return request(app).post('/api/analytics/tracker/events').send(data); }
 beforeEach(() => {
   for (const key of Object.keys(settings)) delete settings[key];
-  mockIsHostAllowed.mockClear();
-  mockIsHostAllowed.mockResolvedValue(true);
-  relayMock.mockReset();
-  relayMock.mockImplementation(async () => upstreamReply('/* tracker */'));
+  delete process.env.ANALYTICS_ALLOW_INSECURE_HTTP;
+  mockRelay.mockReset();
+  mockSiteUrl.mockReset();
+  mockSiteUrl.mockResolvedValue('https://site.example');
+  mockRelay.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/javascript', 'set-cookie': 'admin_token=evil' },
+    body: Buffer.from('fetch("/api/admin/users")') });
+});
+afterEach(() => {
+  for (const [key, value] of Object.entries(savedEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
 });
 
-describe('analytics tracker proxy — reachability', () => {
-  it('404s when no tracker provider is configured', async () => {
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
+describe('closed data-only boundary', () => {
+  it('fails closed when collector settings cannot be read without relaying', async () => {
+    const app = buildApp();
+    require('../utils/appSettings').getAppSetting.mockRejectedValueOnce(new Error('database unavailable'));
+    await post(app).expect(502);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('404s when the provider is set but has no URL', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
-  });
-
-  it('serves Umami from the configured instance', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-
-    const res = await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-
-    expect(relayMock).toHaveBeenCalledTimes(1);
-    expect(relayMock.mock.calls[0][0]).toBe('https://umami.example.com/script.js');
-    expect(res.headers['content-type']).toBe('text/javascript; charset=utf-8');
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
-    expect(res.text).toBe('/* tracker */');
-  });
-
-  it('honours a legacy umami_enabled install with no explicit provider', async () => {
+  it.each(['none', 'custom', 'unsupported'])('does not contact %s or re-enable legacy Umami', async (provider) => {
+    configured(provider);
     settings.analytics_umami_enabled = true;
-    settings.analytics_umami_url = 'https://umami.example.com';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][0]).toBe('https://umami.example.com/script.js');
+    await post().expect(404);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('maps Rybbit paths onto the upstream /api prefix', async () => {
-    settings.analytics_tracker_provider = 'rybbit';
-    settings.analytics_rybbit_url = 'https://rybbit.example.com/';
+  it('keeps legacy enabled Umami and configured base subpaths', async () => {
+    configured(); delete settings.analytics_tracker_provider; settings.analytics_umami_enabled = true;
+    await post().expect(200);
+    expect(mockRelay.mock.calls[0][0]).toBe('https://collector.example/base/api/send');
+  });
+  it.each(['umami', 'rybbit'])('rejects every legacy executable/config/beacon route for %s', async provider => {
+    configured(provider);
     const app = buildApp();
-
-    await request(app).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][0]).toBe('https://rybbit.example.com/api/script.js');
-
-    relayMock.mockImplementation(async () => upstreamReply('{}', { contentType: 'application/json' }));
-    await request(app)
-      .post('/api/analytics/tracker/track')
-      .set('content-type', 'application/json')
-      .send({ type: 'pageview' })
-      .expect(200);
-    expect(relayMock.mock.calls[1][0]).toBe('https://rybbit.example.com/api/track');
-
-    await request(app).get('/api/analytics/tracker/site/tracking-config/abc-123').expect(200);
-    expect(relayMock.mock.calls[2][0])
-      .toBe('https://rybbit.example.com/api/site/tracking-config/abc-123');
+    for (const path of ['/script.js', '/api/send', '/track', '/site/tracking-config/123',
+      '/site/123/feature-flags/evaluate', '/session-replay/record/123', '/index.html', '/events']) {
+      await request(app).get('/api/analytics/tracker' + path).expect(404);
+      if (path !== '/events') await request(app).post('/api/analytics/tracker' + path).send(EVENT).expect(404);
+    }
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('preserves a sub-path in the configured URL', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://example.com/umami/';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][0]).toBe('https://example.com/umami/script.js');
+  it.each(['application/javascript', 'text/html', 'image/svg+xml', 'application/json'])('discards hostile %s responses', async contentType => {
+    configured();
+    mockRelay.mockResolvedValue({ status: 200, headers: { 'content-type': contentType, 'set-cookie': 'evil=1' },
+      body: Buffer.from('{"cache":"<script>evil()</script>","html":"evil","redirect":"/api/admin/users"}') });
+    const response = await post().expect(200);
+    expect(response.body).toEqual({});
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.text).not.toContain('evil');
+  });
+  it('forwards only our sanitized provider schemas with configured identity', async () => {
+    configured();
+    await post().expect(200);
+    expect(JSON.parse(mockRelay.mock.calls[0][1].body)).toEqual({
+      type: 'event', payload: { website: SITE, hostname: 'site.example', language: 'de-DE',
+        screen: '1920x1080', url: '/gallery/wedding/[redacted]', title: '', referrer: '' },
+    });
+    configured('rybbit');
+    await post().expect(200);
+    expect(mockRelay.mock.calls[1][0]).toBe('https://collector.example/base/api/track');
+    expect(JSON.parse(mockRelay.mock.calls[1][1].body)).toEqual({
+      site_id: SITE, hostname: 'site.example', pathname: '/gallery/wedding/[redacted]', querystring: '',
+      screenWidth: 1920, screenHeight: 1080, language: 'de-DE', page_title: '', referrer: '', type: 'pageview',
+    });
+  });
+  it.each(['umami', 'rybbit'])('reports the site hostname for %s, never the client-supplied one', async provider => {
+    configured(provider);
+    const sent = () => JSON.parse(mockRelay.mock.calls.at(-1)[1].body);
+    const reported = () => (provider === 'umami' ? sent().payload.hostname : sent().hostname);
+    await post(buildApp(), { ...EVENT, hostname: 'attacker.example' }).expect(200);
+    expect(reported()).toBe('site.example');
+    const { hostname: _omitted, ...withoutHostname } = EVENT;
+    await post(buildApp(), withoutHostname).expect(200);
+    expect(reported()).toBe('site.example');
+    // No public origin known: the host this request arrived on.
+    mockSiteUrl.mockResolvedValue('');
+    await post(buildApp(), { ...EVENT, hostname: 'attacker.example' }).set('Host', 'direct.example').expect(200);
+    expect(reported()).toBe('direct.example');
+    expect(JSON.stringify(mockRelay.mock.calls)).not.toContain('attacker.example');
+  });
+  it.each(['umami', 'rybbit'])('preserves gallery events for %s without identifiers/free text', async provider => {
+    configured(provider);
+    await post(buildApp(), { ...EVENT, type: 'event', name: 'gallery_bulk_download', data: { photo_count: 7, is_download_all: true } }).expect(200);
+    const body = JSON.parse(mockRelay.mock.calls[0][1].body);
+    const properties = provider === 'umami' ? body.payload.data : JSON.parse(body.properties);
+    expect(properties).toEqual({ photo_count: 7, is_download_all: true });
+    expect(provider === 'umami' ? body.payload.name : body.event_name).toBe('gallery_bulk_download');
+  });
+  it('returns only a bounded site-scoped opaque Umami token and reuses it', async () => {
+    configured();
+    mockRelay.mockResolvedValue({ status: 200, headers: {}, body: Buffer.from(JSON.stringify({ cache: 'header.payload.signature',
+      sessionId: 'private-session', visitId: 'private-visit', code: 'evil()' })) });
+    const app = buildApp(); const first = await post(app).expect(200);
+    expect(first.body).toEqual({ cache: { site: SITE, token: 'header.payload.signature' } });
+    await post(app, { ...EVENT, cache: first.body.cache }).expect(200);
+    expect(mockRelay.mock.calls[1][1].headers['x-umami-cache']).toBe('header.payload.signature');
+    await post(app, { ...EVENT, cache: { ...first.body.cache, site: 'another-site' } }).expect(200);
+    expect(mockRelay.mock.calls[2][1].headers['x-umami-cache']).toBeUndefined();
   });
 });
 
-describe('analytics tracker proxy — path allowlist', () => {
-  beforeEach(() => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
+describe('input and privacy enforcement on every event', () => {
+  beforeEach(() => configured());
+  it.each(['/ADMIN/login', '/%61dmin', '//customer/dashboard', '/CUSTOMER', '/s/short',
+    '/invite/abc', '/quote/abc', '/contract/signing', '/payment-check/abc', '/transfer/abc',
+    '/transfer-upload/abc', '/slideshow/abc', '/gallery/wedding/client-access',
+    '/gallery/wedding/show/short', '/gallery/wedding/%73how/%61bc', '/gallery/wedding/SHOW/short',
+    '/gallery/wedding/%252fsecret', '/gallery/wedding/%3Fsecret', '/gallery/wedding/%00secret',
+    '/gallery/../admin', 'https://elsewhere.example/gallery/wedding/secret', '/unknown/nested'])('rejects excluded/ambiguous path %s', async path => {
+    await post(buildApp(), { ...EVENT, path }).expect(400);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
+  it.each(['/gallery/wedding/abc', '/GALLERY/wedding/%61bc', '/gallery/wedding/a/b',
+    '/gallery/wedding/[redacted]'])('structurally redacts %s', async path => {
+    await post(buildApp(), { ...EVENT, path }).expect(200);
+    expect(JSON.parse(mockRelay.mock.calls[0][1].body).payload.url).toBe('/gallery/wedding/[redacted]');
+  });
   it.each([
-    ['/api/analytics/tracker/track'],
-    ['/api/analytics/tracker/api/auth/login'],
-    ['/api/analytics/tracker/site/tracking-config/abc'],
-    ['/api/analytics/tracker/'],
-    ['/api/analytics/tracker/script.js/../../secret'],
-    ['/api/analytics/tracker/%2e%2e/%2e%2e/secret'],
-    ['/api/analytics/tracker/index.html'],
-  ])('404s on a path outside the provider allowlist: %s', async (path) => {
-    await request(buildApp()).get(path).expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
+    { title: 'private title' }, { referrer: '/gallery/wedding/SECRET' }, { query: 'SECRET' },
+    { user_id: 'private' }, { website: 'attacker' }, { provider: 'custom' }, { type: 'identify' },
+    { type: 'event', name: 'private-password', data: {} },
+    { type: 'event', name: 'photo_download', data: { photo_id: 123 } },
+    { type: 'event', name: 'photo_download', data: { gallery: 'SECRET' } },
+    { type: 'event', name: 'photo_download', data: { success: 'SECRET' } },
+    { type: 'event', name: 'photo_download', data: { photo_count: Infinity } },
+    { cache: { site: SITE, token: 'evil()' } }, { screenWidth: 10000 }, { hostname: 'user:secret@elsewhere' },
+  ])('rejects unexpected or unsafe representation %j', async variant => {
+    await post(buildApp(), { ...EVENT, ...variant }).expect(400);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('404s when the method does not match the allowlisted path', async () => {
-    // /api/send is POST-only; a GET must not be relayed.
-    await request(buildApp()).get('/api/analytics/tracker/api/send').expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
+  it.each(['DNT', 'Sec-GPC'])('respects %s independently of the client', async header => {
+    await post().set(header, '1').expect(204);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('relays the Umami beacon POST', async () => {
-    relayMock.mockResolvedValue(upstreamReply('cache-token', { contentType: 'text/plain' }));
-
-    const res = await request(buildApp())
-      .post('/api/analytics/tracker/api/send')
-      .set('content-type', 'application/json')
-      .send({ type: 'event' })
-      .expect(200);
-
-    expect(relayMock.mock.calls[0][0]).toBe('https://umami.example.com/api/send');
-    expect(relayMock.mock.calls[0][1].method).toBe('POST');
-    expect(relayMock.mock.calls[0][1].body.toString()).toBe(JSON.stringify({ type: 'event' }));
-    expect(res.headers['cache-control']).toBe('no-store');
+  it('rejects oversized and malformed bodies before any outbound request', async () => {
+    await post(buildApp(), { ...EVENT, padding: 'x'.repeat(4096) }).expect(413);
+    await request(buildApp()).post('/api/analytics/tracker/events').set('content-type', 'application/json').send('{bad').expect(400);
+    expect(mockRelay).not.toHaveBeenCalled();
   });
 });
 
-describe('analytics tracker proxy — SSRF boundary', () => {
-  it('refuses a non-HTTP tracker URL', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'file:///etc/passwd';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
-  });
-
-  it('refuses an unparseable tracker URL', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'not a url';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
-    expect(relayMock).not.toHaveBeenCalled();
-  });
-
-  it('refuses a private/internal host in production', async () => {
-    const previous = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
-    mockIsHostAllowed.mockResolvedValue(false);
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'http://169.254.169.254';
-
-    try {
-      await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
-      expect(mockIsHostAllowed).toHaveBeenCalledWith('169.254.169.254');
-      expect(relayMock).not.toHaveBeenCalled();
-    } finally {
-      process.env.NODE_ENV = previous;
-    }
-  });
-
-  it('allows a localhost tracker outside production (dev parity with s3Storage)', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'http://localhost:3000';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(mockIsHostAllowed).not.toHaveBeenCalled();
-  });
-
-  it('strips credentials, query and fragment from the configured URL', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://user:secret@umami.example.com/?a=1#frag';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][0]).toBe('https://umami.example.com/script.js');
-  });
-
-  it('passes the timeout signal and the response-size cap to the pinned relay', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][1].signal).toBeDefined();
-    expect(relayMock.mock.calls[0][1].maxBytes).toBe(2 * 1024 * 1024);
-  });
-
-  it('admits private answers only outside production', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(relayMock.mock.calls[0][1].allowPrivate).toBe(true);
-
-    const previous = process.env.NODE_ENV;
-    process.env.NODE_ENV = 'production';
-    try {
-      await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-      expect(relayMock.mock.calls[1][1].allowPrivate).toBe(false);
-    } finally {
-      process.env.NODE_ENV = previous;
-    }
-  });
-
-  it('rate-limits an unauthenticated client hammering the beacon', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-    relayMock.mockImplementation(async () => upstreamReply('ok', { contentType: 'text/plain' }));
+describe('bounded pinned transport and header boundary', () => {
+  beforeEach(() => configured());
+  it.each([undefined, null, ''])('stays quiet while no collector URL is configured (%p)', async url => {
+    settings.analytics_umami_url = url;
     const app = buildApp();
-
-    for (let i = 0; i < 120; i += 1) {
-      await request(app).get('/api/analytics/tracker/script.js').expect(200);
-    }
-    await request(app).get('/api/analytics/tracker/script.js').expect(429);
-    expect(relayMock).toHaveBeenCalledTimes(120);
+    await post(app).expect(404);
+    expect(require('../utils/logger').warn).not.toHaveBeenCalled();
+    expect(mockRelay).not.toHaveBeenCalled();
+    settings.analytics_umami_url = 'not a URL';
+    await post(buildApp()).expect(404);
+    expect(require('../utils/logger').warn).toHaveBeenCalledWith('Analytics: invalid collector URL');
   });
-
-  it('502s when the upstream request fails', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-    relayMock.mockRejectedValue(new Error('ECONNREFUSED'));
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(502);
+  it.each(['http://collector.example', 'file:///tmp/data', 'not a URL'])('rejects %s without dev opt-in', async url => {
+    settings.analytics_umami_url = url;
+    await post().expect(404); expect(mockRelay).not.toHaveBeenCalled();
   });
-
-  it('502s when the relay refuses an oversized upstream body', async () => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
-    relayMock.mockRejectedValue(new Error('Integration response exceeded 2097152 bytes'));
-
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(502);
+  it('accepts explicit HTTP development testing, never production', async () => {
+    settings.analytics_umami_url = 'http://localhost:3000';
+    process.env.ANALYTICS_ALLOW_INSECURE_HTTP = 'true';
+    await post().expect(200);
+    process.env.NODE_ENV = 'production';
+    await post().expect(404);
+    expect(mockRelay).toHaveBeenCalledTimes(1);
   });
-});
-
-describe('analytics tracker proxy — header and content-type handling', () => {
-  beforeEach(() => {
-    settings.analytics_tracker_provider = 'umami';
-    settings.analytics_umami_url = 'https://umami.example.com';
+  it('strips pasted upstream userinfo/query/fragment while preserving subpaths', async () => {
+    settings.analytics_umami_url = 'https://user:secret@collector.example/base/?secret=1#secret';
+    await post().expect(200);
+    expect(mockRelay.mock.calls[0][0]).toBe('https://collector.example/base/api/send');
   });
-
-  it('forwards the visitor IP and user agent, but not credentials', async () => {
-    await request(buildApp())
-      .get('/api/analytics/tracker/script.js')
-      .set('user-agent', 'Mozilla/5.0 (test)')
-      .set('accept-language', 'de-DE')
-      .set('cookie', 'picpeak_admin_token=secret')
-      .set('authorization', 'Bearer secret')
-      .set('referer', 'https://picpeak.example/gallery/wedding/SHARETOKEN')
-      .expect(200);
-
-    const headers = relayMock.mock.calls[0][1].headers;
-    expect(headers['user-agent']).toBe('Mozilla/5.0 (test)');
-    expect(headers['accept-language']).toBe('de-DE');
-    // req.ip on a supertest connection is loopback — the point is that the
-    // client IP is forwarded at all, so the tracker keeps attributing visits.
-    expect(headers['x-forwarded-for']).toBeTruthy();
-    expect(headers['x-real-ip']).toBe(headers['x-forwarded-for']);
-    expect(Object.keys(headers).map((k) => k.toLowerCase()))
-      .toEqual(expect.not.arrayContaining(['cookie', 'authorization', 'referer', 'host']));
+  it('keeps actual IP/UA attribution but never app credentials or raw URL headers', async () => {
+    await post().set('user-agent', 'Mozilla/5.0').set('cookie', 'admin_token=SECRET')
+      .set('authorization', 'Bearer SECRET').set('referer', 'https://picpeak.example/gallery/x/SECRET')
+      .set('x-umami-cache', 'SECRET').expect(200);
+    const options = mockRelay.mock.calls[0][1];
+    expect(options.headers).toEqual({ 'content-type': 'application/json', 'user-agent': 'Mozilla/5.0',
+      'x-forwarded-for': expect.any(String), 'x-real-ip': expect.any(String) });
+    expect(options.signal).toBeDefined();
+    expect(options.maxBytes).toBe(16 * 1024);
+    expect(options.allowPrivate).toBe(true);
+    expect(options.body.toString()).not.toContain('SECRET');
+    process.env.NODE_ENV = 'production';
+    await post().expect(200);
+    expect(mockRelay.mock.calls[1][1].allowPrivate).toBe(false);
   });
-
-  it('neutralises an HTML response from a hostile tracker host', async () => {
-    // Without this a tracker host could serve `<script>` HTML through
-    // PicPeak's own origin and get it rendered as same-origin content.
-    relayMock.mockResolvedValue(upstreamReply('<html><body>xss</body></html>', {
-      contentType: 'text/html',
-    }));
-
-    const res = await request(buildApp()).get('/api/analytics/tracker/script.js').expect(200);
-    expect(res.headers['content-type']).toBe('application/octet-stream');
-    expect(res.headers['x-content-type-options']).toBe('nosniff');
+  it('rate limits anonymous forwarding', async () => {
+    const app = buildApp();
+    for (let i = 0; i < 120; i++) await post(app).expect(200);
+    await post(app).expect(429); expect(mockRelay).toHaveBeenCalledTimes(120);
   });
-
-  it('passes the upstream status through', async () => {
-    relayMock.mockResolvedValue(upstreamReply('nope', { status: 404, contentType: 'text/plain' }));
-    await request(buildApp()).get('/api/analytics/tracker/script.js').expect(404);
+  it.each([302, 401, 500])('does not expose upstream status/body %s', async status => {
+    mockRelay.mockResolvedValue({ status, headers: {}, body: Buffer.from('SECRET') });
+    const response = await post().expect(502); expect(response.text).not.toContain('SECRET');
+  });
+  it('turns network/size/timeout failures into an inert failure', async () => {
+    mockRelay.mockRejectedValue(new Error('Response too large'));
+    await post().expect(502);
   });
 });

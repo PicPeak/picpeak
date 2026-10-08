@@ -19,6 +19,7 @@ const logger = require('../utils/logger');
 const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = require('../utils/emailSecretRedaction');
 const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
 const { queueTimestamp } = require('../utils/queueTimestamps');
+const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 
 // Shared wording for a masked password that may not follow a changed server.
 const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
@@ -731,7 +732,9 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
     const pageSize = req.query.pageSize ? parseInt(req.query.pageSize, 10) : 25;
 
     const applyFilters = (qb) => {
-      if (req.query.status) qb.where('email_queue.status', req.query.status);
+      if (req.query.status === 'pending') {
+        qb.whereIn('email_queue.status', ['pending', PROTECTED_PENDING_STATUS]);
+      } else if (req.query.status) qb.where('email_queue.status', req.query.status);
       if (req.query.emailType) qb.where('email_queue.email_type', req.query.emailType);
       // 'system' includes legacy rows (origin was NULL before migration 155).
       if (req.query.origin === 'manual') qb.where('email_queue.origin', 'manual');
@@ -782,7 +785,7 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
       id: r.id,
       recipientEmail: r.recipient_email,
       emailType: r.email_type,
-      status: r.status,
+      status: r.status === PROTECTED_PENDING_STATUS ? 'pending' : r.status,
       createdAt: r.created_at,
       scheduledAt: r.scheduled_at,
       sentAt: r.sent_at,
@@ -842,7 +845,7 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
       id: row.id,
       recipientEmail: row.recipient_email,
       emailType: row.email_type,
-      status: row.status,
+      status: row.status === PROTECTED_PENDING_STATUS ? 'pending' : row.status,
       createdAt: row.created_at,
       scheduledAt: row.scheduled_at,
       sentAt: row.sent_at,

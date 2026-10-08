@@ -115,7 +115,7 @@ describe('backupService — config + file collection + manifest (smoke)', () => 
     it('round-trips a generated manifest as valid', async () => {
       seedFile('events/active/E1/a.jpg', 'aaa');
       const files = await backupService.getFilesToBackup({ backup_include_archived: true });
-
+      for (const file of files) file.checksum = require('crypto').createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
       const manifest = await backupManifest.generateManifest({
         backupType: 'full',
         backupPath: '/backup/run-1',

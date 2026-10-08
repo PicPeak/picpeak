@@ -24,6 +24,23 @@ services:
           if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
           else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
         fi
+        if [ -n "$$BACKUP_MANIFEST_KEY" ]; then
+          # A corrected BACKUP_MANIFEST_KEY replaces the seeded copy, so a bad
+          # first value is not sticky. The value it replaces is kept, one per
+          # line, for BACKUP_MANIFEST_KEYS_OLD.
+          if [ "$$(cat /run/secrets/backup_manifest_key 2>/dev/null)" != "$$BACKUP_MANIFEST_KEY" ]; then
+            if [ -s /run/secrets/backup_manifest_key ]; then
+              { cat /run/secrets/backup_manifest_key; echo; } >> /run/secrets/backup_manifest_key.previous
+              chmod 600 /run/secrets/backup_manifest_key.previous
+            fi
+            printf '%s' "$$BACKUP_MANIFEST_KEY" > /run/secrets/backup_manifest_key
+          fi
+        elif [ ! -e /run/secrets/backup_manifest_key ]; then
+          od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > /run/secrets/backup_manifest_key
+        fi
+        # Independent backup-store trust anchor: backend volume only, never
+        # copied into Postgres/Redis secrets or the backed-up media estate.
+        chmod 644 /run/secrets/backup_manifest_key
         # 644: the readers run as three different users (postgres, redis, nodejs),
         # so a non-root reader must be able to read them. The volume is private to
         # these containers and never host-exposed.
@@ -51,7 +68,20 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
+      # Trust exactly the immediately connected frontend nginx hop. Trusting
+      # all private ranges lets a LAN client extend and spoof the XFF chain.
+      # A reverse proxy on the host in front of the frontend makes it 2.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-auto}
+      - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - JWT_SECRET=${JWT_SECRET:-}
+      - BACKUP_MANIFEST_KEY=${BACKUP_MANIFEST_KEY:-}
+      - BACKUP_MANIFEST_KEY_FILE=${BACKUP_MANIFEST_KEY_FILE:-/run/secrets/backup_manifest_key}
+      - BACKUP_MANIFEST_KEYS_OLD=${BACKUP_MANIFEST_KEYS_OLD:-}
+      - BACKUP_MANIFEST_LEGACY_KEY=${BACKUP_MANIFEST_LEGACY_KEY:-}
+      - BACKUP_MANIFEST_RECOVERY_SHA256=${BACKUP_MANIFEST_RECOVERY_SHA256:-}
+      - BACKUP_MANIFEST_RECOVERY_REASON=${BACKUP_MANIFEST_RECOVERY_REASON:-}
+      - EMAIL_QUEUE_ENCRYPTION_KEY=${EMAIL_QUEUE_ENCRYPTION_KEY:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
@@ -156,7 +186,7 @@ services:
       - ./storage:/app/storage
       - picpeak-secrets:/run/secrets:ro
     ports:
-      - "${BACKEND_PORT:-3001}:3000"
+      - "${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000"
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -305,9 +335,6 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=${VITE_API_URL:-/api}
-        - VITE_UMAMI_URL=${VITE_UMAMI_URL:-}
-        - VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID:-}
-        - VITE_UMAMI_SHARE_URL=${VITE_UMAMI_SHARE_URL:-}
     container_name: picpeak-frontend
     restart: unless-stopped
     environment:
@@ -317,7 +344,7 @@ services:
       - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
       - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     healthcheck:

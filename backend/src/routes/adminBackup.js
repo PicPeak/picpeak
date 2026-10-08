@@ -4,7 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
 const { clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { revokeToken } = require('../utils/tokenRevocation');
-const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest, sshHostKeyOptions } = require('../services/backupService');
+const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { formatBytes } = require('../utils/formatBytes');
@@ -209,6 +209,13 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
     // two directories.
     if (typeof (updates || {}).backup_destination_path === 'string') {
       updates.backup_destination_path = updates.backup_destination_path.trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_rsync_port')) {
+      const port = updates.backup_rsync_port;
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return res.status(400).json({ error: 'backup_rsync_port must be a whole number from 1 to 65535', code: 'RSYNC_CONFIG_INVALID' });
+      }
     }
 
     if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_manifest_format')
@@ -770,15 +777,6 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // Test rsync connection using spawn with argument arrays to prevent command injection
       const { spawn } = require('child_process');
 
-      // Validate and sanitize inputs to prevent command injection
-      const sanitizeInput = (input) => {
-        if (!input || typeof input !== 'string') return null;
-        // Remove any shell metacharacters and limit length
-        return input.replace(/[;&|`$(){}[\]<>\\!#*?"'\n\r]/g, '').substring(0, 255);
-      };
-
-      const host = sanitizeInput(config.host);
-      const user = sanitizeInput(config.user);
       // The key file path from the form, or the saved one when the form
       // holds the mask or sends none. An explicit '' tests without a key, as
       // saving the emptied field would. A value that is not a path (a pasted
@@ -797,60 +795,16 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       }
       const sshKeyPath = keyCandidate || null;
 
-      if (!host) {
-        res.json({ success: false, message: 'Invalid host specified' });
-        break;
-      }
-
-      // Validate host format (hostname or IP only)
-      const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (!hostRegex.test(host) && !ipRegex.test(host)) {
-        res.json({ success: false, message: 'Invalid host format' });
-        break;
-      }
-
-      // SSRF protection: resolve the host and block any private/internal
-      // address. ssh does its own DNS at connect time, so a literal-only
-      // check let a hostname resolving to an internal IP through (#GHSA-4jh8).
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!(await isHostAllowed(host))) {
-        res.json({ success: false, message: 'Host cannot be a private or internal network address' });
-        break;
-      }
-
-      // Validate username format if provided
-      if (user && !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(user)) {
-        res.json({ success: false, message: 'Invalid username format' });
-        break;
-      }
-
-      // Build SSH arguments as array (safe from injection)
-      const sshArgs = [];
-      if (sshKeyPath) {
-        // Validate SSH key path exists and is a file
-        const fsSync = require('fs');
-        if (!fsSync.existsSync(sshKeyPath) || !fsSync.statSync(sshKeyPath).isFile()) {
-          res.json({ success: false, message: 'SSH key file not found' });
-          break;
-        }
-        sshArgs.push('-i', sshKeyPath);
-      }
-      // Same host-key policy as the backup run: record the key on first
-      // contact, refuse a host whose key changed since.
+      let connection;
       try {
-        sshArgs.push(...sshHostKeyOptions(sshKeyPath || null));
+        connection = await require('../utils/rsyncConnection').resolveRsyncConnection({
+          host: config.host, user: config.user, sshKey: sshKeyPath, port: config.port
+        });
       } catch (optionError) {
-        res.json({ success: false, message: optionError.message });
+        res.json({ success: false, code: optionError.code, message: optionError.message });
         break;
       }
-      sshArgs.push('-o', 'ConnectTimeout=10');
-      sshArgs.push('-o', 'BatchMode=yes');
-
-      // Add target (user@host or just host)
-      const target = user ? `${user}@${host}` : host;
-      sshArgs.push(target);
-      sshArgs.push('echo', 'Connection successful');
+      const sshArgs = [...connection.sshArgs, connection.target, 'echo', 'Connection successful'];
 
       try {
         await new Promise((resolve, reject) => {
@@ -881,14 +835,15 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         res.json({ success: true, message: 'Rsync connection successful' });
       } catch (error) {
         logger.warn('Rsync connection test failed', {
-          destination: host,
+          destination: connection.host,
           error: error.message
         });
-        const hostKeyChanged = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(error.message);
+        const hostKeyError = require('../utils/rsyncConnection').hostKeyFailure(error.message);
         res.json({
           success: false,
-          message: hostKeyChanged
-            ? 'The SSH host key of this destination differs from the one recorded on first contact. If the server was reinstalled on purpose, remove its line from the known_hosts file next to the SSH key and test again.'
+          code: hostKeyError ? hostKeyError.code : undefined,
+          message: hostKeyError
+            ? hostKeyError.message
             : 'Rsync connection failed. Check server logs for details.'
         });
       }
@@ -961,6 +916,7 @@ router.get('/manifest/:backupRunId', adminAuth, requirePermission('backup.view')
     res.json({
       backupRunId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
@@ -1035,6 +991,7 @@ router.get('/manifests/:backupId', adminAuth, requirePermission('backup.view'), 
     res.json({
       backupId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
