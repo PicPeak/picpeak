@@ -643,7 +643,6 @@ async function importExternalFolder({
               // Browser-playable copy (issue 1430, item 8). The copy is
               // written to the managed backend; the NAS file is never
               // touched.
-              ...(await require('./videoRenditionService').isEnabled() ? { web_status: 'pending' } : {}),
               // The placeholder is a completed row with a note, so the admin
               // grid can show it and offer a retry (issue 1430, item 6).
               processing_error: result.placeholder ? posterFrameError(result.thumbnailError) : null,
@@ -653,6 +652,10 @@ async function importExternalFolder({
               ...(m.width ? { width: m.width } : {}),
               ...(m.height ? { height: m.height } : {}),
             });
+            if (await require('./videoRenditionService').isEnabled()) {
+              const photo = await db('photos').where({ id: photoId }).first();
+              if (photo) await require('./videoRenditionService').enqueueWeb(photo);
+            }
             thumbnailsGenerated++;
           } catch (videoErr) {
             thumbnailsFailed++;

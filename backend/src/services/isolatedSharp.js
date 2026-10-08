@@ -2,7 +2,7 @@
 const fs = require('fs').promises;
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const nativeRunner = require('./nativeProcessRunner');
 const { configuration, refusal } = require('./imageResourcePolicy');
 
 const methods = ['rotate', 'withMetadata', 'keepMetadata', 'resize', 'jpeg', 'png', 'webp', 'gif', 'extract', 'composite'];
@@ -49,34 +49,17 @@ async function execute(entry) {
     if (entry.done) throw entry.failure;
     const manifest = JSON.stringify({ ...job, policy: entry.policy, output: path.join(dir, 'output') });
     if (Buffer.byteLength(manifest) > 1024 * 1024) throw refusal('Image processing instructions exceed the budget');
-    const result = await new Promise((resolve, reject) => {
-      const child = spawn('/bin/sh', ['-c', 'ulimit -v "$1" || exit 125; exec "$2" --jitless --no-expose-wasm --max-old-space-size=64 "$3"', 'picpeak-image',
-        String(Math.floor(entry.policy.nativeBytes / 1024)), process.execPath, path.join(__dirname, 'sharpWorker.js')],
-      { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, VIPS_CONCURRENCY: '1', MALLOC_ARENA_MAX: '2' } });
-      entry.child = child;
-      let stdout = '', stderr = '';
-      let spawnError;
-      child.on('error', error => { spawnError = error; });
-      child.stdout.on('data', chunk => {
-        if (entry.done) return;
-        stdout += chunk;
-        if (Buffer.byteLength(stdout) > 1024 * 1024) entry.fail(refusal('Image worker response exceeds the budget', 'IMAGE_WORKER_FAILED'));
+    const response = await nativeRunner.run(process.execPath,
+      ['--jitless', '--no-expose-wasm', '--max-old-space-size=64', path.join(__dirname, 'sharpWorker.js')], {
+        prefix: 'IMAGE', memoryBytes: entry.policy.nativeBytes, fileBytes: entry.policy.outputBytes,
+        wallMs: Math.max(1, entry.deadline - Date.now()), cpuSeconds: Math.ceil(entry.policy.timeoutMs / 1000),
+        outputBytes: 1024 * 1024, input: manifest, signal: entry.controller.signal,
       });
-      child.stderr.on('data', chunk => { if (stderr.length < 4096) stderr += chunk.toString().slice(0, 4096 - stderr.length); });
-      child.stdin.on('error', () => {}); // A refused/crashed child may close its pipe early.
-      child.on('close', (code, signal) => {
-        entry.child = null;
-        if (entry.done) return reject(entry.failure);
-        if (spawnError || code !== 0) return reject(refusal(`Image worker could not complete (${signal || code})`, 'IMAGE_WORKER_FAILED'));
-        try {
-          const response = JSON.parse(stdout);
-          if (response.error) return reject(Object.assign(new Error(response.error.message), { code: response.error.code, status: 422 }));
-          resolve(response);
-        } catch (_) { reject(refusal('Invalid image worker response', 'IMAGE_WORKER_FAILED')); }
-      });
-      if (entry.done) child.kill('SIGKILL');
-      else child.stdin.end(manifest);
-    });
+    if (entry.done) throw entry.failure;
+    let result;
+    try { result = JSON.parse(response.stdout.toString()); }
+    catch (_) { throw refusal('Invalid image worker response', 'IMAGE_WORKER_FAILED'); }
+    if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code, status: 422 });
     if (['metadata', 'metadataBatch'].includes(entry.job.terminal)) return decode(result.value);
     const stat = await fs.stat(path.join(dir, 'output'));
     if (stat.size > entry.policy.outputBytes) throw refusal('Image output exceeds the byte budget');
@@ -95,6 +78,10 @@ async function execute(entry) {
       return decode(result.info);
     }
     return entry.job.resolveWithObject ? { data: buffer, info: decode(result.info) } : buffer;
+  } catch (error) {
+    // The child receives an abort for either public cancellation or our
+    // deadline; retain the originating API error after terminal cleanup.
+    throw entry.failure || error;
   } finally {
     clearTimeout(entry.timer);
     entry.signal?.removeEventListener('abort', entry.cancel);
@@ -105,6 +92,12 @@ async function execute(entry) {
 }
 function submit(job, signal) {
   const policy = configuration();
+  const mediaScope = require('./mediaProcessService').currentScope();
+  const attempt = require('./mediaAttemptContext').current();
+  signal = signal || mediaScope?.signal || attempt?.signal;
+  if (attempt) policy.timeoutMs = Math.min(policy.timeoutMs, attempt.deadline - Date.now());
+  if (mediaScope) policy.timeoutMs = Math.min(policy.timeoutMs, mediaScope.deadline - Date.now());
+  if (policy.timeoutMs <= 0) return Promise.reject(refusal('Image processing deadline exceeded', 'IMAGE_TIMEOUT'));
   if (process.platform !== 'linux') return Promise.reject(refusal('Image processing requires the Linux hard-memory-limited runner', 'IMAGE_WORKER_UNAVAILABLE'));
   if (!policy.workers) return Promise.reject(refusal('Deployment memory is too small for the image worker', 'IMAGE_WORKER_UNAVAILABLE'));
   if (queue.length >= policy.queueLength) return Promise.reject(refusal('Image processing queue is full', 'IMAGE_QUEUE_FULL'));
@@ -116,18 +109,19 @@ function submit(job, signal) {
   if (bytes + retainedBytes > policy.inputBytes) return Promise.reject(refusal('Image input queue exceeds the byte budget', 'IMAGE_QUEUE_FULL'));
   retainedBytes += bytes;
   return new Promise((resolve, reject) => {
-    const entry = { job, policy, signal, resolve, reject, done: false, running: false };
+    const entry = { job, policy, signal, resolve, reject, done: false, running: false,
+      deadline: Date.now() + policy.timeoutMs, controller: new AbortController() };
     let inputsReleased = false;
     entry.releaseInputs = () => { if (!inputsReleased) { retainedBytes -= bytes; inputsReleased = true; } };
     entry.fail = error => {
       if (entry.done) return;
       entry.done = true;
       entry.failure = error;
-      if (entry.child) entry.child.kill('SIGKILL');
-      // Return the refusal at the deadline, but retain the live native slot
-      // and input accounting until the actual child close/cleanup completes.
-      reject(error);
+      entry.controller.abort();
+      // A running promise settles only after the supervisor proves terminal
+      // child state and temporary output cleanup has completed.
       if (!entry.running) {
+        reject(error);
         const index = queue.indexOf(entry);
         if (index >= 0) queue.splice(index, 1);
         clearTimeout(entry.timer);

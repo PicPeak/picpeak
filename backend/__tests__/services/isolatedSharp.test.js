@@ -31,15 +31,11 @@ linux('hard-capped native image runner', () => {
   beforeAll(async () => { workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'isolated-sharp-test-')); });
   afterAll(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
 
-  test('the production Linux pre-exec cap refuses native allocation above the limit', () => {
-    const { spawnSync } = require('child_process');
-    const result = spawnSync('/bin/sh', ['-c',
-      'ulimit -v "$1" || exit 125; exec "$2" --jitless --no-expose-wasm --max-old-space-size=64 --eval "$3"',
-      'picpeak-image-limit-test', String(configuration().nativeBytes / 1024), process.execPath,
-      `try { Buffer.alloc(${configuration().nativeBytes + 64 * 1024 * 1024}); process.exit(2); } catch (_) { process.exit(0); }`],
-    { timeout: 30000, env: { ...process.env, MALLOC_ARENA_MAX: '2' } });
-    expect(result.error).toBeUndefined();
-    expect(result.status).toBe(0);
+  test('the production Linux pre-exec cap refuses native allocation above the limit', async () => {
+    await expect(require('../../src/services/nativeProcessRunner').run(process.execPath,
+      ['--jitless', '--no-expose-wasm', '--max-old-space-size=64', '--eval',
+        `try { Buffer.alloc(${configuration().nativeBytes + 64 * 1024 * 1024}); process.exit(2); } catch (_) { process.exit(0); }`],
+      { prefix: 'IMAGE', memoryBytes: configuration().nativeBytes, wallMs: 30000, cpuSeconds: 30 })).resolves.toBeDefined();
   });
 
   test('keeps the ordinary 32.7MP file/Buffer control and orientation/EXIF', async () => {

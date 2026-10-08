@@ -10,9 +10,18 @@ const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { isStorageUnavailableError } = require('./storage/storageErrors');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
-const { execFile } = require('child_process');
-const { promisify } = require('util');
-const execFileAsync = promisify(execFile);
+const { AsyncLocalStorage } = require('async_hooks');
+const mediaProcesses = require('./mediaProcessService');
+const rawWork = new AsyncLocalStorage();
+const attemptContext = require('./mediaAttemptContext');
+const derivativeContext = new AsyncLocalStorage();
+async function publishDerivative(callback) {
+  const attempt = attemptContext.current() || derivativeContext.getStore();
+  await attempt?.assertCurrent();
+  const result = await callback();
+  await attempt?.assertCurrent();
+  return result;
+}
 
 // Configure sharp for better memory management with large batches
 sharp.cache(false); // Disable cache to prevent memory buildup
@@ -22,6 +31,41 @@ sharp.concurrency(2); // Limit concurrent operations
 // browser render this?" without loading sharp. Re-exported below, because
 // isRawFilename has callers that import it from here.
 const { RAW_EXTENSIONS, isRawFilename, originalNeedsPreview } = require('../utils/rawFormats');
+
+const derivativeSourceFields = ['event_id', 'path', 'filename', 'external_relpath', 'source_origin', 'processing_attempt_id'];
+const boundedDerivative = photo => isVideoPhoto(photo) || isRawFilename(photo.filename || photo.external_relpath || photo.path || '');
+const derivativeCacheId = photo => crypto.createHash('sha256')
+  .update(JSON.stringify(derivativeSourceFields.map(field => photo[field] ?? null))).digest('hex').slice(0, 24);
+function cacheBasename(photo, name) {
+  return boundedDerivative(photo) ? require('./mediaAttemptService').outputName(name, { id: derivativeCacheId(photo) }) : name;
+}
+function sourceGuard(photo) {
+  const match = { id: photo.id };
+  for (const field of derivativeSourceFields) if (photo[field] !== undefined) match[field] = photo[field];
+  return db('photos').where(match);
+}
+function withLazyDerivative(photo, callback) {
+  if (attemptContext.current() || derivativeContext.getStore() ||
+      !boundedDerivative(photo)) return callback();
+  const scope = { id: crypto.randomUUID(), cacheId: derivativeCacheId(photo),
+  assertCurrent: async () => {
+    if (!(await sourceGuard(photo).first())) throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
+  } };
+  return derivativeContext.run(scope, callback);
+}
+function derivativeBasename(name, { cache = false } = {}) {
+  const scope = derivativeContext.getStore();
+  return scope ? require('./mediaAttemptService').outputName(name, { id: cache ? scope.cacheId : scope.id }) : name;
+}
+async function publishPhotoDerivative(photo, key, values) {
+  const scope = derivativeContext.getStore();
+  if (!scope) return db('photos').where({ id: photo.id }).update(values);
+  await scope.assertCurrent();
+  if (await sourceGuard(photo).update(values) !== 1) {
+    await getStorage().delete(key).catch(() => {});
+    throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
+  }
+}
 
 /**
  * Distinguish "the tool isn't installed" from "this file has no preview".
@@ -77,12 +121,17 @@ const EXIFTOOL_TIMEOUT_MS = 30_000;
 // 2.4 MB. The old 256 MB let a malformed file balloon a worker's memory.
 const EXIFTOOL_MAX_BUFFER = 64 * 1024 * 1024;
 
-const runExiftool = (args, options = {}) => execFileAsync('exiftool', args, {
-  maxBuffer: EXIFTOOL_MAX_BUFFER,
-  timeout: EXIFTOOL_TIMEOUT_MS,
-  killSignal: 'SIGKILL',
-  ...options,
-});
+const runExiftool = async (args, options = {}) => {
+  const budget = rawWork.getStore();
+  if (budget && budget.remaining <= 0) throw require('./mediaProcessPolicy').refusal('RAW extracted output exceeds the processing budget');
+  const policy = require('./mediaProcessPolicy').configuration();
+  const result = await mediaProcesses.run('exiftool', args, {
+    memoryBytes: policy.nativeBytes, wallMs: EXIFTOOL_TIMEOUT_MS, cpuSeconds: 30,
+    outputBytes: budget?.remaining || EXIFTOOL_MAX_BUFFER, fileBytes: EXIFTOOL_MAX_BUFFER,
+  });
+  if (budget) budget.remaining -= result.stdout.length;
+  return { ...result, stdout: options.encoding === 'buffer' ? result.stdout : result.stdout.toString('utf8') };
+};
 
 /**
  * Ask what a RAW actually contains: how many bytes each embedded image is, and
@@ -154,6 +203,7 @@ async function applyContainerOrientation(previewPath, orientation, previewOrient
   try {
     await runExiftool([`-Orientation=${orientation}`, '-n', '-overwrite_original', previewPath]);
   } catch (err) {
+    if (isResourceError(err)) throw err;
     // A preview that is right side up in every other respect beats a failed
     // photo, so this warns rather than throws.
     logger.warn(
@@ -169,7 +219,12 @@ async function applyContainerOrientation(previewPath, orientation, previewOrient
  * isn't a valid image — the caller treats that as a processing failure
  * (photo → 'failed'), same as any unreadable upload.
  */
-async function extractRawPreview(rawPath) {
+async function extractRawPreview(rawPath, sourceName = rawPath) {
+  return mediaProcesses.withSnapshot(rawPath, 'raw', snapshot => rawWork.run(
+    { remaining: EXIFTOOL_MAX_BUFFER }, () => extractRawPreviewSnapshot(snapshot)), { sourceName });
+}
+
+async function extractRawPreviewSnapshot(rawPath) {
   const outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-raw-'));
   const outPath = path.join(outDir, `${crypto.randomBytes(4).toString('hex')}.jpg`);
   const cleanup = () => fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
@@ -200,6 +255,7 @@ async function extractRawPreview(rawPath) {
     orientation = probe.orientation;
   } catch (err) {
     lastErr = err;
+    if (isResourceError(err)) { await cleanup(); throw err; }
     if (err && err.code === 'ENOENT') {
       await cleanup();
       throw exiftoolMissingError(rawPath);
@@ -264,7 +320,8 @@ async function extractRawPreview(rawPath) {
       await cleanup();
       throw err;
     }
-    await applyContainerOrientation(outPath, orientation, undersized.orientation);
+    try { await applyContainerOrientation(outPath, orientation, undersized.orientation); }
+    catch (error) { await cleanup(); throw error; }
     return { path: outPath, cleanup };
   }
 
@@ -288,7 +345,7 @@ async function withProcessableImage(localPath, sourceName) {
   if (!isRawFilename(sourceName)) {
     return { path: localPath, outputBasename: undefined, cleanup: () => {} };
   }
-  const { path: previewPath, cleanup } = await extractRawPreview(localPath);
+  const { path: previewPath, cleanup } = await extractRawPreview(localPath, sourceName);
   return { path: previewPath, outputBasename: path.basename(sourceName), cleanup };
 }
 
@@ -527,7 +584,7 @@ async function generateThumbnail(imagePath, options = {}) {
       throw new Error('Generated thumbnail is empty');
     }
 
-    await storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) });
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: contentTypeFor(settings.format) }));
 
     return thumbnailRelKey;
   } catch (error) {
@@ -750,7 +807,7 @@ async function ensureThumbnail(photo, { force = false, boundVideoSource = true }
     logger.warn(`Invalid thumbnail detected for photo ${photo.id}, regenerating...`);
   }
 
-  return singleFlight(flightKey('thumbnail', photo), () => regenerateThumbnail(photo, { boundVideoSource }), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => withLazyDerivative(photo, () => regenerateThumbnail(photo, { boundVideoSource })), { force });
 }
 
 async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
@@ -798,7 +855,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    const outputBasename = `ext${photo.id}_${sourceBasename}`;
+    const outputBasename = derivativeBasename(`ext${photo.id}_${sourceBasename}`);
     logger.info(`Ensuring thumbnail for external photo ${photo.id} from ${localPath}`);
     // Through the RAW extraction, like the managed branch below. Without it a
     // RAW on a NAS mount can never have a thumbnail: sharp throws on the
@@ -822,7 +879,7 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
     newThumbnailPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
+        return await generateThumbnail(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
       } finally {
         await proc.cleanup();
       }
@@ -830,12 +887,10 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   }
 
   if (newThumbnailPath) {
-    await db('photos')
-      .where({ id: photo.id })
-      .update({
+    await publishPhotoDerivative(photo, newThumbnailPath, {
         thumbnail_path: newThumbnailPath,
         ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
-      });
+    });
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
     return newThumbnailPath;
@@ -879,13 +934,13 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
   );
-  const outputBasename = isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename;
+  const outputBasename = derivativeBasename(isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename);
   const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
 
   // Resolves to { thumbnailKey, placeholder, thumbnailError } or null, so the
   // caller can write the processing note the way the upload paths do.
   const generate = async (localPath) => {
-    const result = await processUploadedVideo(localPath, thumbnailKey);
+    const result = await publishDerivative(() => processUploadedVideo(localPath, thumbnailKey));
     if (!result?.thumbnailKey) return null;
     return { thumbnailKey: result.thumbnailKey, placeholder: Boolean(result.placeholder), thumbnailError: result.thumbnailError || null };
   };
@@ -923,6 +978,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource 
     return await withLocalCopy(sourceKey, generate);
   } catch (e) {
     logger.error(`Failed to regenerate thumbnail for video ${photo.id}: ${e.message}`);
+    if (isResourceError(e)) throw e;
     return null;
   }
 }
@@ -971,7 +1027,7 @@ async function generateVideoPlaceholder(originalFilename, options = {}) {
       .jpeg({ quality: settings.quality || DEFAULT_THUMBNAIL_QUALITY })
       .toBuffer();
 
-    await storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' });
+    await publishDerivative(() => storage.put(thumbnailRelKey, buffer, { contentType: 'image/jpeg' }));
 
     return thumbnailRelKey;
   } catch (error) {
@@ -1063,7 +1119,7 @@ async function generateHeroImage(imagePath, options = {}) {
       throw new Error('Generated hero image is empty');
     }
 
-    await storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' });
+    await publishDerivative(() => storage.put(heroRelKey, buffer, { contentType: 'image/jpeg' }));
 
     logger.info(`Generated hero image for ${filename} → ${heroRelKey}`);
     return heroRelKey;
@@ -1118,7 +1174,7 @@ async function ensureHeroImage(photo, { anchor } = {}) {
   // Per anchor: a request for the new focal point must not join a flight that
   // is still cutting the old one and be handed that rendition.
   const flight = `${flightKey('hero', photo)}:${anchor === undefined ? 'stored' : normalizeHeroAnchor(anchor)}`;
-  return singleFlight(flight, () => regenerateHeroImage(photo, anchor));
+  return singleFlight(flight, () => withLazyDerivative(photo, () => regenerateHeroImage(photo, anchor)));
 }
 
 // The rendition of a previous focal point is a different file (see
@@ -1183,11 +1239,11 @@ async function regenerateHeroImage(photo, anchor) {
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
     newHeroPath = await generateHeroImage(localPath, {
       regenerate: true,
-      outputBasename: `ext${photo.id}_${sourceBasename}`,
+      outputBasename: derivativeBasename(`ext${photo.id}_${sourceBasename}`),
       anchor: heroAnchor,
     });
     if (newHeroPath) {
-      await db('photos').where({ id: photo.id }).update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+      await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
       await dropSupersededHero(photo, newHeroPath);
     }
     return newHeroPath;
@@ -1213,16 +1269,14 @@ async function regenerateHeroImage(photo, anchor) {
   newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
     const proc = await withProcessableImage(localPath, sourceKey);
     try {
-      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename, anchor: heroAnchor });
+      return await generateHeroImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename), anchor: heroAnchor });
     } finally {
       await proc.cleanup();
     }
   });
 
   if (newHeroPath) {
-    await db('photos')
-      .where({ id: photo.id })
-      .update({ hero_path: newHeroPath, hero_anchor: heroAnchor });
+    await publishPhotoDerivative(photo, newHeroPath, { hero_path: newHeroPath, hero_anchor: heroAnchor });
     await dropSupersededHero(photo, newHeroPath);
 
     logger.info(`Regenerated hero image for photo ${photo.id}`);
@@ -1344,9 +1398,9 @@ async function generatePreviewImage(imagePath, options = {}) {
       throw new Error('Generated preview image is empty');
     }
 
-    await storage.put(previewRelKey, buffer, {
+    await publishDerivative(() => storage.put(previewRelKey, buffer, {
       contentType: needsWebp ? 'image/webp' : 'image/jpeg',
-    });
+    }));
 
     logger.info(`Generated preview image for ${filename} → ${previewRelKey}`);
     return previewRelKey;
@@ -1467,6 +1521,10 @@ function previewTierKeyCandidates(photo, width) {
   const keys = [`${stem}${base}.jpg`, `${stem}${base}.webp`];
   const legacy = `${stem}${outputBasename}`;
   if (!keys.includes(legacy)) keys.push(legacy);
+  if (boundedDerivative(photo)) {
+    const scoped = cacheBasename(photo, outputBasename).replace(/\.[^./\\]+$/, '');
+    keys.unshift(`${stem}${scoped}.jpg`, `${stem}${scoped}.webp`);
+  }
   return keys.map((k) => path.posix.join('previews', k));
 }
 
@@ -1495,8 +1553,8 @@ function thumbnailTierKeys(photo) {
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
   const outputBasename = `p${photo.id}_${sourceBasename}`;
-  return THUMBNAIL_WIDTHS
-    .map((w) => path.posix.join('thumbnails', `thumb_w${w}_${outputBasename}`));
+  const basenames = boundedDerivative(photo) ? [cacheBasename(photo, outputBasename), outputBasename] : [outputBasename];
+  return THUMBNAIL_WIDTHS.flatMap(w => basenames.map(name => path.posix.join('thumbnails', `thumb_w${w}_${name}`)));
 }
 
 async function deleteThumbnailTiers(photo) {
@@ -1546,7 +1604,7 @@ async function ensureThumbnailAtWidth(photo, width) {
   // on a stale probe and starting another pass.
   return singleFlight(
     flightKey('thumbnail', photo, width),
-    () => ensureThumbnailTierUnguarded(photo, width, settings, canonicalWidth)
+    () => withLazyDerivative(photo, () => ensureThumbnailTierUnguarded(photo, width, settings, canonicalWidth))
   );
 }
 
@@ -1566,7 +1624,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = `p${photo.id}_${sourceBasename}`;
+  const outputBasename = derivativeBasename(`p${photo.id}_${sourceBasename}`, { cache: true });
   const key = path.posix.join('thumbnails', `thumb_w${width}_${outputBasename}`);
 
   try {
@@ -1616,7 +1674,7 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
       try {
         return await generateThumbnail(proc.path, { outputBasename, width, height });
       } finally {
-        proc.cleanup();
+        await proc.cleanup();
       }
     });
   } catch (e) {
@@ -1630,7 +1688,7 @@ async function ensurePreviewImageAtWidth(photo, width) {
   if (!width || width === DEFAULT_PREVIEW_LONG_EDGE) return ensurePreviewImage(photo);
   return singleFlight(
     flightKey('preview', photo, width),
-    () => ensurePreviewImageAtWidthUnguarded(photo, width)
+    () => withLazyDerivative(photo, () => ensurePreviewImageAtWidthUnguarded(photo, width))
   );
 }
 
@@ -1647,12 +1705,15 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
   if (!event) return null;
 
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
-  const outputBasename = previewTierBasename(photo);
+  const outputBasename = derivativeBasename(previewTierBasename(photo), { cache: true });
 
   // Cache hit: nothing to do. This is the common path once a gallery has been
   // browsed at a given size. Every key the tier can have been written under
   // is probed — see previewTierKeyCandidates for why there is more than one.
-  for (const key of previewTierKeyCandidates(photo, width)) {
+  // A RAW tier never trusts a previous source's legacy, unversioned key.
+  const cacheCandidates = derivativeContext.getStore() ? ['jpg', 'webp'].map(extension =>
+    path.posix.join('previews', `preview_w${width}_${outputBasename.replace(/\.[^.]+$/, '')}.${extension}`)) : previewTierKeyCandidates(photo, width);
+  for (const key of cacheCandidates) {
     try {
       if (await storage.stat(key)) return key;
     } catch (e) {
@@ -1683,7 +1744,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
           longEdge: width,
         });
       } finally {
-        proc.cleanup();
+        await proc.cleanup();
       }
     });
   } catch (e) {
@@ -1700,7 +1761,7 @@ async function ensurePreviewImage(photo, { force = false } = {}) {
     logger.warn(`Invalid preview detected for photo ${photo.id}, regenerating…`);
   }
 
-  return singleFlight(flightKey('preview', photo), () => regeneratePreviewImage(photo), { force });
+  return singleFlight(flightKey('preview', photo), () => withLazyDerivative(photo, () => regeneratePreviewImage(photo)), { force });
 }
 
 async function regeneratePreviewImage(photo) {
@@ -1735,7 +1796,7 @@ async function regeneratePreviewImage(photo) {
       return null;
     }
     const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
-    const outputBasename = `ext${photo.id}_${sourceBasename}`;
+    const outputBasename = derivativeBasename(`ext${photo.id}_${sourceBasename}`);
     logger.info(`Ensuring preview for external photo ${photo.id} from ${localPath}`);
     newPreviewPath = await generatePreviewImage(localPath, { regenerate: true, outputBasename });
   } else {
@@ -1758,7 +1819,7 @@ async function regeneratePreviewImage(photo) {
     newPreviewPath = await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
+        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: derivativeBasename(proc.outputBasename) });
       } finally {
         await proc.cleanup();
       }
@@ -1766,7 +1827,7 @@ async function regeneratePreviewImage(photo) {
   }
 
   if (newPreviewPath) {
-    await db('photos').where({ id: photo.id }).update({ preview_path: newPreviewPath });
+    await publishPhotoDerivative(photo, newPreviewPath, { preview_path: newPreviewPath });
     return newPreviewPath;
   }
 

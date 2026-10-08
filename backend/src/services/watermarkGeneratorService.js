@@ -96,12 +96,13 @@ class WatermarkGeneratorService {
 
       if (result.success) {
         // Update database with watermark path
-        await db('photos')
-          .where({ id: photoId })
-          .update({
-            watermark_path: result.watermarkPath,
-            watermark_generated_at: db.fn.now()
-          });
+        const attempt = require('./mediaAttemptContext').current();
+        await attempt?.assertCurrent();
+        const query = attempt ? require('./mediaAttemptService').guard(attempt) : db('photos').where({ id: photoId });
+        await query.update({
+          watermark_path: result.watermarkPath,
+          watermark_generated_at: db.fn.now()
+        });
       }
 
       return result;

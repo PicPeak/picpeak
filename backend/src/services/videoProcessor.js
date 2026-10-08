@@ -1,4 +1,5 @@
-const ffmpeg = require('fluent-ffmpeg');
+const mediaProcesses = require('./mediaProcessService');
+const { isResourceError } = require('./imageResourcePolicy');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -6,6 +7,7 @@ const os = require('os');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
+const attemptContext = require('./mediaAttemptContext');
 
 // Use system ffmpeg/ffprobe (apk-installed in the Docker image, brew/apt on
 // dev hosts). The npm `@ffmpeg-installer/ffmpeg` binary is glibc-built and
@@ -20,38 +22,30 @@ const { getStorage } = require('./storage');
  * @returns {Promise<Object>} - Video metadata
  */
 async function extractVideoMetadata(videoPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        logger.error('Error extracting video metadata', { error: err.message, videoPath });
-        return reject(err);
-      }
+  try {
+    const metadata = await mediaProcesses.probeVideo(videoPath);
+    const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+    const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
 
-      try {
-        const videoStream = metadata.streams.find(s => s.codec_type === 'video');
-        const audioStream = metadata.streams.find(s => s.codec_type === 'audio');
+    const result = {
+      // null (not 0) when ffprobe genuinely has no duration — a real
+      // 0-second clip and "unknown" must stay distinguishable, since
+      // downstream code treats `duration != null` as "trust this value".
+      duration: metadata.format.duration != null ? Math.floor(metadata.format.duration) : null,
+      width: videoStream?.width || null,
+      height: videoStream?.height || null,
+      videoCodec: videoStream?.codec_name || null,
+      audioCodec: audioStream?.codec_name || null,
+      size: metadata.format.size || 0,
+      bitrate: metadata.format.bit_rate || null,
+      format: metadata.format.format_name || null
+    };
 
-        const result = {
-          // null (not 0) when ffprobe genuinely has no duration — a real
-          // 0-second clip and "unknown" must stay distinguishable, since
-          // downstream code treats `duration != null` as "trust this value".
-          duration: metadata.format.duration != null ? Math.floor(metadata.format.duration) : null,
-          width: videoStream?.width || null,
-          height: videoStream?.height || null,
-          videoCodec: videoStream?.codec_name || null,
-          audioCodec: audioStream?.codec_name || null,
-          size: metadata.format.size || 0,
-          bitrate: metadata.format.bit_rate || null,
-          format: metadata.format.format_name || null
-        };
-
-        resolve(result);
-      } catch (parseErr) {
-        logger.error('Error parsing video metadata', { error: parseErr.message });
-        reject(parseErr);
-      }
-    });
-  });
+    return result;
+  } catch (error) {
+    logger.error('Error extracting video metadata', { error: error.message, videoPath });
+    throw error;
+  }
 }
 
 /**
@@ -75,23 +69,31 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
   const tmpPath = path.join(tmpDir, tmpFilename);
 
   try {
-    await new Promise((resolve, reject) => {
-      ffmpeg(videoPath)
-        .screenshots({
-          timestamps: [timeOffset],
-          filename: tmpFilename,
-          folder: tmpDir,
-          size: size
-        })
-        .on('end', () => resolve())
-        .on('error', (err) => reject(err));
+    if (!/^\d{1,4}x\d{1,4}$/.test(size) || size.split('x').some(value => Number(value) <= 0 || Number(value) > 4096)) throw new Error('Invalid video thumbnail size');
+    await mediaProcesses.withSnapshot(videoPath, 'thumbnail', async (snapshot, details) => {
+      try { await mediaProcesses.probeSnapshot(snapshot, details); }
+      catch (error) {
+        if (isResourceError(error)) throw error;
+        // Some legitimate phone exports can be decoded even when ffprobe
+        // cannot describe them. The native decoder remains hard-capped.
+        logger.warn('Video poster probe unavailable; using bounded decode', { error: error.message });
+      }
+      await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+        ...mediaProcesses.inputOptions(details.format), '-ss', String(timeOffset), '-i', snapshot,
+        '-frames:v', '1', '-an', '-sn', '-dn', '-vf', `scale=${size.replace('x', ':')}`,
+        '-threads', '1', '-filter_threads', '1', '-filter_complex_threads', '1', tmpPath], {
+        memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
+        cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,
+      });
     });
 
     if (!fsSync.existsSync(tmpPath)) {
       throw new Error('ffmpeg did not produce a thumbnail file');
     }
 
+    await attemptContext.current()?.assertCurrent();
     await storage.putFromFile(thumbnailKey, tmpPath, { contentType: 'image/jpeg' });
+    await attemptContext.current()?.assertCurrent();
     logger.info('Video thumbnail generated', { videoPath, thumbnailKey });
     return thumbnailKey;
   } finally {
@@ -109,6 +111,7 @@ async function isValidVideo(videoPath) {
     const metadata = await extractVideoMetadata(videoPath);
     return metadata.duration > 0 && metadata.width > 0 && metadata.height > 0;
   } catch (error) {
+    if (isResourceError(error)) throw error;
     logger.error('Video validation failed', { error: error.message, videoPath });
     return false;
   }
@@ -124,6 +127,7 @@ async function getVideoDuration(videoPath) {
     const metadata = await extractVideoMetadata(videoPath);
     return metadata.duration;
   } catch (error) {
+    if (isResourceError(error)) throw error;
     logger.error('Error getting video duration', { error: error.message });
     return 0;
   }
@@ -163,6 +167,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
   try {
     metadata = await extractVideoMetadata(videoPath);
   } catch (error) {
+    if (isResourceError(error)) throw error;
     logger.error('Video metadata extraction failed — continuing without duration/codec/dimensions', {
       error: error.message,
       videoPath
@@ -184,6 +189,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
       thumbnailError = 'ffmpeg produced no poster frame';
     }
   } catch (error) {
+    if (isResourceError(error)) throw error;
     thumbnailError = error.message;
     logger.error('Video thumbnail generation failed — continuing without a thumbnail', {
       error: error.message,
@@ -227,6 +233,7 @@ async function processUploadedVideo(videoPath, thumbnailKey, options = {}) {
         usedPlaceholder = true;
       }
     } catch (error) {
+      if (isResourceError(error)) throw error;
       logger.error('Video placeholder generation also failed', { error: error.message, videoPath });
     }
   }

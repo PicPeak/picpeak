@@ -377,7 +377,9 @@ async function handleAdminPhotoUpload(req, res) {
     const storage = getStorage();
 
     const imageAdmission = require('../services/imageWorkAdmission');
+    const mediaAdmission = require('../services/mediaWorkAdmission');
     let batchDecodedBytes = 0;
+    let batchVideoWork = 0;
     const preparedImages = await imageAdmission.prepareBatch(filesToUpload, req.publicUploadReservation?.signal);
     for (const file of filesToUpload) {
       let object;
@@ -403,7 +405,11 @@ async function handleAdminPhotoUpload(req, res) {
         const relativePath = path.posix.join(event.slug, newFilename);
         const isVideo = isVideoMimeType(file.mimetype);
 
-        if (!isVideo) {
+        if (isVideo) {
+          const estimate = await mediaAdmission.inspect(file.path, req.publicUploadReservation?.signal);
+          imageReservation = await mediaAdmission.reserve(eventId, estimate, { bytes: batchDecodedBytes + estimate.decodedBytes, work: batchVideoWork + estimate.work });
+          batchDecodedBytes += estimate.decodedBytes; batchVideoWork += estimate.work;
+        } else {
           const bytes = await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
           imageReservation = await imageAdmission.reserve(eventId, bytes, batchDecodedBytes + bytes);
           batchDecodedBytes += bytes;
@@ -457,6 +463,7 @@ async function handleAdminPhotoUpload(req, res) {
           if (!inserted) throw new Error('Photo cap reached');
           const id = inserted[0]?.id || inserted[0];
           if (imageReservation) await imageAdmission.attach(imageReservation, id, conn);
+          if (imageReservation && isVideo) await mediaAdmission.attach(imageReservation, id, conn);
           return id;
         });
         rowCommitted = true;
@@ -474,6 +481,9 @@ async function handleAdminPhotoUpload(req, res) {
       } catch (err) {
         if (!rowCommitted && imageReservation) await imageAdmission.release(imageReservation).catch(cleanupError => {
           logger.warn('Decoded admin image reservation retained', { error: cleanupError.message });
+        });
+        if (!rowCommitted && imageReservation) await mediaAdmission.release(imageReservation).catch(cleanupError => {
+          logger.warn('Decoded admin video reservation retained', { error: cleanupError.message });
         });
         if (object) {
           try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
@@ -722,26 +732,40 @@ router.post(
       }
 
       const imageAdmission = require('../services/imageWorkAdmission');
+      const mediaAdmission = require('../services/mediaWorkAdmission');
       let imageReservation;
       try {
-        if (photo.media_type !== 'video' && !photo.mime_type?.startsWith('video/')) {
+        const isVideo = photo.media_type === 'video' || photo.mime_type?.startsWith('video/');
+        if (await db('media_process_attempts').where({ photo_id: photo.id, state: 'active' }).first()) {
+          throw Object.assign(new Error('The previous media execution has not terminated'), { code: 'MEDIA_LEASE_BUSY', status: 409 });
+        }
+        if (!isVideo) {
           const { withLocalCopy } = require('../services/imageProcessor');
           const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
           const key = resolvePhotoStorageKey(event, photo);
           const inspect = localPath => imageAdmission.inspect(localPath, photo.filename);
           const bytes = key ? await withLocalCopy(key, inspect) : await inspect(resolvePhotoFilePath(event, photo));
           imageReservation = await imageAdmission.reserve(photo.event_id, bytes, bytes);
+        } else {
+          const { withLocalCopy } = require('../services/imageProcessor');
+          const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
+          const key = resolvePhotoStorageKey(event, photo);
+          const inspect = localPath => mediaAdmission.inspect(localPath);
+          const estimate = key ? await withLocalCopy(key, inspect) : await inspect(resolvePhotoFilePath(event, photo));
+          imageReservation = await mediaAdmission.reserve(photo.event_id, estimate, { bytes: estimate.decodedBytes, work: estimate.work });
         }
         await db.transaction(async trx => {
           const changed = await trx('photos').where({ id: photo.id, processing_status: photo.processing_status })
             .update({ processing_status: 'pending', processing_error: null, processing_started_at: null,
               // An explicit authorized retry starts a new finite attempt cycle.
-              processing_attempts: 0 });
+              processing_attempts: 0, processing_attempt_id: null });
           if (changed !== 1) throw new Error('Photo retry is already in progress');
           if (imageReservation) await imageAdmission.attach(imageReservation, photo.id, trx);
+          if (imageReservation && isVideo) await mediaAdmission.attach(imageReservation, photo.id, trx);
         });
       } catch (error) {
         if (imageReservation) await imageAdmission.release(imageReservation);
+        if (imageReservation) await mediaAdmission.release(imageReservation);
         throw error;
       }
       res.json({ id: photo.id, status: 'pending' });

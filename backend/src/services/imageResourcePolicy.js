@@ -69,6 +69,6 @@ function estimate(metadata, policy = configuration()) {
   return bytes;
 }
 function isResourceError(error) {
-  return typeof error?.code === 'string' && error.code.startsWith('IMAGE_');
+  return typeof error?.code === 'string' && (error.code.startsWith('IMAGE_') || error.code.startsWith('MEDIA_'));
 }
 module.exports = { configuration, estimate, refusal, isResourceError, effectiveMemory };

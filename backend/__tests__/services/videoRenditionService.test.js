@@ -9,6 +9,23 @@ const path = require('path');
 
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }));
 jest.mock('fluent-ffmpeg');
+jest.mock('../../src/services/mediaProcessService', () => ({
+  probeVideo: path => new Promise((resolve, reject) => require('fluent-ffmpeg').ffprobe(path, (error, value) => error ? reject(error) : resolve(value))),
+  probeSnapshot: jest.fn(async () => ({})), inputOptions: () => [],
+  withSnapshot: (path, _kind, callback) => callback(path, { format: 'mov,mp4', policy: { nativeBytes: 768 * 1024 * 1024, renditionMs: 3600000, outputBytes: 512 * 1024 * 1024 } }),
+  run: (_command, args) => new Promise((resolve, reject) => {
+    const ffmpeg = require('fluent-ffmpeg');
+    if (args.includes('-filters')) return ffmpeg.getAvailableFilters((error, filters) => error ? reject(error) : resolve({ stdout: Buffer.from(Object.keys(filters).join(' ')) }));
+    const command = ffmpeg(args[args.indexOf('-i') + 1]);
+    command.outputOptions(args.slice(args.indexOf('-i') + 2, args.lastIndexOf('-threads')))
+      .on('end', () => resolve({ stdout: Buffer.alloc(0) })).on('error', reject).save(args[args.length - 1]);
+  }),
+}));
+jest.mock('../../src/services/mediaAttemptService', () => ({
+  current: () => ({ id: '11111111-1111-4111-8111-111111111111', assertCurrent: async () => {} }),
+  guard: (_attempt, db) => db('photos').where({ id: require('../../src/database/db').__state.photo.id,
+    web_status: 'processing', web_attempt_id: '11111111-1111-4111-8111-111111111111' }),
+}));
 
 jest.mock('../../src/database/db', () => {
   const state = { photo: null, event: null, setting: null, updates: [], updateResult: null };
@@ -241,11 +258,11 @@ describe('renderWebCopy', () => {
     expect(ffmpeg).toHaveBeenCalledWith(atoms);
     expect(command.outputOptions).toHaveBeenCalledWith(service.transcodeOptions());
     // The key carries the claim, so two attempts never share an object.
-    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4', savedTo, { contentType: 'video/mp4' });
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_11111111-1111-4111-8111-111111111111_phone.mp4', savedTo, { contentType: 'video/mp4' });
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
-    expect(update.data).toMatchObject({ web_path: 'videos/web_22_muqqfmo0_phone.mp4', web_status: 'complete', web_error: null });
+    expect(update.data).toMatchObject({ web_path: 'videos/web_22_11111111-1111-4111-8111-111111111111_phone.mp4', web_status: 'complete', web_error: null });
     // Published only against the worker's own claim: status and claim time.
-    expect(update.where).toEqual({ id: 22, web_status: 'processing', web_started_at: '2026-10-02T09:00:00.000Z' });
+    expect(update.where).toEqual({ id: 22, web_status: 'processing', web_attempt_id: '11111111-1111-4111-8111-111111111111' });
     // The temp file is gone once the copy is in storage.
     expect(fs.existsSync(savedTo)).toBe(false);
   });
@@ -300,11 +317,11 @@ describe('renderWebCopy', () => {
     ffmpeg.mockImplementation(() => command);
 
     expect(await service.renderWebCopy(22, { claimedAt: '2026-10-02T09:00:00.000Z' })).toBe('superseded');
-    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4', expect.any(String), { contentType: 'video/mp4' });
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_22_11111111-1111-4111-8111-111111111111_phone.mp4', expect.any(String), { contentType: 'video/mp4' });
     // Its own object only: the key is this claim's.
-    expect(storage.delete).toHaveBeenCalledWith('videos/web_22_muqqfmo0_phone.mp4');
+    expect(storage.delete).toHaveBeenCalledWith('videos/web_22_11111111-1111-4111-8111-111111111111_phone.mp4');
     const update = dbModule.__state.updates.find((u) => u.table === 'photos');
-    expect(update.where).toEqual({ id: 22, web_status: 'processing', web_started_at: '2026-10-02T09:00:00.000Z' });
+    expect(update.where).toEqual({ id: 22, web_status: 'processing', web_attempt_id: '11111111-1111-4111-8111-111111111111' });
   });
 
   it('reads an external video off the mount and keys the copy by id and NAS basename', async () => {
@@ -329,7 +346,7 @@ describe('renderWebCopy', () => {
     expect(await service.renderWebCopy(23)).toBe('complete');
     expect(withLocalCopy).not.toHaveBeenCalled();
     expect(ffmpeg).toHaveBeenCalledWith(nasFile);
-    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_23_Teaser.mp4', expect.any(String), { contentType: 'video/mp4' });
+    expect(storage.putFromFile).toHaveBeenCalledWith('videos/web_23_11111111-1111-4111-8111-111111111111_Teaser.mp4', expect.any(String), { contentType: 'video/mp4' });
   });
 
   it('throws when ffmpeg fails, leaving the row for the queue to mark', async () => {
