@@ -18,7 +18,7 @@ process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-templa
 const { db } = require('../../../src/database/db');
 const { runCoreMigrations } = require('./crmDb');
 
-runCoreMigrations(db)
+require('../../../src/database/crmAccess').withTrustedCrmAccess('isolated migration template', () => runCoreMigrations(db))
   .then(() => db.destroy())
   .then(() => {
     fs.rmSync(process.env.STORAGE_PATH, { recursive: true, force: true });

@@ -181,13 +181,13 @@ async function actById(id, decision, adminId) {
 
 /** Admin-web equivalent of actById, with the run ownership check in-query. */
 async function actByIdForAdmin(id, decision, admin) {
-  const { scopeWorkflowRunsQuery } = require('./access');
+  const { scopeWorkflowRunsQuery, runScopedWorkflowQuery } = require('./access');
   const query = db('workflow_approvals as a')
     .join('workflow_runs as r', 'r.id', 'a.run_id')
     .where('a.id', id)
     .select('a.*');
   scopeWorkflowRunsQuery(query, admin, { alias: 'r', mode: 'manage' });
-  const approval = await query.first();
+  const approval = await runScopedWorkflowQuery(query.first());
   return finalizeApproval(approval, decision, {
     acted_via: 'web', acted_by: admin?.id || null,
   });
@@ -214,7 +214,7 @@ async function listPending(limit = 100) {
 
 /** Pending approvals visible to one admin under the workflow entity boundary. */
 async function listPendingForAdmin(admin, limit = 100) {
-  const { scopeWorkflowRunsQuery } = require('./access');
+  const { scopeWorkflowRunsQuery, runScopedWorkflowQuery } = require('./access');
   const query = db('workflow_approvals as a')
     .join('workflow_runs as r', 'r.id', 'a.run_id')
     .join('workflows as w', 'w.id', 'r.workflow_id')
@@ -227,7 +227,7 @@ async function listPendingForAdmin(admin, limit = 100) {
     .orderBy('a.created_at', 'desc')
     .limit(limit);
   scopeWorkflowRunsQuery(query, admin, { alias: 'r', mode: 'view' });
-  return query;
+  return runScopedWorkflowQuery(query);
 }
 
 module.exports = {

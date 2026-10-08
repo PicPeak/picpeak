@@ -240,9 +240,11 @@ registry.registerAction('webhook', async (ctx) => {
 // prepare_* create DRAFT documents (idempotent, reusing the proven converters)
 // and stash the created ids in the run context; send_document then dispatches
 // the matching draft. Flows run system-side, so the actor is resolved from the
-// quote's creator (else the workflow's creator, else the first admin).
+// scoped execution principal (legacy fallback never chooses a first admin).
 
 async function resolveActor(ctx) {
+  const principal = require('../../database/crmAccess').currentCrmActor();
+  if (principal) return principal.id;
   try {
     if (ctx.run.entity_type === 'quote' && ctx.run.entity_id) {
       const q = await ctx.db('quotes').where({ id: ctx.run.entity_id }).first('created_by_admin_id');
@@ -250,8 +252,7 @@ async function resolveActor(ctx) {
     }
     const wf = await ctx.db('workflows').where({ id: ctx.run.workflow_id }).first('created_by');
     if (wf?.created_by) return wf.created_by;
-    const admin = await ctx.db('admin_users').orderBy('id', 'asc').first('id');
-    return admin?.id || null;
+    return null;
   } catch (_) { return null; }
 }
 

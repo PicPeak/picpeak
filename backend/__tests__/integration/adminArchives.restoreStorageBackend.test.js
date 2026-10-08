@@ -95,7 +95,10 @@ describe('archive routes read and write through the storage backend', () => {
 
     jest.resetModules();
     jest.doMock('../../src/middleware/auth', () => ({
-      adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester' }; next(); },
+      adminAuth: (req, _res, next) => {
+        req.admin = { id: 1, username: 'tester' };
+        require('../../src/database/crmAccess').withTrustedCrmAccess('archive storage fixture authentication', next);
+      },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
       requirePermission: () => (_req, _res, next) => next(),
@@ -133,6 +136,7 @@ describe('archive routes read and write through the storage backend', () => {
   });
 
   beforeEach(async () => {
+    require('../../src/database/crmAccess').enterTrustedCrmFixtureContext();
     await db('photos').del();
     await db('photo_categories').del();
     await db('events').del();

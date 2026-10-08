@@ -18,7 +18,9 @@ const backupManifest = require('./backupManifest');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
+const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
+const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 const service = {};
 let backupJob = null;
@@ -517,9 +519,20 @@ function destinationIsBackedUpFolderMessage(folder) {
     + 'Use a folder of its own, for example a subfolder of it or a directory outside the storage folder.';
 }
 
-async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skip = NO_OWN_OUTPUT) {
+async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], skip = NO_OWN_OUTPUT, strict = false, allowMissing = true) {
+  let entries;
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    entries = await fs.readdir(dirPath, { withFileTypes: true });
+  } catch (error) {
+    // A feature never used has no top-level directory. A directory already
+    // enumerated below it disappearing, or any unreadable directory, is not
+    // a complete catalogue for a standalone point.
+    if (error.code === 'ENOENT' && allowMissing) return;
+    logger.error(`Failed to scan directory ${dirPath}:`, error);
+    if (strict) throw error;
+    return;
+  }
+  try {
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       const relativePath = path.relative(basePath, fullPath);
@@ -531,7 +544,7 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
       if (entry.isDirectory()) {
         if (skip.paths.includes(fullPath)) continue;
         if (skip.ids.length > 0 && skip.ids.includes(await dirIdentity(fullPath))) continue;
-        await scanDirectory(fullPath, fileList, basePath, excludePatterns, skip);
+        await scanDirectory(fullPath, fileList, basePath, excludePatterns, skip, strict, false);
       } else if (entry.isFile()) {
         const stats = await fs.stat(fullPath);
         fileList.push({
@@ -543,9 +556,8 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = [], 
       }
     }
   } catch (error) {
-    if (error.code !== 'ENOENT') {
-      logger.error(`Failed to scan directory ${dirPath}:`, error);
-    }
+    logger.error(`Failed to scan directory ${dirPath}:`, error);
+    if (strict) throw error;
   }
 }
 
@@ -786,6 +798,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
 
   // Never the backup's own output (issue 1780).
   const ownOutput = await ownOutputDirs(config, storagePath);
+  const strictCatalogue = ['local', 's3'].includes(String(config.backup_destination_type || 'local').toLowerCase());
 
   for (const target of targets) {
     // CRM document estate is special-cased in the comment block below
@@ -802,7 +815,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     // those values refer to do not, leaving every CRM *_path column a
     // broken FK. scanDirectory short-circuits on ENOENT so installs
     // that never used CRM features won't error.
-    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns, ownOutput);
+    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns, ownOutput, strictCatalogue);
   }
 
   // Documents a row names in the legacy root (<cwd>/storage) when that is not
@@ -815,6 +828,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     legacyFiles = await collectLegacyStoredFiles(db);
   } catch (error) {
     logger.warn(`Could not list documents stored outside the storage root: ${error.message}`);
+    if (strictCatalogue) throw error;
   }
   for (const legacy of legacyFiles) {
     const target = targets.find((t) => legacy.rel === t.path || legacy.rel.startsWith(`${t.path}/`));
@@ -827,6 +841,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
       stats = await fs.stat(legacy.abs);
     } catch (error) {
       logger.warn(`Skipping a document stored outside the storage root that is no longer readable: ${error.code || error.message}`);
+      if (strictCatalogue) throw error;
       continue;
     }
     files.push({
@@ -840,18 +855,6 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   }
 
   return files;
-}
-
-async function hasFileChanged(filePath, checksum) {
-  try {
-    const existing = await db('backup_file_states')
-      .where('file_path', filePath)
-      .first();
-    return !existing || existing.checksum !== checksum;
-  } catch (error) {
-    logger.error('Failed to check file state:', error);
-    return true;
-  }
 }
 
 async function updateFileState(filePath, checksum, size, modified) {
@@ -878,7 +881,19 @@ async function updateFileState(filePath, checksum, size, modified) {
   }
 }
 
-async function performLocalBackup(config, files) {
+// A run that fails before its manifest is written leaves no restore point,
+// only a partial copy as large as the estate. Take it away again; a failure
+// to do so must not hide why the run failed.
+async function discardPartialSnapshot(remove, location) {
+  try {
+    await remove();
+    logger.info(`Removed the partial backup snapshot ${location}`);
+  } catch (cleanupError) {
+    logger.error(`Could not remove the partial backup snapshot ${location}: ${cleanupError.message}`);
+  }
+}
+
+async function performLocalBackup(config, files, verifiedDatabaseInfo) {
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   // A bare "EACCES ... mkdir '/home/ubuntu'" did not say that the configured
   // path is looked up inside the container (issue 1365). Resolved first, so
@@ -895,41 +910,68 @@ async function performLocalBackup(config, files) {
 
   const backedUpFiles = [];
   let backedUpSize = 0;
+  // Never overwrite another restore point, even after history is removed.
+  const backupPath = path.resolve(destinationRoot, `backup-${crypto.randomUUID()}`);
+  await fs.mkdir(backupPath);
 
-  for (const file of files) {
-    try {
-      const maxSizeMb = config.backup_max_file_size_mb || 5000;
-      if (file.size > maxSizeMb * 1024 * 1024) {
-        logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        continue;
+  let databaseInfo;
+  try {
+    for (const file of files) {
+      try {
+        const maxSizeMb = config.backup_max_file_size_mb || 5000;
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+          continue;
+        }
+
+        const checksum = await calculateChecksum(file.path);
+        file.checksum = checksum;
+
+        const destinationFile = path.join(backupPath, file.relativePath);
+        await fs.mkdir(path.dirname(destinationFile), { recursive: true });
+        await fs.copyFile(file.path, destinationFile, fs.constants.COPYFILE_FICLONE);
+        if (await calculateChecksum(destinationFile) !== checksum) {
+          throw new Error('File changed while its restore point was being created');
+        }
+        file.size = (await fs.stat(destinationFile)).size;
+        if (file.size > maxSizeMb * 1024 * 1024) {
+          throw new Error('File grew beyond the configured backup size limit');
+        }
+
+        await updateFileState(file.relativePath, checksum, file.size, file.modified);
+
+        backedUpFiles.push(file.relativePath);
+        backedUpSize += file.size;
+      } catch (error) {
+        logger.error(`Failed to backup file ${file.relativePath}:`, error);
+        throw error;
       }
-
-      const checksum = await calculateChecksum(file.path);
-      file.checksum = checksum;
-
-      const changed = await hasFileChanged(file.relativePath, checksum);
-      if (!changed && normalizeBoolean(config.backup_incremental) !== false) {
-        continue;
-      }
-
-      const destinationFile = path.join(destinationRoot, file.relativePath);
-      await fs.mkdir(path.dirname(destinationFile), { recursive: true });
-      await fs.copyFile(file.path, destinationFile);
-
-      await updateFileState(file.relativePath, checksum, file.size, file.modified);
-
-      backedUpFiles.push(file.relativePath);
-      backedUpSize += file.size;
-    } catch (error) {
-      logger.error(`Failed to backup file ${file.relativePath}:`, error);
     }
+
+    databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
+    if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
+      const relativeDump = path.join('database', path.basename(verifiedDatabaseInfo.backupFile));
+      const snapshotDump = path.join(backupPath, relativeDump);
+      await fs.mkdir(path.dirname(snapshotDump), { recursive: true });
+      await fs.copyFile(verifiedDatabaseInfo.backupFile, snapshotDump, fs.constants.COPYFILE_FICLONE);
+      const checksum = await calculateChecksum(snapshotDump);
+      if (checksum !== verifiedDatabaseInfo.checksum) {
+        throw new Error('Database dump changed while its restore point was being created');
+      }
+      databaseInfo = { ...verifiedDatabaseInfo, backupFile: relativeDump,
+        size: (await fs.stat(snapshotDump)).size, checksum };
+    }
+  } catch (error) {
+    await discardPartialSnapshot(() => fs.rm(backupPath, { recursive: true, force: true }), backupPath);
+    throw error;
   }
 
   return {
     backedUpCount: backedUpFiles.length,
     backedUpSize,
     backedUpFiles,
-    backupPath: destinationRoot
+    backupPath,
+    databaseInfo
   };
 }
 
@@ -1044,7 +1086,32 @@ async function performRsyncBackup(config, files) {
   };
 }
 
-async function performS3Backup(config, files) {
+// Upload only captured bytes: hashing a live source and opening it later for
+// upload can publish an object whose bytes disagree with its manifest. Stage
+// one file at a time, not the whole estate, and discard it even on failure.
+async function uploadCapturedBackupFile(client, source, key, options, maxBytes, expectedChecksum) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-backup-upload-'));
+  try {
+    const captured = path.join(directory, path.basename(source));
+    await fs.copyFile(source, captured, fs.constants.COPYFILE_FICLONE);
+    const size = (await fs.stat(captured)).size;
+    if (size > maxBytes) throw new Error('File grew beyond the configured backup size limit');
+    const checksum = await calculateChecksum(captured);
+    if (expectedChecksum && checksum !== expectedChecksum) {
+      throw new Error('Database dump changed while its restore point was being created');
+    }
+    await client.upload(captured, key, {
+      ...options, metadata: { ...options.metadata, checksum }
+    });
+    return { size, checksum };
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+}
+
+async function performS3Backup(config, files, verifiedDatabaseInfo) {
+  let s3Client;
+  let s3Prefix;
   try {
     const bucket = config.backup_s3_bucket;
     if (!bucket || !config.backup_s3_access_key || !config.backup_s3_secret_key) {
@@ -1064,14 +1131,14 @@ async function performS3Backup(config, files) {
       ...backupS3Access(config)
     };
 
-    const s3Client = new S3StorageAdapter(s3Config);
+    s3Client = new S3StorageAdapter(s3Config);
     await s3Client.testConnection();
 
     const now = new Date();
     const datePrefix = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-    const backupId = `backup-${now.getTime()}`;
+    const backupId = `backup-${crypto.randomUUID()}`;
     const basePrefix = config.backup_s3_prefix ? config.backup_s3_prefix : 'backups';
-    const s3Prefix = path.posix.join(basePrefix, datePrefix, backupId);
+    s3Prefix = path.posix.join(basePrefix, datePrefix, backupId);
 
     const backedUpFiles = [];
     let backedUpSize = 0;
@@ -1084,23 +1151,17 @@ async function performS3Backup(config, files) {
           continue;
         }
 
-        const checksum = await calculateChecksum(file.path);
-        file.checksum = checksum;
-
-        const changed = await hasFileChanged(file.relativePath, checksum);
-        if (!changed && normalizeBoolean(config.backup_incremental) !== false) {
-          continue;
-        }
-
         const s3Key = path.posix.join(s3Prefix, file.relativePath);
-        await s3Client.upload(file.path, s3Key, {
+        const captured = await uploadCapturedBackupFile(s3Client, file.path, s3Key, {
           metadata: {
             'original-path': file.relativePath,
-            checksum,
             'backup-id': backupId,
             'backup-time': now.toISOString()
           }
-        });
+        }, maxSizeMb * 1024 * 1024);
+        const { checksum } = captured;
+        file.checksum = checksum;
+        file.size = captured.size;
 
         await updateFileState(file.relativePath, checksum, file.size, file.modified);
 
@@ -1108,30 +1169,33 @@ async function performS3Backup(config, files) {
         backedUpSize += file.size;
       } catch (error) {
         logger.error(`Failed to backup file ${file.relativePath} to S3:`, error);
+        throw error;
       }
     }
 
-    let databaseInfo = null;
-    if (normalizeBoolean(config.backup_include_database) !== false) {
+    let databaseInfo = { ...verifiedDatabaseInfo, backupFile: null, size: 0, checksum: null };
+    if (config.backup_include_database == null || normalizeBoolean(config.backup_include_database) !== false) {
       try {
-        databaseInfo = await service.getDatabaseBackupInfo();
+        databaseInfo = verifiedDatabaseInfo;
         if (databaseInfo.backupFile && await fs.stat(databaseInfo.backupFile).catch(() => null)) {
           const dbKey = path.posix.join(s3Prefix, 'database', path.basename(databaseInfo.backupFile));
-          await s3Client.upload(databaseInfo.backupFile, dbKey, {
+          const captured = await uploadCapturedBackupFile(s3Client, databaseInfo.backupFile, dbKey, {
             metadata: {
               'backup-id': backupId,
               'backup-type': 'database',
-              'database-type': databaseInfo.type,
-              checksum: databaseInfo.checksum || ''
+              'database-type': databaseInfo.type
             }
-          });
-          backedUpFiles.push(path.posix.join('database', path.basename(databaseInfo.backupFile)));
+          }, Infinity, databaseInfo.checksum);
+          const relativeDump = path.posix.join('database', path.basename(databaseInfo.backupFile));
+          databaseInfo = { ...databaseInfo, ...captured, backupFile: relativeDump };
+          backedUpFiles.push(relativeDump);
           backedUpSize += databaseInfo.size || 0;
         } else {
-          logger.warn('No recent database backup found to include in S3 backup');
+          throw new Error('No verified database dump is available for this S3 restore point');
         }
       } catch (error) {
         logger.error('Failed to include database backup in S3:', error);
+        throw error;
       }
     }
 
@@ -1169,6 +1233,9 @@ async function performS3Backup(config, files) {
     };
   } catch (error) {
     logger.error('S3 backup failed:', error);
+    if (s3Prefix) {
+      await discardPartialSnapshot(() => removeS3Snapshot(s3Client, s3Prefix), s3Prefix);
+    }
     throw error;
   }
 }
@@ -1201,18 +1268,43 @@ function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
     const source = fileMap.get(relativePath) || {};
     return {
       path: relativePath,
-      size: source.size || null,
+      size: source.size ?? null,
       checksum: source.checksum || null
     };
   });
 }
 
+// Errors that mean "this directory cannot be used", as opposed to a failed
+// write into a usable one.
+const UNUSABLE_DIRECTORY_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'EROFS']);
+
 async function saveManifestToLocal(manifest, manifestFileName, config) {
-  const manifestDir = config.backup_manifest_path
-    || path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests');
-  await fs.mkdir(manifestDir, { recursive: true });
-  const manifestPath = path.join(manifestDir, path.basename(manifestFileName));
-  await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format === 'yaml' ? 'yaml' : 'json');
+  const defaultDir = path.join(config.backup_destination_path || path.join(getStoragePath(), 'backups'), 'manifests');
+  const writeTo = async (manifestDir) => {
+    await fs.mkdir(manifestDir, { recursive: true });
+    const manifestPath = path.join(manifestDir, path.basename(manifestFileName));
+    await backupManifest.saveManifest(manifest, manifestPath, config.backup_manifest_format === 'yaml' ? 'yaml' : 'json');
+    return manifestPath;
+  };
+  let manifestPath;
+  try {
+    manifestPath = await writeTo(config.backup_manifest_path || defaultDir);
+  } catch (error) {
+    // backup_manifest_path is seeded as /backup/manifests on every install
+    // (migration 031). Where that is not writable and the backup goes
+    // elsewhere, the manifest belongs with the backup rather than nowhere.
+    if (!config.backup_manifest_path || path.resolve(config.backup_manifest_path) === path.resolve(defaultDir)
+        || !UNUSABLE_DIRECTORY_CODES.has(error.code)) {
+      throw error;
+    }
+    logger.warn(`Backup manifest directory ${config.backup_manifest_path} is not usable (${error.code}); writing the manifest to ${defaultDir} instead`);
+    try {
+      manifestPath = await writeTo(defaultDir);
+    } catch (fallbackError) {
+      throw new Error(`Cannot write the backup manifest: ${config.backup_manifest_path} is not usable (${error.code}) `
+        + `and neither is ${defaultDir} (${fallbackError.code || fallbackError.message})`);
+    }
+  }
   logger.info(`Backup manifest saved to ${manifestPath}`);
   return manifestPath;
 }
@@ -1239,6 +1331,55 @@ async function saveManifestToS3(manifest, manifestFileName, config, result) {
   const manifestPath = `s3://${result.s3Bucket}/${manifestKey}`;
   logger.info(`Backup manifest uploaded to S3: ${manifestPath}`);
   return manifestPath;
+}
+
+const DEFAULT_RETENTION_COUNT = 7;
+
+// Every local and S3 run is a complete copy, so without a limit the
+// destination grows by one estate per run. Keep the newest
+// backup_retention_count standalone snapshots of the current destination and
+// remove the older ones whole, with their history rows. 0 keeps everything.
+// Legacy trees and anything not shaped like a standalone snapshot are never
+// candidates, and a failure here never fails the backup that just succeeded.
+async function pruneStandaloneSnapshots(config, destinationType, currentRunId, s3Client) {
+  try {
+    const raw = config.backup_retention_count;
+    const keep = raw === undefined || raw === null || raw === '' ? DEFAULT_RETENTION_COUNT : Number(raw);
+    if (!Number.isInteger(keep) || keep <= 0) return;
+
+    const runs = await db('backup_runs')
+      .where('status', 'completed')
+      .whereNotNull('manifest_path')
+      .orderBy('id', 'desc')
+      .select('id', 'manifest_path', 'statistics');
+    let kept = 0;
+    for (const run of runs) {
+      const snapshot = standaloneSnapshotOfRun(config, run);
+      if (!snapshot || snapshot.type !== destinationType) continue;
+      if (run.id === currentRunId || kept < keep) {
+        kept += 1;
+        continue;
+      }
+      try {
+        if (snapshot.type === 's3') {
+          await removeS3Snapshot(s3Client, snapshot.prefix);
+        } else {
+          await removeLocalSnapshot(snapshot.destinationRoot, snapshot.root);
+          if (snapshot.manifestFile) await fs.rm(snapshot.manifestFile, { force: true });
+        }
+        await db.transaction(async (trx) => {
+          await trx('backup_manifest').where('backup_run_id', run.id).del();
+          await trx('backup_runs').where('parent_backup_id', run.id).update({ parent_backup_id: null });
+          await trx('backup_runs').where('id', run.id).del();
+        });
+        logger.info(`Backup retention removed the restore point of run ${run.id} (${snapshot.root || snapshot.prefix})`);
+      } catch (error) {
+        logger.error(`Backup retention could not remove the restore point of run ${run.id}: ${error.message}`);
+      }
+    }
+  } catch (error) {
+    logger.error('Backup retention failed:', error);
+  }
 }
 
 async function runBackupInternal(isManual = false) {
@@ -1304,11 +1445,11 @@ async function runBackupInternal(isManual = false) {
     const destinationType = (config.backup_destination_type || 'local').toLowerCase();
 
     if (destinationType === 'local') {
-      result = await performLocalBackup(config, files);
+      result = await performLocalBackup(config, files, verifiedDatabaseInfo);
     } else if (destinationType === 'rsync') {
       result = await performRsyncBackup(config, files);
     } else if (destinationType === 's3') {
-      result = await performS3Backup(config, files);
+      result = await performS3Backup(config, files, verifiedDatabaseInfo);
     } else {
       throw new Error(`Unknown backup destination type: ${config.backup_destination_type}`);
     }
@@ -1322,7 +1463,8 @@ async function runBackupInternal(isManual = false) {
     try {
       logger.info('Generating backup manifest...');
 
-      const previousBackup = await getPreviousSuccessfulBackup(runId);
+      const previousBackup = destinationType === 'rsync'
+        ? await getPreviousSuccessfulBackup(runId) : null;
       // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
       // top of this run — reuse it so manifest building doesn't pay a
       // second `getDatabaseBackupInfo()` round-trip. The
@@ -1358,6 +1500,10 @@ async function runBackupInternal(isManual = false) {
         customMetadata: {
           backup_run_id: runId,
           destination_type: destinationType,
+          ...(destinationType === 'local' || destinationType === 's3'
+            ? { restore_point: 'standalone-v1',
+              restore_point_manifest_layout: destinationType === 'local' && config.backup_manifest_path
+                ? 'external' : 'nested' } : {}),
           retentionDays: config.backup_retention_days || 30,
           ...(Object.keys(legacyMap).length
             ? { stored_path_map: legacyMap, stored_path_sha256: storedPathChecksums(legacyBacked) }
@@ -1378,7 +1524,9 @@ async function runBackupInternal(isManual = false) {
       if (result.s3Client) {
         manifestPath = await saveManifestToS3(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, config, result);
       } else {
-        manifestPath = await saveManifestToLocal(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, config);
+        const manifestConfig = destinationType === 'local'
+          ? { ...config, backup_destination_path: result.backupPath } : config;
+        manifestPath = await saveManifestToLocal(manifest, `backup-manifest-${manifest.backup.id}.${manifestOptions.format}`, manifestConfig);
       }
 
       try {
@@ -1390,6 +1538,13 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      // Without a manifest the copy is not a restore point. manifestPath is
+      // only set once the manifest is in place, and then the snapshot stays.
+      if (!manifestPath && destinationType === 'local') {
+        await discardPartialSnapshot(() => fs.rm(result.backupPath, { recursive: true, force: true }), result.backupPath);
+      } else if (!manifestPath && destinationType === 's3') {
+        await discardPartialSnapshot(() => removeS3Snapshot(result.s3Client, result.s3Prefix), result.s3Prefix);
+      }
       throw error;
     }
 
@@ -1423,6 +1578,9 @@ async function runBackupInternal(isManual = false) {
           total_files_checked: files.length,
           average_file_size: result.backedUpCount ? Math.round(result.backedUpSize / result.backedUpCount) : 0,
           destination: destinationType,
+          // Where this run's standalone snapshot lives; retention and the
+          // delete route need it when the manifest is kept elsewhere.
+          ...(destinationType === 'local' || destinationType === 's3' ? { snapshot_path: result.backupPath } : {}),
           // Per-Stage-B-path breakdown — { [pathKey]: { count, size } }
           per_path: perPath,
           // Keep camelCase for backward compatibility
@@ -1435,6 +1593,10 @@ async function runBackupInternal(isManual = false) {
       });
 
     logger.info(`Backup completed: ${result.backedUpCount} files, ${(result.backedUpSize / 1024 / 1024).toFixed(2)} MB in ${durationSeconds}s`);
+
+    if (destinationType === 'local' || destinationType === 's3') {
+      await pruneStandaloneSnapshots(config, destinationType, runId, result.s3Client);
+    }
 
     if (normalizeBoolean(config.backup_email_on_success)) {
       const admins = await db('admin_users').where('is_active', formatBoolean(true));
@@ -1542,10 +1704,12 @@ async function startBackupService() {
 
     const schedule = resolveScheduleCron(config);
 
-    backupJob = cron.schedule(schedule, async () => {
+    // The schedule can be restarted from an admin's settings save; the job
+    // must not keep running as that admin.
+    backupJob = cron.schedule(schedule, () => withTrustedCrmAccess('scheduled file backup', async () => {
       logger.info('Starting scheduled backup');
       await service.runBackup();
-    });
+    }));
 
     logger.info(`Backup service started with schedule: ${schedule}`);
   } catch (error) {
@@ -1927,7 +2091,9 @@ async function validateBackupManifest(manifestPath) {
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;
-service.runBackup = runBackupInternal;
+// A backup covers the whole install whoever starts it (the schedule, or an
+// admin holding backup.create), so it never runs under the caller's CRM scope.
+service.runBackup = (isManual) => withTrustedCrmAccess('file backup', () => runBackupInternal(isManual));
 service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;

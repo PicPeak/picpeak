@@ -1534,7 +1534,9 @@
         "customCronHelp": "Geben Sie einen gültigen Cron-Ausdruck ein (z.B. 0 3 * * *)",
         "retention": "Aufbewahrungszeitraum",
         "retentionDays": "Backups aufbewahren für",
-        "retentionHelp": "Tage (ältere Backups werden automatisch gelöscht)"
+        "retentionHelp": "Tage (ältere Backups werden automatisch gelöscht)",
+        "retentionCount": "Aufzubewahrende Wiederherstellungspunkte",
+        "retentionCountHelp": "Vollständige Wiederherstellungspunkte, die an einem lokalen oder S3-Ziel aufbewahrt werden. Ältere werden nach jedem erfolgreichen Backup gelöscht. 0 behält alle."
       },
       "whatToBackup": {
         "title": "Was soll gesichert werden",
@@ -7917,6 +7919,7 @@
     "exportCsv": "CSV exportieren",
     "exportFailed": "Export fehlgeschlagen. Bitte erneut versuchen.",
     "errorTitle": "Steuerliste konnte nicht geladen werden",
+    "completeViewRequired": "Diese Auswertung umfasst alle Rechnungen des Studios. Ihr Konto sieht nur die eigenen Dokumente, deshalb steht sie Ihnen nicht zur Verfügung. Bitten Sie einen Super-Admin, sie zu erstellen.",
     "empty": "Keine Rechnungen in diesem Zeitraum.",
     "statusCancelled": "Storniert",
     "totalsByVatRate": "Summen nach MwSt-Satz",

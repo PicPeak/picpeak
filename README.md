@@ -308,6 +308,51 @@ We love contributions! PicPeak is built by photographers, for photographers — 
 
 Found a security issue? Please open a [security issue](https://github.com/PicPeak/picpeak/issues/new?labels=security). See [SECURITY.md](SECURITY.md) for the policy.
 
+## Standalone backup restore points
+
+New local and S3 scheduled/manual file backups copy every eligible file into
+a unique restore-point directory or object prefix. Their manifests are full
+catalogues marked `standalone-v1`, with no parent dependency; an included,
+verified database dump lives inside the same point. Existing path, feature,
+filename and maximum-file-size exclusions still apply. These backups do not
+cover storage outside the configured backup scope.
+
+Local/S3 `backup_incremental` settings no longer skip unchanged files. Plan
+capacity for a full copy per retained point and temporary space for one S3
+upload file. After each successful run the newest `backup_retention_count`
+points of the current destination are kept (default 7, `0` keeps all) and
+older ones are removed whole with their history entries; deleting a
+standalone run from the history removes its point too. Legacy backup trees
+are never pruned. An earlier point is not overwritten by a later run, a run
+that fails removes its partial copy, and deleting separately retained
+database dumps does not invalidate a standalone point.
+
+Select the point's manifest in the restore wizard. A rescued local mount must
+be under a configured backup location (or `RESTORE_ALLOWED_ROOTS`); its
+default nested `manifests/` layout can move or be renamed without rewriting
+the manifest. A downloaded ZIP's root `manifest.json` also identifies its
+extracted directory as the selected point.
+S3 recovery uses the selected manifest's bucket/prefix and current credentials.
+Keep custom manifests together with their recorded snapshot location.
+
+An empty `RESTORE_ON_INSTALL` trigger still auto-selects the newest local
+manifest, searching both the shared `manifests/` directory and immediate
+`backup-UUID/manifests/` points. For a renamed point or custom manifest location,
+put its explicit manifest path in the trigger file instead.
+Here, newest means the manifest file's modification time across both layouts,
+not its filename or an unverified timestamp inside it. Automatic discovery does
+not follow symlinked point/manifests directories. To recover an older point or
+avoid changed timestamps after copying a rescue mount, name the exact manifest
+in the trigger instead of leaving it empty.
+
+Older ambiguous incremental local/S3 backups cannot prove a complete file set
+and are refused for full/file restores, including forced restores and
+`RESTORE_ON_INSTALL`. A legacy local backup whose manifest is a full catalogue
+(the first run into a destination) still restores. Database-only
+and selective file recovery remain available; they do not establish complete
+recovery. Take and test a new standalone point before relying on it. Existing
+rsync catalogue behavior and portable `.picpeak` exports are unchanged.
+
 ## Analytics integration security
 
 Settings → Analytics supports Umami and Rybbit through PicPeak-owned, data-only

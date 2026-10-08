@@ -356,6 +356,8 @@ async function loadCosts({ from, to, cur }) {
  * get the legacy revenue-only shape.
  */
 async function getTaxReport({ from, to, currency, includeCosts = true } = {}) {
+  // A tax report is every invoice or nothing, never one admin's share.
+  require('../database/crmAccess').assertCompleteCrmView();
   if (!from || !to) {
     throw new Error('getTaxReport: `from` and `to` are required (YYYY-MM-DD)');
   }
