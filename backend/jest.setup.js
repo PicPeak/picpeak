@@ -1,6 +1,9 @@
 process.env.NODE_ENV = 'test';
 if (!process.env.DATABASE_CLIENT) process.env.DATABASE_CLIENT = 'sqlite3';
 require('./src/database/crmAccess').enterTrustedCrmFixtureContext();
+// A suite may reset the module registry in beforeAll; its fixture writes
+// must use the reloaded policy instance too. Real auth replaces this scope.
+beforeEach(() => require('./src/database/crmAccess').enterTrustedCrmFixtureContext());
 
 // Supertest 6 binds an IPv6 wildcard listener but hardcodes an IPv4 URL.
 // macOS can allocate that IPv6 port while a different IPv4 service owns it.

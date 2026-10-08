@@ -139,6 +139,10 @@ function tableName(value) {
 function referencesCrm(sql) {
   return [...PROTECTED].some(t => new RegExp(`\\b${t}\\b`, 'i').test(String(sql)));
 }
+function rawCrmMutation(sql) {
+  return /\b(delete|truncate|drop|alter)\b/i.test(sql)
+    && Object.keys(CRM_REFERENCES).some(t => new RegExp(`\\b${t}\\b`, 'i').test(sql));
+}
 function rawSql(value) { return value?.isRawInstance ? value.toSQL().sql : String(value); }
 function containsCrmTable(value) {
   if (value?.toSQL && !value.isRawInstance) return false; // nested builder compiles independently
@@ -267,6 +271,10 @@ function contextForProtected() {
 function protectBuilder(builder, client) {
   if (builder[INTERNAL]) return builder;
   const root = tableName(builder._single?.table);
+  if (root && CRM_REFERENCES[root.table] && builder._method === 'truncate') {
+    const context = contextForProtected();
+    if (!context.trusted && context.actor?.roleName !== 'super_admin') throw new ForbiddenError('Unsupported CRM query operation');
+  }
   const joins = builder._statements.filter(s => s.grouping === 'join');
   const unsupportedTable = (!root && containsCrmTable(builder._single?.table))
     || joins.some(j => !tableName(j.table) && containsCrmTable(j.table));
@@ -458,7 +466,10 @@ async function validateWrite(builder, client, connection) {
         if (!allowed(actor, target, true)) throw new ForbiddenError('Insufficient CRM permissions');
         await check(target, row[id]);
       } else if (Object.hasOwn(row, id) && !Object.hasOwn(row, type)) throw new ForbiddenError('CRM document type required');
-    } else if (table === 'customer_documents' && row.contract_id != null) await check('contracts', row.contract_id);
+    } else if (table === 'customer_documents' && row.contract_id != null) {
+      if (!allowed(actor, 'contracts', true)) throw new ForbiddenError('Insufficient CRM permissions');
+      await check('contracts', row.contract_id);
+    }
   }
 }
 
@@ -588,7 +599,7 @@ function installCrmAccess(client) {
       return stream.apply(this, args);
     };
     runner.run = async function () {
-      if (builder.isRawInstance && referencesCrm(rawSql(builder))) {
+      if (builder.isRawInstance && (referencesCrm(rawSql(builder)) || rawCrmMutation(rawSql(builder)))) {
         const context = contextForProtected();
         if (!context.trusted && context.actor?.roleName !== 'super_admin') throw new ForbiddenError('Raw CRM queries are not supported');
       }
