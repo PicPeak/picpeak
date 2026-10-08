@@ -4,7 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
 const { clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { revokeToken } = require('../utils/tokenRevocation');
-const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest, sshHostKeyOptions } = require('../services/backupService');
+const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { formatBytes } = require('../utils/formatBytes');
@@ -15,6 +15,10 @@ const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { getStoragePath } = require('../config/storage');
 const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
+const {
+  STANDALONE_SNAPSHOT_RE, isStandaloneRestorePoint, resolveBackupPointLocation, parseS3Location,
+  standaloneSnapshotOfRun, removeLocalSnapshot,
+} = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -211,9 +215,24 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       updates.backup_destination_path = updates.backup_destination_path.trim();
     }
 
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_rsync_port')) {
+      const port = updates.backup_rsync_port;
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return res.status(400).json({ error: 'backup_rsync_port must be a whole number from 1 to 65535', code: 'RSYNC_CONFIG_INVALID' });
+      }
+    }
+
     if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_manifest_format')
         && !MANIFEST_FORMATS.has(updates.backup_manifest_format)) {
       return res.status(400).json({ error: 'backup_manifest_format must be json or yaml' });
+    }
+
+    // How many standalone restore points a local or S3 destination keeps;
+    // 0 keeps all. A whole number only: the backup prunes by it unattended.
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_retention_count')
+        && (!Number.isInteger(updates.backup_retention_count)
+          || updates.backup_retention_count < 0 || updates.backup_retention_count > 1000)) {
+      return res.status(400).json({ error: 'backup_retention_count must be a whole number between 0 and 1000' });
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
@@ -480,8 +499,10 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //
 // What "the stored artifact" is depends on the destination, and only the
 // metadata recorded on the run at backup time decides where to look, never
-// anything in the request. On every destination it is the run's own
-// metadata, never its data files: an incremental run only stores the files
+// anything in the request. A standalone run (backup-<uuid>) is a complete
+// copy nothing else depends on, so its whole validated snapshot directory or
+// prefix goes with it. For a legacy run it is the run's own
+// metadata, never its data files: a legacy incremental run only stores files
 // that changed since the previous one (hasFileChanged against the shared
 // backup_file_states table), so a later run's manifest points at files that
 // exist only under an earlier run. Removing those would take the only copy.
@@ -489,10 +510,10 @@ router.get('/runs/:id', adminAuth, requirePermission('backup.view'), async (req,
 //          backup-summary.json, with the prefix derived from the recorded
 //          manifest_path (<base>/<date>/backup-<ts>/manifests/<file>) and
 //          only when it sits under the configured bucket and base prefix.
-//          The data objects under the prefix stay; the retention-based S3
-//          cleanup route is what purges them.
-//   local  the manifest file, when it resolves inside the manifest directory.
-//          The mirrored tree under backup_destination_path stays.
+//          The data objects under a legacy prefix stay; the retention-based
+//          S3 cleanup route is what purges them.
+//   local  the manifest file, in the configured manifest directory. The
+//          legacy mirror under backup_destination_path stays.
 //   rsync  the local manifest as above; nothing on the remote mirror.
 // The record goes only after the artifact step succeeded or found nothing to
 // do, so the UI never reports a deletion that left storage behind.
@@ -505,7 +526,8 @@ class ArtifactOutOfScopeError extends Error {
   }
 }
 
-async function deleteLocalBackupManifest(config, manifestPath) {
+async function deleteLocalBackupManifest(config, run) {
+  const manifestPath = run.manifest_path.trim();
   const destinationRoot = config.backup_destination_path || path.join(getStoragePath(), 'backups');
   const manifestDir = config.backup_manifest_path || path.join(destinationRoot, 'manifests');
   const resolved = path.resolve(manifestPath);
@@ -513,8 +535,40 @@ async function deleteLocalBackupManifest(config, manifestPath) {
   // sits directly in the manifest directory. Requiring exactly that, rather
   // than "somewhere below it", also rules out a symlinked subdirectory that
   // points outside, which a prefix check would follow.
-  if (path.dirname(resolved) !== path.resolve(manifestDir)) {
-    throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
+  // <destination>/manifests is also where a manifest lands when the configured
+  // directory was not usable (saveManifestToLocal), as is a standalone
+  // snapshot's own manifests directory.
+  if (path.dirname(resolved) !== path.resolve(manifestDir)
+      && path.dirname(resolved) !== path.resolve(destinationRoot, 'manifests')) {
+    const selectedManifestDir = path.dirname(resolved);
+    const snapshotRoot = path.dirname(selectedManifestDir);
+    if (path.basename(selectedManifestDir) !== 'manifests'
+        || path.dirname(snapshotRoot) !== path.resolve(destinationRoot)
+        || !STANDALONE_SNAPSHOT_RE.test(path.basename(snapshotRoot))) {
+      throw new ArtifactOutOfScopeError('The recorded manifest is outside the configured manifest directory');
+    }
+    try {
+      const realDestination = await fs.realpath(destinationRoot);
+      const realSnapshot = await fs.realpath(snapshotRoot);
+      const realManifestDir = await fs.realpath(selectedManifestDir);
+      if (path.dirname(realSnapshot) !== realDestination
+          || realManifestDir !== path.join(realSnapshot, 'manifests')) {
+        throw new ArtifactOutOfScopeError('The recorded snapshot manifest escapes its configured directory');
+      }
+    } catch (error) {
+      if (error.code === 'ENOENT') return { kind: 'manifest', status: 'missing', removed: 0 };
+      throw error;
+    }
+    const removed = await removeLocalSnapshot(destinationRoot, snapshotRoot);
+    return { kind: 'snapshot', status: removed ? 'deleted' : 'missing', removed: removed ? 1 : 0 };
+  }
+  // A manifest kept in backup_manifest_path: its snapshot is where the run
+  // recorded it.
+  const snapshot = standaloneSnapshotOfRun(config, run);
+  if (snapshot && snapshot.type === 'local') {
+    const removed = await removeLocalSnapshot(snapshot.destinationRoot, snapshot.root);
+    await fs.rm(resolved, { force: true });
+    return { kind: 'snapshot', status: removed ? 'deleted' : 'missing', removed: removed ? 1 : 0 };
   }
   try {
     await fs.unlink(resolved);
@@ -539,7 +593,8 @@ async function deleteS3BackupRun(config, manifestPath) {
   const manifestsAt = key.lastIndexOf('/manifests/');
   const runPrefix = manifestsAt > 0 ? key.slice(0, manifestsAt) : '';
   const runSegment = runPrefix.split('/').pop() || '';
-  if (baseWithSlash === '/' || !runPrefix.startsWith(baseWithSlash) || !/^backup-\d+$/.test(runSegment) || runPrefix.includes('..')) {
+  if (baseWithSlash === '/' || !runPrefix.startsWith(baseWithSlash)
+      || (!/^backup-\d+$/.test(runSegment) && !STANDALONE_SNAPSHOT_RE.test(runSegment)) || runPrefix.includes('..')) {
     throw new ArtifactOutOfScopeError('The recorded manifest location is outside the configured backup prefix');
   }
 
@@ -554,9 +609,12 @@ async function deleteS3BackupRun(config, manifestPath) {
     ...backupS3Access(config)
   });
 
-  // Only the run's metadata objects (see the comment above the route).
+  // A standalone snapshot goes whole; of a legacy run only the metadata
+  // objects (see the comment above the route).
+  const standalone = STANDALONE_SNAPSHOT_RE.test(runSegment);
+  const kind = standalone ? 'snapshot' : 'manifest';
   const keys = [];
-  for (const listPrefix of [`${runPrefix}/manifests/`, `${runPrefix}/backup-summary.json`]) {
+  for (const listPrefix of standalone ? [`${runPrefix}/`] : [`${runPrefix}/manifests/`, `${runPrefix}/backup-summary.json`]) {
     let continuationToken;
     do {
       const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
@@ -569,7 +627,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     } while (continuationToken);
   }
 
-  if (keys.length === 0) return { kind: 'manifest', status: 'missing', removed: 0 };
+  if (keys.length === 0) return { kind, status: 'missing', removed: 0 };
   const result = await s3Adapter.deleteMany(keys);
   const removed = result.Deleted ? result.Deleted.length : 0;
   const errors = result.Errors || [];
@@ -579,7 +637,7 @@ async function deleteS3BackupRun(config, manifestPath) {
     error.removed = removed;
     throw error;
   }
-  return { kind: 'manifest', status: 'deleted', removed };
+  return { kind, status: 'deleted', removed };
 }
 
 router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async (req, res) => {
@@ -623,7 +681,7 @@ router.delete('/runs/:id', adminAuth, requirePermission('backup.delete'), async 
       if (manifestPath.startsWith('s3://')) {
         artifact = await deleteS3BackupRun(config, manifestPath);
       } else if (manifestPath) {
-        artifact = await deleteLocalBackupManifest(config, manifestPath);
+        artifact = await deleteLocalBackupManifest(config, run);
       }
     } catch (error) {
       const code = error.code === 'ARTIFACT_OUT_OF_SCOPE' ? 'ARTIFACT_OUT_OF_SCOPE' : 'ARTIFACT_DELETE_FAILED';
@@ -770,15 +828,6 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       // Test rsync connection using spawn with argument arrays to prevent command injection
       const { spawn } = require('child_process');
 
-      // Validate and sanitize inputs to prevent command injection
-      const sanitizeInput = (input) => {
-        if (!input || typeof input !== 'string') return null;
-        // Remove any shell metacharacters and limit length
-        return input.replace(/[;&|`$(){}[\]<>\\!#*?"'\n\r]/g, '').substring(0, 255);
-      };
-
-      const host = sanitizeInput(config.host);
-      const user = sanitizeInput(config.user);
       // The key file path from the form, or the saved one when the form
       // holds the mask or sends none. An explicit '' tests without a key, as
       // saving the emptied field would. A value that is not a path (a pasted
@@ -797,60 +846,16 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       }
       const sshKeyPath = keyCandidate || null;
 
-      if (!host) {
-        res.json({ success: false, message: 'Invalid host specified' });
-        break;
-      }
-
-      // Validate host format (hostname or IP only)
-      const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-      if (!hostRegex.test(host) && !ipRegex.test(host)) {
-        res.json({ success: false, message: 'Invalid host format' });
-        break;
-      }
-
-      // SSRF protection: resolve the host and block any private/internal
-      // address. ssh does its own DNS at connect time, so a literal-only
-      // check let a hostname resolving to an internal IP through (#GHSA-4jh8).
-      const { isHostAllowed } = require('../utils/networkValidation');
-      if (!(await isHostAllowed(host))) {
-        res.json({ success: false, message: 'Host cannot be a private or internal network address' });
-        break;
-      }
-
-      // Validate username format if provided
-      if (user && !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(user)) {
-        res.json({ success: false, message: 'Invalid username format' });
-        break;
-      }
-
-      // Build SSH arguments as array (safe from injection)
-      const sshArgs = [];
-      if (sshKeyPath) {
-        // Validate SSH key path exists and is a file
-        const fsSync = require('fs');
-        if (!fsSync.existsSync(sshKeyPath) || !fsSync.statSync(sshKeyPath).isFile()) {
-          res.json({ success: false, message: 'SSH key file not found' });
-          break;
-        }
-        sshArgs.push('-i', sshKeyPath);
-      }
-      // Same host-key policy as the backup run: record the key on first
-      // contact, refuse a host whose key changed since.
+      let connection;
       try {
-        sshArgs.push(...sshHostKeyOptions(sshKeyPath || null));
+        connection = await require('../utils/rsyncConnection').resolveRsyncConnection({
+          host: config.host, user: config.user, sshKey: sshKeyPath, port: config.port
+        });
       } catch (optionError) {
-        res.json({ success: false, message: optionError.message });
+        res.json({ success: false, code: optionError.code, message: optionError.message });
         break;
       }
-      sshArgs.push('-o', 'ConnectTimeout=10');
-      sshArgs.push('-o', 'BatchMode=yes');
-
-      // Add target (user@host or just host)
-      const target = user ? `${user}@${host}` : host;
-      sshArgs.push(target);
-      sshArgs.push('echo', 'Connection successful');
+      const sshArgs = [...connection.sshArgs, connection.target, 'echo', 'Connection successful'];
 
       try {
         await new Promise((resolve, reject) => {
@@ -881,14 +886,15 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
         res.json({ success: true, message: 'Rsync connection successful' });
       } catch (error) {
         logger.warn('Rsync connection test failed', {
-          destination: host,
+          destination: connection.host,
           error: error.message
         });
-        const hostKeyChanged = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(error.message);
+        const hostKeyError = require('../utils/rsyncConnection').hostKeyFailure(error.message);
         res.json({
           success: false,
-          message: hostKeyChanged
-            ? 'The SSH host key of this destination differs from the one recorded on first contact. If the server was reinstalled on purpose, remove its line from the known_hosts file next to the SSH key and test again.'
+          code: hostKeyError ? hostKeyError.code : undefined,
+          message: hostKeyError
+            ? hostKeyError.message
             : 'Rsync connection failed. Check server logs for details.'
         });
       }
@@ -961,6 +967,7 @@ router.get('/manifest/:backupRunId', adminAuth, requirePermission('backup.view')
     res.json({
       backupRunId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
@@ -1035,6 +1042,7 @@ router.get('/manifests/:backupId', adminAuth, requirePermission('backup.view'), 
     res.json({
       backupId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
@@ -1203,15 +1211,42 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
     
-    // List all backup files
-    const backupFiles = await s3Adapter.list('backups/', { maxKeys: 1000 });
+    // The adapter returns AWS Contents (Key, LastModified, Size), one page at
+    // a time, under the configured prefix. Objects are grouped by backup run
+    // so a run only ever goes whole, once its newest object has aged out;
+    // the newest run always stays.
+    const listPrefix = path.posix.join(config.backup_s3_prefix ? String(config.backup_s3_prefix) : 'backups', '/');
+    if (listPrefix === '/') {
+      return res.status(400).json({ error: 'S3 backup prefix is not usable for cleanup' });
+    }
+    const groups = new Map();
+    let continuationToken;
+    do {
+      const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
+      for (const file of page.Contents || []) {
+        if (typeof file.Key !== 'string' || !file.Key.startsWith(listPrefix)) continue;
+        const parts = file.Key.split('/');
+        const runAt = parts.findIndex((part) => /^backup-\d+$/.test(part) || STANDALONE_SNAPSHOT_RE.test(part));
+        const groupKey = runAt >= 0 && runAt < parts.length - 1 ? parts.slice(0, runAt + 1).join('/') : file.Key;
+        // Only a standalone snapshot is safe to remove whole: a legacy
+        // backup-<ts> delta may still be needed by later legacy manifests.
+        const group = groups.get(groupKey) || { run: groupKey !== file.Key,
+          standalone: runAt >= 0 && STANDALONE_SNAPSHOT_RE.test(parts[runAt]), newest: 0, size: 0, keys: [] };
+        group.newest = Math.max(group.newest, new Date(file.LastModified).getTime() || Date.now());
+        group.size += file.Size || 0;
+        group.keys.push(file.Key);
+        groups.set(groupKey, group);
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    const newestRun = Math.max(...[...groups.values()].filter((group) => group.standalone).map((group) => group.newest));
     const filesToDelete = [];
     let totalSize = 0;
-    
-    for (const file of backupFiles.objects || []) {
-      if (file.lastModified && new Date(file.lastModified) < cutoffDate) {
-        filesToDelete.push(file.key);
-        totalSize += file.size || 0;
+    for (const group of groups.values()) {
+      if (group.standalone && group.newest < cutoffDate.getTime() && group.newest !== newestRun) {
+        filesToDelete.push(...group.keys);
+        totalSize += group.size;
       }
     }
     
@@ -1316,19 +1351,34 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
     }
     
     const config = await getBackupConfig();
-    
-    // Handle different backup types
-    switch (config.backup_destination_type) {
+    const { manifest } = await getBackupManifest(backupRun.id);
+    const destinationType = manifest.metadata?.destination_type || config.backup_destination_type;
+
+    // History belongs to the selected manifest, not the current destination.
+    switch (destinationType) {
     case 'local': {
       // Stream local backup as zip
-      const backupPath = path.join(config.backup_destination_path, `backup-${backupRun.id}`);
+      const backupPath = await resolveBackupPointLocation(manifest, {
+        source: 'local', manifestPath: backupRun.manifest_path
+      }, config);
       const archive = archiver('zip', { zlib: { level: 9 } });
+      archive.on('error', error => res.destroy(error));
         
       res.attachment(`picpeak-backup-${backupRun.id}.zip`);
       archive.pipe(res);
         
-      // Add backup directory contents
-      archive.directory(backupPath, false);
+      // Add backup directory contents. A legacy run's tree is the destination
+      // root, which now also holds every standalone snapshot; those are not
+      // part of it.
+      if (isStandaloneRestorePoint(manifest)) {
+        archive.directory(backupPath, false);
+      } else {
+        for (const entry of await fs.readdir(backupPath, { withFileTypes: true })) {
+          if (STANDALONE_SNAPSHOT_RE.test(entry.name)) continue;
+          if (entry.isDirectory()) archive.directory(path.join(backupPath, entry.name), entry.name);
+          else if (entry.isFile()) archive.file(path.join(backupPath, entry.name), { name: entry.name });
+        }
+      }
         
       // Add manifest if exists
       if (backupRun.manifest_path && await fs.access(backupRun.manifest_path).then(() => true).catch(() => false)) {
@@ -1341,9 +1391,13 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
 
     case 's3': {
       // For S3, provide pre-signed URLs or stream files
+      const location = await resolveBackupPointLocation(manifest, {
+        source: 's3', manifestPath: backupRun.manifest_path
+      }, config);
+      const selected = parseS3Location(location);
       const s3Adapter = new S3StorageAdapter({
         endpoint: config.backup_s3_endpoint,
-        bucket: config.backup_s3_bucket,
+        bucket: selected.bucket,
         accessKeyId: config.backup_s3_access_key,
         secretAccessKey: config.backup_s3_secret_key,
         region: config.backup_s3_region || 'us-east-1',
@@ -1352,20 +1406,33 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         ...backupS3Access(config)
       });
         
-      // List all files for this backup
-      const prefix = `backups/${backupRun.id}/`;
-      const files = await s3Adapter.list(prefix, { maxKeys: 1000 });
-        
-      // Generate pre-signed URLs
+      // The adapter returns AWS Contents, not an objects property. Follow
+      // every page within this exact point; never return a truncated backup.
+      const prefix = selected.prefix + '/';
       const urls = [];
-      for (const file of files.objects || []) {
-        const url = await s3Adapter.getSignedUrl('getObject', file.key, { expiresIn: 3600 }); // 1 hour
-        urls.push({
-          key: file.key,
-          size: file.size,
-          url: url
-        });
-      }
+      const seenKeys = new Set();
+      const seenTokens = new Set();
+      const maxObjects = Math.max(manifest.files.count, manifest.files.manifest.length) + 10;
+      let continuationToken;
+      do {
+        const page = await s3Adapter.list(prefix, { maxKeys: 1000, continuationToken });
+        for (const file of page.Contents || []) {
+          if (typeof file.Key !== 'string' || !file.Key.startsWith(prefix)
+              || seenKeys.has(file.Key) || seenKeys.size >= maxObjects) {
+            throw new Error('Invalid or oversized backup object listing');
+          }
+          seenKeys.add(file.Key);
+          urls.push({
+            key: file.Key, size: file.Size,
+            url: await s3Adapter.getSignedUrl('getObject', file.Key, { expiresIn: 3600 })
+          });
+        }
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+        if (page.IsTruncated && (!continuationToken || seenTokens.has(continuationToken))) {
+          throw new Error('Incomplete backup object listing');
+        }
+        if (continuationToken) seenTokens.add(continuationToken);
+      } while (continuationToken);
         
       res.json({
         backupId: backupRun.id,

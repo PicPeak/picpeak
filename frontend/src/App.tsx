@@ -117,81 +117,17 @@ const queryClient = new QueryClient({
   },
 });
 
-// Bootstraps the analytics tracker from /public/settings. Lives inside
-// QueryClientProvider so it shares the public-settings cache with every
-// other consumer of usePublicSettings. Dispatches based on the
-// `analytics_tracker_provider` switch (#663 Phase 1) — Umami / Rybbit /
-// Custom / None. Back-compat: when the provider field is missing or unset,
-// falls through to the legacy `umami_enabled`-based behaviour so installs
-// that haven't picked yet keep working.
+// The backend owns provider configuration and protocol translation. The
+// browser only runs PicPeak's fixed data-only client; no env/snippet fallback.
 function AnalyticsBootstrap() {
   const { data: settings, isError } = usePublicSettings();
-
   useEffect(() => {
     if (!settings && !isError) return;
-
-    const envUmamiUrl = import.meta.env.VITE_UMAMI_URL;
-    const envUmamiWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-    const provider = settings?.analytics_tracker_provider;
-
-    if (provider === 'rybbit' && settings?.rybbit_url && settings.rybbit_website_id) {
-      analyticsService.initialize({
-        provider: 'rybbit',
-        hostUrl: settings.rybbit_url,
-        websiteId: settings.rybbit_website_id,
-        doNotTrack: true,
-        // Mask every /gallery/* path (they embed the share token) so Rybbit's
-        // auto-tracked page views never carry the secret (GHSA-7m6c). The
-        // other token-bearing pages never load the tracker at all (see
-        // isCredentialPath in analytics.service); they are listed here too
-        // so a page view recorded before a client-side navigation away from
-        // them cannot carry the token either.
-        maskPatterns: [
-          '/gallery/**', '/s/**', '/invite/**', '/quote/**', '/contract/**', '/payment-check/**',
-          '/transfer/**', '/transfer-upload/**', '/customer/**',
-        ],
-      });
-      return;
-    }
-
-    if (provider === 'custom') {
-      analyticsService.initialize({
-        provider: 'custom',
-        customHeadHtml: settings?.analytics_custom_head_html || '',
-      });
-      return;
-    }
-
-    // Umami: explicit provider OR legacy umami_enabled path.
-    if (
-      (provider === 'umami' || settings?.umami_enabled)
-      && settings?.umami_url && settings?.umami_website_id
-    ) {
-      analyticsService.initialize({
-        provider: 'umami',
-        hostUrl: settings.umami_url,
-        websiteId: settings.umami_website_id,
-        // autoTrack omitted → data-auto-track="false": Umami must NOT read the
-        // raw window.location (token leak). Page views come from the manual,
-        // sanitized AnalyticsRouteTracker instead (GHSA-7m6c).
-        doNotTrack: true,
-      });
-      return;
-    }
-
-    // Env-var fallback (legacy deploys). Only when no DB config and
-    // analytics aren't disabled at the public-site level.
-    if (envUmamiUrl && envUmamiWebsiteId && (isError || settings?.enable_analytics !== false)) {
-      analyticsService.initialize({
-        provider: 'umami',
-        hostUrl: envUmamiUrl,
-        websiteId: envUmamiWebsiteId,
-        // autoTrack omitted → data-auto-track="false" (see above, GHSA-7m6c).
-        doNotTrack: true,
-      });
-    }
+    const explicit = settings?.analytics_tracker_provider;
+    const provider = explicit === 'umami' || explicit === 'rybbit' ? explicit
+      : !explicit && settings?.umami_enabled ? 'umami' : 'none';
+    analyticsService.initialize({ provider: settings?.enable_analytics === false ? 'none' : provider });
   }, [settings, isError]);
-
   return null;
 }
 

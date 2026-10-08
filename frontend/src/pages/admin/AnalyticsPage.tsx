@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { analyticsDashboardFrameProps, analyticsDashboardUrl } from '../../utils/analyticsDashboardUrl';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -8,6 +9,7 @@ import {
   Smartphone,
   Monitor,
   Activity,
+  ExternalLink,
   RefreshCw,
   Tablet
 } from 'lucide-react';
@@ -54,8 +56,23 @@ export const AnalyticsPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [isEmbedMode, setIsEmbedMode] = useState(false);
   
-  // Check if Umami is configured from settings or environment
-  const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean }>({});
+  // Check if Umami is configured in the admin settings
+  const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean; cookieDomain?: string | null }>({});
+  const dashboardProps = analyticsDashboardFrameProps(umamiConfig.shareUrl, umamiConfig.cookieDomain);
+  // The new tab is the primary way in: it needs neither credentialless iframe
+  // support nor the dashboard origin in the deployment's frame-src.
+  const dashboardUrl = analyticsDashboardUrl(umamiConfig.shareUrl, umamiConfig.cookieDomain);
+  const dashboardLink = dashboardUrl && (
+    <a
+      href={dashboardUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-2 whitespace-nowrap text-sm font-medium text-accent hover:opacity-80"
+    >
+      <ExternalLink className="w-4 h-4" />
+      {t('analytics.openDashboard')}
+    </a>
+  );
 
   // Fetch analytics data from backend
   const { data: apiData, isLoading, refetch } = useQuery({
@@ -95,38 +112,15 @@ export const AnalyticsPage: React.FC = () => {
           setUmamiConfig({
             url: settings.analytics_umami_url,
             shareUrl: settings.analytics_umami_share_url,
-            enabled: true
-          });
-        } else {
-          // Fall back to environment variables if they exist
-          const envUrl = import.meta.env.VITE_UMAMI_URL;
-          const envWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-          
-          if (envUrl && envWebsiteId) {
-            setUmamiConfig({
-              url: envUrl,
-              shareUrl: import.meta.env.VITE_UMAMI_SHARE_URL,
-              enabled: true
-            });
-          } else {
-            setUmamiConfig({ enabled: false });
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch Umami config:', error);
-        // Fall back to environment variables if they exist
-        const envUrl = import.meta.env.VITE_UMAMI_URL;
-        const envWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-        
-        if (envUrl && envWebsiteId) {
-          setUmamiConfig({
-            url: envUrl,
-            shareUrl: import.meta.env.VITE_UMAMI_SHARE_URL,
+            cookieDomain: settings.analytics_dashboard_cookie_domain,
             enabled: true
           });
         } else {
           setUmamiConfig({ enabled: false });
         }
+      } catch (error) {
+        console.error('Failed to fetch Umami config:', error);
+        setUmamiConfig({ enabled: false });
       }
     };
 
@@ -234,34 +228,34 @@ export const AnalyticsPage: React.FC = () => {
   }
 
   // If Umami is configured and embed mode is enabled, show the Umami dashboard
-  if (isEmbedMode && umamiConfig.shareUrl) {
+  if (isEmbedMode && dashboardProps) {
     return (
       <div>
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-heading">{t('analytics.title')}</h1>
             <p className="text-soft mt-1">{t('analytics.detailedSubtitle')}</p>
+            <p className="text-soft mt-2 text-sm">{t('analytics.embedCspHint')}</p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setIsEmbedMode(false)}
-            leftIcon={<BarChart3 className="w-4 h-4" />}
-          >
-            {t('analytics.showSummaryView')}
-          </Button>
+          <div className="flex items-center gap-3">
+            {dashboardLink}
+            <Button
+              variant="outline"
+              onClick={() => setIsEmbedMode(false)}
+              leftIcon={<BarChart3 className="w-4 h-4" />}
+            >
+              {t('analytics.showSummaryView')}
+            </Button>
+          </div>
         </div>
         
         <Card padding="none" className="overflow-hidden" style={{ height: '800px' }}>
           <iframe
-            src={umamiConfig.shareUrl}
+            {...dashboardProps}
             className="w-full h-full border-0"
             title="Umami Analytics Dashboard"
-            // An admin-configured third-party page: it gets what a dashboard
-            // needs (its own scripts, its own origin, links, forms) and
-            // nothing more — no top-navigation, no popups without user
-            // activation, no referrer.
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups-to-escape-sandbox allow-popups"
-            referrerPolicy="no-referrer"
+            // Separate cookie/storage context, including redirects; no
+            // ordinary-frame fallback, popup escape or top navigation.
           />
         </Card>
       </div>
@@ -275,9 +269,16 @@ export const AnalyticsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold text-heading">{t('analytics.title')}</h1>
           <p className="text-soft mt-1">{t('analytics.subtitle')}</p>
+          {umamiConfig.shareUrl && !dashboardProps && (
+            <p className="text-soft mt-2 text-sm" role="status">{t('analytics.embedUnavailable')}</p>
+          )}
+          {dashboardProps && (
+            <p className="text-soft mt-2 text-sm">{t('analytics.embedCspHint')}</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {umamiConfig.shareUrl && (
+          {dashboardLink}
+          {dashboardProps && (
             <Button
               variant="outline"
               onClick={() => setIsEmbedMode(true)}

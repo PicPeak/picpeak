@@ -68,8 +68,8 @@ describe('restoreService — file restore integrity', () => {
 
       const manifest = { files: { manifest: [
         ok,
-        { path: 'sym/uploads/leak.png', size: 24, checksum: null },
-        { path: 'sym/uploads/linked/x.jpg', size: 18, checksum: null },
+        { path: 'sym/uploads/leak.png', size: 24, checksum: sha256('must not be read') },
+        { path: 'sym/uploads/linked/x.jpg', size: 18, checksum: sha256('must not be read') },
       ] } };
 
       await expect(restoreService.performFilesRestore(backupRoot, manifest, { restoreType: 'files' }))

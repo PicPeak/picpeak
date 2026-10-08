@@ -20,6 +20,7 @@ const { isRawFilename } = require('../utils/rawFormats');
 const watermarkService = require('./watermarkService');
 const { getStorage } = require('./storage');
 const fs = require('fs');
+const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 
 /** Videos have no resize path — they always ship as stored. */
 function isVideo(photo) {
@@ -89,10 +90,10 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
 async function renderPreviewForDownload(photo, watermarkSettings) {
   if (isVideo(photo)) return null;
   const previewKey = await ensurePreviewImage(photo);
-  if (!previewKey) return null;
+  if (!isPresentationRenditionKey(previewKey, 'preview')) return null;
   const wantsWatermark = !!(watermarkSettings && watermarkSettings.enabled);
   const buffer = await withLocalCopy(previewKey, (localPath) => (wantsWatermark
-    ? watermarkService.applyWatermark(localPath, watermarkSettings)
+    ? watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
     : fs.promises.readFile(localPath)));
   const webp = previewKey.endsWith('.webp');
   return { buffer, contentType: webp ? 'image/webp' : 'image/jpeg', extension: webp ? '.webp' : '.jpg' };

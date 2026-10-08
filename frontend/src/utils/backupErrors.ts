@@ -9,6 +9,11 @@ export const BACKUP_ERROR_CODES = [
   'S3_APPROVAL_MISMATCH',
   'S3_CONFIG_INCOMPLETE',
   'S3_CONNECTION_FAILED',
+  'RSYNC_CONFIG_INVALID',
+  'RSYNC_HOST_FORBIDDEN',
+  'RSYNC_HOST_UNRESOLVED',
+  'RSYNC_SSH_TRUST_REQUIRED',
+  'RSYNC_SSH_HOST_KEY_UNTRUSTED',
 ] as const;
 
 export type BackupErrorCode = typeof BACKUP_ERROR_CODES[number];
@@ -22,7 +27,7 @@ const isBackupErrorCode = (value: unknown): value is BackupErrorCode =>
  */
 export function backupErrorCode(source: unknown): BackupErrorCode | null {
   if (typeof source === 'string') {
-    const match = source.match(/\b(S3_[A-Z_]+):/);
+    const match = source.match(/\b((?:S3|RSYNC)_[A-Z_]+):/);
     return match && isBackupErrorCode(match[1]) ? match[1] : null;
   }
   const code = (source as { response?: { data?: { code?: unknown } }; code?: unknown } | null)?.response?.data?.code

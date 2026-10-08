@@ -43,11 +43,13 @@ describe('external folder in one step', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
       userHasAllPermissions: jest.fn(async () => mockHasUpload),
       roleEventScope: jest.fn(async () => null),
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
@@ -63,6 +65,7 @@ describe('external folder in one step', () => {
     ({ db } = await crmDb.bootCrmDb());
     // A real admin row: events.created_by is a foreign key on PostgreSQL.
     const { adminId } = await crmDb.seedMinimal(db);
+    await crmDb.assignAdminRole(db, adminId);
     actor = { id: Number(adminId), username: 'tester' };
     ({ createEvent } = require('../../src/services/eventCreationService'));
 

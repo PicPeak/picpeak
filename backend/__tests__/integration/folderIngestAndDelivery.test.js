@@ -43,11 +43,13 @@ describe('folder ingest and two-stage delivery', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
       userHasAllPermissions: async () => true,
       userHasAnyPermission: async () => true,
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
@@ -59,6 +61,7 @@ describe('folder ingest and two-stage delivery', () => {
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     process.env.EXTERNAL_MEDIA_ROOT = mediaRoot;
 
     app = express();

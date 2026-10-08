@@ -61,7 +61,7 @@ describe('backupManifest — credentials never enter the manifest', () => {
     const manifest = await backupManifest.generateManifest({
       backupType: 'full',
       backupPath: os.tmpdir(),
-      files: [{ path: 'uploads/a.jpg', size: 1, checksum: 'x' }],
+      files: [{ path: 'uploads/a.jpg', size: 1, checksum: require('crypto').createHash('sha256').update('x').digest('hex') }],
       databaseInfo: { type: 'sqlite' },
     });
     const serialised = JSON.stringify(manifest);
