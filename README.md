@@ -66,19 +66,45 @@ docker compose up -d
 
 On first start, open **http://localhost:3000/admin** and follow the in-browser setup to create your admin account. Full details — the one-time setup token, Docker file permissions, and ARM64 notes — are in **[First-run setup](https://docs.picpeak.app/getting-started/first-login)**.
 
+The frontend port is published on every host interface by default; the raw
+backend port binds to host loopback (`PICPEAK_BACKEND_BIND_ADDRESS` overrides
+it). For public access, terminate TLS in a reverse proxy on the host and set
+`PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
+around it.
+
+Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
+proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
+`ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
+and configure the outer proxy to append or overwrite forwarding headers using
+the real client address. The installer selects these settings in proxy mode.
+
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. See [RELEASING.md](RELEASING.md) for the promotion cadence.
+
+> [!NOTE]
+> **Recommended hardening:** an existing install keeps working without
+> changes. With `TRUST_PROXY` unset PicPeak still trusts forwarding headers
+> from every private-range address (and logs a warning at startup); set it to
+> the exact number of reverse-proxy hops instead. Behind TLS, also set
+> `COOKIE_SECURE=true`, and bind the origin to loopback
+> (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
+> native install). The Compose files now publish the raw backend port on host
+> loopback only and pass `TRUST_PROXY` through unchanged (the installer writes an exact hop count for new installs). Unattended installer runs require
+> `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file
 
 For a home server, a NAS, or a single small studio, the all-in-one image runs the whole app as one process with SQLite — no compose file, no separate database, no reverse proxy to wire up:
 
 ```bash
-docker run -d --name picpeak -p 3000:3000 \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   -v picpeak:/data \
   ghcr.io/picpeak/picpeak/aio:main
 ```
 
-No environment variables to set — the JWT secret is generated on first start and kept on the volume.
+The cookie mode above (also the default) suits this loopback-only HTTP quick
+start. A TLS deployment should set `COOKIE_SECURE=true` and enable HSTS. The
+JWT secret is generated on first start and kept on the volume.
 
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 

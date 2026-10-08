@@ -1,3 +1,5 @@
+const logger = require('./logger');
+
 const ADMIN_COOKIE_NAME = 'admin_token';
 const GALLERY_COOKIE_NAME = 'gallery_token';
 const GALLERY_COOKIE_PREFIX = 'gallery_token_';
@@ -19,31 +21,35 @@ const REMEMBER_ME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  *   - false  → never set Secure (allow plain HTTP — cookie has no in-flight protection)
  *   - 'auto' → decide per-request based on req.secure (X-Forwarded-Proto
  *              via Express `trust proxy`). Emits Secure when actual HTTPS is
- *              detected, omits it on plain HTTP. This is the right default
- *              for deployments reachable via both HTTPS (reverse proxy) and
- *              LAN HTTP, and for first-time installs that haven't set up a
- *              reverse proxy yet.
+ *              detected, omits it on plain HTTP. Right for deployments
+ *              reachable via both HTTPS (reverse proxy) and LAN HTTP, and
+ *              for installs that have no reverse proxy yet.
  *
- * Default:
- *   - production → 'auto'  (#427: previously hard `true`, which caused silent
- *                  login loops over HTTP because the browser drops the
- *                  Secure cookie. 'auto' is strictly more lenient than `true`
- *                  on real HTTPS — req.secure is true → Secure flag still
- *                  emitted — so this is not a security regression for
- *                  reverse-proxy deployments. Users who explicitly want the
- *                  HTTPS-only behaviour can still set COOKIE_SECURE=true.)
+ * COOKIE_SECURE is trimmed and case-insensitive; 1/yes/on mean true and
+ * 0/no/off mean false.
+ *
+ * Default (unset):
+ *   - production → 'auto'  (#427: a hard `true` causes silent login loops
+ *                  over HTTP because the browser drops the Secure cookie.
+ *                  On real HTTPS req.secure is true, so Secure is still
+ *                  emitted. HTTPS-only deployments should set
+ *                  COOKIE_SECURE=true.)
  *   - dev → false (allow http://localhost in browsers without HSTS gymnastics)
+ *
+ * An unrecognised value also means 'auto', with one warning at load: a typo
+ * must neither lock an HTTP install out nor silently drop Secure on HTTPS.
  */
 const secureCookieMode = (() => {
   const raw = typeof process.env.COOKIE_SECURE === 'string'
-    ? process.env.COOKIE_SECURE.toLowerCase()
+    ? process.env.COOKIE_SECURE.trim().toLowerCase()
     : '';
   if (raw === 'auto') return 'auto';
-  if (raw === 'true') return true;
-  if (raw === 'false') return false;
-  // No env var set → infer from NODE_ENV. Production defaults to 'auto'
-  // (per-request) rather than hard `true` so first-time HTTP installs don't
-  // silently fail (#427).
+  if (['true', '1', 'yes', 'on'].includes(raw)) return true;
+  if (['false', '0', 'no', 'off'].includes(raw)) return false;
+  if (raw !== '') {
+    logger.warn(`COOKIE_SECURE="${process.env.COOKIE_SECURE}" is not one of true, false or auto; using auto.`);
+    return 'auto';
+  }
   return process.env.NODE_ENV === 'production' ? 'auto' : false;
 })();
 const sameSiteDefault = process.env.COOKIE_SAMESITE || 'Lax';

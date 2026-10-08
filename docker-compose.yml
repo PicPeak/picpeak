@@ -51,6 +51,12 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
+      # Trust exactly the immediately connected frontend nginx hop. Trusting
+      # all private ranges lets a LAN client extend and spoof the XFF chain.
+      # A reverse proxy on the host in front of the frontend makes it 2.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-auto}
+      - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - JWT_SECRET=${JWT_SECRET:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
@@ -137,7 +143,7 @@ services:
       - ./storage:/app/storage
       - picpeak-secrets:/run/secrets:ro
     ports:
-      - "${BACKEND_PORT:-3001}:3000"
+      - "${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000"
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -280,7 +286,7 @@ services:
       - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
       - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     healthcheck:
