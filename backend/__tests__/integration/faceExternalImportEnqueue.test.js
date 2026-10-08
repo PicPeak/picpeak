@@ -94,6 +94,7 @@ describe('external import queues faces (#1090)', () => {
     // bootCrmDb runs every migrations/core/*.up() directly — knex's Migrator
     // deadlocks on 001_init's nested initializeDatabase() call.
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
 
     app = express();
     app.use(express.json());

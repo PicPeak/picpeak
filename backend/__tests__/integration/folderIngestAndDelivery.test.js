@@ -59,6 +59,7 @@ describe('folder ingest and two-stage delivery', () => {
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     process.env.EXTERNAL_MEDIA_ROOT = mediaRoot;
 
     app = express();

@@ -63,6 +63,7 @@ describe('external folder in one step', () => {
     ({ db } = await crmDb.bootCrmDb());
     // A real admin row: events.created_by is a foreign key on PostgreSQL.
     const { adminId } = await crmDb.seedMinimal(db);
+    await crmDb.assignAdminRole(db, adminId);
     actor = { id: Number(adminId), username: 'tester' };
     ({ createEvent } = require('../../src/services/eventCreationService'));
 

@@ -84,6 +84,7 @@ describe('external import of videos (issue 1430)', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     uploadSettings = require('../../src/services/uploadSettings');
     ({ processUploadedVideo } = require('../../src/services/videoProcessor'));
 

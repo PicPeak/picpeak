@@ -28,7 +28,7 @@ const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownlo
 const { validateCreationInput } = require('./eventCreationValidation');
 const { normaliseDownloadLimit } = require('./downloadQuota');
 const { guestNameModeOf } = require('./photoCredit');
-const { resolveExternalPath } = require('./externalMediaService');
+const externalAccess = require('./externalMediaAccess');
 const { importExternalFolder } = require('./externalImportService');
 const { userHasAllPermissions } = require('../middleware/permissions');
 function creationError(body) {
@@ -738,24 +738,26 @@ async function resolveCreationSource({ source_mode, external_path, external_watc
   if (source_mode !== 'reference') {
     return { source_mode: 'managed', external_path: null, external_watch: false, import_now: false };
   }
-  const relPath = typeof external_path === 'string' ? external_path.trim().replace(/^\/+/, '') : '';
+  const inputPath = typeof external_path === 'string' ? external_path.trim() : '';
   // '', '.', './' and 'a/..' all name EXTERNAL_MEDIA_ROOT itself: a gallery
   // gets a folder under the root, never the whole mount.
-  if (!relPath || ['.', ''].includes(path.posix.normalize(relPath).replace(/\/+$/, ''))) {
+  if (!inputPath || ['.', '', '/'].includes(path.posix.normalize(inputPath).replace(/\/+$/, ''))) {
     throw new AppError('external_path is required when source_mode is reference', 400, 'EXTERNAL_PATH_REQUIRED');
   }
+  const relPath = externalAccess.normalizeSourcePath(inputPath);
   let resolved;
+  const watch = parseBooleanInput(external_watch, false);
+  const importNow = parseBooleanInput(import_now, false);
   try {
-    resolved = resolveExternalPath({ external_path: relPath }, '');
-  } catch (_) {
+    resolved = (await externalAccess.authorizeSource(actor.id, relPath, (watch || importNow) ? 'photos.upload' : 'photos.view')).target;
+  } catch (error) {
+    if (error instanceof externalAccess.ExternalMediaAccessError) throw new AppError(error.message, error.statusCode, 'EXTERNAL_SOURCE_DENIED');
     throw new AppError('Invalid external media path', 400, 'EXTERNAL_PATH_INVALID');
   }
   const stat = await fs.stat(resolved).catch(() => null);
   if (!stat || !stat.isDirectory()) {
     throw new AppError('The external folder does not exist', 400, 'EXTERNAL_PATH_NOT_FOUND');
   }
-  const watch = parseBooleanInput(external_watch, false);
-  const importNow = parseBooleanInput(import_now, false);
   if ((watch || importNow) && !(await userHasAllPermissions(actor.id, ['photos.upload']))) {
     throw new AppError('The photos.upload permission is required to import from this folder', 403, 'FORBIDDEN');
   }

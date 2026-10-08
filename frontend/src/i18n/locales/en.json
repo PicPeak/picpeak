@@ -1,4 +1,16 @@
 {
+  "externalSources": {
+    "title": "External source owners",
+    "info": "Only the SuperAdmin can assign or transfer a source folder. Subfolders belong to the same owner; source folders must not overlap.",
+    "owner": "Source owner",
+    "chooseOwner": "Choose an account",
+    "assign": "Assign selected folder to this owner",
+    "revoke": "Revoke access",
+    "confirmRevoke": "Revoke access to {{path}}? Existing gallery photos will not be deleted.",
+    "unassigned": "SuperAdmin only",
+    "noSources": "No external source folders have been assigned to you. Ask the SuperAdmin to assign a folder.",
+    "error": "The source assignment could not be changed. Check that the folder exists and does not overlap another source."
+  },
   "productUsagePrompt": {
     "title": "Help shape PicPeak?",
     "intro": "Help shape PicPeak with optional product usage reports. Review the pseudonymous data, who can see it and where it is sent before deciding."

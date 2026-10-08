@@ -4,6 +4,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { db } = require('../database/db');
 const { list } = require('../services/externalMediaService');
+const externalAccess = require('../services/externalMediaAccess');
 const jobState = require('../services/maintenanceJobState');
 const logger = require('../utils/logger');
 const {
@@ -15,18 +16,60 @@ const {
 
 const router = express.Router();
 
+function sourceError(res, error, fallback) {
+  if (!(error instanceof externalAccess.ExternalMediaAccessError)) {
+    logger.error(fallback, { error: error.message });
+  }
+  return res.status(error instanceof externalAccess.ExternalMediaAccessError ? error.statusCode : 500)
+    .json({ error: error instanceof externalAccess.ExternalMediaAccessError ? error.message : fallback });
+}
+
 // GET /api/admin/external-media/list?path=relative/dir
 router.get('/list', adminAuth, requirePermission('photos.view'), async (req, res) => {
   try {
-    const relPath = (req.query.path || '').replace(/^\/+/, '');
-    const result = await list(relPath);
+    const relPath = req.query.path || '';
+    const result = await list(relPath, req.admin);
     res.json(result);
   } catch (error) {
+    if (error instanceof externalAccess.ExternalMediaAccessError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     logger.warn('Invalid external media path requested', {
       path: req.query.path,
       error: error.message
     });
     res.status(400).json({ error: 'Invalid external media path' });
+  }
+});
+
+router.get('/sources', adminAuth, requirePermission('photos.view'), async (req, res) => {
+  try {
+    const admin = await externalAccess.principal(req.admin.id, 'photos.view');
+    res.json({ sources: await externalAccess.listSources(admin.id), can_assign: admin.roleName === 'super_admin', owners: await externalAccess.ownerChoices(admin.id) });
+  } catch (error) {
+    sourceError(res, error, 'Failed to read external sources');
+  }
+});
+
+// Assignment, transfer and revocation are instance-owner actions. Gallery-wide
+// permissions do not grant ownership of the external mount.
+router.put('/sources', adminAuth, async (req, res) => {
+  try {
+    const source = await externalAccess.assignSource(req.admin.id, req.body?.path, req.body?.owner_id);
+    res.json({ source });
+  } catch (error) {
+    sourceError(res, error, 'Failed to assign external source');
+  }
+});
+
+router.delete('/sources/:sourceId', adminAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.sourceId);
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid source ID' });
+    await externalAccess.revokeSource(req.admin.id, id);
+    res.json({ success: true });
+  } catch (error) {
+    sourceError(res, error, 'Failed to revoke external source');
   }
 });
 
@@ -70,6 +113,9 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       // Another run holds this event — a double-click, or the watcher on any
       // replica mid-pass. Say so rather than walking the tree a second time.
       return res.status(409).json({ error: error.message });
+    }
+    if (error instanceof externalAccess.ExternalMediaAccessError) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     if (error.code === 'PATH_OUTSIDE_BASE') {
       // A folder that is a symlink out of EXTERNAL_MEDIA_ROOT: the caller's

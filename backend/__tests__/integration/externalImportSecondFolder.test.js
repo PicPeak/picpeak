@@ -61,6 +61,7 @@ describe('a second external import (#1163)', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     ({ resolvePhotoFilePath } = require('../../src/services/photoResolver'));
 
     app = express();

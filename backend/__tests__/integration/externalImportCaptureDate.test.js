@@ -81,6 +81,7 @@ describe('external import capture dates (#1172)', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
 
     app = express();
     app.use(express.json());
