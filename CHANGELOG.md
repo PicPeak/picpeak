@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.167.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.2-beta.0...v3.167.3-beta.0) (2026-10-08)
+
+
+### Bug Fixes
+
+* **backup:** create complete standalone restore points ([#1859](https://github.com/PicPeak/picpeak/issues/1859)) ([a0cfe03](https://github.com/PicPeak/picpeak/commit/a0cfe031277e4526cd9957fb05740b66d3bb50b0))
+* bound public upload ingress and lifetime capacity ([#1875](https://github.com/PicPeak/picpeak/issues/1875)) ([a4231bb](https://github.com/PicPeak/picpeak/commit/a4231bb21f796b05e24eccff57df7458472c3f2d))
+* **security:** enforce CRM document ownership ([#1884](https://github.com/PicPeak/picpeak/issues/1884)) ([f47accd](https://github.com/PicPeak/picpeak/commit/f47accd6fff07c7310d4d9b78c09cc6d66770a21))
+* **upload:** bound authenticated upload admission ([#1876](https://github.com/PicPeak/picpeak/issues/1876)) ([697e4b7](https://github.com/PicPeak/picpeak/commit/697e4b745e4e3bcde59624c5113a874580336524))
+
 ## [3.167.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.1-beta.0...v3.167.2-beta.0) (2026-10-08)
 
 
