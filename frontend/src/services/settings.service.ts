@@ -166,7 +166,7 @@ export interface SystemStatus {
     expirationChecker: { status: string };
     // 'active' | 'degraded' | 'stopped' (#1262). Was a hardcoded 'active'
     // until the processor started reporting what it actually did.
-    emailProcessor: { status: string; lastRunAt?: string | null; lastError?: string | null };
+    emailProcessor: { status: string; lastRunAt?: string | null; lastError?: string | null; lastErrorCode?: string | null };
   };
   timestamp: string;
 }

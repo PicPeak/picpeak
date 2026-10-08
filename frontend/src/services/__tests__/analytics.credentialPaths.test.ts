@@ -1,118 +1,33 @@
-/**
- * Pages whose URL carries a bearer secret — invitation, password reset,
- * quote, contract, payment-check and transfer tokens — must never load the
- * tracker: an auto-tracked page view would ship the token to the analytics
- * host, where anyone with access to the events could redeem it first
- * (Codex security audit 2026-09-30). Same treatment as the admin UI. stable
- * has no deferral or reload for the tracker script itself, so a visit that
- * starts on such a page simply goes untracked.
- *
- * Extended 2026-10-03 to the /s/ short links and the whole customer portal:
- * the short slug redeems to a gallery share URL, the portal session is a
- * credential, and the tracker script — vendor code re-served through our
- * origin, or admin-pasted custom head HTML — runs with whatever those pages
- * can do. Gallery pages themselves stay tracked (maintainer decision): their
- * share token is redacted by trackPageView and masked via maskPatterns.
- */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-
-import { analyticsService } from '../analytics.service';
-
-function freshService() {
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { analyticsPath, analyticsService } from '../analytics.service';
+const fetchMock = vi.fn();
+beforeEach(() => { fetchMock.mockReset().mockResolvedValue({ ok: true, json: async () => ({}) }); vi.stubGlobal('fetch', fetchMock); });
+afterEach(() => { vi.unstubAllGlobals(); window.history.pushState({}, '', '/'); });
+const PRIVATE_PATHS = ['/ADMIN/login', '/%61dmin', '/customer', '/CUSTOMER/dashboard', '/customer/reset-password/abc',
+  '/s/abc', '/invite/abc', '/quote/abc', '/contract/signing', '/payment-check/abc', '/transfer/abc',
+  '/transfer-upload/abc', '/slideshow/abc', '/gallery/wedding/client-access',
+  '/gallery/wedding/show/short', '/gallery/wedding/%73how/%61bc', '/gallery/wedding/SHOW/short',
+  '/gallery/wedding/%252fsecret',
+  '/gallery/wedding/%3Fsecret', '/gallery/wedding/%00secret', '/unknown/nested'];
+it.each(PRIVATE_PATHS)('does not emit views or events when starting or navigating onto %s', path => {
+  window.history.pushState({}, '', path);
+  const Service = analyticsService.constructor as new () => typeof analyticsService;
+  const service = new Service(); service.initialize({ provider: 'umami' }); service.trackGalleryEvent('password_entry', { success: true });
+  expect(fetchMock).not.toHaveBeenCalled();
+  window.history.pushState({}, '', '/gallery/wedding/short');
+  service.handleRouteChange(window.location.pathname); service.trackPageView();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  window.history.pushState({}, '', path);
+  service.handleRouteChange(path); service.trackPageView('/impressum'); service.trackDownload(1, 'private');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it.each(['//customer/dashboard', '/gallery/../admin', 'https://external.example/gallery/wedding/abc', '/%ZZ', '/gallery/wedding/a\\b'])('fails closed for ambiguous representation %s', path => {
+  expect(analyticsPath(path)).toBeNull();
+});
+it('uses the SPA route guard even if a late callback sees an older browser pathname', () => {
+  window.history.pushState({}, '', '/gallery/wedding/abc');
   const service = new (analyticsService.constructor as new () => typeof analyticsService)();
-  service.reloadPage = vi.fn();
-  return service;
-}
-const scripts = () => document.head.querySelectorAll('script').length;
-
-describe('tracker and token-bearing pages', () => {
-  beforeEach(() => { document.head.innerHTML = ''; });
-  afterEach(() => { document.head.innerHTML = ''; window.history.pushState({}, '', '/'); });
-
-  it.each([
-    '/invite/9f3a1c',
-    '/quote/9f3a1c',
-    '/contract/9f3a1c',
-    '/payment-check/9f3a1c',
-    '/transfer/9f3a1c',
-    '/transfer-upload/9f3a1c',
-    '/customer/invite/9f3a1c',
-    '/customer/reset-password/9f3a1c',
-    '/customer/login',
-    '/customer/dashboard',
-    '/customer/bills',
-    '/customer',
-    '/CUSTOMER/dashboard',
-    '/s/ab12cd',
-    '/INVITE/9f3a1c',
-  ])('does not load the tracker when the visit starts on %s', (path) => {
-    window.history.pushState({}, '', path);
-    const service = freshService();
-    service.initialize({ provider: 'rybbit', hostUrl: 'https://rybbit.example.com', websiteId: 'site-456' });
-    expect(scripts()).toBe(0);
-  });
-
-  it.each([
-    '/invite/9f3a1c',
-    '/customer/login',
-    '//customer/dashboard',
-    '/s/ab12cd',
-  ])('reloads into a clean document when %s is entered after the custom head ran', (path) => {
-    window.history.pushState({}, '', '/gallery/summer-party');
-    const service = freshService();
-    service.initialize({ provider: 'custom', customHeadHtml: '<script>window.__x = 1</script>' });
-    expect(scripts()).toBe(1);
-    service.handleRouteChange(path);
-    expect(service.reloadPage).toHaveBeenCalledTimes(1);
-  });
-
-  it('records no page view for a portal or short-link path while the tracker is still loaded', () => {
-    // useAnalytics fires handleRouteChange and trackPageView in the same
-    // effect, and stable never unloads the Umami script on a client-side
-    // navigation, so the guard has to be in trackPageView itself.
-    window.history.pushState({}, '', '/gallery/summer-party');
-    const service = freshService();
-    service.initialize({ provider: 'umami', hostUrl: 'https://analytics.example.com', websiteId: 'site-123' });
-    const track = vi.fn();
-    (window as unknown as { umami?: { track: typeof track } }).umami = { track };
-    try {
-      service.trackPageView('/customer/dashboard?tab=bills');
-      service.trackPageView('/customer');
-      service.trackPageView('/s/ab12cd');
-      expect(track).not.toHaveBeenCalled();
-      service.trackPageView('/gallery/summer-party/0123456789abcdef0123456789abcdef');
-      expect(track).toHaveBeenCalledTimes(1);
-    } finally {
-      delete (window as unknown as { umami?: unknown }).umami;
-    }
-  });
-
-  it('still loads the tracker on an ordinary public page (galleries included)', () => {
-    window.history.pushState({}, '', '/gallery/summer-party');
-    const service = freshService();
-    service.initialize({ provider: 'rybbit', hostUrl: 'https://rybbit.example.com', websiteId: 'site-456' });
-    expect(scripts()).toBe(1);
-  });
-
-  it('does not inject deferred custom scripts when the route changes onto a token page', () => {
-    window.history.pushState({}, '', '/invite/9f3a1c');
-    const service = freshService();
-    service.initialize({ provider: 'custom', customHeadHtml: '<script>window.__x = 1</script>' });
-    expect(scripts()).toBe(0);
-    service.handleRouteChange('/invite/9f3a1c?step=2');
-    expect(scripts()).toBe(0);
-    service.handleRouteChange('/gallery/summer-party');
-    expect(scripts()).toBe(1);
-  });
-
-  it.each([
-    '/customer/reset-password/9f3a1c',
-    '/customer/dashboard',
-    '/s/ab12cd',
-  ])('keeps custom head scripts off %s too', (path) => {
-    window.history.pushState({}, '', path);
-    const service = freshService();
-    service.initialize({ provider: 'custom', customHeadHtml: '<script>window.__x = 1</script>' });
-    expect(scripts()).toBe(0);
-  });
+  service.initialize({ provider: 'rybbit' }); fetchMock.mockClear();
+  service.handleRouteChange('//customer/dashboard'); service.trackDownload(1, 'private'); service.trackPageView();
+  expect(fetchMock).not.toHaveBeenCalled();
 });
