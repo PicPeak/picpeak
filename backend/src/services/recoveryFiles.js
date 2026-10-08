@@ -12,6 +12,7 @@ const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
+const logger = require('../utils/logger');
 
 const MANAGED_ROOTS = [
   'events/active', 'events/archived', 'thumbnails', 'previews', 'heroes',
@@ -19,6 +20,18 @@ const MANAGED_ROOTS = [
   'business-docs/customer-documents',
 ];
 const DEFAULT_MAX_BYTES = 5000 * 1024 * 1024;
+// The list of required keys lives beside the database dump it belongs to; the
+// run row only pins it with a count and a checksum.
+const REFERENCES_SUFFIX = '.storage-references.json';
+// Only the columns a storage reference is read from, fetched in id order.
+const REFERENCE_COLUMNS = {
+  events: ['id', 'is_archived', 'archive_path', 'source_mode'],
+  photos: ['id', 'event_id', 'path', 'source_origin', 'thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path'],
+  customer_documents: ['id', 'storage_key', 'purged_at'],
+  transfer_uploads: ['id', 'stored_path'],
+  transfer_extra_files: ['id', 'stored_path'],
+};
+const REFERENCE_BATCH = 1000;
 const hasControl = value => [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
 const badHeader = value => ['\r', '\n', '\0'].some(character => value.includes(character));
 
@@ -82,23 +95,43 @@ function selectedManifestFiles(manifest, options) {
   });
 }
 
-async function rows(knex, table) {
-  if (knex instanceof Map) return knex.get(table) || [];
-  return await knex.schema.hasTable(table) ? knex(table).select('*') : [];
+async function* rows(knex, table) {
+  if (knex instanceof Map) { yield* knex.get(table) || []; return; }
+  if (!await knex.schema.hasTable(table)) return;
+  const info = await knex(table).columnInfo();
+  const columns = REFERENCE_COLUMNS[table].filter(column => column in info);
+  for (let last = null; ;) {
+    const query = knex(table).select(columns).orderBy('id').limit(REFERENCE_BATCH);
+    const batch = await (last === null ? query : query.where('id', '>', last));
+    yield* batch;
+    if (batch.length < REFERENCE_BATCH) return;
+    last = batch[batch.length - 1].id;
+  }
 }
 
 // Require the same selected keys even if ListObjects is partial or empty. A
 // stale local copy cannot satisfy an S3 reference. Lifecycle deletion is not
 // corruption: archived photos and purged customer documents have no live blob.
-async function requiredKeys(knex, selected) {
+// Only originals, archives, documents and transfer files are required. A
+// rendition can be regenerated, so a stale thumbnail row never fails a backup:
+// its key is collected in `derived` (when given) and is otherwise optional.
+async function requiredKeys(knex, selected, derived) {
   const keys = new Set();
   const add = (key, requiredRoot, label) => {
     if (!key && requiredRoot && selected(`${requiredRoot}/required`)) throw new Error(`${label} has no primary-storage key`);
     if (key) { validKey(key); if (selected(key) && managedKey(key)) keys.add(key); }
   };
-  const events = await rows(knex, 'events');
-  const byId = new Map(events.map(e => [String(e.id), e]));
-  for (const event of events) {
+  const addDerived = (key, photo) => {
+    if (!key) return;
+    try { validKey(key); } catch (error) {
+      logger.warn(`Skipping malformed derived storage key on photo ${photo.id}: ${String(key)}`);
+      return;
+    }
+    if (derived && selected(key) && managedKey(key)) derived.add(key);
+  };
+  const byId = new Map();
+  for await (const event of rows(knex, 'events')) {
+    byId.set(String(event.id), event);
     if (event.is_archived === true || event.is_archived === 1) {
       if (!event.archive_path && selected('events/archived/required.zip')) {
         throw new Error(`Archived event ${event.id} has no archive storage key`);
@@ -106,22 +139,25 @@ async function requiredKeys(knex, selected) {
       add(event.archive_path);
     }
   }
-  for (const photo of await rows(knex, 'photos')) {
+  for await (const photo of rows(knex, 'photos')) {
     const event = byId.get(String(photo.event_id));
     if (!event || event.is_archived === true || event.is_archived === 1) continue;
     const mode = photo.source_origin || event.source_mode || 'managed';
-    if (mode !== 'external' && mode !== 'reference' && selected('events/active/required.jpg')) {
-      add(resolvePhotoStorageKey(event, photo));
-    } else if (photo.path) {
-      add(resolvePhotoStorageKey(event, photo));
+    if ((mode !== 'external' && mode !== 'reference' && selected('events/active/required.jpg')) || photo.path) {
+      let key;
+      try { key = resolvePhotoStorageKey(event, photo); } catch (error) {
+        logger.warn(`Skipping photo ${photo.id} in the recovery inventory: ${error.message}`);
+        continue;
+      }
+      add(key);
     }
-    for (const field of ['thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path']) add(photo[field]);
+    for (const field of ['thumbnail_path', 'preview_path', 'hero_path', 'watermark_path', 'web_path']) addDerived(photo[field], photo);
   }
-  for (const doc of await rows(knex, 'customer_documents')) {
+  for await (const doc of rows(knex, 'customer_documents')) {
     if (!doc.purged_at) add(doc.storage_key, 'business-docs/customer-documents', `Customer document ${doc.id}`);
   }
   for (const table of ['transfer_uploads', 'transfer_extra_files']) {
-    for (const row of await rows(knex, table)) add(row.stored_path,
+    for await (const row of rows(knex, table)) add(row.stored_path,
       table === 'transfer_uploads' ? 'uploads/transfers' : 'transfers', `Transfer file ${row.id}`);
   }
   return keys;
@@ -151,10 +187,14 @@ async function adapterInventory(knex, roots, selected = key => roots.some(root =
       found.set(key, { relativePath: key, size: entry.size, modified: entry.mtime, storage: 'adapter' });
     }
   }
-  const required = await requiredKeys(knex, selected);
+  const derived = new Set();
+  const required = await requiredKeys(knex, selected, derived);
   for (const key of requiredReferences) { validKey(key); if (selected(key) && managedKey(key)) required.add(key); }
   for (const key of required) {
     if (!found.has(key)) throw new Error(`Required primary-storage object is missing from the backup inventory: ${key}`);
+  }
+  for (const key of derived) {
+    if (!found.has(key)) logger.debug(`Derived rendition is not in primary storage, left out of the inventory: ${key}`);
   }
   return [...found.values()];
 }
@@ -268,5 +308,5 @@ async function materialize(files, directory, maxBytes = DEFAULT_MAX_BYTES) {
   return output;
 }
 
-module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, validKey, managedKey, remoteDestination, objectOptions,
+module.exports = { MANAGED_ROOTS, DEFAULT_MAX_BYTES, REFERENCES_SUFFIX, validKey, managedKey, remoteDestination, objectOptions,
   restoreObjectOptions, selectedManifestFiles, adapterInventory, requiredKeys, captureStream, captureAdapter, checksumAdapter, verifyAdapter, materialize };

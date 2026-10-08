@@ -1034,7 +1034,30 @@ class RestoreService {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
         const filesBackupPath = path.join(backupPath, 'files.tar.gz');
 
-        await spawnAsync('tar', ['-czf', filesBackupPath, '-C', path.dirname(storagePath), path.basename(storagePath)]);
+        if (options.restoreType === 'selective') {
+          // A selective restore only overwrites the files it names, so the
+          // safety copy holds those and not the whole storage tree.
+          const existing = [];
+          for (const item of options.selectedItems.filter(entry => entry.type === 'file')) {
+            const target = path.join(storagePath, item.path);
+            if (pathEscapes(storagePath, target)) continue;
+            // tar reads the list line by line, and GNU tar unquotes it.
+            if (/[\r\n\\]/.test(item.path)) {
+              this.log('warn', `Not in the safety copy (unsupported file name): ${item.path}`);
+              continue;
+            }
+            const stat = await fs.lstat(target).catch(() => null);
+            if (stat && stat.isFile()) existing.push(path.join(path.basename(storagePath), item.path));
+          }
+          if (existing.length) {
+            const listPath = path.join(backupPath, 'files.list');
+            await fs.writeFile(listPath, `${existing.join('\n')}\n`, { mode: 0o600 });
+            await spawnAsync('tar', ['-czf', filesBackupPath, '-C', path.dirname(storagePath), '-T', listPath]);
+            await fs.unlink(listPath);
+          }
+        } else {
+          await spawnAsync('tar', ['-czf', filesBackupPath, '-C', path.dirname(storagePath), path.basename(storagePath)]);
+        }
         if (getStorage().kind() === 's3') {
           if (!manifest) throw new Error('An S3 safety backup requires the restore catalogue');
           const prior = [];
@@ -1680,6 +1703,10 @@ END $$;`
           continue;
         }
 
+        // Validates the key, so it runs before a descriptor is open: a
+        // throw here must not leave one behind.
+        const remote = recoveryFiles.remoteDestination(file.path);
+
         // Check that the source exists, is a regular file (no symlinks, no
         // devices) and really lives under the backup root — then keep the
         // open descriptor for the copy.
@@ -1698,7 +1725,7 @@ END $$;`
         // file, a full disk) must close it, or a manifest full of such
         // entries runs the process out of descriptors.
         let targetBackup = null;
-        if (recoveryFiles.remoteDestination(file.path)) {
+        if (remote) {
           let captured;
           try {
             captured = await recoveryFiles.captureStream(sourceHandle.createReadStream(), {
@@ -1991,14 +2018,17 @@ END $$;`
           if (!recoveryFiles.remoteDestination(key)) throw new Error(`Invalid S3 rollback key: ${key}`);
           if (!file.existed) { await getStorage().delete(key); continue; }
           const root = await fs.realpath(path.join(preRestoreBackupPath, 'adapter-files'));
-          const handle = await openRestoreSource(root, key, await getRestoreMaxFileBytes());
+          // The capture accepted this object under the limit in force then;
+          // its recorded size keeps it restorable if the limit is lower now.
+          const maxBytes = Math.max(await getRestoreMaxFileBytes(), Number(file.size) || 0);
+          const handle = await openRestoreSource(root, key, maxBytes);
           let captured;
           try {
             captured = await recoveryFiles.captureStream(handle.createReadStream(), {
-              expectedSize: file.size, checksum: file.checksum, label: key,
+              maxBytes, expectedSize: file.size, checksum: file.checksum, label: key,
             });
             await getStorage().putFromFile(key, captured.path, recoveryFiles.objectOptions(file.object_metadata));
-            await recoveryFiles.verifyAdapter(key, file.checksum, file.object_metadata);
+            await recoveryFiles.verifyAdapter(key, file.checksum, file.object_metadata, maxBytes);
           } finally { await handle.close().catch(() => {}); if (captured) await captured.cleanup(); }
         }
       }
