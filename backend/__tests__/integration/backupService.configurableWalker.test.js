@@ -248,8 +248,8 @@ describe('backupService — configurable walker (backup_paths)', () => {
         expect.arrayContaining(['thumbnails', 'events/archived'])
       );
 
-      const args = backupService.buildRsyncArgs(
-        { backup_rsync_host: 'backup.example.com', backup_rsync_path: '/srv/backups' },
+      const args = await backupService.buildRsyncArgs(
+        { backup_rsync_host: '8.8.8.8', backup_rsync_path: '/srv/backups' },
         excluded.map((r) => `/${r.path}/`)
       );
       const excludes = args
