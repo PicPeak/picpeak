@@ -78,6 +78,29 @@ describe('exact portable restore control admission', () => {
     expect(restore.start).not.toHaveBeenCalled();
   });
 
+  it('rejects an unexpired but idle-expired SuperAdmin before multipart parsing', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+    const stale = jwt.sign({ id: superId, type: 'admin', role: 'super_admin', iat }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', expiresIn: '24h' });
+    expect(jwt.verify(stale, process.env.JWT_SECRET).exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(await require('../../src/middleware/sessionTimeout').isSessionExpired(stale, jwt.decode(stale))).toBe(true);
+    const response = await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${stale}`).expect(401);
+    expect(response.body.code).toBe('SESSION_TIMEOUT');
+    expect(restore.start).not.toHaveBeenCalled();
+    expect(restore.admitUpload).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads'))).toEqual([]);
+    await request(app).get(`/api/admin/backup/picpeak/restore/${attemptId}`).set('Authorization', `Bearer ${stale}`).expect(401);
+    expect(restore.progress).not.toHaveBeenCalled();
+  });
+
+  it('preserves remembered admin idle exemption without exempting typed active authentication', async () => {
+    const iat = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+    const remembered = jwt.sign({ id: superId, type: 'admin', role: 'super_admin', rememberMe: true, iat }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', expiresIn: '24h' });
+    await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${remembered}`).expect(202);
+    expect(restore.start).toHaveBeenCalledTimes(1);
+  });
+
   it('checks fresh ready/open admission before any multipart file parsing', async () => {
     restore.admitUpload.mockRejectedValue(Object.assign(new Error('fenced'), { code: 'RESTORE_MAINTENANCE', statusCode: 503 }));
     await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`).expect(503);

@@ -240,11 +240,11 @@ async function reinjectCurrentAdmin(trx, currentAdmin) {
 // the RBAC tables are replaced. Permission NAMES (not ids) are captured because
 // the restored permissions table reassigns ids. Returns null if the operator
 // has no role.
-async function captureOperatorRole(roleId) {
+async function captureOperatorRole(roleId, executor = db) {
   if (!roleId) return null;
-  const role = await db('roles').where({ id: roleId }).first();
+  const role = await executor('roles').where({ id: roleId }).first();
   if (!role) return null;
-  const permissions = await db('role_permissions')
+  const permissions = await executor('role_permissions')
     .join('permissions', 'permissions.id', 'role_permissions.permission_id')
     .where('role_permissions.role_id', roleId)
     .pluck('permissions.name');

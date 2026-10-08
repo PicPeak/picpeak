@@ -31,6 +31,15 @@ linux('actual Linux private restore hierarchy', () => {
     expect((await fs.readdir(value.privateRoot)).some(name => name.endsWith('.tmp'))).toBe(false);
     expect((await restorePaths.storageIdentity()).storageId).toBe(value.storageId);
   });
+  it('recognizes the F2FS policy without weakening real UID/device/private-path checks', async () => {
+    const measure = fs.statfs.bind(fs);
+    const observe = jest.spyOn(fs, 'statfs').mockImplementation(async (...args) => ({ ...await measure(...args), type: 0xf2f52010n }));
+    try {
+      const identity = await restorePaths.storageIdentity({ create: true });
+      expect(identity.filesystem).toBe(String(0xf2f52010n));
+      expect((await fs.stat(identity.privateRoot)).mode & 0o777).toBe(0o700);
+    } finally { observe.mockRestore(); }
+  });
   it('refuses symlink/public/hardlinked markers and unknown existing journal contents', async () => {
     const value = await restorePaths.storageIdentity({ create: true });
     const marker = path.join(value.privateRoot, 'storage-id');

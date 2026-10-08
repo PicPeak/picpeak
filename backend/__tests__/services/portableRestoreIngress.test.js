@@ -85,6 +85,13 @@ describe('bounded private restore ingress lifetime', () => {
       .rejects.toMatchObject({ code: 'RESTORE_STORAGE_UNSAFE', statusCode: 503 });
   });
 
+  it('F2FS uses the same finite owned-volume policy as extraction and local journaling', async () => {
+    fixture.storage.filesystem = String(0xf2f52010n);
+    const ingress = inject({ statfs: async (...args) => ({ ...await fixture.filesystem.statfs(...args), type: 0xf2f52010n }) });
+    await expect(copy(ingress)).resolves.toMatchObject({ bytes: 150000, path: destinationPath });
+    expect(fixture.acquired[0].released).toBe(true);
+  });
+
   it('detects source growth without allocating or writing beyond its measured initial size', async () => {
     let changed = false;
     const ingress = inject({ open: async (filename, ...args) => {

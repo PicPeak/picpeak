@@ -74,6 +74,9 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
   let identity = null;
   let initialized = false;
   let locallyReady = false;
+  let startupAdmitted = false;
+  let drainedAfterAdmission = false;
+  let temporaryPause = null;
   let quiescence = null;
   let polling = null;
   let activeTick = null;
@@ -152,6 +155,36 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     // authoritative persistent SAME host identity, never a hostname or TTL.
     return leaseService().probe(parse(instance.lease_json).path, descriptor(parse(instance.lease_json)));
   }
+  function closeForKnownFence() {
+    if (startupAdmitted) drainedAfterAdmission = true;
+    temporaryPause = null;
+    work.closeAdmission(); locallyReady = false;
+  }
+  function pauseForControlRead() {
+    if (!offline && startupAdmitted && !drainedAfterAdmission && !stopping
+      && (temporaryPause || !work.isClosed())) temporaryPause ||= { ready: locallyReady };
+    work.closeAdmission(); locallyReady = false;
+  }
+  async function liveOpenProof(row) {
+    if (stopping || drainedAfterAdmission || row.state !== 'open'
+      || row.generation !== registration.generation || row.storage_id !== location.storageId) return false;
+    const storage = await getStorageIdentity({ create: false });
+    if (['root', 'privateRoot', 'storageId', 'device', 'filesystem'].some(key => storage[key] !== location[key])
+      || storage.identity.host !== identity.hostId || storage.identity.bootId !== identity.bootId) return false;
+    const stored = await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id }).first());
+    if (!stored || ['instance_id', 'generation', 'storage_id', 'host_id', 'boot_id', 'lease_json', 'ack_epoch', 'startup_ready_epoch']
+      .some(key => (stored[key] ?? null) !== (registration[key] ?? null))
+      || !restorePaths.sameRuntimeVolume(storage, stored) || (await proveFree(stored)) !== 'busy') return false;
+    const latest = await read();
+    return !stopping && !drainedAfterAdmission && latest.state === 'open'
+      && ['storage_id', 'generation', 'revision', 'epoch'].every(key => latest[key] === row[key]);
+  }
+  async function resumeReadPause(row) {
+    if (!temporaryPause || !startupAdmitted || offline || !(await liveOpenProof(row))) return false;
+    const ready = temporaryPause.ready;
+    temporaryPause = null; work.openAdmission(); locallyReady = ready;
+    return true;
+  }
   async function visitInstances(where, visit, connection = db()) {
     let last = '';
     for (;;) {
@@ -162,8 +195,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     }
   }
   async function quiesce(row) {
-    work.closeAdmission();
-    locallyReady = false;
+    closeForKnownFence();
     if (!quiescence) quiescence = work.runUncontrolled(async () => {
       await (stopServices || require('./serviceShutdown').stopServices)();
       await work.drain();
@@ -174,8 +206,9 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
       await work.drain();
     });
     await quiescence;
-    await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id })
-      .update({ ack_epoch: row.epoch }));
+    if ((await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id })
+      .update({ ack_epoch: row.epoch }))) !== 1) throw failure('Runtime registration disappeared before its ACK');
+    registration.ack_epoch = row.epoch;
   }
   async function allQuiescent(row) {
     return visitInstances({}, async instance => {
@@ -235,8 +268,9 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
   }
   async function reconcileRestart(row) {
     if (registration.generation !== row.generation) return;
-    await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id })
-      .update({ startup_ready_epoch: row.epoch }));
+    if ((await control(() => db()(INSTANCES).where({ instance_id: registration.instance_id })
+      .update({ startup_ready_epoch: row.epoch }))) !== 1) throw failure('Runtime registration disappeared before startup ACK');
+    registration.startup_ready_epoch = row.epoch;
     await control(() => db().transaction(async trx => {
       // This WRITE/row lock is also acquired by registration. It closes the
       // SELECT-cohort / CAS-open gap: no unacknowledged cold registration can
@@ -257,8 +291,14 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
   }
   async function tickInternal() {
     if (!initialized || stopping) return;
-    const row = await read();
-    if (row.state === 'open') return;
+    let row;
+    try { row = await read(); }
+    catch (error) { pauseForControlRead(); throw error; }
+    if (row.state === 'open') {
+      if (row.generation !== registration.generation || row.storage_id !== location.storageId) closeForKnownFence();
+      else await resumeReadPause(row);
+      return;
+    }
     await quiesce(row);
     if (row.state === 'restart_required') return reconcileRestart(row);
     if (workerRunning) return;
@@ -311,9 +351,14 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     for (;;) {
       if (stopping) throw failure();
       const row = await read();
-      if (row.state === 'open' && row.generation === registration.generation) {
+      if (drainedAfterAdmission) throw failure();
+      if (startupAdmitted && work.isClosed() && !temporaryPause) throw failure();
+      if (row.state === 'open' && row.generation === registration.generation && row.storage_id === location.storageId
+        && await liveOpenProof(row)) {
         // This is only a newly registered cold runtime, never a drained old
         // cohort member. Existing runtimes cannot reopen without restarting.
+        if (temporaryPause) locallyReady = temporaryPause.ready;
+        temporaryPause = null; quiescence = null; startupAdmitted = true;
         work.openAdmission();
         return;
       }
@@ -326,8 +371,8 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     if (!initialized && process.env.NODE_ENV === 'test' && unstartedServerFixture) return;
     if (!initialized || !locallyReady) throw failure();
     const row = await read();
-    if (row.state !== 'open' || row.generation !== registration.generation) {
-      work.closeAdmission(); locallyReady = false;
+    if (row.state !== 'open' || row.generation !== registration.generation || row.storage_id !== location.storageId) {
+      closeForKnownFence();
       void tick();
       throw failure();
     }
@@ -339,12 +384,32 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     if (!initialized || offline || locallyReady || work.isClosed() || work.isControl() || !work.hasScope()) throw failure();
     let row;
     try { row = await read(); }
-    catch (_) { work.closeAdmission(); void tick(); throw failure(); }
+    catch (_) { pauseForControlRead(); void tick(); throw failure(); }
     if (row.state !== 'open' || row.generation !== registration.generation || row.storage_id !== location.storageId) {
-      work.closeAdmission(); locallyReady = false;
+      closeForKnownFence();
       void tick();
       throw failure();
     }
+  }
+  async function revalidateAfterNativeRestore() {
+    // Only a terminal native/boot restore's existing ordinary owner calls this
+    // inside its shared ingress slot. It cannot turn a known drain into OPEN,
+    // invent startup admission, or infer database/worker terminal from a lease.
+    if (!initialized || offline || !startupAdmitted || stopping || drainedAfterAdmission
+      || work.isControl() || !work.hasScope()) throw failure();
+    let row;
+    try { row = await read(); }
+    catch (_) { pauseForControlRead(); throw failure(); }
+    if (row.state !== 'open' || row.generation !== registration.generation || row.storage_id !== location.storageId) {
+      closeForKnownFence(); throw failure();
+    }
+    let proven = false;
+    try { proven = await liveOpenProof(row); } catch (_) { /* Unavailable runtime proof stays closed. */ }
+    if (!proven) { work.closeAdmission(); locallyReady = false; throw failure(); }
+    if (temporaryPause) {
+      locallyReady = temporaryPause.ready; temporaryPause = null; work.openAdmission();
+    }
+    if (work.isClosed()) throw failure();
   }
   async function reserveRestore({ archivePath, operatorId, options = {} }) {
     if (!initialized || (!offline && !locallyReady) || (!offline && (!Number.isSafeInteger(operatorId) || operatorId <= 0))) throw failure();
@@ -471,9 +536,14 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     // The runtime FD deliberately remains held until actual Node lifetime
     // ends. A hung/unknown worker must not be mistaken for a dead runtime.
   }
-  return { initialize, waitForStartupAdmission, admitRequest, admitUpload: admitRequest, admitStartupRestore, start, progress, tick, stop,
+  return { initialize, waitForStartupAdmission, admitRequest, admitUpload: admitRequest, admitStartupRestore, revalidateAfterNativeRestore, start, progress, tick, stop,
     restoreOffline,
-    markReady: () => { locallyReady = true; }, validateStart,
+    markReady: () => {
+      if (!startupAdmitted || drainedAfterAdmission || stopping) throw failure();
+      if (temporaryPause) temporaryPause.ready = true;
+      else if (!work.isClosed()) locallyReady = true;
+      else throw failure();
+    }, validateStart,
     instanceId: () => registration?.instance_id, isInitialized: () => initialized };
 }
 
