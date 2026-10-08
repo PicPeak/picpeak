@@ -6314,6 +6314,7 @@
     "exportCsv": "CSV exportieren",
     "exportFailed": "Export fehlgeschlagen. Bitte erneut versuchen.",
     "errorTitle": "Steuerliste konnte nicht geladen werden",
+    "completeViewRequired": "Diese Auswertung umfasst alle Rechnungen des Studios. Ihr Konto sieht nur die eigenen Dokumente, deshalb steht sie Ihnen nicht zur Verfügung. Bitten Sie einen Super-Admin, sie zu erstellen.",
     "empty": "Keine Rechnungen in diesem Zeitraum.",
     "statusCancelled": "Storniert",
     "totalsByVatRate": "Summen nach MwSt-Satz",

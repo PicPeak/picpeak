@@ -250,11 +250,14 @@ async function main() {
   // stdout and exiting explicitly — otherwise the parent's spawnSync waits on a
   // process that will never end by itself.
   if (args.phase) {
-    const payload = args.phase === 'export' ? await phaseExport()
-      : args.phase === 'fingerprint' ? await phaseFingerprint()
-        : args.phase === 'user-data' ? await phaseUserData(args.ignoreBootstrapAdmins)
-          : args.phase === 'import' ? await phaseImport(args.archive)
-            : await phaseMigrateSchema();
+    // A CLI has no signed-in admin, and every phase reads or writes the CRM
+    // tables whole. Without an explicit context the first such query is refused.
+    const payload = await require('../src/database/crmAccess').withTrustedCrmAccess('operator CLI: migrate-sqlite-to-postgres', async () => (
+      args.phase === 'export' ? phaseExport()
+        : args.phase === 'fingerprint' ? phaseFingerprint()
+          : args.phase === 'user-data' ? phaseUserData(args.ignoreBootstrapAdmins)
+            : args.phase === 'import' ? phaseImport(args.archive)
+              : phaseMigrateSchema()));
     if (args.resultFile) fs.writeFileSync(args.resultFile, String(payload ?? ''));
     // The knex pool holds the event loop open; exit explicitly or the parent's
     // spawnSync waits on a process that will never end by itself.

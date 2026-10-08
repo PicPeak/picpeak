@@ -542,6 +542,21 @@ async function validateDelete(builder, client, connection) {
   await inspectReferences(parsed.table, ids);
 }
 
+/** What a graph executes, as one comparable string: layout and labels are not part of it. */
+function executableGraph(nodes, edges) {
+  const canonical = value => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    return value;
+  };
+  return JSON.stringify(canonical({
+    nodes: nodes.map(n => ({ key: n.node_key, type: n.type, config: n.config || {} }))
+      .sort((a, b) => a.key.localeCompare(b.key)),
+    edges: edges.map(e => ({ from: e.from_node, to: e.to_node, handle: e.from_handle || null,
+      loop: [true, 1, '1'].includes(e.loop_back) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+  }));
+}
+
 /** Only the shipped executable graph, not its editable builtin flag, is trusted. */
 async function isShippedCrmGraph(workflow, graph) {
   if (workflow?.created_by || !graph?.nodeByKey || !Array.isArray(graph.edges)) return false;
@@ -558,19 +573,7 @@ async function isShippedCrmGraph(workflow, graph) {
     if (!Number.isFinite(firstDays) || firstDays < 0 || !Number.isFinite(gapDays) || gapDays < 1) return false;
     shipped = buildDunningGraph({ firstDays, gapDays, maxReminders: 3 });
   } else shipped = await def.build();
-  const canonical = value => {
-    if (Array.isArray(value)) return value.map(canonical);
-    if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
-    return value;
-  };
-  const executable = (nodes, edges) => canonical({
-    nodes: nodes.map(n => ({ key: n.node_key, type: n.type, config: n.config || {} }))
-      .sort((a, b) => a.key.localeCompare(b.key)),
-    edges: edges.map(e => ({ from: e.from_node, to: e.to_node, handle: e.from_handle || null,
-      loop: [true, 1, '1'].includes(e.loop_back) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-  });
-  return JSON.stringify(executable([...graph.nodeByKey.values()], graph.edges))
-    === JSON.stringify(executable(shipped.nodes, shipped.edges));
+  return executableGraph([...graph.nodeByKey.values()], graph.edges) === executableGraph(shipped.nodes, shipped.edges);
 }
 
 /** Rehydrate workflow authority independently of its editable graph/payload. */
@@ -692,7 +695,10 @@ function requireCrmDocument(root) {
       const actor = currentCrmActor();
       if (actor && !allowed(actor, root, false)) return next();
       const { db } = require('./db');
-      if (!(await db(root).where('id', Number(req.params.id)).first('id'))) {
+      // An id no serial key can hold is a missing document, not a database
+      // range error.
+      const id = Number(req.params.id);
+      if (id <= 0 || id > 2147483647 || !(await db(root).where('id', id).first('id'))) {
         return res.status(404).json({ error: 'Document not found', code: 'NOT_FOUND' });
       }
       return next();
@@ -707,6 +713,19 @@ async function assertCrmParent(root, id) {
   if (!(await db(root).where('id', id).first('id'))) throw new NotFoundError('Document');
 }
 
+/**
+ * An aggregate over CRM rows (tax report, ledger export) has to cover all of
+ * them. A scoped actor's query would quietly sum only that actor's documents,
+ * so such a caller is refused instead of handed a partial total.
+ */
+function assertCompleteCrmView() {
+  const context = contextForProtected();
+  if (context.trusted || context.actor?.roleName === 'super_admin') return;
+  const error = new ForbiddenError('This report covers every invoice of the studio. Your account only sees its own documents, so it cannot be produced for you.');
+  error.code = 'CRM_COMPLETE_VIEW_REQUIRED';
+  throw error;
+}
+
 module.exports = { installCrmAccess, loadCrmActor, withCrmActor, currentCrmActor,
-  withTrustedCrmAccess, crmCapabilityRouter, requireCrmDocument,
+  withTrustedCrmAccess, crmCapabilityRouter, requireCrmDocument, executableGraph, assertCompleteCrmView,
   enterTrustedCrmFixtureContext, withoutCrmContext, workflowCrmActor, assertCrmParent };

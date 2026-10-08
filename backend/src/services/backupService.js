@@ -19,6 +19,7 @@ const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require
 const S3StorageAdapter = require('./storage/s3Storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
 const packageJson = require('../../package.json');
+const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 const service = {};
 let backupJob = null;
@@ -1542,10 +1543,12 @@ async function startBackupService() {
 
     const schedule = resolveScheduleCron(config);
 
-    backupJob = cron.schedule(schedule, async () => {
+    // The schedule can be restarted from an admin's settings save; the job
+    // must not keep running as that admin.
+    backupJob = cron.schedule(schedule, () => withTrustedCrmAccess('scheduled file backup', async () => {
       logger.info('Starting scheduled backup');
       await service.runBackup();
-    });
+    }));
 
     logger.info(`Backup service started with schedule: ${schedule}`);
   } catch (error) {
@@ -1909,7 +1912,9 @@ async function validateBackupManifest(manifestPath) {
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;
-service.runBackup = runBackupInternal;
+// A backup covers the whole install whoever starts it (the schedule, or an
+// admin holding backup.create), so it never runs under the caller's CRM scope.
+service.runBackup = (isManual) => withTrustedCrmAccess('file backup', () => runBackupInternal(isManual));
 service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;
