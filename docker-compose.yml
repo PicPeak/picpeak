@@ -68,6 +68,12 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
+      # Trust exactly the immediately connected frontend nginx hop. Trusting
+      # all private ranges lets a LAN client extend and spoof the XFF chain.
+      # A reverse proxy on the host in front of the frontend makes it 2.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-auto}
+      - ENABLE_HSTS=${ENABLE_HSTS:-false}
       - JWT_SECRET=${JWT_SECRET:-}
       - BACKUP_MANIFEST_KEY=${BACKUP_MANIFEST_KEY:-}
       - BACKUP_MANIFEST_KEY_FILE=${BACKUP_MANIFEST_KEY_FILE:-/run/secrets/backup_manifest_key}
@@ -75,6 +81,7 @@ services:
       - BACKUP_MANIFEST_LEGACY_KEY=${BACKUP_MANIFEST_LEGACY_KEY:-}
       - BACKUP_MANIFEST_RECOVERY_SHA256=${BACKUP_MANIFEST_RECOVERY_SHA256:-}
       - BACKUP_MANIFEST_RECOVERY_REASON=${BACKUP_MANIFEST_RECOVERY_REASON:-}
+      - EMAIL_QUEUE_ENCRYPTION_KEY=${EMAIL_QUEUE_ENCRYPTION_KEY:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
@@ -89,12 +96,17 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME}
+      - DB_SSL=${DB_SSL:-false}
+      - DB_SSL_CA=${DB_SSL_CA:-}
+      - DB_SSL_REJECT_UNAUTHORIZED=${DB_SSL_REJECT_UNAUTHORIZED:-}
+      - DB_SSL_SERVERNAME=${DB_SSL_SERVERNAME:-}
       - EXTERNAL_MEDIA_ROOT=${EXTERNAL_MEDIA_ROOT:-/app/storage/external-media}
       - SMTP_HOST=${SMTP_HOST}
       - SMTP_PORT=${SMTP_PORT}
       - SMTP_SECURE=${SMTP_SECURE:-false}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - MAIL_PRIVATE_ENDPOINTS=${MAIL_PRIVATE_ENDPOINTS:-}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@picpeak.local}
       # Webhook email transport (#1225). Listed here because this service
       # declares an explicit `environment:` block — a variable only present in
@@ -155,7 +167,7 @@ services:
       - ./storage:/app/storage
       - picpeak-secrets:/run/secrets:ro
     ports:
-      - "${BACKEND_PORT:-3001}:3000"
+      - "${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000"
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -286,9 +298,6 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=${VITE_API_URL:-/api}
-        - VITE_UMAMI_URL=${VITE_UMAMI_URL:-}
-        - VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID:-}
-        - VITE_UMAMI_SHARE_URL=${VITE_UMAMI_SHARE_URL:-}
     container_name: picpeak-frontend
     restart: unless-stopped
     environment:
@@ -298,7 +307,7 @@ services:
       - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
       - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     healthcheck:

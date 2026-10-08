@@ -268,13 +268,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
             slug={slug}
             onProtectionViolation={(violationType) => {
               // Track analytics
-              if (typeof window !== 'undefined' && (window as any).umami) {
-                (window as any).umami.track('thumbnail_protection_violation', {
-                  photoId: photo.id,
-                  violationType,
-                  protectionLevel
-                });
-              }
+              analyticsService.track('thumbnail_protection_violation', { violationType, protectionLevel });
             }}
           />
           
