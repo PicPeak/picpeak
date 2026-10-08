@@ -28,6 +28,23 @@ services:
           if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
           else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
         fi
+        if [ -n "$$BACKUP_MANIFEST_KEY" ]; then
+          # A corrected BACKUP_MANIFEST_KEY replaces the seeded copy, so a bad
+          # first value is not sticky. The value it replaces is kept, one per
+          # line, for BACKUP_MANIFEST_KEYS_OLD.
+          if [ "$$(cat /run/secrets/backup_manifest_key 2>/dev/null)" != "$$BACKUP_MANIFEST_KEY" ]; then
+            if [ -s /run/secrets/backup_manifest_key ]; then
+              { cat /run/secrets/backup_manifest_key; echo; } >> /run/secrets/backup_manifest_key.previous
+              chmod 600 /run/secrets/backup_manifest_key.previous
+            fi
+            printf '%s' "$$BACKUP_MANIFEST_KEY" > /run/secrets/backup_manifest_key
+          fi
+        elif [ ! -e /run/secrets/backup_manifest_key ]; then
+          od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > /run/secrets/backup_manifest_key
+        fi
+        # Independent backup-store trust anchor: backend volume only, never
+        # copied into Postgres/Redis secrets or the backed-up media estate.
+        chmod 644 /run/secrets/backup_manifest_key
         # 644: the readers run as three different users (postgres, redis, nodejs),
         # so a non-root reader must be able to read them. The volume is private to
         # these containers and never host-exposed.
@@ -107,6 +124,7 @@ services:
     env_file: .env
     environment:
       - NODE_ENV=production
+      - BACKUP_MANIFEST_KEY_FILE=${BACKUP_MANIFEST_KEY_FILE:-/run/secrets/backup_manifest_key}
       # Trust exactly the immediately connected frontend nginx hop. The
       # backend port is host-loopback-only, preventing remote bypasses.
       # A reverse proxy on the host in front of the frontend makes it 2.

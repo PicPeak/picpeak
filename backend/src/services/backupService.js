@@ -15,6 +15,7 @@ const logger = require('../utils/logger');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
+const backupManifestKey = require('../utils/backupManifestKey');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
@@ -328,6 +329,19 @@ async function ensureDatabaseDumpForBackup(config) {
       'Refusing to proceed with file backup to avoid shipping a manifest with no DB content.'
     );
   }
+
+  // The dump lives in mutable backup storage. Its independently recorded
+  // creation digest is the authority; rehashing and replacing that digest
+  // would launder changed store bytes into a newly authenticated manifest.
+  const expected = typeof databaseInfo.checksum === 'string' ? databaseInfo.checksum.trim().toLowerCase() : '';
+  if (!/^[a-f0-9]{64}$/.test(expected)) {
+    throw new Error('Database backup has no valid recorded checksum. Create a fresh database dump before signing a file backup.');
+  }
+  if (await calculateChecksum(databaseInfo.backupFile) !== expected) {
+    throw new Error('Database backup does not match its recorded checksum; refusing to sign changed dump bytes.');
+  }
+  databaseInfo.size = dumpStat.size;
+  databaseInfo.checksum = expected;
 
   return databaseInfo;
 }
@@ -932,38 +946,15 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-function buildRsyncArgs(config, extraExcludes = []) {
+async function buildRsyncArgs(config, extraExcludes = []) {
   const storagePath = getStoragePath();
-  const host = validateRsyncParam(config.backup_rsync_host, 'host');
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
 
-  if (!host || !remotePath) {
+  if (!config.backup_rsync_host || !remotePath) {
     throw new Error('Rsync configuration incomplete');
   }
 
-  // Validate host format (hostname or IP only)
-  const hostRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
-  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (!hostRegex.test(host) && !ipRegex.test(host)) {
-    throw new Error('Invalid rsync host format');
-  }
-
   const args = ['-avz', '--delete', '--stats'];
-  if (config.backup_rsync_ssh_key) {
-    // The setting is a key FILE path. The form used to ask for the key
-    // itself, so a pasted key can still be stored here; name that plainly
-    // instead of reporting "disallowed characters".
-    if (/PRIVATE KEY|\n/.test(String(config.backup_rsync_ssh_key))) {
-      throw new Error('The rsync SSH key setting holds a pasted key, not a key file path. Enter the absolute path to a private key file.');
-    }
-    const sshKey = validateRsyncParam(config.backup_rsync_ssh_key, 'SSH key path');
-    const fs = require('fs');
-    if (!fs.existsSync(sshKey) || !fs.statSync(sshKey).isFile()) {
-      throw new Error('SSH key file not found or is not a file');
-    }
-    // Pass SSH options as separate array elements to avoid shell interpretation
-    args.push('-e', `ssh -i ${sshKey} -o StrictHostKeyChecking=no`);
-  }
 
   // Same noise filters as the walker, plus the de-selected backup paths
   // (extraExcludes) — rsync syncs the whole storage root, so this is the
@@ -977,19 +968,13 @@ function buildRsyncArgs(config, extraExcludes = []) {
 
   const source = `${storagePath}/`;
 
-  const user = config.backup_rsync_user;
-  if (user) {
-    validateRsyncParam(user, 'user');
-    if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(user)) {
-      throw new Error('Invalid rsync username format');
-    }
-  }
-
-  const destination = user
-    ? `${user}@${host}:${remotePath}`
-    : `${host}:${remotePath}`;
-
-  args.push(source, destination);
+  // Last awaited operation before spawning: the returned literal, not an
+  // independently resolved hostname, controls the actual SSH socket.
+  const { resolveRsyncConnection } = require('../utils/rsyncConnection');
+  const connection = await resolveRsyncConnection({ host: config.backup_rsync_host,
+    user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key, port: config.backup_rsync_port });
+  args.push('-e', connection.rsyncShell);
+  args.push(source, `${connection.rsyncTarget}:${remotePath}`);
   return args;
 }
 
@@ -1011,14 +996,6 @@ function parseRsyncStats(output) {
 
 async function performRsyncBackup(config, files) {
   const { spawnAsync } = require('../utils/safeExec');
-  // SSRF: the /test-connection route validates the host, but a scheduled or
-  // manual /run reaches here directly with the stored host. Resolve-and-vet
-  // it right before ssh/rsync does its own DNS at connect time, so a host
-  // that resolves to an internal address can't be reached (GHSA-4jh8).
-  const { isHostAllowed } = require('../utils/networkValidation');
-  if (!(await isHostAllowed(config.backup_rsync_host))) {
-    throw new Error('rsync host resolves to a private or internal network address');
-  }
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
   // file list (which only feeds manifests and file state).
@@ -1031,22 +1008,33 @@ async function performRsyncBackup(config, files) {
     files = files.filter((file) => !file.legacyValues);
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
-  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
-  const { stdout } = await spawnAsync('rsync', rsyncArgs);
+  const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
+  const { stdout } = await spawnAsync('rsync', rsyncArgs).catch((error) => {
+    // The run's error_message, failure email and System Health then name
+    // the refused host key instead of a bare "rsync exited with code 255".
+    throw require('../utils/rsyncConnection').hostKeyFailure(error.stderr || error.message) || error;
+  });
   const stats = parseRsyncStats(stdout);
-
-  const backedUpFiles = files.map(file => file.relativePath);
 
   const totalSize = typeof stats.totalSize === 'number'
     ? stats.totalSize
     : files.reduce((acc, file) => acc + file.size, 0);
 
+  const backedUpFiles = [];
   for (const file of files) {
     try {
       const checksum = await calculateChecksum(file.path);
+      file.checksum = checksum;
       await updateFileState(file.relativePath, checksum, file.size, file.modified);
+      backedUpFiles.push(file.relativePath);
     } catch (error) {
-      logger.error(`Failed to update rsync file state for ${file.relativePath}:`, error);
+      // Deleted between the walk and this hash (a photo removed mid-backup):
+      // leave it out of the manifest rather than fail the whole run.
+      if (error.code === 'ENOENT') {
+        logger.warn(`rsync backup: ${file.relativePath} disappeared before it could be hashed; left out of the manifest`);
+        continue;
+      }
+      throw new Error(`Cannot authenticate rsync file ${file.relativePath}: ${error.message}`);
     }
   }
 
@@ -1200,11 +1188,16 @@ async function getPreviousSuccessfulBackup(currentRunId) {
   return record || null;
 }
 
-function buildManifestFiles(backedUpFiles, allFiles) {
+function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
   const fileMap = new Map();
   allFiles.forEach(file => {
     fileMap.set(file.relativePath, file);
   });
+  if (databaseInfo?.backupFile) {
+    fileMap.set(path.posix.join('database', path.basename(databaseInfo.backupFile)), {
+      size: databaseInfo.size, checksum: databaseInfo.checksum,
+    });
+  }
 
   return backedUpFiles.map(relativePath => {
     const source = fileMap.get(relativePath) || {};
@@ -1292,6 +1285,7 @@ async function runBackupInternal(isManual = false) {
     if (clashingFolder) {
       throw new Error(destinationIsBackedUpFolderMessage(clashingFolder));
     }
+    backupManifestKey.loadKey({ create: true });
 
     // Inline DB dump + fail-loud verification. The returned `databaseInfo`
     // is reused at manifest-build time below so we don't pay a second
@@ -1329,7 +1323,6 @@ async function runBackupInternal(isManual = false) {
       logger.info('Generating backup manifest...');
 
       const previousBackup = await getPreviousSuccessfulBackup(runId);
-      const manifestFiles = buildManifestFiles(result.backedUpFiles, files);
       // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
       // top of this run — reuse it so manifest building doesn't pay a
       // second `getDatabaseBackupInfo()` round-trip. The
@@ -1337,6 +1330,7 @@ async function runBackupInternal(isManual = false) {
       // (S3, future destinations) that override the local info on the result
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
+      const manifestFiles = buildManifestFiles(result.backedUpFiles, files, databaseInfo);
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
@@ -1394,6 +1388,7 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      throw error;
     }
 
     // Per-Stage-B-path stats — bucket the actually-backed-up files
@@ -1527,6 +1522,8 @@ function resolveScheduleCron(config) {
 async function startBackupService() {
   try {
     const config = await resolveConfigWithFallback();
+    const trustWarning = require('../utils/rsyncConnection').missingKnownHostsWarning(config);
+    if (trustWarning) logger.warn(trustWarning);
     if (!config || !normalizeBoolean(config.backup_enabled)) {
       if (backupJob) {
         backupJob.stop();
@@ -1608,13 +1605,15 @@ async function getBackupStatus(limit = 10) {
 
     const lastRun = runs[0];
     let manifestValid = false;
+    let manifestAuthentication = { authenticated: false, state: 'unavailable' };
 
     if (lastRun && lastRun.manifest_path) {
       try {
         // Use validateBackupManifest which handles both local and S3 paths
         const result = await validateBackupManifest(lastRun.manifest_path);
         manifestValid = result.valid;
-        if (!result.valid) {
+        manifestAuthentication = result.authentication || { authenticated: false, state: 'unverified' };
+        if (!result.valid && manifestAuthentication.state !== 'legacy') {
           logger.warn('Manifest validation failed:', result.error);
         }
       } catch (error) {
@@ -1622,7 +1621,8 @@ async function getBackupStatus(limit = 10) {
       }
     }
 
-    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid } : null;
+    const signingKey = backupManifestKey.keyStatus();
+    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid, authentication: manifestAuthentication } : null;
 
     // Separate "most recent attempt" from "most recent SUCCESS" so the
     // dashboard widget can distinguish:
@@ -1649,7 +1649,12 @@ async function getBackupStatus(limit = 10) {
 
     return {
       isRunning,
-      isHealthy: Boolean(lastRun && lastRun.status === 'completed'),
+      // A latest manifest that merely predates authentication is not a fault:
+      // the next backup signs a new one. It still cannot be restored as-is.
+      isHealthy: Boolean(lastRun && lastRun.status === 'completed' && signingKey.ready
+        && (manifestAuthentication.state === 'legacy' || (manifestValid && manifestAuthentication.authenticated))),
+      signingKey,
+      manifestAuthentication,
       lastRun: lastRunWithManifest,
       lastBackup: lastRunWithManifest, // Alias for frontend compatibility
       lastSuccessfulBackup: lastSuccessful, // NEW — see comment above
@@ -1774,7 +1779,7 @@ async function loadManifestFromAnywhere(manifestPath, config) {
 // disk whether or not the download or the parse succeeded.
 const MAX_S3_MANIFEST_BYTES = 16 * 1024 * 1024;
 
-async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
+async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel, options = {}) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
   const tempPath = path.join(tempDir, `manifest-${backupRunLabel}.json`);
   try {
@@ -1795,7 +1800,7 @@ async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
     });
     const body = await s3Client.downloadStream(key);
     await pipeline(body, limiter, fsSync.createWriteStream(tempPath));
-    return await backupManifest.loadManifest(tempPath);
+    return await backupManifest.loadManifest(tempPath, options);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -1811,9 +1816,12 @@ async function getBackupManifest(backupRunId) {
   }
 
   if (!run.manifest_path.startsWith('s3://')) {
-    const manifest = await backupManifest.loadManifest(run.manifest_path);
+    // Reading is not restoring: a manifest from before authentication is
+    // still shown, flagged, instead of answering 404.
+    const manifest = await backupManifest.loadManifest(run.manifest_path, { inspect: true });
     return {
       manifest,
+      authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
       summary: backupManifest.generateSummaryReport
         ? backupManifest.generateSummaryReport(manifest)
         : null
@@ -1857,10 +1865,11 @@ async function getBackupManifest(backupRunId) {
     ...backupS3Access(config)
   });
 
-  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId);
+  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId, { inspect: true });
 
   return {
     manifest,
+    authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
     summary: backupManifest.generateSummaryReport
       ? backupManifest.generateSummaryReport(manifest)
       : null
@@ -1894,16 +1903,22 @@ async function validateBackupManifest(manifestPath) {
         ...backupS3Access(config)
       });
 
-      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`);
+      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`, { inspect: true });
     } else {
-      manifest = await backupManifest.loadManifest(manifestPath);
+      manifest = await backupManifest.loadManifest(manifestPath, { inspect: true });
     }
 
     if (backupManifest.validateManifest) {
-      backupManifest.validateManifest(manifest);
+      backupManifest.validateManifest(manifest, { inspect: true });
     }
 
-    return { valid: true, manifest };
+    const authentication = backupManifest.getAuthentication(manifest);
+    // Intact but written before manifests were authenticated: still not
+    // valid, and named as its own state so health can tell it from damage.
+    if (!authentication.valid) {
+      return { valid: false, error: authentication.error, authentication: { authenticated: false, state: 'legacy' } };
+    }
+    return { valid: true, manifest, authentication };
   } catch (error) {
     return { valid: false, error: error.message };
   }
