@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
-const migration = require('../../../migrations/core/274_storage_s3_generation_index');
+const migration = require('../../../migrations/core/281_storage_s3_generation_index');
 const TABLE = 'storage_s3_generation_index';
 const INTERNAL_ROOT = '.picpeak-generations';
 // Hard limits, not operator-overridable: bound parsing, maps and copies in the

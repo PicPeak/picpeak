@@ -10,7 +10,7 @@ const LocalFsStorage = require('../../src/services/storage/LocalFsStorage');
 const S3StorageBackend = require('../../src/services/storage/S3StorageBackend');
 const storageModule = require('../../src/services/storage');
 const knex = require('knex');
-const indexMigration = require('../../migrations/core/274_storage_s3_generation_index');
+const indexMigration = require('../../migrations/core/281_storage_s3_generation_index');
 
 // Stub out the DB so getThumbnailSettings falls into its catch and uses defaults.
 jest.mock('../../src/database/db', () => ({

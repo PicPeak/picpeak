@@ -83,8 +83,8 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     db = knex(client === 'pg' ? { client, connection: process.env.PICPEAK_PG_TEST_URL, searchPath: [schema], pool: { min: 0, max: 4 } }
       : { client, connection: { filename: path.join(directory, 'control.db') }, useNullAsDefault: true, pool: { min: 1, max: 1 } });
     if (client === 'pg') await db.schema.createSchema(schema);
-    await require('../../migrations/core/271_portable_restore_control').up(db);
-    await require('../../migrations/core/271_portable_restore_control').up(db);
+    await require('../../migrations/core/280_portable_restore_control').up(db);
+    await require('../../migrations/core/280_portable_restore_control').up(db);
   });
   beforeEach(async () => {
     for (const table of ['portable_restore_commits', 'portable_restore_instances', 'portable_restore_control']) await db(table).delete();

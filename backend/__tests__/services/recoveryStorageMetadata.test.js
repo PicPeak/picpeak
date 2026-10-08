@@ -4,7 +4,7 @@ jest.mock('../../src/services/storage/s3Storage');
 const RawAdapter = require('../../src/services/storage/s3Storage');
 const S3Backend = require('../../src/services/storage/S3StorageBackend');
 const knex = require('knex');
-const migration = require('../../migrations/core/274_storage_s3_generation_index');
+const migration = require('../../migrations/core/281_storage_s3_generation_index');
 let database;
 let raw; let storage;
 beforeEach(async () => {

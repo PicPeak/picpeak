@@ -1,6 +1,6 @@
 'use strict';
 
-const migration = require('../../migrations/core/271_portable_restore_control');
+const migration = require('../../migrations/core/280_portable_restore_control');
 
 const TABLES = Object.freeze({
   portable_restore_control: { key: 'id', text: ['options_json', 'worker_lease_json', 'result_json'] },

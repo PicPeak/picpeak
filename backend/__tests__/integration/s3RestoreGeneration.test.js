@@ -10,7 +10,7 @@ const { S3Client, CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command
   PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const S3StorageBackend = require('../../src/services/storage/S3StorageBackend');
 const index = require('../../src/services/storage/generationIndex');
-const migration = require('../../migrations/core/274_storage_s3_generation_index');
+const migration = require('../../migrations/core/281_storage_s3_generation_index');
 const nativeEndpoint = process.env.PICPEAK_GENERATION_S3_TEST_URL;
 const read = async stream => { const chunks = []; for await (const chunk of stream) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks); };
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');

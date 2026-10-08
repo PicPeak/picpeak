@@ -1,7 +1,7 @@
 'use strict';
 
 const knex = require('knex');
-const migration = require('../../migrations/core/271_portable_restore_control');
+const migration = require('../../migrations/core/280_portable_restore_control');
 const runtime = require('../../src/services/portableRestoreRuntimeState');
 
 describe('native restore preserves target portable authority', () => {
