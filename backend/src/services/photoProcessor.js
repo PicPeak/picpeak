@@ -7,6 +7,8 @@ const { processUploadedVideo, extractVideoMetadata, isVideoMimeType, posterFrame
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const logger = require('../utils/logger');
+const uploadQuota = require('./publicUploadQuota');
+const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 
 function normalizeFiles(files) {
@@ -56,7 +58,7 @@ function normalizeFiles(files) {
 // `placement` (issue 1786): photo columns resolved by uploadPlacement —
 // category_id, folder_id, first_look, pending_folder_request_id. Before it
 // existed this path dropped the category of a chunked upload entirely.
-async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categoryId = null, placement = {}) {
+async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categoryId = null, placement = {}, uploadReservation = null) {
   const uploadedPhotos = [];
   const fileList = normalizeFiles(files);
 
@@ -78,7 +80,13 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
   // Process each file
   for (const file of fileList) {
-    const trx = await db.transaction();
+    // Admission commits use the ledger's short transaction. Never hold a
+    // SQLite connection through media IO then try to nest a ledger transaction.
+    const trx = uploadReservation ? null : await db.transaction();
+    const conn = trx || db;
+    let promotion = null;
+    let promotionSettled = false;
+    let rowCommitted = false;
     
     try {
       // Count existing photos to generate sequence number
@@ -91,7 +99,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
       
       // Count existing photos of the same type for numbering
-      const existingCount = await trx('photos')
+      if (uploadReservation?.isCancelled?.()) throw uploadQuota.refusal('UPLOAD_CANCELLED', 400);
+      const existingCount = await conn('photos')
         .where({ event_id: eventId, type: photoType })
         .count('id as count')
         .first();
@@ -208,10 +217,16 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       // Now upload the original through the storage backend and remove the
       // local temp copy.
+      const actualSize = uploadReservation ? (await fs.stat(tempPath)).size : file.size;
+      if (uploadReservation) promotion = await uploadQuota.prepareObject(uploadReservation, finalKey, actualSize);
       try {
         await getStorage().putFromFile(finalKey, tempPath, {
           contentType: file.mimetype,
         });
+        promotionSettled = true;
+        if (uploadReservation && Number((await getStorage().stat(finalKey))?.size) !== actualSize) {
+          throw new Error('Stored upload size could not be verified');
+        }
       } catch (uploadErr) {
         logger.error(`Failed to upload ${file.originalname} → ${finalKey}:`, uploadErr);
         throw new Error(`Failed to upload to storage: ${uploadErr.message}`);
@@ -242,7 +257,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         path: relativePath,
         thumbnail_path: relativeThumbPath,
         type: photoType,
-        size_bytes: file.size,
+        size_bytes: actualSize,
         uploaded_by: uploadedBy,
         source_origin: 'managed',
         media_type: mediaType,
@@ -270,7 +285,14 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         photoData.height = imageMetadata.height;
       }
 
-      if (supportsReturning) {
+      if (uploadReservation) {
+        const id = await uploadQuota.commitObject(promotion, 'photo', async ledgerTrx => {
+          const inserted = await insertPhotoWithinCap(photoData, photoCapOf(event), ledgerTrx);
+          if (!inserted) throw new Error('Photo cap reached');
+          return inserted[0]?.id || inserted[0];
+        });
+        insertResult = [id];
+      } else if (supportsReturning) {
         insertResult = await trx('photos')
           .insert(photoData)
           .returning('id');
@@ -289,7 +311,13 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       }
 
       // Commit transaction
-      await trx.commit();
+      if (trx) await trx.commit();
+      rowCommitted = true;
+      if (uploadReservation) {
+        // A failed accounting acknowledgement must retain pending capacity;
+        // it must not delete a successfully associated original.
+        await uploadQuota.processingComplete(photoId).catch(err => logger.warn('Completed upload charge remains pending', { photoId, error: err.message }));
+      }
 
       // Webhook (#327) — fires for every entry path that lands in this
       // service: guest upload + auto-import + admin upload via API.
@@ -335,6 +363,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
 
       logger.info(`Successfully processed file ${file.originalname} (ID: ${photoId})`);
     } catch (error) {
+      if (promotion && !rowCommitted) {
+        await uploadQuota.failedObject(promotion, { storage: getStorage(), settled: promotionSettled })
+          .catch(err => logger.warn('Failed upload charge retained', { objectId: promotion.id, error: err.message }));
+      }
       logger.error(`Error processing file ${file.originalname}:`, {
         error: error.message,
         stack: error.stack,

@@ -63,7 +63,7 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
     .set('Authorization', `Bearer ${adminToken}`)
     .attach('photos', Buffer.alloc(bytes, 0x41), { filename, contentType: 'image/jpeg' });
 
-  const postChunkedInit = (fileSize, filename = 'clip.mp4') => request(app)
+  const postChunkedInit = (fileSize, filename = 'shot.jpg') => request(app)
     .post(`/api/admin/photos/${eventId}/chunked-upload/init`)
     .set('Authorization', `Bearer ${adminToken}`)
     .send({ filename, fileSize, mimeType: 'video/mp4', totalChunks: 1 });

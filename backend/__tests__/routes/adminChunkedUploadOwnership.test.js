@@ -130,6 +130,10 @@ describe('admin chunked upload ownership', () => {
     uploadId = res.body.uploadId;
   });
 
+  afterEach(async () => {
+    await require('../../src/services/chunkedUploadService').abortUpload(uploadId);
+  });
+
   describe('another admin pairing the leaked id with an event of their own', () => {
     it('cannot read its status', async () => {
       const res = await status(otherToken, otherEvent, uploadId);

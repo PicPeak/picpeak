@@ -32,7 +32,31 @@ PUBLIC_UPLOAD_LIMITS_JSON={"requestBytes":209715200,"gallery":{"bytes":107374182
 
 Available top-level scalars: `requestBytes`, `requestTimeoutMs`, `headroomBytes` (default 512 MiB), `headroomPercent` (default 5), `headroomFiles` (default 1,024 free inodes). Each of `gallery`, `guest`, `transfer`, `account`, `deployment` accepts `bytes`, `files`, `pendingBytes`, `pendingFiles`, `requests`, `hourBytes`, `hourRequests`. Larger body settings still require sufficient guest/account/deployment pending and hourly capacity and matching proxy limits.
 
-Low-storage admission requires measurable byte/inode capacity and leaves the greater of absolute/percentage byte headroom plus absolute inode headroom. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room as well as durable byte/file quotas. These public-ingress controls do not replace budgets for derived media, private/admin import paths, subprocesses, inbound mail or other writers.
+Low-storage admission requires measurable byte/inode capacity and leaves the greater of absolute/percentage byte headroom plus absolute inode headroom. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room as well as durable byte/file quotas. These ingress controls do not replace budgets for derived media, import paths, subprocesses, inbound mail or other writers.
+
+## Authenticated admin and API uploads
+
+Both admin multipart aliases, API-v1 photo uploads and admin resumable uploads use the same persistent ledger. Auth, permissions and event ownership still apply. Private profiles have no guest or transfer bucket. Lifetime, pending and concurrent claims include public and private ingress together; hourly request/byte counters are separate for private ingress.
+
+| Private scope | Original bytes | Files | Pending bytes | Pending files | Concurrent sessions | Bytes/hour | Requests/hour |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gallery | 100 GiB | 20,000 | 2 GiB | 4,000 | 2 | 10 GiB | 600 |
+| Account | 500 GiB | 100,000 | 4 GiB | 8,000 | 4 | 20 GiB | 1,200 |
+| Deployment | 1 TiB | 500,000 | 8 GiB | 16,000 | 8 | 50 GiB | 2,400 |
+
+Private multipart bodies default to 95 MiB and five minutes, including framing and rejected parts. Per-photo/RAW and per-video settings remain distinct. A bounded video-specific header classification is required before granting the video allowance; it is not full codec or decoded-media validation. The admin UI leaves a framing margin and sends large single files through chunks.
+
+Resumable init reserves the exact declared file size and enough local byte/inode capacity for chunks plus their merge copy, even with S3. Defaults admit the normal 500-MiB video setting; a fair pending slot is at most 1 GiB. Larger per-file settings require finite pending/rate/lifetime allowances large enough for the entire session. Chunk geometry stays fixed at 10 MiB with a final remainder. Video chunk zero must be classified first; subsequent indices can be out of order. Each accepted chunk attempt, including a retransmission or failed body, consumes its own hourly request and actual received-byte allowance. One writer or merge runs per session. Disk/inode headroom is rechecked before resumed receipt, merge and local promotion.
+
+The 24-hour resume expiry requests cancellation; it never frees capacity ahead of a live writer, merge or synchronous processor. Abort also waits for descriptor close and all processing/promotion IO. Failed cleanup retains the session claim. Successful completion atomically associates the stored original with its lifetime charge. Replacements charge every new original without regenerating allowance by overwriting a catalogue row.
+
+Configure `ADMIN_UPLOAD_LIMITS_JSON` in the backend environment using the same positive-integer scalar/schema rules as the public profile. Only `gallery`, `account` and `deployment` scope overrides are allowed. The existing per-file settings cannot disable admission. Compose forwards this variable. For example, admitting a 2-GiB resumable file with two gallery sessions requires at least:
+
+```dotenv
+ADMIN_UPLOAD_LIMITS_JSON={"gallery":{"pendingBytes":4294967296},"account":{"pendingBytes":8589934592},"deployment":{"pendingBytes":17179869184}}
+```
+
+This does not raise the per-file video setting, local headroom or proxy limits. Chunk requests remain 10 MiB; the multipart ceiling is not a per-file cap.
 
 ## Cleanup and capacity recovery
 

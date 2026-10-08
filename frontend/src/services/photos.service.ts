@@ -1,5 +1,6 @@
 import { api } from '../config/api';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
+import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
 
 export interface AdminPhoto {
   id: number;
@@ -372,7 +373,7 @@ class PhotosService {
   // Check if file should use chunked upload (default > 95MB Cloudflare-safe batch).
   shouldUseChunkedUpload(fileSize: number, thresholdBytes?: number): boolean {
     const threshold = thresholdBytes ?? this.DEFAULT_CHUNKED_THRESHOLD;
-    return fileSize > threshold;
+    return fileSize > uploadMultipartBudget(threshold);
   }
 
   // ============================================

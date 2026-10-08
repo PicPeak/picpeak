@@ -191,7 +191,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
   const policy = await getTransferUploadPolicy();
   const maxSizeMb = policy.maxSizeMb;
   await withPublicUpload(req, res, {
-    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD,
+    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, fileField: 'files',
     fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
   }, options => buildUploader(maxSizeMb * 1024 * 1024, policy, options), async (uploadReservation, res) => {
 
