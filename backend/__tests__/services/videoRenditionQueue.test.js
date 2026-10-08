@@ -4,6 +4,10 @@
  * SQLite, ISO-string timestamps.
  */
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
 jest.mock('../../src/services/videoRenditionService', () => ({
   isEnabled: jest.fn(),
   renderWebCopy: jest.fn(),
@@ -42,6 +46,17 @@ function loadQueue(db) {
 }
 
 describe('videoRenditionQueue.claimNext', () => {
+  let leaseDirectory, priorLeasePath;
+  beforeAll(() => {
+    priorLeasePath = process.env.MEDIA_PROCESS_LEASE_PATH;
+    leaseDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'owned-video-claim-test-'));
+    process.env.MEDIA_PROCESS_LEASE_PATH = leaseDirectory;
+  });
+  afterAll(async () => {
+    if (priorLeasePath === undefined) delete process.env.MEDIA_PROCESS_LEASE_PATH;
+    else process.env.MEDIA_PROCESS_LEASE_PATH = priorLeasePath;
+    await fs.promises.rm(leaseDirectory, { recursive: true, force: true });
+  });
   it('returns null when nothing is pending', async () => {
     const { db } = makeFakeDb({ pendingRow: null });
     expect(await loadQueue(db).claimNext()).toBeNull();
@@ -50,7 +65,7 @@ describe('videoRenditionQueue.claimNext', () => {
   it('claims with FOR UPDATE SKIP LOCKED on Postgres and flips the row to processing', async () => {
     const pendingRow = { id: 42, web_status: 'pending' };
     const { db, queries } = makeFakeDb({ pendingRow, clientName: 'pg' });
-    // The claim comes back with its token: the time the worker fences on.
+    // A unique execution token fences the claim; time alone is not authority.
     expect(await loadQueue(db).claimNext()).toMatchObject({ ...pendingRow, web_status: 'processing', web_attempt_id: expect.any(String), web_started_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) });
     expect(queries.some(query => query.locked && query.skipped)).toBe(true);
     expect(queries[0].wheres[0]).toEqual(['web_status', 'pending']);
