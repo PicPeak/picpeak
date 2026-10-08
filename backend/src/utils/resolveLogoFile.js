@@ -124,7 +124,7 @@ function pickExisting(candidates, storageRoot) {
 async function rasteriseToPng(sourcePath, storageRoot) {
   let sharp;
   try {
-    sharp = require('sharp');
+    sharp = require('../services/isolatedSharp');
   } catch (err) {
     logger.warn('PDF logo rasterisation skipped — sharp not installed', { err: err.message });
     return null;

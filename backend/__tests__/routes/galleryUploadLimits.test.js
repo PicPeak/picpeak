@@ -38,7 +38,7 @@ const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'gallery-upload-limits-secret';
 
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+let JPEG;
 
 describe('guest upload limits', () => {
   let db; let cleanup; let app;
@@ -98,6 +98,7 @@ describe('guest upload limits', () => {
   };
 
   beforeAll(async () => {
+    JPEG = await require('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'white' } }).jpeg().toBuffer();
     ({ db, cleanup } = await bootCrmDb());
     await seedMinimal(db);
     app = express();

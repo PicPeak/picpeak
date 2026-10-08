@@ -18,7 +18,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { resolveExternalPath, getExternalMediaRoot } = require('./externalMediaService');
@@ -497,6 +497,7 @@ async function importExternalFolder({
             // its tile from those (#1185).
             ({ width, height } = orientedDimensions(metadata));
           } catch (dimErr) {
+            if (require('./imageResourcePolicy').isResourceError(dimErr)) { skipped++; continue; }
             logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
           }
         }

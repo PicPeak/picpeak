@@ -11,7 +11,7 @@
  * toggle warns about it and why the face queue defaults to concurrency 1.
  */
 
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');

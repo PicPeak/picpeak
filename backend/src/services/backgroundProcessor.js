@@ -31,6 +31,8 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { processPhoto } = require('./photoProcessor');
+const imageAdmission = require('./imageWorkAdmission');
+const MAX_ATTEMPTS = 2;
 
 const POLL_INTERVAL_MS = parseInt(process.env.UPLOAD_PROCESSOR_POLL_MS || '1000', 10);
 
@@ -63,7 +65,7 @@ function pickDefaultConcurrency() {
 }
 
 const CONCURRENCY = Math.max(1, pickDefaultConcurrency());
-const STUCK_TIMEOUT_MS = parseInt(process.env.UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS || '600000', 10);
+const STUCK_TIMEOUT_MS = Math.max(600000, parseInt(process.env.UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS || '600000', 10) || 600000);
 const JANITOR_INTERVAL_MS = 60 * 1000;
 
 let running = false;
@@ -94,9 +96,15 @@ async function claimNextPhoto() {
         .skipLocked()
         .first();
       if (!row) return null;
+      if (Number(row.processing_attempts || 0) >= MAX_ATTEMPTS) {
+        await trx('photos').where('id', row.id).update({ processing_status: 'failed', processing_error: 'Image processing retry limit reached' });
+        await trx('image_work_reservations').where({ photo_id: row.id }).delete();
+        return null;
+      }
       await trx('photos').where('id', row.id).update({
         processing_status: 'processing',
         processing_started_at: new Date().toISOString(),
+        processing_attempts: Number(row.processing_attempts || 0) + 1,
       });
       return row;
     });
@@ -110,11 +118,17 @@ async function claimNextPhoto() {
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;
+    if (Number(row.processing_attempts || 0) >= MAX_ATTEMPTS) {
+      await trx('photos').where({ id: row.id, processing_status: 'pending' }).update({ processing_status: 'failed', processing_error: 'Image processing retry limit reached' });
+      await trx('image_work_reservations').where({ photo_id: row.id }).delete();
+      return null;
+    }
     const updated = await trx('photos')
       .where({ id: row.id, processing_status: 'pending' })
       .update({
         processing_status: 'processing',
         processing_started_at: new Date().toISOString(),
+        processing_attempts: Number(row.processing_attempts || 0) + 1,
       });
     return updated > 0 ? row : null;
   });
@@ -138,6 +152,7 @@ async function workerLoop(workerIdx) {
 
     try {
       await processPhoto(claimed.id);
+      await imageAdmission.finish(claimed.id);
     } catch (err) {
       logger.error(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} failed`, {
         error: err.message,
@@ -148,6 +163,7 @@ async function workerLoop(workerIdx) {
           processing_status: 'failed',
           processing_error: String(err.message || err).slice(0, 1000),
         });
+        await imageAdmission.finish(claimed.id);
       } catch (updateErr) {
         logger.error(`backgroundProcessor[${workerIdx}]: failed to mark photo ${claimed.id} as failed`, {
           error: updateErr.message,
@@ -167,6 +183,8 @@ async function janitorLoop() {
       // process that died mid-flight sorts below any text and is reset too,
       // which is the right outcome for it.
       const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
+      // An interrupted writer is retried at most once. Do not release its
+      // decoded reservation on age alone: a live child may still hold it.
       const reset = await db('photos')
         .where('processing_status', 'processing')
         .where('processing_started_at', '<', cutoff)

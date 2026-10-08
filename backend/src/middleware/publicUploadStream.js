@@ -17,6 +17,10 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
   let parser;
   let countBody;
   let stopped = false;
+  const cancellation = new AbortController();
+  const cancelImageWork = () => cancellation.abort();
+  req.once('aborted', cancelImageWork);
+  res.once('close', cancelImageWork);
   let response;
   let responseStatus = 200;
   let phase = 'admission';
@@ -33,6 +37,7 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
   const failStream = err => {
     if (stopped) return;
     stopped = true;
+    cancellation.abort();
     req.unpipe(guard);
     req.pause();
     // Respond before closing; never drain an attacker-controlled infinite
@@ -64,6 +69,7 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
     await quota.cleanupAbandoned();
     session = await quota.begin(scope);
     session.isCancelled = () => Boolean(stopped || req.aborted || res.destroyed);
+    session.signal = cancellation.signal;
     if (req.destroyed || session.isCancelled()) throw quota.refusal('UPLOAD_CANCELLED', 400);
     phase = 'staging';
     req.publicUploadReservation = session;
@@ -159,6 +165,8 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
     }
     logger.warn('Public upload rejected', { code: err.code, error: err.message });
   } finally {
+    req.removeListener('aborted', cancelImageWork);
+    res.removeListener('close', cancelImageWork);
     clearTimeout(timer);
     if (countBody) req.removeListener('data', countBody);
     if (guard) { req.unpipe(guard); guard.destroy(); }
