@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.167.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.4-beta.0...v3.167.5-beta.0) (2026-10-08)
+
+
+### Bug Fixes
+
+* **media:** enforce native process budgets and execution fencing ([#1892](https://github.com/PicPeak/picpeak/issues/1892)) ([daf9899](https://github.com/PicPeak/picpeak/commit/daf989948f3335d8632c17101aec4e977bab4962))
+
 ## [3.167.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.3-beta.0...v3.167.4-beta.0) (2026-10-08)
 
 
