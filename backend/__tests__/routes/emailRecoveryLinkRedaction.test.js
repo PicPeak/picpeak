@@ -221,6 +221,28 @@ describe('admin archive of credential links', () => {
     })).rejects.toThrow(/protected storage/);
   });
 
+  it('answers 409, not a storage error, when a sent admin reset is sent again', async () => {
+    // The sent row keeps the masked password and no link, so the masked-link
+    // check does not see it; it used to reach the storage guard and 500.
+    const id = await queueRow({
+      email_type: 'admin_password_reset',
+      email_data: JSON.stringify({ username: 'tester', new_password: MASK }),
+    });
+    await db('feature_flags').insert({ key: 'projects', value: true }).onConflict('key').merge({ value: true });
+    const app = buildRouteApp('/api/admin/projects', require('../../src/routes/adminProjects'));
+
+    for (const action of ['resend', 'retry', 'send-now']) {
+      const res = await request(app).post(`/api/admin/projects/email/${id}/${action}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(res.body)).toMatch(/Create a new invitation or password reset/);
+    }
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.status).toBe('sent');
+    expect(await db('email_queue').where({ email_type: 'admin_password_reset' }).count('* as c').first())
+      .toMatchObject({ c: 1 });
+  });
+
   it('webhook delivery detail hides share links from settings.view, not from settings.integrations', async () => {
     const app = buildRouteApp('/api/admin/webhooks', require('../../src/routes/adminWebhooks'));
     const hookIns = await db('webhooks').insert({

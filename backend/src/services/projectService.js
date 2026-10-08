@@ -31,9 +31,15 @@ function pendingStatusFor(row) {
 
 // A sent invitation or password-reset mail no longer holds its link (see
 // emailProcessor), so sending that row again would deliver a dead link.
+// Any other account-recovery row that is no longer encrypted (a sent admin
+// reset keeps only the masked password) cannot go back to pending either:
+// the storage guard refuses it, so answer like System Health does.
 function assertResendable(row) {
   if (hasMaskedRecoveryLink(parseEmailData(row.email_data))) {
     throw new AppError('This invitation or password-reset email cannot be sent again: its link is not kept after sending. Send a new invitation or password reset instead.', 409);
+  }
+  if (isProtectedEmailType(row.email_type) && !isEncryptedEmailData(parseEmailData(row.email_data))) {
+    throw new AppError('Create a new invitation or password reset; this recovery email cannot be retried.', 409);
   }
 }
 

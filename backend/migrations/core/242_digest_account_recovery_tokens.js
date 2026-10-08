@@ -7,6 +7,13 @@
  * This is a forward-only boundary: deploy the new backend to every replica
  * promptly. A recovery action attempted on an old replica can fail after its
  * credential change and must be retried on a new replica.
+ *
+ * Outstanding invitations and reset links stop working on upgrade; the pass
+ * logs how many per table, and names any admin whose password it had to reset.
+ *
+ * down() is intentionally empty. Rolling this migration back restores
+ * nothing: the tokens stay digested and expired, rotated passwords stay
+ * rotated, and the write guards stay installed.
  */
 const {
   ensureAccountRecoveryDigestColumns,
