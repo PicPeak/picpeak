@@ -1233,7 +1233,14 @@ function getQueueProcessorStatus() {
   };
 }
 
-async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = null } = {}) {
+// The queue is a system job: it sends what was already authorised when it was
+// queued. It never runs under the CRM scope of the admin who triggered it (the
+// flush route, "send now"), where another owner's document would be invisible.
+function processEmailQueue(options) {
+  return require('../database/crmAccess').withTrustedCrmAccess('email queue processor', () => processEmailQueueInternal(options));
+}
+
+async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, onlyId = null } = {}) {
   logger.info('Email queue processor: Checking for pending emails...');
   const result = { processed: 0, sent: 0, failed: 0 };
   processorStatus.lastRunAt = new Date().toISOString();

@@ -86,7 +86,11 @@ async function assertEngine() {
 }
 
 // Main migration runner
-async function runMigrations() {
+function runMigrations() {
+  return require('../src/database/crmAccess').withTrustedCrmAccess('schema migration', runMigrationsInternal);
+}
+
+async function runMigrationsInternal() {
   try {
     console.log('Starting database migrations...');
     await assertEngine();
