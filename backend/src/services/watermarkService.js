@@ -173,6 +173,12 @@ class WatermarkService {
         }
       }
 
+      // Nothing to draw (no usable logo, no company name) is not a failed
+      // watermark: fail-closed callers must not turn it into an error.
+      if (!watermarkBuffer && !String(settings.companyName || '').trim()) {
+        return isBuffer ? imagePath : await fs.readFile(imagePath);
+      }
+
       // If no logo or logo failed, create text watermark
       if (!watermarkBuffer) {
         const padding = 10;

@@ -215,10 +215,11 @@ describe('gallery original-asset authority', () => {
   test('a failed mandatory preview watermark does not expose the unwatermarked derivative', async () => {
     await db('events').where({ id: eventId }).update({ allow_downloads: 0 });
     const watermark = require('../../src/services/watermarkService');
-    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: undefined });
+    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: 'Studio' });
+    const broken = jest.spyOn(watermark, 'applyWatermark').mockRejectedValue(new Error('composite failed'));
     try {
       expect((await get('preview')).status).toBe(404);
-    } finally { spy.mockRestore(); }
+    } finally { spy.mockRestore(); broken.mockRestore(); }
   });
   test('working watermarked previews preserve bounded gallery presentation', async () => {
     await db('events').where({ id: eventId }).update({ allow_downloads: 0 });
@@ -341,7 +342,8 @@ describe('gallery original-asset authority', () => {
   });
   test('a failed watermark fails closed on the photo route the renditions redirect to', async () => {
     const watermark = require('../../src/services/watermarkService');
-    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: undefined });
+    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: 'Studio' });
+    const broken = jest.spyOn(watermark, 'applyWatermark').mockRejectedValue(new Error('composite failed'));
     try {
       const preview = await get('preview');
       expect(preview.status).toBe(302);
@@ -349,6 +351,15 @@ describe('gallery original-asset authority', () => {
       const photo = await get('photo');
       expect(photo.status).toBe(500);
       expect(photo.body).not.toEqual(source);
+      expect(broken.mock.calls.every(([, , options]) => options?.failClosed === true)).toBe(true);
+    } finally { spy.mockRestore(); broken.mockRestore(); }
+  });
+  test('a watermark with no logo and no company name leaves the photo as it is', async () => {
+    const watermark = require('../../src/services/watermarkService');
+    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: '  ' });
+    try {
+      const photo = await get('photo');
+      expect(photo.status).toBe(200);
     } finally { spy.mockRestore(); }
   });
   test('the public OG cover reads only a thumbnail-namespace key', async () => {
