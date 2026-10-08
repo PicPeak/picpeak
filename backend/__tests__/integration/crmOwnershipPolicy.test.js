@@ -10,6 +10,25 @@ const engines = ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])];
 const manage = ['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage', 'contracts.view', 'contracts.manage'];
 const actor = (id, permissions = manage, roleName = 'photographer') => ({ id, roleName, permissions: new Set(permissions) });
 
+test.each(['test', 'production'])('NODE_ENV=%s alone never grants missing-context fixture authority', environment => {
+  const script = `
+    const knex = require('knex');
+    const policy = require('./src/database/crmAccess');
+    const conn = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+    policy.installCrmAccess(conn.client);
+    try { conn('quotes').select().toSQL(); process.exitCode = 1; }
+    catch (error) { if (error.statusCode !== 403) throw error; }
+    if (process.env.NODE_ENV === 'production') {
+      try { policy.enterTrustedCrmFixtureContext(); process.exitCode = 1; }
+      catch (error) { if (!error.message.includes('test-only')) throw error; }
+    }
+    conn.destroy();
+  `;
+  require('child_process').execFileSync(process.execPath, ['-e', script], {
+    cwd: path.resolve(__dirname, '../..'), env: { ...process.env, NODE_ENV: environment }, timeout: 10000,
+  });
+});
+
 describe.each(engines)('CRM query ownership (%s)', client => {
   let conn, dir, schema;
   const trusted = fn => withTrustedCrmAccess('isolated policy fixture', fn);
