@@ -177,6 +177,10 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 - **Analytics**: Privacy-focused with Umami integration
 - **External media**: point PicPeak at `EXTERNAL_MEDIA_ROOT` to reference existing originals read-only, index quickly, and generate thumbnails on demand
 
+Official images use Sharp's bundled native libraries. Custom installations using
+a globally installed libvips must also provide librsvg 2.63.2 or newer for safe
+SVG decoding; updating the npm package does not update system libraries.
+
 ## 📸 Screenshots
 
 <details>
