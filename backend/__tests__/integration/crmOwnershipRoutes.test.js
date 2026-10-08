@@ -186,7 +186,7 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
   const workflowApp = buildRouteApp('/api/admin/workflows', require('../../src/routes/adminWorkflows'));
   const wf = await graph({ targetId: ids.invoices[1] });
   const started = await request(workflowApp).post('/api/admin/workflows/' + wf + '/test-run').set(auth('owner')).send({
-    entityType: 'invoice', entityId: ids.invoices[0], dryRun: false,
+    entityType: 'invoice', entityId: ids.invoices[0],
     payload: { crmInitiatedByAdminId: superId, originAdminId: superId, entityId: ids.invoices[1] },
   });
   expect(started.status).toBe(200);
