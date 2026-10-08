@@ -91,20 +91,22 @@ describe('standalone snapshot retention routes', () => {
         });
     });
 
-    it('reads the adapter\'s Contents pages under the configured prefix and removes aged runs whole', async () => {
+    it('reads the adapter\'s Contents pages under the configured prefix and removes aged standalone snapshots whole', async () => {
       const res = await cleanupS3({ retentionDays: 30 });
       expect(res.status).toBe(200);
       expect(mockList).toHaveBeenNthCalledWith(1, 'archive/', { maxKeys: 1000, continuationToken: undefined });
       expect(mockList).toHaveBeenNthCalledWith(2, 'archive/', { maxKeys: 1000, continuationToken: 'page-2' });
+      // The legacy delta and the loose file stay: later legacy manifests may
+      // still need that delta, and nothing identifies the loose file as ours.
       expect(mockDeleteMany.mock.calls[0][0].sort()).toEqual([
-        oldPoint + '/events/a.jpg', oldPoint + '/manifests/m.json', legacy + '/events/b.jpg', 'archive/loose.txt',
+        oldPoint + '/events/a.jpg', oldPoint + '/manifests/m.json',
       ].sort());
-      expect(res.body).toMatchObject({ deletedCount: 4, totalSize: 36 });
+      expect(res.body).toMatchObject({ deletedCount: 2, totalSize: 11 });
     });
 
     it('previews without deleting', async () => {
       const res = await cleanupS3({ retentionDays: 30, dryRun: true });
-      expect(res.body.wouldDelete).toBe(4);
+      expect(res.body.wouldDelete).toBe(2);
       expect(mockDeleteMany).not.toHaveBeenCalled();
     });
 
@@ -118,7 +120,7 @@ describe('standalone snapshot retention routes', () => {
         IsTruncated: false,
       });
       await cleanupS3({ retentionDays: 30 });
-      expect(mockDeleteMany).toHaveBeenCalledWith([legacy + '/events/b.jpg']);
+      expect(mockDeleteMany).not.toHaveBeenCalled();
     });
   });
 });

@@ -1022,7 +1022,10 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
         const parts = file.Key.split('/');
         const runAt = parts.findIndex((part) => /^backup-\d+$/.test(part) || STANDALONE_SNAPSHOT_RE.test(part));
         const groupKey = runAt >= 0 && runAt < parts.length - 1 ? parts.slice(0, runAt + 1).join('/') : file.Key;
-        const group = groups.get(groupKey) || { run: groupKey !== file.Key, newest: 0, size: 0, keys: [] };
+        // Only a standalone snapshot is safe to remove whole: a legacy
+        // backup-<ts> delta may still be needed by later legacy manifests.
+        const group = groups.get(groupKey) || { run: groupKey !== file.Key,
+          standalone: runAt >= 0 && STANDALONE_SNAPSHOT_RE.test(parts[runAt]), newest: 0, size: 0, keys: [] };
         group.newest = Math.max(group.newest, new Date(file.LastModified).getTime() || Date.now());
         group.size += file.Size || 0;
         group.keys.push(file.Key);
@@ -1035,7 +1038,7 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     const filesToDelete = [];
     let totalSize = 0;
     for (const group of groups.values()) {
-      if (group.newest < cutoffDate.getTime() && !(group.run && group.newest === newestRun)) {
+      if (group.standalone && group.newest < cutoffDate.getTime() && group.newest !== newestRun) {
         filesToDelete.push(...group.keys);
         totalSize += group.size;
       }
