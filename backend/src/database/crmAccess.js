@@ -184,9 +184,16 @@ function predicate(table, alias, actor, write = false) {
     const a = fresh('project'), e = fresh('project_event'), bad = fresh('bad_event');
     return `exists (select 1 from projects as ${identifier(a)} where ${col(a, 'id')} = ${id} and (${col(a, 'created_by')} = ${param(actor.id)} or (${col(a, 'created_by')} is null and exists (select 1 from events as ${identifier(e)} where ${col(e, 'project_id')} = ${col(a, 'id')} and ${col(e, 'created_by')} = ${param(actor.id)}) and not exists (select 1 from events as ${identifier(bad)} where ${col(bad, 'project_id')} = ${col(a, 'id')} and (${col(bad, 'created_by')} is null or ${col(bad, 'created_by')} <> ${param(actor.id)})))))`;
   };
+  const noForeignDeal = a => {
+    const foreign = Object.keys(ROOTS).map(root => {
+      const b = fresh('foreign_deal');
+      return `not exists (select 1 from ${identifier(root)} as ${identifier(b)} where ${col(b, 'deal_uuid')} = ${col(a, 'deal_uuid')} and ${col(b, 'created_by_admin_id')} is not null and ${col(b, 'created_by_admin_id')} <> ${param(actor.id)})`;
+    });
+    return `(${col(a, 'deal_uuid')} is null or (${foreign.join(' and ')}))`;
+  };
   const baseOwner = (root, a) => {
     const anchors = [];
-    const constraints = [];
+    const constraints = [noForeignDeal(a)];
     if (root !== 'invoices') {
       const owned = project(col(a, 'project_id'));
       anchors.push(owned);
@@ -205,7 +212,7 @@ function predicate(table, alias, actor, write = false) {
       // The supported conversion chain is finite: quote -> contract ->
       // invoice. Do not lose a legacy contract's originating quote grant,
       // or let it override a conflicting project/event/source anchor.
-      ownership = `(${col(a, 'created_by_admin_id')} = ${param(actor.id)} or (${col(a, 'created_by_admin_id')} is null and (${ownership} or ${quote}) and (${col(a, 'source_quote_id')} is null or ${quote}) and (${col(a, 'project_id')} is null or ${project(col(a, 'project_id'))}) and (${col(a, 'converted_event_id')} is null or ${event(col(a, 'converted_event_id'))})))`;
+      ownership = `(${col(a, 'created_by_admin_id')} = ${param(actor.id)} or (${col(a, 'created_by_admin_id')} is null and (${ownership} or ${quote}) and ${noForeignDeal(a)} and (${col(a, 'source_quote_id')} is null or ${quote}) and (${col(a, 'project_id')} is null or ${project(col(a, 'project_id'))}) and (${col(a, 'converted_event_id')} is null or ${event(col(a, 'converted_event_id'))})))`;
     }
     return `exists (select 1 from ${identifier(root)} as ${identifier(a)} where ${col(a, 'id')} = ${id} and ${ownership})`;
   };
@@ -220,10 +227,11 @@ function predicate(table, alias, actor, write = false) {
       if (cap.eventId) anchors.push(`${col(a, root === 'invoices' ? 'event_id' : 'converted_event_id')} = ${param(cap.eventId)}`);
       // An editable built-in graph is not global system authority. Its
       // capability cannot traverse a foreign photographer's stored creator.
-      return `(${anchors.length ? anchors.join(' or ') : '1 = 0'}) and (${col(a, 'created_by_admin_id')} is null or ${col(a, 'created_by_admin_id')} = ${param(actor.id)})`;
+      const legacy = actor.roleName === 'crm_system_capability' ? '1 = 1' : noForeignDeal(a);
+      return `(${anchors.length ? anchors.join(' or ') : '1 = 0'}) and ((${col(a, 'created_by_admin_id')} is null and ${legacy}) or ${col(a, 'created_by_admin_id')} = ${param(actor.id)})`;
     }
     const fallback = [baseOwner(root, a)];
-    const constraints = [];
+    const constraints = [noForeignDeal(a)];
     if (root !== 'quotes') {
       fallback.push(source('quotes', col(a, 'source_quote_id')));
       constraints.push(`(${col(a, 'source_quote_id')} is null or ${source('quotes', col(a, 'source_quote_id'))})`);
@@ -237,13 +245,12 @@ function predicate(table, alias, actor, write = false) {
     constraints.push(`(${col(a, ec)} is null or ${event(col(a, ec))})`);
     // A lineage UUID is not a grant by itself. It needs a stored actor-owned
     // anchor, and any foreign creator makes the creatorless deal ambiguous.
-    const dealAnchors = [], foreign = [];
+    const dealAnchors = [];
     for (const r of Object.keys(ROOTS)) {
-      const d = fresh('deal'), b = fresh('foreign_deal');
+      const d = fresh('deal');
       dealAnchors.push(`exists (select 1 from ${identifier(r)} as ${identifier(d)} where ${col(d, 'deal_uuid')} = ${col(a, 'deal_uuid')} and ${col(d, 'created_by_admin_id')} = ${param(actor.id)})`);
-      foreign.push(`not exists (select 1 from ${identifier(r)} as ${identifier(b)} where ${col(b, 'deal_uuid')} = ${col(a, 'deal_uuid')} and ${col(b, 'created_by_admin_id')} is not null and ${col(b, 'created_by_admin_id')} <> ${param(actor.id)})`);
     }
-    fallback.push(`(${col(a, 'deal_uuid')} is not null and (${dealAnchors.join(' or ')}) and ${foreign.join(' and ')})`);
+    fallback.push(`(${col(a, 'deal_uuid')} is not null and (${dealAnchors.join(' or ')}))`);
     return `(${col(a, 'created_by_admin_id')} = ${param(actor.id)} or (${col(a, 'created_by_admin_id')} is null and (${fallback.join(' or ')}) and ${constraints.join(' and ')}))`;
   };
   const rootGuard = (root, id) => {
