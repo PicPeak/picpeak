@@ -136,7 +136,7 @@ router.get('/:id/runs', requirePermission('workflows.view'), async (req, res, ne
     const query = db('workflow_runs as r').where('r.workflow_id', Number(req.params.id))
       .select('r.*').orderBy('r.id', 'desc').limit(200);
     workflows.scopeWorkflowRunsQuery(query, req.admin, { alias: 'r', mode: 'view' });
-    const runs = await query;
+    const runs = await workflows.runScopedWorkflowQuery(query);
     const parsed = runs.map((r) => ({ ...r, context: parseJson(r.context, {}) }));
     res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'context'));
   } catch (e) { next(e); }
