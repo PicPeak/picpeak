@@ -1,7 +1,10 @@
 const dns = require('dns').promises;
 const net = require('net');
 const { EventEmitter } = require('events');
-const { mailSocketOptions, smtpConnectionOptions, isMailHostAllowed } = require('../../src/utils/mailConnection');
+const { mailSocketOptions, smtpConnectionOptions, mailHostRejection } = require('../../src/utils/mailConnection');
+const logger = require('../../src/utils/logger');
+const isMailHostAllowed = async (...args) => !(await mailHostRejection(...args));
+const ENV_KEYS = ['MAIL_PRIVATE_ENDPOINTS', 'SMTP_HOST', 'SMTP_PORT'];
 let lookup; let connect; let sockets;
 const record = address => ({ address, family: net.isIP(address) });
 const invoke = (policy, options = { all: true }, name = policy.host) => new Promise((resolve, reject) => {
@@ -14,7 +17,7 @@ function socket() {
   sockets.push(result); return result;
 }
 beforeEach(() => {
-  delete process.env.MAIL_PRIVATE_ENDPOINTS; sockets = [];
+  ENV_KEYS.forEach(key => { delete process.env[key]; }); sockets = [];
   lookup = jest.spyOn(dns, 'lookup').mockResolvedValue([record('8.8.8.8')]);
   connect = jest.spyOn(net, 'createConnection').mockImplementation(options => {
     const result = socket();
@@ -29,7 +32,7 @@ beforeEach(() => {
     return result;
   });
 });
-afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); delete process.env.MAIL_PRIVATE_ENDPOINTS; });
+afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); ENV_KEYS.forEach(key => { delete process.env[key]; }); });
 
 test('every connection on one cached SMTP transport resolves afresh and consumes only the vetted answer', async () => {
   lookup.mockResolvedValueOnce([record('8.8.8.8')]).mockResolvedValueOnce([record('127.0.0.1')]);
@@ -95,10 +98,88 @@ test('only an exact deployment protocol/host/port approval admits private servic
   delete process.env.MAIL_PRIVATE_ENDPOINTS;
   await expect(open(smtpConnectionOptions({ host: '127.0.0.1', port: 1025, private_endpoint_approval: 'smtp://127.0.0.1:1025' }))).rejects.toThrow();
 });
-test.each(['http://mailhog:1025', 'smtp://user:pass@mailhog:1025', 'smtp://mailhog:1025/path', 'smtp://mailhog', 'smtp://mailhog:1025?x'])
-('rejects malformed deployment approval %s', value => {
-  process.env.MAIL_PRIVATE_ENDPOINTS = value;
-  expect(() => mailSocketOptions('imap', 'imap.example.com', 993)).toThrow();
+// One bad entry used to throw MAIL_CONFIG_INVALID for every connection, public hosts included.
+test.each(['http://mailhog:1025', 'smtp://user:pass@mailhog:1025', 'smtp://mailhog:1025/path', 'smtp://mailhog', 'smtp://mailhog:1025?x', 'not a url'])('malformed deployment approval %s approves nothing, is logged once and leaves other mail alone', async value => {
+  const error = jest.spyOn(logger, 'error').mockImplementation(() => {});
+  process.env.MAIL_PRIVATE_ENDPOINTS = `${value}, imap://inbox.internal:993`;
+  for (let i = 0; i < 3; i += 1) expect(mailSocketOptions('imap', 'imap.example.com', 993).host).toBe('imap.example.com');
+  await expect(open(smtpConnectionOptions({ host: 'smtp.example.com', port: 587 }))).resolves.toBeDefined();
+  lookup.mockResolvedValue([record('172.18.0.2')]);
+  expect(await isMailHostAllowed('smtp', 'mailhog', 1025)).toBe(false);
+  expect(await isMailHostAllowed('imap', 'inbox.internal', 993)).toBe(true);
+  expect(error).toHaveBeenCalledTimes(1);
+  expect(error.mock.calls[0][0]).toContain('MAIL_PRIVATE_ENDPOINTS');
+  expect(error.mock.calls[0][0]).toContain(value.replace('user:pass@', '***@'));
+  expect(error.mock.calls[0][0]).not.toContain('user:pass');
+});
+test('the memoised approvals follow a changed environment value', async () => {
+  lookup.mockResolvedValue([record('172.18.0.2')]);
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://memo-one:25';
+  for (let i = 0; i < 3; i += 1) expect(await isMailHostAllowed('smtp', 'memo-one', 25)).toBe(true);
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://memo-two:25';
+  expect(await isMailHostAllowed('smtp', 'memo-one', 25)).toBe(false);
+  expect(await isMailHostAllowed('smtp', 'memo-two', 25)).toBe(true);
+});
+test('compose service names with underscores are valid mail hosts and approvals', async () => {
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://Mail_Relay:25';
+  lookup.mockResolvedValue([record('172.18.0.3')]);
+  expect(mailSocketOptions('smtp', 'mail_relay', 25).host).toBe('mail_relay');
+  expect(await isMailHostAllowed('smtp', 'mail_relay', 25)).toBe(true);
+  expect(await isMailHostAllowed('smtp', 'mail_relay', 587)).toBe(false);
+});
+// Upgrade safety: the relay the deployment itself names keeps sending.
+test('SMTP_HOST/SMTP_PORT from the deployment environment approve exactly that SMTP endpoint', async () => {
+  lookup.mockResolvedValue([record('172.18.0.2')]);
+  expect(await isMailHostAllowed('smtp', 'postfix', 25)).toBe(false);
+  process.env.SMTP_HOST = 'postfix'; process.env.SMTP_PORT = '25';
+  expect(await isMailHostAllowed('smtp', 'postfix', 25)).toBe(true);
+  await expect(open(smtpConnectionOptions({ host: 'postfix', port: 25 }))).resolves.toBeDefined();
+  expect(await isMailHostAllowed('smtp', 'postfix', 587)).toBe(false);
+  expect(await isMailHostAllowed('imap', 'postfix', 25)).toBe(false);
+  expect(await isMailHostAllowed('smtp', 'other', 25)).toBe(false);
+  lookup.mockResolvedValue([record('169.254.169.254')]);
+  expect(await isMailHostAllowed('smtp', 'postfix', 25)).toBe(false);
+  // The first migration seeds port 1025 when SMTP_PORT is unset; so does the approval.
+  delete process.env.SMTP_PORT; process.env.SMTP_HOST = 'mailhog';
+  lookup.mockResolvedValue([record('172.18.0.2')]);
+  expect(await isMailHostAllowed('smtp', 'mailhog', 1025)).toBe(true);
+  expect(await isMailHostAllowed('smtp', 'mailhog', 25)).toBe(false);
+  process.env.SMTP_HOST = 'metadata.google.internal';
+  expect(await isMailHostAllowed('smtp', 'metadata.google.internal', 1025)).toBe(false);
+});
+test.each(['100.64.0.10', '::ffff:100.64.0.10', 'fec0::1'])('an approved endpoint may resolve to %s, an unapproved one may not', async address => {
+  lookup.mockResolvedValue([record(address)]);
+  expect(await isMailHostAllowed('smtp', 'relay.tailnet.example', 25)).toBe(false);
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://relay.tailnet.example:25';
+  expect(await isMailHostAllowed('smtp', 'relay.tailnet.example', 25)).toBe(true);
+});
+test.each(['100.64.0.10', 'fec0::1'])('private literal %s needs its approval', address => {
+  expect(() => mailSocketOptions('smtp', address, 25)).toThrow(expect.objectContaining({ code: 'MAIL_HOST_FORBIDDEN' }));
+  process.env.MAIL_PRIVATE_ENDPOINTS = `smtp://${address.includes(':') ? `[${address}]` : address}:25`;
+  expect(mailSocketOptions('smtp', address, 25).host).toBe(address);
+});
+test.each(['0.0.0.0', '255.255.255.255', '224.0.0.1', '169.254.10.10', '100.100.100.200', '::', 'ff02::1', 'fe80::1'])('an approval never admits %s', async address => {
+  process.env.MAIL_PRIVATE_ENDPOINTS = 'smtp://relay.internal:25';
+  lookup.mockResolvedValue([record(address)]);
+  expect(await isMailHostAllowed('smtp', 'relay.internal', 25)).toBe(false);
+});
+test('an unresolvable name is reported as such, a private or forbidden destination is not told apart', async () => {
+  for (const code of ['ENOTFOUND', 'EAI_AGAIN']) {
+    lookup.mockRejectedValueOnce(Object.assign(new Error(`getaddrinfo ${code}`), { code }));
+    expect(await mailHostRejection('smtp', 'smtp.exmaple.com', 587))
+      .toEqual({ code: 'MAIL_HOST_UNRESOLVED', error: 'SMTP host could not be resolved. Check the hostname.' });
+  }
+  lookup.mockResolvedValueOnce([]);
+  expect(await mailHostRejection('imap', 'imap.exmaple.com', 993)).toMatchObject({ code: 'MAIL_HOST_UNRESOLVED', error: expect.stringMatching(/^IMAP host/) });
+  const forbidden = { code: 'MAIL_HOST_FORBIDDEN', error: 'SMTP host cannot point to a private or internal network address without deployment approval' };
+  for (const address of ['10.0.0.5', '169.254.169.254', '224.0.0.1']) {
+    lookup.mockResolvedValueOnce([record(address)]);
+    expect(await mailHostRejection('smtp', 'smtp.example.com', 587)).toEqual(forbidden);
+  }
+  expect(await mailHostRejection('smtp', '10.0.0.5', 587)).toEqual(forbidden);
+  expect(await mailHostRejection('smtp', 'smtp.example.com/x', 587)).toEqual(forbidden);
+  lookup.mockResolvedValueOnce([record('8.8.8.8')]);
+  expect(await mailHostRejection('smtp', 'smtp.example.com', 587)).toBeNull();
 });
 test('matches exact private IPv6 approvals across equivalent literal spellings without admitting metadata', () => {
   process.env.MAIL_PRIVATE_ENDPOINTS = 'imap://[fd00::1]:993,imap://[fe80::1]:993';

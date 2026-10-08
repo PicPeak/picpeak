@@ -141,6 +141,32 @@ describe('mail entry points consume guarded connection answers', () => {
     expect(mockAccepted).toHaveLength(0);
   });
 
+  it('names a policy refusal in the queue processor status instead of the generic transporter error', async () => {
+    lookup.mockResolvedValue(privateRecords);
+    expect(await processor.initializeTransporter(true)).toBeNull();
+    await processor.processEmailQueue();
+    expect(processor.getQueueProcessorStatus()).toMatchObject({ lastErrorCode: 'MAIL_HOST_FORBIDDEN', lastError: expect.stringContaining('MAIL_PRIVATE_ENDPOINTS') });
+    lookup.mockRejectedValue(Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }));
+    await processor.processEmailQueue();
+    expect(processor.getQueueProcessorStatus()).toMatchObject({ lastErrorCode: null, lastError: expect.stringContaining('could not be initialised') });
+    lookup.mockResolvedValue(publicRecords);
+    expect(await processor.initializeTransporter(true)).toBeTruthy();
+  });
+
+  it.each([
+    ['/config', { smtp_host: 'smtp.exmaple.com', smtp_port: 587, from_email: 'sender@example.com' }, 'SMTP'],
+    ['/incoming-config/test', { imap_host: 'imap.exmaple.com', imap_port: 993, imap_user: 'inbox@example.com', imap_pass: 'fixture-new' }, 'IMAP'],
+  ])('tells an unresolvable host apart from a refused one at %s, both as a 400', async (url, body, label) => {
+    lookup.mockRejectedValue(Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }));
+    const unresolved = await post(url, body);
+    expect(unresolved.status).toBe(400);
+    expect(unresolved.body).toEqual({ code: 'MAIL_HOST_UNRESOLVED', error: `${label} host could not be resolved. Check the hostname.` });
+    lookup.mockReset(); lookup.mockResolvedValue(privateRecords);
+    const refused = await post(url, body);
+    expect(refused.status).toBe(400); expect(refused.body.code).toBe('MAIL_HOST_FORBIDDEN');
+    expect(mockSmtpOptions).toHaveLength(0); expect(mockImapOptions).toHaveLength(0);
+  });
+
   it.each(['/incoming-config/folders', '/incoming-config/test', '/accounts/test'])
   ('rejects a changed answer between request preflight and the IMAP connector at %s', async url => {
     lookup.mockResolvedValueOnce(publicRecords).mockResolvedValueOnce(privateRecords);

@@ -20,7 +20,7 @@ process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-mailta
 // No DNS in credential-contract tests; connection guards are exercised separately.
 jest.mock('../../src/utils/mailConnection', () => ({
   ...jest.requireActual('../../src/utils/mailConnection'),
-  isMailHostAllowed: async () => true,
+  mailHostRejection: async () => null,
 }));
 
 // Record every IMAP login instead of connecting.

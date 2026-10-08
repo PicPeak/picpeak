@@ -484,6 +484,7 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
             status: p.started && !p.lastError ? 'active' : (p.started ? 'degraded' : 'stopped'),
             lastRunAt: p.lastRunAt,
             lastError: p.lastError,
+            lastErrorCode: p.lastErrorCode,
           };
         })()
       },
