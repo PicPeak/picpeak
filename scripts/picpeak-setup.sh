@@ -332,7 +332,9 @@ run_verified_bootstrap() (
     fi
     # Private staging must not make upstream package/repository files root-only.
     umask "$original_umask" || return 1
-    "$interpreter" "$bootstrap_dir/bootstrap.sh"
+    # Under `curl ... | sudo bash` stdin IS the rest of this installer; a child
+    # that reads it would swallow the lines bash has not parsed yet.
+    "$interpreter" "$bootstrap_dir/bootstrap.sh" </dev/null
 )
 
 # Write stdin to a secret-bearing file (.env) as mode 0600. The file is created
