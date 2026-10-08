@@ -134,7 +134,8 @@ async function apiTokenAuth(req, res, next) {
       name: row.name,
       scopes: parseScopes(row.scopes)
     };
-    return next();
+    const { loadCrmActor, withCrmActor } = require('../database/crmAccess');
+    return withCrmActor(await loadCrmActor(req.admin), next);
   } catch (error) {
     logger.error('apiTokenAuth error', { error: error.message });
     return res.status(500).json({ error: 'Authentication error' });

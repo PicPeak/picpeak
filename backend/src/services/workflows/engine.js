@@ -17,6 +17,7 @@
 const { db } = require('../../database/db');
 const logger = require('../../utils/logger');
 const registry = require('./registry');
+const { currentCrmActor, workflowCrmActor, withCrmActor, withoutCrmContext } = require('../../database/crmAccess');
 
 const MAX_STEPS_PER_ADVANCE = 200;
 
@@ -125,6 +126,18 @@ async function advanceRun(runId) {
   const { nodeByKey, edges } = await loadGraph(run.workflow_id, run.version);
   const context = parseJson(run.context, { vars: {} });
   if (!context.vars) context.vars = {};
+  let actor;
+  try {
+    const workflow = await db('workflows').where('id', run.workflow_id).first();
+    actor = await workflowCrmActor(run, workflow, context.crmInitiatedByAdminId);
+  } catch (error) {
+    // Pure graph primitives still work on old ownerless definitions. A data
+    // handler runs without CRM authority and fails closed at its first CRM
+    // query; it never inherits the scheduler/public capability context.
+    actor = null;
+  }
+  const invoke = (handler, ctx) => actor ? withCrmActor(actor, () => handler(ctx))
+    : withoutCrmContext(() => handler(ctx));
 
   let currentKey = run.current_node;
   let steps = 0;
@@ -148,7 +161,7 @@ async function advanceRun(runId) {
       case 'condition':
       case 'branch': {
         const cond = registry.getCondition(node.config?.condition || 'expr');
-        const result = cond ? await cond(ctx) : false;
+        const result = cond ? await invoke(cond, ctx) : false;
         const handle = result ? (node.config?.trueHandle || 'yes') : (node.config?.falseHandle || 'no');
         const e = outEdge(edges, currentKey, handle) || outEdge(edges, currentKey, result ? 'true' : 'false');
         nextKey = e ? e.to_node : null;
@@ -197,7 +210,7 @@ async function advanceRun(runId) {
         // by the approval phase. Engine still pauses cleanly without it.
         const setup = registry.getAction('gate_setup');
         if (setup) {
-          try { await setup(ctx); } catch (e) { logger.error('[workflow] gate setup failed', { runId, error: e.message }); }
+          try { await invoke(setup, ctx); } catch (e) { logger.error('[workflow] gate setup failed', { runId, error: e.message }); }
         }
         return; // paused — an approval (email or inbox) resumes via resumeRun
       }
@@ -205,7 +218,7 @@ async function advanceRun(runId) {
       case 'webhook': {
         const actionKey = node.config?.action || (node.type === 'webhook' ? 'webhook' : 'noop');
         const action = registry.getAction(actionKey);
-        const result = action ? (await action(ctx)) || {} : { skipped: true, reason: `unknown action ${actionKey}` };
+        const result = action ? (await invoke(action, ctx)) || {} : { skipped: true, reason: `unknown action ${actionKey}` };
         if (result.set && typeof result.set === 'object') Object.assign(context.vars, result.set);
         const e = outEdge(edges, currentKey, null);
         nextKey = e ? e.to_node : null;
@@ -326,7 +339,7 @@ async function emitWorkflowEvent(triggerType, { entityType = null, entityId = nu
           entity_type: entityType,
           entity_id: entityId,
           status: 'pending',
-          context: JSON.stringify({ vars: { ...payload } }),
+          context: JSON.stringify({ vars: { ...payload }, crmInitiatedByAdminId: currentCrmActor()?.id || null }),
           dedup_key: dedupKey,
         });
       } catch (e) {
@@ -614,7 +627,7 @@ async function testRun(workflowId, { entityType = null, entityId = null, payload
     entity_type: entityType,
     entity_id: entityId,
     status: 'pending',
-    context: JSON.stringify({ vars }),
+    context: JSON.stringify({ vars, crmInitiatedByAdminId: currentCrmActor()?.id || null }),
     dedup_key: dedupKey,
     updated_at: db.fn.now(),
   });

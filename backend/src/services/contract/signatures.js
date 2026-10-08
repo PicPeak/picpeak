@@ -1146,6 +1146,9 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
  * page's AuditTrailCard.
  */
 async function getAuditTrail(contractId) {
+  // Logs have JSON metadata rather than a CRM FK; authorize their parent
+  // explicitly before reading evidence, including direct service callers.
+  await require('../../database/crmAccess').assertCrmParent('contracts', contractId);
   if (!(await db.schema.hasTable('activity_logs'))) return [];
   // Push the metadata.contractId filter into SQL instead of fetching
   // every contract_* row and filtering in JS. The previous shape
@@ -1180,7 +1183,7 @@ async function getAuditTrail(contractId) {
       try { meta = JSON.parse(meta); } catch { meta = {}; }
     }
     return { ...r, metadata: meta || {} };
-  });
+  }).filter((row) => Number(row.metadata.contractId) === id);
 }
 
 module.exports = {

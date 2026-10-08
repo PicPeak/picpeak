@@ -40,6 +40,7 @@ const signingV2 = require('../services/contract/signingV2');
 const signingSignals = require('../services/contract/signingSignals');
 
 const router = express.Router();
+router.use(require('../database/crmAccess').crmCapabilityRouter('public contract signing capability'));
 // With contracts switched off, signing is off too — same code as the admin routes.
 router.use(requireFeatureFlag('contracts', 'CONTRACTS_DISABLED'));
 

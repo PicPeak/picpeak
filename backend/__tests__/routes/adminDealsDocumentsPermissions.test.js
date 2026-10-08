@@ -30,16 +30,22 @@ const DEAL = '11111111-2222-4333-8444-555555555555';
 describe('deal lineage — per-document-class permissions', () => {
   let db; let cleanup; let app;
   let superTok; let quotesOnlyTok; let customersOnlyTok; let photographerTok;
+  const principals = new Map();
 
   const auth = (req, tok) => req.set('Authorization', `Bearer ${tok}`);
   const insertId = async (table, row) => {
     const ins = await db(table).insert(row).returning('id');
     return ins[0]?.id ?? ins[0];
   };
-  const adminWithRole = async (username, roleId) => mintAdminToken(await insertId('admin_users', {
-    username, email: `${username}@example.com`, password_hash: 'x', role_id: roleId,
-    must_change_password: false, created_at: new Date().toISOString(),
-  }));
+  const adminWithRole = async (username, roleId) => {
+    const id = await insertId('admin_users', {
+      username, email: `${username}@example.com`, password_hash: 'x', role_id: roleId,
+      must_change_password: false, created_at: new Date().toISOString(),
+    });
+    const token = mintAdminToken(id);
+    principals.set(token, id);
+    return token;
+  };
   const kinds = (body) => ({
     quotes: body.quotes.length, contracts: body.contracts.length, invoices: body.invoices.length,
   });
@@ -49,6 +55,7 @@ describe('deal lineage — per-document-class permissions', () => {
     const { adminId: superId, customerId } = await seedMinimal(db);
     await assignAdminRole(db, superId, 'super_admin');
     superTok = mintAdminToken(superId);
+    principals.set(superTok, superId);
 
     const quotesOnly = await svc.createRole({ name: 'quotes_only', permissions: ['customers.view', 'quotes.view'] }, superId);
     quotesOnlyTok = await adminWithRole('quotes-only', quotesOnly.id);
@@ -77,7 +84,14 @@ describe('deal lineage — per-document-class permissions', () => {
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
-  const get = (tok) => auth(request(app).get(`/api/admin/deals/${DEAL}/documents`), tok);
+  const get = async (tok) => {
+    // This suite isolates the domain-permission matrix. Each caller owns the
+    // fixture lineage; cross-photographer access has separate regressions.
+    for (const table of ['quotes', 'contracts', 'invoices']) {
+      await db(table).where('deal_uuid', DEAL).update({ created_by_admin_id: principals.get(tok) });
+    }
+    return auth(request(app).get(`/api/admin/deals/${DEAL}/documents`), tok);
+  };
   const body = (res) => res.body.data || res.body;
 
   it('returns only quotes to a role with quotes.view', async () => {

@@ -97,6 +97,7 @@ async function requireBillsFlag(req, res, next) {
 }
 
 router.use(adminAuth);
+router.use('/:id', require('../database/crmAccess').requireCrmDocument('invoices'));
 router.use(requireBillsFlag);
 
 function transformInvoice(i) {
