@@ -157,7 +157,9 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 
 Capturing S3-primary backups uses a private temporary tree: provide temporary disk capacity for the entire selected file estate, not just one object. Missing required objects, interrupted capture or publication, and reference changes during a database dump fail the run rather than produce a completed incomplete backup. Scheduled database dumps record their storage references; after upgrading, create a new database dump before reusing a pre-upgrade dump with inline dumping disabled.
 
-Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers. Portable import database/files atomicity is a separate limitation.
+Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers.
+
+Portable restores require coordinated Linux maintenance and a shared persistent local storage volume. The read-only progress UI remains available; restart every backend instance after a committed restore or verified rollback. See [Portable restore](docs/PORTABLE_RESTORE.md) for bounded worker/archive limits, recovery fences, S3 generation activation and deployment requirements.
 
 ## 📊 Comparison with Alternatives
 

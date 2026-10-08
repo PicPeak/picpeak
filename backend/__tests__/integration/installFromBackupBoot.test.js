@@ -28,7 +28,7 @@ const { bootCrmDb } = require('./helpers/crmDb');
 const mockRestore = jest.fn();
 jest.mock('../../src/services/restoreService', () => ({
   restoreService: {
-    restore: (...args) => mockRestore(...args),
+    restoreDuringStartup: (...args) => mockRestore(...args),
   },
 }));
 
