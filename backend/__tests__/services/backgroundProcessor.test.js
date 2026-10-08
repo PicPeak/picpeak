@@ -99,6 +99,27 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     expect(require('../../src/services/photoProcessor').processPhoto).not.toHaveBeenCalled();
   });
 
+  it('retains accounting failures without turning a completed photo into failed/retryable work', async () => {
+    const { db, queries } = makeFakeDb({ pendingRow: { id: 7 } });
+    const finish = jest.fn().mockRejectedValue(new Error('capacity cleanup unavailable'));
+    jest.doMock('../../src/services/imageWorkAdmission', () => ({ finish }));
+    process.env.UPLOAD_PROCESSOR_CONCURRENCY = '1';
+    let bg;
+    try {
+      bg = loadProcessor(db);
+      require('../../src/services/photoProcessor').processPhoto.mockImplementation(async () => { void bg.stop(); });
+      bg.start();
+      await new Promise(resolve => setImmediate(resolve));
+      await bg.stop();
+      expect(finish).toHaveBeenCalledWith(7);
+      expect(queries.some(query => query.updates?.processing_status === 'failed')).toBe(false);
+    } finally {
+      if (bg) await bg.stop();
+      delete process.env.UPLOAD_PROCESSOR_CONCURRENCY;
+      jest.dontMock('../../src/services/imageWorkAdmission');
+    }
+  });
+
   it('returns null when the SQLite UPDATE-with-guard loses the race', async () => {
     const pendingRow = { id: 7 };
     const { db } = makeFakeDb({ pendingRow, clientName: 'better-sqlite3', updateResult: 0 });

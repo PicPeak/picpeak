@@ -152,7 +152,11 @@ async function workerLoop(workerIdx) {
 
     try {
       await processPhoto(claimed.id);
-      await imageAdmission.finish(claimed.id);
+      // A completed photo must not become retryable because capacity cleanup
+      // failed. Retaining its charge is conservative; reprocessing is not.
+      await imageAdmission.finish(claimed.id).catch(error => {
+        logger.warn('Completed image work charge retained', { photoId: claimed.id, error: error.message });
+      });
     } catch (err) {
       logger.error(`backgroundProcessor[${workerIdx}]: photo ${claimed.id} failed`, {
         error: err.message,
