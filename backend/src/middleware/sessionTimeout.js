@@ -26,14 +26,18 @@ const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes - reduced DB queries
 // behaviour is unchanged: the timer fires every 5 min as long as
 // the server has anything else keeping the loop alive (HTTP server,
 // other intervals), which is always.
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [token, lastActivity] of sessions.entries()) {
-    if (now - lastActivity > DEFAULT_SESSION_TIMEOUT) {
-      sessions.delete(token);
+let cleanupTimer = null;
+function startSessionCleanup() {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [token, lastActivity] of sessions.entries()) {
+      if (now - lastActivity > DEFAULT_SESSION_TIMEOUT) {
+        sessions.delete(token);
+      }
     }
-  }
-}, 5 * 60 * 1000).unref();
+  }, 5 * 60 * 1000).unref();
+}
 
 async function getSessionTimeout() {
   const now = Date.now();
@@ -215,7 +219,8 @@ function getActiveSessions() {
 }
 
 module.exports = {
-  dispose: () => { clearInterval(cleanupTimer); sessions.clear(); cachedTimeout = null; cacheExpiry = 0; },
+  dispose: () => { clearInterval(cleanupTimer); cleanupTimer = null; sessions.clear(); cachedTimeout = null; cacheExpiry = 0; },
+  startSessionCleanup,
   sessionTimeoutMiddleware,
   isSessionExpired,
   touchSession,

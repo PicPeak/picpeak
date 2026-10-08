@@ -43,6 +43,12 @@ try {
 // container was manually restarted — exactly the footgun Ralf hit
 // repeatedly on 2026-05-30.
 let _db = knex(knexConfig);
+let ownsApplicationWork = false;
+
+function enableApplicationWorkOwnership() {
+  require('./applicationWork').installApplicationWork(_db.client);
+  ownsApplicationWork = true;
+}
 
 const db = new Proxy(function knexCall() {}, {
   // db('tableName') — knex's query builder entry point
@@ -76,6 +82,7 @@ async function reinitPool() {
     logger.warn(`Old pool destroy failed (continuing with reinit): ${err.message}`);
   }
   _db = knex(knexConfig);
+  if (ownsApplicationWork) require('./applicationWork').installApplicationWork(_db.client);
   // Probe the new pool with a no-op query so we fail loudly here if
   // the new pool can't connect — better than silently handing the
   // caller a broken pool and surfacing the error on the next admin
@@ -690,4 +697,4 @@ async function logActivityInternal(activityType, metadata = {}, eventId = null, 
   }
 }
 
-module.exports = { db, initializeDatabase, logActivity, withRetry, reinitPool };
+module.exports = { db, initializeDatabase, logActivity, withRetry, reinitPool, enableApplicationWorkOwnership };

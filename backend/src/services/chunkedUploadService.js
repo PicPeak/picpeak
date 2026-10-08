@@ -583,9 +583,9 @@ async function cleanupExpiredUploads() {
 const cleanupTask = require('./scheduledTask').scheduledTask(cleanupExpiredUploads, {
   interval: 60 * 60 * 1000
 });
-cleanupTask.start();
 
 module.exports = {
+  start: () => cleanupTask.start(),
   stop: () => cleanupTask.stop(),
   initializeUpload,
   uploadChunk,

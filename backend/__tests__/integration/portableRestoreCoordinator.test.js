@@ -1,0 +1,335 @@
+'use strict';
+
+const fs = require('fs').promises;
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const knex = require('knex');
+const { createCoordinator } = require('../../src/services/portableRestoreCoordinator');
+const { createWorkRegistry } = require('../../src/services/activeApplicationWork');
+const { sameRuntimeVolume } = require('../../src/services/portableRestorePaths');
+
+const engines = ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : [])];
+const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+
+test.each(['test', 'production'])('NODE_ENV=%s never supplies unstarted server authority alone', environment => {
+  require('child_process').execFileSync(process.execPath, ['-e', `
+    const policy = require('./src/services/portableRestoreCoordinator');
+    policy.admitRequest().then(() => { process.exitCode = 1; }, error => {
+      if (error.code !== 'RESTORE_MAINTENANCE') throw error;
+      if (process.env.NODE_ENV === 'production') {
+        try { policy.enterUnstartedServerFixtureContext(); process.exitCode = 1; }
+        catch (error) { if (!error.message.includes('test-only')) throw error; }
+      }
+    });
+  `], { cwd: path.resolve(__dirname, '../..'), env: { ...process.env, NODE_ENV: environment }, timeout: 10000 });
+});
+
+test('same-kernel proof works without container machine-id; changed boot requires authoritative same host', () => {
+  const boot = crypto.randomUUID();
+  const storage = { storageId: crypto.randomUUID(), identity: { host: null, bootId: boot } };
+  const row = { storage_id: storage.storageId, boot_id: boot, host_id: null };
+  expect(sameRuntimeVolume(storage, row)).toBe(true);
+  expect(sameRuntimeVolume(storage, { ...row, boot_id: crypto.randomUUID() })).toBe(false);
+  expect(sameRuntimeVolume(storage, { ...row, storage_id: crypto.randomUUID() })).toBe(false);
+  storage.identity.host = hash('same-authoritative-host');
+  expect(sameRuntimeVolume(storage, { ...row, host_id: hash('foreign-host') })).toBe(false);
+  expect(sameRuntimeVolume(storage, { ...row, host_id: storage.identity.host, boot_id: crypto.randomUUID() })).toBe(true);
+});
+
+describe.each(engines)('durable portable coordinator (%s)', client => {
+  let db, directory, schema, storage, instances, native, worker, terminal, starts, recoveries, allGates;
+  const row = () => db('portable_restore_control').where({ id: 1 }).first();
+  const waitState = async state => {
+    for (let i = 0; i < 150; i++) {
+      const current = await row();
+      if (current.state === state) return current;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error(`Did not reach ${state}`);
+  };
+  async function create({ offline = false, identity = storage, stopServices = async () => {} } = {}) {
+    const work = createWorkRegistry();
+    const coordinator = createCoordinator({ database: db, work, leases: native, worker, stopServices,
+      offline, getStorageIdentity: async () => identity, pollInterval: 10, autoPoll: false });
+    instances.push({ coordinator, work });
+    await coordinator.initialize();
+    if (!offline && (await row()).state === 'open') {
+      await coordinator.waitForStartupAdmission(); coordinator.markReady();
+    }
+    return { coordinator, work };
+  }
+  async function upload() {
+    const filename = path.join(directory, `${crypto.randomUUID()}.picpeak`);
+    await fs.writeFile(filename, 'owned complete archive fixture', { mode: 0o600 });
+    return filename;
+  }
+
+  beforeAll(async () => {
+    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-coordinator-'));
+    schema = `restore_control_${process.pid}_${Date.now()}`;
+    db = knex(client === 'pg' ? { client, connection: process.env.PICPEAK_PG_TEST_URL, searchPath: [schema], pool: { min: 0, max: 4 } }
+      : { client, connection: { filename: path.join(directory, 'control.db') }, useNullAsDefault: true, pool: { min: 1, max: 1 } });
+    if (client === 'pg') await db.schema.createSchema(schema);
+    await require('../../migrations/core/271_portable_restore_control').up(db);
+    await require('../../migrations/core/271_portable_restore_control').up(db);
+  });
+  beforeEach(async () => {
+    for (const table of ['portable_restore_commits', 'portable_restore_instances', 'portable_restore_control']) await db(table).delete();
+    instances = []; starts = []; recoveries = []; allGates = []; terminal = gate(); allGates.push(terminal);
+    storage = { root: directory, privateRoot: path.join(directory, '.picpeak-maintenance'), storageId: crypto.randomUUID(),
+      device: '1', filesystem: '61353', identity: { bootId: crypto.randomUUID(), host: null } };
+    await fs.mkdir(path.join(storage.privateRoot, 'runtime'), { recursive: true, mode: 0o700 });
+    const files = new Map();
+    native = {
+      async acquire(filename) {
+        const value = { path: filename, device: '1', inode: String(files.size + 1), filesystem: '61353', state: 'busy' };
+        files.set(filename, value);
+        return { ...value, release: async () => { value.state = 'free'; } };
+      },
+      async probe(filename, expected) {
+        const value = files.get(filename);
+        return value && ['device', 'inode', 'filesystem'].every(key => value[key] === expected[key]) ? value.state : 'unknown';
+      }, files,
+    };
+    const run = async args => {
+      await args.onStart();
+      await terminal.promise;
+      const result = terminal.result || { outcome: 'committed', attemptId: args.attemptId, proof: 'kernel_lease_released',
+        summary: { tables: 3, filesRestored: 2, sessionInvalidated: true } };
+      if (result.outcome === 'committed') await db('portable_restore_commits').insert({ attempt_id: args.attemptId,
+        local_plan_checksum: hash('local plan'), options_digest: hash(JSON.stringify(args.options || {})) });
+      return result;
+    };
+    worker = {
+      async workerLeaseDescriptor({ attemptId }) {
+        const parent = path.join(storage.privateRoot, attemptId);
+        await fs.mkdir(parent, { mode: 0o700 });
+        return { path: path.join(parent, 'worker.lease'), device: '1', inode: '9000', filesystem: '61353' };
+      },
+      probeWorkerLease: jest.fn(async () => 'free'),
+      startWorker: jest.fn(args => { starts.push(args); return run(args); }),
+      recoverWorker: jest.fn(args => { recoveries.push(args); return run(args); }),
+    };
+  });
+  afterEach(async () => {
+    allGates.forEach(item => item.resolve());
+    await Promise.all(instances.map(({ coordinator }) => coordinator.stop()));
+    // Wait only fixture-owned finite continuations before the next DB reset.
+    await new Promise(resolve => setTimeout(resolve, 30));
+  });
+  afterAll(async () => {
+    if (client === 'pg') await db.schema.dropSchemaIfExists(schema, true);
+    await db.destroy();
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  it('fresh durable ingress does not inherit the existing cached-maintenance/admin-header exemptions', async () => {
+    const a = await create();
+    await a.coordinator.admitRequest();
+    const handle = await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await expect(a.coordinator.admitRequest({ headers: { authorization: 'Bearer fake' } })).rejects.toMatchObject({ statusCode: 503 });
+    expect(await a.coordinator.progress(handle.attemptId, handle.progressToken)).toMatchObject({ state: expect.any(String) });
+    await expect(a.coordinator.progress(handle.attemptId, 'a'.repeat(64))).rejects.toMatchObject({ statusCode: 404 });
+    const progress = JSON.stringify(await a.coordinator.progress(handle.attemptId, handle.progressToken));
+    expect(progress).not.toMatch(/archive_path|worker\.lease|progress_token|options_json|stack/);
+    terminal.resolve(); await waitState('restart_required');
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('waits for every live replica to close and drain before its explicit ACK and worker admission', async () => {
+    const a = await create(); const b = await create();
+    const held = gate(); allGates.push(held);
+    const pending = b.work.track('accepted detached writer', () => held.promise);
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await a.coordinator.tick();
+    expect(starts).toHaveLength(0);
+    await db('portable_restore_instances').where({ instance_id: b.coordinator.instanceId() }).update({ registered_at: '1900-01-01' });
+    const pause = b.coordinator.tick();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect((await db('portable_restore_instances').where({ instance_id: b.coordinator.instanceId() }).first()).ack_epoch).toBeNull();
+    expect(starts).toHaveLength(0);
+    held.resolve(); await Promise.all([pending, pause]);
+    await a.coordinator.tick();
+    expect(starts).toHaveLength(1);
+    expect(starts[0].epoch).toBe((await row()).epoch);
+    terminal.resolve(); await waitState('restart_required');
+  });
+
+  it('stops resources constructed by an already admitted startup after its first shutdown snapshot', async () => {
+    let constructed = false;
+    const stopped = [];
+    const a = await create({ stopServices: async () => { stopped.push(constructed); } });
+    const held = gate(); allGates.push(held);
+    const startup = a.work.track('admitted runtime startup', async () => { await held.promise; constructed = true; });
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(stopped).toEqual([false]);
+    held.resolve(); await startup; await a.coordinator.tick();
+    expect(stopped).toEqual([false, true]);
+    expect(starts).toHaveLength(1);
+    terminal.resolve(); await waitState('restart_required');
+  });
+
+  it('failed start invokes supervised recovery rather than inferring rollback from an absent marker', async () => {
+    const a = await create();
+    worker.startWorker.mockRejectedValue(Object.assign(new Error('worker exited before proof'), { code: 'RESTORE_WORKER_FAILED' }));
+    worker.recoverWorker.mockImplementation(async args => {
+      await args.onStart();
+      return { attemptId: args.attemptId, proof: 'kernel_lease_released', outcome: 'rolled_back' };
+    });
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await waitState('recovery_required');
+    await a.coordinator.tick();
+    await waitState('restart_required');
+    expect(worker.recoverWorker).toHaveBeenCalledTimes(1);
+    expect(await db('portable_restore_commits').count('* as count').first()).toMatchObject({ count: client === 'pg' ? '0' : 0 });
+    expect((await row()).result_json).toContain('rolled_back');
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('successful terminal proof remains fenced until all old lifetimes are free and new runtimes ACK', async () => {
+    const a = await create(); const b = await create();
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await b.coordinator.tick(); await a.coordinator.tick();
+    terminal.resolve(); const verified = await waitState('restart_required');
+    const c = await create();
+    expect((await row()).state).toBe('restart_required');
+    expect(c.work.isClosed()).toBe(true);
+    for (const value of native.files.values()) if (!value.path.includes(c.coordinator.instanceId())) value.state = 'free';
+    await c.coordinator.tick();
+    expect((await row()).state).toBe('open');
+    expect((await row()).generation).toBe(verified.generation);
+    await c.coordinator.waitForStartupAdmission(); c.coordinator.markReady();
+    await c.coordinator.admitRequest();
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('serializes cold registration against the proof cohort and opening transaction', async () => {
+    const a = await create();
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    terminal.resolve(); await waitState('restart_required');
+    const c = await create();
+    const owner = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId()));
+    owner.state = 'free';
+    const proof = gate(); const entered = gate(); allGates.push(proof, entered);
+    const original = native.probe;
+    let intercepted = false;
+    native.probe = async (...args) => {
+      if (!intercepted && args[0] === owner.path) {
+        intercepted = true; entered.resolve(); await proof.promise;
+      }
+      return original(...args);
+    };
+    const opening = c.coordinator.tick(); await entered.promise;
+    let registered = false;
+    const registering = create().then(value => { registered = true; return value; });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(registered).toBe(false);
+    proof.resolve(); await opening;
+    const d = await registering;
+    expect((await row()).state).toBe('open');
+    await d.coordinator.admitRequest();
+  });
+
+  it('checks every permanently registered lifetime with finite keyset pages, never a time-based cohort cutoff', async () => {
+    const a = await create();
+    const rows = Array.from({ length: 205 }, (_, index) => {
+      const id = crypto.randomUUID();
+      const lease = { path: path.join(storage.privateRoot, 'runtime', `${id}.lease`), device: '1', inode: String(2000 + index), filesystem: '61353', state: 'free' };
+      native.files.set(lease.path, lease);
+      return { instance_id: id, generation: 0, storage_id: storage.storageId, boot_id: storage.identity.bootId,
+        lease_json: JSON.stringify({ path: lease.path, device: lease.device, inode: lease.inode, filesystem: lease.filesystem }) };
+    });
+    await db.batchInsert('portable_restore_instances', rows, 50);
+    const queries = [];
+    const observe = query => { if (/select .*portable_restore_instances/i.test(query.sql)) queries.push(query); };
+    db.on('query', observe);
+    try {
+      await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+      terminal.resolve(); await waitState('restart_required');
+      const owner = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId())); owner.state = 'free';
+      const c = await create(); await c.coordinator.waitForStartupAdmission(); c.coordinator.markReady();
+      await c.coordinator.admitRequest();
+      const pages = queries.filter(query => query.sql.includes('instance_id') && /limit/i.test(query.sql));
+      expect(pages.length).toBeGreaterThanOrEqual(6);
+      expect(pages.every(query => query.bindings.includes(100) && !/offset/i.test(query.sql))).toBe(true);
+    } finally { db.removeListener('query', observe); }
+  });
+
+  it.each(['busy', 'unknown'])('never treats owner or worker %s proof as timeout death', async proof => {
+    const a = await create();
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await a.coordinator.tick();
+    const c = await create();
+    const ownerLease = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId()));
+    ownerLease.state = proof;
+    await c.coordinator.tick(); expect(recoveries).toHaveLength(0);
+    ownerLease.state = 'free'; worker.probeWorkerLease.mockResolvedValue(proof);
+    await c.coordinator.tick(); expect(recoveries).toHaveLength(0);
+    expect((await row()).state).not.toBe('open');
+    terminal.resolve();
+  });
+
+  it('wrong terminal attempt/proof or absent commit marker cannot reopen', async () => {
+    const a = await create();
+    terminal.result = { outcome: 'committed', attemptId: crypto.randomUUID(), proof: 'kernel_lease_released' };
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    terminal.resolve(); await waitState('recovery_required');
+    expect((await row()).generation).toBe(0);
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('requires the matching commit marker and digest even when the terminal worker says committed', async () => {
+    const a = await create();
+    worker.startWorker.mockImplementation(async args => {
+      await args.onStart();
+      return { outcome: 'committed', attemptId: args.attemptId, proof: 'kernel_lease_released' };
+    });
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await waitState('recovery_required');
+    expect((await row()).generation).toBe(0);
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('a replaced inode or unshared volume stays fenced even if a copied lease appears free', async () => {
+    const a = await create();
+    await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    terminal.resolve(); await waitState('restart_required');
+    const lease = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId()));
+    lease.state = 'free'; lease.inode = 'replaced';
+    const c = await create(); await c.coordinator.tick();
+    expect((await row()).state).toBe('restart_required');
+    await expect(create({ identity: { ...storage, storageId: crypto.randomUUID() } })).rejects.toMatchObject({ code: 'RESTORE_STORAGE_MISMATCH' });
+  });
+
+  it('a live offline peer ACK is not death proof; no worker is launched', async () => {
+    const a = await create(); const offline = await create({ offline: true });
+    await expect(offline.coordinator.restoreOffline({ archivePath: await upload(), operatorId: 10 }))
+      .rejects.toMatchObject({ statusCode: 503 });
+    expect(starts).toHaveLength(0);
+    expect((await row()).state).toBe('open');
+    await a.coordinator.admitRequest();
+  });
+
+  it('offline verified rollback rejects its sanitized typed error and retains the restart barrier', async () => {
+    const offline = await create({ offline: true });
+    terminal.result = { outcome: 'rolled_back', attemptId: null, proof: 'kernel_lease_released',
+      error: { code: 'RESTORE_ARCHIVE_INVALID', statusCode: 413, message: 'Archive limit exceeded' } };
+    worker.startWorker.mockImplementation(async args => {
+      await args.onStart(); return { ...terminal.result, attemptId: args.attemptId };
+    });
+    await expect(offline.coordinator.restoreOffline({ archivePath: await upload(), operatorId: 10 }))
+      .rejects.toMatchObject({ statusCode: 413, code: 'RESTORE_ARCHIVE_INVALID' });
+    expect((await row()).state).toBe('restart_required');
+    expect([...native.files.values()].every(value => value.state === 'free')).toBe(true);
+  });
+
+  it('offline committed result preserves compatible summary but never clears a restart barrier itself', async () => {
+    const offline = await create({ offline: true }); terminal.resolve();
+    const result = await offline.coordinator.restoreOffline({ archivePath: await upload(), operatorId: 10 });
+    expect(result).toMatchObject({ restored: true, externalPathsConverted: true, filesRestored: 2, restartRequired: true });
+    expect((await row()).state).toBe('restart_required');
+  });
+});
