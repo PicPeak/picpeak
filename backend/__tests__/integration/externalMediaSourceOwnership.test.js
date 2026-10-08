@@ -142,7 +142,7 @@ describe('external media source ownership', () => {
   });
 
   test('alternate representations and symlinks cannot cross the approved source boundary inside the global mount', async () => {
-    for (const value of ['tenants/alice/../bob', '/tenants/alice', 'tenants\\bob', ['tenants/alice']]) {
+    for (const value of ['tenants/alice/../bob', 'tenants\\bob', ['tenants/alice']]) {
       await expect(access.authorizeSource(aliceId, value)).rejects.toMatchObject({ statusCode: 400 });
     }
     const link = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'tenants', 'alice', 'link');
@@ -196,18 +196,16 @@ describe('external media source ownership', () => {
   test('a refused watcher is reported once, at warn, with the gallery and the folder', async () => {
     const logger = require('../../src/utils/logger');
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
-    const id = await event(aliceId, { slug: 'acl-refused-watch', source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
-    await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(false) });
+    const id = await event(aliceId, { slug: 'acl-refused-watch', source_mode: 'reference', external_path: 'tenants/alice/../bob', external_watch: 1 });
     try {
       await watcher.reconcile();
       await watcher.reconcile();
       expect(watcher.watchedEventIds()).not.toContain(id);
       const lines = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes(`event ${id} (acl-refused-watch)`));
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain('\'tenants/alice\'');
-      expect(lines[0]).toContain('External source owners');
+      expect(lines[0]).toContain('\'tenants/alice/../bob\'');
+      expect(lines[0]).toContain('Invalid external media path');
     } finally {
-      await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(true) });
       await db('events').where({ id }).update({ external_watch: formatBoolean(false) });
       warn.mockRestore();
       await watcher.stopExternalMediaWatcher();
@@ -272,18 +270,27 @@ describe('external media source ownership', () => {
     } finally { await fs.unlink(original); await fs.rename(parked, original); }
   });
 
-  test('live permission and account revocation prevent background imports despite an unchanged source grant', async () => {
+  test('a bound gallery keeps importing when its creator loses photos.upload or is deactivated; interactive actions do not', async () => {
     const id = await event(aliceId, { source_mode: 'reference', external_path: 'tenants/alice', external_watch: 1 });
     const upload = await db('permissions').where({ name: 'photos.upload' }).first();
     const account = await db('admin_users').where({ id: aliceId }).first();
     await db('role_permissions').where({ role_id: account.role_id, permission_id: upload.id }).del();
     try {
-      await expect(access.authorizeImport(id, 'tenants/alice', { automatic: true })).rejects.toMatchObject({ statusCode: 403 });
+      await expect(access.authorizeImport(id, 'tenants/alice', { automatic: true })).resolves.toMatchObject({ relativePath: 'tenants/alice' });
+      await expect(access.authorizeImport(id, 'tenants/alice', { actor: { type: 'admin', id: aliceId } })).rejects.toMatchObject({ statusCode: 403 });
     } finally { await db('role_permissions').insert({ role_id: account.role_id, permission_id: upload.id }); }
     await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(false) });
     try {
-      await expect(access.authorizeImport(id, 'tenants/alice', { automatic: true })).rejects.toMatchObject({ statusCode: 403 });
-    } finally { await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(true) }); }
+      await expect(importer.importExternalFolder({ eventId: id, externalPath: 'tenants/alice', automatic: true })).resolves.toMatchObject({ imported: 1 });
+      await watcher.reconcile();
+      expect(watcher.watchedEventIds()).toContain(id);
+      await expect(access.authorizeImport(id, 'tenants/alice', { actor: { type: 'admin', id: aliceId } })).rejects.toMatchObject({ statusCode: 403 });
+      // Any other folder is a new binding and still needs a live creator.
+      await expect(access.authorizeImport(id, 'tenants/alice/batch', { automatic: true })).rejects.toMatchObject({ statusCode: 403 });
+    } finally {
+      await db('admin_users').where({ id: aliceId }).update({ is_active: formatBoolean(true) });
+      await watcher.stopExternalMediaWatcher();
+    }
   });
 
   test('one-step creation and no-path rescan cannot acquire a foreign source', async () => {
@@ -327,13 +334,10 @@ describe('external media source ownership', () => {
     expect((await db('events').where({ id }).first()).external_path).toBeNull();
   });
 
-  test('paths stored before source grants keep working: a leading slash and a colon in a folder name', async () => {
-    expect(access.normalizeSourcePath('/tenants//unassigned/', { stored: true })).toBe('tenants/unassigned');
-    expect(access.normalizeSourcePath('tenants/unassigned/2026-05-01 12:00', { stored: true })).toBe('tenants/unassigned/2026-05-01 12:00');
-    for (const value of ['tenants\\bob', 'tenants/../bob', 'tenants/\u0007bob']) {
-      expect(() => access.normalizeSourcePath(value, { stored: true })).toThrow('Invalid external media path');
-    }
-    for (const value of ['/tenants/alice', 'tenants/alice/12:00', 'C:\\tenants', 'tenants/../alice']) {
+  test('a leading slash and a colon in a folder name are accepted, stored or new', async () => {
+    expect(access.normalizeSourcePath('/tenants//unassigned/')).toBe('tenants/unassigned');
+    expect(access.normalizeSourcePath('tenants/unassigned/2026-05-01 12:00')).toBe('tenants/unassigned/2026-05-01 12:00');
+    for (const value of ['tenants\\bob', 'C:\\tenants', 'tenants/../bob', '/../tenants', 'tenants/\u0007bob']) {
       expect(() => access.normalizeSourcePath(value)).toThrow('Invalid external media path');
     }
 
@@ -345,8 +349,12 @@ describe('external media source ownership', () => {
     await expect(importer.importExternalFolder({ eventId: id, externalPath: stored, automatic: true })).resolves.toMatchObject({ imported: 1 });
     expect((await db('photos').where({ event_id: id }).first()).external_relpath).toBe(path.join('tenants', 'unassigned', '2026-05-01 12:00', 'late.jpg'));
     expect((await importInto(id, stored, danaToken)).status).toBe(200);
-    // The same spelling as new input, on a gallery that is not bound to it, stays refused.
-    expect((await importInto(await event(danaId), stored, rootToken)).status).toBe(400);
+    // As new input the same spelling is accepted too, and still needs a grant.
+    expect((await importInto(await event(danaId), stored, danaToken)).status).toBe(403);
+    const fresh = await event(danaId);
+    expect((await importInto(fresh, stored, rootToken)).status).toBe(200);
+    expect((await db('events').where({ id: fresh }).first()).external_path).toBe('tenants/unassigned/2026-05-01 12:00');
+    expect((await call('get', `/external/list?path=${encodeURIComponent(stored)}`, rootToken)).status).toBe(200);
   });
 
   test('an import authorises its source per run, not per file', async () => {

@@ -1477,8 +1477,8 @@ module.exports = (router) => {
         const stored = await db('events').where({ id }).first('source_mode', 'external_path', 'external_watch');
         const storedMode = stored?.source_mode === 'reference' ? 'reference' : 'managed';
         const sendsPath = sourceFields.includes('external_path');
-        // Compared the way a stored path is read: `/clients/a` on the row
-        // and `clients/a` in the request are the same folder.
+        // Compared normalised: `/clients/a` on the row and `clients/a` in the
+        // request are the same folder.
         const pathChanges = sendsPath && !externalAccess.sameSourcePath(updates.external_path, stored?.external_path);
         const becomesReference = updates.source_mode === 'reference' && storedMode !== 'reference';
         const nextPath = sendsPath ? updates.external_path : stored?.external_path;
