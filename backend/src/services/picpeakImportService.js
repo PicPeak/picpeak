@@ -599,6 +599,7 @@ function relocateStoredPaths(table, rows, filesDir) {
 // archive lacks keeps its LOCAL rows across the restore, which is the #1586
 // leak shape this clear exists to close.
 const SEED_ONLY_TABLES = new Set([
+  'image_work_lock',             // 268 — id=1 serialization singleton, no user data; old archives must not erase it
   'public_upload_lock',          // 266 — id=1 serialization singleton, no user data; old archives must not erase it
   'product_usage_state',        // migrations/core/201_product_usage.js — id=1 singleton; UsageService.status() dereferences it unguarded
   'ledger_accounts',             // migrations/core/129_create_ledger_accounts_and_vat_codes.js — Swiss/LI chart of accounts

@@ -95,6 +95,12 @@ describe('video poster-frame note and retry (issue 1430)', () => {
     });
     cleanId = await mkPhoto('fine.mp4', { media_type: 'video', mime_type: 'video/mp4', processing_status: 'complete' });
     failedId = await mkPhoto('broken.jpg', { processing_status: 'failed', processing_error: 'sharp: bad header' });
+    // A retryable image has repaired/available source bytes; the old fixture
+    // never wrote its source. Retry now verifies its decoded charge first.
+    const sourceDir = path.join(process.env.STORAGE_PATH, 'events', 'active');
+    await fs.promises.mkdir(sourceDir, { recursive: true });
+    await require('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'white' } })
+      .jpeg().toFile(path.join(sourceDir, 'broken.jpg'));
 
     const categoryId = unwrap(await db('photo_categories').insert({
       event_id: eventId, name: 'Ceremony', slug: 'ceremony', is_global: 0,
@@ -155,6 +161,17 @@ describe('video poster-frame note and retry (issue 1430)', () => {
       expect(await db('photos').where({ id: failedId }).first()).toMatchObject({
         processing_status: 'pending', processing_error: null,
       });
+      expect(await db('image_work_reservations').where({ photo_id: failedId }).first()).toMatchObject({ decoded_bytes: 1024 });
+    });
+
+    it('does not requeue an image that exceeds current decoded admission policy', async () => {
+      const id = await mkPhoto('broken.jpg', { processing_status: 'failed', processing_error: 'prior failure' });
+      process.env.IMAGE_MAX_PIXELS = '1';
+      try {
+        expect((await retry(id)).status).toBe(500); // Existing retry error envelope.
+        expect(await db('photos').where({ id }).first()).toMatchObject({ processing_status: 'failed', processing_error: 'prior failure' });
+        expect(await db('image_work_reservations').where({ photo_id: id })).toEqual([]);
+      } finally { delete process.env.IMAGE_MAX_PIXELS; }
     });
 
     it('takes a complete video with a note and queues it again', async () => {
