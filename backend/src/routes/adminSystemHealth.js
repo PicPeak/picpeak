@@ -236,7 +236,13 @@ router.get(
       if (offset + WAITING_PAGE_SIZE >= WAITING_SCAN_MAX) scanTruncated = true;
     }
 
+    const backupStatus = await require('../services/backupService').getBackupStatus();
+    const backupAuthentication = {
+      signingKey: backupStatus.signingKey || require('../utils/backupManifestKey').keyStatus(),
+      latestManifest: backupStatus.manifestAuthentication || { authenticated: false, state: 'unavailable' },
+    };
     return successResponse(res, {
+      backupAuthentication,
       stuckEmails: stuckEmails.map(mapEmailRow),
       waitingEmails: waitingEmails.map(mapEmailRow),
       processor: getQueueProcessorStatus(),

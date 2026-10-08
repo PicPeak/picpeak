@@ -720,6 +720,7 @@ router.get('/manifest/:backupRunId', adminAuth, requirePermission('backup.view')
     res.json({
       backupRunId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
@@ -794,6 +795,7 @@ router.get('/manifests/:backupId', adminAuth, requirePermission('backup.view'), 
     res.json({
       backupId,
       manifest: result.manifest,
+      authenticated: result.authenticated,
       summary: result.summary
     });
   } catch (error) {
