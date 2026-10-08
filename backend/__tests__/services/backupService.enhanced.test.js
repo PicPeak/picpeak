@@ -106,6 +106,7 @@ describe('Enhanced Backup Service Tests', () => {
     backupManifest.saveManifest = jest.fn().mockResolvedValue('/path/to/manifest.json');
     backupManifest.loadManifest = jest.fn().mockResolvedValue({});
     backupManifest.validateManifest = jest.fn();
+    backupManifest.getAuthentication = jest.fn().mockReturnValue({ valid: true, authenticated: true, recovery: false, warnings: [] });
     backupManifest.generateSummaryReport = jest.fn().mockReturnValue('Summary report');
     
     // Mock logger
@@ -123,7 +124,7 @@ describe('Enhanced Backup Service Tests', () => {
       type: 'sqlite',
       backupFile: DB_DUMP_PATH,
       size: 13,
-      checksum: 'abc123',
+      checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
       hasChanged: false
     });
   });
@@ -222,6 +223,7 @@ describe('Enhanced Backup Service Tests', () => {
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
         type: 'sqlite',
         backupFile: DB_DUMP_PATH,
+        checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
         hasChanged: true
       });
       
@@ -325,7 +327,7 @@ describe('Enhanced Backup Service Tests', () => {
         type: 'sqlite',
         backupFile: '/backup/db-backup.sql',
         size: 1024000,
-        checksum: 'abc123',
+        checksum: crypto.createHash('sha256').update('database backup content').digest('hex'),
         hasChanged: false
       });
       
@@ -585,6 +587,40 @@ describe('Enhanced Backup Service Tests', () => {
     });
   });
 
+  describe('rsync file that disappears mid-run', () => {
+    it('leaves a file deleted between the walk and the hash out of the manifest instead of failing the run', async () => {
+      mockDb.select.mockResolvedValue([]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
+      mockDb.first.mockResolvedValue(null);
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({
+        backup_enabled: true,
+        backup_destination_type: 'rsync',
+        backup_rsync_host: 'backup.example.com',
+        backup_rsync_user: 'backup',
+        backup_rsync_path: '/remote/backup'
+      });
+      mockStorage({
+        '/storage/events/active/event1': {
+          'kept.jpg': Buffer.from('kept'),
+          'gone.jpg': Buffer.from('gone')
+        }
+      });
+      spawnAsync.mockImplementation(async () => {
+        require('fs').unlinkSync('/storage/events/active/event1/gone.jpg');
+        return { stdout: 'Number of files transferred: 2\nTotal file size: 8 bytes' };
+      });
+
+      await backupService.runBackup();
+
+      const failed = mockDb.update.mock.calls.find(([row]) => row.status === 'failed');
+      expect(failed).toBeUndefined();
+      const paths = backupManifest.generateManifest.mock.calls[0][0].files.map((file) => file.path);
+      expect(paths.some((p) => p.endsWith('kept.jpg'))).toBe(true);
+      expect(paths.some((p) => p.endsWith('gone.jpg'))).toBe(false);
+      expect(logger.warn.mock.calls.some(([message]) => /gone\.jpg disappeared/.test(String(message)))).toBe(true);
+    });
+  });
+
   describe('Error Handling and Recovery', () => {
     it('should handle file read errors gracefully', async () => {
       const config = {
@@ -797,8 +833,10 @@ describe('Enhanced Backup Service Tests', () => {
       expect(status).toEqual({
         isRunning: false,
         isHealthy: true,
-        lastRun: { ...run, manifestValid: true },
-        lastBackup: { ...run, manifestValid: true },
+        signingKey: { ready: true, source: 'env', keyId: expect.any(String) },
+        manifestAuthentication: { valid: true, authenticated: true, recovery: false, warnings: [] },
+        lastRun: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
+        lastBackup: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
         lastSuccessfulBackup: run,
         zombieRuns: [],
         recentRuns: [run],
@@ -807,6 +845,21 @@ describe('Enhanced Backup Service Tests', () => {
         nextScheduledRun: expect.any(String),
         nextBackup: expect.any(String)
       });
+    });
+
+    it('does not report the backup system unhealthy only because the latest manifest predates authentication', async () => {
+      mockDb.limit.mockResolvedValue([
+        { id: 1, started_at: new Date(), completed_at: new Date(), status: 'completed', manifest_path: '/backup/manifest.json' }
+      ]);
+      mockDb.select.mockResolvedValue([]);
+      backupManifest.getAuthentication.mockReturnValue({ valid: false, authenticated: false, legacy: true, error: 'Manifest is not authenticated', warnings: [] });
+
+      const status = await backupService.getBackupStatus();
+
+      expect(backupManifest.loadManifest).toHaveBeenCalledWith('/backup/manifest.json', { inspect: true });
+      expect(status.manifestAuthentication).toEqual({ authenticated: false, state: 'legacy' });
+      expect(status.lastBackup.manifestValid).toBe(false);
+      expect(status.isHealthy).toBe(true);
     });
 
     // Issue 1641: the management header read lastBackup as "last successful".
@@ -854,6 +907,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       expect(result).toEqual({
         manifest: manifest,
+        authenticated: true,
         summary: 'Summary'
       });
     });
