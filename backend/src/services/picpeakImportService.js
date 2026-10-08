@@ -747,6 +747,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
 async function restoreFiles(stagingDir, manifest) {
   const src = path.join(stagingDir, 'files');
   if (!fs.existsSync(src)) return 0;
+  const catalogue = new Map((manifest.files || []).map(file => [file.path, file]));
   const storageRoot = getStoragePath();
   let count = 0;
   async function walk(rel) {
@@ -761,18 +762,20 @@ async function restoreFiles(stagingDir, manifest) {
         const problem = importFilePathProblem(childRel.split(path.sep).join('/'));
         if (problem) throw new Error(`Refusing to restore ${childRel}: ${problem}`);
         const key = childRel.split(path.sep).join('/');
-        const recorded = manifest.files?.find(file => file.path === key);
+        const recorded = catalogue.get(key);
         if (recoveryFiles.remoteDestination(key)) {
           const handle = await fsp.open(path.join(src, childRel), fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
           let captured;
           try {
             if (!(await handle.stat()).isFile()) throw new Error(`Invalid archive source: ${key}`);
+            // Exports carry no per-file ceiling; the archive limits bound it.
+            const maxBytes = Math.max(recoveryFiles.DEFAULT_MAX_BYTES, Number(recorded?.size) || 0);
             captured = await recoveryFiles.captureStream(handle.createReadStream(), {
-              expectedSize: recorded?.size, checksum: recorded?.checksum, label: key,
+              maxBytes, expectedSize: recorded?.size, checksum: recorded?.checksum, label: key,
             });
             const options = recoveryFiles.restoreObjectOptions(key, recorded?.object_metadata);
             await getStorage().putFromFile(key, captured.path, options);
-            await recoveryFiles.verifyAdapter(key, captured.checksum, options);
+            await recoveryFiles.verifyAdapter(key, captured.checksum, options, maxBytes);
           } finally {
             await handle.close().catch(() => {});
             if (captured) await captured.cleanup();
@@ -877,6 +880,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
         try {
           if (!(await handle.stat()).isFile()) throw new Error(`Invalid portable source: ${key}`);
           captured = await recoveryFiles.captureStream(handle.createReadStream(), {
+            maxBytes: Math.max(recoveryFiles.DEFAULT_MAX_BYTES, file.size),
             expectedSize: file.size, checksum: file.checksum, label: key,
           });
         } finally { await handle.close().catch(() => {}); if (captured) await captured.cleanup(); }

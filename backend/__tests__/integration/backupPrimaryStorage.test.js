@@ -295,9 +295,21 @@ it('records dump-bound references for scheduled reuse and rejects an old unbound
   await databaseBackupService.backup({});
   const dump = await backup.getDatabaseBackupInfo();
   expect(dump.storageReferences).toContain(original);
+  // The run row (GET /history returns it raw) pins the list, it does not hold it.
+  const recorded = JSON.parse((await db('database_backup_runs').where('file_path', dump.backupFile).first()).statistics);
+  const sidecar = `${dump.backupFile}${files.REFERENCES_SUFFIX}`;
+  expect(recorded.storageReferences).toEqual({ count: dump.storageReferences.length, checksum: sha(await fs.readFile(sidecar)) });
+  expect(JSON.stringify(recorded)).not.toContain(original);
   await db('app_settings').where('setting_key', 'backup_database_inline_dump').update({ setting_value: 'false' });
   await backup.runBackup(true);
   expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('completed');
+  const list = await fs.readFile(sidecar);
+  await fs.writeFile(sidecar, JSON.stringify([]));
+  await backup.runBackup(true);
+  expect((await db('backup_runs').orderBy('id', 'desc').first())).toMatchObject({
+    status: 'failed', error_message: expect.stringMatching(/recorded storage references/),
+  });
+  await fs.writeFile(sidecar, list);
   await db('database_backup_runs').where('file_path', dump.backupFile).update({ statistics: '{}' });
   await backup.runBackup(true);
   expect((await db('backup_runs').orderBy('id', 'desc').first())).toMatchObject({
@@ -305,7 +317,7 @@ it('records dump-bound references for scheduled reuse and rejects an old unbound
   });
 });
 
-it('rejects a reference lifecycle change while the actual database dump is being captured', async () => {
+it('records the settled references when a lifecycle change lands while the database dump is being captured', async () => {
   await seedEstate(); await configure();
   const { databaseBackupService } = require('../../src/services/databaseBackup');
   const capture = databaseBackupService.createSQLiteBackup.bind(databaseBackupService);
@@ -313,9 +325,23 @@ it('rejects a reference lifecycle change while the actual database dump is being
     await capture(...args); await archiveManaged();
   });
   try {
-    await expect(databaseBackupService.backup({})).rejects.toThrow(/references changed during the database dump/);
-    expect((await db('database_backup_runs').orderBy('id', 'desc').first()).status).toBe('failed');
+    await expect(databaseBackupService.backup({})).resolves.toMatchObject({ success: true });
+    const dump = await backup.getDatabaseBackupInfo();
+    expect(dump.storageReferences).toContain('events/archived/managed.zip');
+    expect(dump.storageReferences).not.toContain(original);
   } finally { spy.mockRestore(); }
+});
+
+it('records the union of references, and still completes, when they never settle during the dump', async () => {
+  await seedEstate(); await configure();
+  const { databaseBackupService } = require('../../src/services/databaseBackup');
+  let call = 0;
+  const spy = jest.spyOn(files, 'requiredKeys').mockImplementation(async () => new Set([`events/active/moving/${call++}.jpg`]));
+  try {
+    await expect(databaseBackupService.backup({})).resolves.toMatchObject({ success: true });
+    expect(spy).toHaveBeenCalledTimes(4);
+  } finally { spy.mockRestore(); }
+  expect((await backup.getDatabaseBackupInfo()).storageReferences).toEqual([0, 1, 2, 3].map(n => `events/active/moving/${n}.jpg`));
 });
 
 it.each([['customer_documents', 'storage_key'], ['transfer_uploads', 'stored_path'], ['transfer_extra_files', 'stored_path']])(
@@ -428,6 +454,132 @@ it('rsync source can be an owned materialized hybrid catalogue, with no raw-root
   expect(materialized.find(file => file.relativePath === original).objectMetadata).toEqual(metadata);
   const args = backup.buildRsyncArgs({ backup_rsync_host: 'backup.example.com', backup_rsync_path: '/backups' }, [], stage);
   expect(args[args.length - 2]).toBe(`${stage}/`);
+});
+
+it('treats renditions as optional: a stale or malformed derived key does not fail the inventory or the dump', async () => {
+  await seedEstate(); objects.delete('thumbnails/original.jpg');
+  const managed = await db('events').where('slug', 'managed').first();
+  await db('photos').insert({ event_id: managed.id, filename: 'legacy.jpg', path: 'managed/individual/legacy.jpg',
+    type: 'individual', thumbnail_path: '/app/storage/thumbnails/legacy.jpg' });
+  store('events/active/managed/individual/legacy.jpg');
+  const inventory = await backup.getFilesToBackup({ backup_include_archived: true });
+  expect(inventory.some(file => file.relativePath === 'thumbnails/original.jpg')).toBe(false);
+  expect(inventory.some(file => file.relativePath === original)).toBe(true);
+  const required = await files.requiredKeys(db, () => true);
+  expect([...required]).toEqual(expect.arrayContaining([original, 'events/active/managed/individual/legacy.jpg']));
+  expect([...required].some(key => key.includes('thumbnails'))).toBe(false);
+  await configure(); await backup.runBackup(true);
+  expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('completed');
+});
+
+it('skips a photo row without a path, but still refuses a malformed key for a required original', async () => {
+  await seedEstate();
+  const managed = await db('events').where('slug', 'managed').first();
+  const [inserted] = await db('photos').insert({ event_id: managed.id, filename: 'empty.jpg', path: '', type: 'individual' }).returning('id');
+  expect([...await files.requiredKeys(db, () => true)]).toContain(original);
+  await db('photos').where('id', inserted?.id || inserted).update({ path: 'managed/bad\u0001.jpg' });
+  await expect(files.requiredKeys(db, () => true)).rejects.toThrow(/Invalid recovery storage key/);
+});
+
+it('reads reference rows in id batches with only the path columns', async () => {
+  await seedEstate();
+  const managed = await db('events').where('slug', 'managed').first();
+  const many = Array.from({ length: 1005 }, (_, n) => ({ event_id: managed.id, filename: `bulk-${n}.jpg`,
+    path: `managed/individual/bulk-${n}.jpg`, type: 'individual' }));
+  for (let start = 0; start < many.length; start += 100) await db('photos').insert(many.slice(start, start + 100));
+  const queries = [];
+  const listener = query => { if (/from [`"]photos[`"]/.test(query.sql)) queries.push(query.sql); };
+  db.on('query', listener);
+  try {
+    const keys = await files.requiredKeys(db, () => true);
+    expect(keys.has('events/active/managed/individual/bulk-1004.jpg')).toBe(true);
+  } finally { db.removeListener('query', listener); }
+  const selects = queries.filter(sql => /^select/i.test(sql));
+  expect(selects.length).toBe(2);
+  expect(selects.every(sql => !sql.includes('*') && /limit/i.test(sql))).toBe(true);
+});
+
+it('local storage with an rsync destination reads the storage root in place and only stages the dump', async () => {
+  storageModule.setStorageForTesting({ kind: () => 'local' });
+  await event('managed');
+  const source = await local(original, Buffer.from('local original'));
+  const old = new Date('2020-01-02T03:04:05.000Z'); await fs.utimes(source, old, old);
+  await configure('rsync');
+  const materialize = jest.spyOn(files, 'materialize');
+  const network = jest.spyOn(require('../../src/utils/networkValidation'), 'isHostAllowed').mockResolvedValue(true);
+  const spawn = jest.spyOn(require('../../src/utils/safeExec'), 'spawnAsync').mockImplementation(async (command, args) => {
+    const [root, stage] = args.slice(-3);
+    expect(root).toBe(`${process.env.STORAGE_PATH}/`);
+    const dump = await backup.getDatabaseBackupInfo();
+    expect(await fs.readdir(stage)).toEqual(['database']);
+    expect(await fs.readdir(path.join(stage, 'database'))).toEqual([path.basename(dump.backupFile)]);
+    return { stdout: 'Number of files transferred: 2\nTotal file size: 30 bytes' };
+  });
+  try {
+    await backup.runBackup(true);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(materialize).not.toHaveBeenCalled();
+    expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('completed');
+    expect((await fs.stat(source)).mtime).toEqual(old);
+  } finally { spawn.mockRestore(); network.mockRestore(); materialize.mockRestore(); }
+});
+
+it('a selective restore on local storage only copies the files it will overwrite into the safety backup', async () => {
+  storageModule.setStorageForTesting({ kind: () => 'local' });
+  await local(original, Buffer.from('current original')); await local('events/active/managed/other.jpg');
+  const service = new RestoreService(); service.tempDir = path.join(tmpDir, 'safety-selective');
+  const options = { restoreType: 'selective', selectedItems: [
+    { type: 'file', path: original }, { type: 'file', path: 'events/active/managed/absent.jpg' }] };
+  const safety = await service.createPreRestoreBackup(options, { files: { manifest: [] } });
+  const listing = require('child_process').execFileSync('tar', ['-tzf', path.join(safety, 'files.tar.gz')]).toString().trim().split('\n');
+  expect(listing).toEqual([path.join(path.basename(process.env.STORAGE_PATH), original)]);
+  await fs.writeFile(path.join(process.env.STORAGE_PATH, original), 'overwritten');
+  await service.attemptRollback(safety);
+  expect(await fs.readFile(path.join(process.env.STORAGE_PATH, original), 'utf8')).toBe('current original');
+});
+
+it('exports local storage in place with a checksummed catalogue, and S3 storage without a per-file ceiling', async () => {
+  const materialize = jest.spyOn(files, 'materialize');
+  try {
+    await seedEstate();
+    await exporter.createPicpeak({ includePhotos: true, outDir: path.join(tmpDir, 'portable') });
+    expect(materialize.mock.calls[0][2]).toBe(Number.MAX_SAFE_INTEGER);
+    materialize.mockClear();
+    storageModule.setStorageForTesting({ kind: () => 'local' });
+    const exported = await exporter.createPicpeak({ includePhotos: true, outDir: path.join(tmpDir, 'portable') });
+    expect(materialize).not.toHaveBeenCalled();
+    expect(exported.manifest.files.find(file => file.path === original)).toMatchObject({
+      size: 'unused local decoy'.length, checksum: sha(Buffer.from('unused local decoy')) });
+    await fs.rm(process.env.STORAGE_PATH, { recursive: true, force: true }); await fs.mkdir(process.env.STORAGE_PATH);
+    const result = await importer.importFromPicpeak({ picpeakPath: exported.filePath });
+    expect(result.filesRestored).toBe(exported.manifest.file_count);
+    expect(await fs.readFile(path.join(process.env.STORAGE_PATH, original), 'utf8')).toBe('unused local decoy');
+  } finally { materialize.mockRestore(); }
+});
+
+it('rolls back an object the safety capture accepted even when the restore size limit is lower afterwards', async () => {
+  store(original, Buffer.from('old original'));
+  const { root, manifest } = await sourceCatalogue([[original, Buffer.from('replacement')]]);
+  const service = new RestoreService(); service.tempDir = path.join(tmpDir, 'safety-limit');
+  const safety = await service.createPreRestoreBackup({ restoreType: 'files' }, manifest);
+  await service.performFilesRestore(root, manifest, { restoreType: 'files' });
+  await db('app_settings').insert({ setting_key: 'restore_max_file_size_mb', setting_type: 'restore',
+    setting_value: JSON.stringify(0.000005) }).onConflict('setting_key').merge();
+  try {
+    await service.attemptRollback(safety);
+    expect(objects.get(original).bytes).toEqual(Buffer.from('old original'));
+  } finally { await db('app_settings').where('setting_key', 'restore_max_file_size_mb').del(); }
+});
+
+it('does not open the backup source for a catalogue entry whose key fails validation', async () => {
+  const bad = 'events/active/managed/bad\u0001.jpg';
+  const { root, manifest } = await sourceCatalogue([[bad, Buffer.from('bytes')]]);
+  const open = jest.spyOn(fs, 'open');
+  try {
+    await expect(new RestoreService().performFilesRestore(root, manifest, { restoreType: 'files' })).rejects.toThrow();
+    expect(open.mock.calls.some(([target]) => String(target).endsWith('.jpg'))).toBe(false);
+  } finally { open.mockRestore(); }
+  expect(adapter.putFromFile).not.toHaveBeenCalled();
 });
 
 it.each(['../escape', '/absolute', 'events//active/x', 'events/active/./x', 'events\\active\\x', 'C:/escape', 'events/active/x\0y'])('rejects ambiguous recovery key %j', key => {
