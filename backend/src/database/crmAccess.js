@@ -144,10 +144,10 @@ function rawCrmMutation(sql) {
     && Object.keys(CRM_REFERENCES).some(t => new RegExp(`\\b${t}\\b`, 'i').test(sql));
 }
 function rawSql(value) { return value?.isRawInstance ? value.toSQL().sql : String(value); }
-function containsCrmTable(value) {
+function containsCrmTable(value, mutation = false) {
   if (value?.toSQL && !value.isRawInstance) return false; // nested builder compiles independently
-  if (value && typeof value === 'object' && !value.isRawInstance) return Object.values(value).some(containsCrmTable);
-  return referencesCrm(rawSql(value));
+  if (value && typeof value === 'object' && !value.isRawInstance) return Object.values(value).some(v => containsCrmTable(v, mutation));
+  return referencesCrm(rawSql(value)) || (mutation && rawCrmMutation(`delete from ${rawSql(value)}`));
 }
 function unsafeCrmRaw(value) {
   if (value?.isRawInstance) return referencesCrm(rawSql(value)) && /\b(select|from|join|update|delete|insert|with)\b/i.test(rawSql(value));
@@ -276,15 +276,16 @@ function protectBuilder(builder, client) {
     if (!context.trusted && context.actor?.roleName !== 'super_admin') throw new ForbiddenError('Unsupported CRM query operation');
   }
   const joins = builder._statements.filter(s => s.grouping === 'join');
-  const unsupportedTable = (!root && containsCrmTable(builder._single?.table))
-    || joins.some(j => !tableName(j.table) && containsCrmTable(j.table));
+  const mutation = !['select', 'first', 'pluck', 'columnInfo'].includes(builder._method || 'select');
+  const unsupportedTable = (!root && containsCrmTable(builder._single?.table, mutation))
+    || joins.some(j => !tableName(j.table) && containsCrmTable(j.table, mutation));
   const unsafeFragment = builder._statements.some(s => unsafeCrmRaw(s.value) || unsafeCrmRaw(s.columns));
   if (unsupportedTable || unsafeFragment) {
     const context = contextForProtected();
     if (!context.trusted && context.actor?.roleName !== 'super_admin') throw new ForbiddenError('Unsupported raw CRM query');
   }
   const involved = (root && PROTECTED.has(root.table)) || joins.some(j => PROTECTED.has(tableName(j.table)?.table));
-  if (involved && builder._single?.schema) {
+  if ((involved || (mutation && root && CRM_REFERENCES[root.table])) && builder._single?.schema) {
     const context = contextForProtected();
     if (!context.trusted && context.actor?.roleName !== 'super_admin') throw new ForbiddenError('CRM schema redirects are not supported');
   }

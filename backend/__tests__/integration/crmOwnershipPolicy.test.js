@@ -181,6 +181,8 @@ describe.each(engines)('CRM query ownership (%s)', client => {
     await expect(conn('quotes').truncate()).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.raw('delete from events')).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn('events').truncate()).rejects.toMatchObject({ statusCode: 403 });
+    await expect(conn.queryBuilder().from(conn.raw('events')).delete()).rejects.toMatchObject({ statusCode: 403 });
+    await expect(conn(client === 'pg' ? `${schema}.events` : 'main.events').delete()).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.select('*').from(conn.raw('quotes'))).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.raw('select * from ??', ['quotes'])).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.select('*').from(conn.raw('??', ['quotes']))).rejects.toMatchObject({ statusCode: 403 });
