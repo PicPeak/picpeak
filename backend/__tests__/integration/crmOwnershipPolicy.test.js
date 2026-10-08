@@ -102,6 +102,7 @@ describe.each(engines)('CRM query ownership (%s)', client => {
     expect(await as(actor(10, []), () => conn('quotes'))).toEqual([]);
     await expect(as(actor(10, ['quotes.view']), () => conn('quotes').where('id', 1).update({ status: 'sent' }))).rejects.toMatchObject({ statusCode: 403 });
     await expect(as(actor(10, ['quotes.view']), () => conn('quote_line_items').insert({ quote_id: 1 }))).rejects.toMatchObject({ statusCode: 403 });
+    await expect(as(actor(10, ['contracts.view']), () => conn('customer_documents').insert({ contract_id: 1 }))).rejects.toMatchObject({ statusCode: 403 });
     expect((await as(actor(10, ['quotes.view']), () => conn('quotes'))).map(r => r.id)).toEqual([1]);
   });
 
@@ -178,6 +179,8 @@ describe.each(engines)('CRM query ownership (%s)', client => {
   test('direct raw/from-raw CRM access cannot bypass the shared policy', () => as(actor(10), async () => {
     await expect(conn.raw('select * from quotes')).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn('quotes').truncate()).rejects.toMatchObject({ statusCode: 403 });
+    await expect(conn.raw('delete from events')).rejects.toMatchObject({ statusCode: 403 });
+    await expect(conn('events').truncate()).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.select('*').from(conn.raw('quotes'))).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.raw('select * from ??', ['quotes'])).rejects.toMatchObject({ statusCode: 403 });
     await expect(conn.select('*').from(conn.raw('??', ['quotes']))).rejects.toMatchObject({ statusCode: 403 });

@@ -979,6 +979,10 @@ test('the evidence view needs contracts.manage, and every opening is logged', as
   require('../../src/middleware/permissions').clearPermissionCache();
   const readerAuth = { Authorization: `Bearer ${mintAdminToken(readerId)}` };
 
+  // This permission-only control must own the document it reads; foreign
+  // photographer denial is covered separately by crmOwnershipRoutes.
+  await db('contracts').where('id', ids.contract).update({ created_by_admin_id: readerId });
+
   const denied = await request(contractsApp).get(`/api/admin/contracts/${ids.contract}/signing-evidence`).set(readerAuth);
   expect(denied.status).toBe(403);
   // A read-only role still reads the contract itself — this is about the
