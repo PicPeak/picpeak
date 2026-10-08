@@ -2710,6 +2710,8 @@
     "subtitle": "Track gallery performance and visitor engagement",
     "detailedSubtitle": "Detailed analytics powered by Umami",
     "embedUnavailable": "External dashboards require an HTTPS host outside PicPeak's cookie scope and a browser with credentialless iframe support. Built-in statistics remain available.",
+    "embedCspHint": "Embedding additionally requires the dashboard's origin in the frame-src directive of the reverse proxy's Content-Security-Policy; without it the frame stays blank.",
+    "openDashboard": "Open dashboard in new tab",
     "loadingAnalytics": "Loading analytics...",
     "showSummaryView": "Show Summary View",
     "fullDashboard": "Full Dashboard",

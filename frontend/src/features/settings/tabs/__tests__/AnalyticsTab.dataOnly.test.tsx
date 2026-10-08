@@ -31,3 +31,7 @@ it.each(['umami', 'rybbit'] as const)('offers data-only %s collection and HTTPS 
   expect(screen.getByText(/Production collectors must use HTTPS/)).toBeInTheDocument();
   expect(screen.queryByRole('option', { name: 'custom' })).toBeNull();
 });
+it('says next to the share URL that embedding also needs the dashboard origin in frame-src', () => {
+  show('umami');
+  expect(screen.getByText(/settings\.analytics\.shareUrlHelp/)).toHaveTextContent('analytics.embedCspHint');
+});

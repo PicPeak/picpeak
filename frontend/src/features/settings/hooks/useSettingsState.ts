@@ -483,7 +483,6 @@ export function useSettingsState() {
       // new `tracker_provider` switch so back-compat consumers (publicSettings
       // surface, embedded Umami iframe) keep working when provider !== 'umami'.
       settingsData.analytics_umami_enabled = analyticsSettings.tracker_provider === 'umami';
-      if (analyticsSettings.tracker_provider !== 'custom') settingsData.analytics_custom_head_html = '';
       return settingsService.updateSettings(settingsData);
     },
     onSuccess: () => {

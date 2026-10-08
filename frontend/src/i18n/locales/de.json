@@ -4272,6 +4272,8 @@
     "subtitle": "Galerie-Performance und Besucherengagement verfolgen",
     "detailedSubtitle": "Detaillierte Analysen mit Umami",
     "embedUnavailable": "Externe Dashboards benötigen einen HTTPS-Host außerhalb des PicPeak-Cookie-Bereichs und einen Browser mit Unterstützung für Iframes ohne Zugangsdaten. Die integrierten Statistiken bleiben verfügbar.",
+    "embedCspHint": "Für die Einbettung muss zusätzlich der Ursprung des Dashboards in der frame-src-Direktive der Content-Security-Policy des Reverse-Proxys eingetragen sein; ohne diesen Eintrag bleibt der Rahmen leer.",
+    "openDashboard": "Dashboard in neuem Tab öffnen",
     "loadingAnalytics": "Analytik wird geladen...",
     "showSummaryView": "Zusammenfassungsansicht anzeigen",
     "fullDashboard": "Vollständiges Dashboard",

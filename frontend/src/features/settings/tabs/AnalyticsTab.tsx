@@ -130,7 +130,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 leftIcon={<Activity className="w-5 h-5 text-neutral-400" />}
               />
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                {t('settings.analytics.shareUrlHelp')}
+                {t('settings.analytics.shareUrlHelp')} {t('analytics.embedCspHint')}
               </p>
             </div>
 
@@ -225,7 +225,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
 
         {/* Legacy snippets are retained in admin settings for recovery, never rendered. */}
         {provider === 'custom' && (
-          <p className="text-sm text-soft" role="status">
+          <p className="text-sm text-neutral-600 dark:text-neutral-400" role="status">
             {t('settings.analytics.customDisabledHelp', 'Your legacy custom snippet is disabled and is not sent to visitors. Choose Umami, Rybbit or None, then save to clear the old snippet.')}
           </p>
         )}

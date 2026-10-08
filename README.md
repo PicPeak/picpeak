@@ -205,7 +205,7 @@ Settings → Analytics supports Umami and Rybbit through PicPeak-owned, data-onl
 event forwarding. Third-party scripts and legacy custom HTML snippets are never
 executed or sent to visitors. Existing custom configurations are disabled; choose
 Umami, Rybbit or None and save to clear the old snippet. Configure collectors in
-the admin settings; build-time `VITE_UMAMI_*` values do not configure collection.
+the admin settings; the former build-time `VITE_UMAMI_*` variables are no longer read.
 
 Gallery page views and supported download/search/protection events remain
 tracked. Gallery capability suffixes are redacted regardless of token length;
