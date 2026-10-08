@@ -3,7 +3,7 @@
  *
  * A "transfer" is a share link that bundles ORIGINAL photos picked from any
  * number of events and hands them to a recipient as a download link. It can
- * also open a short (6-char) upload token so the client can send files back
+ * also open a short (10-char) upload code so the client can send files back
  * (logos etc.).
  *
  * Design decisions (from the issue):

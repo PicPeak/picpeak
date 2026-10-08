@@ -42,3 +42,44 @@ test('rotates legacy transfer upload codes once and preserves current codes', as
   expect((await db('transfers').where({ id: legacyId }).first('upload_token')).upload_token)
     .toBe(legacy.upload_token);
 });
+
+test('leaves an empty upload code dead and logs the rotated transfers once', async () => {
+  const future = new Date(Date.now() + 86400000).toISOString();
+  const rows = await db('transfers').insert([
+    {
+      token: '3'.repeat(64), title: 'empty', expires_at: future,
+      is_active: true, allow_uploads: false, upload_token: '',
+    },
+    {
+      token: '4'.repeat(64), title: 'Logo request', expires_at: future,
+      is_active: true, allow_uploads: true, upload_token: 'XYZ234',
+    },
+  ]).returning('id');
+  const emptyId = rows[0]?.id ?? rows[0];
+  const legacyId = rows[1]?.id ?? rows[1];
+
+  const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+  try {
+    await migration.up(db);
+
+    expect((await db('transfers').where({ id: emptyId }).first('upload_token')).upload_token)
+      .toBe('');
+    const rotated = (await db('transfers').where({ id: legacyId }).first('upload_token')).upload_token;
+    expect(rotated).toHaveLength(10);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    const line = log.mock.calls[0][0];
+    expect(line).toContain('Migration 241: rotated 1 legacy transfer upload code(s)');
+    expect(line).toContain(`#${legacyId} "Logo request"`);
+    expect(line).not.toContain(`#${emptyId} `);
+    // The log names the transfer, never the credential.
+    expect(line).not.toContain('XYZ234');
+    expect(line).not.toContain(rotated);
+
+    log.mockClear();
+    await migration.up(db);
+    expect(log).not.toHaveBeenCalled();
+  } finally {
+    log.mockRestore();
+  }
+});

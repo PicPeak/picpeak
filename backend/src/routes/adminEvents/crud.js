@@ -1671,6 +1671,12 @@ module.exports = (router) => {
           updates.client_share_token = crypto.randomBytes(32).toString('hex');
         }
       }
+      // Client login needs the link token as well as the PIN, so a PIN never
+      // stays without one (older rows, or a PIN set on its own).
+      if ((updates.client_password_hash || event.client_password_hash)
+        && !event.client_share_token && !updates.client_share_token) {
+        updates.client_share_token = crypto.randomBytes(32).toString('hex');
+      }
 
       // Update event. Skip the write when the denylist (or masked secrets)
       // left nothing to change — Knex rejects .update({}) with an error,

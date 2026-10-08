@@ -53,7 +53,8 @@ export const ClientAccessPage: React.FC = () => {
 
     const linkToken = searchParams.get('token');
     if (!linkToken) {
-      setLoginError(t('clientAccess.invalidPin'));
+      // Not a PIN problem: retrying would only run the client into the lockout.
+      setLoginError(t('clientAccess.linkInvalid'));
       return;
     }
 
