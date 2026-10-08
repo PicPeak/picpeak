@@ -108,7 +108,12 @@ async function execute(entry) {
     child.on('close', async (code, signal) => {
       entry.child = null;
       try {
-        await Promise.all(writes); await output?.close();
+        // A failed registration/output write is still pending execution work.
+        // Drain every write and prove death before releasing pool capacity,
+        // even when the first write rejected or the guardian died abnormally.
+        const outcomes = await Promise.allSettled(writes);
+        let teardownError = outcomes.find(outcome => outcome.status === 'rejected')?.reason;
+        try { await output?.close(); } catch (error) { teardownError ||= error; }
         if (!terminal && child.pid) {
           // An abnormal guardian exit before its child identity arrived is
           // not proof of termination. Keep the lease fenced rather than
@@ -116,8 +121,9 @@ async function execute(entry) {
           if (!entry.nativePid && !spawnError && ![123, 125].includes(code)) await new Promise(() => {});
           await waitForNativeDeath(entry);
         }
-        await entry.onFinish?.(entry.lease);
+        try { await entry.onFinish?.(entry.lease); } catch (error) { teardownError ||= error; }
         if (entry.failure) throw entry.failure;
+        if (teardownError) throw teardownError;
         if (spawnError || code === 125) throw errorFor(entry, 'Linux native media supervisor is unavailable; run npm run build:native with a C compiler', 'WORKER_UNAVAILABLE');
         if (code === 123) throw errorFor(entry, 'Native execution lease is still held', 'LEASE_BUSY');
         if (code === 127) throw Object.assign(new Error(`${entry.command} is not installed`), { code: 'ENOENT' });

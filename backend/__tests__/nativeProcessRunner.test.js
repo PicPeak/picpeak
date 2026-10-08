@@ -92,6 +92,25 @@ linux('mandatory native media process boundary', () => {
     await new Promise(resolve => controller.once('close', resolve));
     await dead(lease.pid); await dead(lease.guardianPid);
   });
+  test('registration failure cannot skip abnormal child-death proof or the finish I/O barrier', async () => {
+    const failure = new Error('Owned registration failed');
+    let finishStarted, releaseFinish, lease;
+    const ready = new Promise(resolve => { finishStarted = resolve; });
+    const barrier = new Promise(resolve => { releaseFinish = resolve; });
+    const job = run('sleep', {
+      onStart: async value => {
+        lease = value; process.kill(value.guardianPid, 'SIGKILL'); throw failure;
+      },
+      onFinish: async () => { await dead(lease.pid); finishStarted(); await barrier; },
+    });
+    const rejected = expect(job).rejects.toBe(failure);
+    await ready;
+    let stopped = false;
+    const stopping = runner.stop().then(() => { stopped = true; });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(stopped).toBe(false);
+    releaseFinish(); await stopping; await rejected;
+  });
   test('persistent local kernel lease rejects concurrent reuse and symlinks, then becomes free only after reap', async () => {
     const kernelLease = require('../src/services/linuxKernelLease');
     const leasePath = path.join(dir, 'persistent.lease');
@@ -130,6 +149,25 @@ linux('mandatory native media process boundary', () => {
     expect(await kernelLease.probe(leasePath, identity)).toBe('busy');
     owner.kill('SIGKILL'); await new Promise(resolve => owner.once('close', resolve));
     expect(await kernelLease.probe(leasePath, identity)).toBe('free');
+  });
+  test('a replaced busy inode cannot acknowledge the recorded execution owner', async () => {
+    const kernelLease = require('../src/services/linuxKernelLease');
+    const originalPath = path.join(dir, 'replaced.lease'), movedPath = path.join(dir, 'recorded.lease');
+    const recorded = await kernelLease.acquire(originalPath);
+    let replacement;
+    try {
+      await fs.rename(originalPath, movedPath);
+      replacement = await kernelLease.acquire(originalPath);
+      expect(await kernelLease.probe(originalPath)).toBe('busy');
+      expect(await kernelLease.probe(originalPath, recorded)).toBe('unknown');
+      expect(await kernelLease.probe(originalPath, replacement)).toBe('busy');
+      expect(await kernelLease.probe(movedPath, recorded)).toBe('busy');
+    } finally {
+      if (replacement) await replacement.release();
+      await recorded.release();
+    }
+    expect(await kernelLease.probe(originalPath, replacement)).toBe('free');
+    expect(await kernelLease.probe(movedPath, recorded)).toBe('free');
   });
   test('native code cannot unlock the guardian lease through FD9 or a duplicate, including abnormal guardian death', async () => {
     const kernelLease = require('../src/services/linuxKernelLease');

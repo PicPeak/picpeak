@@ -7,7 +7,7 @@
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <unistd.h>
-static int open_process_lease(const char *name, int create) {
+static int open_process_lease_file(const char *name, int create) {
     if (name[0] != '/') return -1;
     int file = open(name, O_RDWR | O_NOFOLLOW | O_CLOEXEC | (create ? O_CREAT : 0), 0600);
     if (file < 0) return -1;
@@ -19,6 +19,11 @@ static int open_process_lease(const char *name, int create) {
         filesystem.f_type != OVERLAYFS_SUPER_MAGIC && (unsigned long)filesystem.f_type != 0x2fc12fc1UL) {
         close(file); return -1;
     }
+    return file;
+}
+static int open_process_lease(const char *name, int create) {
+    int file = open_process_lease_file(name, create);
+    if (file < 0) return -1;
     if (flock(file, LOCK_EX | LOCK_NB)) { int busy = errno == EWOULDBLOCK; close(file); return busy ? -2 : -1; }
     return file;
 }

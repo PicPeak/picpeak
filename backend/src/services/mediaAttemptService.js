@@ -218,11 +218,12 @@ function outputName(name, attempt = context.current()) {
 // Never adopt imported runtime identities or credits, and never escape the
 // caller's transaction (SQLite restore holds its sole connection).
 async function resetImportedMediaAttempts(trx) {
+  const web = await trx.schema.hasColumn('photos', 'web_status');
   await trx('photos').update({ processing_attempt_id: null, processing_attempts: 0,
-    processing_started_at: null, processing_error: null, web_attempt_id: null,
-    web_attempts: 0, web_started_at: null, web_error: null });
+    processing_started_at: null, processing_error: null, ...(web ? { web_attempt_id: null,
+      web_attempts: 0, web_started_at: null, web_error: null } : {}) });
   await trx('photos').where({ processing_status: 'processing' }).update({ processing_status: 'pending' });
-  await trx('photos').where({ web_status: 'processing' }).update({ web_status: 'pending' });
+  if (web) await trx('photos').where({ web_status: 'processing' }).update({ web_status: 'pending' });
   for (const table of ['media_process_attempts', 'media_video_work_reservations', 'image_work_reservations']) {
     if (await trx.schema.hasTable(table)) await trx(table).delete();
   }

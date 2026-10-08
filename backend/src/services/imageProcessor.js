@@ -48,9 +48,9 @@ function withLazyDerivative(photo, callback) {
   if (attemptContext.current() || derivativeContext.getStore() ||
       !boundedDerivative(photo)) return callback();
   const scope = { id: crypto.randomUUID(), cacheId: derivativeCacheId(photo),
-  assertCurrent: async () => {
-    if (!(await sourceGuard(photo).first())) throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
-  } };
+    assertCurrent: async () => {
+      if (!(await sourceGuard(photo).first())) throw Object.assign(new Error('Media source was superseded'), { code: 'MEDIA_SUPERSEDED', status: 422 });
+    } };
   return derivativeContext.run(scope, callback);
 }
 function derivativeBasename(name, { cache = false } = {}) {
@@ -888,8 +888,8 @@ async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
 
   if (newThumbnailPath) {
     await publishPhotoDerivative(photo, newThumbnailPath, {
-        thumbnail_path: newThumbnailPath,
-        ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
+      thumbnail_path: newThumbnailPath,
+      ...(posterNote !== undefined ? { processing_error: posterNote } : {}),
     });
 
     logger.info(`Regenerated thumbnail for photo ${photo.id}`);
