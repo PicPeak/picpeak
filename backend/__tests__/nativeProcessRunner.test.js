@@ -23,7 +23,7 @@ linux('mandatory native media process boundary', () => {
   async function dead(pid) {
     for (let n = 0; n < 200; n++) {
       try { if (['Z', 'X'].includes(parseStat(await fs.readFile(`/proc/${pid}/stat`, 'utf8')).state)) return; }
-      catch (error) { if (error.code === 'ENOENT') return; throw error; }
+      catch (error) { if (['ENOENT', 'ESRCH'].includes(error.code)) return; throw error; }
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     throw new Error(`Owned native PID ${pid} remained live`);
