@@ -1140,7 +1140,11 @@ async function stopServer() {
 }
 
 // Initialize services
-async function startServer() {
+function startServer() {
+  return require('./src/database/crmAccess').withTrustedCrmAccess('application bootstrap', startServerInternal);
+}
+
+async function startServerInternal() {
   try {
     // Initialize database
     await initializeDatabase();
@@ -1351,7 +1355,9 @@ async function startServer() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
-    httpServer = app.listen(PORT, () => {
+    // Bootstrap/cron authority must not become the default authority of an
+    // incoming HTTP request. Its authentication/capability middleware owns it.
+    httpServer = await require('./src/database/crmAccess').withoutCrmContext(() => app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
@@ -1367,7 +1373,7 @@ async function startServer() {
           : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
         console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
       }
-    });
+    }));
   } catch (error) {
     logger.error('Failed to start server:', error);
     await stopServer();

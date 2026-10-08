@@ -1,3 +1,7 @@
+process.env.NODE_ENV = 'test';
+if (!process.env.DATABASE_CLIENT) process.env.DATABASE_CLIENT = 'sqlite3';
+require('./src/database/crmAccess').enterTrustedCrmFixtureContext();
+
 // Supertest 6 binds an IPv6 wildcard listener but hardcodes an IPv4 URL.
 // macOS can allocate that IPv6 port while a different IPv4 service owns it.
 // Address the listener's actual family so a test cannot reach that service.

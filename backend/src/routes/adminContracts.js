@@ -58,6 +58,7 @@ async function requireContractsFlag(req, res, next) {
 
 router.use(adminAuth);
 router.use(requireContractsFlag);
+router.use('/:id', require('../database/crmAccess').requireCrmDocument('contracts'));
 
 // ----- multer upload (wet-signed PDF) --------------------------------
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
