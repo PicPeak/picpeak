@@ -127,6 +127,7 @@ async function advanceRun(runId) {
   const context = parseJson(run.context, { vars: {} });
   if (!context.vars) context.vars = {};
   let actor;
+  let authorityError = null;
   try {
     const workflow = await db('workflows').where('id', run.workflow_id).first();
     actor = await workflowCrmActor(run, workflow, context.crmInitiatedByAdminId, { nodeByKey, edges });
@@ -134,7 +135,11 @@ async function advanceRun(runId) {
     // Pure graph primitives still work on old ownerless definitions. A data
     // handler runs without CRM authority and fails closed at its first CRM
     // query; it never inherits the scheduler/public capability context.
+    // The reason is kept: without it that later failure reads as a bare
+    // "CRM execution context required" with nothing to act on.
     actor = null;
+    authorityError = error.message;
+    logger.warn('[workflow] run has no CRM authority, its CRM steps will fail', { runId, workflowId: run.workflow_id, error: error.message });
   }
   const invoke = (handler, ctx) => actor ? withCrmActor(actor, () => handler(ctx))
     : withoutCrmContext(() => handler(ctx));
@@ -233,7 +238,7 @@ async function advanceRun(runId) {
       }
     } catch (err) {
       await recordStep(runId, node, 'failed', null, err.message);
-      await failRun(runId, `node ${currentKey} failed: ${err.message}`);
+      await failRun(runId, `node ${currentKey} failed: ${err.message}${authorityError ? ` (workflow authority unavailable: ${authorityError})` : ''}`);
       return;
     }
 

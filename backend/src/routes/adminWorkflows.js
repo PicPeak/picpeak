@@ -25,6 +25,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const workflows = require('../services/workflows');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { executableGraph } = require('../database/crmAccess');
 
 router.use(adminAuth, requireFeatureFlag('workflows'));
 
@@ -211,6 +212,15 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
     }
     const newVersion = wf.version + 1;
     const hasAdminToggled = await hasColumnCached('workflows', 'admin_toggled_at');
+    // Whether this save changes what the workflow executes, not just its
+    // name, layout or enabled state.
+    const storedNodes = await db('workflow_nodes').where({ workflow_id: id, version: wf.version });
+    const storedEdges = await db('workflow_edges').where({ workflow_id: id, version: wf.version });
+    const triggerConfig = (value) => JSON.stringify(parseJson(value, null));
+    const graphChanged = (b.trigger_type ?? wf.trigger_type) !== wf.trigger_type
+      || (b.trigger_config !== undefined && triggerConfig(b.trigger_config) !== triggerConfig(wf.trigger_config))
+      || executableGraph(storedNodes.map((n) => ({ ...n, config: parseJson(n.config, {}) })), storedEdges)
+        !== executableGraph(b.nodes || [], b.edges || []);
     await db.transaction(async (trx) => {
       const update = {
         name: b.name ?? wf.name,
@@ -221,11 +231,14 @@ router.put('/:id', requirePermission('workflows.manage'), async (req, res, next)
           ? (b.trigger_config ? JSON.stringify(b.trigger_config) : null)
           : wf.trigger_config,
         version: newVersion,
-        // An editable graph executes as its live editor, not a builtin system
-        // capability or a previous privileged creator. Pinned runs rehydrate it.
-        created_by: req.admin.id,
         updated_at: trx.fn.now(),
       };
+      // An edited graph executes as its live editor, not a builtin system
+      // capability or a previous privileged creator. Pinned runs rehydrate it.
+      // A save that leaves the graph as it was keeps the stored authority: a
+      // shipped built-in stays shipped, and nobody takes over a flow by
+      // renaming it.
+      if (graphChanged) update.created_by = req.admin.id;
       // An admin edit claims ownership of a built-in so the boot seeder stops
       // re-seeding / re-enabling it (see _workflowSeedBoot).
       if (hasAdminToggled) update.admin_toggled_at = trx.fn.now();

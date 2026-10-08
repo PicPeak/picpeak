@@ -1302,7 +1302,14 @@ function getQueueProcessorStatus() {
   };
 }
 
-async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = null } = {}) {
+// The queue is a system job: it sends what was already authorised when it was
+// queued. Run under an admin's own CRM scope (the flush route, "send now"), it
+// could not see another owner's document and cancelled that mail as deleted.
+function processEmailQueue(options) {
+  return require('../database/crmAccess').withTrustedCrmAccess('email queue processor', () => processEmailQueueInternal(options));
+}
+
+async function processEmailQueueInternal({ ignoreSchedule = false, limit = 10, onlyId = null } = {}) {
   logger.info('Email queue processor: Checking for pending emails...');
   const result = { processed: 0, sent: 0, failed: 0 };
   processorStatus.lastRunAt = new Date().toISOString();
