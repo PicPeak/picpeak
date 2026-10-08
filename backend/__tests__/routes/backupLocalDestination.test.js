@@ -239,6 +239,7 @@ describe('local backup destination', () => {
         status: 'completed',
         backup_type: 'sqlite',
         file_path: dump,
+        checksum: require('crypto').createHash('sha256').update(fs.readFileSync(dump)).digest('hex'),
         file_size_bytes: fs.statSync(dump).size,
         destination_path: dump,
       });

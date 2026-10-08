@@ -99,6 +99,7 @@ describe('backupService — per-Stage-B-path statistics', () => {
       status: 'completed',
       backup_type: 'pg',
       file_path: fakeDump,
+      checksum: require('crypto').createHash('sha256').update(fs.readFileSync(fakeDump)).digest('hex'),
       file_size_bytes: fs.statSync(fakeDump).size,
       destination_path: fakeDump,
     });
@@ -144,6 +145,7 @@ describe('backupService — per-Stage-B-path statistics', () => {
       status: 'completed',
       backup_type: 'pg',
       file_path: fakeDump,
+      checksum: require('crypto').createHash('sha256').update(fs.readFileSync(fakeDump)).digest('hex'),
       file_size_bytes: fs.statSync(fakeDump).size,
       destination_path: fakeDump,
     });

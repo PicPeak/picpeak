@@ -165,6 +165,60 @@ Unlike expensive SaaS solutions, PicPeak gives you:
 
 ## 📖 Documentation
 
+### Standard backup authenticity and recovery
+
+Standard JSON/YAML backups use a v3 canonical HMAC-SHA256 manifest. The signature
+binds the full restore description, algorithm and key ID, including dump/file
+digests and stored-path metadata. Normal restores refuse missing keys, unsigned
+manifests, algorithm downgrades and unsafe legacy checksum serialization; `force`
+and the install trigger do not bypass this boundary. This is separate from the
+portable `.picpeak` format.
+
+Retain the **dedicated signing key separately and off-host** before relying on a
+backup. Compose provisions `backup_manifest_key` in the private backend secrets
+volume, not the Postgres/Redis volumes. Native/AIO creates
+`DATA_DIR/backup-manifest.key` (native default: `backend/data`) on first signing,
+outside backed-up storage. An explicit `BACKUP_MANIFEST_KEY` must be 64 hex digits
+from a random 32-byte value (`openssl rand -hex 32`); an explicit
+`BACKUP_MANIFEST_KEY_FILE` must be outside the managed/legacy storage estate.
+Verification never generates a replacement for a lost key. Restore the original
+key on a fresh recovery host, not a key supplied by the backup being verified.
+System Health reports key readiness and latest manifest authenticity separately
+from completion. A missing/invalid key or unverified manifest is not healthy.
+An invalid key (wrong encoding, group/world-writable or symlinked key file) does
+not stop the server: it is logged at boot, shown in System Health, and backups
+fail until it is corrected. A latest manifest that only predates authentication
+is reported as legacy rather than unhealthy; the next backup signs a new one.
+
+Retain previous v3 keys with `BACKUP_MANIFEST_KEYS_OLD` (comma-separated 64-hex
+values) while rotating. Only canonical pre-v3 HMAC manifests can use the explicit
+`BACKUP_MANIFEST_LEGACY_KEY` compatibility setting (the original key string, of
+any length); an earlier passphrase-style `BACKUP_MANIFEST_KEY` left in place
+verifies those manifests the same way but never signs a new one. The old
+under-covering serializer is never accepted as authenticated. Preserve all keys needed by retained backups. Installer
+reconfiguration keeps signing/key-ring settings but clears one-artifact recovery
+approval; key files survive updates independently of application source.
+
+If an old backup is unsigned, uses the unsafe legacy serializer, or its original
+key was lost, it is **unauthenticated**. Recover only on an isolated host after
+independently inspecting/trusting its contents (database dumps may contain SQL
+and client commands). Run the read-only helper:
+
+```sh
+cd backend
+node scripts/backup-manifest-recovery-digest.js /trusted/staged/manifest.json
+```
+
+Set `BACKUP_MANIFEST_RECOVERY_SHA256` to that complete artifact digest and
+`BACKUP_MANIFEST_RECOVERY_REASON` to a meaningful operator reason in trusted host
+configuration, restart the recovery process and restore that one manifest.
+The exception does not prove authenticity; inspection/health still reject it.
+Restores prominently log and retain the unauthenticated outcome and reason.
+Different artifact contents cannot reuse the approval. Missing content digests
+are allowed only in this explicitly approved flow; recorded digests must still
+match. **Remove both recovery variables immediately afterward**, restart, retain
+the audit and create a new authenticated backup with a separately retained key.
+
 Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** — deployment, admin settings, API, branding, and more.
 
 | Topic | Link |

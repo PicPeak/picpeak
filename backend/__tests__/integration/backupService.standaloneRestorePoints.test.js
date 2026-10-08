@@ -345,7 +345,8 @@ describe('complete standalone backup restore points', () => {
   });
   it.each(['json', 'yaml'])('round-trips an authenticated standalone %s catalogue', async format => {
     const originalKey = process.env.BACKUP_MANIFEST_KEY;
-    process.env.BACKUP_MANIFEST_KEY = 'standalone-fixture-key-not-a-production-secret';
+    // A fixture, not a production secret: the key must be 64 hex digits.
+    process.env.BACKUP_MANIFEST_KEY = '5a'.repeat(32);
     try {
       await setting('backup_manifest_format', format);
       const row = await run();

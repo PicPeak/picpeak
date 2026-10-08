@@ -310,6 +310,11 @@ router.get(
     // file in business-docs (backed up), or not created yet. Never the key.
     const fieldEncryption = require('../utils/fieldEncryption');
     const evidenceKey = fieldEncryption.keyStatus();
+    const backupStatus = await require('../services/backupService').getBackupStatus();
+    const backupAuthentication = {
+      signingKey: backupStatus.signingKey || require('../utils/backupManifestKey').keyStatus(),
+      latestManifest: backupStatus.manifestAuthentication || { authenticated: false, state: 'unavailable' },
+    };
     // Stored evidence names the key it was written under. A key that changed
     // — a rotated env var, a restore that brought back another key file —
     // leaves names, emails and addresses unreadable and invitations going out
@@ -330,6 +335,7 @@ router.get(
       : null;
 
     return successResponse(res, {
+      backupAuthentication,
       signingSignals,
       stuckEmails: stuckEmails.map(mapEmailRow),
       waitingEmails: waitingEmails.map(mapEmailRow),
