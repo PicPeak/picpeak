@@ -1,3 +1,4 @@
+// Stable numbering (main: 281_storage_s3_generation_index).
 // Target-local runtime representation, never portable application data.
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('storage_s3_generation_index'))) {

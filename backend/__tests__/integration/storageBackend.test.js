@@ -9,7 +9,7 @@ const { S3Client, CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command
 const LocalFsStorage = require('../../src/services/storage/LocalFsStorage');
 const S3StorageBackend = require('../../src/services/storage/S3StorageBackend');
 const knex = require('knex');
-const indexMigration = require('../../migrations/core/274_storage_s3_generation_index');
+const indexMigration = require('../../migrations/core/250_storage_s3_generation_index');
 
 // MinIO defaults match docker-compose.dev.yml. Override via TEST_S3_* if needed.
 const TEST_S3 = {

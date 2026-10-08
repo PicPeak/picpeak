@@ -1,3 +1,4 @@
+// Stable numbering (main: 280_portable_restore_control).
 'use strict';
 
 // Runtime authority, not portable instance data. This schema must be available

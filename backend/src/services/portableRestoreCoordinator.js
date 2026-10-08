@@ -96,7 +96,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
   async function schema() {
     // Concurrent first boot can race CREATE TABLE. Only a positively complete
     // expected schema permits continuing; another error remains fail-closed.
-    try { await control(() => require('../../migrations/core/271_portable_restore_control').up(db())); }
+    try { await control(() => require('../../migrations/core/249_portable_restore_control').up(db())); }
     catch (error) {
       for (const [table, columns] of [[CONTROL, ['storage_id', 'epoch', 'revision', 'worker_lease_json']],
         [INSTANCES, ['lease_json', 'host_id', 'startup_ready_epoch']], ['portable_restore_commits', ['attempt_id', 'format_version', 'options_digest']]]) {
