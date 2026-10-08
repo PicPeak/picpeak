@@ -7,7 +7,7 @@ import { appendUploadPlacement, photosService, type UploadPlacement } from '../s
 import { folderQueryKey } from '../services/folders.service';
 import { useUploadProgress } from '../hooks/useUploadProgress';
 import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
-import { adminUploadErrorKey } from '../utils/publicUploadErrors';
+import { adminUploadErrorKey, imageLimitMessage } from '../utils/publicUploadErrors';
 import { CAPACITY_RETRY_DELAYS_MS, isTransientUploadRefusal, retryWhileBusy } from '../utils/uploadCapacityRetry';
 
 // The admin upload runs here, outside the upload modal, so the modal can close
@@ -321,7 +321,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
               for (const r of rejected) {
                 collected.push({
                   filename: r?.filename || t('upload.failures.unknownFile', 'Unknown file'),
-                  reason: r?.error || t('upload.failures.unknownReason', 'Unknown error'),
+                  reason: imageLimitMessage(t, r) ?? (r?.error || t('upload.failures.unknownReason', 'Unknown error')),
                   kind: 'rejected',
                 });
               }

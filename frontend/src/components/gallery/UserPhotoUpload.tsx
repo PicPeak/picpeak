@@ -10,7 +10,7 @@ import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { guestsService, type GuestIdentity } from '../../services/guests.service';
 import { clearGuestIdentity, getGuestIdentity, getGuestToken, storeGuestIdentity } from '../../utils/guestIdentityStorage';
 import type { GuestNameMode } from '../../types';
-import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -382,7 +382,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           }
           failedCount++;
           const capacityKey = publicUploadErrorKey(firstError?.code);
-          const reason = capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed');
+          const reason = imageLimitMessage(t, firstError) ?? (capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed'));
           toast.error(`${file.name}: ${reason}`);
           continue;
         }

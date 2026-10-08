@@ -824,7 +824,12 @@
   },
   "upload": {
     "capacity": {
-      "decoded": "This image or batch exceeds the server's image-processing budget. Please use fewer frames, lower image dimensions, or a smaller batch.",
+      "decoded": "This image exceeds the server's image-processing limits.",
+      "imagePixels": "This image is larger than the {{max}} megapixels this server processes.",
+      "imageDimension": "This image is longer than the {{max}} px per side this server processes.",
+      "imageFrames": "This animation has more than the {{max}} frames this server processes.",
+      "imageFileSize": "This image file is larger than the {{max}} MB this server processes.",
+      "imageMemory": "This image needs more memory than the {{max}} MB this server gives to image processing.",
       "processing": "Image processing could not complete within the server's resource limits. Please contact the owner.",
       "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
       "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",

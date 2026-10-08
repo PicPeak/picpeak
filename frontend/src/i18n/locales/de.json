@@ -824,7 +824,12 @@
   },
   "upload": {
     "capacity": {
-      "decoded": "Dieses Bild oder dieser Stapel überschreitet das Bildverarbeitungsbudget des Servers. Bitte weniger Einzelbilder, geringere Bildabmessungen oder einen kleineren Stapel verwenden.",
+      "decoded": "Dieses Bild überschreitet die Bildverarbeitungsgrenzen des Servers.",
+      "imagePixels": "Dieses Bild ist größer als die {{max}} Megapixel, die dieser Server verarbeitet.",
+      "imageDimension": "Dieses Bild ist länger als die {{max}} px je Seite, die dieser Server verarbeitet.",
+      "imageFrames": "Diese Animation hat mehr als die {{max}} Einzelbilder, die dieser Server verarbeitet.",
+      "imageFileSize": "Diese Bilddatei ist größer als die {{max}} MB, die dieser Server verarbeitet.",
+      "imageMemory": "Dieses Bild benötigt mehr Arbeitsspeicher als die {{max}} MB, die dieser Server der Bildverarbeitung gibt.",
       "processing": "Die Bildverarbeitung konnte innerhalb der Ressourcenlimits des Servers nicht abgeschlossen werden. Bitte den Eigentümer kontaktieren.",
       "batch": "Dieser Upload überschreitet die Stapelgrenze des Servers oder das verbleibende Kontingent. Bitte weniger oder kleinere Dateien senden oder den Eigentümer kontaktieren.",
       "lifetime": "Diese Galerie oder Dateianfrage hat ihr Upload-Kontingent erreicht. Bitte den Eigentümer kontaktieren.",
