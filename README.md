@@ -160,6 +160,22 @@ Capturing S3-primary backups uses a private temporary tree: provide temporary di
 Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers.
 
 Portable restores require coordinated Linux maintenance and a shared persistent local storage volume. The read-only progress UI remains available; restart every backend instance after a committed restore or verified rollback. See [Portable restore](docs/PORTABLE_RESTORE.md) for bounded worker/archive limits, recovery fences, S3 generation activation and deployment requirements.
+### Mail network policy
+
+Every SMTP/IMAP connection validates and consumes only its current vetted DNS
+answers, while retaining the configured hostname for TLS verification. Private
+mail servers require deployment-owned `MAIL_PRIVATE_ENDPOINTS` entries with an
+exact protocol, hostname and explicit port, for example `smtp://mailhog:1025` or
+`imap://mail.internal:993`. No settings request can add an approval. The
+`SMTP_HOST`/`SMTP_PORT` pair in the deployment environment counts as approved
+for exactly that host and port, so a relay the deployment itself names keeps
+sending after an upgrade; a host or port changed in the admin UI does not.
+Approved endpoints may resolve to private, loopback or carrier-grade NAT
+addresses. Metadata, link-local, multicast and reserved addresses remain
+forbidden even with an approval. For the Compose `dev` mail catcher, set
+`SMTP_HOST=mailhog` and `SMTP_PORT=1025`.
+An approval does not disable TLS certificate checks; production private TLS
+servers still need a trusted certificate for their configured hostname.
 
 ## 📊 Comparison with Alternatives
 
@@ -186,6 +202,10 @@ Portable restores require coordinated Linux maintenance and a shared persistent 
 - **Email**: SMTP with customizable templates
 - **Analytics**: Privacy-focused with Umami integration
 - **External media**: point PicPeak at `EXTERNAL_MEDIA_ROOT` to reference existing originals read-only, index quickly, and generate thumbnails on demand
+
+Official images use Sharp's bundled native libraries. Custom installations using
+a globally installed libvips must also provide librsvg 2.63.2 or newer for safe
+SVG decoding; updating the npm package does not update system libraries.
 
 ## 📸 Screenshots
 

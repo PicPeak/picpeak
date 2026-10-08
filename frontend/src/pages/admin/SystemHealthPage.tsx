@@ -19,6 +19,7 @@ import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { systemHealthService, type StuckEmail } from '../../services/systemHealth.service';
+import { mailPolicyMessage } from '../../utils/mailErrors';
 
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
@@ -166,7 +167,7 @@ export const SystemHealthPage: React.FC = () => {
                     'Not running on this instance. Queued emails are written to the database but nothing is sending them.')
                   : processorState === 'degraded'
                     ? t('systemHealth.processor.degraded',
-                      'Running, but the last pass could not send: {{error}}', { error: processor.lastError })
+                      'Running, but the last pass could not send: {{error}}', { error: mailPolicyMessage(processor.lastErrorCode, t) || processor.lastError })
                     : t('systemHealth.processor.running', 'Running.')}
               </p>
               <p className="text-xs text-muted mt-1">

@@ -37,6 +37,10 @@ static uint64_t number(const char *value) {
     if (errno || !*value || *end || value[0] == '-' || result == 0) _exit(125);
     return result;
 }
+/* Memory and CPU budgets may be 0: "no limit of its own". */
+static uint64_t optional(const char *value) {
+    return !strcmp(value, "0") ? 0 : number(value);
+}
 static void limit(int resource, uint64_t amount) {
     struct rlimit value = { (rlim_t)amount, (rlim_t)amount };
     if (setrlimit(resource, &value) != 0) _exit(125);
@@ -164,10 +168,10 @@ int main(int argc, char **argv) {
     }
     if (argc < 9) return 125;
     pid_t parent = (pid_t)number(argv[1]);
-    uint64_t bytes = number(argv[2]), cpu = number(argv[3]);
+    uint64_t bytes = optional(argv[2]), cpu = optional(argv[3]);
     uint64_t file_bytes = number(argv[4]), wall = number(argv[5]), threads = number(argv[6]);
-    if (bytes > UINT64_C(4294967296) || cpu > 7200 || wall > 7200000 ||
-        file_bytes > UINT64_C(10737418240) || threads > 256) return 125;
+    if (bytes > UINT64_C(1099511627776) || cpu > 2592000 || wall > 604800000 ||
+        file_bytes > UINT64_C(1099511627776) || threads > 256) return 125;
     if (parent_signals(parent) || prctl(PR_SET_CHILD_SUBREAPER, 1)) return 125;
     if (strcmp(argv[7], "-")) {
         int lease = lease_file(argv[7], 1);
@@ -187,7 +191,9 @@ int main(int argc, char **argv) {
         if (setpgid(0, 0) || prctl(PR_SET_PDEATHSIG, SIGKILL) || getppid() != supervisor) _exit(125);
         signal(SIGTERM, SIG_DFL); signal(SIGINT, SIG_DFL); signal(SIGPIPE, SIG_DFL);
         if (ptrace(PTRACE_TRACEME, 0, 0, 0) || raise(SIGSTOP)) _exit(125);
-        limit(RLIMIT_AS, bytes); limit(RLIMIT_CPU, cpu); limit(RLIMIT_FSIZE, file_bytes);
+        if (bytes) limit(RLIMIT_AS, bytes);
+        if (cpu) limit(RLIMIT_CPU, cpu);
+        limit(RLIMIT_FSIZE, file_bytes);
         /* NPROC is UID-wide, including unrelated containers/replicas. The
          * guardian instead enforces the same finite thread budget per job. */
         limit(RLIMIT_CORE, 0); limit(RLIMIT_STACK, 16 * 1024 * 1024);
@@ -213,7 +219,7 @@ int main(int argc, char **argv) {
     dprintf(3, "{\"version\":1,\"pid\":%d,\"group\":%d,\"leaseDevice\":\"%llu\",\"leaseInode\":\"%llu\",\"leaseFilesystem\":\"%lu\"}\n",
         child, child, (unsigned long long)lease_stat.st_dev, (unsigned long long)lease_stat.st_ino, (unsigned long)lease_fs.f_type);
     int status = 0, final_status = 0, stopped = 0, timed_out = 0, released = 0;
-    int tracing = 0, supervisor_failed = 0, thread_limit = 0;
+    int tracing = 0, supervisor_failed = 0, thread_limit = 0, executed = 0;
     unsigned live = 1;
     struct traced_thread tasks[257] = {{ .pid = child, .known = 1 }};
     for (;;) {
@@ -254,6 +260,10 @@ int main(int argc, char **argv) {
                     tracing = 1;
                 }
                 unsigned event = (unsigned)status >> 16;
+                /* Only an exit status after this point is the command's own.
+                 * The caller reads it from the terminal record, so a command
+                 * that exits 125 is not mistaken for a failed guardian. */
+                if (event == PTRACE_EVENT_EXEC && result == child) executed = 1;
                 if (event == PTRACE_EVENT_CLONE) {
                     unsigned long newborn;
                     if (ptrace(PTRACE_GETEVENTMSG, result, 0, &newborn)) { supervisor_failed = 1; continue; }
@@ -275,9 +285,10 @@ int main(int argc, char **argv) {
         if (result < 0 && errno != EINTR) return 125;
         struct timespec delay = { 0, 10000000 }; (void)nanosleep(&delay, NULL);
     }
-    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s,\"threadLimit\":%s,\"supervisorFailed\":%s,\"childSignal\":%d}\n",
+    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s,\"threadLimit\":%s,\"supervisorFailed\":%s,\"executed\":%s,\"exitCode\":%d,\"childSignal\":%d}\n",
         timed_out ? "true" : "false", cancelled ? "true" : "false",
         thread_limit ? "true" : "false", supervisor_failed ? "true" : "false",
+        executed ? "true" : "false", WIFEXITED(final_status) ? WEXITSTATUS(final_status) : -1,
         WIFSIGNALED(final_status) ? WTERMSIG(final_status) : 0);
     close(3);
     if (timed_out) return 124;

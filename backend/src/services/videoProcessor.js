@@ -1,5 +1,7 @@
 const mediaProcesses = require('./mediaProcessService');
-const { isResourceError } = require('./imageResourcePolicy');
+// Only a "not now" or a lost claim passes through the fallbacks below; a
+// video the tools cannot handle still completes with the placeholder tile.
+const { isInterruption: isResourceError } = require('./mediaProcessPolicy');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -79,9 +81,9 @@ async function generateVideoThumbnail(videoPath, thumbnailKey, options = {}) {
         logger.warn('Video poster probe unavailable; using bounded decode', { error: error.message });
       }
       await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-        ...mediaProcesses.inputOptions(details.format), '-ss', String(timeOffset), '-i', snapshot,
+        ...mediaProcesses.inputOptions(details.format, details.policy.threads), '-ss', String(timeOffset), '-i', snapshot,
         '-frames:v', '1', '-an', '-sn', '-dn', '-vf', `scale=${size.replace('x', ':')}`, '-pix_fmt', 'yuvj420p',
-        '-threads', '1', '-filter_threads', '1', '-filter_complex_threads', '1', tmpPath], {
+        '-threads', '1', '-filter_threads', '1', tmpPath], {
         memoryBytes: details.policy.nativeBytes, wallMs: details.policy.thumbnailMs,
         cpuSeconds: Math.ceil(details.policy.thumbnailMs / 1000), fileBytes: 16 * 1024 * 1024,
       });

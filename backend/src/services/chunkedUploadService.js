@@ -24,6 +24,10 @@ const MAX_EXPECTED_CHUNKS = Math.ceil((10 * 1024 * 1024 * 1024) / CHUNK_SIZE);
 
 // Upload expiration: 24 hours
 const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
+// An admitted session holds a concurrency slot and staging room. A closed tab
+// never aborts, so one with no chunk for this long is released: its chunks
+// live in the admission's own staging directory and go with it.
+const ADMITTED_IDLE_MS = 15 * 60 * 1000;
 
 function totalReceivedBytes(uploadMeta) {
   let total = 0;
@@ -143,9 +147,7 @@ async function initializeUpload(options) {
   let admission = null;
   if (options.admission) {
     if (size > Number(maxFileSizeBytes)) throw fileTooLargeError(Number(maxFileSizeBytes));
-    try { quota().configuration('admin'); } catch (_) { throw quota().refusal('UPLOAD_QUOTA_UNAVAILABLE', 503); }
-    admission = await quota().begin({ eventId, mode: 'admin', maxFiles: 1,
-      requestedBytes: size, stagingFiles: expectedChunks + 3 });
+    admission = await quota().begin({ eventId, mode: 'admin', accountId: adminId, maxFiles: 1, requestedBytes: size, stagedCopies: 2 });
   }
   const uploadDir = admission ? path.join(admission.dir, 'chunks') : path.join(getChunksPath(), uploadId);
   try {
@@ -179,6 +181,7 @@ async function initializeUpload(options) {
     admission,
     uploadDir,
     createdAt: Date.now(),
+    lastActivityAt: Date.now(),
     expiresAt: Date.now() + UPLOAD_EXPIRATION_MS,
     status: 'in_progress'
   };
@@ -315,7 +318,12 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
       await abortUpload(uploadId);
       throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
     }
-    return admitted().upload(uploadMeta, chunkIndex, source, declaredBytes, CHUNK_SIZE);
+    uploadMeta.lastActivityAt = Date.now();
+    try {
+      return await admitted().upload(uploadMeta, chunkIndex, source, declaredBytes, CHUNK_SIZE);
+    } finally {
+      uploadMeta.lastActivityAt = Date.now();
+    }
   }
 
   // Only the announced chunk indices are valid — anything else would merge
@@ -621,7 +629,8 @@ async function cleanupExpiredUploads() {
   const expiredIds = [];
 
   for (const [uploadId, meta] of activeUploads.entries()) {
-    if (now > meta.expiresAt) {
+    const idle = meta.admission && meta.status === 'in_progress' && !meta.busy && now - meta.lastActivityAt > ADMITTED_IDLE_MS;
+    if (now > meta.expiresAt || idle) {
       expiredIds.push(uploadId);
     }
   }
@@ -637,8 +646,9 @@ async function cleanupExpiredUploads() {
   return expiredIds.length;
 }
 
+// Every minute: the idle release above is what frees an abandoned slot.
 const cleanupTask = require('./scheduledTask').scheduledTask(cleanupExpiredUploads, {
-  interval: 60 * 60 * 1000
+  interval: 60 * 1000
 });
 
 module.exports = {
@@ -651,5 +661,6 @@ module.exports = {
   finishUpload,
   getUploadStatus,
   cleanupExpiredUploads,
-  CHUNK_SIZE
+  CHUNK_SIZE,
+  ADMITTED_IDLE_MS
 };

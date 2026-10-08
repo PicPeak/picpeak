@@ -256,15 +256,14 @@ router.get('/:slug/photo/:photoId',
             // now while the setting is on, or to `failed` for the next
             // switch-on. Guarded on the stale pointer, so a concurrent
             // worker's fresh publish is not undone.
-            const { isEnabled, enqueueWeb } = require('../../services/videoRenditionService');
+            const { isEnabled } = require('../../services/videoRenditionService');
             const enabled = await isEnabled().catch(() => false);
-            const changed = await db('photos').where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
+            await db('photos').where({ id: photo.id, web_path: photo.web_path, web_status: 'complete' }).update({
               web_path: null,
-              web_status: 'failed',
+              web_status: enabled ? 'pending' : 'failed',
               web_started_at: null,
               web_error: 'copy missing from storage',
             }).catch((e) => logger.warn(`Could not re-queue the missing web copy of video ${photo.id}: ${e.message}`));
-            if (changed && enabled) await enqueueWeb({ ...photo, web_path: null, web_status: 'failed' });
           }
         }
         const range = req.headers.range;

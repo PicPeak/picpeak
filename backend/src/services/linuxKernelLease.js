@@ -1,8 +1,8 @@
 const path = require('path');
-const unavailable = () => Object.assign(new Error('A persistent local Linux execution lease is unavailable; run npm run build:native'), { code: 'MEDIA_LEASE_UNAVAILABLE', status: 422 });
+// Optional: callers ask mediaCapabilities first and carry on without a lease.
+const unavailable = () => Object.assign(new Error('A local kernel execution lease is unavailable'), { code: 'MEDIA_LEASE_UNAVAILABLE', status: 503 });
 function binding() {
-  if (process.platform !== 'linux') throw unavailable();
-  try { return require('../../bin/local-process-lease.node'); }
+  try { return require('./mediaCapabilities').loadAddon(); }
   catch (_) { throw unavailable(); }
 }
 async function probe(leasePath, expected) {

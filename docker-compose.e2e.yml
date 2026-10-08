@@ -33,6 +33,7 @@ services:
       - DB_NAME=picpeak_e2e
       - SMTP_HOST=mailhog
       - SMTP_PORT=1025
+      - MAIL_PRIVATE_ENDPOINTS=smtp://mailhog:1025
       - SMTP_SECURE=false
       - EMAIL_FROM=noreply@picpeak.local
       - FRONTEND_URL=http://localhost:7200

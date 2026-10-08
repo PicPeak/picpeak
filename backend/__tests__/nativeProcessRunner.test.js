@@ -3,12 +3,20 @@ const path = require('path');
 const os = require('os');
 const { execFileSync, spawn } = require('child_process');
 const runner = require('../src/services/nativeProcessRunner');
+const capabilities = require('../src/services/mediaCapabilities');
 const { parseStat } = require('../src/services/linuxProcessLease');
-const linux = process.platform === 'linux' ? describe : describe.skip;
+// The guarded path itself: only where it can exist. Everything a host
+// without it does instead is in __tests__/services/mediaDegradation.test.js.
+const built = process.platform === 'linux' && require('fs').existsSync(capabilities.GUARD) &&
+  require('fs').existsSync(path.join(path.dirname(capabilities.GUARD), 'local-process-lease.node'));
+const linux = built ? describe : describe.skip;
 
-linux('mandatory native media process boundary', () => {
+linux('the process guard and kernel leases, where the host has them', () => {
   let dir, fixture;
   beforeAll(async () => {
+    // If this fails the guard is built but cannot trace here (seccomp,
+    // ptrace_scope): the backend would run unguarded and say so at startup.
+    expect(await capabilities.probe()).toMatchObject({ guard: true, leases: true });
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-media-runner-test-'));
     fixture = path.join(dir, 'fixture');
     execFileSync(process.env.CC || 'cc', ['-O0', '-pthread', path.join(__dirname, 'fixtures/mediaProcessFixture.c'), '-o', fixture]);
@@ -33,6 +41,19 @@ linux('mandatory native media process boundary', () => {
     expect((await run('fork')).stdout.toString().trim()).toBe('process fork denied');
     expect((await run('untraced')).stdout.toString().trim()).toBe('untraced clone denied');
     expect((await run('uring')).stdout.toString().trim()).toBe('kernel IO thread creation denied');
+    // 0 means "no limit of its own" for memory and CPU time (a transcode).
+    expect((await run('limits', { memoryBytes: 0, cpuSeconds: 0 })).stdout.toString().trim()).toBe('18446744073709551615 18446744073709551615 65536');
+  });
+  test('a command that itself exits 125 is its own failure; the guard stays in use', async () => {
+    await expect(run('exit125')).rejects.toMatchObject({ exitCode: 125, message: expect.stringMatching(/failed \(125\)/) });
+    expect(capabilities.current().guard).toBe(true);
+    expect((await run('limits')).stdout.toString().trim()).toBe('67108864 1 65536');
+  });
+  test('a job that waited longer than its whole budget still gets all of it once it starts', async () => {
+    const slow = [run('sleep', { wallMs: 700 }).catch(error => error), run('sleep', { wallMs: 700 }).catch(error => error)];
+    const queued = run('limits', { wallMs: 300 });
+    expect((await queued).stdout.toString().trim()).toBe('67108864 1 65536');
+    for (const outcome of await Promise.all(slow)) expect(outcome.code).toBe('MEDIA_TIMEOUT');
   });
   test('even a job outside a durable attempt holds a protected kernel lease until terminal cleanup', async () => {
     const kernelLease = require('../src/services/linuxKernelLease');
@@ -41,8 +62,9 @@ linux('mandatory native media process boundary', () => {
       automaticPath = await fs.readlink(`/proc/${lease.pid}/fd/9`);
       expect(await kernelLease.probe(automaticPath, lease)).toBe('busy');
     } });
-    expect(path.basename(automaticPath)).toBe('execution.lease');
-    await expect(fs.stat(path.dirname(automaticPath))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(path.dirname(automaticPath)).toBe(capabilities.current().leaseRoot);
+    expect(path.basename(automaticPath)).toMatch(/^[0-9a-f-]{36}\.exec\.lease$/);
+    await expect(fs.stat(automaticPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   test('guardian death cannot bypass a busy same-inode kernel proof with a missing or zombie leader', async () => {
     const kernelLease = require('../src/services/linuxKernelLease');
@@ -115,7 +137,7 @@ linux('mandatory native media process boundary', () => {
   test('an ordinary wrapped FFmpeg errno is not misclassified as a native resource signal', async () => {
     await expect(run('ordinary-error')).rejects.toMatchObject({ exitCode: 234 });
   });
-  test('queue-inclusive timeout, cancellation and stop await termination and lease writes', async () => {
+  test('timeout, cancellation and stop await termination and lease writes', async () => {
     let pid;
     await expect(run('sleep', { wallMs: 100, onStart: lease => { pid = lease.pid; } })).rejects.toMatchObject({ code: 'MEDIA_TIMEOUT' });
     if (pid) await dead(pid);
@@ -140,7 +162,12 @@ linux('mandatory native media process boundary', () => {
     `], { stdio: ['ignore', 'pipe', 'pipe'] });
     const lease = await new Promise((resolve, reject) => {
       let text = '';
-      controller.stdout.on('data', chunk => { text += chunk; if (text.includes('\n')) resolve(JSON.parse(text.split('\n')[0])); });
+      // The controller also prints the one-line capability report; the lease is the JSON line.
+      controller.stdout.on('data', chunk => {
+        text += chunk;
+        const line = text.split('\n').slice(0, -1).find(item => item.startsWith('{'));
+        if (line) resolve(JSON.parse(line));
+      });
       controller.on('error', reject); controller.on('exit', () => { if (!text) reject(new Error('Owned controller exited before handshake')); });
     });
     controller.kill('SIGKILL');
@@ -229,7 +256,8 @@ linux('mandatory native media process boundary', () => {
     const leasePath = path.join(dir, 'protected.lease'), ready = path.join(dir, 'unlock-denied');
     let lease;
     const job = run('unlock', { leasePath, onStart: value => { lease = value; } }, [ready]);
-    const rejected = expect(job).rejects.toMatchObject({ code: 'MEDIA_WORKER_FAILED' });
+    // A guardian killed from outside is "not now", not a verdict on the media.
+    const rejected = expect(job).rejects.toMatchObject({ code: 'MEDIA_WORKER_UNAVAILABLE', status: 503 });
     for (let n = 0; n < 200; n++) {
       try { await fs.access(ready); break; } catch (_) { await new Promise(resolve => setTimeout(resolve, 5)); }
     }

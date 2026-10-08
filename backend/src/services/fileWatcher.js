@@ -2,6 +2,7 @@ const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
+const { retryTransient } = require('./imageResourcePolicy');
 const { resolveCredit } = require('./photoCredit');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
@@ -84,7 +85,8 @@ function startFileWatcher() {
 
   watcher
     .on('add', (filePath) => {
-      enqueue(() => processNewPhoto(filePath)).catch((error) => {
+      // A busy image worker is asked again: nothing re-announces this file.
+      enqueue(() => retryTransient(() => processNewPhoto(filePath))).catch((error) => {
         logger.error('Error processing new photo:', error);
       });
     })
@@ -220,13 +222,10 @@ async function processNewPhoto(filePath) {
       size_bytes: stats.size,
       mime_type: mimeType,
       ...(dimensions && { width: dimensions.width, height: dimensions.height }),
+      ...(webCopyEnabled ? { web_status: 'pending' } : {}),
       ...credit
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
-    if (webCopyEnabled) {
-      const photo = await db('photos').where({ id: photoId }).first();
-      if (photo) await require('./videoRenditionService').enqueueWeb(photo);
-    }
 
     logger.info(`Added new photo: ${relativePath}`);
     downloadZipService.invalidate(event.id);

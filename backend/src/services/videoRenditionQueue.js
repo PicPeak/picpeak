@@ -26,8 +26,9 @@ const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { isEnabled, renderWebCopy } = require('./videoRenditionService');
 const mediaAttempts = require('./mediaAttemptService');
-const imageAdmission = require('./imageWorkAdmission');
-const mediaAdmission = require('./mediaWorkAdmission');
+const { isTransient } = require('./imageResourcePolicy');
+
+const RETRY_BACKOFF_MS = 60000;
 
 const POLL_INTERVAL_MS = parseInt(process.env.VIDEO_RENDITION_POLL_MS || '5000', 10);
 const CONCURRENCY = Math.min(8, Math.max(1, parseInt(process.env.VIDEO_RENDITION_CONCURRENCY || '1', 10) || 1));
@@ -48,7 +49,9 @@ const sleep = (ms) => waits.sleep(ms);
  * UPDATE on SQLite. Timestamps as ISO strings (CLAUDE.md).
  */
 async function claimNext() {
-  return mediaAttempts.claimNext('web');
+  const outcome = await mediaAttempts.claimNext('web');
+  // A video that used up its attempts was recorded as failed by the claim.
+  return outcome?.exhausted ? null : outcome;
 }
 
 async function workerLoop(workerIdx) {
@@ -75,29 +78,34 @@ async function workerLoop(workerIdx) {
 
     try {
       await mediaAttempts.execute(claimed, 'web', () => renderWebCopy(claimed.id));
-      if (await db('photos').where({ id: claimed.id, web_attempt_id: claimed.web_attempt_id }).first()) {
-        await Promise.all([imageAdmission.finish(claimed.id), mediaAdmission.finish(claimed.id)]);
-      }
     } catch (err) {
-      logger.error(`videoRenditionQueue[${workerIdx}]: video ${claimed.id} failed`, {
+      if (err.code === 'MEDIA_SUPERSEDED') continue;
+      // Guarded on this worker's attempt id and source: a delete, a
+      // replacement or the janitor meanwhile has already moved the row on,
+      // possibly into another worker's hands.
+      const mine = { id: claimed.id, web_status: 'processing', web_attempt_id: claimed.web_attempt_id,
+        path: claimed.path, filename: claimed.filename };
+      const attempts = Number(claimed.web_attempts || 0);
+      // A shutdown is not an attempt; "not now" is one, and is tried again
+      // after a growing pause. Only a verdict on the video is a failure.
+      const paused = !running && /_CANCELLED$/.test(err.code || '');
+      const requeue = paused || (isTransient(err) && attempts < mediaAttempts.MAX_ATTEMPTS);
+      logger[requeue ? 'warn' : 'error'](`videoRenditionQueue[${workerIdx}]: video ${claimed.id} ${requeue ? `requeued (${err.code})` : 'failed'}`, {
         error: err.message,
       });
       try {
-        // Guarded on this worker's UUID and source: a delete,
-        // a replacement or the janitor meanwhile has already moved it on,
-        // possibly into another worker's hands.
-        if (!(await db('media_process_attempts').where({ id: claimed.web_attempt_id, state: 'terminated' }).first())) continue;
-        const paused = !running && /_CANCELLED$/.test(err.code || '');
-        const updated = await db('photos').where({ id: claimed.id, web_status: 'processing', web_attempt_id: claimed.web_attempt_id,
-          path: claimed.path, filename: claimed.filename }).update({
-          web_status: paused ? 'pending' : 'failed',
-          ...(paused ? { web_attempts: Math.max(0, Number(claimed.web_attempts) - 1) } : {}),
+        await db('photos').where(mine).update(requeue ? {
+          web_status: 'pending',
+          web_started_at: null,
+          ...(paused ? { web_attempts: Math.max(0, attempts - 1), web_retry_at: null }
+            : { web_retry_at: new Date(Date.now() + RETRY_BACKOFF_MS * attempts).toISOString() }),
+        } : {
+          web_status: 'failed',
           web_started_at: null,
           web_error: String(err.message || err).split('\n')[0].slice(0, 1000),
         });
-        if (updated && !paused) await Promise.all([imageAdmission.finish(claimed.id), mediaAdmission.finish(claimed.id)]);
       } catch (updateErr) {
-        logger.error(`videoRenditionQueue[${workerIdx}]: failed to mark video ${claimed.id} as failed`, {
+        logger.error(`videoRenditionQueue[${workerIdx}]: failed to record the outcome of video ${claimed.id}`, {
           error: updateErr.message,
         });
       }
