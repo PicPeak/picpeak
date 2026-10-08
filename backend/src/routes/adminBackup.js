@@ -207,6 +207,13 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
       updates.backup_destination_path = updates.backup_destination_path.trim();
     }
 
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_rsync_port')) {
+      const port = updates.backup_rsync_port;
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return res.status(400).json({ error: 'backup_rsync_port must be a whole number from 1 to 65535', code: 'RSYNC_CONFIG_INVALID' });
+      }
+    }
+
     const restricted = await changedRestrictedBackupSettings(updates);
     if (restricted.length > 0 && !(await isSuperAdminUser(req.admin && req.admin.id))) {
       return res.status(403).json({
@@ -595,7 +602,7 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
       let connection;
       try {
         connection = await require('../utils/rsyncConnection').resolveRsyncConnection({
-          host: config.host, user: config.user, sshKey: sshKeyPath
+          host: config.host, user: config.user, sshKey: sshKeyPath, port: config.port
         });
       } catch (optionError) {
         res.json({ success: false, code: optionError.code, message: optionError.message });
@@ -635,12 +642,12 @@ router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res)
           destination: connection.host,
           error: error.message
         });
-        const hostKeyChanged = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(error.message);
+        const hostKeyError = require('../utils/rsyncConnection').hostKeyFailure(error.message);
         res.json({
           success: false,
-          code: hostKeyChanged ? 'RSYNC_SSH_HOST_KEY_UNTRUSTED' : undefined,
-          message: hostKeyChanged
-            ? 'The destination host key is unknown or changed. Independently verify it and provision the approved known_hosts entry before retrying.'
+          code: hostKeyError ? hostKeyError.code : undefined,
+          message: hostKeyError
+            ? hostKeyError.message
             : 'Rsync connection failed. Check server logs for details.'
         });
       }
