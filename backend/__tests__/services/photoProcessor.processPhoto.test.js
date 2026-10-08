@@ -10,6 +10,11 @@
  */
 
 const path = require('path');
+jest.mock('../../src/services/mediaAttemptService', () => ({
+  current: () => ({ id: '11111111-1111-4111-8111-111111111111', assertCurrent: async () => {} }),
+  outputName: name => name,
+  guard: (_attempt, db) => db('photos').where({ id: db.__photoId || 1 }),
+}));
 jest.mock('../../src/services/publicUploadQuota', () => ({ processingComplete: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('../../src/database/db', () => {

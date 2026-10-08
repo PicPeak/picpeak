@@ -193,7 +193,6 @@ async function processNewPhoto(filePath) {
       mime_type: mimeType,
       ...(dimensions && { width: dimensions.width, height: dimensions.height })
     }).returning('id');
-    const photoId = insertResult[0]?.id || insertResult[0];
 
     logger.info(`Added new photo: ${relativePath}`);
     downloadZipService.invalidate(event.id);

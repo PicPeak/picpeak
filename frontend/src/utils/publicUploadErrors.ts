@@ -1,11 +1,24 @@
 /** Only server-defined upload capacity codes use these localized messages. */
 export function publicUploadErrorKey(code: unknown): string | null {
   switch (code) {
+    case 'MEDIA_RESOURCE_LIMIT':
+    case 'MEDIA_OUTPUT_LIMIT':
     case 'IMAGE_RESOURCE_LIMIT': return 'upload.capacity.decoded';
+    case 'MEDIA_INVALID_SIGNATURE': return 'upload.capacity.signature';
+    case 'MEDIA_LEASE_BUSY':
+    case 'MEDIA_QUEUE_FULL':
     case 'IMAGE_QUEUE_FULL': return 'upload.capacity.busy';
+    case 'MEDIA_TIMEOUT':
+    case 'MEDIA_CANCELLED':
     case 'IMAGE_TIMEOUT':
     case 'IMAGE_CANCELLED': return 'upload.capacity.timeout';
     case 'IMAGE_WORKER_UNAVAILABLE':
+    case 'MEDIA_WORKER_UNAVAILABLE':
+    case 'MEDIA_ADMISSION_UNAVAILABLE':
+    case 'MEDIA_WORKER_FAILED':
+    case 'MEDIA_LEASE_UNAVAILABLE':
+    case 'MEDIA_SUPERSEDED':
+    case 'MEDIA_ATTEMPT_REQUIRED':
     case 'IMAGE_ADMISSION_UNAVAILABLE':
     case 'IMAGE_WORKER_FAILED': return 'upload.capacity.processing';
     case 'UPLOAD_REQUEST_TOO_LARGE': return 'upload.capacity.batch';

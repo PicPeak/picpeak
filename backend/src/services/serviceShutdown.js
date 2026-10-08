@@ -14,7 +14,8 @@ const resources = [
   ['./whatsappProcessor', 'stopWhatsAppQueueProcessor'], ['./emailIntakeService', 'stopIncomingMailPoller'],
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter'],
   ['./backupService', 'stopBackupService'], ['./databaseBackup', 'stopScheduledBackups'],
-  ['./backgroundProcessor', 'stop'], ['./faceQueue', 'stop'], ['./secureImageService', 'dispose'],
+  ['./mediaProcessService', 'stop'], ['./nativeProcessRunner', 'stop'],
+  ['./secureImageService', 'dispose'],
   ['../utils/authSecurity', 'stopCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
 ];
 async function stopServices() {

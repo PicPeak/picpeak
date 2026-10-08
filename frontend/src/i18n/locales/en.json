@@ -776,7 +776,8 @@
   },
   "upload": {
     "capacity": {
-      "decoded": "This image or batch exceeds the server's image-processing budget. Please use fewer frames, lower image dimensions, or a smaller batch.",
+      "decoded": "This media or batch exceeds the server's processing budget. Please use fewer frames, lower dimensions, shorter videos, or a smaller batch.",
+      "signature": "This file does not contain a supported video or RAW image. Please upload the original media file.",
       "processing": "Image processing could not complete within the server's resource limits. Please contact the owner.",
       "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
       "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",

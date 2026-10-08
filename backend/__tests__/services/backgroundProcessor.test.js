@@ -12,13 +12,17 @@ jest.mock('../../src/services/photoProcessor', () => ({
   processUploadedPhotos: jest.fn(),
   queueFilesForProcessing: jest.fn(),
 }));
+jest.mock('../../src/services/linuxKernelLease', () => ({
+  acquire: jest.fn(async () => ({ device: '1', inode: '2', filesystem: '3', release: jest.fn(async () => {}) })),
+}));
+jest.mock('../../src/services/linuxProcessLease', () => ({ currentIdentity: async () => ({ host: 'fixture' }) }));
 
 // Build a fake knex instance whose .transaction() takes a callback we can
 // drive from the test, and whose query-builder records calls.
 function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } = {}) {
   const queries = [];
 
-  const builder = () => {
+  const builder = table => {
     const recorded = { wheres: [], updates: null, ordered: false, locked: false, skipped: false, deleted: false };
     queries.push(recorded);
     const chain = {
@@ -41,13 +45,15 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
       first: jest.fn(async function () {
         // Only the SELECT chain returns the pending row; the UPDATE chain
         // never calls .first().
-        return pendingRow ? { ...pendingRow } : null;
+        return table === 'photos' && pendingRow ? { ...pendingRow } : null;
       }),
       update: jest.fn(async function (data) {
         recorded.updates = data;
         return updateResult;
       }),
       delete: jest.fn(async function () { recorded.deleted = true; return 1; }),
+      insert: jest.fn(async () => 1),
+      then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
     };
     return chain;
   };
@@ -55,6 +61,7 @@ function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } =
   const trxFn = (table) => builder(table);
   trxFn.client = { config: { client: clientName } };
   trxFn.transaction = async (cb) => cb(trxFn);
+  trxFn.fn = { now: () => 'fixture-now' };
 
   // Top-level db('photos') returns same builder for the janitor test path.
   const db = trxFn;
@@ -80,22 +87,25 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     const { db, queries } = makeFakeDb({ pendingRow, clientName: 'pg' });
     const bg = loadProcessor(db);
     const result = await bg.claimNextPhoto();
-    expect(result).toEqual(pendingRow);
+    expect(result).toMatchObject({ ...pendingRow, processing_status: 'processing', processing_attempt_id: expect.any(String) });
     // The first query is the SELECT FOR UPDATE SKIP LOCKED.
-    expect(queries[0].locked).toBe(true);
-    expect(queries[0].skipped).toBe(true);
+    expect(queries.some(query => query.locked && query.skipped)).toBe(true);
     // The second query is the status update.
-    expect(queries[1].updates.processing_status).toBe('processing');
-    expect(queries[1].updates.processing_attempts).toBe(1);
-    expect(queries[1].updates.processing_started_at).toBeInstanceOf(Date);
+    const update = queries.find(query => query.updates);
+    expect(update.updates.processing_status).toBe('processing');
+    expect(update.updates.processing_attempts).toBe(1);
+    // An ISO string, not a Date: on SQLite the column holds whatever the
+    // driver bound, and a Date bound inside Jest lands as "[object Object]"
+    // (CLAUDE.md). The janitor compares against the same shape.
+    expect(update.updates.processing_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
   it.each(['pg', 'sqlite3'])('ends the finite automatic retry cycle on %s without starting native work', async clientName => {
     const { db, queries } = makeFakeDb({ pendingRow: { id: 7, processing_attempts: 2 }, clientName });
     const bg = loadProcessor(db);
     expect(await bg.claimNextPhoto()).toBeNull();
-    expect(queries[1].updates.processing_status).toBe('failed');
-    expect(queries[2].deleted).toBe(true);
+    expect(queries.find(query => query.updates).updates.processing_status).toBe('failed');
+    expect(queries.filter(query => query.deleted)).toHaveLength(2);
     expect(require('../../src/services/photoProcessor').processPhoto).not.toHaveBeenCalled();
   });
 
@@ -133,7 +143,7 @@ describe('backgroundProcessor.claimNextPhoto', () => {
     const { db, queries } = makeFakeDb({ pendingRow, clientName: 'better-sqlite3', updateResult: 1 });
     const bg = loadProcessor(db);
     const result = await bg.claimNextPhoto();
-    expect(result).toEqual(pendingRow);
+    expect(result).toMatchObject({ ...pendingRow, processing_status: 'processing', processing_attempt_id: expect.any(String) });
     // SQLite path: no FOR UPDATE / SKIP LOCKED.
     expect(queries[0].locked).toBe(false);
     expect(queries[0].skipped).toBe(false);

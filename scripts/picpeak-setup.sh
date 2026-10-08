@@ -989,6 +989,7 @@ setup_native_installation() {
     # Install backend production dependencies
     cd "$NATIVE_APP_DIR/app/backend"
     npm install --production
+    npm run build:native
     # Ensure SQLite data directory exists for native installs
     mkdir -p "$NATIVE_APP_DIR/app/backend/data"
 
@@ -1483,6 +1484,7 @@ update_native_installation() {
     # Update backend dependencies
     cd "$NATIVE_APP_DIR/app/backend"
     run_as_user "npm install --production"
+    run_as_user "npm run build:native"
     
     # Run migrations
     run_as_user "npm run migrate"
