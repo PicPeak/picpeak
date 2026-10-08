@@ -53,8 +53,9 @@ let polling = false;
 const IMAP_TIMEOUTS = { connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000 };
 // Look back this far so the Received log captures mail already read in another
 // client (the unseen-only fetch missed those). Dedup by message-id keeps each
-// poll cheap — only un-logged messages are downloaded + processed.
-const LOOKBACK_DAYS = 90;
+// poll cheap — only un-logged messages are downloaded + processed. Retention
+// owns the number: it must never remove a row whose message is still in here.
+const { LOOKBACK_DAYS } = mailRetention;
 
 function makeImapClient(cfg) {
   return new ImapFlow({ host: cfg.host, port: cfg.port, secure: cfg.secure, auth: cfg.auth, logger: false, ...IMAP_TIMEOUTS });
@@ -319,6 +320,8 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
       }
 
       // 3) Drop ones we've already logged (so each poll only does new work).
+      //    An expired message keeps a body-less row for as long as it can
+      //    still be found here, so retention never causes a second import.
       const logged = new Set();
       for (let i = 0; i < candidates.length; i += 500) {
         const chunk = candidates.slice(i, i + 500).map((c) => c.messageId);
@@ -327,7 +330,11 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
       }
       const fresh = candidates.filter((c) => !logged.has(c.messageId));
 
-      // 4) Download + process each fresh message.
+      // 4) Download + process each fresh message. A capacity or rate refusal
+      //    stores nothing and leaves the message unread for a later poll;
+      //    within this poll, do not ask again for what the same limit refuses.
+      let refusedBytes = Infinity;
+      const refusedSenders = new Set();
       for (const cand of fresh) {
         let messageId = cand.messageId;
         let claim = null;
@@ -338,12 +345,19 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
           // same huge message was re-downloaded every poll interval forever,
           // and an OOM-kill/restart simply resumed the loop.
           const oversized = cand.size > MAX_MESSAGE_BYTES;
+          const bytes = 2 * (cand.size > 0 ? cand.size : MAX_MESSAGE_BYTES) + mailRetention.META_BYTES
+            + (routeToExpenses ? MAX_ATTACHMENTS * mailRetention.AUDIT_BYTES : 0);
+          if (bytes >= refusedBytes || refusedSenders.has(cand.sender)) continue;
           const admission = await mailRetention.admit({
-            messageId: cand.messageId, accountKey, sender: cand.sender,
-            bytes: 2 * (cand.size > 0 ? cand.size : MAX_MESSAGE_BYTES) + mailRetention.META_BYTES
-              + (routeToExpenses ? MAX_ATTACHMENTS * mailRetention.AUDIT_BYTES : 0),
+            messageId: cand.messageId, accountKey, sender: cand.sender, bytes,
             error: oversized ? `Message too large (${cand.size} bytes); limit is ${MAX_MESSAGE_BYTES}` : null,
           });
+          if (admission.retry) {
+            if (admission.limit === 'EMAIL_INTAKE_SENDER_PER_HOUR') refusedSenders.add(cand.sender);
+            else if (admission.limit.endsWith('_BYTES')) refusedBytes = bytes;
+            else break;
+            continue;
+          }
           if (admission.skip) {
             await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
             continue;

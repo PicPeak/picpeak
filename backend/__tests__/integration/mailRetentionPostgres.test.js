@@ -84,7 +84,7 @@ jest.setTimeout(120000);
     await mail.sweep({ now: new Date(Date.now() + mail.CLAIM_MS + 1) });
     await expect(mail.saveAttachment({ content: image }, held)).rejects.toThrow(/expired|superseded/);
     await db('received_emails').where({ id: held.id }).update({ status: 'received', body_text: 'löwe 📷', retained_bytes: 0 });
-    const migration = require('../../migrations/core/270_incoming_mail_retention');
+    const migration = require('../../migrations/core/275_incoming_mail_retention');
     await migration.up(db); await migration.up(db);
     expect(Number((await db('received_emails').where({ id: held.id }).first()).retained_bytes)).toBe(mail.META_BYTES + Buffer.byteLength('löwe 📷'));
   });

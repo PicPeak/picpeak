@@ -35,7 +35,7 @@ const SEEDED_BUT_NOT_SEED_ONLY = new Set([
   'feature_flags',                // 088
   'business_profile',             // 107
   'backup_paths',                 // 109; _backupPathsBoot.js re-seeds
-  'mail_intake_state',            // 270; importer rebuilds from restored mail, not local runtime state
+  'mail_intake_state',            // 275; importer rebuilds from restored mail, not local runtime state
 ]);
 
 let db; let cleanup;

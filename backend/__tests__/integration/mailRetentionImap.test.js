@@ -108,14 +108,18 @@ test('native IMAP envelope capacity refusal never requests source literals', asy
   process.env.EMAIL_INTAKE_MAILBOX_BYTES = '50000';
   expect(await intake.pollOnce()).toEqual({ processed: 0 });
   expect(downloads).toHaveLength(0);
-  const rows = await db('received_emails');
-  expect(rows).toHaveLength(2);
-  expect(rows.every(row => !row.body_text && !row.body_html && /capacity/.test(row.error))).toBe(true);
+  // Refused mail is neither recorded nor flagged \Seen: it waits for room.
+  expect(await db('received_emails')).toHaveLength(0);
+  expect(commands.filter(command => /^UID STORE/i.test(command))).toHaveLength(0);
+  delete process.env.EMAIL_INTAKE_INSTALLATION_BYTES;
+  delete process.env.EMAIL_INTAKE_MAILBOX_BYTES;
+  expect(await intake.pollOnce()).toEqual({ processed: 2 });
 });
 
-test('native sender envelope budget allows one ordinary source and refuses the next unique ID', async () => {
+test('native sender envelope budget allows one ordinary source and leaves the next unique ID unread', async () => {
   process.env.EMAIL_INTAKE_SENDER_PER_HOUR = '1';
   expect(await intake.pollOnce()).toEqual({ processed: 1 });
   expect(downloads).toEqual([1]);
-  expect((await db('received_emails').where({ status: 'error' }).first()).error).toMatch(/rate/);
+  expect((await db('received_emails')).map(row => row.status)).toEqual(['ingested']);
+  expect(commands.filter(command => /^UID STORE/i.test(command))).toHaveLength(1);
 });
