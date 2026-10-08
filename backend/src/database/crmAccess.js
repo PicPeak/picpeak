@@ -4,6 +4,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const { ForbiddenError, NotFoundError } = require('../utils/errors');
 
 const execution = new AsyncLocalStorage();
+let testFixtureAuthority = false;
 const INSTALLED = Symbol.for('picpeak.crmAccess.installed');
 const INTERNAL = Symbol('crm policy query');
 const clientHandles = new WeakMap();
@@ -111,9 +112,13 @@ function crmCapabilityRouter(reason) {
 // fixture authority is explicit, and unavailable in application environments.
 function enterTrustedCrmFixtureContext() {
   if (process.env.NODE_ENV !== 'test') throw new Error('CRM fixture context is test-only');
+  // Jest may execute hooks/tests in separate async resources after a module
+  // reset. Opt-in fixture authority survives that scheduling, but never
+  // overrides a real actor or an explicitly denied/missing-context control.
+  testFixtureAuthority = true;
   execution.enterWith({ trusted: 'isolated test fixture' });
 }
-function withoutCrmContext(work) { return execution.run(undefined, async () => await work()); }
+function withoutCrmContext(work) { return execution.run({ denied: true }, async () => await work()); }
 
 function allowed(actor, root, write) {
   const domain = ROOTS[root];
@@ -264,6 +269,8 @@ function predicate(table, alias, actor, write = false) {
 
 function contextForProtected() {
   const context = execution.getStore();
+  if (context?.denied) throw new ForbiddenError('CRM execution context required');
+  if (!context && process.env.NODE_ENV === 'test' && testFixtureAuthority) return { trusted: 'explicit isolated test fixture' };
   if (!context) throw new ForbiddenError('CRM execution context required');
   return context;
 }
