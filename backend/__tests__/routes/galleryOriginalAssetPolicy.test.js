@@ -112,11 +112,20 @@ describe('gallery original-asset authority', () => {
       expect(Math.max(metadata.width, metadata.height)).toBeLessThanOrEqual(1920);
       expect((await get('download', id)).status).toBe(403);
     }
-    for (const headers of [{}, { Range: 'bytes=0-5' }]) {
-      const video = await get('photo', videoId, headers);
-      expect(video.status).toBe(403);
-      expect(video.body).not.toEqual(VIDEO);
-    }
+    // A video has no bounded image tier: it keeps playing inline, ranges
+    // included, and only the download route refuses it.
+    const whole = await get('photo', videoId);
+    expect(whole.status).toBe(200);
+    expect(whole.body).toEqual(VIDEO);
+    expect(whole.headers['content-disposition']).toBe('inline');
+    const ranged = await get('photo', videoId, { Range: 'bytes=0-5' });
+    expect(ranged.status).toBe(206);
+    expect(ranged.body).toEqual(VIDEO.subarray(0, 6));
+    expect(ranged.headers['content-disposition']).toBe('inline');
+    const viaPreview = await get('preview', videoId);
+    expect(viaPreview.status).toBe(302);
+    expect(viaPreview.headers.location).toContain(`/photo/${videoId}`);
+    expect((await get('download', videoId)).status).toBe(403);
   });
   test('corrupt or throwing previews cannot redirect a restricted viewer to original', async () => {
     await db('events').where({ id: eventId }).update({ allow_downloads: 0 });
@@ -179,9 +188,21 @@ describe('gallery original-asset authority', () => {
     await db('events').where({ id: eventId }).update({ allow_downloads: 0 });
     const key = `events/active/${SLUG}/individual/source.jpg`;
     await db('photos').where({ id: imageId }).update({ preview_path: key, thumbnail_path: key, hero_path: key });
+    // The pointer is not followed and not left broken either: the rendition
+    // is rebuilt from the source and the row gets a canonical key.
+    const expectRebuilt = async () => {
+      for (const [route, column, prefix, edge] of [['preview', 'preview_path', 'previews/preview_', 1920],
+        ['thumbnail', 'thumbnail_path', 'thumbnails/thumb_', 1000]]) {
+        const res = await get(route);
+        expect(res.status).toBe(200);
+        expect(res.body).not.toEqual(source);
+        expect((await sharp(res.body).metadata()).width).toBeLessThanOrEqual(edge);
+        expect((await db('photos').where({ id: imageId }).first(column))[column].startsWith(prefix)).toBe(true);
+      }
+      await db('photos').where({ id: imageId }).update({ preview_path: key, thumbnail_path: key });
+    };
     try {
-      expect((await get('preview')).status).toBe(404);
-      expect((await get('thumbnail')).status).toBe(404);
+      await expectRebuilt();
       // A hero fallback may redirect, but following it never returns source.
       const hero = await get('hero');
       expect(hero.body).not.toEqual(source);
@@ -211,6 +232,75 @@ describe('gallery original-asset authority', () => {
       expect(marked.body).not.toEqual(plain.body);
       expect((await sharp(marked.body).metadata()).width).toBeLessThanOrEqual(1920);
     } finally { spy.mockRestore(); }
+  });
+  test('a legacy-shaped rendition pointer is rebuilt instead of answering 404', async () => {
+    expect((await get('thumbnail')).status).toBe(200);
+    expect((await get('preview')).status).toBe(200);
+    const row = await db('photos').where({ id: imageId }).first('thumbnail_path', 'preview_path');
+    await db('photos').where({ id: imageId }).update({
+      thumbnail_path: `./${row.thumbnail_path}`, preview_path: row.preview_path.replace('/', '\\') });
+    expect((await get('thumbnail')).status).toBe(200);
+    expect((await get('preview')).status).toBe(200);
+    const healed = await db('photos').where({ id: imageId }).first('thumbnail_path', 'preview_path');
+    expect(healed.thumbnail_path.startsWith('thumbnails/thumb_')).toBe(true);
+    expect(healed.preview_path.startsWith('previews/preview_')).toBe(true);
+  });
+  test('a text watermark wider than the image is fitted, not thrown', async () => {
+    const watermark = require('../../src/services/watermarkService');
+    const settings = { enabled: true, companyName: 'A'.repeat(40), opacity: 50, size: 15, position: 'bottom-right' };
+    const small = await sharp({ create: { width: 300, height: 200, channels: 3, background: '#336699' } }).jpeg().toBuffer();
+    const marked = await watermark.applyWatermark(small, settings, { failClosed: true });
+    expect(marked).not.toEqual(small);
+    expect(await sharp(marked).metadata()).toMatchObject({ width: 300, height: 200 });
+    // Narrower than the mark at the 8px font floor, and shorter than its box.
+    const tiny = await sharp({ create: { width: 60, height: 20, channels: 3, background: '#336699' } }).jpeg().toBuffer();
+    const tinyMarked = await watermark.applyWatermark(tiny, settings, { failClosed: true });
+    expect(tinyMarked).not.toEqual(tiny);
+    const plain = await get('thumbnail');
+    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue(settings);
+    try {
+      const thumb = await get('thumbnail');
+      expect(thumb.status).toBe(200);
+      expect(thumb.body).not.toEqual(plain.body);
+    } finally { spy.mockRestore(); }
+  });
+  test('a failed watermark fails closed on the photo route the renditions redirect to', async () => {
+    const watermark = require('../../src/services/watermarkService');
+    const spy = jest.spyOn(watermark, 'getWatermarkSettings').mockResolvedValue({ enabled: true, companyName: undefined });
+    try {
+      const preview = await get('preview');
+      expect(preview.status).toBe(302);
+      expect(preview.headers.location).toContain(`/photo/${imageId}`);
+      const photo = await get('photo');
+      expect(photo.status).toBe(500);
+      expect(photo.body).not.toEqual(source);
+    } finally { spy.mockRestore(); }
+  });
+  test('the public OG cover reads only a thumbnail-namespace key', async () => {
+    const og = express();
+    og.get('/og/:slug', require('../../src/services/galleryOgService').handleGalleryOgCover);
+    const key = `events/active/${SLUG}/individual/source.jpg`;
+    await db('events').where({ id: eventId }).update({ og_image_share_enabled: 1, hero_photo_id: imageId });
+    await db('photos').where({ id: imageId }).update({ thumbnail_path: key });
+    const cover = () => request(og).get(`/og/${SLUG}`).buffer().parse(binary);
+    try {
+      const rebuilt = await cover();
+      expect(rebuilt.status).toBe(200);
+      expect(rebuilt.body).not.toEqual(source);
+      expect((await sharp(rebuilt.body).metadata()).width).toBeLessThanOrEqual(1000);
+      // No rebuild possible: the pointer is refused, not read.
+      const brokenKey = `events/active/${SLUG}/individual/broken.jpg`;
+      await db('events').where({ id: eventId }).update({ hero_photo_id: brokenId });
+      await db('photos').where({ id: brokenId }).update({ thumbnail_path: brokenKey });
+      const getSpy = jest.spyOn(storage, 'get');
+      try {
+        expect((await cover()).status).toBe(404);
+        expect(getSpy.mock.calls.filter(([k]) => k === brokenKey)).toHaveLength(0);
+      } finally { getSpy.mockRestore(); }
+    } finally {
+      await db('events').where({ id: eventId }).update({ og_image_share_enabled: 0, hero_photo_id: null });
+      await db('photos').whereIn('id', [imageId, brokenId]).update({ thumbnail_path: null });
+    }
   });
   test('legacy view and capabilities enforce current original policy at every use', async () => {
     const headers = { Authorization: `Bearer ${token()}`, 'User-Agent': 'Mozilla/5.0 Chrome/130.0',

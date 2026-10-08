@@ -8,8 +8,11 @@ function galleryPolicyContext(event, galleryAccess) {
     accessLevel: galleryAccess?.session?.accessLevel || 'guest' };
 }
 
-/** Visibility authorizes presentation, not source bytes. */
-async function originalAssetDenial(req, photo = null, { display = false } = {}) {
+/**
+ * The grant itself, before any download policy. Video playback continues
+ * where downloads are off, but never past a refusal from here.
+ */
+function grantDenial(req, photo = null) {
   const grant = req.galleryAccess;
   if (!grant || !['public', 'gallery', 'admin'].includes(grant.kind)
       || Number(grant.eventId) !== Number(req.event?.id)) return { error: 'Photo not available' };
@@ -18,6 +21,14 @@ async function originalAssetDenial(req, photo = null, { display = false } = {}) 
   }
   if (photo && (Number(photo.event_id) !== Number(req.event.id)
       || isPhotoHiddenFromViewer(photo, req.accessLevel))) return { error: 'Photo not available' };
+  return null;
+}
+
+/** Visibility authorizes presentation, not source bytes. */
+async function originalAssetDenial(req, photo = null, { display = false } = {}) {
+  const grant = req.galleryAccess;
+  const refused = grantDenial(req, photo);
+  if (refused) return refused;
   // Admin display previews retain original access; downloads retain policy.
   if (display && grant.kind === 'admin') return null;
   if (!parseBooleanInput(req.event.allow_downloads, true)) {
@@ -41,4 +52,4 @@ function isPresentationRenditionKey(key, kind) {
     && !key.slice(prefix.length).includes('/') && !key.includes('\\');
 }
 
-module.exports = { originalAssetDenial, galleryPolicyContext, isPresentationRenditionKey };
+module.exports = { originalAssetDenial, grantDenial, galleryPolicyContext, isPresentationRenditionKey };
