@@ -58,6 +58,9 @@ const EXCLUDED_TABLES = new Set([
   // POSTs, with no runner anywhere that could release it. The table is seeded
   // by its migration, so the target already has the rows it needs.
   'maintenance_jobs',
+  // Physical primary-S3 generations belong to THIS target's object store.
+  // Portable archives carry logical files, never runtime read redirections.
+  'storage_s3_generation_index',
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.

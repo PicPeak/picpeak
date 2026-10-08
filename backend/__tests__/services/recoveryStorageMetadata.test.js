@@ -3,13 +3,20 @@ const { Readable } = require('stream');
 jest.mock('../../src/services/storage/s3Storage');
 const RawAdapter = require('../../src/services/storage/s3Storage');
 const S3Backend = require('../../src/services/storage/S3StorageBackend');
+const knex = require('knex');
+const migration = require('../../migrations/core/274_storage_s3_generation_index');
+let database;
 let raw; let storage;
-beforeEach(() => {
+beforeEach(async () => {
   raw = { upload: jest.fn(), uploadStream: jest.fn(), downloadStream: jest.fn(), list: jest.fn(),
-    s3Client: { send: jest.fn() } };
+    s3Client: { send: jest.fn() }, testConnection: jest.fn() };
   RawAdapter.mockImplementation(() => raw);
-  storage = new S3Backend({ bucket: 'fixture', prefix: 'tenant-one' });
+  database = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+  await migration.up(database);
+  storage = new S3Backend({ bucket: 'fixture', prefix: 'tenant-one', indexDatabase: database });
+  await storage.init();
 });
+afterEach(async () => { await database.destroy(); });
 const options = { contentType: 'image/jpeg', contentDisposition: 'attachment', cacheControl: 'private', metadata: { fixture: 'preserved' } };
 it('preserves full object metadata through stat and all upload entry points', async () => {
   raw.s3Client.send.mockResolvedValue({ ContentLength: 3, LastModified: new Date(0), ContentType: options.contentType,
