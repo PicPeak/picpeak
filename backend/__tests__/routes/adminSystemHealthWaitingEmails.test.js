@@ -135,7 +135,7 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
   });
 
   it('leaves a freshly queued email alone — the processor wakes every 60s', async () => {
-    await queue({ email_type: 'customer_invitation', created_at: ago(30 * 1000) });
+    await queue({ email_type: 'gallery_expired', created_at: ago(30 * 1000) });
 
     const body = await failures();
     expect(body.waitingEmails).toEqual([]);
@@ -229,7 +229,7 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
       await queue({ email_type: 'gallery_created', created_at: ms(-52 * MINUTE) });
       await queue({ email_type: 'quote_sent', created_at: ago(52 * MINUTE) });
       await queue({ email_type: 'invoice_due', created_at: ms(-30 * 1000) });
-      await queue({ email_type: 'customer_invitation', created_at: ago(30 * 1000) });
+      await queue({ email_type: 'gallery_expired', created_at: ago(30 * 1000) });
 
       const body = await failures();
       expect(typesOf(body.waitingEmails)).toEqual(['gallery_created', 'quote_sent']);

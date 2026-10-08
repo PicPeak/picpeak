@@ -74,7 +74,7 @@ beforeEach(async () => {
   }).returning('id')) };
   const row = { token: 'e'.repeat(64), title: 'Owned request', expires_at: future, is_active: 1, grace_days: 7, allow_uploads: 1, created_by: adminId };
   if (await db.schema.hasColumn('transfers', 'kind')) { row.kind = 'request'; token = row.token; }
-  else { row.upload_token = 'OWND7K'; row.upload_expires_at = future; token = row.upload_token; }
+  else { row.upload_token = 'OWND7KQ2XM'; row.upload_expires_at = future; token = row.upload_token; }
   transfer = idOf(await db('transfers').insert(row).returning('id'));
 });
 afterEach(async () => { jest.restoreAllMocks(); });

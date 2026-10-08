@@ -1,6 +1,7 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { ensureThumbnail } = require('./imageProcessor');
+const { isPresentationRenditionKey } = require('./galleryAssetPolicy');
 const { getStorage } = require('./storage');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { isGalleryAvailable } = require('../utils/galleryLifecycle');
@@ -338,8 +339,14 @@ async function handleGalleryOgCover(req, res) {
       return;
     }
 
-    const thumbnailPath = await ensureThumbnail(photo);
-    if (!thumbnailPath) {
+    // This endpoint is public, so the row's pointer gets the same check as
+    // the gallery thumbnail route: a legacy-shaped one is rebuilt, and only a
+    // key in the thumbnail namespace is ever read.
+    let thumbnailPath = await ensureThumbnail(photo);
+    if (thumbnailPath && !isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
+      thumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null }, { force: true });
+    }
+    if (!isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
       res.status(404).type('text/plain').send('Cover not available');
       return;
     }

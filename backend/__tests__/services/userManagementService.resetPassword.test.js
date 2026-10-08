@@ -32,6 +32,7 @@ const bcrypt = require('bcrypt');
 
 const { bootCrmDb, seedMinimal, assignAdminRole } = require('../integration/helpers/crmDb');
 const userManagementService = require('../../src/services/userManagementService');
+const { decryptEmailData, isEncryptedEmailData } = require('../../src/utils/emailQueueEncryption');
 
 // The wordlist generateReadablePassword() used to produce:
 //   <Adjective><Noun><4 digits><1 special>, e.g. "SwiftEagle4821!"
@@ -70,7 +71,9 @@ describe('userManagementService.resetAdminPassword (GHSA-h4w8-57xq-53fx)', () =>
       .orderBy('id', 'desc')
       .first();
     expect(emailRow).toBeDefined();
-    const emailData = JSON.parse(emailRow.email_data);
+    const storedEmailData = JSON.parse(emailRow.email_data);
+    expect(isEncryptedEmailData(storedEmailData)).toBe(true);
+    const emailData = decryptEmailData(emailRow.email_type, storedEmailData, emailRow.recipient_email);
     const newPassword = emailData.new_password;
 
     // generateSecurePassword(16): fixed 16-char length, not the wordlist's
