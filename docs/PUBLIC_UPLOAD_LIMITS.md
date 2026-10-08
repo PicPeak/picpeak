@@ -15,7 +15,7 @@ These limits exist to stop abuse of the **public** (unauthenticated or guest) up
 | Scope | Lifetime bytes | Lifetime files | Pending bytes | Pending files | Concurrent requests | Bytes/hour |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Gallery | 50 GiB | 20,000 | 20 GiB | 5,000 | 16 | 20 GiB |
-| Guest | 10 GiB | 5,000 | 5 GiB | 1,000 | 4 | 5 GiB |
+| Guest | 50 GiB | 20,000 | 20 GiB | 5,000 | 16 | 20 GiB |
 | File request | 50 GiB | 20,000 | 20 GiB | 5,000 | 4 | 20 GiB |
 | Account | 500 GiB | 200,000 | 50 GiB | 20,000 | 32 | 100 GiB |
 | Deployment | unlimited | unlimited | 100 GiB | 50,000 | 64 | 200 GiB |

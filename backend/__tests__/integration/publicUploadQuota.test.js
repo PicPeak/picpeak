@@ -387,7 +387,7 @@ test('defaults fit a real event, and overrides accept any positive integer', () 
   const GiB = 1024 * MiB;
   expect(quota.configuration()).toMatchObject({
     gallery: { bytes: 50 * GiB, files: 20000, requests: 16, hourBytes: 20 * GiB },
-    guest: { requests: 4 },
+    guest: { bytes: 50 * GiB, files: 20000, requests: 16, hourBytes: 20 * GiB },
     account: { bytes: 500 * GiB, files: 200000 },
     deployment: { bytes: Number.MAX_SAFE_INTEGER, files: Number.MAX_SAFE_INTEGER },
   });
