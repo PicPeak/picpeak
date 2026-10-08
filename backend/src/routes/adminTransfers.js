@@ -24,6 +24,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { sanitizeFilename } = require('../utils/filenameSanitizer');
 const { getStorage } = require('../services/storage');
 const transferService = require('../services/transferService');
+const uploadQuota = require('../services/publicUploadQuota');
 const {
   getTransferUploadPolicy,
   validateTransferFileType,
@@ -121,6 +122,39 @@ async function runAdminUpload(req, res, fieldLimits) {
   }
 }
 
+/**
+ * The authenticated upload admission (a concurrency slot, the staged-bytes
+ * bound and the free-disk check) around a handler that runs multer. Held
+ * until the handler has stored or dropped its temp files.
+ */
+function withUploadAdmission(handler) {
+  return async (req, res) => {
+    const policy = await getTransferUploadPolicy();
+    const maxFileBytes = policy.maxSizeMb * 1024 * 1024;
+    const length = req.headers['transfer-encoding'] ? NaN : Number(req.headers['content-length']);
+    let session;
+    try {
+      session = await uploadQuota.begin({
+        mode: 'admin', accountId: req.admin.id, maxFiles: ADMIN_MAX_FILES,
+        requestedBytes: Number.isSafeInteger(length) && length > 0 ? length : ADMIN_MAX_FILES * maxFileBytes,
+      });
+    } catch (err) {
+      if (!err.status || !/^UPLOAD_/.test(err.code || '')) throw err;
+      uploadQuota.forAdmin(err);
+      // The refused body is unread; do not leave it on a keep-alive socket.
+      if (!req.readableEnded) res.set('Connection', 'close');
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    try {
+      return await handler(req, res);
+    } finally {
+      await uploadQuota.finish(session).catch((err) => {
+        logger.warn('transfer upload admission not released', { requestId: session.id, error: err.message });
+      });
+    }
+  };
+}
+
 /** Persist the uploaded temp files as the transfer's deliverable extra files. */
 async function storeExtraFiles(transferId, files) {
   if (!files || !files.length) return;
@@ -198,7 +232,7 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
 // the recipients the download link.
 router.post('/',
   requirePermission('events.edit'),
-  handleAsync(async (req, res) => {
+  handleAsync(withUploadAdmission(async (req, res) => {
     const up = await runAdminUpload(req, res, CREATE_FIELD_LIMITS);
     if (!up.ok) return; // 4xx already sent
 
@@ -280,7 +314,7 @@ router.post('/',
       201,
       notes.length ? `${isRequest ? 'File request' : 'Transfer'} created — ${notes.join('; ')}` : 'Transfer created',
     );
-  }),
+  })),
 );
 
 // Ownership guard for every `/:id`, `/:id/files`, `/:id/download`, … route.
@@ -380,7 +414,7 @@ router.delete('/:id/files/:fileId',
 // Upload deliverable files into an existing transfer (multipart `files`).
 router.post('/:id/upload-files',
   requirePermission('events.edit'),
-  handleAsync(async (req, res) => {
+  handleAsync(withUploadAdmission(async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid id' });
     const existing = await transferService.getTransfer(id);
@@ -410,7 +444,7 @@ router.post('/:id/upload-files',
       200,
       rejected.length ? `Files added — ${rejected.length} were not an allowed type` : 'Files added',
     );
-  }),
+  })),
 );
 
 // Remove one admin-uploaded deliverable file from a transfer

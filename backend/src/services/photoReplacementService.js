@@ -139,7 +139,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
   let object;
   let storage;
   let promotionSettled = false;
-  let mediaReservation, rowCommitted = false;
 
   try {
     // Generate new filename + storage key
@@ -164,11 +163,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // EXIF replaces it. Guest and manual credits are decisions about the
     // photo and stay.
     const isVideoReplacement = !!mimeType?.startsWith('video/');
-    if (isVideoReplacement) {
-      const admission = require('./mediaWorkAdmission');
-      const value = await admission.inspect(newFileTempPath, uploadReservation?.signal);
-      mediaReservation = await admission.reserve(existingPhoto.event_id, value, { bytes: value.decodedBytes, work: value.work });
-    }
     const autoCredit = existingPhoto.uploaded_by !== 'guest'
       && (!existingPhoto.credit_source || existingPhoto.credit_source === 'exif')
       ? await resolveCredit({ localPath: newFileTempPath, isVideo: isVideoReplacement })
@@ -267,9 +261,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // A replaced video is queued for a new copy while the setting is on;
       // anything else starts over with none.
       web_path: null,
-      processing_attempt_id: null,
-      web_attempt_id: null,
-      web_attempts: 0,
       web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
@@ -319,23 +310,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
           throw new Error('Replacement target no longer exists');
         }
-        if (mediaReservation) {
-          await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-          await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-        }
         return existingPhoto.id;
       });
-    } else await db.transaction(async conn => {
-      if (await conn('photos').where({ id: existingPhoto.id }).update(updates) !== 1) throw new Error('Replacement target no longer exists');
-      if (mediaReservation) {
-        await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-        await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-      }
-    });
-    rowCommitted = true;
-    if (mediaReservation && !updates.web_status) await Promise.all([
-      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
-    ]);
+    } else await db('photos').where({ id: existingPhoto.id }).update(updates);
     if (autoCredit) {
       // Fenced like the upload worker: a manual credit set meanwhile wins,
       // and so does a replacement that installed another file since.
@@ -364,9 +341,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       previousFilename: existingPhoto.filename,
     };
   } catch (err) {
-    if (mediaReservation && !rowCommitted) await Promise.all([
-      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
-    ]).catch(cleanupError => logger.warn('Replacement media charge retained', { error: cleanupError.message }));
     if (object) {
       try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
       catch (cleanupError) {
@@ -374,7 +348,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       }
     }
     logger.error('replacePhoto error', { photoId: existingPhoto.id, error: err.message });
-    return { success: false, error: err.message, ...(isResourceError(err) ? { code: err.code } : {}) };
+    return { success: false, error: err.message };
   }
 }
 

@@ -180,7 +180,8 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
   await withPublicUpload(req, res, {
-    eventId, mode: 'admin', maxFiles: maxFilesPerUpload, fileField: 'photos',
+    eventId, mode: 'admin', accountId: req.admin.id, maxFiles: maxFilesPerUpload, fileField: 'photos',
+    maxFileBytes: Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes),
     fileExtension: file => path.extname(file.originalname).toLowerCase(),
     fileGuard: file => createUploadFileGuard(file, req.maxFileSizeBytes, req.maxVideoSizeBytes),
     formatError: err => ({
@@ -385,14 +386,9 @@ async function handleAdminPhotoUpload(req, res) {
     const storage = getStorage();
 
     const imageAdmission = require('../services/imageWorkAdmission');
-    const mediaAdmission = require('../services/mediaWorkAdmission');
-    let batchDecodedBytes = 0;
-    let batchVideoWork = 0;
     const preparedImages = await imageAdmission.prepareBatch(filesToUpload, req.publicUploadReservation?.signal);
     for (const file of filesToUpload) {
       let object;
-      let imageReservation;
-      let rowCommitted = false;
       let promotionSettled = false;
       try {
         const tempStats = await fs.stat(file.path);
@@ -413,15 +409,7 @@ async function handleAdminPhotoUpload(req, res) {
         const relativePath = path.posix.join(event.slug, newFilename);
         const isVideo = isVideoMimeType(file.mimetype);
 
-        if (isVideo) {
-          const estimate = await mediaAdmission.inspect(file.path, req.publicUploadReservation?.signal);
-          imageReservation = await mediaAdmission.reserve(eventId, estimate, { bytes: batchDecodedBytes + estimate.decodedBytes, work: batchVideoWork + estimate.work });
-          batchDecodedBytes += estimate.decodedBytes; batchVideoWork += estimate.work;
-        } else {
-          const bytes = await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
-          imageReservation = await imageAdmission.reserve(eventId, bytes, batchDecodedBytes + bytes);
-          batchDecodedBytes += bytes;
-        }
+        if (!isVideo) await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
 
         // 1. Move file to its final storage key first. If the worker
         //    later picks up the photo row, the file is guaranteed to
@@ -465,18 +453,15 @@ async function handleAdminPhotoUpload(req, res) {
           // Explicit rather than the column default (#1561); the worker
           // reads the EXIF credit for admin rows.
           uploaded_by: 'admin',
-          // Preserve the uploading account and held-review visibility.
+          // The uploading account, and hidden + pending under review
+          // (issue 743), resolved once above.
           ...uploadColumns,
         };
         const photoId = await uploadQuota.commitObject(object, 'photo', async conn => {
           const inserted = await insertPhotoWithinCap(photoData, photoCapOf(event), conn);
           if (!inserted) throw new Error('Photo cap reached');
-          const id = inserted[0]?.id || inserted[0];
-          if (imageReservation) await imageAdmission.attach(imageReservation, id, conn);
-          if (imageReservation && isVideo) await mediaAdmission.attach(imageReservation, id, conn);
-          return id;
+          return inserted[0]?.id || inserted[0];
         });
-        rowCommitted = true;
 
         acceptedUpload(res, { video: isVideo, raw: isRawUploadFilename(file.originalname), s3: process.env.STORAGE_BACKEND === 's3' });
 
@@ -489,12 +474,6 @@ async function handleAdminPhotoUpload(req, res) {
           media_type: isVideo ? 'video' : 'image',
         });
       } catch (err) {
-        if (!rowCommitted && imageReservation) await imageAdmission.release(imageReservation).catch(cleanupError => {
-          logger.warn('Decoded admin image reservation retained', { error: cleanupError.message });
-        });
-        if (!rowCommitted && imageReservation) await mediaAdmission.release(imageReservation).catch(cleanupError => {
-          logger.warn('Decoded admin video reservation retained', { error: cleanupError.message });
-        });
         if (object) {
           try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
           catch (cleanupError) {
@@ -503,7 +482,7 @@ async function handleAdminPhotoUpload(req, res) {
         }
         logger.error(`Error queuing file ${file.originalname}:`, err);
         errors.push({ filename: file.originalname, error: err.message,
-          ...(require('../services/imageResourcePolicy').isResourceError(err) ? { code: err.code } : {}) });
+          ...require('../services/imageResourcePolicy').describe(err) });
       }
     }
     
@@ -741,43 +720,14 @@ router.post(
         });
       }
 
-      const imageAdmission = require('../services/imageWorkAdmission');
-      const mediaAdmission = require('../services/mediaWorkAdmission');
-      let imageReservation;
-      try {
-        const isVideo = photo.media_type === 'video' || photo.mime_type?.startsWith('video/');
-        if (await db('media_process_attempts').where({ photo_id: photo.id, state: 'active' }).first()) {
-          throw Object.assign(new Error('The previous media execution has not terminated'), { code: 'MEDIA_LEASE_BUSY', status: 409 });
-        }
-        if (!isVideo) {
-          const { withLocalCopy } = require('../services/imageProcessor');
-          const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
-          const key = resolvePhotoStorageKey(event, photo);
-          const inspect = localPath => imageAdmission.inspect(localPath, photo.filename);
-          const bytes = key ? await withLocalCopy(key, inspect) : await inspect(resolvePhotoFilePath(event, photo));
-          imageReservation = await imageAdmission.reserve(photo.event_id, bytes, bytes);
-        } else {
-          const { withLocalCopy } = require('../services/imageProcessor');
-          const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
-          const key = resolvePhotoStorageKey(event, photo);
-          const inspect = localPath => mediaAdmission.inspect(localPath);
-          const estimate = key ? await withLocalCopy(key, inspect) : await inspect(resolvePhotoFilePath(event, photo));
-          imageReservation = await mediaAdmission.reserve(photo.event_id, estimate, { bytes: estimate.decodedBytes, work: estimate.work });
-        }
-        await db.transaction(async trx => {
-          const changed = await trx('photos').where({ id: photo.id, processing_status: photo.processing_status })
-            .update({ processing_status: 'pending', processing_error: null, processing_started_at: null,
-              // An explicit authorized retry starts a new finite attempt cycle.
-              processing_attempts: 0, processing_attempt_id: null });
-          if (changed !== 1) throw new Error('Photo retry is already in progress');
-          if (imageReservation) await imageAdmission.attach(imageReservation, photo.id, trx);
-          if (imageReservation && isVideo) await mediaAdmission.attach(imageReservation, photo.id, trx);
-        });
-      } catch (error) {
-        if (imageReservation) await imageAdmission.release(imageReservation);
-        if (imageReservation) await mediaAdmission.release(imageReservation);
-        throw error;
-      }
+      await db('photos').where({ id: photo.id }).update({
+        processing_status: 'pending',
+        processing_error: null,
+        processing_started_at: null,
+        // An explicit retry starts a new attempt cycle, due at once.
+        processing_attempts: 0,
+        processing_retry_at: null,
+      });
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to retry photo processing');
@@ -2036,6 +1986,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
   } catch (error) {
     // A declared size and chunk count that do not fit together is the
     // client's mistake, and carries its own status.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }
@@ -2073,6 +2024,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     // Client-caused states (unknown/finished/expired upload, bad index, too
     // large) carry their own status. Only a genuinely unexpected error should
     // reach the 500 below and the error log with it.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       // Refusing the body early is the point — but it leaves unread bytes in
       // flight on a connection this response still advertises as keep-alive.
@@ -2168,6 +2120,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   } catch (error) {
     // Same rule as the chunk route: a tagged status is a client-caused state
     // (unknown/expired upload, missing chunks), not a server fault.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }

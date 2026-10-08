@@ -824,15 +824,28 @@
   },
   "upload": {
     "capacity": {
-      "decoded": "This media or batch exceeds the server's processing budget. Please use fewer frames, lower dimensions, shorter videos, or a smaller batch.",
-      "signature": "This file does not contain a supported video or RAW image. Please upload the original media file.",
+      "decoded": "This image exceeds the server's image-processing limits.",
+      "imagePixels": "This image is larger than the {{max}} megapixels this server processes.",
+      "imageDimension": "This image is longer than the {{max}} px per side this server processes.",
+      "imageFrames": "This animation has more than the {{max}} frames this server processes.",
+      "imageFileSize": "This image file is larger than the {{max}} MB this server processes.",
+      "imageMemory": "This image needs more memory than the {{max}} MB this server gives to image processing.",
       "processing": "Image processing could not complete within the server's resource limits. Please contact the owner.",
       "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
       "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",
       "busy": "Other uploads or processing jobs are using the available capacity. Please try again later.",
-      "rate": "The upload byte or request limit for this hour has been reached. Please try again later.",
+      "rate": "The upload data limit for this hour has been reached. Please try again later.",
       "unavailable": "Upload storage capacity is unavailable. Please contact the owner.",
-      "timeout": "The upload took too long. Please try a smaller batch."
+      "timeout": "The upload took too long. Please try a smaller batch.",
+      "gone": "This gallery or file request no longer exists."
+    },
+    "adminCapacity": {
+      "batch": "This upload is larger than the server accepts in one request. Lower the upload batch size in the settings.",
+      "busy": "The server stayed busy with other uploads and had no room for these files in time. Upload them again in a moment.",
+      "storage": "The server is short on disk space. Free up space, then upload these files again.",
+      "unavailable": "The server could not reserve room for this upload. Check the server log and ADMIN_UPLOAD_LIMITS_JSON.",
+      "timeout": "The upload took too long and was stopped. Check the connection and upload these files again.",
+      "waiting": "Waiting for upload capacity on the server (retry {{attempt}} of {{total}})…"
     },
     "photoCategory": "Photo Category",
     "noCategory": "No category",
@@ -4911,6 +4924,10 @@
     "subtitle": "Configure email settings for notifications",
     "loadingSettings": "Loading email settings...",
     "smtpConfiguration": "SMTP Configuration",
+    "networkPolicyHelp": "SMTP and IMAP connections validate every DNS answer and retain hostname TLS verification. Private mail servers require an exact deployment approval in MAIL_PRIVATE_ENDPOINTS.",
+    "networkPolicyForbidden": "Mail destination blocked. Private mail servers require an exact protocol/host/port approval in MAIL_PRIVATE_ENDPOINTS. Metadata and reserved destinations are never allowed.",
+    "networkPolicyInvalid": "Invalid mail host, port or MAIL_PRIVATE_ENDPOINTS approval. Use a hostname or IP and an exact mail endpoint with an explicit port.",
+    "networkPolicyUnresolved": "The mail host name could not be resolved. Check the hostname.",
     "smtpHost": "SMTP Host",
     "fromEmail": "From Email",
     "fromName": "From Name",

@@ -24,6 +24,7 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { batchFilesForUpload } from '../../utils/uploadBatches';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
@@ -148,39 +149,63 @@ export const TransferUploadPage: React.FC = () => {
     if (!files.length) return;
     setUploading(true);
     setProgress(0);
+    // One request may not carry more than the server's per-request byte
+    // budget, so a large selection goes up as several requests in order.
+    const batches = batchFilesForUpload(files, data.max_request_bytes || Infinity, data.max_files);
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
+    let sentBytes = 0;
+    // Files of the refused request and of every request after it.
+    let unsent: File[] = [];
+    const rejected: string[] = [];
+    const failed: string[] = [];
     try {
-      const result = await transfersService.upload(token as string, files, setProgress);
+      for (const [index, batch] of batches.entries()) {
+        const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
+        try {
+          const result = await transfersService.upload(token as string, batch, (pct) => {
+            setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
+          });
+          rejected.push(...(result.rejected_files || []));
+          failed.push(...(result.failed_files || []));
+          sentBytes += batchBytes;
+        } catch (err) {
+          const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
+          const capacityKey = publicUploadErrorKey(details?.code);
+          const msg = capacityKey ? t(capacityKey) : details?.error || t('transfers.upload.failed', 'Upload failed. Please try again.');
+          toast.error(msg);
+          // Do not turn one refusal into a string of repeated requests.
+          unsent = batches.slice(index).flat();
+          break;
+        }
+      }
+
       // The server filters independently of us, so it can still drop a file the
       // page admitted (a type whose MIME the browser guessed differently).
-      if (result.rejected_files?.length) {
+      if (rejected.length) {
         toast.warn(t(
           'transfers.upload.someRejected',
           'These files were not accepted: {{names}}',
-          { names: result.rejected_files.join(', ') },
+          { names: rejected.join(', ') },
         ));
       }
 
       // Files whose bytes or row did not land are NOT uploaded, whatever the
       // 201 says. Keep them on screen so retrying is one click, and do not
       // show the "thank you" screen over a partial failure.
-      const failed = result.failed_files || [];
       if (failed.length) {
         toast.error(t(
           'transfers.upload.someFailed',
           'These files could not be stored. Please try them again: {{names}}',
           { names: failed.join(', ') },
         ));
-        setFiles((prev) => prev.filter((f) => failed.includes(f.name)));
+      }
+      if (failed.length || unsent.length) {
+        setFiles(files.filter((f) => unsent.includes(f) || failed.includes(f.name)));
         setProgress(0);
         return;
       }
 
       setDone(true);
-    } catch (err) {
-      const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
-      const capacityKey = publicUploadErrorKey(details?.code);
-      const msg = capacityKey ? t(capacityKey) : details?.error || t('transfers.upload.failed', 'Upload failed. Please try again.');
-      toast.error(msg);
     } finally {
       setUploading(false);
     }
