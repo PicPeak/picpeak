@@ -482,7 +482,14 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // hero route caches for an hour, so a non-centre anchor rides in the
       // URL: a changed anchor is a new URL, not a stale cached crop.
       const heroQuery = [imgQuery, heroAnchorQuery(event.hero_image_anchor)].filter(Boolean).join('&');
-      const photoUrl = useJwtUrl ?
+      // A restricted gallery still renders at enhanced/maximum protection:
+      // advertise the bounded preview, not a source-only secure capability.
+      // This is a presentation hint; byte routes independently enforce policy.
+      const originalWithheld = !isVideo && !adminPreview && (accessLevel === 'slideshow'
+        || !parseBooleanInput(event.allow_downloads, true)
+        || (photo.category_id && categoryMap[photo.category_id]
+          && !parseBooleanInput(categoryMap[photo.category_id].allow_downloads, true)));
+      const photoUrl = originalWithheld ? `/api/gallery/${slug}/preview/${photo.id}${wmQuery}` : useJwtUrl ?
         `/api/gallery/${slug}/photo/${photo.id}${wmQuery}` :
         `/api/secure-images/${slug}/secure/${photo.id}/{{token}}`;
 
@@ -511,7 +518,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
         // installs that haven't opted in keep loading the original
         // (current behaviour). Skipped for videos since they don't
         // get a preview tier; lightbox will use the original .url.
-        preview_url: (lightboxPreviewEnabled || originalNeedsPreview(photo))
+        preview_url: (lightboxPreviewEnabled || originalNeedsPreview(photo) || originalWithheld)
             && photo.media_type !== 'video'
             && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
           ? `/api/gallery/${slug}/preview/${photo.id}${wmQuery}`

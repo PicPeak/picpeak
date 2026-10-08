@@ -1,4 +1,16 @@
 {
+  "externalSources": {
+    "title": "Eigentümer externer Quellen",
+    "info": "Nur der SuperAdmin kann einen Quellordner zuweisen oder übertragen. Unterordner gehören demselben Eigentümer; Quellordner dürfen sich nicht überschneiden.",
+    "owner": "Eigentümer der Quelle",
+    "chooseOwner": "Konto auswählen",
+    "assign": "Ausgewählten Ordner diesem Eigentümer zuweisen",
+    "revoke": "Zugriff entziehen",
+    "confirmRevoke": "Zugriff auf {{path}} entziehen? Vorhandene Galeriefotos werden nicht gelöscht.",
+    "unassigned": "Nur SuperAdmin",
+    "noSources": "Dir sind keine externen Quellordner zugewiesen. Bitte den SuperAdmin, einen Ordner zuzuweisen.",
+    "error": "Die Quellenzuweisung konnte nicht geändert werden. Prüfe, ob der Ordner existiert und keine andere Quelle überschneidet."
+  },
   "productUsagePrompt": {
     "title": "PicPeak mitgestalten?",
     "intro": "Helfen Sie, PicPeak mit freiwilligen Produktnutzungsberichten weiterzuentwickeln. Prüfen Sie vor Ihrer Entscheidung, welche pseudonymen Daten geteilt werden, wer sie sehen kann und wohin sie gesendet werden."
@@ -871,7 +883,7 @@
     "enableUploads": "Upload-Link aktivieren",
     "uploadEnabled": "Upload-Link aktiviert",
     "noUploads": "Der Kunde hat noch keine Dateien hochgeladen.",
-    "uploadHint": "Aktivieren Sie dies, um dem Kunden einen 6-stelligen Code zu geben, mit dem er Ihnen Dateien (Logos etc.) senden kann.",
+    "uploadHint": "Aktivieren Sie dies, um dem Kunden einen kurzen Code zu geben, mit dem er Ihnen Dateien (Logos etc.) senden kann.",
     "createAndSend": "Erstellen & senden",
     "uploadedFiles": "Hochgeladene Dateien",
     "addFiles": "Dateien hinzufügen",
@@ -2678,7 +2690,7 @@
     "analytics": {
       "title": "Analyse",
       "providerHeading": "Analytics-Anbieter",
-      "providerDescription": "Tracker für die öffentliche Galerie wählen oder eigenes Skript einfügen. Das Geräte-Diagramm im Admin-Dashboard wird nur bei Umami oder Rybbit angereichert — diese stellen eine Metrics-API bereit. Andere Anbieter (Plausible, Matomo, GA4, …) funktionieren über den Custom-Modus unten.",
+      "providerDescription": "Wählen Sie Umami oder Rybbit für öffentliche Galerie-Analysen. PicPeak leitet nur Daten weiter; eigene Tracker-Skripte werden nicht mehr unterstützt.",
       "providerLabel": "Anbieter",
       "provider": {
         "none": "Keiner",
@@ -2686,9 +2698,11 @@
         "rybbit": "Rybbit",
         "custom": "Custom (eigenes Skript einfügen)"
       },
-      "providerNoneInfo": "Kein externer Tracker eingebunden. Das Admin-Dashboard zeigt weiterhin Übersichtskarten + den Tagesverlauf aus PicPeaks eigenen access_logs; das Geräte-Diagramm verwendet eine grobe User-Agent-Heuristik.",
-      "proxiedNotice": "Wird über Ihre eigene Domain ausgeliefert",
-      "proxiedNoticeText": "PicPeak lädt das Tracker-Skript und leitet dessen Ereignisse über die eigene Domain weiter, deshalb ist keine Änderung an der Content-Security-Policy oder am Reverse-Proxy nötig — und Werbeblocker sehen First-Party-Anfragen. Ihr Tracker erhält weiterhin IP-Adresse und User-Agent jedes Besuchers (als X-Forwarded-For weitergereicht), Geräte- und Standort-Auswertungen funktionieren also unverändert. Die URL muss vom PicPeak-Server aus erreichbar sein und auf eine öffentliche Adresse auflösen.",
+      "providerNoneInfo": "Keine Ereignisse werden extern weitergeleitet. Das Admin-Dashboard zeigt weiterhin Übersicht und Tagesverlauf aus PicPeaks access_logs; Geräte werden grob anhand des User-Agents zugeordnet.",
+      "proxiedNotice": "Datenbasierte Analytics-Weiterleitung",
+      "customDisabled": "Eigene Skripte deaktiviert",
+      "customDisabledHelp": "Ihr bisheriges eigenes Snippet ist deaktiviert und wird nicht an Besucher gesendet. Wählen Sie Umami, Rybbit oder Keinen und speichern Sie, um das alte Snippet zu löschen.",
+      "proxiedNoticeText": "PicPeak leitet bereinigte Seitenaufrufe und Galerie-Ereignisse weiter, ohne Drittanbieter-Code zu laden. Der Anbieter erhält Besucher-IP und User-Agent, aber keine URL-Parameter, Seitentitel, Referrer, Tokens oder Konto-Kennungen. In Produktion muss der Anbieter HTTPS verwenden.",
       "customOnlyCspWarningText": "PicPeak liefert eine strikte CSP aus (`script-src 'self'; connect-src 'self'`). Anders als bei den Optionen Umami und Rybbit oben wird ein eingefügtes Snippet nicht über PicPeak geleitet — tragen Sie die Domain Ihres Trackers sowohl in `script-src` (zum Laden des Skripts) als auch in `connect-src` (für die gesendeten Ereignisse) Ihrer Reverse-Proxy- oder nginx-CSP-Konfiguration ein, sonst blockiert der Browser sie stillschweigend.",
       "rybbitUrl": "Rybbit-URL",
       "rybbitUrlHelp": "URL Ihrer Rybbit-Instanz — `https://app.rybbit.io` für SaaS oder `https://rybbit.ihre-domain.de` für selbst gehostet.",
@@ -4275,6 +4289,9 @@
     "title": "Analytics Dashboard",
     "subtitle": "Galerie-Performance und Besucherengagement verfolgen",
     "detailedSubtitle": "Detaillierte Analysen mit Umami",
+    "embedUnavailable": "Externe Dashboards benötigen einen HTTPS-Host außerhalb des PicPeak-Cookie-Bereichs und einen Browser mit Unterstützung für Iframes ohne Zugangsdaten. Die integrierten Statistiken bleiben verfügbar.",
+    "embedCspHint": "Für die Einbettung muss zusätzlich der Ursprung des Dashboards in der frame-src-Direktive der Content-Security-Policy des Reverse-Proxys eingetragen sein; ohne diesen Eintrag bleibt der Rahmen leer.",
+    "openDashboard": "Dashboard in neuem Tab öffnen",
     "loadingAnalytics": "Analytik wird geladen...",
     "showSummaryView": "Zusammenfassungsansicht anzeigen",
     "fullDashboard": "Vollständiges Dashboard",
@@ -4310,6 +4327,10 @@
     "subtitle": "E-Mail-Einstellungen für Benachrichtigungen konfigurieren",
     "loadingSettings": "E-Mail-Einstellungen werden geladen...",
     "smtpConfiguration": "SMTP-Konfiguration",
+    "networkPolicyHelp": "SMTP- und IMAP-Verbindungen prüfen alle DNS-Antworten und behalten die TLS-Prüfung des Hostnamens bei. Private Mailserver benötigen eine genaue Freigabe in MAIL_PRIVATE_ENDPOINTS in der Bereitstellungskonfiguration.",
+    "networkPolicyForbidden": "Mailziel blockiert. Private Mailserver benötigen eine genaue Protokoll-/Host-/Port-Freigabe in MAIL_PRIVATE_ENDPOINTS. Metadaten- und reservierte Ziele sind nie erlaubt.",
+    "networkPolicyInvalid": "Ungültiger Mailhost, Port oder MAIL_PRIVATE_ENDPOINTS-Eintrag. Verwenden Sie einen Hostnamen oder eine IP und einen genauen Mailendpunkt mit explizitem Port.",
+    "networkPolicyUnresolved": "Der Name des Mailhosts konnte nicht aufgelöst werden. Bitte den Hostnamen prüfen.",
     "smtpHost": "SMTP-Host",
     "fromEmail": "Absender-E-Mail",
     "fromName": "Absendername",
@@ -5004,6 +5025,7 @@
     "pinPlaceholder": "PIN eingeben",
     "enterPin": "Geben Sie die PIN ein, die Sie erhalten haben",
     "invalidPin": "Ungültige PIN. Bitte versuchen Sie es erneut.",
+    "linkInvalid": "Dieser Zugangslink ist nicht mehr gültig. Bitten Sie Ihren Fotografen um einen neuen Link.",
     "loginFailed": "Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.",
     "loginButton": "Zugang erhalten",
     "guestHint": "Nur Fotos ansehen?",

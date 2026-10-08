@@ -65,6 +65,7 @@ const STORED_PATH_COLUMNS = [
   { table: 'contracts', column: 'signed_customer_signature_path' },
   { table: 'contracts', column: 'signed_admin_signature_path' },
   { table: 'inbound_documents', column: 'file_path' },
+  { table: 'mail_intake_files', column: 'file_path' },
   { table: 'expenses', column: 'receipt_path' },
   { table: 'events', column: 'hero_logo_path' },
 ];

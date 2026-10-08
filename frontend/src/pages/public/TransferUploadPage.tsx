@@ -1,7 +1,7 @@
 /**
  * Public client-upload page for PicTransfer (#997).
  *
- * Token-only (6-char code, no auth). Lets a client send files back to the
+ * Token-only (10-char code, no auth). Lets a client send files back to the
  * photographer (logos etc.). Reached via /transfer-upload/:token.
  *
  * Like the recipient download page, styling reads the branding theme CSS

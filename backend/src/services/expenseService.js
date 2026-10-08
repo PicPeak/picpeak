@@ -203,7 +203,7 @@ async function inspectFile(filePath, mimeType) {
   return { sha, pageCount, pdfError };
 }
 
-async function recordInboundDocument({ source, filePath, originalFilename, mimeType }, adminId) {
+async function recordInboundDocument({ source, filePath, originalFilename, mimeType, mailClaim }, adminId) {
   let fileSha256 = null;
   let pageCount = null;
   let pdfError = null;
@@ -246,14 +246,26 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
     page_count: pageCount != null ? Math.min(pageCount, 200) : null,
     duplicate_of_id: duplicateOfId,
     created_by_admin_id: adminId || null,
-    created_at: now,
-    updated_at: now,
+    created_at: mailClaim ? now.toISOString() : now,
+    updated_at: mailClaim ? now.toISOString() : now,
+    ...(mailClaim ? { received_email_id: mailClaim.id, mail_account_key: mailClaim.accountKey } : {}),
   };
   // The mailbox poller records with no admin: attribute it to the intake.
-  const inserted = await auditedInsert(db, 'inbound_documents', row, {
-    actor: adminId || (row.source === 'email' ? 'email-intake' : null),
-    source: 'inbound.record',
-  });
+  const insert = async conn => {
+    // Automated captures share the quota lock: the duplicate decision must
+    // be made there too, not from an earlier pre-lock snapshot.
+    if (mailClaim && fileSha256) {
+      const duplicate = await conn('inbound_documents').where({ file_sha256: fileSha256 }).first('id');
+      duplicateOfId = duplicate?.id || null;
+      row.duplicate_of_id = duplicateOfId;
+      row.status = pdfError ? 'declined' : duplicateOfId ? 'duplicate' : 'unsorted';
+    }
+    return auditedInsert(conn, 'inbound_documents', row, {
+      actor: adminId || (row.source === 'email' ? 'email-intake' : null),
+      source: 'inbound.record',
+    });
+  };
+  const inserted = mailClaim ? await require('./mailRetentionService').recordDocument(mailClaim, insert) : await insert(db);
   const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
   await logActivity('incoming_invoice_captured', { inboundDocumentId: id, source: row.source, duplicate: !!duplicateOfId }, null, adminActor(adminId));
   return getInbound(id);
