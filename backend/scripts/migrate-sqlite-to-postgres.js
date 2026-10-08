@@ -53,6 +53,7 @@ function parseArgs(argv) {
     keepArchive: argv.includes('--keep-archive'),
     phase: (argv.find((a) => a.startsWith('--phase=')) || '').split('=')[1] || null,
     archive: (argv.find((a) => a.startsWith('--archive=')) || '').split('=')[1] || null,
+    storageIndex: (argv.find((a) => a.startsWith('--storage-index=')) || '').split('=')[1] || null,
     resultFile: (argv.find((a) => a.startsWith('--result-file=')) || '').split('=')[1] || null,
     ignoreBootstrapAdmins: argv.includes('--ignore-bootstrap-admins'),
   };
@@ -118,6 +119,11 @@ async function phaseExport() {
   // would just risk filling the temp disk.
   try {
     const { filePath } = await createPicpeak({ includePhotos: false, includeFiles: false, outDir });
+    // Same object store, new database engine. Runtime physical mappings are
+    // excluded from portable archives but must survive THIS operator workflow.
+    await require('../src/services/storage/generationIndex').writeMigrationIndex(
+      path.join(outDir, '.s3-generation-index.json'), require('../src/database/db').db
+    );
     return filePath;
   } catch (err) {
     // createPicpeak leaves a caller-supplied outDir alone on failure, and a
@@ -187,6 +193,10 @@ async function phaseFingerprint() {
     }
     out[table] = entry;
   }
+  // Indirection is excluded from portable application rows. Still detect a
+  // publication concurrent with the same-install migration before switching.
+  const index = require('../src/services/storage/generationIndex');
+  out[index.TABLE] = { fingerprint: JSON.stringify(await index.snapshotDatabaseIndex(db)) };
   return JSON.stringify(out);
 }
 
@@ -197,13 +207,17 @@ async function phaseMigrateSchema() {
   await runMigrations();
 }
 
-async function phaseImport(archivePath) {
+async function phaseImport(archivePath, storageIndexPath) {
   const { importFromPicpeak } = require('../src/services/picpeakImportService');
+  const index = require('../src/services/storage/generationIndex');
+  const storage = require('../src/services/storage').getStorage();
+  const runtimeRows = storageIndexPath ? await index.readMigrationIndex(storageIndexPath, storage.namespace) : null;
   // No currentAdminId: this is a CLI, there is no operator session to preserve.
   // The SQLite install's own admin accounts come across with everything else.
   // sqlite → pg is allowed by validateManifest's direction policy (#1041) —
   // the same gate the upload/restore UI uses, no separate opt-in flag.
   const summary = await importFromPicpeak({ picpeakPath: archivePath });
+  if (runtimeRows) await index.restoreDatabaseIndex(require('../src/database/db').db, runtimeRows);
   return JSON.stringify(summary || {});
 }
 
@@ -220,7 +234,9 @@ function describeDrift(before, after) {
       drifted.push(`${table}: ${a.count ?? 0} rows → ${b.count ?? 0}`);
     } else if (a.maxId !== b.maxId || a.maxUpdated !== b.maxUpdated) {
       drifted.push(`${table}: rows edited in place (max id ${a.maxId ?? '-'} → ${b.maxId ?? '-'}, `
-        + `last update ${a.maxUpdated ?? '-'} → ${b.maxUpdated ?? '-'})`);
+      + `last update ${a.maxUpdated ?? '-'} → ${b.maxUpdated ?? '-'})`);
+    } else if (a.fingerprint !== b.fingerprint) {
+      drifted.push(`${table}: target-local storage representation changed`);
     }
   }
   return drifted;
@@ -253,7 +269,7 @@ async function main() {
     const payload = args.phase === 'export' ? await phaseExport()
       : args.phase === 'fingerprint' ? await phaseFingerprint()
         : args.phase === 'user-data' ? await phaseUserData(args.ignoreBootstrapAdmins)
-          : args.phase === 'import' ? await phaseImport(args.archive)
+          : args.phase === 'import' ? await phaseImport(args.archive, args.storageIndex)
             : await phaseMigrateSchema();
     if (args.resultFile) fs.writeFileSync(args.resultFile, String(payload ?? ''));
     // The knex pool holds the event loop open; exit explicitly or the parent's
@@ -411,7 +427,7 @@ async function main() {
   }
 
   console.log('\n  Loading into PostgreSQL…');
-  runPhase('import', 'pg', [`--archive=${archive}`]);
+  runPhase('import', 'pg', [`--archive=${archive}`, `--storage-index=${path.join(path.dirname(archive), '.s3-generation-index.json')}`]);
 
   // And again afterwards: writes can also land while the load runs, and those
   // rows would vanish from view the moment the engine switches.
