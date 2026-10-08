@@ -20,6 +20,7 @@ const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
 const { isPhotoHiddenFromViewer } = require('../../utils/photoVisibility');
+const { originalAssetDenial, isPresentationRenditionKey } = require('../../services/galleryAssetPolicy');
 
 /**
  * Is this photo outside what the viewer's grant may reach?
@@ -88,6 +89,14 @@ router.get('/:slug/photo/:photoId',
 
       // Check if this is a video
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+
+      const originalDenial = await originalAssetDenial(req, photo, { display: true });
+      if (originalDenial) {
+        if (isVideo) return res.status(403).json(originalDenial);
+        const queryAt = req.originalUrl.indexOf('?');
+        const query = queryAt === -1 ? '' : req.originalUrl.slice(queryAt);
+        return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}${query}`);
+      }
 
       // Check protection level - basic and standard protection allow direct JWT access
       const protectionLevel = req.event.protection_level || 'standard';
@@ -366,7 +375,7 @@ router.get('/:slug/thumbnail/:photoId',
         ? thumbTier
         : null;
 
-      if (!thumbnailPath) {
+      if (!isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
         logger.error(`Failed to generate thumbnail for photo ${photoId}`);
         return res.status(404).json({ error: 'Thumbnail generation failed' });
       }
@@ -423,7 +432,7 @@ router.get('/:slug/thumbnail/:photoId',
         // Materialize via withLocalCopy — no-op in local mode, downloads
         // to a tmp file then cleans up in S3 mode.
         const watermarkedBuffer = await withLocalCopy(thumbnailPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {
@@ -482,7 +491,7 @@ router.get('/:slug/hero/:photoId',
       // point (issue 1737); regenerate if needed.
       const heroPath = await ensureHeroImage(photo, { anchor: req.event.hero_image_anchor });
 
-      if (!heroPath) {
+      if (!isPresentationRenditionKey(heroPath, 'hero')) {
         // If hero generation fails, fall back to original photo
         logger.warn(`Failed to generate hero image for photo ${photoId}, falling back to original`);
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
@@ -524,7 +533,7 @@ router.get('/:slug/hero/:photoId',
         // applyWatermark needs a local file path; materialize via
         // withLocalCopy so this works in S3 mode too.
         const watermarkedBuffer = await withLocalCopy(heroPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {
@@ -574,8 +583,13 @@ function answerStorageUnavailable(res) {
 // A preview that cannot be served falls back to the original, so the lightbox
 // always renders. Not for a slideshow session, which /photo refuses
 // (denySlideshowToken): it would send the request straight back here.
-function fallBackToOriginal(req, res) {
-  if (req.accessLevel === 'slideshow') {
+async function fallBackToOriginal(req, res, photo) {
+  if (!photo?.event_id) photo = await db('photos').where({ id: req.params.photoId, event_id: req.event.id }).first();
+  if (!photo || await originalAssetDenial(req, photo, { display: true })) {
+    res.removeHeader('ETag');
+    res.removeHeader('Content-Type');
+    res.removeHeader('Content-Length');
+    res.set('Cache-Control', 'no-store');
     return res.status(404).json({ error: 'Preview not available' });
   }
   return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
@@ -606,7 +620,7 @@ router.get('/:slug/preview/:photoId',
       // belt-and-braces in case a stale tab does.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
-        return fallBackToOriginal(req, res);
+        return fallBackToOriginal(req, res, photo);
       }
 
       // Responsive tier (#1095). Whitelisted only — an open ?w= would let
@@ -625,9 +639,9 @@ router.get('/:slug/preview/:photoId',
       const previewPath = tierWidth
         ? (await ensurePreviewImageAtWidth(photo, tierWidth)) || (await ensurePreviewImage(photo))
         : await ensurePreviewImage(photo);
-      if (!previewPath) {
+      if (!isPresentationRenditionKey(previewPath, 'preview')) {
         logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
-        return fallBackToOriginal(req, res);
+        return fallBackToOriginal(req, res, photo);
       }
 
       const storage = getStorage();
@@ -636,7 +650,7 @@ router.get('/:slug/preview/:photoId',
         logger.error('Preview file does not exist in storage backend', {
           slug: req.params.slug, photoId, eventId: req.event.id, previewPath,
         });
-        return fallBackToOriginal(req, res);
+        return fallBackToOriginal(req, res, photo);
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
@@ -681,7 +695,7 @@ router.get('/:slug/preview/:photoId',
         // multi-frame source to one frame while keeping the WebP container.
         // That is a separate problem and a much larger one.
         const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {
@@ -700,7 +714,11 @@ router.get('/:slug/preview/:photoId',
       });
       if (res.headersSent) return;
       if (isStorageUnavailableError(error)) return answerStorageUnavailable(res);
-      fallBackToOriginal(req, res);
+      try {
+        await fallBackToOriginal(req, res);
+      } catch (fallbackError) {
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to serve preview' });
+      }
     }
   }
 );
