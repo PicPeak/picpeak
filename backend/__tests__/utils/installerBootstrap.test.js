@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const installer = fs.readFileSync(path.join(__dirname, '../../../scripts/picpeak-setup.sh'), 'utf8');
+const legacyInstaller = fs.readFileSync(path.join(__dirname, '../../../scripts/install.sh'), 'utf8');
 const pins = installer.split('\n').filter(line => /^readonly (NODE_(VERSION|MIN_VERSION)|(?:DOCKER|NODE_DEB|NODE_RPM)_BOOTSTRAP_(URL|SHA256))=/.test(line));
 // Extract only the actual helper/callers: never source main, log redirection,
 // root checks, or real installation/service code while testing.
@@ -84,7 +85,7 @@ describe('standalone root installer verified bootstrap boundary', () => {
       ...definitions, stubs, command
     ].join('\n');
     const result = spawnSync('/bin/bash', ['-c', script], {
-      cwd: fixture, timeout: 5000, encoding: 'utf8',
+      cwd: fixture, timeout: 5000, encoding: 'utf8', input: options.input,
       env: {
         ...process.env, EVENTS: eventsPath, PAYLOAD: payloadPath, ATTACK_PAYLOAD: attackPath,
         NODE_STATE: nodeState, FIXTURE_ROOT: fixture,
@@ -120,6 +121,31 @@ describe('standalone root installer verified bootstrap boundary', () => {
     expect(result.events).toContain('--disable --fail --silent --show-error --location');
     expect(result.events).toContain('--proto =https --proto-redir =https --max-redirs 3');
     expect(result.events).toContain('--connect-timeout 10 --max-time 60 --max-filesize 1048576');
+  });
+
+  test.each(['sh', 'bash'])('verified %s child gets EOF on stdin, leaving a piped installer intact', interpreter => {
+    const result = run('run_verified_bootstrap "$DOCKER_BOOTSTRAP_URL" "$FIXTURE_DIGEST" ' + interpreter
+      + '; read -r rest || true; printf "PARENT_READ:%s\\n" "$rest" >> "$EVENTS"', {
+      input: 'REST_OF_INSTALLER\n',
+      payloadSuffix: 'if read -r line; then printf "CHILD_READ:%s\\n" "$line" >> "$EVENTS"; else printf "CHILD_EOF\\n" >> "$EVENTS"; fi\n'
+    });
+    expect(result.status).toBe(0);
+    expect(result.events).toContain('CHILD_EOF');
+    expect(result.events).not.toContain('CHILD_READ');
+    expect(result.events).toContain('PARENT_READ:REST_OF_INSTALLER');
+  });
+
+  test('legacy scripts/install.sh is an exit-only stub with no remote download or execution', () => {
+    expect(legacyInstaller).not.toMatch(/\b(curl|wget)\s+-/);
+    expect(legacyInstaller).not.toMatch(/https?:\/\//);
+    expect(legacyInstaller).not.toMatch(/releases\/latest/);
+    expect(legacyInstaller).not.toMatch(/^\s*(sh|bash)\s+\S+\.sh\b/m);
+    const result = spawnSync('/bin/bash', [path.join(__dirname, '../../../scripts/install.sh')], {
+      cwd: fixture, timeout: 5000, encoding: 'utf8'
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('scripts/picpeak-setup.sh');
+    expect(fs.readdirSync(fixture)).toEqual([]);
   });
 
   test.each(['0022', '0027'])('verified child keeps caller umask %s for public repository files', mask => {
