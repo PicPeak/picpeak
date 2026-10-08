@@ -50,14 +50,14 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     }
     throw new Error(`Did not reach ${state}`);
   };
-  async function create({ offline = false, identity = storage, stopServices = async () => {} } = {}) {
+  async function create({ offline = false, identity = storage, stopServices = async () => {}, ready = true } = {}) {
     const work = createWorkRegistry();
     const coordinator = createCoordinator({ database: db, work, leases: native, worker, ingress, stopServices,
       offline, getStorageIdentity: async () => identity, pollInterval: 10, autoPoll: false });
     instances.push({ coordinator, work });
     await coordinator.initialize();
     if (!offline && (await row()).state === 'open') {
-      await coordinator.waitForStartupAdmission(); coordinator.markReady();
+      await coordinator.waitForStartupAdmission(); if (ready) coordinator.markReady();
     }
     return { coordinator, work };
   }
@@ -393,6 +393,42 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     contenderIngress.leases.acquire = original;
     await newcomer.initialize(); await newcomer.stop();
     expect(Number((await db('portable_restore_instances').count('* as count').first()).count)).toBe(Number(before.count) + 1);
+  });
+
+  it('trusted tracked startup may restore only before normal readiness, with fresh durable open authority', async () => {
+    const cold = await create({ ready: false });
+    await expect(cold.coordinator.admitStartupRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await expect(cold.work.runControl(() => cold.coordinator.admitStartupRestore())).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await expect(cold.work.track('shipped runtime startup', () => cold.coordinator.admitStartupRestore())).resolves.toBeUndefined();
+    cold.coordinator.markReady();
+    await expect(cold.work.track('ordinary ready request', () => cold.coordinator.admitStartupRestore())).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await cold.coordinator.admitUpload();
+  });
+
+  it.each(['fenced', 'generation', 'volume', 'invalid metadata'])('startup restore rejects changed durable %s authority before mutation', async changed => {
+    const cold = await create({ ready: false });
+    const current = await row();
+    await db('portable_restore_control').where({ id: 1 }).update(changed === 'fenced'
+      ? { state: 'recovery_required', epoch: crypto.randomUUID(), attempt_id: crypto.randomUUID(), owner_instance_id: crypto.randomUUID() } : changed === 'generation'
+        ? { generation: current.generation + 1 } : changed === 'volume' ? { storage_id: crypto.randomUUID() } : { format_version: 999 });
+    await expect(cold.work.track('shipped runtime startup', () => cold.coordinator.admitStartupRestore()))
+      .rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    expect(cold.work.isClosed()).toBe(true);
+    expect(starts).toHaveLength(0); expect(recoveries).toHaveLength(0);
+  });
+
+  it('uninitialized, offline and drained startup callers have no native boot authority', async () => {
+    const freshWork = createWorkRegistry();
+    const fresh = createCoordinator({ database: db, work: freshWork, leases: native, worker, ingress,
+      getStorageIdentity: async () => storage, autoPoll: false });
+    await expect(freshWork.track('fake startup', () => fresh.admitStartupRestore())).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    const offline = await create({ offline: true });
+    await expect(offline.work.track('offline job', () => offline.coordinator.admitStartupRestore())).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    const cold = await create({ ready: false });
+    await cold.work.track('already accepted startup', async () => {
+      cold.work.closeAdmission();
+      await expect(cold.coordinator.admitStartupRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    });
   });
 
   it('offline verified rollback rejects its sanitized typed error and retains the restart barrier', async () => {
