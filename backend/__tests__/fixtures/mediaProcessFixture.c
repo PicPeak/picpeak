@@ -1,7 +1,9 @@
 #define _GNU_SOURCE
 #include <errno.h>
+#include <linux/io_uring.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,9 +16,16 @@ static void *held_thread(void *unused) { (void)unused; for (;;) pause(); return 
 int main(int argc, char **argv) {
     if (argc < 2) return 1;
     if (!strcmp(argv[1], "ordinary-error")) return 234;
+    if (!strcmp(argv[1], "uring")) {
+        struct io_uring_params parameters; memset(&parameters, 0, sizeof(parameters));
+        int descriptor = syscall(SYS_io_uring_setup, 1, &parameters);
+        if (descriptor < 0 && errno == ENOSYS) { puts("kernel IO thread creation denied"); return 0; }
+        if (descriptor >= 0) close(descriptor);
+        return 1;
+    }
     if (!strcmp(argv[1], "untraced")) {
         void *stack = malloc(65536); if (!stack) return 1;
-        const unsigned flags[] = { CLONE_UNTRACED, CLONE_VFORK };
+        const unsigned flags[] = { CLONE_UNTRACED, CLONE_VFORK, SIGCHLD };
         for (unsigned n = 0; n < sizeof(flags) / sizeof(flags[0]); n++) {
             long result = syscall(SYS_clone, CLONE_VM | CLONE_THREAD | CLONE_SIGHAND | flags[n],
                 (char *)stack + 65536, NULL, NULL, 0);

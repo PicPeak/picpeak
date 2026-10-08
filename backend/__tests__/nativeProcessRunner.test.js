@@ -32,6 +32,42 @@ linux('mandatory native media process boundary', () => {
     expect((await run('limits')).stdout.toString().trim()).toBe('67108864 1 65536');
     expect((await run('fork')).stdout.toString().trim()).toBe('process fork denied');
     expect((await run('untraced')).stdout.toString().trim()).toBe('untraced clone denied');
+    expect((await run('uring')).stdout.toString().trim()).toBe('kernel IO thread creation denied');
+  });
+  test('even a job outside a durable attempt holds a protected kernel lease until terminal cleanup', async () => {
+    const kernelLease = require('../src/services/linuxKernelLease');
+    let automaticPath;
+    await run('limits', { onStart: async lease => {
+      automaticPath = await fs.readlink(`/proc/${lease.pid}/fd/9`);
+      expect(await kernelLease.probe(automaticPath, lease)).toBe('busy');
+    } });
+    expect(path.basename(automaticPath)).toBe('execution.lease');
+    await expect(fs.stat(path.dirname(automaticPath))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  test('guardian death cannot bypass a busy same-inode kernel proof with a missing or zombie leader', async () => {
+    const kernelLease = require('../src/services/linuxKernelLease');
+    const originalProbe = kernelLease.probe;
+    const leasePath = path.join(dir, 'last-thread-proof.lease');
+    let held = true, lease, finished = false, stopped = false;
+    let started;
+    const ready = new Promise(resolve => { started = resolve; });
+    const probe = jest.spyOn(kernelLease, 'probe').mockImplementation((filename, expected) =>
+      filename === leasePath && held ? Promise.resolve('busy') : originalProbe(filename, expected));
+    const failure = new Error('Owned guardian died during registration');
+    const job = run('sleep', { leasePath,
+      onStart: value => { lease = value; process.kill(value.guardianPid, 'SIGKILL'); started(); throw failure; },
+      onFinish: () => { finished = true; },
+    });
+    const observed = expect(job).rejects.toBe(failure);
+    try {
+      await ready; await dead(lease.pid);
+      const stopping = runner.stop().then(() => { stopped = true; });
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(finished).toBe(false); expect(stopped).toBe(false);
+      expect(probe).toHaveBeenCalledWith(leasePath, { device: lease.device, inode: lease.inode, filesystem: lease.filesystem });
+      held = false; await stopping; await observed;
+      expect(finished).toBe(true);
+    } finally { held = false; probe.mockRestore(); await runner.stop(); }
   });
   test('tiny-stack native threads cannot exceed the hard per-job count', async () => {
     let pid;
@@ -53,7 +89,7 @@ linux('mandatory native media process boundary', () => {
       await db.destroy();
     })().catch(error=>{process.stderr.write(error.stack);process.exitCode=1})`;
     const result = await runner.run(process.execPath, ['--jitless', '--max-old-space-size=384', '-e', code], {
-      memoryBytes: 768 * 1024 * 1024, cpuSeconds: 30, wallMs: 30000, leasePath: path.join(dir, 'node-worker.lease'),
+      memoryBytes: 768 * 1024 * 1024, cpuSeconds: 30, wallMs: 30000, leasePath: path.join(dir, 'node-worker.lease'), env: { UV_USE_IO_URING: '1' },
     });
     expect(JSON.parse(result.stdout.toString())).toEqual({ fd9: true, crypto: 8, sqlite: 7, thread: 42 });
   });
