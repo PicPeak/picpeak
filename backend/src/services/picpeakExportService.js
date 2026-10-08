@@ -188,6 +188,30 @@ async function collectFiles(includePhotos, requiredReferences) {
     ...remote.map(file => ({ ...file, rel: file.relativePath }))];
 }
 
+// Local storage is archived from where it lies: only the catalogue entry
+// (size + sha256) is computed here, nothing is copied to the temp disk.
+async function catalogueInPlace(files) {
+  const byKey = new Map();
+  for (const file of files) {
+    const key = recoveryFiles.validKey(file.rel.split(path.sep).join('/'));
+    const handle = await fsp.open(file.abs, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+    const hash = crypto.createHash('sha256');
+    let size = 0;
+    try {
+      if (!(await handle.stat()).isFile()) throw new Error(`Not a regular recovery source: ${key}`);
+      for await (const chunk of handle.createReadStream({ autoClose: false })) { hash.update(chunk); size += chunk.length; }
+    } finally { await handle.close().catch(() => {}); }
+    const checksum = hash.digest('hex');
+    const existing = byKey.get(key);
+    if (existing) {
+      if (existing.checksum !== checksum) throw new Error(`Conflicting recovery sources for ${key}`);
+      continue;
+    }
+    byKey.set(key, { ...file, relativePath: key, size, checksum });
+  }
+  return [...byKey.values()];
+}
+
 /**
  * Build a .picpeak archive.
  * @param {Object} opts
@@ -228,10 +252,14 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       ? [...await recoveryFiles.requiredKeys(referenceRows, key => roots.some(root => key.startsWith(`${root}/`)))] : [];
     let files = includeFiles ? await collectFiles(includePhotos, references) : [];
     for (const f of legacyFiles) files.push({ abs: f.abs, rel: f.rel.split('/').join(path.sep) });
-    if (includeFiles) {
+    if (includeFiles && getStorage().kind() === 's3') {
+      // An export is the whole estate: no per-file ceiling, or one long
+      // video fails it.
       const fileStage = path.join(staging, 'captured');
       await fsp.mkdir(fileStage, { mode: 0o700 });
-      files = await recoveryFiles.materialize(files, fileStage);
+      files = await recoveryFiles.materialize(files, fileStage, Number.MAX_SAFE_INTEGER);
+    } else if (includeFiles) {
+      files = await catalogueInPlace(files);
     }
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.

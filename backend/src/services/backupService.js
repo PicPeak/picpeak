@@ -336,6 +336,20 @@ async function ensureDatabaseDumpForBackup(config) {
   return databaseInfo;
 }
 
+// The dump's required-key list is a file beside it, pinned by the checksum
+// in the run row. Anything else reads as "no recorded references".
+async function readStorageReferences(dumpFile, pinned) {
+  if (!pinned || typeof pinned.checksum !== 'string') return undefined;
+  try {
+    const body = await fs.readFile(`${dumpFile}${recoveryFiles.REFERENCES_SUFFIX}`);
+    if (crypto.createHash('sha256').update(body).digest('hex') !== pinned.checksum) return undefined;
+    const keys = JSON.parse(body);
+    return Array.isArray(keys) ? keys : undefined;
+  } catch (error) {
+    return undefined;
+  }
+}
+
 async function getDatabaseBackupInfoInternal() {
   try {
     const recent = await db('database_backup_runs')
@@ -366,7 +380,7 @@ async function getDatabaseBackupInfoInternal() {
         backupTime: recent.completed_at,
         tables: (stats && stats.tables) || {},
         rowCounts: checksums || {},
-        storageReferences: stats?.storageReferences
+        storageReferences: await readStorageReferences(recent.file_path, stats?.storageReferences)
       };
     }
 
@@ -950,7 +964,7 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath()) {
+function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath(), dumpRoot) {
   const storagePath = sourceRoot;
   const host = validateRsyncParam(config.backup_rsync_host, 'host');
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
@@ -1007,7 +1021,9 @@ function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath(
     ? `${user}@${host}:${remotePath}`
     : `${host}:${remotePath}`;
 
-  args.push(source, destination);
+  // `dumpRoot` holds only database/<dump>; rsync merges it into the same
+  // destination tree as the storage root.
+  args.push(source, ...(dumpRoot ? [`${dumpRoot}/`] : []), destination);
   return args;
 }
 
@@ -1027,7 +1043,7 @@ function parseRsyncStats(output) {
   return stats;
 }
 
-async function performRsyncBackup(config, files, sourceRoot) {
+async function performRsyncBackup(config, files, sourceRoot, dumpRoot) {
   const { spawnAsync } = require('../utils/safeExec');
   // SSRF: the /test-connection route validates the host, but a scheduled or
   // manual /run reaches here directly with the stored host. Resolve-and-vet
@@ -1049,7 +1065,7 @@ async function performRsyncBackup(config, files, sourceRoot) {
     files = files.filter((file) => !file.legacyValues);
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
-  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`), sourceRoot);
+  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`), sourceRoot, dumpRoot);
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
   const stats = parseRsyncStats(stdout);
 
@@ -1332,11 +1348,17 @@ async function runBackupInternal(isManual = false) {
 
     let result;
     const destinationType = (config.backup_destination_type || 'local').toLowerCase();
-    if (getStorage().kind() === 's3' || destinationType === 'rsync') {
+    // Only an S3-primary estate has to be staged as a tree. With local
+    // storage rsync keeps reading the storage root in place (no second copy
+    // of the library, mtimes intact); the stage then holds the dump alone.
+    const stagedFiles = getStorage().kind() === 's3';
+    if (stagedFiles || destinationType === 'rsync') {
       recoveryStage = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-backup-files-'));
       await fs.chmod(recoveryStage, 0o700);
-      files = await recoveryFiles.materialize(files, recoveryStage,
-        (Number(config.backup_max_file_size_mb) || 5000) * 1024 * 1024);
+      if (stagedFiles) {
+        files = await recoveryFiles.materialize(files, recoveryStage,
+          (Number(config.backup_max_file_size_mb) || 5000) * 1024 * 1024);
+      }
       if (destinationType === 'rsync') {
         // The walker excludes backup output directories. Explicitly capture
         // the verified dump under the same relative root restore downloads.
@@ -1358,7 +1380,9 @@ async function runBackupInternal(isManual = false) {
     if (destinationType === 'local') {
       result = await performLocalBackup(config, files);
     } else if (destinationType === 'rsync') {
-      result = await performRsyncBackup(config, files, recoveryStage);
+      result = stagedFiles
+        ? await performRsyncBackup(config, files, recoveryStage)
+        : await performRsyncBackup(config, files, undefined, recoveryStage);
     } else if (destinationType === 's3') {
       result = await performS3Backup(config, files, verifiedDatabaseInfo);
     } else {
@@ -1385,13 +1409,14 @@ async function runBackupInternal(isManual = false) {
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
 
       // Rows naming a legacy-root document are pointed at its backed-up path
-      // on restore (restoreService), including the staged rsync tree.
+      // on restore (restoreService), including the staged rsync tree. An
+      // rsync of the storage root itself leaves those documents out.
       // `file.checksum` (set by performLocalBackup/performS3Backup right
       // before the copy/upload) reflects the bytes actually archived; prefer
       // it over `legacySha256`, which collectLegacyStoredFiles computed
       // earlier during the collection walk and can go stale if the source
       // file changes between collection and the archive write.
-      const legacyBacked = files.filter((file) => file.legacyValues)
+      const legacyBacked = (destinationType === 'rsync' && !stagedFiles ? [] : files.filter((file) => file.legacyValues))
         .map((file) => ({
           rel: file.relativePath.split(path.sep).join('/'),
           values: file.legacyValues,
