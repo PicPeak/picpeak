@@ -45,7 +45,7 @@ export const ExternalSourceAssignments: React.FC<{ selectedPath: string }> = ({ 
       <label className="block" htmlFor="external-source-owner">{t('externalSources.owner')}</label>
       <div className="flex flex-wrap gap-2">
         <select id="external-source-owner" value={owner} onChange={(e) => setOwner(e.target.value)}
-          className="border border-line rounded p-1 bg-surface text-body" disabled={busy}>
+          className="border border-line rounded p-1 bg-panel text-body" disabled={busy}>
           <option value="">{t('externalSources.chooseOwner')}</option>
           {data.owners.map((account) => <option key={account.id} value={account.id}>{account.username}</option>)}
         </select>
