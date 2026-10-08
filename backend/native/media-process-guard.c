@@ -121,12 +121,19 @@ static int thread_only(int protect_lease) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone3, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
 #endif
+#ifdef SYS_io_uring_setup
+        /* io-wq creates kernel-side IO threads outside user clone tracing.
+         * Ordinary synchronous/libuv fallback remains available. */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_io_uring_setup, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+#endif
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ptrace, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone, 0, 6),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
-        /* A newborn must remain traced and stopped until registered. */
-        BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, CLONE_UNTRACED | CLONE_VFORK, 0, 1),
+        /* Signal-bearing clones report FORK, not CLONE. Only ordinary
+         * signal-less pthread clones may reach our mandatory CLONE trace. */
+        BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, CLONE_UNTRACED | CLONE_VFORK | CSIGNAL, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
         BPF_STMT(BPF_ALU | BPF_AND | BPF_K, CLONE_THREAD | CLONE_VM),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, CLONE_THREAD | CLONE_VM, 1, 0),
