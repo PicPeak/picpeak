@@ -14,7 +14,8 @@ const ATTEMPT = /^[a-zA-Z0-9_-]{8,128}$/;
 const PHYSICAL = /^\.picpeak-generations\/[a-zA-Z0-9_-]{8,128}\/[a-f0-9-]{36}$/;
 
 function logicalKey(value, { prefix = '', listing = false } = {}) {
-  if (typeof value !== 'string' || !value || value.includes('\\') || /[\x00-\x1f\x7f]/.test(value)
+  if (typeof value !== 'string' || !value || value.includes('\\')
+      || Array.from(value).some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
       || /^[a-z]:/i.test(value)) throw new Error('Invalid S3 storage key');
   const key = listing && value.endsWith('/') ? value.slice(0, -1) : value;
   if (!key || key.split('/').some(p => !p || p === '.' || p === '..')) {
