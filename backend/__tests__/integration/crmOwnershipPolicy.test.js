@@ -146,6 +146,30 @@ describe.each(engines)('CRM query ownership (%s)', client => {
     await expect(withoutCrmContext(() => conn('quotes').select())).rejects.toMatchObject({ statusCode: 403 });
   });
 
+  test('mixed foreign deal creators veto every legacy fallback, but not an explicit stored creator', async () => {
+    await trusted(async () => {
+      await conn('quotes').insert([{ id: 4, project_id: 1, deal_uuid: 'foreign' },
+        { id: 5, converted_event_id: 1, deal_uuid: 'foreign' }]);
+      await conn('contracts').insert({ id: 5, source_quote_id: 1, deal_uuid: 'foreign' });
+      await conn('invoices').insert({ id: 5, source_contract_id: 5 });
+      await conn('quotes').where('id', 1).update({ deal_uuid: 'foreign' });
+    });
+    await as(actor(10), async () => {
+      expect(await conn('quotes').where('id', 1).first()).toBeDefined();
+      expect(await conn('quotes').where('id', 4).first()).toBeUndefined();
+      expect(await conn('quotes').where('id', 5).first()).toBeUndefined();
+      expect(await conn('contracts').where('id', 5).first()).toBeUndefined();
+      expect(await conn('invoices').where('id', 5).first()).toBeUndefined();
+      expect(await conn('quotes').where('id', 4).update({ status: 'sent' })).toBe(0);
+    });
+    await as({ ...actor(10), capability: { root: 'quotes', id: 1, dealUuid: 'foreign', eventId: 1 } }, async () => {
+      expect(await conn('quotes').where('id', 4).first()).toBeUndefined();
+    });
+    await trusted(() => conn('contracts').where('id', 5).update({ deal_uuid: 'unambiguous' }));
+    expect(await as(actor(10), () => conn('contracts').where('id', 5).first())).toBeDefined();
+    expect(await as(actor(10), () => conn('invoices').where('id', 5).first())).toBeDefined();
+  });
+
   test('legacy quote-to-contract-to-invoice ownership is finite and conflicting anchors deny it', async () => {
     await trusted(async () => {
       await conn('contracts').insert({ id: 5, source_quote_id: 1 });
