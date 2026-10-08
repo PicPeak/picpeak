@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/file.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -120,8 +121,13 @@ static int thread_only(int protect_lease) {
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone3, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
 #endif
-        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone, 0, 4),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_ptrace, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone, 0, 6),
         BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
+        /* A newborn must remain traced and stopped until registered. */
+        BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, CLONE_UNTRACED | CLONE_VFORK, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
         BPF_STMT(BPF_ALU | BPF_AND | BPF_K, CLONE_THREAD | CLONE_VM),
         BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, CLONE_THREAD | CLONE_VM, 1, 0),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
@@ -130,6 +136,18 @@ static int thread_only(int protect_lease) {
     struct sock_fprog program = { sizeof(filter) / sizeof(filter[0]), filter };
     return prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) ||
         prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program);
+}
+struct traced_thread { pid_t pid; int known, pending; };
+static int track_thread(struct traced_thread *tasks, unsigned *count, pid_t pid, unsigned maximum) {
+    for (unsigned n = 0; n < *count; n++) if (tasks[n].pid == pid) return (int)n;
+    if (*count >= maximum + 1) return -1;
+    tasks[*count] = (struct traced_thread){ .pid = pid };
+    return (int)(*count)++;
+}
+static void remove_thread(struct traced_thread *tasks, unsigned *count, pid_t pid) {
+    for (unsigned n = 0; n < *count; n++) if (tasks[n].pid == pid) {
+        tasks[n] = tasks[--*count]; return;
+    }
 }
 int main(int argc, char **argv) {
     if (argc == 3 && !strcmp(argv[1], "--lease-check")) {
@@ -161,8 +179,11 @@ int main(int argc, char **argv) {
         close(gate[1]);
         if (setpgid(0, 0) || prctl(PR_SET_PDEATHSIG, SIGKILL) || getppid() != supervisor) _exit(125);
         signal(SIGTERM, SIG_DFL); signal(SIGINT, SIG_DFL); signal(SIGPIPE, SIG_DFL);
+        if (ptrace(PTRACE_TRACEME, 0, 0, 0) || raise(SIGSTOP)) _exit(125);
         limit(RLIMIT_AS, bytes); limit(RLIMIT_CPU, cpu); limit(RLIMIT_FSIZE, file_bytes);
-        limit(RLIMIT_NPROC, threads); limit(RLIMIT_CORE, 0); limit(RLIMIT_STACK, 16 * 1024 * 1024);
+        /* NPROC is UID-wide, including unrelated containers/replicas. The
+         * guardian instead enforces the same finite thread budget per job. */
+        limit(RLIMIT_CORE, 0); limit(RLIMIT_STACK, 16 * 1024 * 1024);
         if (thread_only(strcmp(argv[7], "-") != 0)) _exit(125);
         close(3); close(4);
         char permission;
@@ -178,13 +199,16 @@ int main(int argc, char **argv) {
     struct statfs lease_fs; memset(&lease_fs, 0, sizeof(lease_fs));
     if (strcmp(argv[7], "-") && (fstat(9, &lease_stat) || fstatfs(9, &lease_fs))) {
         (void)kill(-child, SIGKILL); (void)kill(child, SIGKILL);
-        while (waitpid(-1, NULL, 0) >= 0 || errno == EINTR) {}
+        while (waitpid(-1, NULL, __WALL) >= 0 || errno == EINTR) {}
         dprintf(3, "{\"terminal\":true}\n");
         return 125;
     }
     dprintf(3, "{\"version\":1,\"pid\":%d,\"group\":%d,\"leaseDevice\":\"%llu\",\"leaseInode\":\"%llu\",\"leaseFilesystem\":\"%lu\"}\n",
         child, child, (unsigned long long)lease_stat.st_dev, (unsigned long long)lease_stat.st_ino, (unsigned long)lease_fs.f_type);
     int status = 0, final_status = 0, stopped = 0, timed_out = 0, released = 0;
+    int tracing = 0, supervisor_failed = 0, thread_limit = 0;
+    unsigned live = 1;
+    struct traced_thread tasks[257] = {{ .pid = child, .known = 1 }};
     for (;;) {
         if (!released && !stopped) {
             char permission;
@@ -194,24 +218,63 @@ int main(int argc, char **argv) {
                 close(gate[1]); close(4); released = 1;
             } else if (count == 0 || (count < 0 && errno != EAGAIN && errno != EINTR)) cancelled = 1;
         }
-        if (!stopped && (cancelled || milliseconds() >= deadline)) {
-            timed_out = !cancelled; stopped = 1;
+        if (!stopped && (cancelled || supervisor_failed || thread_limit || milliseconds() >= deadline)) {
+            timed_out = !cancelled && !supervisor_failed && !thread_limit; stopped = 1;
             (void)kill(-child, SIGKILL); (void)kill(child, SIGKILL);
         }
-        pid_t result = waitpid(-1, &status, WNOHANG);
+        pid_t result = waitpid(-1, &status, WNOHANG | __WALL);
         if (result > 0) {
-            if (result == child) { final_status = status; stopped = 1; (void)kill(-child, SIGKILL); }
+            if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                remove_thread(tasks, &live, result);
+                if (result == child) {
+                    final_status = status; stopped = 1; (void)kill(-child, SIGKILL);
+                    if (!tracing) supervisor_failed = 1;
+                }
+                continue;
+            }
+            if (WIFSTOPPED(status)) {
+                /* SIGKILL also terminates ptrace-stopped threads. After a
+                 * refusal, only reap: racing CONT against their death is not
+                 * a new failure to establish supervision. */
+                if (stopped) continue;
+                int index = track_thread(tasks, &live, result, (unsigned)threads);
+                if (index < 0 || live > threads) { thread_limit = 1; continue; }
+                if (!tracing && result == child) {
+                    if (WSTOPSIG(status) != SIGSTOP ||
+                        ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_TRACECLONE | PTRACE_O_TRACEEXEC | PTRACE_O_EXITKILL)) {
+                        supervisor_failed = 1; continue;
+                    }
+                    tracing = 1;
+                }
+                unsigned event = (unsigned)status >> 16;
+                if (event == PTRACE_EVENT_CLONE) {
+                    unsigned long newborn;
+                    if (ptrace(PTRACE_GETEVENTMSG, result, 0, &newborn)) { supervisor_failed = 1; continue; }
+                    int added = track_thread(tasks, &live, (pid_t)newborn, (unsigned)threads);
+                    if (added < 0 || live > threads) { thread_limit = 1; continue; }
+                    tasks[added].known = 1;
+                    if (tasks[added].pending) {
+                        tasks[added].pending = 0;
+                        if (ptrace(PTRACE_CONT, tasks[added].pid, 0, 0) && errno != ESRCH) supervisor_failed = 1;
+                    }
+                }
+                if (!tasks[index].known) { tasks[index].pending = 1; continue; }
+                int delivery = event || WSTOPSIG(status) == SIGSTOP ? 0 : WSTOPSIG(status);
+                if (ptrace(PTRACE_CONT, result, 0, delivery) && errno != ESRCH) supervisor_failed = 1;
+            }
             continue;
         }
         if (result < 0 && errno == ECHILD) break;
         if (result < 0 && errno != EINTR) return 125;
         struct timespec delay = { 0, 10000000 }; (void)nanosleep(&delay, NULL);
     }
-    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s,\"childSignal\":%d}\n",
+    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s,\"threadLimit\":%s,\"supervisorFailed\":%s,\"childSignal\":%d}\n",
         timed_out ? "true" : "false", cancelled ? "true" : "false",
+        thread_limit ? "true" : "false", supervisor_failed ? "true" : "false",
         WIFSIGNALED(final_status) ? WTERMSIG(final_status) : 0);
     close(3);
     if (timed_out) return 124;
     if (cancelled) return 130;
+    if (supervisor_failed || thread_limit) return 125;
     return WIFEXITED(final_status) ? WEXITSTATUS(final_status) : 128 + WTERMSIG(final_status);
 }
