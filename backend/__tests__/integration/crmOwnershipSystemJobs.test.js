@@ -114,6 +114,7 @@ describe('backups are not scoped to the admin who started or rescheduled them', 
       { setting_key: 'database_backup_email_on_failure', setting_value: 'false', setting_type: 'database_backup' },
       { setting_key: 'backup_destination_type', setting_value: JSON.stringify('local'), setting_type: 'backup' },
       { setting_key: 'backup_destination_path', setting_value: JSON.stringify(destination), setting_type: 'backup' },
+      { setting_key: 'backup_manifest_path', setting_value: JSON.stringify(path.join(destination, 'manifests')), setting_type: 'backup' },
       { setting_key: 'backup_email_on_failure', setting_value: 'false', setting_type: 'backup' },
     ]).onConflict('setting_key').merge();
 
