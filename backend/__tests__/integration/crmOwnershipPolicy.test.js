@@ -243,6 +243,18 @@ describe.each(engines)('CRM query ownership (%s)', client => {
     expect(await as(actor(10), () => conn('quote_line_items').where('id', 21).first())).toBeUndefined();
   });
 
+  test('a legacy workflow primary without a UUID can create only literal source-linked children', async () => {
+    await trusted(() => conn('quotes').where('id', 1).update({ deal_uuid: null }));
+    await as({ ...actor(10), capability: { root: 'quotes', id: 1, dealUuid: null, eventId: null } }, async () => {
+      await conn('contracts').insert({ id: 5, created_by_admin_id: 10, source_quote_id: 1, deal_uuid: 'new-derived-deal' });
+      expect(await conn('contracts').where('id', 5).first()).toBeDefined();
+      await expect(conn('contracts').insert({ id: 6, created_by_admin_id: 10, source_quote_id: 2,
+        deal_uuid: 'unrelated' })).rejects.toMatchObject({ statusCode: 403 });
+      await expect(conn('contracts').insert({ id: 6, created_by_admin_id: 10,
+        deal_uuid: 'unrelated' })).rejects.toMatchObject({ statusCode: 403 });
+    });
+  });
+
   (client === 'pg' ? test : test.skip)('ordinary concurrent owner writes serialize without shared-lock upgrade deadlocks', async () => {
     const results = await Promise.all(['sent', 'draft'].map(status => as(actor(10), () => conn('quotes').where('id', 1).update({ status }).timeout(3000))));
     expect(results).toEqual([1, 1]);
