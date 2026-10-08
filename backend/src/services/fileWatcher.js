@@ -2,6 +2,7 @@ const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('./isolatedSharp');
+const { retryTransient } = require('./imageResourcePolicy');
 const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -64,7 +65,8 @@ function startFileWatcher() {
 
   watcher
     .on('add', (filePath) => {
-      enqueue(() => processNewPhoto(filePath)).catch((error) => {
+      // A busy image worker is asked again: nothing re-announces this file.
+      enqueue(() => retryTransient(() => processNewPhoto(filePath))).catch((error) => {
         logger.error('Error processing new photo:', error);
       });
     })

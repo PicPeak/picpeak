@@ -1,5 +1,5 @@
 const sharp = require('./isolatedSharp');
-const { isResourceError } = require('./imageResourcePolicy');
+const { isResourceError, isTransient } = require('./imageResourcePolicy');
 const exifr = require('exifr');
 const path = require('path');
 const fsp = require('fs').promises;
@@ -276,13 +276,15 @@ async function generateThumbnail(imagePath, options = {}) {
 
   try {
     // First, verify the source image is complete and valid
-    const metadata = await sharp(imagePath).metadata();
+    const metadata = await sharp(imagePath, { interactive: options.interactive }).metadata();
 
     if (!metadata.width || !metadata.height) {
       throw new Error('Invalid image metadata - file may be incomplete');
     }
 
     let sharpInstance = sharp(imagePath, {
+      // Set by the on-demand tier routes: refused, not queued, under a flood.
+      interactive: options.interactive,
       limitInputPixels: 268402689, // ~16k x 16k max
       sequentialRead: true,
       failOn: 'none'
@@ -1059,7 +1061,7 @@ async function generatePreviewImage(imagePath, options = {}) {
   // and the encoding depends on what the source turns out to be.
   let probe;
   try {
-    probe = await sharp(imagePath).metadata();
+    probe = await sharp(imagePath, { interactive: options.interactive }).metadata();
   } catch (error) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to read metadata for preview of ${filename}: ${msg}`);
@@ -1086,6 +1088,8 @@ async function generatePreviewImage(imagePath, options = {}) {
     const quality = options.quality || DEFAULT_PREVIEW_QUALITY;
 
     let sharpInstance = sharp(imagePath, {
+      // Set by the on-demand tier routes: refused, not queued, under a flood.
+      interactive: options.interactive,
       limitInputPixels: 268402689, // ~16k x 16k max
       sequentialRead: true,
       failOn: 'none',
@@ -1393,13 +1397,15 @@ async function ensureThumbnailTierUnguarded(photo, width, settings, canonicalWid
     return await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
-        return await generateThumbnail(proc.path, { outputBasename, width, height });
+        return await generateThumbnail(proc.path, { outputBasename, width, height, interactive: true });
       } finally {
         proc.cleanup();
       }
     });
   } catch (e) {
-    if (isResourceError(e)) throw e;
+    // \"Not now\" goes to the caller (503); an image over the limits falls back
+    // like any other source that cannot be rendered.
+    if (isTransient(e)) throw e;
     logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
     return null;
   }
@@ -1445,7 +1451,7 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
       return await generatePreviewImage(localPath, {
-        regenerate: true, outputBasename, longEdge: width,
+        regenerate: true, outputBasename, longEdge: width, interactive: true,
       });
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
@@ -1460,13 +1466,16 @@ async function ensurePreviewImageAtWidthUnguarded(photo, width) {
           regenerate: true,
           outputBasename,
           longEdge: width,
+          interactive: true,
         });
       } finally {
         proc.cleanup();
       }
     });
   } catch (e) {
-    if (isResourceError(e)) throw e;
+    // \"Not now\" goes to the caller (503); an image over the limits falls back
+    // like any other source that cannot be rendered.
+    if (isTransient(e)) throw e;
     logger.warn(`Preview tier w${width} failed for photo ${photo.id}: ${e.message}`);
     return null;
   }
@@ -1604,8 +1613,10 @@ async function extractCaptureDate(imagePath) {
  *
  * Takes and returns a Buffer so callers can chain resize → watermark without
  * a tmp file. Returns the input unchanged when `box` is null ('original').
- * Never throws: on a corrupt/undecodable source it logs and returns the input,
- * because failing a download outright is worse than serving the full size.
+ * On a corrupt/undecodable source it logs and returns the input, because
+ * failing a download outright is worse than serving the full size. It throws
+ * only an image-worker refusal (IMAGE_* code): the server's image limits, or
+ * a worker that is busy or unavailable, which the route answers as such.
  */
 async function resizeToBox(inputBuffer, box, options = {}) {
   if (!box || !box.width || !box.height) return inputBuffer;
@@ -1674,7 +1685,9 @@ async function resizeToBox(inputBuffer, box, options = {}) {
     return await pipeline.toBuffer();
   } catch (e) {
     logger.warn(`resizeToBox failed (${box.width}x${box.height}), serving original: ${e.message}`);
-    if (isResourceError(e)) throw e;
+    // \"Not now\" goes to the caller (503); an image over the limits falls back
+    // like any other source that cannot be rendered.
+    if (isTransient(e)) throw e;
     return inputBuffer;
   }
 }

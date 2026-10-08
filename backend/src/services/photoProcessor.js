@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const imageAdmission = require('./imageWorkAdmission');
-const { isResourceError } = require('./imageResourcePolicy');
+const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -423,7 +423,6 @@ async function queueFilesForProcessing(files, options = {}) {
 
   // Once the cap is hit, the rest of the batch is refused without storing it.
   let capReached = false;
-  let batchDecodedBytes = 0;
   const preparedImages = await imageAdmission.prepareBatch(fileList, uploadReservation?.signal);
   const capRefusal = () => Object.assign(new Error(photoCapError(photoCap).error), { code: 'PHOTO_CAP_REACHED' });
 
@@ -433,7 +432,6 @@ async function queueFilesForProcessing(files, options = {}) {
     let uploadCharge = null;
     let promotionSettled = false;
     let rowCommitted = false;
-    let imageReservation = null;
     try {
       if (!tempPath) {
         throw new Error('Uploaded file is missing a temporary path');
@@ -455,11 +453,9 @@ async function queueFilesForProcessing(files, options = {}) {
       const relativePath = path.posix.join(event.slug, newFilename);
       const isVideo = isVideoMimeType(file.mimetype);
 
-      if (!isVideo) {
-        const bytes = await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
-        imageReservation = await imageAdmission.reserve(eventId, bytes, batchDecodedBytes + bytes);
-        batchDecodedBytes += bytes;
-      }
+      // An image over the server's limits is refused here, before promotion
+      // or queue insertion, with a message naming the limit.
+      if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
@@ -497,13 +493,11 @@ async function queueFilesForProcessing(files, options = {}) {
       const writePhoto = async conn => {
         const inserted = await insertPhotoWithinCap(photoRow, photoCap, conn);
         if (!inserted) { capReached = true; throw capRefusal(); }
-        const id = inserted[0]?.id || inserted[0];
-        if (imageReservation) await imageAdmission.attach(imageReservation, id, conn);
-        return id;
+        return inserted[0]?.id || inserted[0];
       };
       const inserted = uploadCharge
         ? [await require('./publicUploadQuota').commitObject(uploadCharge, 'photo', writePhoto)]
-        : [await db.transaction(writePhoto)];
+        : await insertPhotoWithinCap(photoRow, photoCap);
       if (!inserted) {
         capReached = true;
         throw capRefusal();
@@ -520,9 +514,6 @@ async function queueFilesForProcessing(files, options = {}) {
     } catch (err) {
       // An object with no photo row is invisible to every listing and every
       // cleanup, so a failure after the upload removes what it stored.
-      if (!rowCommitted && imageReservation) await imageAdmission.release(imageReservation).catch(cleanupError => {
-        logger.warn('Decoded image reservation retained after cleanup failure', { error: cleanupError.message });
-      });
       // An object with no photo row is invisible to every listing and every
       // cleanup, so a failure after the upload removes what it stored.
       if (!rowCommitted && uploadCharge) {
@@ -535,7 +526,7 @@ async function queueFilesForProcessing(files, options = {}) {
         filename: file?.originalname || 'unknown',
         error: err.message,
         ...(err.code === 'PHOTO_CAP_REACHED' ? { code: err.code, limit: photoCap } : {}),
-        ...(isResourceError(err) ? { code: err.code } : {}),
+        ...describeImageError(err),
       });
     }
   }
