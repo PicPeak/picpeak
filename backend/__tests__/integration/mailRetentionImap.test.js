@@ -12,6 +12,7 @@ jest.setTimeout(120000);
 let db, cleanup, server, intake, port, image, messages, downloads;
 const sockets = new Set();
 const commands = [];
+const previousPrivateEndpoints = process.env.MAIL_PRIVATE_ENDPOINTS;
 
 function reply(socket, tag, command) {
   commands.push(command);
@@ -61,6 +62,9 @@ beforeAll(async () => {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   port = server.address().port;
+  // Compose with the mail DNS boundary using one owned protocol/host/port,
+  // never a NODE_ENV-wide private-network exception.
+  process.env.MAIL_PRIVATE_ENDPOINTS = `imap://127.0.0.1:${port}`;
   await db('feature_flags').insert({ key: 'incomingMail', value: 1 }).onConflict('key').merge({ value: 1 });
   const cfg = { imap_host: '127.0.0.1', imap_port: port, imap_secure: 0, imap_user: 'intake@example.com', imap_pass: 'owned-fixture', imap_folder: 'INBOX' };
   const old = await db('email_configs').first();
@@ -80,6 +84,8 @@ beforeEach(async () => {
   await db('mail_intake_state').insert({ key: 'installation' });
 });
 afterAll(async () => {
+  if (previousPrivateEndpoints === undefined) delete process.env.MAIL_PRIVATE_ENDPOINTS;
+  else process.env.MAIL_PRIVATE_ENDPOINTS = previousPrivateEndpoints;
   for (const socket of sockets) socket.destroy();
   if (server) await new Promise(resolve => server.close(resolve));
   if (cleanup) await cleanup();
