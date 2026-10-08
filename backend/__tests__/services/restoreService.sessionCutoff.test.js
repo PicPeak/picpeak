@@ -31,7 +31,7 @@ jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn() })
 // whole-operation admission/ownership has its own maintenance-owner suite.
 jest.mock('../../src/services/portableRestoreIngress', () => ({ withIngress: run => run() }), { virtual: true });
 jest.mock('../../src/services/portableRestoreCoordinator', () => ({
-  admitUpload: async () => {}, enterUnstartedServerFixtureContext: () => {},
+  admitUpload: async () => {}, revalidateAfterNativeRestore: async () => {}, enterUnstartedServerFixtureContext: () => {},
 }));
 
 const { bootCrmDb } = require('../integration/helpers/crmDb');

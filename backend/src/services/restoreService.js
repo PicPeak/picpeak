@@ -305,7 +305,9 @@ class RestoreService {
     return applicationWork.track('native-restore', () =>
       require('./portableRestoreIngress').withIngress(async () => {
         await require('./portableRestoreCoordinator').admitUpload();
-        return this.performRestore(options);
+        const result = await this.performRestore(options);
+        await require('./portableRestoreCoordinator').revalidateAfterNativeRestore();
+        return result;
       }));
   }
 
@@ -316,7 +318,9 @@ class RestoreService {
     return applicationWork.track('native-startup-restore', () =>
       require('./portableRestoreIngress').withIngress(async () => {
         await require('./portableRestoreCoordinator').admitStartupRestore();
-        return this.performRestore(options);
+        const result = await this.performRestore(options);
+        await require('./portableRestoreCoordinator').revalidateAfterNativeRestore();
+        return result;
       }));
   }
 

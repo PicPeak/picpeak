@@ -25,6 +25,13 @@ function createRestoreShellRouter({ frontendDir = process.env.FRONTEND_DIR || pa
       .split('${BRAND_DESCRIPTION}').join('PicPeak maintenance and restore progress.');
   } catch (_) { return router; }
 
+  // Express automatically answers OPTIONS for matching GET routes. The
+  // asset wildcard must not answer ordinary API preflights before admission.
+  router.use((req, _res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next('router');
+    return next();
+  });
+
   router.get(SHELL_PATHS, (_req, res) => {
     res.set('Cache-Control', 'no-store');
     res.type('html').send(html);

@@ -23,6 +23,15 @@ capacity information and ambiguous lease identities are refused. For host
 identity across reboot, supply a stable, host-unique `MEDIA_PROCESS_HOST_ID` when
 a persistent machine ID is unavailable. Never share that value between hosts.
 
+Managed local files must be owned by the application UID and singly linked.
+Redirected/symlinked parents, hardlinked destinations and separate-volume
+promotion paths are refused before replacement.
+
+Stop external database writers and do not run migrations during restore.
+On PostgreSQL, cutover also holds exclusive locks on all target public tables
+until transaction completion; database-backed progress polls can wait during
+that interval, while the bundled maintenance UI remains served.
+
 Do not delete or replace maintenance markers, leases, journals or runtime tables
 to clear a fence. An expired timer, missing container PID or database disconnect
 does not establish that a file writer or database transaction has stopped.

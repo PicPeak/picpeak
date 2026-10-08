@@ -66,6 +66,16 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     await fs.writeFile(filename, 'owned complete archive fixture', { mode: 0o600 });
     return filename;
   }
+  function failOneControlRead() {
+    const query = db.client.query;
+    let failNext = true;
+    return jest.spyOn(db.client, 'query').mockImplementation(function (...args) {
+      if (failNext && /select .*portable_restore_control/i.test(args[1]?.sql || '')) {
+        failNext = false; return Promise.reject(new Error('owned transient replacement fixture'));
+      }
+      return query.apply(this, args);
+    });
+  }
 
   beforeAll(async () => {
     directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-coordinator-')));
@@ -138,6 +148,145 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
     expect(progress).not.toMatch(/archive_path|worker\.lease|progress_token|options_json|stack/);
     terminal.resolve(); await waitState('restart_required');
     await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('a solely transient control read pause resumes an undrained native-style runtime after positive proof', async () => {
+    const a = await create();
+    const fault = failOneControlRead();
+    try {
+      await a.work.track('accepted native-style restore body', () => ingress.withIngress(async () => {
+        await a.coordinator.tick();
+        expect(a.work.isClosed()).toBe(true);
+        await a.coordinator.tick();
+        await expect(a.coordinator.admitRequest()).resolves.toBeUndefined();
+      }));
+    } finally { fault.mockRestore(); }
+  });
+
+  it('terminal native revalidation restores readiness but startup revalidation never makes a cold runtime ready', async () => {
+    for (const ready of [false, true]) {
+      const a = await create({ ready });
+      const fault = failOneControlRead();
+      try {
+        await a.work.track('accepted terminal native body', () => ingress.withIngress(async () => {
+          await a.coordinator.tick(); expect(a.work.isClosed()).toBe(true);
+          await a.coordinator.revalidateAfterNativeRestore(); expect(a.work.isClosed()).toBe(false);
+          if (ready) await a.coordinator.admitUpload();
+          else {
+            await expect(a.coordinator.admitUpload()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+            await a.coordinator.admitStartupRestore();
+          }
+        }));
+      } finally { fault.mockRestore(); }
+      if (!ready) { a.coordinator.markReady(); await a.coordinator.admitRequest(); }
+    }
+  });
+
+  it.each(['missing registration', 'changed tuple', 'unknown lease', 'free lease', 'replaced inode', 'unshared marker',
+    'changed canonical root', 'changed generation', 'changed control volume'])('a read pause remains closed with %s', async changed => {
+    const a = await create(); const fault = failOneControlRead();
+    try { await a.coordinator.tick(); } finally { fault.mockRestore(); }
+    const own = db('portable_restore_instances').where({ instance_id: a.coordinator.instanceId() });
+    const lease = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId()));
+    if (changed === 'missing registration') await own.delete();
+    if (changed === 'changed tuple') await own.update({ boot_id: crypto.randomUUID() });
+    if (changed === 'unknown lease') lease.state = 'unknown';
+    if (changed === 'free lease') lease.state = 'free';
+    if (changed === 'replaced inode') lease.inode = 'replacement';
+    if (changed === 'unshared marker') storage.storageId = crypto.randomUUID();
+    if (changed === 'changed canonical root') storage.root = `${directory}/foreign`;
+    if (changed === 'changed generation') await db('portable_restore_control').where({ id: 1 }).increment('generation', 1);
+    if (changed === 'changed control volume') await db('portable_restore_control').where({ id: 1 }).update({ storage_id: crypto.randomUUID() });
+    await a.coordinator.tick();
+    expect(a.work.isClosed()).toBe(true);
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    expect(starts).toHaveLength(0);
+  });
+
+  it('a changed durable OPEN revision during proof cannot resume until a new unchanged proof', async () => {
+    const a = await create(); const fault = failOneControlRead();
+    try { await a.coordinator.tick(); } finally { fault.mockRestore(); }
+    const probe = native.probe; let change = true;
+    native.probe = async (...args) => {
+      if (change) { change = false; await db('portable_restore_control').where({ id: 1 }).increment('revision', 1); }
+      return probe(...args);
+    };
+    await a.coordinator.tick(); expect(a.work.isClosed()).toBe(true);
+    await a.coordinator.tick(); await a.coordinator.admitRequest();
+  });
+
+  it('a stopped paused process, no-scope caller or control request cannot revalidate native readiness', async () => {
+    const a = await create(); const fault = failOneControlRead();
+    try { await a.coordinator.tick(); } finally { fault.mockRestore(); }
+    await expect(a.coordinator.revalidateAfterNativeRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await expect(a.work.runControl(() => a.coordinator.revalidateAfterNativeRestore())).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await a.coordinator.stop(); await a.coordinator.tick();
+    expect(a.work.isClosed()).toBe(true);
+  });
+
+  it('terminal runtime-proof errors close a healthy owner without granting startup or read-pause reopening', async () => {
+    const a = await create(); const probe = native.probe;
+    await a.work.track('accepted native terminal body', () => ingress.withIngress(async () => {
+      native.probe = async () => { throw new Error('owned unavailable kernel fixture'); };
+      await expect(a.coordinator.revalidateAfterNativeRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+      native.probe = probe;
+      expect(a.work.isClosed()).toBe(true);
+      await expect(a.coordinator.revalidateAfterNativeRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    }));
+    const fault = failOneControlRead();
+    try { await a.coordinator.tick(); } finally { fault.mockRestore(); }
+    await a.coordinator.tick(); expect(a.work.isClosed()).toBe(true);
+    await expect(a.coordinator.waitForStartupAdmission()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+  });
+
+  it('stopped native owners cannot revalidate from their still-active ordinary scope', async () => {
+    const a = await create();
+    await a.work.track('accepted native stopping body', () => ingress.withIngress(async () => {
+      const fault = failOneControlRead();
+      try { await a.coordinator.tick(); } finally { fault.mockRestore(); }
+      await a.coordinator.stop();
+      await expect(a.coordinator.revalidateAfterNativeRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+      expect(a.work.isClosed()).toBe(true);
+    }));
+  });
+
+  it('an observed drain stays sticky even if durable control is reset to the old OPEN generation', async () => {
+    const a = await create(); const held = gate(); allGates.push(held);
+    const body = a.work.track('accepted old native body', async () => {
+      await held.promise;
+      await expect(a.coordinator.revalidateAfterNativeRestore()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    });
+    const original = await row();
+    await db('portable_restore_control').where({ id: 1 }).update({ state: 'draining', epoch: crypto.randomUUID(),
+      attempt_id: crypto.randomUUID(), owner_instance_id: crypto.randomUUID() });
+    const draining = a.coordinator.tick();
+    await new Promise(done => setTimeout(done, 10));
+    expect(a.work.isClosed()).toBe(true);
+    held.resolve(); await Promise.all([body, draining]);
+    await db('portable_restore_control').where({ id: 1 }).update({ ...original });
+    await a.coordinator.tick(); expect(a.work.isClosed()).toBe(true);
+    await expect(a.coordinator.waitForStartupAdmission()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+    await expect(a.coordinator.admitRequest()).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+  });
+
+  it('cold pre-start quiescence clears only at its proven barrier and the next epoch stops newly started writers', async () => {
+    const a = await create(); await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    terminal.resolve(); await waitState('restart_required');
+    const stopped = [];
+    const cold = await create({ ready: false, stopServices: async () => { stopped.push('stop'); } });
+    expect(stopped).toHaveLength(2);
+    for (const value of native.files.values()) if (value.path.includes(a.coordinator.instanceId())) value.state = 'free';
+    await cold.coordinator.tick(); await cold.coordinator.waitForStartupAdmission(); cold.coordinator.markReady();
+    const held = gate(); allGates.push(held);
+    const writer = cold.work.track('newly started cold runtime writer', () => held.promise);
+    await cold.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+    await new Promise(done => setTimeout(done, 10));
+    expect(stopped).toHaveLength(3);
+    expect((await db('portable_restore_instances').where({ instance_id: cold.coordinator.instanceId() }).first()).ack_epoch).not.toBe((await row()).epoch);
+    held.resolve(); await writer; await cold.coordinator.tick();
+    expect(stopped).toHaveLength(4);
+    await waitState('restart_required');
   });
 
   it('waits for every live replica to close and drain before its explicit ACK and worker admission', async () => {
@@ -254,9 +403,12 @@ describe.each(engines)('durable portable coordinator (%s)', client => {
       const owner = [...native.files.values()].find(value => value.path.includes(a.coordinator.instanceId())); owner.state = 'free';
       const c = await create(); await c.coordinator.waitForStartupAdmission(); c.coordinator.markReady();
       await c.coordinator.admitRequest();
-      const pages = queries.filter(query => query.sql.includes('instance_id') && /limit/i.test(query.sql));
+      const pages = queries.filter(query => /order by .*instance_id/i.test(query.sql));
       expect(pages.length).toBeGreaterThanOrEqual(6);
       expect(pages.every(query => query.bindings.includes(100) && !/offset/i.test(query.sql))).toBe(true);
+      const pointProofs = queries.filter(query => !pages.includes(query));
+      expect(pointProofs.every(query => /where .*instance_id.*=/.test(query.sql)
+        && /limit/i.test(query.sql) && query.bindings.includes(1) && !/offset/i.test(query.sql))).toBe(true);
     } finally { db.removeListener('query', observe); }
   });
 

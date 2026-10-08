@@ -94,15 +94,18 @@ linux('portable restore actual supervised worker roundtrip', () => {
     await fs.writeFile(second, 'PRIOR-SECOND');
     const evidence = path.join(path.dirname(process.env.STORAGE_PATH), 'promotion-observed.json');
     const journalModule = require.resolve('../../src/services/portableRestoreJournal');
-    const preload = `const fs=require('fs');const {PortableRestoreJournal:J}=require(${JSON.stringify(journalModule)});
-      const original=J.prototype.promote;J.prototype.promote=function(source){return original.call(this,source,{onStep:()=>{
-        fs.writeFileSync(${JSON.stringify(evidence)},JSON.stringify({first:fs.readFileSync(${JSON.stringify(first)},'utf8')}),{mode:0o600});
+    const preload = `const fs=require('fs');const path=require('path');const {PortableRestoreJournal:J}=require(${JSON.stringify(journalModule)});
+      const original=J.prototype.promote;J.prototype.promote=function(source){const root=this.root;return original.call(this,source,{onStep:(_step,record)=>{
+        const promoted=path.join(root,...record.key.split('/'));
+        fs.writeFileSync(${JSON.stringify(evidence)},JSON.stringify({key:record.key,bytes:fs.readFileSync(promoted,'utf8')}),{mode:0o600});
         process.kill(process.pid,'SIGKILL');}})};`;
     await withImportPreload('owned-before-commit-crash', preload, async () => {
       await expect(importFromPicpeak({ picpeakPath: exported.filePath, currentAdminId: adminId }))
         .rejects.toMatchObject({ code: 'RESTORE_ROLLED_BACK' });
     });
-    expect(JSON.parse(await fs.readFile(evidence, 'utf8')).first).toBe('BACKUP-FIRST');
+    const promoted = JSON.parse(await fs.readFile(evidence, 'utf8'));
+    expect(['business-docs/a-first.dat', 'business-docs/z-collision.dat']).toContain(promoted.key);
+    expect(promoted.bytes).toBe(promoted.key.endsWith('a-first.dat') ? 'BACKUP-FIRST' : 'BACKUP-SECOND');
     expect(await readMarker()).toBe('before-crash');
     expect(await fs.readFile(first, 'utf8')).toBe('PRIOR-FIRST');
     expect(await fs.readFile(second, 'utf8')).toBe('PRIOR-SECOND');

@@ -13,7 +13,7 @@ const RESERVE_BYTES = 256 * 1024 ** 2;
 const RESERVE_INODES = 1024;
 const CHUNK_BYTES = 64 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n]);
+const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
 const error = (code, message, status = 503) => new AppError(message, status, code);
 const invalid = () => error('RESTORE_ARCHIVE_INVALID', 'Restore archive is invalid or changed', 400);
 

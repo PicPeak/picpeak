@@ -6,7 +6,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const { acquireRestoreDatabaseLock, LOCK_CLASS, LOCK_RESOURCE } = require('../../src/services/portableRestoreDatabaseLock');
+const { acquireRestoreDatabaseLock, acquireRestoreTableLocks, LOCK_CLASS, LOCK_RESOURCE } = require('../../src/services/portableRestoreDatabaseLock');
 
 const attemptId = crypto.randomUUID();
 const epoch = crypto.randomUUID();
@@ -35,6 +35,14 @@ describe('portable SQLite server-side recovery lock', () => {
     await expect(db.transaction(trx => acquireRestoreDatabaseLock(trx, { ...identity, epoch: crypto.randomUUID() }))).rejects.toMatchObject({ code: 'RESTORE_EPOCH_CHANGED' });
     await db.transaction(trx => acquireRestoreDatabaseLock(trx, identity));
     expect((await db('portable_restore_control').first()).revision).toBe(7);
+  });
+  test('the PostgreSQL table barrier requires a held transaction and leaves SQLite locking unchanged', async () => {
+    await expect(acquireRestoreTableLocks(db)).rejects.toThrow('transaction');
+    await db.transaction(async trx => {
+      await acquireRestoreDatabaseLock(trx, identity);
+      expect(await acquireRestoreTableLocks(trx)).toEqual([]);
+      expect((await trx('portable_restore_control').first()).revision).toBe(7);
+    });
   });
   test('recovery observes the marker only after the actual previous transaction terminates', async () => {
     let release;

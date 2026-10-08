@@ -4,6 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const { adminAuth } = require('../middleware/auth');
 const { requireSuperAdmin } = require('../middleware/permissions');
+const { sessionTimeoutMiddleware } = require('../middleware/sessionTimeout');
 const csrf = require('../middleware/csrf');
 const applicationWork = require('../services/activeApplicationWork');
 const coordinator = require('../services/portableRestoreCoordinator');
@@ -23,7 +24,7 @@ function createRestoreControlRouter({ restore = coordinator, work = applicationW
   // Only these exact read-only preflights are available, not an API-prefix
   // exemption. The origin policy is the same one as ordinary server CORS.
   router.options([IMPORT, PROGRESS], cors, (_req, res) => res.sendStatus(204));
-  router.post(IMPORT, cors, control, csrf, authenticate, superAdmin, wrap(async (req, res) => {
+  router.post(IMPORT, cors, control, csrf, authenticate, sessionTimeoutMiddleware, superAdmin, wrap(async (req, res) => {
     await restore.admitUpload();
     ingress.validateRequestEnvelope(req);
     const result = await ingress.withIngress(async () => {
@@ -45,10 +46,13 @@ function createRestoreControlRouter({ restore = coordinator, work = applicationW
     if (req.get(TOKEN_HEADER)) return next();
     return authenticate(req, res, error => {
       if (error) return next(error);
-      return superAdmin(req, res, failure => {
-        if (failure) return next(failure);
-        req.restoreProgressSuperAdmin = true;
-        return next();
+      return sessionTimeoutMiddleware(req, res, timeoutError => {
+        if (timeoutError) return next(timeoutError);
+        return superAdmin(req, res, failure => {
+          if (failure) return next(failure);
+          req.restoreProgressSuperAdmin = true;
+          return next();
+        });
       });
     });
   }, wrap(async (req, res) => {

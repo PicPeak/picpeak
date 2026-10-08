@@ -7,6 +7,7 @@ jest.mock('../../src/services/portableRestoreIngress', () => ({
 }), { virtual: true });
 jest.mock('../../src/services/portableRestoreCoordinator', () => ({
   admitUpload: jest.fn(async () => {}), admitStartupRestore: jest.fn(async () => {}),
+  revalidateAfterNativeRestore: jest.fn(async () => {}),
   enterUnstartedServerFixtureContext: jest.fn(),
 }));
 jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn() }));
@@ -37,10 +38,12 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     await tick();
     await tick();
     expect(drained).toBe(false);
+    expect(coordinator.revalidateAfterNativeRestore).not.toHaveBeenCalled();
     finish();
     await expect(restore).resolves.toEqual({ success: true });
     await drain;
     expect(drained).toBe(true);
+    expect(coordinator.revalidateAfterNativeRestore).toHaveBeenCalledTimes(1);
   });
 
   test('fresh durable admission failure never reaches any native mutation', async () => {
@@ -49,6 +52,7 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     service.performRestore = jest.fn();
     await expect(service.restore({})).rejects.toThrow('durable fence is closed');
     expect(service.performRestore).not.toHaveBeenCalled();
+    expect(coordinator.revalidateAfterNativeRestore).not.toHaveBeenCalled();
     await applicationWork.drain();
     expect(applicationWork.pendingCount()).toBe(0);
   });
@@ -67,6 +71,7 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     service.performRestore = jest.fn(async () => ({ success: true }));
     await expect(service.restoreDuringStartup({ actor: { type: 'arbitrary' } })).resolves.toEqual({ success: true });
     expect(coordinator.admitStartupRestore).toHaveBeenCalledTimes(1);
+    expect(coordinator.revalidateAfterNativeRestore).toHaveBeenCalledTimes(1);
     expect(coordinator.admitUpload).not.toHaveBeenCalled();
     jest.clearAllMocks();
     await service.restore({ actor: { type: 'install-from-backup' } });

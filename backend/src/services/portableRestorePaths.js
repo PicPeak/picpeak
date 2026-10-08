@@ -8,7 +8,7 @@ const { getStoragePath } = require('../config/storage');
 const { AppError } = require('../utils/errors');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n]);
+const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
 function unsafe(message) { return Object.assign(new Error(message), { code: 'RESTORE_STORAGE_UNSAFE', statusCode: 503 }); }
 async function hostIdentity() {
   if (process.platform !== 'linux') throw unsafe('Coordinated restore requires Linux and a shared supported local storage mount');

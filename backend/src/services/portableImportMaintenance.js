@@ -10,6 +10,7 @@ const { getStorage, initStorage } = require('./storage');
 const { PortableRestoreJournal, MAX_FILES } = require('./portableRestoreJournal');
 const { rowBatches } = require('./portableImportRows');
 const worker = require('./portableRestoreWorker');
+const { acquireRestoreTableLocks } = require('./portableRestoreDatabaseLock');
 const recoveryFiles = require('./recoveryFiles');
 const generationIndex = require('./storage/generationIndex');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -173,9 +174,6 @@ async function importInMaintenanceWorker() {
       if (!known) recorded.set(key, { path: key, ...evidence });
     }
     await preflightRows(tables, path.join(staging, 'data'), crossEngine);
-    const currentAdmin = request.operatorId ? await db('admin_users').where({ id: request.operatorId }).first() : null;
-    if (request.operatorId && !currentAdmin) throw new Error('Restore operator is no longer available');
-    const role = currentAdmin ? await helpers().captureOperatorRole(currentAdmin.role_id) : null;
     await initStorage();
     const storage = getStorage();
     const remote = files.filter(key => recoveryFiles.remoteDestination(key));
@@ -214,6 +212,12 @@ async function importInMaintenanceWorker() {
     await db.transaction(async trx => {
       await worker.acquireRestoreDatabaseLock(trx, request);
       await worker.assertWorkerAuthority(trx);
+      await acquireRestoreTableLocks(trx);
+      // Preserve the latest terminal operator credentials/grants, not a
+      // snapshot taken while an ordinary remote COMMIT could still finish.
+      const currentAdmin = request.operatorId ? await trx('admin_users').where({ id: request.operatorId }).first() : null;
+      if (request.operatorId && !currentAdmin) throw new Error('Restore operator is no longer available');
+      const role = currentAdmin ? await helpers().captureOperatorRole(currentAdmin.role_id, trx) : null;
       await helpers().replaceAllTables(tables, path.join(staging, 'data'), currentAdmin, role,
         { executor: trx, crossEngine, allTables });
       await require('./externalRelpathFold').foldExternalRelpaths(trx, message => logger.info('Portable restore external path conversion', { message }));
@@ -230,7 +234,7 @@ async function importInMaintenanceWorker() {
         local_plan_checksum: journal.state.planChecksum, s3_namespace: s3Manifest?.namespace || null,
         s3_revision: s3Manifest?.revision || null, s3_manifest_checksum: s3Checksum,
         options_digest: request.optionsDigest });
-    });
+    }, pg ? { isolationLevel: 'read committed' } : undefined);
     await waitPastSessionCutoff(cutoff);
     // The same lock-based recovery path verifies every committed representation
     // and completes mandatory postcommit repairs before reporting success.
@@ -244,9 +248,11 @@ async function recoverInMaintenanceWorker() {
     const directory = await journalPaths().attemptDirectory(request.attemptId);
     let marker;
     let journal;
+    const pg = ['pg', 'postgres', 'postgresql'].includes(db.client.config.client);
     await db.transaction(async trx => {
       await worker.acquireRestoreDatabaseLock(trx, request);
       await worker.assertWorkerAuthority(trx);
+      await acquireRestoreTableLocks(trx);
       marker = await trx('portable_restore_commits').where({ attempt_id: request.attemptId }).first();
       try {
         journal = await PortableRestoreJournal.load({ storageRoot: getStoragePath(), id: request.attemptId, validateKey: helpers().importFilePathProblem });
@@ -262,7 +268,7 @@ async function recoverInMaintenanceWorker() {
       if (!journal || marker.format_version !== 1 || marker.options_digest !== request.optionsDigest
           || marker.local_plan_checksum !== journal.state.planChecksum) throw new Error('Matching restore commit marker is invalid');
       await journal.verifyCommitted();
-    });
+    }, pg ? { isolationLevel: 'read committed' } : undefined);
     if (!marker) return { outcome: 'rolled_back', summary: {} };
     const hasS3 = marker.s3_manifest_checksum !== null || marker.s3_namespace !== null || marker.s3_revision !== null;
     if (hasS3) {

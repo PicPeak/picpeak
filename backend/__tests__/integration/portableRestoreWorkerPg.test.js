@@ -151,6 +151,50 @@ postgres('portable restore actual hard-limited PostgreSQL worker', () => {
     expect(next.id).toBe(42);
   }, 120000);
 
+  test('a pending ordinary credential and role update is preserved only after the table barrier', async () => {
+    const passwordHash = await bcrypt.hash('latest-ordinary-operator', 4);
+    const updating = await observer.transaction();
+    let restoring;
+    try {
+      const previousRole = await updating('roles').where({ id: operator.role_id }).first();
+      const role = { ...previousRole, name: 'owned_latest_operator' };
+      delete role.id;
+      const [created] = await updating('roles').insert(role).returning('id');
+      const permissions = await updating('permissions').whereIn('name', operatorPermissions.slice(0, 2)).select('id', 'name');
+      expect(permissions.length).toBeGreaterThan(0);
+      await updating('role_permissions').insert(permissions.map(permission => ({ role_id: created.id, permission_id: permission.id })));
+      await updating('admin_users').where({ id: operator.id }).update({ password_hash: passwordHash, role_id: created.id });
+      const pid = (await updating.raw('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+      restoring = importFromPicpeak({ picpeakPath: exported.filePath, currentAdminId: operator.id });
+      let failure;
+      restoring.catch(error => { failure = error; });
+      let waiting = false;
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (failure) throw failure;
+        const pending = await observer.raw('SELECT pid FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))', [pid]);
+        if (pending.rows.length) { waiting = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+      await updating.commit();
+      const result = await restoring;
+      expect(result).toMatchObject({ restored: true, outcome: 'committed', restartRequired: true });
+      const preserved = await observer('admin_users').where({ email: operator.email }).first();
+      expect(preserved.password_hash).toBe(passwordHash);
+      expect(await observer('roles').where({ id: preserved.role_id }).first()).toMatchObject({ name: 'owned_latest_operator' });
+      const granted = await observer('role_permissions').join('permissions', 'permissions.id', 'role_permissions.permission_id')
+        .where('role_permissions.role_id', preserved.role_id).pluck('permissions.name');
+      expect(granted.sort()).toEqual(permissions.map(permission => permission.name).sort());
+      // Subsequent cross-engine controls intentionally exercise the original
+      // super-admin contract again, without relying on this new role fixture.
+      const originalRole = await observer('roles').where({ name: 'super_admin' }).first();
+      await observer('admin_users').where({ id: preserved.id }).update({ role_id: originalRole.id, password_hash: operator.password_hash });
+    } finally {
+      if (!updating.isCompleted()) await updating.rollback();
+      if (restoring) await restoring.catch(() => {});
+    }
+  }, 120000);
+
   test('a genuine SQLite portable export traverses the same worker and preserves PG value semantics', async () => {
     const outputDirectory = path.join(fixture, 'sqlite-export');
     const source = `const fs=require('fs').promises,path=require('path');
