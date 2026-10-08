@@ -175,12 +175,26 @@ class WatermarkService {
 
       // If no logo or logo failed, create text watermark
       if (!watermarkBuffer) {
-        const fontSize = Math.max(16, Math.floor(metadata.width * 0.03));
         const padding = 10;
-        
+        const textWidth = (size) => settings.companyName.length * size * 0.6 + padding * 2;
+        // The mark has to fit inside the image or sharp refuses the
+        // composite: a long name on a 300px thumbnail is wider than the
+        // thumbnail at the 16px floor. Shrink the font to fit, down to 8px.
+        let fontSize = Math.max(16, Math.floor(metadata.width * 0.03));
+        if (textWidth(fontSize) > metadata.width) {
+          fontSize = Math.max(8, Math.floor((metadata.width - padding * 2) / (settings.companyName.length * 0.6)));
+        }
+        const svgWidth = Math.ceil(textWidth(fontSize));
+        const svgHeight = fontSize + padding * 2;
+        // Still too large at the floor: render the whole mark smaller, through
+        // the viewBox, so it stays legible in proportion and never overflows.
+        const scale = Math.min(1, metadata.width / svgWidth, metadata.height / svgHeight);
+        const markWidth = Math.max(1, Math.floor(svgWidth * scale));
+        const markHeight = Math.max(1, Math.floor(svgHeight * scale));
+
         // Create SVG text watermark
         const svg = `
-          <svg width="${settings.companyName.length * fontSize * 0.6 + padding * 2}" height="${fontSize + padding * 2}">
+          <svg width="${markWidth}" height="${markHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">
             <rect x="0" y="0" width="100%" height="100%" fill="black" opacity="0.5" rx="5"/>
             <text x="${padding}" y="${fontSize + padding/2}" 
               font-family="Arial, sans-serif" 
@@ -193,10 +207,7 @@ class WatermarkService {
         `;
         
         watermarkBuffer = Buffer.from(svg);
-        watermarkMetadata = {
-          width: settings.companyName.length * fontSize * 0.6 + padding * 2,
-          height: fontSize + padding * 2
-        };
+        watermarkMetadata = { width: markWidth, height: markHeight };
       }
 
       // Calculate position

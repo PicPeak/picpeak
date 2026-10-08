@@ -158,8 +158,6 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // photos can opt out per-category.
     const photoDenial = await originalAssetDenial(req, photo);
     if (photoDenial) return res.status(403).json(photoDenial);
-    // Folder downloads are inherited (issue 1786): off on a folder means off
-    // for everything below it.
 
     // Download resolution (#858). Resolved BEFORE the counters below: a
     // rejected resolution must not inflate download stats, which a guest

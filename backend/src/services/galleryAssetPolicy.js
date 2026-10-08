@@ -4,11 +4,20 @@ const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
 const folderTree = require('./folderTreeService');
 const { currentDownloadLimit, isOriginalWithheld, drawsOnQuota, clientOnlyError } = require('./downloadQuota');
 
-/** Use only after galleryAccessService has authorized this typed grant. */
-function galleryPolicyContext(event, galleryAccess) {
-  return { event, galleryAccess, isAdminPreview: galleryAccess?.kind === 'admin',
-    accessLevel: galleryAccess?.session?.accessLevel || 'guest',
-    viaCustomer: galleryAccess?.session?.via === 'customer' };
+/**
+ * The grant itself, before any download policy. Video playback continues
+ * where downloads are off, but never past a refusal from here.
+ */
+function grantDenial(req, photo = null) {
+  const grant = req.galleryAccess;
+  if (!grant || !['public', 'gallery', 'admin'].includes(grant.kind)
+      || Number(grant.eventId) !== Number(req.event?.id)) return { error: 'Photo not available' };
+  if (grant.session?.accessLevel === 'slideshow' || req.accessLevel === 'slideshow') {
+    return { error: 'Slideshow tokens are display-only' };
+  }
+  if (photo && (Number(photo.event_id) !== Number(req.event.id)
+      || isPhotoHiddenFromViewer(photo, req.accessLevel))) return { error: 'Photo not available' };
+  return null;
 }
 
 /**
@@ -18,13 +27,8 @@ function galleryPolicyContext(event, galleryAccess) {
  */
 async function originalAssetDenial(req, photo = null, { display = false } = {}) {
   const grant = req.galleryAccess;
-  if (!grant || !['public', 'gallery', 'admin'].includes(grant.kind)
-      || Number(grant.eventId) !== Number(req.event?.id)) return { error: 'Photo not available' };
-  if (grant.session?.accessLevel === 'slideshow' || req.accessLevel === 'slideshow') {
-    return { error: 'Slideshow tokens are display-only' };
-  }
-  if (photo && (Number(photo.event_id) !== Number(req.event.id)
-      || isPhotoHiddenFromViewer(photo, req.accessLevel))) return { error: 'Photo not available' };
+  const refused = grantDenial(req, photo);
+  if (refused) return refused;
   // An authorized admin preview inspects originals without changing the
   // viewer's download policy. Downloads themselves retain their old policy.
   if (display && grant.kind === 'admin') return null;
@@ -44,7 +48,8 @@ async function originalAssetDenial(req, photo = null, { display = false } = {}) 
     const downloadLimit = await currentDownloadLimit(req.event);
     if (await isOriginalWithheld({ ...req.event, download_limit: downloadLimit }, photo)) {
       const video = photo.media_type === 'video' || String(photo.mime_type || '').startsWith('video/');
-      // Eligible clients still use admitVideoStream's atomic reservation.
+      // Eligible clients still use admitVideoStream's atomic reservation
+      // when it is the original they are streamed.
       if (!video || !drawsOnQuota(req)) return clientOnlyError();
     }
   }
@@ -52,12 +57,14 @@ async function originalAssetDenial(req, photo = null, { display = false } = {}) 
 }
 
 // DB rendition pointers are not authority to read arbitrary source keys.
-// These namespaces are written by imageProcessor's bounded generators.
+// These namespaces are written by imageProcessor's bounded generators and,
+// for `web`, by videoRenditionService.
 function isPresentationRenditionKey(key, kind) {
-  const prefixes = { preview: 'previews/preview_', hero: 'heroes/hero_', thumbnail: 'thumbnails/thumb_' };
+  const prefixes = { preview: 'previews/preview_', hero: 'heroes/hero_', thumbnail: 'thumbnails/thumb_',
+    web: 'videos/web_' };
   const prefix = prefixes[kind];
   return typeof key === 'string' && !!prefix && key.startsWith(prefix)
     && !key.slice(prefix.length).includes('/') && !key.includes('\\');
 }
 
-module.exports = { originalAssetDenial, galleryPolicyContext, isPresentationRenditionKey };
+module.exports = { originalAssetDenial, grantDenial, isPresentationRenditionKey };
