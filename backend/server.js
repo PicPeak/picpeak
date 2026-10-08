@@ -99,7 +99,12 @@ const {
   getAdminTokenFromRequest,
   getGalleryTokenFromRequest,
 } = require('./src/utils/tokenUtils');
-const { parseTrustProxy, resolveListenHost } = require('./src/config/network');
+const {
+  LEGACY_TRUST_PROXY,
+  isTrustProxyUnset,
+  parseTrustProxy,
+  resolveListenHost,
+} = require('./src/config/network');
 
 // Import routes
 const authRoutes = require('./src/routes/auth');
@@ -120,18 +125,27 @@ const LISTEN_HOST = resolveListenHost();
 // rate-limit keys) is the originating client IP behind any number
 // of trusted reverse proxies.
 //
-// Default: false. A source address being private does not prove that it is a
-// proxy controlled by this deployment. Native reverse-proxy installs set
-// 'loopback'; the Compose stack trusts exactly its one frontend nginx hop.
-// Other topologies must set TRUST_PROXY to the exact boundary they control,
-// accepting any value Express accepts: a number,
-// 'loopback', 'linklocal', 'uniquelocal', a CIDR, a comma list, or
+// Default (TRUST_PROXY unset): 'loopback, linklocal, uniquelocal', the
+// legacy private-range trust. It stays the default so an install that only
+// pulls a new image keeps resolving the real client behind its proxy, but a
+// source address being private does not prove it is a proxy this deployment
+// controls. Recommended: set TRUST_PROXY to the exact hop count (the Compose
+// stack pins 1 for its frontend nginx; the installer writes 'loopback' for
+// a native reverse proxy). Any value Express accepts works: a number,
+// 'loopback', 'linklocal', 'uniquelocal', a CIDR, a comma list, 'false' /
+// '0' (trust nothing), or
 // 'true' (trust ALL proxies — only safe behind a fully-controlled
 // reverse-proxy chain).
 //
 // NEVER read req.headers['x-forwarded-for'] directly in audit paths
 // — see utils/clientIp.js for the rationale.
 app.set('trust proxy', parseTrustProxy());
+if (process.env.NODE_ENV === 'production' && isTrustProxyUnset()) {
+  logger.warn(
+    `TRUST_PROXY is not set: trusting forwarding headers from every private-range address (${LEGACY_TRUST_PROXY}). `
+    + 'Set TRUST_PROXY to the exact number of reverse-proxy hops in front of PicPeak (or false when there is none).'
+  );
+}
 
 // Security middleware with custom CSP
 // In native HTTP installs, do NOT force HTTPS for subresources.
@@ -1436,7 +1450,7 @@ async function startServer() {
     require('./src/services/videoRenditionQueue').start();
 
     httpServer = app.listen(PORT, LISTEN_HOST, () => {
-      logger.info(`Server running on ${LISTEN_HOST}:${PORT}`);
+      logger.info(`Server running on ${LISTEN_HOST || 'all interfaces'}:${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
       // First-run banner. Print the TOKEN ITSELF only when the 0600 token file

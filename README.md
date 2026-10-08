@@ -66,29 +66,30 @@ docker compose up -d
 
 On first start, open **http://localhost:3000/admin** and follow the in-browser setup to create your admin account. Full details — the one-time setup token, Docker file permissions, and ARM64 notes — are in **[First-run setup](https://docs.picpeak.app/getting-started/first-login)**.
 
-The published frontend and raw backend ports bind to host loopback by default.
-For remote or public access, keep that boundary and terminate TLS in a local
-reverse proxy. `PICPEAK_BIND_ADDRESS=0.0.0.0` is the explicit compatibility
-override for a deliberately host/LAN-facing HTTP frontend; the raw backend
-port remains loopback-only.
+The frontend port is published on every host interface by default; the raw
+backend port binds to host loopback (`PICPEAK_BACKEND_BIND_ADDRESS` overrides
+it). For public access, terminate TLS in a reverse proxy on the host and set
+`PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
+around it.
 
 Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
-proxy in front of that loopback port, set `TRUST_PROXY=2` and
+proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
 `ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
 and configure the outer proxy to append or overwrite forwarding headers using
 the real client address. The installer selects these settings in proxy mode.
 
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. To update from the admin UI instead, enable [in-app updates](docs/self-update.md). See [RELEASING.md](RELEASING.md) for the promotion cadence.
 
-> [!WARNING]
-> **Security boundary change:** production now trusts no forwarding headers,
-> uses Secure cookies, and native processes / Compose host ports default to
-> loopback. Existing LAN-only HTTP installs must make that risk explicit:
-> Compose uses `PICPEAK_BIND_ADDRESS=0.0.0.0` plus `COOKIE_SECURE=false`;
-> native installs use `LISTEN_HOST=0.0.0.0` plus `COOKIE_SECURE=false`.
-> Prefer a loopback/private origin behind TLS, and set `TRUST_PROXY` only to
-> the proxy boundary you control. Unattended installer runs additionally
-> require `--allow-insecure-http` before creating a plaintext deployment.
+> [!NOTE]
+> **Recommended hardening:** an existing install keeps working without
+> changes. With `TRUST_PROXY` unset PicPeak still trusts forwarding headers
+> from every private-range address (and logs a warning at startup); set it to
+> the exact number of reverse-proxy hops instead. Behind TLS, also set
+> `COOKIE_SECURE=true`, and bind the origin to loopback
+> (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
+> native install). The Compose files now publish the raw backend port on host
+> loopback only and pin `TRUST_PROXY=1`. Unattended installer runs require
+> `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file
 
@@ -101,10 +102,9 @@ docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
   ghcr.io/picpeak/picpeak/aio:main
 ```
 
-The explicit cookie compatibility mode above is for this loopback-only HTTP
-quick start. A TLS deployment should omit it (production defaults to Secure
-cookies) and enable HSTS. The JWT secret is generated on first start and kept
-on the volume.
+The cookie mode above (also the default) suits this loopback-only HTTP quick
+start. A TLS deployment should set `COOKIE_SECURE=true` and enable HSTS. The
+JWT secret is generated on first start and kept on the volume.
 
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 

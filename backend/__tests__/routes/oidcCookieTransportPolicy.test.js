@@ -26,7 +26,8 @@ describe('OIDC state cookie transport policy', () => {
   });
 
   test.each([
-    [undefined, false, true],
+    [undefined, false, false],
+    [undefined, true, true],
     ['true', false, true],
     ['false', false, false],
     ['auto', false, false],
