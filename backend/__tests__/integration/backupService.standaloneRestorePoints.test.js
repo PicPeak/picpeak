@@ -343,6 +343,71 @@ describe('complete standalone backup restore points', () => {
       expect((await db('backup_runs')).map(row => row.id)).toEqual([second.id]);
     });
   });
+  describe('an unusable backup_manifest_path (seeded as /backup/manifests on every install)', () => {
+    const logger = require('../../src/utils/logger');
+    const unusable = () => path.join(fixtureRoot, 'not-writable', 'manifests');
+    const refuse = (...refused) => {
+      const original = fs.mkdir;
+      jest.spyOn(fs, 'mkdir').mockImplementation((directory, ...args) => {
+        if (refused.some(test => test(String(directory)))) {
+          return Promise.reject(Object.assign(new Error(`EACCES: permission denied, mkdir '${directory}'`), { code: 'EACCES' }));
+        }
+        return original(directory, ...args);
+      });
+    };
+    const fallbackWarnings = warn => warn.mock.calls.filter(([message]) => /is not usable/.test(String(message)));
+
+    it('writes the manifest into the restore point, records that path and warns once', async () => {
+      await setting('backup_manifest_path', unusable());
+      await setting('backup_retention_count', 1);
+      refuse(directory => directory === unusable());
+      const warn = jest.spyOn(logger, 'warn');
+      const first = await run();
+      expect(first.status).toBe('completed');
+      const manifest = await manifestFor(first);
+      expect(first.manifest_path).toBe(path.join(manifest.backup.path, 'manifests', path.basename(first.manifest_path)));
+      expect(await fs.stat(first.manifest_path)).toBeTruthy();
+      expect(fallbackWarnings(warn)).toHaveLength(1);
+      expect(fallbackWarnings(warn)[0][0]).toContain(unusable());
+      expect(fallbackWarnings(warn)[0][0]).toContain(path.join(manifest.backup.path, 'manifests'));
+
+      // Restore discovery and retention still find the point there.
+      const { resolveBackupPointLocation, standaloneSnapshotOfRun } = require('../../src/utils/backupRestorePoint');
+      const config = await service.getBackupConfig();
+      expect(await resolveBackupPointLocation(manifest, { source: 'local', manifestPath: first.manifest_path }, config))
+        .toBe(await fs.realpath(manifest.backup.path));
+      expect(standaloneSnapshotOfRun(config, first)).toMatchObject({ type: 'local', root: manifest.backup.path });
+      const second = await run();
+      expect(second.status).toBe('completed');
+      await expect(fs.stat(manifest.backup.path)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await db('backup_runs')).map(row => row.id)).toEqual([second.id]);
+    });
+
+    it('fails the run with both locations named when neither can be written', async () => {
+      await setting('backup_manifest_path', unusable());
+      refuse(directory => directory === unusable(), directory => /backup-[0-9a-f-]{36}\/manifests$/.test(directory));
+      const row = await run();
+      expect(row.status).toBe('failed');
+      expect(row.error_message).toMatch(/Cannot write the backup manifest/);
+      expect(row.error_message).toContain(unusable());
+      expect(row.error_message).toMatch(/backup-[0-9a-f-]{36}\/manifests \(EACCES\)/);
+      expect(await snapshotDirs()).toEqual([]);
+    });
+
+    it('keeps other failures of the configured directory fatal', async () => {
+      await setting('backup_manifest_path', unusable());
+      await fs.mkdir(path.dirname(unusable()), { recursive: true });
+      await fs.writeFile(unusable(), 'a file where the directory should be');
+      try {
+        const row = await run();
+        expect(row.status).toBe('failed');
+        expect(row.error_message).toMatch(/EEXIST|ENOTDIR/);
+      } finally {
+        await fs.rm(unusable(), { force: true });
+      }
+    });
+  });
+
   it.each(['json', 'yaml'])('round-trips an authenticated standalone %s catalogue', async format => {
     const originalKey = process.env.BACKUP_MANIFEST_KEY;
     // A fixture, not a production secret: the key must be 64 hex digits.
