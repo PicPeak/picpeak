@@ -14,6 +14,7 @@ const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { withLocalCopy, isRawFilename } = require('./imageProcessor');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 
 class WatermarkGeneratorService {
   constructor() {
@@ -37,7 +38,12 @@ class WatermarkGeneratorService {
    * @param {number} photoId - The photo ID
    * @returns {Object} Result with success status and watermark path
    */
-  async generateForPhoto(photoId) {
+  generateForPhoto(photoId) {
+    return applicationWork.track('photo watermark',
+      () => this.generateForPhotoInternal(photoId));
+  }
+
+  async generateForPhotoInternal(photoId) {
     try {
       // Get photo with event info
       const photo = await db('photos')
@@ -234,7 +240,12 @@ class WatermarkGeneratorService {
    * @param {Function} onProgress - Optional callback for progress updates
    * @returns {Object} Result with success count and errors
    */
-  async regenerateAll(onProgress = null) {
+  regenerateAll(onProgress = null) {
+    return applicationWork.track('watermark regeneration',
+      () => this.regenerateAllInternal(onProgress));
+  }
+
+  async regenerateAllInternal(onProgress = null) {
     const jobId = Date.now().toString();
     const results = { jobId, total: 0, success: 0, failed: 0, errors: [], status: 'running' };
 
@@ -342,7 +353,12 @@ class WatermarkGeneratorService {
   /**
    * Clear all watermarks (when watermarking is disabled)
    */
-  async clearAllWatermarks() {
+  clearAllWatermarks() {
+    return applicationWork.track('watermark removal',
+      () => this.clearAllWatermarksInternal());
+  }
+
+  async clearAllWatermarksInternal() {
     try {
       // Get all photos with watermarks
       const photos = await db('photos')

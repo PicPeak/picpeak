@@ -3,6 +3,7 @@ const path = require('path');
 const knex = require('knex');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
+const applicationWork = require('../services/activeApplicationWork');
 const { extractShareToken } = require('../utils/shareLinkUtils');
 
 // Ensure SQLite directory exists when using file-based DB (native installs)
@@ -645,7 +646,12 @@ async function ensureGlobalCategories() {
 }
 
 // Helper function to log activities
-async function logActivity(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
+function logActivity(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
+  return applicationWork.track('activity log', () => logActivityInternal(activityType, metadata, eventId, actor, executor))
+    .catch(error => logger.error('Failed to log activity:', { error: error.message }));
+}
+
+async function logActivityInternal(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
   try {
     // Callers issuing the log from inside a knex transaction must pass that
     // trx as `executor`, otherwise the global-`db` insert tries to grab a

@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 // Resolve only services already loaded by startup. Shutdown must not construct
 // unrelated singletons or start new work just to stop it.
 const resources = [
@@ -24,6 +25,9 @@ async function stopServices() {
   }));
   const failures = results.filter(result => result.status === 'rejected');
   failures.forEach(result => logger.error('Service shutdown failed', { error: result.reason.message }));
+  // Timer/watcher stop methods must drain their own callbacks, and detached
+  // API-started work has a separate owner. Neither alone proves quiescence.
+  await applicationWork.drain();
   if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Service shutdown failed');
 }
 module.exports = { stopServices };
