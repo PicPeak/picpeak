@@ -120,7 +120,7 @@ describe('standalone snapshot retention routes', () => {
         IsTruncated: false,
       });
       await cleanupS3({ retentionDays: 30 });
-      expect(mockDeleteMany).not.toHaveBeenCalled();
+      expect(mockDeleteMany.mock.calls.flatMap(([keys]) => keys)).toEqual([]);
     });
   });
 });

@@ -1034,7 +1034,7 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
       continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (continuationToken);
 
-    const newestRun = Math.max(...[...groups.values()].filter((group) => group.run).map((group) => group.newest));
+    const newestRun = Math.max(...[...groups.values()].filter((group) => group.standalone).map((group) => group.newest));
     const filesToDelete = [];
     let totalSize = 0;
     for (const group of groups.values()) {
