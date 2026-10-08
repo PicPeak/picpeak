@@ -14,6 +14,7 @@ const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
+const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../utils/backupRestorePoint');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -403,6 +404,9 @@ class RestoreService {
       if (['full', 'files', 'selective'].includes(options.restoreType)) {
         for (const file of resolveRestoreFiles(manifest, options)) requireContentChecksum(manifest, file.checksum, file.path);
       }
+      assertCompleteFileRestore(manifest, options);
+      const backupConfig = await require('./backupService').getBackupConfig();
+      const selectedBackup = await resolveBackupPointLocation(manifest, options, backupConfig);
       this.log('info', 'Manifest loaded and validated', {
         backupId: manifest.backup.id,
         backupType: manifest.backup.type,
@@ -470,41 +474,13 @@ class RestoreService {
         this.log('warn', 'Pre-restore backup skipped at user request');
       }
 
-      // Step 5: Download backup if from S3, or resolve the local root.
-      //
-      // The wizard passes `options.source = 'local'` (the SOURCE TYPE
-      // string) — not a path. The old code assigned that string to
-      // `localBackupPath` verbatim and every downstream `path.join(...)`
-      // ended up with junk like `local/database/<file>.sql.gz`. Caused
-      // the disaster-recovery restore flow to fail with
-      // `Database backup file not found: local/database/...` even when
-      // the manifest recorded the correct absolute path AND the file
-      // existed at exactly that path on disk.
-      //
-      // Resolve `'local'` to the configured backup destination root by
-      // reading `backup_destination_path` from app_settings. That's the
-      // same root the file-backup walker writes to, so every relative
-      // `file.path` in the manifest resolves correctly via
-      // `path.join(localBackupPath, file.path)` further down.
-      let localBackupPath = options.source;
-      if (options.source === 'local') {
-        try {
-          const row = await db('app_settings')
-            .where('setting_key', 'backup_destination_path')
-            .first();
-          if (row?.setting_value) {
-            let parsed;
-            try { parsed = JSON.parse(row.setting_value); } catch (_) { parsed = row.setting_value; }
-            if (parsed) localBackupPath = parsed;
-          }
-        } catch (err) {
-          this.log('warn', `Could not resolve backup_destination_path: ${err.message}`);
-        }
-      } else if (options.source === 's3' || options.source.startsWith('s3://')) {
+      // Step 5: Use the selected restore point, not today's destination or
+      // another run's mirror. The wizard's source type tokens were resolved
+      // and their roots validated before any destructive restore work.
+      let localBackupPath = selectedBackup;
+      if (selectedBackup.startsWith('s3://')) {
         this.updateProgress('Downloading backup from S3...');
-        const s3Source = options.source === 's3' ? manifest.backup.path : options.source;
-        if (typeof s3Source !== 'string' || !s3Source.startsWith('s3://')) throw new Error('The authenticated manifest requires an S3 backup path');
-        localBackupPath = await this.downloadFromS3(s3Source, manifest, options);
+        localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
       }
 
       // Step 6: Perform the actual restore based on type
@@ -851,7 +827,7 @@ class RestoreService {
       throw new Error('Selected items are required for selective restore');
     }
 
-    if (options.source.startsWith('s3://') && !options.s3Config) {
+    if ((options.source === 's3' || options.source.startsWith('s3://')) && !options.s3Config) {
       throw new Error('S3 configuration is required for S3-based backups');
     }
   }

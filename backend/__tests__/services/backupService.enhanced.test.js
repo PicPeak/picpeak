@@ -77,6 +77,7 @@ describe('Enhanced Backup Service Tests', () => {
       delete: jest.fn()
     };
     db.mockReturnValue(mockDb);
+    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
     
     // Mock cron job
     mockCronJob = {
@@ -273,7 +274,7 @@ describe('Enhanced Backup Service Tests', () => {
       }));
     });
 
-    it('should skip unchanged files in incremental backup', async () => {
+    it('should include unchanged files in every standalone S3 restore point', async () => {
       const config = {
         backup_enabled: true,
         backup_destination_type: 's3',
@@ -301,12 +302,12 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      // Should skip unchanged file
+      // File-state bookkeeping must not omit bytes from this restore point.
       const uploadCalls = mockS3Client.upload.mock.calls;
       const photo1Uploaded = uploadCalls.some(call => 
         call[1].includes('photo1.jpg')
       );
-      expect(photo1Uploaded).toBe(false);
+      expect(photo1Uploaded).toBe(true);
     });
 
     it('should include database backup when configured', async () => {
@@ -398,7 +399,7 @@ describe('Enhanced Backup Service Tests', () => {
       expect(backupManifest.generateManifest).toHaveBeenCalledWith(
         expect.objectContaining({
           backupType: 'full',
-          backupPath: '/backup',
+          backupPath: expect.stringMatching(/^\/backup\/backup-[0-9a-f-]{36}$/),
           format: 'json'
         })
       );
@@ -406,7 +407,7 @@ describe('Enhanced Backup Service Tests', () => {
       expect(backupManifest.saveManifest).toHaveBeenCalled();
     });
 
-    it('should generate incremental manifest when parent exists', async () => {
+    it('should generate an independent full manifest even when parent history exists', async () => {
       const config = {
         backup_enabled: true,
         backup_destination_type: 'local',
@@ -435,8 +436,13 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      expect(backupManifest.loadManifest).toHaveBeenCalledWith('/backup/manifests/previous.json');
-      expect(backupManifest.generateIncrementalManifest).toHaveBeenCalled();
+      expect(backupManifest.loadManifest).not.toHaveBeenCalled();
+      expect(backupManifest.generateIncrementalManifest).not.toHaveBeenCalled();
+      expect(backupManifest.generateManifest).toHaveBeenCalledWith(expect.objectContaining({
+        backupType: 'full',
+        parentBackupId: null,
+        customMetadata: expect.objectContaining({ restore_point: 'standalone-v1' }),
+      }));
     });
 
     it('should upload manifest to S3 for S3 backups', async () => {
@@ -502,7 +508,8 @@ describe('Enhanced Backup Service Tests', () => {
       
       // Verify files were copied to local destination
       const fs = require('fs');
-      const destPath = '/backup/local/events/active/event1/photo1.jpg';
+      const destPath = path.join(backupManifest.generateManifest.mock.calls[0][0].backupPath,
+        'events/active/event1/photo1.jpg');
       expect(fs.existsSync(destPath)).toBe(true);
     });
 
@@ -658,7 +665,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      // Should continue with other files despite error
+      // A required file read failure must fail the point rather than omit it.
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to backup file'),
         expect.any(Error)
