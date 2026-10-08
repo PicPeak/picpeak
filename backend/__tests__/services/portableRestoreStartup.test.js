@@ -22,13 +22,16 @@ it('loading the constructed server starts no application timer or ordinary datab
 
 it('new timers and callbacks constructed by runUncontrolled do not retain maintenance authority', async () => {
   const work = require('../../src/services/activeApplicationWork').createWorkRegistry();
-  let callback;
-  await work.runControl(() => work.runUncontrolled(() => { callback = async () => {
-    expect(work.isControl()).toBe(false);
-    await expect(work.track('ordinary callback', async () => {})).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
-  }; }));
   work.closeAdmission();
-  await callback();
+  await work.runControl(() => work.runUncontrolled(() => new Promise((resolve, reject) => {
+    setImmediate(async () => {
+      try {
+        expect(work.isControl()).toBe(false);
+        await expect(work.track('ordinary callback', async () => {})).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
+        resolve();
+      } catch (error) { reject(error); }
+    });
+  })));
 });
 
 it('the actual unstarted server fails closed before health/static/ordinary admin and OPTIONS dispatch', () => {
