@@ -138,7 +138,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
   let object;
   let storage;
   let promotionSettled = false;
-  let mediaReservation, rowCommitted = false;
 
   try {
     // Generate new filename + storage key
@@ -159,12 +158,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
 
     const stats = await fsp.stat(newFileTempPath);
 
-    const isVideoReplacement = !!mimeType?.startsWith('video/');
-    if (isVideoReplacement) {
-      const admission = require('./mediaWorkAdmission');
-      const value = await admission.inspect(newFileTempPath, uploadReservation?.signal);
-      mediaReservation = await admission.reserve(existingPhoto.event_id, value, { bytes: value.decodedBytes, work: value.work });
-    }
     // RAW/DNG isn't sharp-decodable — extract the embedded JPEG preview first
     // (pass-through for ordinary images), then measure + thumbnail that. Mirrors
     // the ingest paths (processPhoto / processUploadedPhotos).
@@ -252,6 +245,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       captured_at: capturedAt,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
+      // The new file starts its own attempts: a worker still busy with the
+      // old one loses its claim and can publish nothing.
       processing_attempt_id: null,
       // The replacement lives in the managed backend, so the row has to say
       // so. resolvePhotoStorageKey gives photo.source_origin precedence over
@@ -299,23 +294,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         if (await conn('photos').where({ id: existingPhoto.id, event_id: event.id }).update(updates) !== 1) {
           throw new Error('Replacement target no longer exists');
         }
-        if (mediaReservation) {
-          await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-          await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-        }
         return existingPhoto.id;
       });
-    } else await db.transaction(async conn => {
-      if (await conn('photos').where({ id: existingPhoto.id }).update(updates) !== 1) throw new Error('Replacement target no longer exists');
-      if (mediaReservation) {
-        await require('./imageWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-        await require('./mediaWorkAdmission').attach(mediaReservation, existingPhoto.id, conn);
-      }
-    });
-    rowCommitted = true;
-    if (mediaReservation) await Promise.all([
-      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
-    ]);
+    } else await db('photos').where({ id: existingPhoto.id }).update(updates);
 
     const updatedPhoto = await db('photos').where({ id: existingPhoto.id }).first();
     if (object && updatedPhoto && !['pending', 'processing', 'failed'].includes(updatedPhoto.processing_status)) {
@@ -336,9 +317,6 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       previousFilename: existingPhoto.filename,
     };
   } catch (err) {
-    if (mediaReservation && !rowCommitted) await Promise.all([
-      require('./imageWorkAdmission').release(mediaReservation), require('./mediaWorkAdmission').release(mediaReservation),
-    ]).catch(cleanupError => logger.warn('Replacement media charge retained', { error: cleanupError.message }));
     if (object) {
       try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
       catch (cleanupError) {
@@ -346,7 +324,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       }
     }
     logger.error('replacePhoto error', { photoId: existingPhoto.id, error: err.message });
-    return { success: false, error: err.message, ...(isResourceError(err) ? { code: err.code } : {}) };
+    return { success: false, error: err.message };
   }
 }
 

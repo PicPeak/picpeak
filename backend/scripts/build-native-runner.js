@@ -3,7 +3,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 if (process.platform !== 'linux') {
-  process.stdout.write('Native media processing requires Linux. Use the Linux development container.\n');
+  // Optional hardening: without these the backend runs the media tools
+  // unguarded and recovers interrupted work by age (docs/MEDIA_PROCESSING.md).
+  process.stdout.write(`The media process guard and kernel leases are Linux-only; nothing to build on ${process.platform}.\n`);
 } else {
   const root = path.join(__dirname, '..');
   fs.mkdirSync(path.join(root, 'bin'), { recursive: true });

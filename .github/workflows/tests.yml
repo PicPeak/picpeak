@@ -74,7 +74,7 @@ jobs:
         working-directory: ./backend
         run: npm ci
 
-      - name: Build mandatory Linux media supervisor and install native controls
+      - name: Build the optional media process guard and install the media tools
         working-directory: ./backend
         run: |
           sudo apt-get update

@@ -294,6 +294,8 @@ function pump() {
 function submit(job, { signal, interactive } = {}) {
   let policy;
   try { policy = configuration(); } catch (error) { return Promise.reject(error); }
+  // Work inside a queue attempt stops with it (shutdown, a lost claim).
+  signal = signal || require('./mediaAttemptContext').current()?.signal;
   if (signal?.aborted) return Promise.reject(refusal('Image processing was cancelled', 'IMAGE_CANCELLED'));
   if (interactive && queue.length >= policy.queueLength) {
     return Promise.reject(refusal('Image processing is busy; try again shortly', 'IMAGE_QUEUE_FULL', { retryAfter: 5 }));

@@ -11,6 +11,8 @@ const uploadQuota = require('./publicUploadQuota');
 const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
 const imageAdmission = require('./imageWorkAdmission');
 const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
+const mediaAttempts = require('./mediaAttemptService');
+const { refusal: mediaRefusal, isInterruption } = require('./mediaProcessPolicy');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -549,6 +551,15 @@ async function queueFilesForProcessing(files, options = {}) {
  * fails but dimensions succeed) are persisted up to the failure point.
  */
 async function processPhoto(photoId) {
+  // Outside the queue worker (a script, a test): claim the row first, so
+  // this run is fenced like any other.
+  if (!mediaAttempts.current()) {
+    const claimed = await mediaAttempts.claimNext('photo', photoId);
+    if (!claimed || claimed.exhausted) throw mediaRefusal(`Photo ${photoId} is not pending, or is being processed already`, 'MEDIA_ATTEMPT_REQUIRED');
+    return mediaAttempts.execute(claimed, 'photo', () => processPhoto(photoId));
+  }
+  const attempt = mediaAttempts.current();
+  await attempt.assertCurrent();
   const photo = await db('photos').where({ id: photoId }).first();
   if (!photo) throw new Error(`Photo ${photoId} not found`);
 
@@ -576,9 +587,12 @@ async function processPhoto(photoId) {
     }
 
     if (isVideo) {
+      // Named after the attempt: a worker that lost its claim can never
+      // overwrite the tile a newer attempt published.
+      const thumbnailBasename = mediaAttempts.outputName(photo.filename);
       const videoThumbnailKey = path.posix.join(
         'thumbnails',
-        `thumb_${photo.filename.replace(/\.[^.]+$/, '.jpg')}`
+        `thumb_${thumbnailBasename.replace(/\.[^.]+$/, '.jpg')}`
       );
       // A thumbnail/probe failure must not fail the row: processPhoto's caller
       // marks failed rows 'failed' and the guest gallery only lists 'complete',
@@ -592,14 +606,17 @@ async function processPhoto(photoId) {
       try {
         videoResult = await processUploadedVideo(localPath, videoThumbnailKey);
       } catch (videoErr) {
+        // "Not now" and a lost claim are not a verdict on the video.
+        if (isInterruption(videoErr)) throw videoErr;
         logger.warn(`processPhoto: video processing failed for ${photoId}, using placeholder thumbnail`, { error: videoErr.message });
         try {
           videoResult = { metadata: await extractVideoMetadata(localPath) };
         } catch (metaErr) {
+          if (isInterruption(metaErr)) throw metaErr;
           logger.warn(`processPhoto: video metadata extraction also failed for ${photoId}`, { error: metaErr.message });
         }
         // ffmpeg-free (sharp-rendered SVG); returns null on failure.
-        const placeholderKey = await generateVideoPlaceholder(photo.filename);
+        const placeholderKey = await generateVideoPlaceholder(thumbnailBasename);
         if (placeholderKey) videoResult = { ...(videoResult || {}), thumbnailKey: placeholderKey };
       }
       if (videoResult?.thumbnailKey) updateData.thumbnail_path = videoResult.thumbnailKey;
@@ -620,7 +637,7 @@ async function processPhoto(photoId) {
       const proc = await withProcessableImage(localPath, photo.filename);
       try {
         try {
-          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
+          const thumbnailPath = await generateThumbnail(proc.path, { outputBasename: mediaAttempts.outputName(proc.outputBasename || photo.filename) });
           if (thumbnailPath) updateData.thumbnail_path = thumbnailPath;
         } catch (e) {
           logger.warn(`processPhoto: thumbnail generation failed for ${photoId}`, { error: e.message });
@@ -665,12 +682,21 @@ async function processPhoto(photoId) {
     logger.warn(`processPhoto: face enqueue check failed for ${photoId}`, { error: err.message });
   }
 
-  await db('photos').where({ id: photoId }).update(updateData);
+  // The result is written only while the row still carries this attempt's
+  // id, in the same UPDATE. A worker that lost its claim removes what it
+  // stored and writes nothing.
+  const storage = require('./storage').getStorage();
+  if (await mediaAttempts.guard(attempt, db, true).update(updateData) !== 1) {
+    if (updateData.thumbnail_path) await storage.delete(updateData.thumbnail_path).catch(() => {});
+    throw mediaRefusal('Photo attempt was superseded', 'MEDIA_SUPERSEDED');
+  }
+  if (updateData.thumbnail_path) await mediaAttempts.dropSuperseded(storage, photo.thumbnail_path, updateData.thumbnail_path);
 
   // Side effects (best-effort, never fail the photo if these break)
   if (!isVideo) {
     const watermarkGeneratorService = require('./watermarkGeneratorService');
-    watermarkGeneratorService
+    // Awaited, so the watermark is written inside this attempt's fence.
+    await watermarkGeneratorService
       .generateForPhoto(photoId)
       .catch((err) => logger.warn(`processPhoto: watermark queue failed for ${photoId}`, { error: err.message }));
   }
