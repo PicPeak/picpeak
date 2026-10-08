@@ -33,6 +33,44 @@ function normalizeColorLabels(value) {
   return [...seen];
 }
 
+/** The decision filter values (issue 744): two verdicts plus "nobody yet". */
+const DECISION_FILTERS = ['approved', 'rejected', 'undecided'];
+
+/**
+ * Accept a decision filter as an array or a comma-separated string, keeping
+ * only the known values, de-duplicated.
+ */
+function normalizeDecisionFilter(value) {
+  if (!value) return [];
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  const seen = new Set();
+  for (const entry of raw) {
+    const decision = String(entry).trim().toLowerCase();
+    if (DECISION_FILTERS.includes(decision)) seen.add(decision);
+  }
+  return [...seen];
+}
+
+/**
+ * Narrow to photos some guest approved / rejected, or that nobody has decided
+ * on yet (issue 744). Reads the denormalized counters — "anyone approved it"
+ * is exactly what they count. The values OR among themselves and form ONE
+ * condition, so "approved,undecided" under logic=AND still means "not
+ * rejected by anyone".
+ */
+function whereDecision(builder, decisions) {
+  return builder.where(function () {
+    if (decisions.includes('approved')) this.orWhere('photos.approved_count', '>', 0);
+    if (decisions.includes('rejected')) this.orWhere('photos.rejected_count', '>', 0);
+    if (decisions.includes('undecided')) {
+      this.orWhere(function () {
+        this.where(q => q.where('photos.approved_count', 0).orWhereNull('photos.approved_count'))
+          .where(q => q.where('photos.rejected_count', 0).orWhereNull('photos.rejected_count'));
+      });
+    }
+  });
+}
+
 class PhotoFilterBuilder {
   constructor(queryBuilder, eventId, identityMode = 'simple') {
     this.query = queryBuilder;
@@ -57,6 +95,7 @@ class PhotoFilterBuilder {
       has_comments,
       color_labels,
       my_color_labels,
+      decisions,
       my_min_rating,
       marked_only,
       mark_source = 'either',
@@ -117,6 +156,11 @@ class PhotoFilterBuilder {
           identityMode,
         );
       }));
+    }
+
+    const requestedDecisions = normalizeDecisionFilter(decisions);
+    if (requestedDecisions.length > 0) {
+      conditions.push(builder => whereDecision(builder, requestedDecisions));
     }
 
     // The same question against the caller's own marks (#1044 follow-up).
@@ -269,7 +313,11 @@ class PhotoFilterBuilder {
         db.raw('COUNT(CASE WHEN like_count > 0 THEN 1 END) as with_likes'),
         db.raw('COUNT(CASE WHEN favorite_count > 0 THEN 1 END) as with_favorites'),
         db.raw('COUNT(CASE WHEN comment_count > 0 THEN 1 END) as with_comments'),
-        db.raw('COUNT(CASE WHEN color_label_count > 0 THEN 1 END) as with_color_labels')
+        db.raw('COUNT(CASE WHEN color_label_count > 0 THEN 1 END) as with_color_labels'),
+        // Approve / reject (issue 744) — the filter chips' counts.
+        db.raw('COUNT(CASE WHEN approved_count > 0 THEN 1 END) as with_approved'),
+        db.raw('COUNT(CASE WHEN rejected_count > 0 THEN 1 END) as with_rejected'),
+        db.raw('COUNT(CASE WHEN approved_count > 0 OR rejected_count > 0 THEN 1 END) as with_decisions')
       )
       .first();
 
@@ -298,9 +346,12 @@ class PhotoFilterBuilder {
       withFavorites: parseInt(result.with_favorites) || 0,
       withComments: parseInt(result.with_comments) || 0,
       withColorLabels: parseInt(result.with_color_labels) || 0,
-      colorLabelCounts
+      colorLabelCounts,
+      withApproved: parseInt(result.with_approved) || 0,
+      withRejected: parseInt(result.with_rejected) || 0,
+      withDecisions: parseInt(result.with_decisions) || 0
     };
   }
 }
 
-module.exports = { PhotoFilterBuilder, normalizeColorLabels };
+module.exports = { PhotoFilterBuilder, normalizeColorLabels, normalizeDecisionFilter, whereDecision };

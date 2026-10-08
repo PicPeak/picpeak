@@ -71,7 +71,8 @@
     "confirmCancelInvitation": {
       "title": "Annuler l'invitation",
       "message": "Êtes-vous sûr de vouloir annuler l'invitation pour {{email}} ?"
-    }
+    },
+    "creditNameHelp": "Indiqué sur les photos importées par ce compte lorsque le fichier ne contient pas de nom de photographe dans ses métadonnées."
   },
   "common": {
     "loading": "Chargement...",
@@ -853,8 +854,12 @@
         "folderStructureOn": "Arborescence activée",
         "folderStructureOff": "Envois sans dossiers",
         "firstLookDue": "première sélection, galerie complète pour le {{date}}",
-        "firstLook": "première sélection, la suite après"
-      }
+        "firstLook": "première sélection, la suite après",
+        "teamMembers_one": "{{count}} membre de l'équipe",
+        "teamMembers_other": "{{count}} membres de l'équipe",
+        "teamReview": "envois de l'équipe vérifiés"
+      },
+      "passwordOwnerOnly": "Seul le propriétaire de la galerie peut modifier le mot de passe ou le désactiver."
     },
     "folders": {
       "sectionTitle": "Dossiers",
@@ -915,6 +920,19 @@
       "structureApplied_other": "{{count}} photos déplacées dans des dossiers",
       "structureNothing": "Toutes les photos d'un sous-dossier sont déjà dans un dossier",
       "structureFailed": "La structure des dossiers n'a pas pu être appliquée"
+    },
+    "team": {
+      "label": "Membres de l'équipe",
+      "help": "Les comptes administrateur ajoutés ici peuvent travailler sur cette galerie comme vous, dans les limites de leur rôle. Les données clients et de facturation restent les vôtres.",
+      "removeAria": "Retirer {{name}}",
+      "placeholder": "Rechercher des comptes administrateur",
+      "loading": "Chargement…",
+      "loadFailed": "Impossible de charger les comptes administrateur.",
+      "noResults": "Aucun autre compte administrateur ne correspond.",
+      "reviewUploads": "Vérifier les envois des membres de l'équipe avant publication",
+      "reviewUploadsHelp": "Retient les envois des membres de l'équipe dont le rôle n'a pas l'autorisation « Review Team Uploads » : ils restent masqués pour les invités et les clients jusqu'à ce que vous ou un réviseur les approuviez dans l'onglet Photos. Les rôles Admin, Editor et Solo Photographer ont cette autorisation par défaut, leurs envois ne sont donc jamais retenus.",
+      "reviewUploadsHelpMember": "Vos envois dans cette galerie restent masqués pour les invités et les clients jusqu'à ce que le propriétaire ou un réviseur les approuve.",
+      "reviewUploadsHelpReviewer": "Les envois des membres de l'équipe sans l'autorisation « Review Team Uploads » attendent une approbation dans l'onglet Photos. Les vôtres sont publiés immédiatement."
     }
   },
   "settings": {
@@ -963,7 +981,9 @@
       "accountSaveSuccess": "Détails du compte mis à jour",
       "adminLanguage": "Votre langue d’administration",
       "adminLanguageHelp": "S'applique à l'espace d'administration, pour vous sur cet appareil uniquement. L'effet est immédiat — inutile d'enregistrer.",
-      "customerLanguage": "Langue de la galerie et des invités"
+      "customerLanguage": "Langue de la galerie et des invités",
+      "accountCreditName": "Crédit photo",
+      "accountCreditNameHelp": "Indiqué sur les photos que vous importez lorsque le fichier ne contient pas de nom de photographe dans ses métadonnées. Laissez vide pour aucun crédit."
     },
     "publicSite": {
       "badge": "Page d'accueil publique",
@@ -1160,7 +1180,8 @@
       "firstLookKeywords": "Mots-clés",
       "firstLookKeywordsHelp": "Séparés par des virgules. La casse, les espaces, les tirets et les traits de soulignement sont ignorés : « FirstLook » correspond aussi à « first-look ».",
       "deliveryDays": "Galerie complète due après (jours)",
-      "deliveryDaysHelp": "Si une première sélection démarre sans date promise, la galerie complète est due ce nombre de jours après la date de l'événement."
+      "deliveryDaysHelp": "Si une première sélection démarre sans date promise, la galerie complète est due ce nombre de jours après la date de l'événement.",
+      "defaultAllowDecisions": "Approuver / refuser chaque photo"
     },
     "imageSecurity": {
       "title": "Protection des images",
@@ -1943,7 +1964,14 @@
       "categoryHeroUpdated": "Photo de couverture de catégorie mise à jour",
       "publicSiteResetToDefault": "Site public réinitialisé aux valeurs par défaut",
       "cmsPageLogoUploaded": "Logo de la page CMS téléversé : {{slug}}",
-      "adminPasswordResetByAdmin": "Réinitialisation du mot de passe admin par un autre admin : {{username}}"
+      "adminPasswordResetByAdmin": "Réinitialisation du mot de passe admin par un autre admin : {{username}}",
+      "eventTeamChanged": "Équipe modifiée pour {{eventName}}",
+      "photosReviewApproved_one": "{{count}} envoi de l'équipe approuvé dans {{eventName}}",
+      "photosReviewApproved_other": "{{count}} envois de l'équipe approuvés dans {{eventName}}",
+      "photosReviewRejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
+      "photosReviewRejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}",
+      "photoDecision": "Photo approuvée ou refusée dans {{eventName}}",
+      "guestFeedbackDecision": "Un invité a approuvé ou refusé une photo dans {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Toutes les notifications marquées comme lues",
@@ -2005,7 +2033,9 @@
         "filterLabel": "Filtrer par crédit",
         "filterAll": "Tous les noms",
         "filterNone": "Aucun nom"
-      }
+      },
+      "approvedBy": "Approuvée : {{value}}",
+      "rejectedBy": "Refusée : {{value}}"
     },
     "events": {
       "tabs": {
@@ -2203,7 +2233,14 @@
       "delivery_first_look_started": "Première sélection démarrée pour {{eventName}}",
       "delivery_completed": "Galerie complète livrée : {{eventName}}",
       "delivery_due_soon": "La galerie complète de {{eventName}} arrive à échéance",
-      "delivery_overdue": "La galerie complète de {{eventName}} est en retard"
+      "delivery_overdue": "La galerie complète de {{eventName}} est en retard",
+      "photo_decision": "Photo approuvée ou refusée dans {{eventName}}",
+      "guest_feedback_decision": "Un invité a approuvé ou refusé une photo dans {{eventName}}",
+      "event_team_changed": "Équipe modifiée pour {{eventName}}",
+      "photos_review_approved_one": "{{count}} envoi de l'équipe approuvé dans {{eventName}}",
+      "photos_review_approved_other": "{{count}} envois de l'équipe approuvés dans {{eventName}}",
+      "photos_review_rejected_one": "{{count}} envoi de l'équipe refusé dans {{eventName}}",
+      "photos_review_rejected_other": "{{count}} envois de l'équipe refusés dans {{eventName}}"
     },
     "catalogedMedia": "{{size}} catalogués",
     "storageUnavailable": "indisponible",
@@ -2943,7 +2980,9 @@
       "keybindColors": "Couleurs uniquement (le plus simple)",
       "keybindColorsDesc": "1 = vert (1er choix), 2 = jaune (2e choix), 3 = rouge (rejeté)",
       "keybindLightroom": "Valeurs par défaut de Lightroom",
-      "keybindLightroomDesc": "1-5 attribuent les étoiles, 6-9 les couleurs rouge / jaune / vert / bleu"
+      "keybindLightroomDesc": "1-5 attribuent les étoiles, 6-9 les couleurs rouge / jaune / vert / bleu",
+      "decisions": "Approuver / refuser chaque photo",
+      "decisionsDesc": "Les invités approuvent ou refusent chaque photo, en indiquant éventuellement pourquoi. Vous filtrez et exportez selon leur décision"
     },
     "settingsUpdated": "Paramètres de commentaires mis à jour",
     "settingsUpdateError": "Échec de la mise à jour des paramètres",
@@ -2966,7 +3005,8 @@
       "like": "J'aimes",
       "comment": "Commentaires",
       "favorite": "Favoris",
-      "reaction": "Réactions"
+      "reaction": "Réactions",
+      "decision": "Approuver / refuser"
     },
     "allStatuses": "Tous statuts",
     "status": {
@@ -3033,7 +3073,25 @@
     "removeColorLabel": "Retirer l'étiquette {{color}}",
     "setColorLabel": "Marquer comme {{color}}",
     "markedAs": "Marqué comme {{color}}",
-    "alsoMarkedBy": "Également marqué par d’autres : {{colors}}"
+    "alsoMarkedBy": "Également marqué par d’autres : {{colors}}",
+    "decisions": {
+      "approved": "Approuvée",
+      "rejected": "Refusée"
+    },
+    "totalDecisions": "Approuvées / refusées",
+    "decisionsTitle": "Approuver / refuser",
+    "decisionApprove": "Approuver",
+    "decisionReject": "Refuser",
+    "decisionClear": "Annuler votre décision",
+    "decisionReasonEdit": "Pourquoi ? (facultatif)",
+    "decisionReasonLabel": "Pourquoi refusez-vous cette photo ? (facultatif)",
+    "decisionReasonPlaceholder": "p. ex. yeux fermés, pas mon meilleur profil",
+    "decisionReasonSave": "Enregistrer le motif",
+    "decisionReasonBlocked": "Votre motif contient des mots qui ne sont pas autorisés ici.",
+    "decisionError": "Impossible d'enregistrer votre décision",
+    "decisionType": "votre décision",
+    "youApproved": "Vous avez approuvé cette photo",
+    "youRejected": "Vous avez refusé cette photo"
   },
   "filter": {
     "feedbackFilters": "Filtres de commentaires",
@@ -3056,7 +3114,11 @@
     "colorLabels": "Étiquettes de couleur",
     "showOnlyColor": "Afficher uniquement {{color}}",
     "myColorLabels": "Vos marques",
-    "showOnlyMyColor": "Afficher uniquement mes marques {{color}}"
+    "showOnlyMyColor": "Afficher uniquement mes marques {{color}}",
+    "decisions": "Approuver / refuser",
+    "decisionApproved": "Approuvées",
+    "decisionRejected": "Refusées",
+    "decisionUndecided": "Sans décision"
   },
   "adminLogin": {
     "title": "Connexion administrateur",
@@ -3212,6 +3274,29 @@
       "waitingForAdmin_one": "{{count}} demande de dossier attend un administrateur. D'ici là, ses {{photos}} photos restent dans le dossier existant le plus proche.",
       "waitingForAdmin_many": "{{count}} demandes de dossier attendent un administrateur. D'ici là, leurs {{photos}} photos restent dans le dossier existant le plus proche.",
       "waitingForAdmin_other": "{{count}} demandes de dossier attendent un administrateur. D'ici là, leurs {{photos}} photos restent dans le dossier existant le plus proche."
+    },
+    "review": {
+      "pendingOwner_one": "{{count}} envoi de votre équipe attend votre vérification",
+      "pendingOwner_other": "{{count}} envois de votre équipe attendent votre vérification",
+      "pendingMember_one": "{{count}} envoi de l'équipe attend la vérification du propriétaire",
+      "pendingMember_other": "{{count}} envois de l'équipe attendent la vérification du propriétaire",
+      "nonePending": "Aucun envoi n'attend de vérification.",
+      "filterPending": "À vérifier ({{count}})",
+      "filterRejected": "Refusées ({{count}})",
+      "showAll": "Toutes les photos",
+      "approve": "Approuver",
+      "reject": "Refuser",
+      "approved_one": "{{count}} photo approuvée et publiée",
+      "approved_other": "{{count}} photos approuvées et publiées",
+      "rejected_one": "{{count}} photo refusée",
+      "rejected_other": "{{count}} photos refusées",
+      "failed": "Les photos n'ont pas pu être vérifiées",
+      "pendingBadge": "À vérifier",
+      "rejectedBadge": "Refusée",
+      "uploadedBy": "Envoyée par {{name}}",
+      "hiddenUntilApproved": "Masquée pour les invités et les clients jusqu'à approbation",
+      "skippedOnShow_one": "{{count}} photo attend une vérification et reste masquée jusqu'à son approbation",
+      "skippedOnShow_other": "{{count}} photos attendent une vérification et restent masquées jusqu'à leur approbation"
     }
   },
   "customer": {

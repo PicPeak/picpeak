@@ -1,9 +1,9 @@
 import React from 'react';
-import { Star, Heart, Bookmark, MessageCircle, Filter, X } from 'lucide-react';
+import { Star, Heart, Bookmark, MessageCircle, Filter, X, ThumbsUp, ThumbsDown, CircleDashed } from 'lucide-react';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../common';
-import { FeedbackFilters, FilterSummary } from '../../services/photos.service';
+import { FeedbackFilters, FilterSummary, type DecisionFilter } from '../../services/photos.service';
 
 interface PhotoFilterPanelProps {
   filters: FeedbackFilters;
@@ -66,6 +66,18 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
     });
   };
 
+  // Approve / reject (issue 744): multi-select like the colours; the chosen
+  // values OR together.
+  const toggleDecision = (decision: DecisionFilter) => {
+    const active = filters.decisions || [];
+    onChange({
+      ...filters,
+      decisions: active.includes(decision)
+        ? active.filter(d => d !== decision)
+        : [...active, decision],
+    });
+  };
+
   const handleLogicChange = (logic: 'AND' | 'OR') => {
     onChange({ ...filters, logic });
   };
@@ -78,6 +90,7 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
       hasComments: false,
       colorLabels: [],
       myColorLabels: [],
+      decisions: [],
       logic: 'AND'
     });
   };
@@ -87,7 +100,8 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
     filters.hasFavorites ||
     filters.hasComments ||
     (filters.colorLabels?.length || 0) > 0 ||
-    (filters.myColorLabels?.length || 0) > 0;
+    (filters.myColorLabels?.length || 0) > 0 ||
+    (filters.decisions?.length || 0) > 0;
 
   return (
     <div className="bg-panel rounded-lg border border-line p-4 mb-4">
@@ -218,6 +232,43 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
                     />
                     <span>{name}</span>
                     <span className="text-muted">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Approve / reject (issue 744). Like the colours, only once some
+            guest has decided — dead UI in galleries without the feature. */}
+        {(summary?.withDecisions || 0) > 0 && (
+          <div>
+            <span className="block text-sm font-medium text-body mb-2">
+              {t('filter.decisions', 'Approve / reject')}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {([
+                { value: 'approved', icon: <ThumbsUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" aria-hidden="true" />, label: t('filter.decisionApproved', 'Approved'), count: summary?.withApproved || 0 },
+                { value: 'rejected', icon: <ThumbsDown className="w-3.5 h-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />, label: t('filter.decisionRejected', 'Rejected'), count: summary?.withRejected || 0 },
+                { value: 'undecided', icon: <CircleDashed className="w-3.5 h-3.5 text-muted" aria-hidden="true" />, label: t('filter.decisionUndecided', 'Undecided'), count: Math.max(0, (summary?.total || 0) - (summary?.withDecisions || 0)) },
+              ] as Array<{ value: DecisionFilter; icon: React.ReactNode; label: string; count: number }>).map((option) => {
+                const isActive = (filters.decisions || []).includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => toggleDecision(option.value)}
+                    disabled={isLoading}
+                    aria-pressed={isActive}
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-sm transition-colors ${
+                      isActive
+                        ? 'border-accent-dark bg-accent-dark/10 text-heading'
+                        : 'border-line text-soft hover:bg-hover'
+                    }`}
+                  >
+                    {option.icon}
+                    <span>{option.label}</span>
+                    <span className="text-muted">({option.count})</span>
                   </button>
                 );
               })}

@@ -71,6 +71,9 @@ class PhotoExportService {
         'photos.favorite_count',
         'photos.comment_count',
         'photos.color_label_count',
+        // Approve / reject tallies (issue 744).
+        'photos.approved_count',
+        'photos.rejected_count',
         'photos.width',
         'photos.height',
         'photos.size_bytes',
@@ -213,7 +216,11 @@ class PhotoExportService {
       'height',
       'size_bytes',
       'uploaded_at',
-      'credit'
+      'credit',
+      // Appended rather than placed beside color_label (issue 744): a
+      // spreadsheet or script reading the columns by position keeps working.
+      'approved',
+      'rejected'
     ];
 
     const rows = photos.map(photo => [
@@ -232,7 +239,9 @@ class PhotoExportService {
       photo.height || '',
       photo.size_bytes || '',
       photo.uploaded_at ? new Date(photo.uploaded_at).toISOString() : '',
-      photo.credit_name || ''
+      photo.credit_name || '',
+      photo.approved_count || 0,
+      photo.rejected_count || 0
     ]);
 
     const csvContent = [
@@ -327,6 +336,10 @@ class PhotoExportService {
         color_labels: photo.color_labels || {},
         my_rating: photo.my_rating ?? null,
         my_color_label: photo.my_color_label || null,
+        decisions: {
+          approved: photo.approved_count || 0,
+          rejected: photo.rejected_count || 0
+        },
         dimensions: {
           width: photo.width || null,
           height: photo.height || null

@@ -25,7 +25,9 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { requireEventOwnership, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery } = require('../../middleware/ownership');
+const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent } = require('../../middleware/ownership');
+const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
+const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
 const { applyEventListSort } = require('./listSort');
 const { VIDEO_COUNT_SQL, VIDEO_DURATION_SQL } = require('../../utils/mediaTypeSql');
 
@@ -191,6 +193,7 @@ module.exports = (router) => {
     body('allow_favorites').optional().isBoolean(),
     body('allow_reactions').optional().isBoolean(),
     body('allow_color_labels').optional().isBoolean(),
+    body('allow_decisions').optional().isBoolean(),
     body('keybind_mode').optional().isIn(KEYBIND_MODES),
     body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     // Hero logo settings
@@ -228,6 +231,10 @@ module.exports = (router) => {
     // customer_accounts.id — many-to-many via event_customer_assignments.
     body('customer_account_ids').optional().isArray(),
     body('customer_account_ids.*').optional().isInt({ min: 1 }),
+    // Team members and the review of their uploads (issue 743).
+    body('assigned_admin_ids').optional().isArray(),
+    body('assigned_admin_ids.*').optional().isInt({ min: 1 }),
+    body('review_contributor_uploads').optional().isBoolean(),
     // Custom styling switch (services/galleryTheme) and the photo source,
     // so a gallery is complete from the create form alone.
     body('custom_theme_enabled').optional().isBoolean(),
@@ -395,6 +402,18 @@ module.exports = (router) => {
     }
   });
 
+  // Admin accounts a gallery's team can be picked from (issue 743): id,
+  // username and role only. Registered before /:id, which would match it.
+  router.get('/assignable-admins', adminAuth, requirePermission('events.edit'), async (req, res) => {
+    try {
+      res.json({ admins: await eventAdminAssignments.listAssignableAdmins({
+        includeSuperAdmins: req.admin.roleName === 'super_admin',
+      }) });
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to fetch admin accounts');
+    }
+  });
+
   // Get single event details
   router.get('/:id', adminAuth, requirePermission('events.view'), async (req, res) => {
     try {
@@ -483,8 +502,15 @@ module.exports = (router) => {
         logger.warn('Failed to resolve gallery notice recipients', { eventId: id, error: e.message });
       }
 
+      // The gallery's team (issue 743). Only the owner changes it; the owner
+      // or a holder of photos.review publishes the uploads it holds for review.
+      const assignedAdmins = await eventAdminAssignments.listAssignedAdmins(event.id);
+
       res.json(withoutForeignEventSecrets(mapEventForApi({
         ...event,
+        assigned_admins: assignedAdmins,
+        can_manage_assignments: ownsEvent(req.admin, event),
+        can_review_uploads: await mayReviewUploads(req.admin, event),
         gallery_notice: galleryNotice,
         photo_count: parseInt(photoCount) || 0,
         video_count: Number(videoCount) || 0,
@@ -544,6 +570,11 @@ module.exports = (router) => {
 
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
+      }
+      // A new gallery password is the owner's to set (issue 743), as reading
+      // and resetting it are; sending or publishing without one stays open.
+      if (password && !ownsEvent(req.admin, event)) {
+        return res.status(403).json({ error: 'Only the gallery owner can change its password', code: 'EVENT_OWNER_REQUIRED' });
       }
       if (parseBooleanInput(event.is_draft, false)) {
         // A draft has no working gallery link yet, so the email would carry a
@@ -676,6 +707,11 @@ module.exports = (router) => {
 
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
+      }
+      // A new gallery password is the owner's to set (issue 743), as reading
+      // and resetting it are; sending or publishing without one stays open.
+      if (password && !ownsEvent(req.admin, event)) {
+        return res.status(403).json({ error: 'Only the gallery owner can change its password', code: 'EVENT_OWNER_REQUIRED' });
       }
 
       if (!parseBooleanInput(event.is_draft, false)) {
@@ -1003,6 +1039,7 @@ module.exports = (router) => {
           // A clone copies the SOURCE event, so these come from the source
           // row rather than the global defaults (#1044).
           allow_color_labels: sourceFeedback.allow_color_labels,
+          allow_decisions: sourceFeedback.allow_decisions,
           keybind_mode: sourceFeedback.keybind_mode,
           require_name_email: sourceFeedback.require_name_email,
           moderate_comments: sourceFeedback.moderate_comments,
@@ -1202,6 +1239,10 @@ module.exports = (router) => {
     // customer_accounts.id — many-to-many via event_customer_assignments.
     body('customer_account_ids').optional().isArray(),
     body('customer_account_ids.*').optional().isInt({ min: 1 }),
+    // Team members and the review of their uploads (issue 743), the owner's.
+    body('assigned_admin_ids').optional().isArray(),
+    body('assigned_admin_ids.*').optional().isInt({ min: 1 }),
+    body('review_contributor_uploads').optional().isBoolean(),
     // Custom styling switch (services/galleryTheme). Off keeps color_theme
     // and css_template_id stored, so switching it on again restores them.
     body('custom_theme_enabled').optional().isBoolean()
@@ -1251,10 +1292,10 @@ module.exports = (router) => {
       // insert error, and `[false]` coerced to true by formatBoolean.
       //
       // Guarded here rather than per field because it applies to all 44
-      // validated fields, not to a chosen few. `customer_account_ids` is the
-      // only field that is legitimately an array, and it is deleted from
-      // `updates` below before the write (#1296).
-      const ARRAY_VALUED_FIELDS = new Set(['customer_account_ids']);
+      // validated fields, not to a chosen few. `customer_account_ids` and
+      // `assigned_admin_ids` are the only fields that are legitimately arrays,
+      // and both are deleted from `updates` below before the write (#1296).
+      const ARRAY_VALUED_FIELDS = new Set(['customer_account_ids', 'assigned_admin_ids']);
       const arrayValued = Object.keys(updates)
         .filter((key) => Array.isArray(updates[key]) && !ARRAY_VALUED_FIELDS.has(key));
       if (arrayValued.length > 0) {
@@ -1262,6 +1303,73 @@ module.exports = (router) => {
           error: `Array values are not accepted for: ${arrayValued.join(', ')}`,
         });
       }
+
+      // The gallery's credentials are the owner's (issue 743): reading and
+      // resetting them is (requireEventOwner), so setting a new password or
+      // client PIN, regenerating the client link, or switching password
+      // protection on or off must be too. A non-owner's echo of the stored
+      // require_password, and empty password fields from the settings draft,
+      // are not changes and pass.
+      const setsPassword = (value) => typeof value === 'string' ? value !== '' : Boolean(value);
+      const touchesCredentials = setsPassword(req.body.password)
+        || setsPassword(req.body.client_password)
+        || parseBooleanInput(req.body.regenerate_client_token, false)
+        || Object.prototype.hasOwnProperty.call(req.body, 'require_password');
+      if (touchesCredentials) {
+        const stored = await db('events').where('id', id).first('id', 'created_by', 'require_password');
+        if (!stored) return res.status(404).json({ error: 'Event not found' });
+        const togglesProtection = Object.prototype.hasOwnProperty.call(req.body, 'require_password')
+          && parseBooleanInput(req.body.require_password, true) !== parseBooleanInput(stored.require_password, true);
+        const changesCredentials = setsPassword(req.body.password) || setsPassword(req.body.client_password)
+          || parseBooleanInput(req.body.regenerate_client_token, false) || togglesProtection;
+        if (changesCredentials && !ownsEvent(req.admin, stored)) {
+          return res.status(403).json({ error: 'Only the gallery owner can change its password', code: 'EVENT_OWNER_REQUIRED' });
+        }
+      }
+
+      // Who works on the gallery and whether their uploads wait for review
+      // (issue 743) are the owner's to decide: an assigned admin holding
+      // events.edit edits the gallery, not its team. A non-owner's echo of the
+      // stored values (the settings form sends the whole draft) changes
+      // nothing and is let through.
+      let assignedAdminIds = null;
+      const touchesTeam = Array.isArray(req.body.assigned_admin_ids)
+        || Object.prototype.hasOwnProperty.call(updates, 'review_contributor_uploads');
+      if (touchesTeam) {
+        const stored = await db('events').where('id', id).first('id', 'created_by', 'review_contributor_uploads');
+        if (!stored) return res.status(404).json({ error: 'Event not found' });
+        const previousAdminIds = (await db('event_admin_assignments').where('event_id', id).pluck('admin_user_id')).map(Number);
+        const isOwner = ownsEvent(req.admin, stored);
+        if (Array.isArray(req.body.assigned_admin_ids)) {
+          // A non-owner is compared on the raw ids, before validation, so the
+          // 400 for an unknown or inactive account never answers them: the
+          // route must not say which admin ids are live to someone who may not
+          // change the team anyway.
+          const same = (ids) => ids.length === previousAdminIds.length && ids.every((v) => previousAdminIds.includes(v));
+          if (!isOwner) {
+            const echoed = [...new Set(req.body.assigned_admin_ids.map(Number))]
+              .filter((v) => v !== Number(stored.created_by));
+            if (!same(echoed)) {
+              return res.status(403).json({ error: 'Only the gallery owner can change its team', code: 'EVENT_OWNER_REQUIRED' });
+            }
+          } else {
+            const submitted = await eventAdminAssignments.resolveAssignableIds(
+              req.body.assigned_admin_ids, stored.created_by, previousAdminIds);
+            if (!same(submitted)) assignedAdminIds = submitted;
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, 'review_contributor_uploads')) {
+          const next = parseBooleanInput(updates.review_contributor_uploads, false);
+          if (next === parseBooleanInput(stored.review_contributor_uploads, false)) {
+            delete updates.review_contributor_uploads;
+          } else if (!isOwner) {
+            return res.status(403).json({ error: 'Only the gallery owner can change upload review', code: 'EVENT_OWNER_REQUIRED' });
+          } else {
+            updates.review_contributor_uploads = formatBoolean(next);
+          }
+        }
+      }
+      delete updates.assigned_admin_ids;
 
       // Strip identity/provenance/secret columns from the mass-assigned
       // body (GHSA-3rqx). The handler spreads req.body straight into the
@@ -1442,7 +1550,8 @@ module.exports = (router) => {
       // leaves an already-watched event as it is stays an events.edit
       // operation, so a role without photos.upload can still edit the rest.
       if (Object.prototype.hasOwnProperty.call(updates, 'external_watch') || Object.prototype.hasOwnProperty.call(updates, 'external_path')) {
-        const current = await db('events').where('id', id).select('external_watch', 'external_path').first();
+        const current = await db('events').where('id', id)
+          .select('id', 'created_by', 'review_contributor_uploads', 'external_watch', 'external_path').first();
         const wasWatched = Boolean(current?.external_watch);
         const willWatch = Object.prototype.hasOwnProperty.call(updates, 'external_watch')
           ? Boolean(updates.external_watch)
@@ -1452,6 +1561,15 @@ module.exports = (router) => {
         if (willWatch && ((!wasWatched) || pathChanges)) {
           if (!(await userHasAllPermissions(req.admin.id, ['photos.upload']))) {
             return res.status(403).json({ error: 'The photos.upload permission is required to enable automatic imports for this folder' });
+          }
+          // The watcher imports visible, past the owner's review (issue 743),
+          // so a team member whose uploads wait for it cannot start one; the
+          // manual folder import refuses them the same way.
+          if (await holdsForReview(req.admin, current)) {
+            return res.status(403).json({
+              error: 'Uploads to this event wait for review; automatic folder imports are not available',
+              code: 'UPLOAD_REVIEW_REQUIRED',
+            });
           }
         }
       }
@@ -1539,6 +1657,20 @@ module.exports = (router) => {
       const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first();
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
+      }
+
+      // A team upload still under review (issue 743) is not the gallery's to
+      // show yet, and the hero is the public link-preview cover; it is
+      // chosen once the owner has approved the photo.
+      if (updates.hero_photo_id != null
+        && Number(updates.hero_photo_id) !== Number(event.hero_photo_id)) {
+        const underReview = await db('photos')
+          .where({ id: updates.hero_photo_id, event_id: event.id })
+          .whereNotNull('moderation_status')
+          .first('id');
+        if (underReview) {
+          return res.status(409).json({ error: 'Photo is awaiting review', code: 'PHOTO_UNDER_REVIEW' });
+        }
       }
 
       const currentRequirePassword = parseBooleanInput(event.require_password, true);
@@ -1827,12 +1959,38 @@ module.exports = (router) => {
         }
       }
 
+      // Team members (issue 743): replaced as one set, validated above.
+      // Its own transaction after the event UPDATE (a db-level helper above
+      // would deadlock SQLite inside one), so a failure here comes after the
+      // gallery edits are already saved: say exactly that, and still audit
+      // the edits, rather than a 500 claiming nothing was saved.
+      let teamChange = null;
+      let teamError = null;
+      if (assignedAdminIds) {
+        try {
+          teamChange = await db.transaction((trx) => eventAdminAssignments.setAssignedAdmins(
+            parseInt(id, 10), assignedAdminIds, req.admin.id, trx));
+        } catch (e) {
+          teamError = e;
+          logger.error('Failed to set team members on event update', {
+            eventId: id, error: e.message, stack: e.stack,
+          });
+        }
+      }
+
       // Log activity
       await logActivity('event_updated',
         { changes: Object.keys(updates), eventName: event.event_name },
         id,
         { type: 'admin', id: req.admin.id, name: req.admin.username }
       );
+      if (teamChange && (teamChange.added.length > 0 || teamChange.removed.length > 0)) {
+        await logActivity('event_team_changed',
+          { ...teamChange, eventName: event.event_name },
+          id,
+          { type: 'admin', id: req.admin.id, name: req.admin.username }
+        );
+      }
 
       // Invalidate download zip if watermark settings changed
       const changeKeys = Object.keys(req.body);
@@ -1840,8 +1998,15 @@ module.exports = (router) => {
         downloadZipService.invalidate(parseInt(id));
       }
 
+      if (teamError) {
+        return res.status(500).json({
+          error: 'Gallery saved, but the team could not be saved. Try again.',
+          code: 'TEAM_NOT_SAVED',
+        });
+      }
       res.json({ message: 'Event updated successfully' });
     } catch (error) {
+      if (error.isOperational) return res.status(error.statusCode).json({ error: error.message, code: error.code });
       errorResponse(res, error, 500, 'Failed to update event');
     }
   });
@@ -1899,7 +2064,7 @@ module.exports = (router) => {
     }
   });
 
-  router.delete('/:id', adminAuth, requirePermission('events.delete'), requireEventOwnership, async (req, res) => {
+  router.delete('/:id', adminAuth, requirePermission('events.delete'), requireEventOwner, async (req, res) => {
     try {
       const { id } = req.params;
       await deleteEventCascade(id, { id: req.admin.id, username: req.admin.username });

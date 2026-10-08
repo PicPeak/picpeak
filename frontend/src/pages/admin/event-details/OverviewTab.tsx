@@ -262,6 +262,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </span>
             </SummaryRow>
           )}
+          {/* Team members (issue 743); changed in Settings → General. */}
+          {(event.assigned_admins?.length ?? 0) > 0 && (
+            <SummaryRow label={t('events.team.label', 'Team members')}>
+              <span className="flex flex-col items-end gap-0.5">
+                {(event.assigned_admins ?? []).map((a) => (
+                  <span key={a.id} title={a.role_name || undefined}>{a.username}</span>
+                ))}
+              </span>
+            </SummaryRow>
+          )}
           {event.admin_email && <SummaryRow label={t('events.adminEmail')}>{event.admin_email}</SummaryRow>}
           {event.created_at && <SummaryRow label={t('events.created')}>{format(safeParseDate(event.created_at)!, 'PP')}</SummaryRow>}
           <SummaryRow label={t('events.expires')}>

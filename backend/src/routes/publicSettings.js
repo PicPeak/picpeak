@@ -28,6 +28,7 @@ router.get('/', async (req, res) => {
               'event_default_allow_comments',
               'event_default_allow_reactions',
               'event_default_allow_color_labels',
+              'event_default_allow_decisions',
               'event_default_keybind_mode',
               // Download limit default (issue 1560) — pre-fills the create form.
               'event_default_download_limit',
@@ -243,6 +244,7 @@ router.get('/', async (req, res) => {
       event_default_allow_comments: settingsObject.event_default_allow_comments !== false,
       event_default_allow_reactions: settingsObject.event_default_allow_reactions !== false,
       event_default_allow_color_labels: settingsObject.event_default_allow_color_labels === true,
+      event_default_allow_decisions: settingsObject.event_default_allow_decisions === true,
       event_default_keybind_mode: settingsObject.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
       // Download limit default (issue 1560). null = unlimited; the backend
       // applies the same value when a create request omits the field.

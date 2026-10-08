@@ -2,6 +2,7 @@ const express = require('express');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
+const { holdsForReview } = require('../services/uploadReviewService');
 const { db } = require('../database/db');
 const { list } = require('../services/externalMediaService');
 const jobState = require('../services/maintenanceJobState');
@@ -46,10 +47,20 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
   const eventId = parseInt(req.params.id);
   const { recursive = true, map = { individual: 'individual', collages: 'collages' } } = req.body || {};
   let external_path = typeof req.body?.external_path === 'string' ? req.body.external_path.trim() : '';
-  if (!external_path) {
-    const event = await db('events').where({ id: eventId }).first('source_mode', 'external_path');
-    if (!event) return res.status(404).json({ error: 'Event not found' });
-    if (event.source_mode === 'reference' && event.external_path) external_path = event.external_path;
+  const event = await db('events').where({ id: eventId })
+    .first('id', 'created_by', 'review_contributor_uploads', 'source_mode', 'external_path');
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  // An import publishes every file it finds at once, so a team member whose
+  // uploads the owner reviews (issue 743) uploads through the uploader
+  // instead, where each photo waits for that review.
+  if (await holdsForReview(req.admin, event)) {
+    return res.status(403).json({
+      error: 'Uploads to this event wait for the owner\'s review; importing a folder is not available',
+      code: 'UPLOAD_REVIEW_REQUIRED',
+    });
+  }
+  if (!external_path && event.source_mode === 'reference' && event.external_path) {
+    external_path = event.external_path;
   }
   if (!external_path) return res.status(400).json({ error: 'external_path is required' });
 

@@ -51,6 +51,15 @@ jest.mock('../../../middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
   userHasAnyPermission: async () => true,
   userHasAllPermissions: async () => true,
+  roleHasPermission: async () => true,
+}));
+
+// The upload columns (issue 743: uploader, account credit, review) read
+// admin_users; this suite queues db() chains in call order, so they are pinned
+// here and covered in __tests__/routes/eventAdminAssignments.
+jest.mock('../../../services/uploadReviewService', () => ({
+  holdsForReview: async () => false,
+  adminUploadColumns: async (admin) => ({ uploaded_by_admin_id: admin.id }),
 }));
 
 jest.mock('../../../middleware/apiTokenAuth', () => ({

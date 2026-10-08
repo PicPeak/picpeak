@@ -15,6 +15,9 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [clientPin, setClientPin] = useState('');
+  // The PIN and the client link are the owner's to change (issue 743); a
+  // team member sees the link but not these controls. Missing = owner.
+  const ownsEvent = event?.can_manage_assignments !== false;
 
   return (
     <Card padding="md">
@@ -53,6 +56,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
         {!!event?.client_access_enabled && (
           <>
             {/* Set/Change PIN */}
+            {ownsEvent && (
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-body mb-1">
@@ -97,6 +101,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 {t('clientAccess.setPin')}
               </Button>
             </div>
+            )}
 
             {/* Client access link */}
             {event?.client_share_token && (
@@ -135,6 +140,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   </Button>
                 </div>
 
+                {ownsEvent && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -151,6 +157,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 >
                   {t('clientAccess.regenerateToken')}
                 </Button>
+                )}
               </div>
             )}
           </>

@@ -57,7 +57,7 @@ async function execute(entry) {
       env: { ...process.env, OMP_NUM_THREADS: '1', OPENBLAS_NUM_THREADS: '1', VIPS_CONCURRENCY: '1', MALLOC_ARENA_MAX: '2', ...entry.env },
     });
     entry.child = child;
-    let spawnError, terminal = false, handshake = '', stdoutBytes = 0, stderrBytes = 0;
+    let spawnError, terminal = false, nativeSignal, handshake = '', stdoutBytes = 0, stderrBytes = 0;
     const stdout = [], stderr = [];
     const writes = [];
     let output;
@@ -87,7 +87,10 @@ async function execute(entry) {
             });
             writes.push(registration); registration.catch(error => entry.fail(error));
           }
-          if (value.terminal === true) terminal = true;
+          if (value.terminal === true) {
+            terminal = true;
+            if (Number.isSafeInteger(value.childSignal) && value.childSignal >= 0) nativeSignal = value.childSignal;
+          }
         } catch (_) { entry.fail(errorFor(entry, 'Invalid native supervisor response', 'WORKER_FAILED')); }
       }
     });
@@ -131,7 +134,10 @@ async function execute(entry) {
         if (!terminal) throw errorFor(entry, 'Native supervisor failed after confirmed child termination', 'WORKER_FAILED');
         if (!terminal || code !== 0) {
           const detail = Buffer.concat(stderr).toString().slice(0, 8192);
-          if (code >= 128 || /cannot allocate memory|out of memory|memory allocation|resource temporarily unavailable/i.test(detail)) {
+          // FFmpeg can exit with a wrapped negative errno (for example 234),
+          // so only the guardian's actual signal proves a native kill.
+          if ((nativeSignal === undefined ? code >= 128 : nativeSignal > 0) ||
+              /cannot allocate memory|out of memory|memory allocation|resource temporarily unavailable/i.test(detail)) {
             throw errorFor(entry, 'Native processing exceeded its resource budget', 'RESOURCE_LIMIT');
           }
           throw Object.assign(new Error(`${path.basename(entry.command)} failed (${signal || code}): ${detail}`), { exitCode: code, signal });
