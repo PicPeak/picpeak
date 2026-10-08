@@ -55,6 +55,7 @@ async function requireQuotesFlag(req, res, next) {
 
 router.use(adminAuth);
 router.use(requireQuotesFlag);
+router.use('/:id', require('../database/crmAccess').requireCrmDocument('quotes'));
 
 // ---------------------------------------------------------------------
 // Transforms (snake_case DB → camelCase API)

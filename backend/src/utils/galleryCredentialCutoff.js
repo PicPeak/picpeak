@@ -2,7 +2,9 @@
  * Gallery sessions end when the credential they were opened with changes.
  *
  * Guest sessions come from the gallery password (or the share link of a gallery
- * without one), client sessions from the client password or the client link.
+ * without one), and client sessions from the client password. The private-link
+ * token is required to mint a new client session, but rotating that link does
+ * not end a session that has already authenticated with the PIN.
  * Slideshow sessions come from the slideshow link: the session carries a digest
  * of the link it was opened with, and rotating or disabling the link ends every
  * session opened with the old one. Portal sessions (`via: 'customer'`) are bound

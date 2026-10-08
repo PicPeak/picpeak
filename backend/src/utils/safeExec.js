@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { withPgClientPolicy } = require('./pgClient');
 
 /**
  * Safe command execution utilities using spawn (shell: false).
@@ -9,7 +10,7 @@ const { spawn } = require('child_process');
  * Run a command with arguments, returning { stdout, stderr }.
  * Equivalent to execAsync(cmd) but safe from injection.
  */
-function spawnAsync(cmd, args = [], options = {}) {
+function rawSpawnAsync(cmd, args = [], options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       shell: false,
@@ -63,7 +64,7 @@ function spawnAsync(cmd, args = [], options = {}) {
  *   - restoreService pre-restore safety snapshot (would have hit the
  *     same on next restore attempt)
  */
-function spawnToFile(cmd, args, outputPath, options = {}) {
+function rawSpawnToFile(cmd, args, outputPath, options = {}) {
   const fs = require('fs');
   return new Promise((resolve, reject) => {
     const outStream = fs.createWriteStream(outputPath);
@@ -127,7 +128,7 @@ function spawnToFile(cmd, args, outputPath, options = {}) {
  * ReadStream `fd` is null at spawn time. Use `stdio[0] = 'pipe'` and pipe
  * the file stream into `child.stdin` via the streams API instead.
  */
-function spawnFromFile(cmd, args, inputPath, options = {}) {
+function rawSpawnFromFile(cmd, args, inputPath, options = {}) {
   const fs = require('fs');
   return new Promise((resolve, reject) => {
     const inStream = fs.createReadStream(inputPath);
@@ -176,6 +177,18 @@ function spawnFromFile(cmd, args, inputPath, options = {}) {
       settleResolve({ stdout, stderr });
     });
   });
+}
+
+function spawnAsync(cmd, args = [], options = {}) {
+  return withPgClientPolicy(cmd, args, options, (safeArgs, safeOptions) => rawSpawnAsync(cmd, safeArgs, safeOptions));
+}
+
+function spawnToFile(cmd, args, outputPath, options = {}) {
+  return withPgClientPolicy(cmd, args, options, (safeArgs, safeOptions) => rawSpawnToFile(cmd, safeArgs, outputPath, safeOptions));
+}
+
+function spawnFromFile(cmd, args, inputPath, options = {}) {
+  return withPgClientPolicy(cmd, args, options, (safeArgs, safeOptions) => rawSpawnFromFile(cmd, safeArgs, inputPath, safeOptions));
 }
 
 module.exports = { spawnAsync, spawnToFile, spawnFromFile };

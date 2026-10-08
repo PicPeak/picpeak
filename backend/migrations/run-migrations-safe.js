@@ -148,7 +148,11 @@ async function runMigrationSafely(filepath) {
 }
 
 // Main migration runner
-async function runMigrations() {
+function runMigrations() {
+  return require('../src/database/crmAccess').withTrustedCrmAccess('schema migration', runMigrationsInternal);
+}
+
+async function runMigrationsInternal() {
   let connection;
   try {
     console.log('Starting production-safe database migrations...');

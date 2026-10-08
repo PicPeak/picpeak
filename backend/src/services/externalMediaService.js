@@ -55,10 +55,19 @@ function isUnderRoot(p) {
   return resolved === root || resolved.startsWith(root + path.sep);
 }
 
-async function list(relativePath = '') {
+async function list(relativePath = '', actor = null) {
+  const access = require('./externalMediaAccess');
+  const admin = await access.principal(actor?.id, 'photos.view');
+  const normalizedPath = access.normalizeSourcePath(relativePath);
+  if (!normalizedPath && admin.roleName !== 'super_admin') {
+    // A virtual root, not a listing of the global mount or grant ancestors.
+    const sources = await access.ownedSources(admin);
+    return { path: '', entries: sources.map((source) => ({ name: source.path, path: source.path, type: 'dir' })), canNavigateUp: false };
+  }
+  const authorized = await access.authorizeSource(admin.id, normalizedPath);
   const root = getExternalMediaRoot();
   // Normalize and ensure safe join under root
-  const targetDir = safePathJoin(root, relativePath || '.');
+  const targetDir = authorized.target;
   // The lexical check above does not follow symlinks; a link inside the root
   // would otherwise list whatever it points at.
   await assertRealpathUnder(root, targetDir);
@@ -71,6 +80,7 @@ async function list(relativePath = '') {
     // listed, so it can never be chosen.
     if (d.name.startsWith('.') || d.isSymbolicLink()) continue;
     const full = path.join(targetDir, d.name);
+    await access.authorizeSelectedFile(authorized, full);
     const stat = await fs.stat(full).catch(() => null);
     if (!stat) continue;
 

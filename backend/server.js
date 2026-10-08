@@ -99,6 +99,12 @@ const {
   getAdminTokenFromRequest,
   getGalleryTokenFromRequest,
 } = require('./src/utils/tokenUtils');
+const {
+  LEGACY_TRUST_PROXY,
+  isTrustProxyUnset,
+  parseTrustProxy,
+  resolveListenHost,
+} = require('./src/config/network');
 
 // Import routes
 const authRoutes = require('./src/routes/auth');
@@ -110,6 +116,7 @@ const setupRoutes = require('./src/routes/setup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const LISTEN_HOST = resolveListenHost();
 
 // Trust proxy headers (required for Traefik/nginx).
 //
@@ -119,20 +126,27 @@ const PORT = process.env.PORT || 3000;
 // rate-limit keys) is the originating client IP behind any number
 // of trusted reverse proxies.
 //
-// Default: 'loopback, linklocal, uniquelocal' — covers localhost,
-// link-local (169.254.0.0/16), and unique-local IPv6 (fc00::/7).
-// Standard for nginx-in-front-of-Node deployments on the same host
-// and for Docker bridge networks. Operators with unusual topologies
-// (load balancer in a public subnet, multi-hop NAT) override via
-// TRUST_PROXY env, accepting any value Express accepts: a number,
-// 'loopback', 'linklocal', 'uniquelocal', a CIDR, a comma list, or
+// Default (TRUST_PROXY unset): 'loopback, linklocal, uniquelocal', the
+// legacy private-range trust. It stays the default so an install that only
+// pulls a new image keeps resolving the real client behind its proxy, but a
+// source address being private does not prove it is a proxy this deployment
+// controls. Recommended: set TRUST_PROXY to the exact hop count (the Compose
+// stack pins 1 for its frontend nginx; the installer writes 'loopback' for
+// a native reverse proxy). Any value Express accepts works: a number,
+// 'loopback', 'linklocal', 'uniquelocal', a CIDR, a comma list, 'false' /
+// '0' (trust nothing), or
 // 'true' (trust ALL proxies — only safe behind a fully-controlled
 // reverse-proxy chain).
 //
 // NEVER read req.headers['x-forwarded-for'] directly in audit paths
 // — see utils/clientIp.js for the rationale.
-const trustProxySetting = process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal';
-app.set('trust proxy', trustProxySetting === 'true' ? true : trustProxySetting);
+app.set('trust proxy', parseTrustProxy());
+if (process.env.NODE_ENV === 'production' && isTrustProxyUnset()) {
+  logger.warn(
+    `TRUST_PROXY is not set: trusting forwarding headers from every private-range address (${LEGACY_TRUST_PROXY}). `
+    + 'Set TRUST_PROXY to the exact number of reverse-proxy hops in front of PicPeak (or false when there is none).'
+  );
+}
 
 // Security middleware with custom CSP
 // In native HTTP installs, do NOT force HTTPS for subresources.
@@ -261,12 +275,9 @@ app.use('/api', cors(corsOptions));
 // Handle preflight explicitly for API paths
 app.options('/api/*', cors(corsOptions));
 
-// Same-origin proxy for the configured analytics tracker. Mounted HERE, ahead
-// of the body parsers, so the tracker's beacon payload reaches the proxy as a
-// raw buffer (express.json would consume it, and the CSRF Content-Type gate
-// below would 415 a navigator.sendBeacon `text/plain` POST). It carries no
-// PicPeak state and reads no PicPeak credentials — see the route file for the
-// SSRF/path-allowlist model.
+// Data-only analytics, mounted before the app-wide body parser to enforce its
+// own smaller JSON limit. It never serves vendor code, reads
+// PicPeak credentials, or forwards arbitrary upstream responses.
 app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
 
 // Health check endpoint. `pid` + `uptime` let monitors (and the local E2E
@@ -1140,7 +1151,11 @@ async function stopServer() {
 }
 
 // Initialize services
-async function startServer() {
+function startServer() {
+  return require('./src/database/crmAccess').withTrustedCrmAccess('application bootstrap', startServerInternal);
+}
+
+async function startServerInternal() {
   try {
     // Initialize database
     await initializeDatabase();
@@ -1362,8 +1377,10 @@ async function startServer() {
     // lazy means they don't pay for a module graph they never use.
     require('./src/services/faceQueue').start();
 
-    httpServer = app.listen(PORT, () => {
-      logger.info(`Server running on port ${PORT}`);
+    // Bootstrap/cron authority must not become the default authority of an
+    // incoming HTTP request. Its authentication/capability middleware owns it.
+    httpServer = await require('./src/database/crmAccess').withoutCrmContext(() => app.listen(PORT, LISTEN_HOST, () => {
+      logger.info(`Server running on ${LISTEN_HOST || 'all interfaces'}:${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
       // First-run banner. Print the TOKEN ITSELF only when the 0600 token file
@@ -1378,7 +1395,7 @@ async function startServer() {
           : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
         console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
       }
-    });
+    }));
   } catch (error) {
     logger.error('Failed to start server:', error);
     await stopServer();

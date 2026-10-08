@@ -4,6 +4,7 @@ const knex = require('knex');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
 const { extractShareToken } = require('../utils/shareLinkUtils');
+const { installCrmAccess } = require('./crmAccess');
 
 // Ensure SQLite directory exists when using file-based DB (native installs)
 try {
@@ -42,6 +43,7 @@ try {
 // container was manually restarted — exactly the footgun Ralf hit
 // repeatedly on 2026-05-30.
 let _db = knex(knexConfig);
+installCrmAccess(_db.client);
 
 const db = new Proxy(function knexCall() {}, {
   // db('tableName') — knex's query builder entry point
@@ -75,6 +77,7 @@ async function reinitPool() {
     logger.warn(`Old pool destroy failed (continuing with reinit): ${err.message}`);
   }
   _db = knex(knexConfig);
+  installCrmAccess(_db.client);
   // Probe the new pool with a no-op query so we fail loudly here if
   // the new pool can't connect — better than silently handing the
   // caller a broken pool and surfacing the error on the next admin
@@ -119,7 +122,11 @@ async function withRetry(queryFn, retries = MAX_RETRIES) {
   }
 }
 
-async function initializeDatabase() {
+function initializeDatabase() {
+  return require('./crmAccess').withTrustedCrmAccess('database initialization', initializeDatabaseInternal);
+}
+
+async function initializeDatabaseInternal() {
   // Events table
   const hasEventsTable = await db.schema.hasTable('events');
   if (!hasEventsTable) {

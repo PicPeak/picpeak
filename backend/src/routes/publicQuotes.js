@@ -33,6 +33,7 @@ const KIND = 'quote';
 const TABLE = 'quote_action_tokens';
 
 const router = express.Router();
+router.use(require('../database/crmAccess').crmCapabilityRouter('public quote action-token capability'));
 
 // Rate-limit: 30 token previews per IP per minute, 10 responses.
 const previewLimiter = rateLimit({
