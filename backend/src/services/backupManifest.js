@@ -253,8 +253,11 @@ class BackupManifestGenerator {
 
     // Every caller shares mandatory authentication and explicit migration
     // rules; ordinary force/dry-run flags cannot enable legacy recovery.
+    // `inspect` (listing, download, health) may still READ an intact manifest
+    // written before authentication existed; it comes back flagged
+    // unauthenticated. Restore never passes it.
     const checksumResult = this.verifyManifestChecksum(manifest, options);
-    if (!checksumResult.valid) {
+    if (!checksumResult.valid && !(options.inspect && checksumResult.legacy)) {
       throw new Error(checksumResult.error || 'Manifest checksum verification failed');
     }
     checksumResult.warnings.forEach((w) => logger.warn(w));
@@ -501,7 +504,7 @@ class BackupManifestGenerator {
   // this entire parsed artifact. Neither force, trigger bytes, nor manifest
   // metadata can enable it. Inspection/health/parent loaders never opt in.
   verifyManifestChecksum(manifest, { allowRecovery = false } = {}) {
-    const reject = error => {
+    const reject = (error, legacy = false) => {
       const approved = process.env.BACKUP_MANIFEST_RECOVERY_SHA256;
       const reason = process.env.BACKUP_MANIFEST_RECOVERY_REASON;
       if (allowRecovery && manifest && typeof manifest === 'object' && /^[a-f0-9]{64}$/i.test(approved || '')
@@ -511,14 +514,20 @@ class BackupManifestGenerator {
           recoveryDigest: approved.toLowerCase(), reason: reason.trim(),
           warnings: ['UNAUTHENTICATED backup recovery explicitly approved on the host: ' + reason.trim()] };
       }
-      return { valid: false, authenticated: false, error, warnings: [] };
+      return { valid: false, authenticated: false, legacy, error, warnings: [] };
     };
     const verification = manifest?.verification;
     if (!/^[a-f0-9]{64}$/i.test(verification?.total_checksum || '')) {
       return reject('Manifest carries no checksum or an invalid signature');
     }
     if (verification.checksum_algorithm !== 'hmac-sha256') {
-      return reject('Manifest is not authenticated — refusing an unkeyed algorithm downgrade');
+      return reject(
+        'Manifest is not authenticated — refusing an unkeyed algorithm downgrade. A backup taken before '
+        + 'manifest authentication can only be restored on an isolated host by approving that one artifact '
+        + 'with BACKUP_MANIFEST_RECOVERY_SHA256 and BACKUP_MANIFEST_RECOVERY_REASON '
+        + '(digest: backend/scripts/backup-manifest-recovery-digest.js).',
+        this.isIntactLegacyManifest(manifest),
+      );
     }
     try {
       let key;
@@ -533,11 +542,23 @@ class BackupManifestGenerator {
       } else {
         // Explicit migration compatibility for canonical pre-v3 HMACs.
         // The unsafe array-replacer serializer is NEVER retried.
-        const legacyKey = process.env.BACKUP_MANIFEST_LEGACY_KEY;
-        if (typeof legacyKey !== 'string' || legacyKey.trim().length < 32) {
+        //
+        // Before v3 the HMAC key was the BACKUP_MANIFEST_KEY string as typed,
+        // of any length, so that string must keep verifying what it signed:
+        // either retained as BACKUP_MANIFEST_LEGACY_KEY or still sitting in
+        // BACKUP_MANIFEST_KEY. Neither is ever used to sign (signManifest
+        // only takes a 32-byte key from loadKey).
+        const legacyKeys = [process.env.BACKUP_MANIFEST_LEGACY_KEY, process.env.BACKUP_MANIFEST_KEY]
+          .filter(value => typeof value === 'string' && value.trim())
+          .map(value => value.trim());
+        if (!legacyKeys.length) {
           return reject('Legacy manifest authentication requires the explicitly retained canonical HMAC key');
         }
-        key = legacyKey.trim();
+        const expected = Buffer.from(verification.total_checksum, 'hex');
+        key = legacyKeys.find(candidate => crypto.timingSafeEqual(
+          Buffer.from(this.calculateManifestChecksum(manifest, { keyed: candidate }), 'hex'), expected,
+        ));
+        if (!key) return reject('Manifest checksum verification failed');
         keyId = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
       }
       const actual = this.calculateManifestChecksum(manifest, { keyed: key });
@@ -547,6 +568,19 @@ class BackupManifestGenerator {
       return { valid: true, authenticated: true, keyId, recovery: false, warnings: [] };
     } catch (_) {
       return reject('Manifest signing key is missing or invalid; authenticity cannot be verified');
+    }
+  }
+
+  // A pre-authentication manifest whose plain SHA-256 still matches: not
+  // authentic (anyone can recompute it), but not damaged either.
+  isIntactLegacyManifest(manifest) {
+    try {
+      if (manifest.manifest?.version === '3.0') return false;
+      const expected = manifest.verification.total_checksum;
+      return expected === this.calculateManifestChecksum(manifest, { keyed: false })
+        || expected === this.calculateManifestChecksum(manifest, { keyed: false, legacy: true });
+    } catch (_) {
+      return false;
     }
   }
 

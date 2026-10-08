@@ -1048,18 +1048,24 @@ async function performRsyncBackup(config, files) {
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
   const stats = parseRsyncStats(stdout);
 
-  const backedUpFiles = files.map(file => file.relativePath);
-
   const totalSize = typeof stats.totalSize === 'number'
     ? stats.totalSize
     : files.reduce((acc, file) => acc + file.size, 0);
 
+  const backedUpFiles = [];
   for (const file of files) {
     try {
       const checksum = await calculateChecksum(file.path);
       file.checksum = checksum;
       await updateFileState(file.relativePath, checksum, file.size, file.modified);
+      backedUpFiles.push(file.relativePath);
     } catch (error) {
+      // Deleted between the walk and this hash (a photo removed mid-backup):
+      // leave it out of the manifest rather than fail the whole run.
+      if (error.code === 'ENOENT') {
+        logger.warn(`rsync backup: ${file.relativePath} disappeared before it could be hashed; left out of the manifest`);
+        continue;
+      }
       throw new Error(`Cannot authenticate rsync file ${file.relativePath}: ${error.message}`);
     }
   }
@@ -1635,7 +1641,7 @@ async function getBackupStatus(limit = 10) {
         const result = await validateBackupManifest(lastRun.manifest_path);
         manifestValid = result.valid;
         manifestAuthentication = result.authentication || { authenticated: false, state: 'unverified' };
-        if (!result.valid) {
+        if (!result.valid && manifestAuthentication.state !== 'legacy') {
           logger.warn('Manifest validation failed:', result.error);
         }
       } catch (error) {
@@ -1671,7 +1677,10 @@ async function getBackupStatus(limit = 10) {
 
     return {
       isRunning,
-      isHealthy: Boolean(lastRun && lastRun.status === 'completed' && manifestValid && manifestAuthentication.authenticated && signingKey.ready),
+      // A latest manifest that merely predates authentication is not a fault:
+      // the next backup signs a new one. It still cannot be restored as-is.
+      isHealthy: Boolean(lastRun && lastRun.status === 'completed' && signingKey.ready
+        && (manifestAuthentication.state === 'legacy' || (manifestValid && manifestAuthentication.authenticated))),
       signingKey,
       manifestAuthentication,
       lastRun: lastRunWithManifest,
@@ -1798,7 +1807,7 @@ async function loadManifestFromAnywhere(manifestPath, config) {
 // disk whether or not the download or the parse succeeded.
 const MAX_S3_MANIFEST_BYTES = 16 * 1024 * 1024;
 
-async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
+async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel, options = {}) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
   const tempPath = path.join(tempDir, `manifest-${backupRunLabel}.json`);
   try {
@@ -1819,7 +1828,7 @@ async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
     });
     const body = await s3Client.downloadStream(key);
     await pipeline(body, limiter, fsSync.createWriteStream(tempPath));
-    return await backupManifest.loadManifest(tempPath);
+    return await backupManifest.loadManifest(tempPath, options);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -1835,9 +1844,12 @@ async function getBackupManifest(backupRunId) {
   }
 
   if (!run.manifest_path.startsWith('s3://')) {
-    const manifest = await backupManifest.loadManifest(run.manifest_path);
+    // Reading is not restoring: a manifest from before authentication is
+    // still shown, flagged, instead of answering 404.
+    const manifest = await backupManifest.loadManifest(run.manifest_path, { inspect: true });
     return {
       manifest,
+      authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
       summary: backupManifest.generateSummaryReport
         ? backupManifest.generateSummaryReport(manifest)
         : null
@@ -1881,10 +1893,11 @@ async function getBackupManifest(backupRunId) {
     ...backupS3Access(config)
   });
 
-  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId);
+  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId, { inspect: true });
 
   return {
     manifest,
+    authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
     summary: backupManifest.generateSummaryReport
       ? backupManifest.generateSummaryReport(manifest)
       : null
@@ -1918,16 +1931,22 @@ async function validateBackupManifest(manifestPath) {
         ...backupS3Access(config)
       });
 
-      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`);
+      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`, { inspect: true });
     } else {
-      manifest = await backupManifest.loadManifest(manifestPath);
+      manifest = await backupManifest.loadManifest(manifestPath, { inspect: true });
     }
 
     if (backupManifest.validateManifest) {
-      backupManifest.validateManifest(manifest);
+      backupManifest.validateManifest(manifest, { inspect: true });
     }
 
-    return { valid: true, manifest, authentication: backupManifest.getAuthentication(manifest) };
+    const authentication = backupManifest.getAuthentication(manifest);
+    // Intact but written before manifests were authenticated: still not
+    // valid, and named as its own state so health can tell it from damage.
+    if (!authentication.valid) {
+      return { valid: false, error: authentication.error, authentication: { authenticated: false, state: 'legacy' } };
+    }
+    return { valid: true, manifest, authentication };
   } catch (error) {
     return { valid: false, error: error.message };
   }

@@ -69,7 +69,7 @@ describe('backup authentication deployment and offline recovery', () => {
     const first = fs.readFileSync(keyPath, 'utf8');
     expect(first).toMatch(/^[a-f0-9]{64}$/);
     expect(fs.statSync(keyPath).mode & 0o022).toBe(0);
-    expect(init(name, 'a5'.repeat(32)).result.status).toBe(0);
+    expect(init(name, '').result.status).toBe(0);
     expect(fs.readFileSync(keyPath, 'utf8')).toBe(first);
     expect(fs.readdirSync(path.join(fixture, 'db'))).toEqual(['db_password']);
     expect(fs.readdirSync(path.join(fixture, 'redis'))).toEqual(['redis_password']);
@@ -93,6 +93,24 @@ describe('backup authentication deployment and offline recovery', () => {
         expect(compose.services.backend.environment).toContain(envDefault('BACKUP_MANIFEST_' + variable));
       }
     } else expect(compose.services.backend.env_file).toBe('.env');
+  });
+
+  // A passphrase seeded on first start used to stay in the secret for good:
+  // the corrected value must replace it, and nothing may be lost doing so.
+  test.each(['docker-compose.yml', 'docker-compose.production.yml'])('%s replaces a seeded key when BACKUP_MANIFEST_KEY changes and keeps the old one', name => {
+    const { keyPath } = init(name, 'not a hex key');
+    expect(fs.readFileSync(keyPath, 'utf8')).toBe('not a hex key');
+    const corrected = 'a7'.repeat(32);
+    expect(init(name, corrected).result.status).toBe(0);
+    expect(fs.readFileSync(keyPath, 'utf8')).toBe(corrected);
+    expect(fs.readFileSync(keyPath + '.previous', 'utf8')).toBe('not a hex key\n');
+    expect(fs.statSync(keyPath + '.previous').mode & 0o077).toBe(0);
+    // Unchanged value: no rewrite, no second retained copy.
+    expect(init(name, corrected).result.status).toBe(0);
+    expect(fs.readFileSync(keyPath + '.previous', 'utf8')).toBe('not a hex key\n');
+    // Removing the variable keeps the corrected key.
+    expect(init(name, '').result.status).toBe(0);
+    expect(fs.readFileSync(keyPath, 'utf8')).toBe(corrected);
   });
 
   test.each(['json', 'yaml'])('offline %s digest is exact, warned, and never creates a trust anchor', format => {

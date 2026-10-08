@@ -151,12 +151,17 @@ Verification never generates a replacement for a lost key. Restore the original
 key on a fresh recovery host, not a key supplied by the backup being verified.
 System Health reports key readiness and latest manifest authenticity separately
 from completion. A missing/invalid key or unverified manifest is not healthy.
+An invalid key (wrong encoding, group/world-writable or symlinked key file) does
+not stop the server: it is logged at boot, shown in System Health, and backups
+fail until it is corrected. A latest manifest that only predates authentication
+is reported as legacy rather than unhealthy; the next backup signs a new one.
 
 Retain previous v3 keys with `BACKUP_MANIFEST_KEYS_OLD` (comma-separated 64-hex
 values) while rotating. Only canonical pre-v3 HMAC manifests can use the explicit
-`BACKUP_MANIFEST_LEGACY_KEY` compatibility setting (the original key string,
-minimum 32 characters); the old under-covering serializer is never accepted as
-authenticated. Preserve all keys needed by retained backups. Installer
+`BACKUP_MANIFEST_LEGACY_KEY` compatibility setting (the original key string, of
+any length); an earlier passphrase-style `BACKUP_MANIFEST_KEY` left in place
+verifies those manifests the same way but never signs a new one. The old
+under-covering serializer is never accepted as authenticated. Preserve all keys needed by retained backups. Installer
 reconfiguration keeps signing/key-ring settings but clears one-artifact recovery
 approval; key files survive updates independently of application source.
 

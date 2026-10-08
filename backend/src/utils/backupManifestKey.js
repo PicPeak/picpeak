@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { getStoragePath } = require('../config/storage');
+const logger = require('./logger');
 
 const idOf = key => crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
 
@@ -78,6 +79,9 @@ function loadKey({ create = false } = {}) {
     try {
       fs.writeFileSync(file, fresh.toString('hex'), { flag: 'wx', mode: 0o600 });
       key = fresh;
+      // Said once, at creation: the only copy is on the host it protects.
+      logger.warn(`Created the backup manifest signing key at ${file}. Copy it OFF this host and keep it with `
+        + 'whoever keeps the backups: a backup cannot be verified or restored on a replacement host without it.');
     } catch (writeError) {
       if (writeError.code !== 'EEXIST') throw writeError;
       key = readFileKey(file);

@@ -31,11 +31,29 @@ describe('startup backup manifest trust anchor', () => {
     expect(logger.warn.mock.calls.some(([message]) => /retain that external key separately/.test(message))).toBe(true);
   });
 
-  test('invalid key configuration fails startup without disclosing material', () => {
+  // Any BACKUP_MANIFEST_KEY string was accepted before manifests were
+  // authenticated; exiting on one would restart-loop an upgraded install.
+  test('invalid key configuration warns loudly but does not stop startup', () => {
     status.mockReturnValue({ ready: false, source: 'invalid', keyId: null });
     validateEnvironment();
-    expect(exit).toHaveBeenCalledWith(1);
-    expect(logger.error.mock.calls.some(([message]) => /signing key configuration is invalid/.test(message))).toBe(true);
+    expect(exit).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.some(([message]) => /BACKUP SIGNING IS DISABLED.*signing key configuration is invalid/.test(message))).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith('Environment validation passed');
+  });
+
+  test('a passphrase-style BACKUP_MANIFEST_KEY from before the upgrade does not stop startup or get logged', () => {
+    status.mockRestore();
+    const previousKey = process.env.BACKUP_MANIFEST_KEY;
+    process.env.BACKUP_MANIFEST_KEY = 'correct horse battery staple';
+    try {
+      validateEnvironment();
+      expect(exit).not.toHaveBeenCalled();
+      expect(logger.warn.mock.calls.some(([message]) => /BACKUP SIGNING IS DISABLED/.test(message))).toBe(true);
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('correct horse');
+    } finally {
+      if (previousKey === undefined) delete process.env.BACKUP_MANIFEST_KEY; else process.env.BACKUP_MANIFEST_KEY = previousKey;
+      status = jest.spyOn(require('../../src/utils/backupManifestKey'), 'keyStatus');
+    }
   });
 
   test('a ready external trust anchor permits normal startup', () => {

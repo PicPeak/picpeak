@@ -39,6 +39,20 @@ describe('backup manifest trust anchor', () => {
     expect(JSON.stringify(keyStatus())).not.toContain(first.key.toString('hex'));
   });
 
+  it('says once, when it creates the key, that it must be kept off the host with the backups', () => {
+    const warn = jest.spyOn(require('../../src/utils/logger'), 'warn').mockImplementation(() => {});
+    try {
+      const { key } = loadKey({ create: true });
+      loadKey({ create: true });
+      const messages = warn.mock.calls.map(([message]) => String(message)).filter(message => /signing key/.test(message));
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatch(/OFF this host/);
+      expect(messages[0]).toMatch(/whoever keeps the backups/);
+      expect(messages[0]).toContain(keyFile());
+      expect(messages[0]).not.toContain(key.toString('hex'));
+    } finally { warn.mockRestore(); }
+  });
+
   it('uses a strict configured 32-byte key without writing a file', () => {
     process.env.BACKUP_MANIFEST_KEY = 'e7'.repeat(32);
     expect(loadKey().key).toEqual(Buffer.from(process.env.BACKUP_MANIFEST_KEY, 'hex'));

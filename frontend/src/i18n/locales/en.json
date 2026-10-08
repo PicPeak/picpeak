@@ -665,7 +665,8 @@
       "keyMissing": "The backup signing key is missing or invalid. Authentic recovery is not ready.",
       "verified": "The latest backup manifest is authenticated with a retained key.",
       "unverified": "The latest backup manifest is unavailable or unauthenticated. A completed run alone does not establish authenticity.",
-      "hint": "Retain the signing key separately and off-host. Never obtain it from the backup being restored; remove any one-artifact unauthenticated recovery approval after recovery."
+      "legacy": "The latest backup manifest was written before manifests were authenticated. The next backup will be authenticated; until then this one can only be restored with an explicit recovery approval.",
+      "hint": "Keep a copy of the signing key off this host, with whoever keeps the backups: a backup cannot be verified on a replacement host without it. Never obtain it from the backup being restored; remove any one-artifact unauthenticated recovery approval after recovery."
     },
     "title": "System health",
     "subtitle": "Background failures that need attention.",
