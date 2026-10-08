@@ -97,7 +97,7 @@ class WatermarkService {
    * file — which matters because the mark is sized relative to the input's
    * own width, so it has to be applied at the OUTPUT size to come out right.
    */
-  async applyWatermark(imagePath, settings, { keepMetadata = false } = {}) {
+  async applyWatermark(imagePath, settings, { keepMetadata = false, failClosed = false } = {}) {
     const isBuffer = Buffer.isBuffer(imagePath);
     try {
       if (!settings || !settings.enabled) {
@@ -258,6 +258,7 @@ class WatermarkService {
       return watermarkedBuffer;
     } catch (error) {
       logger.error('Error applying watermark:', error);
+      if (failClosed) throw error;
       // Return the un-watermarked input on error. Buffer inputs are already
       // in memory — readFile() would treat the Buffer as a path and throw,
       // turning a cosmetic watermark failure into a failed download.

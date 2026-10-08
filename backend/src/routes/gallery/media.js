@@ -21,8 +21,9 @@ const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
 const { safePathJoin } = require('../../utils/fileSecurityUtils');
+const { originalAssetDenial, isPresentationRenditionKey } = require('../../services/galleryAssetPolicy');
 const {
-  isOriginalWithheld, currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
+  currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
 } = require('../../services/downloadQuota');
 
@@ -139,7 +140,8 @@ router.get('/:slug/photo/:photoId',
       // copy one long-press away from every counted download. Videos have no
       // preview tier: playing one is counted instead (admitVideoStream, below
       // once the file is known to exist).
-      if (!isVideo && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview })) {
+      const originalDenial = await originalAssetDenial(req, photo, { display: true });
+      if (!isVideo && originalDenial) {
         // Keep the query (the ?v= cache-buster) so the preview is not served
         // from a stale cache entry.
         const queryAt = req.originalUrl.indexOf('?');
@@ -162,7 +164,7 @@ router.get('/:slug/photo/:photoId',
       let stat;
       let fileSize;
 
-      if (useStorageBackend) {
+      if (!originalDenial && useStorageBackend) {
         try {
           storageKey = resolvePhotoStorageKey(req.event, photo);
         } catch (resolveError) {
@@ -187,7 +189,7 @@ router.get('/:slug/photo/:photoId',
           return res.status(404).json({ error: 'Photo file not found' });
         }
         fileSize = stat.size;
-      } else {
+      } else if (!originalDenial) {
         try {
           filePath = resolvePhotoFilePath(req.event, photo);
         } catch (resolveError) {
@@ -217,7 +219,7 @@ router.get('/:slug/photo/:photoId',
 
       // Handle video streaming with range requests
       if (isVideo) {
-        if (!(await admitVideoStream(req, res, photo))) return;
+        if (!originalDenial && !(await admitVideoStream(req, res, photo))) return;
 
         // Browser-playable copy (issue 1430, item 8): when the queue wrote
         // one, the player gets it instead of the original. It always lives
@@ -229,7 +231,9 @@ router.get('/:slug/photo/:photoId',
         let videoSize = fileSize;
         let videoViaStorage = useStorageBackend;
         let videoContentType = resolvePhotoContentType(photo);
-        if (photo.web_path && photo.web_status === 'complete') {
+        if (photo.web_path && photo.web_status === 'complete'
+            && (!originalDenial || (photo.web_path.startsWith(`videos/web_${photo.id}_`)
+              && photo.web_path.endsWith('.mp4')))) {
           // stat() answers null for a key the backend does not have and
           // throws for anything else (network, credentials): only the first
           // is "the copy is gone". A failing backend serves the original for
@@ -266,6 +270,9 @@ router.get('/:slug/photo/:photoId',
             }).catch((e) => logger.warn(`Could not re-queue the missing web copy of video ${photo.id}: ${e.message}`));
           }
         }
+        // A missing, failed or unreachable rendition is never permission to
+        // stream the source. Restricted playback does not even stat it.
+        if (originalDenial && !videoKey) return res.status(403).json(originalDenial);
         const range = req.headers.range;
 
         if (range) {
@@ -460,7 +467,7 @@ router.get('/:slug/thumbnail/:photoId',
         ? thumbTier
         : null;
 
-      if (!thumbnailPath) {
+      if (!isPresentationRenditionKey(thumbnailPath, 'thumbnail')) {
         logger.error(`Failed to generate thumbnail for photo ${photoId}`);
         return res.status(404).json({ error: 'Thumbnail generation failed' });
       }
@@ -517,7 +524,7 @@ router.get('/:slug/thumbnail/:photoId',
         // Materialize via withLocalCopy — no-op in local mode, downloads
         // to a tmp file then cleans up in S3 mode.
         const watermarkedBuffer = await withLocalCopy(thumbnailPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {
@@ -579,7 +586,7 @@ router.get('/:slug/hero/:photoId',
       // point (issue 1737); regenerate if needed.
       const heroPath = await ensureHeroImage(photo, { anchor: req.event.hero_image_anchor });
 
-      if (!heroPath) {
+      if (!isPresentationRenditionKey(heroPath, 'hero')) {
         // If hero generation fails, fall back to original photo
         logger.warn(`Failed to generate hero image for photo ${photoId}, falling back to original`);
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
@@ -621,7 +628,7 @@ router.get('/:slug/hero/:photoId',
         // applyWatermark needs a local file path; materialize via
         // withLocalCopy so this works in S3 mode too.
         const watermarkedBuffer = await withLocalCopy(heroPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {
@@ -673,8 +680,12 @@ function answerStorageUnavailable(res) {
 // 1560): /photo would send the request straight back here.
 // Nor for a slideshow session, which /photo refuses (denySlideshowToken).
 async function fallBackToOriginal(req, res, photo) {
-  if (req.accessLevel === 'slideshow'
-    || (req.event && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview }))) {
+  if (!photo?.event_id) photo = await db('photos').where({ id: req.params.photoId, event_id: req.event.id }).first();
+  if (!photo || await originalAssetDenial(req, photo, { display: true })) {
+    res.removeHeader('ETag');
+    res.removeHeader('Content-Type');
+    res.removeHeader('Content-Length');
+    res.set('Cache-Control', 'no-store');
     return res.status(404).json({ error: 'Preview not available' });
   }
   return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
@@ -705,6 +716,9 @@ router.get('/:slug/preview/:photoId',
       // belt-and-braces in case a stale tab does.
       const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
       if (isVideo) {
+        // /photo rechecks source authority and may select a bounded web copy;
+        // keep this established video URL redirect, not an original fallback.
+        if (req.accessLevel === 'slideshow') return fallBackToOriginal(req, res, photo);
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
       }
 
@@ -724,7 +738,7 @@ router.get('/:slug/preview/:photoId',
       const previewPath = tierWidth
         ? (await ensurePreviewImageAtWidth(photo, tierWidth)) || (await ensurePreviewImage(photo))
         : await ensurePreviewImage(photo);
-      if (!previewPath) {
+      if (!isPresentationRenditionKey(previewPath, 'preview')) {
         logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
         return fallBackToOriginal(req, res, photo);
       }
@@ -780,7 +794,7 @@ router.get('/:slug/preview/:photoId',
         // multi-frame source to one frame while keeping the WebP container.
         // That is a separate problem and a much larger one.
         const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
-          watermarkService.applyWatermark(localPath, watermarkSettings)
+          watermarkService.applyWatermark(localPath, watermarkSettings, { failClosed: true })
         );
         res.send(watermarkedBuffer);
       } else {

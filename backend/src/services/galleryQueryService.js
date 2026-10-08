@@ -593,7 +593,12 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       // A limited gallery withholds the original of every image it has not
       // granted yet (routes/gallery/media.js), so point straight at the
       // preview instead of at a redirect.
-      const originalWithheld = withholdOriginals && !isVideo && !deliveredIds.has(Number(photo.id));
+      const downloadDisabled = !parseBooleanInput(event.allow_downloads, true)
+        || (photo.category_id && categoryMap[photo.category_id]
+          && !parseBooleanInput(categoryMap[photo.category_id].allow_downloads, true))
+        || (photo.folder_id && blockedFolderIds.has(Number(photo.folder_id)));
+      const originalWithheld = !isVideo && !adminPreview && (accessLevel === 'slideshow'
+        || downloadDisabled || (withholdOriginals && !deliveredIds.has(Number(photo.id))));
       const photoUrl = originalWithheld
         ? previewUrl
         : `/api/gallery/${slug}/photo/${photo.id}${wmQuery}`;
