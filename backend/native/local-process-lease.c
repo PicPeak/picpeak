@@ -54,8 +54,8 @@ static napi_value probe(napi_env env, napi_callback_info info) {
         napi_get_value_string_utf8(env, args[1], device, sizeof(device), &size) != napi_ok || size >= 63 ||
         napi_get_value_string_utf8(env, args[2], inode, sizeof(inode), &size) != napi_ok || size >= 63 ||
         napi_get_value_string_utf8(env, args[3], filesystem, sizeof(filesystem), &size) != napi_ok || size >= 63) return error(env, 0);
-    int file = open_process_lease(filename, 0);
-    const char *state = file >= 0 ? "free" : file == -2 ? "busy" : "unknown";
+    int file = open_process_lease_file(filename, 0);
+    const char *state = file >= 0 ? "matching" : "unknown";
     if (file >= 0) {
         if (*device || *inode || *filesystem) {
             struct stat stat; struct statfs fs; char actual_device[64], actual_inode[64], actual_filesystem[64];
@@ -66,6 +66,9 @@ static napi_value probe(napi_env env, napi_callback_info info) {
                 snprintf(actual_filesystem, sizeof(actual_filesystem), "%lu", (unsigned long)fs.f_type);
                 if (strcmp(device, actual_device) || strcmp(inode, actual_inode) || strcmp(filesystem, actual_filesystem)) state = "unknown";
             }
+        }
+        if (!strcmp(state, "matching")) {
+            state = !flock(file, LOCK_EX | LOCK_NB) ? "free" : errno == EWOULDBLOCK ? "busy" : "unknown";
         }
         close(file);
     }

@@ -21,7 +21,7 @@ RUN npm ci --omit=dev
 
 # Copy application files
 COPY . .
-RUN apk add --no-cache --virtual .media-build build-base && npm run build:native
+RUN apk add --no-cache --virtual .media-build build-base linux-headers && npm run build:native
 
 # Production stage
 FROM node:22-alpine

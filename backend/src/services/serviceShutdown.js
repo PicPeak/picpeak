@@ -15,6 +15,7 @@ const resources = [
   ['./webhookDeliveryWorker', 'stopWebhookDeliveryWorker'], ['./s3AutoImporter', 'stopS3AutoImporter'],
   ['./backupService', 'stopBackupService'], ['./databaseBackup', 'stopScheduledBackups'],
   ['./mediaProcessService', 'stop'], ['./nativeProcessRunner', 'stop'],
+  ['./backgroundProcessor', 'stop'], ['./faceQueue', 'stop'],
   ['./secureImageService', 'dispose'],
   ['../utils/authSecurity', 'stopCleanupJob'], ['../utils/tokenRevocation', 'stopRevocationCleanup'],
 ];

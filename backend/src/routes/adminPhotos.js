@@ -698,6 +698,7 @@ router.post(
       let imageReservation;
       try {
         const isVideo = photo.media_type === 'video' || photo.mime_type?.startsWith('video/');
+        const event = await db('events').where({ id: photo.event_id }).first();
         if (await db('media_process_attempts').where({ photo_id: photo.id, state: 'active' }).first()) {
           throw Object.assign(new Error('The previous media execution has not terminated'), { code: 'MEDIA_LEASE_BUSY', status: 409 });
         }

@@ -317,7 +317,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Commit transaction
       if (trx) await trx.commit();
       rowCommitted = true;
-      if (!isVideo || !webCopyEnabled) await Promise.all([imageAdmission.finish(photoId), mediaAdmission.finish(photoId)]);
+      await Promise.all([imageAdmission.finish(photoId), mediaAdmission.finish(photoId)]);
       if (uploadReservation) {
         // A failed accounting acknowledgement must retain pending capacity;
         // it must not delete a successfully associated original.

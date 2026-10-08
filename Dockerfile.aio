@@ -42,7 +42,7 @@ COPY backend/package*.json ./
 RUN npm ci --omit=dev
 COPY backend/native/ ./native/
 COPY backend/scripts/build-native-runner.js ./scripts/build-native-runner.js
-RUN apk add --no-cache --virtual .media-build build-base && npm run build:native
+RUN apk add --no-cache --virtual .media-build build-base linux-headers && npm run build:native
 
 # ---------------------------------------------------------------------------
 # Runtime — mirrors backend/Dockerfile's production stage + the frontend dist
