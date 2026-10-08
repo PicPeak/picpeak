@@ -88,6 +88,11 @@ test('contract signer, integrity and signed-upload gates reject before evidence 
   const upload = await request(apps.contracts).post(`/api/admin/contracts/${id}/upload-signed-pdf`).set(auth('owner'))
     .attach('file', Buffer.from('%PDF-1.4\n%%EOF'), { filename: 'signed.pdf', contentType: 'application/pdf' });
   expect(upload.status).toBe(404);
+  for (const alternateId of [`0${id}`, `+${id}`, `%2B${id}`]) {
+    const result = await request(apps.contracts).post(`/api/admin/contracts/${alternateId}/upload-signed-pdf`).set(auth('owner'))
+      .attach('file', Buffer.from('%PDF-1.4\\n%%EOF'), { filename: 'signed.pdf', contentType: 'application/pdf' });
+    expect(result.status).toBe(404);
+  }
   expect(fs.existsSync(path.join(process.env.STORAGE_PATH, 'uploads/contracts/signed'))).toBe(false);
 });
 
