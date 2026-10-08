@@ -692,16 +692,29 @@ class DatabaseBackupService {
       
       // Create the backup
       this.updateProgress('Creating database backup...');
-      const storageReferences = getStorage().kind() === 's3'
-        ? [...await recoveryFiles.requiredKeys(db, () => true)].sort() : null;
+      const captureReferences = async () => [...await recoveryFiles.requiredKeys(db, () => true)].sort();
+      let storageReferences = getStorage().kind() === 's3' ? await captureReferences() : null;
       if (this.dbType === 'sqlite') {
         await this.createSQLiteBackup(sqlFile, options);
       } else {
         await this.createPostgreSQLBackup(sqlFile, options);
       }
-      if (storageReferences && JSON.stringify(storageReferences)
-          !== JSON.stringify([...await recoveryFiles.requiredKeys(db, () => true)].sort())) {
-        throw new Error('Primary-storage references changed during the database dump; retry after uploads/archiving finish');
+      if (storageReferences) {
+        // An upload or an archive run landing mid-dump is normal on a live
+        // install. Re-read until two captures agree; a set that never settles
+        // is recorded as the union, which can only require too much.
+        const seen = new Set(storageReferences);
+        let settled = false;
+        for (let attempt = 0; attempt < 3 && !settled; attempt++) {
+          const current = await captureReferences();
+          settled = JSON.stringify(current) === JSON.stringify(storageReferences);
+          current.forEach(key => seen.add(key));
+          storageReferences = current;
+        }
+        if (!settled) {
+          storageReferences = [...seen].sort();
+          logger.warn(`Primary-storage references kept changing during the database dump; recording the union of ${storageReferences.length} keys`);
+        }
       }
       
       // Compress if requested
@@ -724,6 +737,16 @@ class DatabaseBackupService {
       
       // Get final file size
       const finalStats = await fs.stat(finalFile);
+
+      // The key list stays beside the dump; the run row (returned by
+      // GET /history) only carries its count and checksum.
+      let referenceStats = null;
+      if (storageReferences) {
+        const body = JSON.stringify(storageReferences);
+        await fs.writeFile(`${finalFile}${recoveryFiles.REFERENCES_SUFFIX}`, body, { mode: 0o600 });
+        referenceStats = { count: storageReferences.length,
+          checksum: crypto.createHash('sha256').update(body).digest('hex') };
+      }
       
       // Calculate duration
       const endTime = new Date();
@@ -747,7 +770,7 @@ class DatabaseBackupService {
             compressed: compress,
             validated: validateIntegrity,
             compressionStats,
-            ...(storageReferences ? { storageReferences } : {}),
+            ...(referenceStats ? { storageReferences: referenceStats } : {}),
             tableCount: tableChecksums ? Object.keys(tableChecksums).length : null,
             app_version: packageJson.version,
             node_version: process.version,
@@ -899,6 +922,7 @@ class DatabaseBackupService {
           // Delete the file
           if (backup.file_path) {
             await fs.unlink(backup.file_path);
+            await fs.rm(`${backup.file_path}${recoveryFiles.REFERENCES_SUFFIX}`, { force: true });
           }
           
           // Delete the record
