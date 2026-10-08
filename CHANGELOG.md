@@ -5,6 +5,30 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.2](https://github.com/PicPeak/picpeak/compare/v3.134.1...v3.134.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **analytics:** isolate telemetry from application credentials (stable) ([#1857](https://github.com/PicPeak/picpeak/issues/1857)) ([88df84d](https://github.com/PicPeak/picpeak/commit/88df84d406f0f44bf5e68884adf957284bbfb51f))
+* **auth:** harden client links and transfer upload codes (stable) ([#1846](https://github.com/PicPeak/picpeak/issues/1846)) ([f444238](https://github.com/PicPeak/picpeak/commit/f444238cdac6c21b57a05bfa1f31fb25af2ad91b))
+* **auth:** protect account recovery secrets at rest ([#1849](https://github.com/PicPeak/picpeak/issues/1849)) ([fed4ec4](https://github.com/PicPeak/picpeak/commit/fed4ec4fd9a22a5c93224e3b94c73bb3a548c401))
+* **backup:** authenticate standard recovery manifests (stable) ([#1864](https://github.com/PicPeak/picpeak/issues/1864)) ([78077d3](https://github.com/PicPeak/picpeak/commit/78077d309bfb845e95aa43125571f420627d79c1))
+* **backup:** create complete standalone restore points (stable) ([#1860](https://github.com/PicPeak/picpeak/issues/1860)) ([5e89b2b](https://github.com/PicPeak/picpeak/commit/5e89b2bb989b52986053505ce2da5fe39edc4e07))
+* **backup:** pin rsync SSH destinations and require approved host keys (stable) ([#1869](https://github.com/PicPeak/picpeak/issues/1869)) ([0418c15](https://github.com/PicPeak/picpeak/commit/0418c156dc251479cc76f34c76212056cbbac4f3))
+* **db:** verify PostgreSQL TLS across pools and native clients (stable) ([#1853](https://github.com/PicPeak/picpeak/issues/1853)) ([74ac75f](https://github.com/PicPeak/picpeak/commit/74ac75fcaea66832e662f92864e89e0e9ee41c39))
+* **deps:** close the six open Trivy findings (stable) ([#1842](https://github.com/PicPeak/picpeak/issues/1842)) ([6d4ef05](https://github.com/PicPeak/picpeak/commit/6d4ef058522e23e0a2eda09252affd9a91acbdbc))
+* enforce gallery original-asset authorization ([#1879](https://github.com/PicPeak/picpeak/issues/1879)) ([e076618](https://github.com/PicPeak/picpeak/commit/e076618b9778c2465ce3d02b543ab1e492c17420))
+* **installer:** verify pinned bootstrap scripts before execution (stable) ([#1862](https://github.com/PicPeak/picpeak/issues/1862)) ([67ed33b](https://github.com/PicPeak/picpeak/commit/67ed33b735aba53fc7b6053a4f13e673048a4b39))
+* **mail:** bind SMTP and IMAP connections to vetted DNS answers (stable) ([#1873](https://github.com/PicPeak/picpeak/issues/1873)) ([576e8aa](https://github.com/PicPeak/picpeak/commit/576e8aa7e4287e0b69765daab413933d43c83b29))
+* **mail:** bound retained intake bytes and lifecycle ([#1886](https://github.com/PicPeak/picpeak/issues/1886)) ([bd63a3c](https://github.com/PicPeak/picpeak/commit/bd63a3c797f43a7a38ec7f6accfa6f8a13c06d54))
+* scope external media sources to their owners (stable) ([#1881](https://github.com/PicPeak/picpeak/issues/1881)) ([720980e](https://github.com/PicPeak/picpeak/commit/720980eb1589fc984c688458e6094ef08b17b38e))
+* **security:** enforce CRM document ownership (stable) ([#1885](https://github.com/PicPeak/picpeak/issues/1885)) ([09372a3](https://github.com/PicPeak/picpeak/commit/09372a3a0ff10979393e0b5f4a927f7201d54ce4))
+* **security:** tighten production network and cookie defaults (stable) ([#1851](https://github.com/PicPeak/picpeak/issues/1851)) ([2b6f6a5](https://github.com/PicPeak/picpeak/commit/2b6f6a5115a16751b855b3aa166775cf54c748bb))
+* **stable:** bound public upload ingress and lifetime capacity ([#1874](https://github.com/PicPeak/picpeak/issues/1874)) ([fb6567d](https://github.com/PicPeak/picpeak/commit/fb6567d4561f99d639467002c7c129f043394131))
+* **upload:** bound authenticated upload admission (stable) ([#1877](https://github.com/PicPeak/picpeak/issues/1877)) ([a64defc](https://github.com/PicPeak/picpeak/commit/a64defc2da0b31cff4b0d18e82328e4d44fb5290))
+* **workflows:** enforce owner scope on execution data (stable) ([#1844](https://github.com/PicPeak/picpeak/issues/1844)) ([2b3fdba](https://github.com/PicPeak/picpeak/commit/2b3fdba3d2f6eb0375d0badd2bf1eedcd4308e0c))
+
 ## [3.134.1](https://github.com/PicPeak/picpeak/compare/v3.134.0...v3.134.1) (2026-10-06)
 
 
