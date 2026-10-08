@@ -214,6 +214,8 @@ function predicate(table, alias, actor, write = false) {
       const cap = actor.capability;
       const anchors = [];
       if (root === cap.root) anchors.push(`${col(a, 'id')} = ${param(cap.id)}`);
+      if (cap.root === 'quotes' && root !== 'quotes') anchors.push(`${col(a, 'source_quote_id')} = ${param(cap.id)}`);
+      if (cap.root === 'contracts' && root === 'invoices') anchors.push(`${col(a, 'source_contract_id')} = ${param(cap.id)}`);
       if (cap.dealUuid) anchors.push(`${col(a, 'deal_uuid')} = ${param(cap.dealUuid)}`);
       if (cap.eventId) anchors.push(`${col(a, root === 'invoices' ? 'event_id' : 'converted_event_id')} = ${param(cap.eventId)}`);
       // An editable built-in graph is not global system authority. Its
@@ -427,7 +429,9 @@ async function validateWrite(builder, client, connection) {
         const cap = actor.capability;
         const inDeal = cap.dealUuid && row.deal_uuid === cap.dealUuid;
         const inEvent = cap.eventId && Number(row.event_id || row.converted_event_id) === Number(cap.eventId);
-        if (!inDeal && !inEvent) throw new ForbiddenError('CRM write exceeds workflow entity capability');
+        const inSource = (cap.root === 'quotes' && Number(row.source_quote_id) === cap.id)
+          || (cap.root === 'contracts' && Number(row.source_contract_id) === cap.id);
+        if (!inDeal && !inEvent && !inSource) throw new ForbiddenError('CRM write exceeds workflow entity capability');
       }
       if (Object.hasOwn(row, 'created_by_admin_id')) {
         if (Number(row.created_by_admin_id) !== actor.id) throw new ForbiddenError('CRM ownership cannot be transferred');
@@ -446,7 +450,10 @@ async function validateWrite(builder, client, connection) {
         if (!(await query).length) throw new NotFoundError('CRM relationship');
       }
       if (row.deal_uuid != null) {
-        if (actor.capability && row.deal_uuid !== actor.capability.dealUuid) throw new ForbiddenError('CRM lineage exceeds workflow entity capability');
+        const cap = actor.capability;
+        const derivedInsert = builder._method === 'insert' && cap && ((cap.root === 'quotes' && Number(row.source_quote_id) === cap.id)
+          || (cap.root === 'contracts' && Number(row.source_contract_id) === cap.id));
+        if (cap && row.deal_uuid !== cap.dealUuid && !derivedInsert) throw new ForbiddenError('CRM lineage exceeds workflow entity capability');
         for (const target of Object.keys(ROOTS)) {
           // Lock all existing lineage records first, not merely the visible
           // subset. The scoped check below must account for each of them.
@@ -636,6 +643,10 @@ function requireCrmDocument(root) {
   return async (req, res, next) => {
     if (!/^\d+$/.test(req.params.id || '')) return next();
     try {
+      // Preserve the route's existing domain-permission response. Without
+      // that domain there is no ownership probe, including for missing IDs.
+      const actor = currentCrmActor();
+      if (actor && !allowed(actor, root, false)) return next();
       const { db } = require('./db');
       if (!(await db(root).where('id', Number(req.params.id)).first('id'))) {
         return res.status(404).json({ error: 'Document not found', code: 'NOT_FOUND' });
