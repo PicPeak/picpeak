@@ -291,11 +291,6 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       // Commit transaction
       if (trx) await trx.commit();
       rowCommitted = true;
-      if (uploadReservation) {
-        // A failed accounting acknowledgement must retain pending capacity;
-        // it must not delete a successfully associated original.
-        await uploadQuota.processingComplete(photoId).catch(err => logger.warn('Completed upload charge remains pending', { photoId, error: err.message }));
-      }
 
       // Webhook (#327) — fires for every entry path that lands in this
       // service: guest upload + auto-import + admin upload via API.

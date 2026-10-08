@@ -160,7 +160,8 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
   await withPublicUpload(req, res, {
-    eventId, mode: 'admin', maxFiles: maxFilesPerUpload, fileField: 'photos',
+    eventId, mode: 'admin', accountId: req.admin.id, maxFiles: maxFilesPerUpload, fileField: 'photos',
+    maxFileBytes: Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes),
     fileExtension: file => path.extname(file.originalname).toLowerCase(),
     fileGuard: file => createUploadFileGuard(file, req.maxFileSizeBytes, req.maxVideoSizeBytes),
     formatError: err => ({
@@ -1679,6 +1680,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
   } catch (error) {
     // A declared size and chunk count that do not fit together is the
     // client's mistake, and carries its own status.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }
@@ -1716,6 +1718,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     // Client-caused states (unknown/finished/expired upload, bad index, too
     // large) carry their own status. Only a genuinely unexpected error should
     // reach the 500 below and the error log with it.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       // Refusing the body early is the point — but it leaves unread bytes in
       // flight on a connection this response still advertises as keep-alive.
@@ -1808,6 +1811,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   } catch (error) {
     // Same rule as the chunk route: a tagged status is a client-caused state
     // (unknown/expired upload, missing chunks), not a server fault.
+    uploadQuota.forAdmin(error);
     if (error.statusCode || error.status) {
       return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }

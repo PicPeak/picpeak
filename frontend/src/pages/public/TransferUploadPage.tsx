@@ -19,6 +19,7 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
 import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { batchFilesForUpload } from '../../utils/uploadBatches';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
@@ -89,14 +90,38 @@ export const TransferUploadPage: React.FC = () => {
     }
     setUploading(true);
     setProgress(0);
+    // One request may not carry more than the server's per-request byte
+    // budget, so a large selection goes up as several requests in order.
+    const batches = batchFilesForUpload(files, data.max_request_bytes || Infinity, data.max_files);
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
+    let sentBytes = 0;
+    // Files of the refused request and of every request after it.
+    let unsent: File[] = [];
     try {
-      await transfersService.upload(token as string, files, setProgress);
+      for (const [index, batch] of batches.entries()) {
+        const batchBytes = batch.reduce((sum, f) => sum + f.size, 0);
+        try {
+          await transfersService.upload(token as string, batch, (pct) => {
+            setProgress(Math.round(((sentBytes + (batchBytes * pct) / 100) / totalBytes) * 100));
+          });
+          sentBytes += batchBytes;
+        } catch (err) {
+          const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
+          const capacityKey = publicUploadErrorKey(details?.code);
+          const msg = capacityKey ? t(capacityKey) : details?.error || t('transfers.upload.failed', 'Upload failed. Please try again.');
+          toast.error(msg);
+          // Do not turn one refusal into a string of repeated requests.
+          unsent = batches.slice(index).flat();
+          break;
+        }
+      }
+      if (unsent.length) {
+        // What already went up is stored; keep only the rest for a retry.
+        setFiles(unsent);
+        setProgress(0);
+        return;
+      }
       setDone(true);
-    } catch (err) {
-      const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
-      const capacityKey = publicUploadErrorKey(details?.code);
-      const msg = capacityKey ? t(capacityKey) : details?.error || t('transfers.upload.failed', 'Upload failed. Please try again.');
-      toast.error(msg);
     } finally {
       setUploading(false);
     }

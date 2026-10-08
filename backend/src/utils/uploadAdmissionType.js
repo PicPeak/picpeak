@@ -9,7 +9,9 @@ const IMAGE_BRANDS = new Set([
   'mif1', 'mif2', 'msf1', 'avif', 'avis', 'avci', 'avcs',
   'jpeg', 'jpgs', 'j2ki', 'j2ks', 'j2is', 'jxsi', 'jxss',
 ]);
-const MP4_BRANDS = new Set(['mp41', 'mp42', 'avc1', 'dash', 'MSNV', 'M4V ', 'M4VH', 'M4VP', 'F4V ']);
+// A classic QuickTime file has no ftyp box: it opens with one of these atoms.
+const QUICKTIME_ATOMS = new Set(['moov', 'mdat', 'wide', 'free', 'skip', 'pnot']);
+const BRAND = /^[\x20-\x7e]{4}$/;
 
 function vint(buffer, offset, keepMarker = false) {
   if (offset >= buffer.length || buffer[offset] === 0) return null;
@@ -26,14 +28,19 @@ function videoPrefix(buffer, mime, ended = false) {
   const need = length => buffer.length < length ? (ended ? false : null) : true;
   if (mime === 'video/mp4' || mime === 'video/quicktime') {
     if (need(8) !== true) return need(8);
-    if (buffer.toString('latin1', 4, 8) !== 'ftyp') return false;
     const size = buffer.readUInt32BE(0);
+    const atom = buffer.toString('latin1', 4, 8);
+    // Size 1 announces a 64-bit length; anything else covers its own header.
+    if (atom !== 'ftyp') return mime === 'video/quicktime' && QUICKTIME_ATOMS.has(atom) && (size === 1 || size >= 8);
     if (size < 16 || size > PREFIX_BYTES || size % 4 !== 0) return false;
     if (need(size) !== true) return need(size);
     const brands = [buffer.toString('latin1', 8, 12)];
     for (let at = 16; at < size; at += 4) brands.push(buffer.toString('latin1', at, at + 4));
-    if (brands.some(brand => IMAGE_BRANDS.has(brand))) return false;
-    return mime === 'video/quicktime' ? brands.includes('qt  ') : brands.some(brand => MP4_BRANDS.has(brand));
+    // Any ISO base media brand is a video container here (isom, iso2-iso6,
+    // 3gp*, hvc1, M4V, msnv, qt, ...) unless it names a still-image format.
+    // The all-zero filler an old QuickTime writer leaves is not a brand.
+    const named = brands.filter(brand => brand !== '\0\0\0\0');
+    return named.length > 0 && named.every(brand => BRAND.test(brand)) && !named.some(brand => IMAGE_BRANDS.has(brand));
   }
   if (mime === 'video/x-msvideo') {
     if (need(12) !== true) return need(12);

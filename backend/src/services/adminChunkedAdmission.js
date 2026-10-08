@@ -1,6 +1,7 @@
 // HTTP chunk uploads keep one persistent admission from init through the last
-// processing side effect. Legacy non-HTTP callers of chunkedUploadService do
-// not opt in. No body is consumed before the per-session gate and rate claim.
+// processing side effect: the whole session is ONE active request, however
+// many chunks it takes. Legacy non-HTTP callers of chunkedUploadService do
+// not opt in. No body is consumed before the per-session gate.
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -84,10 +85,9 @@ function writePart(source, destination, allowance, { signal, deadlineMs, guard, 
   });
 }
 
-async function cleanupAttempt(meta, part, ingress, count) {
+async function cleanupAttempt(meta, part) {
   try {
     await fs.rm(part, { force: true });
-    await quota.settleChunkIngress(ingress, count.bytes);
   } catch (err) {
     meta.status = 'failed';
     throw err;
@@ -102,7 +102,7 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
   const video = meta.mimeType.startsWith('video/');
   if (video && !meta.videoValidated && index !== 0) throw error('Upload video chunk 0 first', 409);
   return exclusive(meta, async signal => {
-    const ingress = await quota.reserveChunkIngress(meta.admission, expected);
+    await quota.recheckStaging(meta.admission);
     const count = { bytes: 0 };
     // Serialized attempts use one bounded, exclusive pathname. A cleanup
     // failure makes the session non-retryable instead of accumulating parts.
@@ -121,14 +121,11 @@ async function upload(meta, index, source, declaredBytes, chunkSize) {
       meta.receivedChunks.add(index);
       meta.chunkSizes.set(index, count.bytes);
       if (video && index === 0) meta.videoValidated = true;
-      let banked = 0;
-      for (const size of meta.chunkSizes.values()) banked += size;
-      await quota.stagedChunks(meta.admission, banked, meta.receivedChunks.size + 1);
       return { chunkIndex: index, received: meta.receivedChunks.size, expected: meta.expectedChunks,
         progress: meta.receivedChunks.size / meta.expectedChunks * 100,
         complete: meta.receivedChunks.size === meta.expectedChunks };
     } finally {
-      await cleanupAttempt(meta, part, ingress, count);
+      await cleanupAttempt(meta, part);
     }
   });
 }
@@ -140,7 +137,7 @@ async function complete(meta) {
     const tempDir = path.join(meta.admission.dir, 'merged');
     const mergedPath = path.join(tempDir, meta.filename);
     try {
-      await quota.prepareChunkMerge(meta.admission);
+      await quota.recheckStaging(meta.admission);
       if (signal.aborted) throw cancelled();
       await fs.mkdir(tempDir, { mode: 0o700 });
       for (let index = 0; index < meta.expectedChunks; index++) {
@@ -151,7 +148,6 @@ async function complete(meta) {
       if (stats.size !== meta.fileSize || stats.size > meta.maxFileSizeBytes) throw error('Invalid merged file size', 400, 'INVALID_CHUNK');
       if (signal.aborted) throw cancelled();
       await fs.rm(meta.uploadDir, { recursive: true, force: true });
-      await quota.staged(meta.admission, stats.size, 1);
       // Installed before releasing the merge gate. Abort in the route handoff
       // must also wait for the processor, not just the merge's descriptor.
       meta.processing = deferred();

@@ -168,6 +168,11 @@ async function workerLoop(workerIdx) {
           processing_error: String(err.message || err).slice(0, 1000),
         });
         await imageAdmission.finish(claimed.id);
+        // A failed photo is no longer queued work: free its public-upload
+        // pending hold (the lifetime charge for its original stays).
+        await require('./publicUploadQuota').releasePending(claimed.id).catch((releaseErr) => {
+          logger.warn(`backgroundProcessor[${workerIdx}]: pending hold of photo ${claimed.id} not released`, { error: releaseErr.message });
+        });
       } catch (updateErr) {
         logger.error(`backgroundProcessor[${workerIdx}]: failed to mark photo ${claimed.id} as failed`, {
           error: updateErr.message,

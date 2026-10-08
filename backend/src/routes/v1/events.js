@@ -401,7 +401,7 @@ router.post(
     try { maxFileSizeBytes = await getMaxFileSizeBytes(); }
     catch { maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024; }
     await withPublicUpload(req, res, {
-      eventId, mode: 'admin', maxFiles: 1, fileField: 'photo',
+      eventId, mode: 'admin', accountId: req.admin.id, maxFiles: 1, maxFileBytes: maxFileSizeBytes, fileField: 'photo',
       fileExtension: file => {
         const extension = path.extname(file.originalname).toLowerCase();
         return /^\.[a-z0-9]{1,10}$/i.test(extension) ? extension : '';
@@ -607,8 +607,6 @@ async function handleV1PhotoUpload(req, res) {
       const insertResult = await conn('photos').insert(photoData).returning('id');
       return insertResult[0]?.id || insertResult[0];
     });
-    try { await uploadQuota.processingComplete(id); }
-    catch (err) { logger.warn('v1 pending charge retained', { photoId: id, error: err.message }); }
 
     await logActivity('photo_uploaded', { via: 'api_v1', filename: finalName }, event.id, {
       type: 'admin', id: req.admin.id, name: req.admin.username
