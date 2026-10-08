@@ -30,7 +30,7 @@ const { getStorage } = require('./storage');
 // — so the rows are deleted from the temp copy before it is finalised. See
 // createSQLiteBackup below.
 const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissals'];
-const { TABLE: S3_INDEX_TABLE } = require('./storage/generationIndex');
+const RESTORE_RUNTIME_TABLES = require('../utils/restoreRuntimeTables');
 
 // sqlite3's `.backup` is a dot-command parsed by sqlite3's OWN tokenizer, not
 // the shell: spawn()'s argv separation does not stop a quote or a line break
@@ -340,7 +340,7 @@ class DatabaseBackupService {
         AND name != 'knex_migrations_lock'
         ORDER BY name
       `);
-      return result.map(row => row.name).filter((t) => !FACE_TABLES.includes(t) && t !== S3_INDEX_TABLE);
+      return result.map(row => row.name).filter((t) => !FACE_TABLES.includes(t) && !RESTORE_RUNTIME_TABLES.includes(t));
     } else {
       // PostgreSQL
       const result = await db.raw(`
@@ -353,7 +353,7 @@ class DatabaseBackupService {
       `);
       return result.rows
         .map(row => row.table_name)
-        .filter((t) => !FACE_TABLES.includes(t) && t !== S3_INDEX_TABLE);
+        .filter((t) => !FACE_TABLES.includes(t) && !RESTORE_RUNTIME_TABLES.includes(t));
     }
   }
 
@@ -406,10 +406,12 @@ class DatabaseBackupService {
       }
       // Runtime S3 indirection is target-local. Unlike optional historical
       // face tables, scrub failures MUST abort rather than export live keys.
-      const indexPresent = await spawnAsync('sqlite3', [tempPath,
-        `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='${S3_INDEX_TABLE}';`]);
-      if (indexPresent.stdout.trim() === '1') {
-        await spawnAsync('sqlite3', [tempPath, `DELETE FROM ${S3_INDEX_TABLE};`]);
+      for (const table of RESTORE_RUNTIME_TABLES) {
+        const present = await spawnAsync('sqlite3', [tempPath,
+          `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='${table}';`]);
+        if (present.stdout.trim() === '1') {
+          await spawnAsync('sqlite3', [tempPath, `DELETE FROM ${table};`]);
+        }
       }
 
       // Reset the DERIVED state on photos as well. Without this the restored
@@ -510,7 +512,7 @@ class DatabaseBackupService {
     for (const table of FACE_TABLES) {
       pgDumpOptions.push(`--exclude-table-data=public.${table}`);
     }
-    pgDumpOptions.push(`--exclude-table-data=public.${S3_INDEX_TABLE}`);
+    for (const table of RESTORE_RUNTIME_TABLES) pgDumpOptions.push(`--exclude-table-data=public.${table}`);
     // NOTE: the Postgres path cannot rewrite rows inside pg_dump the way the
     // SQLite path can, so photos.face_status is restored as-is here. The
     // restore path compensates — see resetDerivedFaceState in restoreService.

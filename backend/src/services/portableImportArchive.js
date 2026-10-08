@@ -116,7 +116,7 @@ function createCensus(options = {}, bound = limits()) {
     } else if (parts[0] === 'files' && parts.length > 1) {
       if (typeof options.validateFileKey !== 'function') throw refusal('No portable file policy was supplied.');
       const problem = options.validateFileKey(parts.slice(1).join('/'));
-      if (problem) throw refusal(`Archive contains an unsupported portable file (${problem}).`);
+      if (problem) throw refusal(`Archive contains a file PicPeak would not have exported (${problem}): ${entry.name}`, 400, 'UNSUPPORTED_ARCHIVE_FILE');
     } else {
       throw refusal('Unsupported archive entry layout.');
     }

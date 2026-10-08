@@ -209,15 +209,14 @@ async function phaseMigrateSchema() {
 
 async function phaseImport(archivePath, storageIndexPath) {
   const { importFromPicpeak } = require('../src/services/picpeakImportService');
-  const index = require('../src/services/storage/generationIndex');
-  const storage = require('../src/services/storage').getStorage();
-  const runtimeRows = storageIndexPath ? await index.readMigrationIndex(storageIndexPath, storage.namespace) : null;
   // No currentAdminId: this is a CLI, there is no operator session to preserve.
   // The SQLite install's own admin accounts come across with everything else.
   // sqlite → pg is allowed by validateManifest's direction policy (#1041) —
   // the same gate the upload/restore UI uses, no separate opt-in flag.
-  const summary = await importFromPicpeak({ picpeakPath: archivePath });
-  if (runtimeRows) await index.restoreDatabaseIndex(require('../src/database/db').db, runtimeRows);
+  // This private operator-only sidecar is validated and adopted by the actual
+  // supervised worker on the SAME transaction as rows and the commit marker.
+  // Uploaded portable archives cannot provide this authority channel.
+  const summary = await importFromPicpeak({ picpeakPath: archivePath, migrationStorageIndexPath: storageIndexPath || undefined });
   return JSON.stringify(summary || {});
 }
 
