@@ -544,6 +544,9 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
       else if (!work.isClosed()) locallyReady = true;
       else throw failure();
     }, validateStart,
+    // Presentation hint only: ordinary requests still require fresh durable
+    // admission. A healthy UI must use normal branding/headers/compression.
+    isReady: () => initialized && locallyReady && !work.isClosed() && !stopping,
     instanceId: () => registration?.instance_id, isInitialized: () => initialized };
 }
 

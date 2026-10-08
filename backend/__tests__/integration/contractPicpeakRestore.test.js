@@ -20,8 +20,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const request = require('supertest');
 const { PDFDocument } = require('pdf-lib');
+const { formatBoolean } = require('../../src/utils/dbCompat');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
@@ -39,6 +42,47 @@ const prevCwd = process.cwd();
 const auth = { get Authorization() { return `Bearer ${token}`; } };
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 const parsed = (value) => (typeof value === 'string' ? JSON.parse(value) : value);
+const execFileAsync = promisify(execFile);
+
+async function checkTemplateInColdRuntime() {
+  // Restore repairs execute in a real child, and every old application cache
+  // must be retired at the restart barrier. A parent-process module spy cannot
+  // observe that lifecycle. Start a fresh runtime with the actual Node lease
+  // and durable coordinator before performing the normal startup check.
+  const script = `
+    const coordinator = require('./src/services/portableRestoreCoordinator');
+    const work = require('./src/services/activeApplicationWork');
+    const { db } = require('./src/database/db');
+    (async () => {
+      try {
+        await coordinator.initialize();
+        await coordinator.waitForStartupAdmission();
+        await work.track('cold contract template startup', () =>
+          require('./src/services/contract/defaultTemplate').ensureDefaultTemplate());
+        coordinator.markReady();
+        const control = await db('portable_restore_control').where({ id: 1 }).first();
+        const system = await db('contract_templates').where({ is_system: require('./src/utils/dbCompat').formatBoolean(true) }).first();
+        const version = await db('contract_template_versions').where({ template_id: system.id, status: 'published' }).first();
+        process.stdout.write('PICPEAK_COLD_TEMPLATE=' + JSON.stringify({
+          instanceId: coordinator.instanceId(), ready: coordinator.isReady(),
+          state: control.state, generation: control.generation, templateId: system.id,
+          revision: version.system_revision, contentSha256: version.content_sha256,
+        }) + '\\n');
+      } finally {
+        await coordinator.stop();
+        await require('./src/services/serviceShutdown').stopServices();
+        await db.destroy();
+      }
+    })().catch(error => { process.stderr.write(String(error.stack)); process.exitCode = 1; });
+  `;
+  const { stdout } = await execFileAsync(process.execPath, ['--eval', script], {
+    cwd: path.resolve(__dirname, '../..'), env: { ...process.env, NODE_OPTIONS: '' },
+    timeout: 60000, maxBuffer: 256 * 1024,
+  });
+  const line = stdout.split('\n').find(value => value.startsWith('PICPEAK_COLD_TEMPLATE='));
+  expect(line).toBeDefined();
+  return JSON.parse(line.slice('PICPEAK_COLD_TEMPLATE='.length));
+}
 
 async function ok(req, status = [200, 201]) {
   const res = await req;
@@ -161,22 +205,55 @@ test('after a restore the retired PDF font path is moved and the standard templa
   const legacyDir = path.join(process.env.STORAGE_PATH, 'fonts');
   fs.mkdirSync(legacyDir, { recursive: true });
   fs.copyFileSync(path.resolve(__dirname, '../../assets/fonts/Jost/400.ttf'), path.join(legacyDir, 'restored.ttf'));
+  const fontSha256 = sha256(fs.readFileSync(path.join(legacyDir, 'restored.ttf')));
   await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: 'fonts/restored.ttf' });
+  // Prime the old process's template cache (also when this case runs alone).
+  await require('../../src/services/contract/defaultTemplate').ensureDefaultTemplate();
+  // Archive a system
+  // template needing a startup repair, without deleting any historical/custom
+  // version used by an issued contract or changing the user's chosen default.
+  const system = await db('contract_templates').where({ is_system: formatBoolean(true) }).first();
+  const systemVersions = await db('contract_template_versions').where({ template_id: system.id }).pluck('id');
+  expect(await db('contracts').whereIn('template_version_id', systemVersions)).toHaveLength(0);
+  const defaultBefore = await db('app_settings').where({ setting_key: 'crm_contracts_default_template_id' }).first();
+  const historical = await db('contracts').whereNotNull('template_version_id').first();
+  const historicalVersion = historical
+    ? await db('contract_template_versions').where({ id: historical.template_version_id }).first() : null;
+  await db('contract_template_version_attachments').whereIn('version_id', systemVersions).del();
+  await db('contract_template_version_items').whereIn('version_id', systemVersions).del();
+  await db('contract_template_versions').whereIn('id', systemVersions).del();
   const { createPicpeak } = require('../../src/services/picpeakExportService');
   const { importFromPicpeak } = require('../../src/services/picpeakImportService');
   const { filePath } = await createPicpeak({ includePhotos: false });
   try {
     await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: null });
-    const defaultTemplate = require('../../src/services/contract/defaultTemplate');
-    const forget = jest.spyOn(defaultTemplate, 'forgetEnsured');
     const result = await importFromPicpeak({ picpeakPath: filePath, currentAdminId: adminId });
     expect(result.restored).toBe(true);
-    // The standard template is checked again against the restored database.
-    expect(forget).toHaveBeenCalled();
-    forget.mockRestore();
     // Moved during the restore, not at the next restart.
     expect((await db('business_profile').where({ id: 1 }).first()).pdf_font_ttf_path).toBeNull();
-    expect(await db('pdf_fonts').where({ display_name: 'Custom font (earlier setting)' }).first()).toBeTruthy();
+    const font = await db('pdf_fonts').where({ display_name: 'Custom font (earlier setting)' }).first();
+    expect(font).toBeTruthy();
+    const fontFile = await db('pdf_font_files').where({ font_id: font.id, style: '400' }).first();
+    expect(fontFile.sha256).toBe(fontSha256);
+    expect(sha256(readStored(fontFile.storage_key))).toBe(fontSha256);
+    const beforeRestart = await db('portable_restore_control').where({ id: 1 }).first();
+    expect(beforeRestart.state).toBe('restart_required');
+    const cold = await checkTemplateInColdRuntime();
+    expect(cold).toMatchObject({ ready: true, state: 'open', generation: beforeRestart.generation,
+      templateId: system.id, revision: require('../../src/services/contract/defaultTemplate').SYSTEM_TEMPLATE_REVISION });
+    expect(cold.contentSha256).toMatch(/^[0-9a-f]{64}$/);
+    const restartedInstance = await db('portable_restore_instances').where({ instance_id: cold.instanceId,
+      generation: cold.generation, startup_ready_epoch: beforeRestart.epoch }).first();
+    expect(restartedInstance).toBeTruthy();
+    expect(cold.instanceId).not.toBe(beforeRestart.owner_instance_id);
+    const lease = parsed(restartedInstance.lease_json);
+    expect(await require('../../src/services/linuxKernelLease').probe(lease.path, lease)).toBe('free');
+    expect((await db('app_settings').where({ setting_key: 'crm_contracts_default_template_id' }).first()).setting_value)
+      .toBe(defaultBefore.setting_value);
+    if (historicalVersion) {
+      expect((await db('contract_template_versions').where({ id: historicalVersion.id }).first()).content_sha256)
+        .toBe(historicalVersion.content_sha256);
+    }
   } finally {
     fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
   }

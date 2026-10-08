@@ -40,6 +40,24 @@ describe('DB-free retained maintenance shell', () => {
   it('does not open mutating shell requests', async () => {
     await request(app).post('/admin/settings').expect(503);
   });
+  it('keeps ordinary OPTIONS behind the maintenance gate', async () => {
+    await request(app).options('/api/admin/users').expect(503);
+  });
+  it('a healthy runtime keeps its normal branding and asset compression while maintenance retains the DB-free fallback', async () => {
+    let maintenance = false;
+    const ordinary = express();
+    ordinary.use(createRestoreShellRouter({ frontendDir: directory, serveFrontend: 'true', shouldServe: () => maintenance }));
+    ordinary.use(require('compression')());
+    ordinary.get('/admin', (_req, res) => res.type('html').send('<title>AIO Smoke</title>'));
+    ordinary.get('/assets/index-AbCd1234.js', (_req, res) => res.type('js').send('window.ordinary = true;'.repeat(200)));
+    ordinary.use((_req, res) => res.status(503).json({ code: 'RESTORE_MAINTENANCE' }));
+    expect((await request(ordinary).get('/admin').expect(200)).text).toContain('<title>AIO Smoke</title>');
+    const asset = await request(ordinary).get('/assets/index-AbCd1234.js').set('Accept-Encoding', 'gzip').expect(200);
+    expect(asset.headers['content-encoding']).toBe('gzip');
+    maintenance = true;
+    expect((await request(ordinary).get('/admin').expect(200)).text).toContain('<title>PicPeak</title>');
+    expect((await request(ordinary).get('/assets/index-AbCd1234.js').expect(200)).text).toContain('maintenanceFixture');
+  });
   it('respects explicit frontend disable', async () => {
     const disabled = express(); disabled.use(createRestoreShellRouter({ frontendDir: directory, serveFrontend: 'false' }));
     disabled.use((_req, res) => res.sendStatus(503)); await request(disabled).get('/admin/settings').expect(503);
