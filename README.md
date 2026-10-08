@@ -66,19 +66,45 @@ docker compose up -d
 
 On first start, open **http://localhost:3000/admin** and follow the in-browser setup to create your admin account. Full details — the one-time setup token, Docker file permissions, and ARM64 notes — are in **[First-run setup](https://docs.picpeak.app/getting-started/first-login)**.
 
+The frontend port is published on every host interface by default; the raw
+backend port binds to host loopback (`PICPEAK_BACKEND_BIND_ADDRESS` overrides
+it). For public access, terminate TLS in a reverse proxy on the host and set
+`PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
+around it.
+
+Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
+proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
+`ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
+and configure the outer proxy to append or overwrite forwarding headers using
+the real client address. The installer selects these settings in proxy mode.
+
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. To update from the admin UI instead, enable [in-app updates](docs/self-update.md). See [RELEASING.md](RELEASING.md) for the promotion cadence.
+
+> [!NOTE]
+> **Recommended hardening:** an existing install keeps working without
+> changes. With `TRUST_PROXY` unset PicPeak still trusts forwarding headers
+> from every private-range address (and logs a warning at startup); set it to
+> the exact number of reverse-proxy hops instead. Behind TLS, also set
+> `COOKIE_SECURE=true`, and bind the origin to loopback
+> (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
+> native install). The Compose files now publish the raw backend port on host
+> loopback only and pass `TRUST_PROXY` through unchanged (the installer writes an exact hop count for new installs). Unattended installer runs require
+> `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file
 
 For a home server, a NAS, or a single small studio, the all-in-one image runs the whole app as one process with SQLite — no compose file, no separate database, no reverse proxy to wire up:
 
 ```bash
-docker run -d --name picpeak -p 3000:3000 \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   -v picpeak:/data \
   ghcr.io/picpeak/picpeak/aio:main
 ```
 
-No environment variables to set — the JWT secret is generated on first start and kept on the volume.
+The cookie mode above (also the default) suits this loopback-only HTTP quick
+start. A TLS deployment should set `COOKIE_SECURE=true` and enable HSTS. The
+JWT secret is generated on first start and kept on the volume.
 
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 
@@ -96,6 +122,14 @@ The compose stack above is still the right choice for anything busier — SQLite
 | ML sidecar (optional) | `ghcr.io/picpeak/picpeak/ml` | [`picpeak/ml`](https://hub.docker.com/r/picpeak/ml) |
 
 Both registries get the same digests and the same tags — `stable`/`latest`, a pinned `x.y.z`, and `beta`/`main` for the active development channel — for `linux/amd64` and `linux/arm64`. Keep every image in one install on the **same** tag.
+
+### Rsync/SSH backup destination security
+
+Rsync connection tests and backup runs resolve and vet every DNS answer, then pin SSH to approved public addresses. Private, metadata, reserved and mixed public/private destinations are refused. For multi-address destinations, an application-owned TCP relay can try the next captured literal only before connecting; it never resolves DNS again or retries an established SSH/rsync operation. SSH host-key verification remains bound to the configured hostname, including when its approved address changes. No private-network bypass is provided.
+
+Before use, obtain the destination's SSH host public key and fingerprint through an independent trusted channel with its operator. Provision a `known_hosts` entry for that hostname; do not trust unverified `ssh-keyscan` output or delete a changed-key entry merely to make a test pass. Existing verified entries remain usable. Unknown or changed keys fail instead of being learned automatically.
+
+Pass `BACKUP_SSH_KNOWN_HOSTS` into the backend/AIO process to select an absolute readable trust-file path (without spaces or shell syntax). Otherwise a configured private key uses `known_hosts` in its directory. These selected files may be read-only and are the only host-key trust source. With neither selected, pre-provisioned OpenSSH default user/global trust remains available; default identity files and an SSH agent still work when no key is configured. Mount trust and key files persistently and independently of backup contents. The SSH connection ignores local/system configuration, aliases, proxies and control sockets, connects to the SSH port from the backup settings (22 by default), and does not accept ports or jump hosts from SSH configuration. For a port other than 22 the `known_hosts` entry is named `[host]:port`, as `ssh-keyscan -p` writes it; the host part is always the lower-case name without a trailing dot. When the selected trust file is missing, the backend logs the expected path at startup. Verify intentional server key replacements independently before updating the approved entry.
 
 ## 🌟 Why PicPeak?
 
@@ -151,6 +185,23 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 
 **Project meta:** [Support](SUPPORT.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE) · [Security](SECURITY.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
+### Mail network policy
+
+Every SMTP/IMAP connection validates and consumes only its current vetted DNS
+answers, while retaining the configured hostname for TLS verification. Private
+mail servers require deployment-owned `MAIL_PRIVATE_ENDPOINTS` entries with an
+exact protocol, hostname and explicit port, for example `smtp://mailhog:1025` or
+`imap://mail.internal:993`. No settings request can add an approval. The
+`SMTP_HOST`/`SMTP_PORT` pair in the deployment environment counts as approved
+for exactly that host and port, so a relay the deployment itself names keeps
+sending after an upgrade; a host or port changed in the admin UI does not.
+Approved endpoints may resolve to private, loopback or carrier-grade NAT
+addresses. Metadata, link-local, multicast and reserved addresses remain
+forbidden even with an approval. For the Compose `dev` mail catcher, set
+`SMTP_HOST=mailhog` and `SMTP_PORT=1025`.
+An approval does not disable TLS certificate checks; production private TLS
+servers still need a trusted certificate for their configured hostname.
+
 ## 📊 Comparison with Alternatives
 
 | Feature | PicPeak | PicDrop | Scrapbook.de | Pixieset |
@@ -177,6 +228,10 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 - **Analytics**: Privacy-focused with Umami integration
 - **External media**: point PicPeak at `EXTERNAL_MEDIA_ROOT` to reference existing originals read-only, index quickly, and generate thumbnails on demand
 
+Official images use Sharp's bundled native libraries. Custom installations using
+a globally installed libvips must also provide librsvg 2.63.2 or newer for safe
+SVG decoding; updating the npm package does not update system libraries.
+
 ## 📸 Screenshots
 
 <details>
@@ -198,6 +253,38 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 We love contributions! PicPeak is built by photographers, for photographers — whether you're fixing bugs, adding features, or improving docs. See the [Contributing Guide](CONTRIBUTING.md) to get started.
 
 Found a security issue? Please open a [security issue](https://github.com/PicPeak/picpeak/issues/new?labels=security). See [SECURITY.md](SECURITY.md) for the policy.
+
+## Analytics integration security
+
+Settings → Analytics supports Umami and Rybbit through PicPeak-owned, data-only
+event forwarding. Third-party scripts and legacy custom HTML snippets are never
+executed or sent to visitors. Existing custom configurations are disabled; choose
+Umami, Rybbit or None and save to clear the old snippet. Configure collectors in
+the admin settings; the former build-time `VITE_UMAMI_*` variables are no longer read.
+
+Gallery page views and supported download/search/protection events remain
+tracked. Gallery capability suffixes are redacted regardless of token length;
+query strings, fragments, page titles, referrers, account/photo identifiers and
+free-text event properties are not collected. Administrator, customer portal,
+client-access login, short-link, slideshow and other capability pages are excluded.
+Do Not Track and Global Privacy Control are respected. Visitor IP and User-Agent
+still reach the chosen collector for device/location attribution. Vendor-only
+auto-capture, session replay and feature flags are not supported.
+
+Optional dashboard embeds require an unrelated HTTPS host outside PicPeak's
+authentication cookie domain. Same-host alternate ports and collectors covered
+by `COOKIE_DOMAIN` are blocked. Embedding stays disabled if the authenticated
+settings response cannot confirm the cookie scope; built-in statistics remain
+available. Embeds also require browser support for credentialless iframes,
+isolate all cookies/storage across redirects, and disallow popups. Unsupported
+browsers use built-in statistics, without an ordinary-iframe fallback. Your
+frame CSP must separately permit an eligible dashboard.
+
+Production collectors must use HTTPS. Migrate HTTP collectors to HTTPS before
+upgrading. Local HTTP testing requires `ANALYTICS_ALLOW_INSECURE_HTTP=true` in a
+non-production backend; it never enables HTTP in production. For an internal
+HTTPS collector, explicitly approve its exact origin with
+`INTEGRATION_PRIVATE_ORIGINS`; each connection is still address-checked.
 
 ## ☕ Support the Project
 

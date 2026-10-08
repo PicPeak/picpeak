@@ -75,6 +75,21 @@ it('stores the files of a request that stays eligible', async () => {
   await db('transfer_uploads').where({ transfer_id: transferId }).del();
 });
 
+it('rejects a legacy six-character upload code before any lookup or disk write', async () => {
+  const byUploadCode = jest.spyOn(transferService, 'getTransferByUploadToken');
+  const byRequestToken = jest.spyOn(transferService, 'getRequestByToken');
+
+  const res = await request(app)
+    .post('/api/public/transfer-upload/ABC234')
+    .attach('files', Buffer.from('%PDF-1.4 bytes'), 'contract.pdf');
+
+  expect(res.status).toBe(400);
+  expect(byUploadCode).not.toHaveBeenCalled();
+  expect(byRequestToken).not.toHaveBeenCalled();
+  expect(await db('transfer_uploads').where({ transfer_id: transferId })).toHaveLength(0);
+  expect(tempFiles()).toHaveLength(0);
+});
+
 it.each([
   ['expires', 410, 'UPLOAD_EXPIRED', () => db('transfers').where({ id: transferId })
     .update({ expires_at: new Date(Date.now() - 1000).toISOString() })],

@@ -189,7 +189,7 @@ const CreateInvitationModal: React.FC<CreateInvitationModalProps> = ({
 interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (userId: number, roleId: number) => void;
+  onSubmit: (userId: number, roleId: number, creditName: string | null) => void;
   user: AdminUser | null;
   roles: AdminRole[];
   isLoading: boolean;
@@ -205,21 +205,24 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
 }) => {
   const { t } = useTranslation();
   const [roleId, setRoleId] = useState<number | ''>('');
+  const [creditName, setCreditName] = useState('');
 
   React.useEffect(() => {
     if (user?.roleId) {
       setRoleId(user.roleId);
     }
+    setCreditName(user?.creditName || '');
   }, [user]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !roleId) return;
-    onSubmit(user.id, roleId as number);
+    onSubmit(user.id, roleId as number, creditName.trim() || null);
   };
 
   const handleClose = () => {
     setRoleId('');
+    setCreditName('');
     onClose();
   };
 
@@ -267,6 +270,23 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="edit-user-credit-name" className="block text-sm font-medium text-body mb-1">
+                {t('settings.general.accountCreditName', 'Photo credit')}
+              </label>
+              <Input
+                id="edit-user-credit-name"
+                type="text"
+                value={creditName}
+                onChange={(e) => setCreditName(e.target.value)}
+                maxLength={100}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted mt-1">
+                {t('userManagement.creditNameHelp', 'Credited on photos this account uploads when the file has no photographer name in its metadata.')}
+              </p>
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -441,8 +461,8 @@ export const UserManagementPage: React.FC = () => {
   });
 
   const updateUserMutation = useMutationWithToast({
-    mutationFn: ({ id, roleId }: { id: number; roleId: number }) =>
-      userManagementService.updateUser(id, { roleId }),
+    mutationFn: ({ id, roleId, creditName }: { id: number; roleId: number; creditName: string | null }) =>
+      userManagementService.updateUser(id, { roleId, creditName }),
     invalidateKeys: [['admin-users']],
     successMessage: t('userManagement.userUpdated'),
     errorMessage: () => t('userManagement.updateUserError'),
@@ -537,8 +557,8 @@ export const UserManagementPage: React.FC = () => {
     editUserModal.open();
   };
 
-  const handleUpdateUser = (userId: number, roleId: number) => {
-    updateUserMutation.mutate({ id: userId, roleId });
+  const handleUpdateUser = (userId: number, roleId: number, creditName: string | null) => {
+    updateUserMutation.mutate({ id: userId, roleId, creditName });
   };
 
   const handleDeactivateUser = (user: AdminUser) => {

@@ -303,6 +303,21 @@ export const notificationsService = {
         return t('admin.notificationMessages.photoReplaced', { eventName: notification.eventName });
       case 'photo_uploaded':
         return t('admin.notificationMessages.photoUploaded', { eventName: notification.eventName });
+      // Gallery team and review of its uploads (issue 743).
+      case 'event_team_changed':
+        return t('admin.notificationMessages.eventTeamChanged', {
+          eventName: notification.eventName || notification.metadata.eventName,
+        });
+      case 'photos_review_approved':
+        return t('admin.notificationMessages.photosReviewApproved', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName || notification.metadata.eventName,
+        });
+      case 'photos_review_rejected':
+        return t('admin.notificationMessages.photosReviewRejected', {
+          count: notification.metadata.count || 0,
+          eventName: notification.eventName || notification.metadata.eventName,
+        });
       case 'category_hero_updated':
         return t('admin.notificationMessages.categoryHeroUpdated');
       case 'public_site_reset_to_default':
@@ -441,7 +456,11 @@ export const notificationsService = {
         return { icon: 'Trash2', color: 'text-red-600' };
       case 'photo_replaced':
       case 'photo_uploaded':
+      case 'photos_review_approved':
+      case 'photos_review_rejected':
         return { icon: 'Image', color: 'text-purple-600' };
+      case 'event_team_changed':
+        return { icon: 'User', color: 'text-primary-600' };
       case 'category_hero_updated':
         return { icon: 'Folder', color: 'text-indigo-600' };
       case 'public_site_reset_to_default':

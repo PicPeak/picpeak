@@ -13,7 +13,8 @@ the small end of the range, not a replacement for it.
 ```bash
 docker run -d \
   --name picpeak \
-  -p 3000:3000 \
+  -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   -v picpeak:/data \
   ghcr.io/picpeak/picpeak/aio:main
 ```
@@ -25,7 +26,7 @@ published version tag also works if you would rather not follow the branch —
 the Releases page, or the package's tag list on the registry, shows what is
 current.
 
-Open `http://<host>:3000`. The first visit lands on the setup wizard, which
+Open `http://localhost:3000`. The first visit lands on the setup wizard, which
 asks for a one-time token:
 
 ```bash
@@ -112,7 +113,8 @@ the adoption step is then skipped entirely:
 
 ```bash
 chown -R 1001:1001 /volume1/docker/picpeak     # once, on the host
-docker run -d --name picpeak -p 3000:3000 \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   --user 1001:1001 \
   -v /volume1/docker/picpeak:/data \
   ghcr.io/picpeak/picpeak/aio:main
@@ -135,12 +137,17 @@ Nothing is required. Everything below has a working default.
 | `SMTP_*` | — | Optional override for outbound email, which is normally configured in the setup wizard / Settings → Email. Without either, PicPeak runs fine but sends nothing. |
 | `DATABASE_CLIENT` | `sqlite3` | Set to `pg` to use an external PostgreSQL. Required — the image declares `sqlite3`, and the boot resolver treats a declared client as an explicit instruction, so `DB_*` alone will **not** switch engines. |
 | `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | — | Connection details, used when `DATABASE_CLIENT=pg`. |
+| `DB_SSL` | `false` | Enable TLS for an external TCP database. `true` verifies the certificate and hostname for the app, readiness checks, backups and restores. |
+| `DB_SSL_CA` | — | Private CA as PEM text, or a path inside the container to a read-only mounted PEM file. Required for self-signed/private certificates. |
+| `DB_SSL_REJECT_UNAUTHORIZED` | `true` | With TLS enabled, `false` explicitly accepts any certificate. Insecure compatibility override; configure a CA instead. |
+| `DB_SSL_SERVERNAME` | — | The name on the certificate when it is not `DB_HOST` (an IP address or a network alias). The app verifies this name; `psql`/`pg_dump` do too for an IP `DB_HOST`, and verify the CA chain only for a DNS `DB_HOST`, so pair it with `DB_SSL_CA`. |
 | `EXTERNAL_MEDIA_ROOT` | `/external-media` | Read-only photo library to offer in the picker. Mount a folder there and it works without setting this. |
 
 ### Using an external PostgreSQL
 
 ```bash
-docker run -d --name picpeak -p 3000:3000 -v picpeak:/data \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 -v picpeak:/data \
+  -e COOKIE_SECURE=auto \
   -e DATABASE_CLIENT=pg \
   -e DB_HOST=10.0.0.5 -e DB_USER=picpeak -e DB_PASSWORD=… -e DB_NAME=picpeak \
   ghcr.io/picpeak/picpeak/aio:main
@@ -149,13 +156,28 @@ docker run -d --name picpeak -p 3000:3000 -v picpeak:/data \
 The image waits for the database to accept connections before running
 migrations, exactly as the compose backend does.
 
+For a remote database, add `-e DB_SSL=true` and use its certificate's DNS name
+as `DB_HOST`. Publicly trusted certificates use the default trust store. For a
+private CA, also mount its PEM file read-only (for example,
+`-v /path/to/ca.pem:/run/certs/postgres-ca.pem:ro`) and set
+`-e DB_SSL_CA=/run/certs/postgres-ca.pem`. TLS now verifies by default: existing
+self-signed deployments must supply their CA rather than relying on the old
+accept-any-certificate behavior. Certificate failures never fall back to an
+unverified connection. Leave TLS disabled for the bundled non-TLS database.
+
+On Node 22.12–22.14, native database clients first perform a bounded,
+credential-free verified TLS handshake to preserve the runtime's configured
+trust store. Newer Node versions export the trust roots directly. An explicit
+`DB_SSL_CA` avoids that extra handshake on every supported Node version.
+
 ## Using photos that are already on the disk
 
 Galleries do not have to be built from uploads. Mount an existing photo library
 read-only at `/external-media` and it appears in the admin photo picker:
 
 ```bash
-docker run -d --name picpeak -p 3000:3000 \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   -v picpeak:/data \
   -v /volume1/photo/2026-weddings:/external-media:ro \
   ghcr.io/picpeak/picpeak/aio:main
@@ -190,12 +212,23 @@ Caddy, nginx, or a Cloudflare Tunnel. Put the public `https://…` address in
 Settings → General (or re-run the setup wizard) so generated links match —
 `FRONTEND_URL` does the same thing but pins it outside the admin UI.
 
+Keep the published port on `127.0.0.1` when the TLS proxy runs on the host. For
+a containerized proxy, attach both containers to a private network instead of
+publishing the origin publicly. Behind TLS set `COOKIE_SECURE=true` and
+`ENABLE_HSTS=true`, and set `TRUST_PROXY` to the exact hop count or proxy
+subnet/list (unset, PicPeak trusts `X-Forwarded-*` headers from every
+private-range address for compatibility and logs a warning at startup). Do not use `TRUST_PROXY=true`
+unless every route to the container crosses a proxy you control.
+
 ## NAS notes
 
 **Synology (Container Manager)** and **QNAP (Container Station)** can both run
 this from the registry UI: pull `ghcr.io/picpeak/picpeak/aio:main`, map a
 host port to container port `3000`, and add one volume mapping to `/data`.
-No environment variables are needed — the secret is generated on first start.
+The registry UI's host-port mapping deliberately exposes plain HTTP. Prefer
+the NAS TLS proxy. LAN-only HTTP works without any cookie setting: the
+default `COOKIE_SECURE=auto` omits `Secure` on plain-HTTP requests.
+The secret itself is generated on first start.
 
 Point the volume at a folder on your data pool, not the system partition, and
 prefer a folder you own — the container starts as root only long enough to

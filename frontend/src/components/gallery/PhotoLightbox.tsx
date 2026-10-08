@@ -7,10 +7,12 @@ import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageUrl } from './imageTiers';
-import { feedbackService, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
+import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
 import { PhotoColorLabels } from './PhotoColorLabels';
+import { PhotoDecision } from './PhotoDecision';
 import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
+import { analyticsService } from '../../services/analytics.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -114,6 +116,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     allow_comments?: boolean;
     allow_reactions?: boolean;
     allow_color_labels?: boolean;
+    allow_decisions?: boolean;
     keybind_mode?: KeybindMode;
     show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
@@ -122,6 +125,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [myRating, setMyRating] = useState<number>(0);
   const [myColorLabel, setMyColorLabel] = useState<ColorLabel | null>(null);
   const [colorLabelCounts, setColorLabelCounts] = useState<Partial<Record<ColorLabel, number>>>({});
+  // Approve / reject (issue 744): the viewer's own decision and reason.
+  const [myDecision, setMyDecision] = useState<Decision | null>(null);
+  const [myDecisionReason, setMyDecisionReason] = useState<string | null>(null);
   const [likeCount, setLikeCount] = useState<number>(0);
   const [avgRating, setAvgRating] = useState<number>(0);
   const [totalRatings, setTotalRatings] = useState<number>(0);
@@ -247,14 +253,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       console.warn('DevTools detected in photo lightbox');
 
       // Track analytics
-      if (typeof window !== 'undefined' && (window as any).umami) {
-        (window as any).umami.track('lightbox_devtools_detected', {
-          photoId: currentPhoto.id,
-          protectionLevel,
-          zoom,
-          gallery: slug
-        });
-      }
+      analyticsService.track('lightbox_devtools_detected', { protectionLevel, zoom });
 
       // Close lightbox immediately for maximum protection
       if (protectionLevel === 'maximum') {
@@ -388,6 +387,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   useEffect(() => {
     setMyRating(currentPhoto?.my_rating ?? 0);
   }, [currentPhoto?.id, currentPhoto?.my_rating]);
+  // Same seeding for the decision (issue 744).
+  useEffect(() => {
+    setMyDecision(currentPhoto?.my_decision ?? null);
+    setMyDecisionReason(currentPhoto?.my_decision_reason ?? null);
+  }, [currentPhoto?.id, currentPhoto?.my_decision, currentPhoto?.my_decision_reason]);
 
   // Load my feedback for the current photo. Keyed on the row's my_rating as
   // well: when a tile rating settles under an open lightbox, the request
@@ -405,6 +409,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         setMyRating(data.my_feedback.rating || 0);
         setMyColorLabel((data.my_feedback.color_label as ColorLabel) || null);
         setColorLabelCounts(data.color_labels || {});
+        setMyDecision(data.my_feedback.decision ?? null);
+        setMyDecisionReason(data.my_feedback.decision_reason ?? null);
         setLikeCount(Number(data.summary?.like_count) || 0);
         setAvgRating(Number(data.summary?.average_rating) || 0);
         setTotalRatings(Number(data.summary?.total_ratings) || 0);
@@ -1179,6 +1185,25 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
 
+            {/* Approve / reject (issue 744), beside the colour labels for the
+                same reason: a proofing pass, not a panel detour. */}
+            {feedbackEnabled && feedbackSettings?.allow_decisions && (
+              <div className="flex items-center ml-1">
+                <PhotoDecision
+                  photoId={String(currentPhoto.id)}
+                  gallerySlug={slug}
+                  myDecision={myDecision}
+                  myReason={myDecisionReason}
+                  requireNameEmail={!!feedbackSettings?.require_name_email}
+                  onDecisionChange={(decision, reason) => {
+                    setMyDecision(decision);
+                    setMyDecisionReason(reason);
+                    if (onFeedbackChange) onFeedbackChange();
+                  }}
+                />
+              </div>
+            )}
+
             {/* Feedback button with indicator. Likes/ratings have their
                 own dedicated toolbar buttons above, so this panel toggle
                 only has work to do when comments (#518) or the emoji
@@ -1312,14 +1337,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
 
-                  if (typeof window !== 'undefined' && (window as any).umami) {
-                    (window as any).umami.track('lightbox_protection_violation', {
-                      photoId: photo.id,
-                      violationType,
-                      protectionLevel,
-                      zoom
-                    });
-                  }
+                  analyticsService.track('lightbox_protection_violation', { violationType, protectionLevel, zoom });
 
                   if (protectionLevel === 'maximum' &&
                       ['devtools_detected', 'print_screen_detected', 'canvas_access_blocked'].includes(violationType)) {

@@ -28,8 +28,11 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { sanitizeName } = require('../utils/personName');
 const { parseBooleanInput } = require('../utils/parsers');
+const { hasColumnCached } = require('../utils/schemaCache');
 
-const CREDIT_SOURCES = Object.freeze(['guest', 'exif', 'manual']);
+// 'account': the uploading admin account's credit name (issue 743), used when
+// the file carries no EXIF name. EXIF found later still replaces it.
+const CREDIT_SOURCES = Object.freeze(['guest', 'exif', 'manual', 'account']);
 const GUEST_NAME_MODES = Object.freeze(['off', 'optional', 'required']);
 // Filter value for "photos without a credit". Not a name anyone can have:
 // creditName() refuses it on every write path.
@@ -173,7 +176,34 @@ async function resolveCredit({ guest = null, uploadedBy = null, localPath = null
  * may still fill in this row's credit.
  */
 function creditOpenForExif(photo) {
-  return !photo.credit_source && photo.uploaded_by !== 'guest';
+  return (!photo.credit_source || photo.credit_source === 'account') && photo.uploaded_by !== 'guest';
+}
+
+/**
+ * The credit columns an admin upload starts with when the account has a
+ * credit name (issue 743): the fallback for a file without an EXIF name. EXIF
+ * read at insert (the synchronous path spreads it last) or by the worker
+ * replaces it. Empty when the account has none: never the login handle.
+ */
+async function accountCreditFields(adminId) {
+  if (!adminId || !(await hasColumnCached('admin_users', 'credit_name'))) return {};
+  const row = await db('admin_users').where({ id: adminId }).first('credit_name');
+  const name = row && row.credit_name ? creditName(row.credit_name) : '';
+  return name ? { credit_name: name, credit_source: 'account' } : {};
+}
+
+/**
+ * An account's credit name as typed on its profile: null clears it. Returns
+ * `{ error }` for a name with nothing left once sanitised, as
+ * manualCreditFields does.
+ */
+function accountCreditName(raw) {
+  if (raw === null || raw === undefined) return { value: null };
+  if (typeof raw !== 'string') return { error: 'credit_name must be a string or null' };
+  if (!raw.trim()) return { value: null };
+  const name = creditName(raw);
+  if (!name) return { error: 'This name has no characters that can be shown. Enter a different name, or clear it.' };
+  return { value: name };
 }
 
 /**
@@ -299,5 +329,7 @@ module.exports = {
   manualCreditFields,
   resolveCredit,
   creditOpenForExif,
+  accountCreditFields,
+  accountCreditName,
   nameFromCopyright,
 };

@@ -1,7 +1,7 @@
 const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
-const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+const { requireEventOwnership, requireEventOwner, scopeEventsQuery } = require('../../middleware/ownership');
 const { readGalleryPassword, isRecoverableStorageEnabled } = require('../../utils/galleryPasswordVault');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { noStoreCache } = require('../../middleware/noStoreCache');
@@ -32,12 +32,12 @@ module.exports = (router) => {
     }
   });
 
-  router.get('/:id/password', adminAuth, noStoreCache, requirePermission(['events.edit', 'events.support']), requireEventOwnership, async (req, res) => {
+  router.get('/:id/password', adminAuth, noStoreCache, requirePermission(['events.edit', 'events.support']), requireEventOwner, async (req, res) => {
     try {
       const { id } = req.params;
-      // Ownership: the rule requireEventOwnership already enforced, kept as
+      // Ownership: the rule requireEventOwner already enforced, kept as
       // defence in depth (issue 1670, §2.4).
-      const event = await scopeEventsQuery(db('events').where('id', id), req.admin).first('id', 'event_name', 'require_password', 'client_access_enabled');
+      const event = await scopeEventsQuery(db('events').where('id', id), req.admin, 'created_by', { assignments: false }).first('id', 'event_name', 'require_password', 'client_access_enabled');
       if (!event) return res.status(404).json({ error: 'Event not found' });
 
       const stored = await readGalleryPassword(id);

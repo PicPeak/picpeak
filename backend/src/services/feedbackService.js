@@ -3,8 +3,9 @@ const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+const { isValidDecision } = require('../constants/photoDecisions');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
-const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 
 // The camera-original name, for the feedback exports (#1224). Both exports
 // used to carry only `photos.filename` — the sanitized stored name
@@ -45,6 +46,7 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'allow_favorites',
   'allow_reactions',
   'allow_color_labels',
+  'allow_decisions',
   'keybind_mode',
   'require_name_email',
   'moderate_comments',
@@ -57,12 +59,13 @@ const FEEDBACK_SETTINGS_COLUMNS = [
 
 /**
  * Feedback types that store exactly ONE value per guest per photo, and the
- * column each keeps it in. Both share the toggle-off / switch semantics in
+ * column each keeps it in. All share the toggle-off / switch semantics in
  * submitFeedback below.
  */
 const SINGLE_VALUE_COLUMNS = {
   reaction: 'reaction',
   color_label: 'color_label',
+  decision: 'decision',
 };
 
 /**
@@ -76,6 +79,10 @@ const SINGLE_VALUE_COLUMNS = {
 // Set once the settings table has been seen. Module scope on purpose: the
 // answer is a property of the schema, not of a request.
 let settingsTableKnownToExist = false;
+// Same idea for the decision counters (issue 744, migration 270). Migration
+// 186's duplicate-photo dedupe recomputes stats on a schema that predates
+// them, so they are only read and written once they are known to exist.
+let decisionColumnsKnownToExist = false;
 
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
@@ -432,10 +439,10 @@ class FeedbackService {
 
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
     try {
-      const { feedback_type, rating, comment_text, reaction, color_label, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+      const { feedback_type, rating, comment_text, reaction, color_label, decision, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
 
       // Validate feedback type
-      if (!['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label'].includes(feedback_type)) {
+      if (!['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label', 'decision'].includes(feedback_type)) {
         throw new Error('Invalid feedback type');
       }
 
@@ -449,6 +456,17 @@ class FeedbackService {
       if (feedback_type === 'color_label' && !isValidColorLabel(color_label)) {
         throw new Error('Invalid color label');
       }
+
+      // And for approve / reject (issue 744).
+      if (feedback_type === 'decision' && !isValidDecision(decision)) {
+        throw new Error('Invalid decision');
+      }
+      // The reason on a decision row. `undefined` means the caller did not
+      // send one, which is what lets the same decision again toggle off; an
+      // empty string is an explicit "no reason" and is stored as NULL.
+      const decisionReason = feedback_type === 'decision' && comment_text !== undefined
+        ? (comment_text || null)
+        : undefined;
 
       // The shared tag (#1197) leaves before any of the per-guest machinery
       // below runs: none of it applies to a row that belongs to the photo
@@ -582,7 +600,7 @@ class FeedbackService {
           // interaction collapse them instead of leaving a phantom count.
           const singleValueColumn = SINGLE_VALUE_COLUMNS[feedback_type];
           if (singleValueColumn) {
-            const submittedValue = feedback_type === 'reaction' ? reaction : color_label;
+            const submittedValue = { reaction, color_label, decision }[feedback_type];
             // Visible rows only, same reason as the rating clear above: the
             // toggle-off and the duplicate collapse below both DELETE over
             // this scope, and a hidden original is the admin's record rather
@@ -599,18 +617,26 @@ class FeedbackService {
               return q;
             };
 
-            if (existing[singleValueColumn] === submittedValue) {
+            // A decision re-sent WITH a reason edits the reason (issue 744)
+            // rather than toggling the decision off: the guest is still
+            // rejecting the photo, they are saying why.
+            const editsReason = existing[singleValueColumn] === submittedValue
+              && decisionReason !== undefined;
+            if (existing[singleValueColumn] === submittedValue && !editsReason) {
               await singleValueScope().delete();
               await this.updatePhotoFeedbackStats(photoId);
               return { removed: true };
             }
             // Converge to exactly one row: drop any racy duplicates, then
-            // switch the surviving row's value.
+            // switch the surviving row's value. A switched decision takes the
+            // reason sent with it, or none — the old one was about the other
+            // verdict.
             await singleValueScope().whereNot('id', existing.id).delete();
             await db('photo_feedback')
               .where('id', existing.id)
               .update({
                 [singleValueColumn]: submittedValue,
+                ...(feedback_type === 'decision' ? { comment_text: decisionReason ?? null } : {}),
                 updated_at: new Date()
               });
             await this.updatePhotoFeedbackStats(photoId);
@@ -677,9 +703,12 @@ class FeedbackService {
         event_id: eventId,
         feedback_type,
         rating: feedback_type === 'rating' ? rating : null,
-        comment_text: feedback_type === 'comment' ? comment_text : null,
+        comment_text: feedback_type === 'comment'
+          ? comment_text
+          : (feedback_type === 'decision' ? (decisionReason ?? null) : null),
         reaction: feedback_type === 'reaction' ? reaction : null,
         color_label: feedback_type === 'color_label' ? color_label : null,
+        decision: feedback_type === 'decision' ? decision : null,
         guest_name,
         guest_email,
         guest_identifier: guestIdentifier,
@@ -776,7 +805,7 @@ class FeedbackService {
       // Newest first; the id breaks a same-second tie.
       const feedback = await query
         .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden');
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'decision', 'guest_name', 'created_at', 'updated_at', 'is_approved', 'is_hidden');
 
       // Rating rows are re-ranked among themselves by last mutation, so the
       // viewer's own rating (the first rating row the route finds) is the
@@ -809,7 +838,7 @@ class FeedbackService {
     try {
       const photos = await db('photos')
         .where('event_id', eventId)
-        .select('id', 'filename', 'visibility', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count')
+        .select('id', 'filename', 'visibility', 'moderation_status', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count', 'approved_count', 'rejected_count')
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
 
@@ -821,7 +850,7 @@ class FeedbackService {
         // disagreed, and a hidden row preserved beside its replacement (#1150)
         // is counted twice.
         .where('photo_feedback.is_hidden', false);
-      if (viewerAccessLevel !== undefined && !canSeeHiddenPhotos(viewerAccessLevel)) {
+      if (viewerAccessLevel !== undefined) {
         statsQuery = applyPhotoVisibilityFilter(
           statsQuery.join('photos', 'photo_feedback.photo_id', 'photos.id'),
           viewerAccessLevel
@@ -835,6 +864,9 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_comments', ['comment']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction']),
+          // Approve / reject (issue 744), per guest like reactions.
+          db.raw('COUNT(CASE WHEN feedback_type = ? AND decision = ? THEN 1 END) as total_approved', ['decision', 'approved']),
+          db.raw('COUNT(CASE WHEN feedback_type = ? AND decision = ? THEN 1 END) as total_rejected', ['decision', 'rejected']),
           // Scoped to the live colour-label set (#1197), like every other
           // colour read. Unscoped, a dormant set left behind by a mode switch
           // inflated total_feedback in the admin analytics and the guest
@@ -983,6 +1015,20 @@ class FeedbackService {
           ['color_label', SHARED_COLOR_LABEL_IDENTITY],
         );
 
+      // Approve / reject (issue 744). Per guest, never shared, so no mode
+      // scoping — but only once migration 270 has added the columns (see
+      // decisionColumnsKnownToExist). Asked as metadata, like the settings
+      // table check, so a Postgres transaction is never aborted by it.
+      if (!decisionColumnsKnownToExist) {
+        decisionColumnsKnownToExist = await trx.schema.hasColumn('photos', 'rejected_count');
+      }
+      const decisionCounts = decisionColumnsKnownToExist
+        ? [
+          trx.raw('COUNT(CASE WHEN feedback_type = ? AND decision = ? THEN 1 END) as approved_count', ['decision', 'approved']),
+          trx.raw('COUNT(CASE WHEN feedback_type = ? AND decision = ? THEN 1 END) as rejected_count', ['decision', 'rejected']),
+        ]
+        : [];
+
       // Get aggregated stats
       const stats = await trx('photo_feedback')
         .where('photo_id', photoId)
@@ -993,6 +1039,7 @@ class FeedbackService {
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
           colorLabelCount,
+          ...decisionCounts,
           trx.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
           // The shared tag is not a participant (#1197). It carries the
           // reserved identifier rather than a person's, so counting it here
@@ -1017,7 +1064,11 @@ class FeedbackService {
           average_rating: stats.average_rating || 0,
           favorite_count: stats.favorite_count || 0,
           reaction_count: stats.reaction_count || 0,
-          color_label_count: stats.color_label_count || 0
+          color_label_count: stats.color_label_count || 0,
+          ...(decisionColumnsKnownToExist ? {
+            approved_count: Number(stats.approved_count) || 0,
+            rejected_count: Number(stats.rejected_count) || 0,
+          } : {}),
         });
     } catch (error) {
       logger.error('Error updating photo feedback stats:', error);
@@ -1188,6 +1239,9 @@ class FeedbackService {
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
           'photo_feedback.color_label',
+          // Approve / reject (issue 744). A decision row's reason is in
+          // comment_text, beside it.
+          'photo_feedback.decision',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.created_at',
@@ -1230,6 +1284,7 @@ class FeedbackService {
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
           'photo_feedback.color_label',
+          'photo_feedback.decision',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.guest_identifier',
@@ -1260,6 +1315,8 @@ class FeedbackService {
             comment: '',
             reaction: '',
             color_label: '',
+            decision: '',
+            decision_reason: '',
             latest_at: row.created_at,
           };
           byKey.set(key, entry);
@@ -1291,6 +1348,12 @@ class FeedbackService {
           break;
         case 'color_label':
           if (row.color_label) entry.color_label = row.color_label;
+          break;
+        case 'decision':
+          if (row.decision) {
+            entry.decision = row.decision;
+            entry.decision_reason = row.comment_text || '';
+          }
           break;
         default:
           // Unknown feedback type — ignore so a future type doesn't break the export.

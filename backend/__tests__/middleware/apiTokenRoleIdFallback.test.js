@@ -25,6 +25,11 @@
 const crypto = require('crypto');
 
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() }));
+// Gallery assignments (migration 269) are not what this suite is about.
+jest.mock('../../src/middleware/ownership', () => ({
+  ...jest.requireActual('../../src/middleware/ownership'),
+  loadAssignedEventIds: jest.fn().mockResolvedValue([]),
+}));
 
 const TOKEN = 'pp_live_' + 'a'.repeat(32);
 const HASHED = crypto.createHash('sha256').update(TOKEN).digest('hex');

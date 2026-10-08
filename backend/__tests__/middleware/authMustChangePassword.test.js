@@ -18,6 +18,11 @@ const jwt = require('jsonwebtoken');
 jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() }));
+// Gallery assignments (migration 269) are not what this suite is about.
+jest.mock('../../src/middleware/ownership', () => ({
+  ...jest.requireActual('../../src/middleware/ownership'),
+  loadAssignedEventIds: jest.fn().mockResolvedValue([]),
+}));
 
 let mockMustChangePassword = false;
 // A joined admin_users + roles row (roles table present).

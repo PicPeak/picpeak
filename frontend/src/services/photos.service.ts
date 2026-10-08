@@ -38,6 +38,9 @@ export interface AdminPhoto {
   color_label_count?: number;
   color_labels?: Record<string, number>;
   dominant_color_label?: string | null;
+  // Approve / reject tallies across guests (issue 744).
+  approved_count?: number;
+  rejected_count?: number;
   // The requesting admin's OWN triage mark (#1044 follow-up) — separate from
   // the client's selections above, and never shown in the gallery.
   my_rating?: number | null;
@@ -45,7 +48,7 @@ export interface AdminPhoto {
   // Photo credit (#1561). The admin always sees it, whatever the event's
   // show-to-guests switch says.
   credit_name?: string | null;
-  credit_source?: 'guest' | 'exif' | 'manual' | null;
+  credit_source?: 'guest' | 'exif' | 'manual' | 'account' | null;
   uploaded_by?: 'admin' | 'guest';
   // Folders (issue 1786): the folder the photo lives in (null = gallery
   // root), and the open folder request it waits on, if any.
@@ -53,11 +56,26 @@ export interface AdminPhoto {
   pending_folder_request_id?: number | null;
   // Delivered as part of a first look (issue 1562).
   first_look?: boolean;
+  // Review of team members' uploads (issue 743): null = published as usual.
+  moderation_status?: PhotoModerationStatus | null;
+  // The admin account that ran the upload; null for imports and older rows.
+  uploaded_by_admin?: { id: number; username: string | null } | null;
+}
+
+/** A photo a team member uploaded, waiting for the owner or turned down (issue 743). */
+export type PhotoModerationStatus = 'pending' | 'rejected';
+
+export interface PhotoModerationCounts {
+  pending: number;
+  rejected: number;
 }
 
 // Filter value for "photos without a credit" — mirrors CREDIT_NONE in
 // backend/src/services/photoCredit.js.
 export const CREDIT_FILTER_NONE = '__none__';
+
+/** Admin filter on the guests' approve / reject (issue 744). */
+export type DecisionFilter = 'approved' | 'rejected' | 'undecided';
 
 export interface PhotoCreditSummary {
   credits: Array<{ name: string; count: number }>;
@@ -90,8 +108,12 @@ export interface PhotoFilters {
   colorLabels?: string[];
   /** Same, against the caller's own marks. */
   myColorLabels?: string[];
+  /** Approve / reject (issue 744); several OR together. */
+  decisions?: DecisionFilter[];
   /** Exact credit name, or CREDIT_FILTER_NONE (#1561). */
   credit?: string;
+  /** Only the photos under review with this status (issue 743). */
+  moderation?: PhotoModerationStatus;
   logic?: 'AND' | 'OR';
 }
 
@@ -173,7 +195,11 @@ class PhotosService {
       if (filters.myColorLabels && filters.myColorLabels.length > 0) {
         params.append('my_color_label', filters.myColorLabels.join(','));
       }
+      if (filters.decisions && filters.decisions.length > 0) {
+        params.append('decision', filters.decisions.join(','));
+      }
       if (filters.credit) params.append('credit', filters.credit);
+      if (filters.moderation) params.append('moderation', filters.moderation);
       if (filters.logic) params.append('logic', filters.logic);
     }
     
@@ -185,6 +211,22 @@ class PhotosService {
     
     // Return photos as-is, URLs are already relative API paths
     return response.data.photos;
+  }
+
+  /** How many photos of the event wait for review or were rejected (issue 743). */
+  async getModerationCounts(eventId: number): Promise<PhotoModerationCounts> {
+    const response = await api.get<{ moderation: PhotoModerationCounts }>(`/admin/photos/${eventId}/photos/moderation`);
+    return response.data.moderation;
+  }
+
+  /** Publish (approve) or turn down (reject) photos under review; owner only. */
+  async moderatePhotos(
+    eventId: number,
+    photoIds: number[],
+    action: 'approve' | 'reject'
+  ): Promise<{ updated: number; moderation: PhotoModerationCounts }> {
+    const response = await api.post(`/admin/photos/${eventId}/photos/moderation`, { photoIds, action });
+    return response.data;
   }
 
   /** The names on this event's photos with their counts (#1561). */
@@ -226,11 +268,16 @@ class PhotosService {
     });
   }
 
-  async bulkUpdatePhotos(eventId: number, photoIds: number[], updates: Record<string, unknown>): Promise<void> {
-    await api.post(`/admin/events/${eventId}/photos/bulk-update`, {
+  /**
+   * `skipped_under_review`: photos a visibility change left alone because they
+   * wait for review (issue 743); only approving them publishes them.
+   */
+  async bulkUpdatePhotos(eventId: number, photoIds: number[], updates: Record<string, unknown>): Promise<{ skipped_under_review?: number }> {
+    const response = await api.post(`/admin/events/${eventId}/photos/bulk-update`, {
       photoIds,
       updates
     });
+    return response.data;
   }
 
   async downloadPhoto(eventId: number, photoId: number, filename: string): Promise<void> {
@@ -397,6 +444,9 @@ class PhotosService {
     if (filters.myColorLabels && filters.myColorLabels.length > 0) {
       params.append('my_color_labels', filters.myColorLabels.join(','));
     }
+    if (filters.decisions && filters.decisions.length > 0) {
+      params.append('decisions', filters.decisions.join(','));
+    }
     if (filters.categoryId) params.append('category_id', filters.categoryId.toString());
     if (filters.logic) params.append('logic', filters.logic);
     if (filters.sort) params.append('sort', filters.sort);
@@ -495,6 +545,8 @@ export interface FeedbackFilters {
   colorLabels?: string[];
   /** Same, against the caller's own marks. */
   myColorLabels?: string[];
+  /** Approve / reject (issue 744). Empty = no filtering. */
+  decisions?: DecisionFilter[];
   categoryId?: number;
   logic?: 'AND' | 'OR';
   sort?: 'rating' | 'likes' | 'favorites' | 'date' | 'filename';
@@ -514,6 +566,10 @@ export interface FilterSummary {
   colorLabelCounts?: Record<string, number>;
   /** Same, for the caller's own marks. */
   myColorLabelCounts?: Record<string, number>;
+  /** Photos some guest approved / rejected / either (issue 744). */
+  withApproved?: number;
+  withRejected?: number;
+  withDecisions?: number;
 }
 
 export interface FilteredPhotosResponse {
@@ -544,6 +600,7 @@ export interface ExportFilter {
   has_comments?: boolean;
   color_labels?: string[];
   my_color_labels?: string[];
+  decisions?: DecisionFilter[];
   category_id?: number;
   logic?: 'AND' | 'OR';
   sort?: 'rating' | 'likes' | 'favorites' | 'date' | 'filename';

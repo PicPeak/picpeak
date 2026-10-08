@@ -1,5 +1,5 @@
 import { api } from '../config/api';
-import type { Event, GuestNameMode } from '../types';
+import type { AssignedAdmin, Event, GuestNameMode } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { toBoolean } from '../utils/parsers';
 
@@ -55,6 +55,10 @@ interface CreateEventData {
   // customer_accounts.id; backend service diffs against the existing
   // assignments and applies inserts/deletes inside the same transaction.
   customer_account_ids?: number[];
+  // Team members (issue 743): admin accounts that reach this gallery the way
+  // its creator does, and whether their uploads wait for review.
+  assigned_admin_ids?: number[];
+  review_contributor_uploads?: boolean;
   // Custom styling switch; off = follow the global Branding theme.
   custom_theme_enabled?: boolean;
   // Photo source; import_now starts the folder's first import on create.
@@ -101,6 +105,10 @@ interface UpdateEventData {
   // Customer accounts (#354). Same semantics as on CreateEventData;
   // omit the field to leave assignments untouched, send [] to clear.
   customer_account_ids?: number[];
+  // Team members (issue 743), the owner's to change. Omit to leave the team
+  // untouched, send [] to clear.
+  assigned_admin_ids?: number[];
+  review_contributor_uploads?: boolean;
 }
 
 /** Two-stage delivery state of one gallery (issue 1562). */
@@ -222,6 +230,12 @@ export const eventsService = {
       return data.map((event: Event) => normalizeEvent(event)) as any;
     }
     return data;
+  },
+
+  // Admin accounts a gallery's team can be picked from (issue 743).
+  async getAssignableAdmins(): Promise<AssignedAdmin[]> {
+    const response = await api.get<{ admins: AssignedAdmin[] }>('/admin/events/assignable-admins');
+    return response.data.admins;
   },
 
   // Get single event details (admin)

@@ -105,7 +105,7 @@ router.get('/:slug/people', verifyGalleryAccess, resolveGuest, noStoreCache, asy
     // Drives the "Finding people… 240/1200" progress line during a backfill.
     // Scoped to what this viewer may see — an unscoped total would leak the
     // number of hidden photos through the progress bar.
-    const status = await getScanStatus(req.event.id, { isClient });
+    const status = await getScanStatus(req.event.id, { isClient, forAdmin: false });
 
     res.json({
       people,
@@ -134,8 +134,11 @@ router.patch('/:slug/photos/:photoId/visibility', verifyGalleryAccess, async (re
       return res.status(400).json({ error: 'Invalid visibility value' });
     }
 
+    // A photo under review (migration 269) is not the client's to publish,
+    // and does not exist for them.
     const photo = await db('photos')
       .where({ id: photoId, event_id: req.event.id })
+      .whereNull('moderation_status')
       .first();
 
     if (!photo) {
@@ -176,6 +179,7 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
     const count = await db('photos')
       .whereIn('id', photoIds)
       .where('event_id', req.event.id)
+      .whereNull('moderation_status')
       .update({ visibility });
 
     // Client bulk hide/show alters the guest download bundle — invalidate
