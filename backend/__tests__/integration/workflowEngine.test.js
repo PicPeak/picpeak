@@ -196,10 +196,11 @@ describe('workflow engine', () => {
   test('invoice_paid condition reads the entity', async () => {
     const registry = require('../../src/services/workflows/registry');
     const cond = registry.getCondition('invoice_paid');
-    const makeCtx = (row) => ({ run: { entity_id: 1 }, db: () => ({ where: () => ({ first: async () => row }) }) });
+    const makeCtx = (row) => ({ run: { entity_type: 'invoice', entity_id: 1 }, db: () => ({ where: () => ({ first: async () => row }) }) });
     expect(await cond(makeCtx({ paid_at: '2026-01-01', status: 'sent' }))).toBe(true);
     expect(await cond(makeCtx({ paid_at: null, status: 'paid' }))).toBe(true);
     expect(await cond(makeCtx({ paid_at: null, status: 'sent', paid_amount_minor: 0, total_amount_minor: 1000 }))).toBe(false);
+    expect(await cond({ run: { entity_type: 'event', entity_id: 1 }, db: () => { throw new Error('unexpected lookup'); } })).toBe(false);
   });
 
   test('gate creates a pending approval + admin email, token confirm resumes the run', async () => {
@@ -544,7 +545,7 @@ describe('workflow engine', () => {
 
   test('gate decision with no matching edge FAILS the run (not a silent done)', async () => {
     // Gate has a confirm edge but the deny edge was lost (e.g. a bad import).
-    const wfId = await makeWorkflow({
+    await makeWorkflow({
       trigger: 'noedge.event', enabled: true,
       nodes: [
         { key: 'g0', type: 'trigger' },
@@ -568,7 +569,7 @@ describe('workflow engine', () => {
     // The booking pattern: prepare → REVIEW GATE → WAIT(event date) → send. The
     // admin can approve at the gate whenever; the run then parks at the wait and
     // the scheduler dispatches when the date arrives.
-    const wfId = await makeWorkflow({
+    await makeWorkflow({
       trigger: 'gatewait.event',
       nodes: [
         { key: 'g0', type: 'trigger' },

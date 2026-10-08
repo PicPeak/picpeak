@@ -42,6 +42,15 @@ function parseJson(v, fallback) {
   try { return JSON.parse(v); } catch (e) { return fallback; }
 }
 
+function entityTypeForTrigger(triggerType) {
+  const prefix = String(triggerType || '').split('.')[0];
+  if (prefix === 'gallery' || prefix === 'event') return 'event';
+  if (['invoice', 'quote', 'contract', 'customer'].includes(prefix)) return prefix;
+  if (triggerType === 'document.requested') return 'customer_document_request';
+  if (prefix === 'document') return 'customer_document';
+  return null;
+}
+
 function validateGraph(body) {
   const nodes = Array.isArray(body.nodes) ? body.nodes : [];
   const edges = Array.isArray(body.edges) ? body.edges : [];
@@ -93,8 +102,9 @@ async function writeGraph(trx, workflowId, version, nodes = [], edges = []) {
 // --- Approvals inbox (registered before /:id so 'approvals' isn't an id) ---
 router.get('/approvals', requirePermission('workflows.view'), async (req, res, next) => {
   try {
-    const items = await workflows.listPending();
-    res.json(items.map((a) => ({ ...a, payload: parseJson(a.payload, {}) })));
+    const items = await workflows.listPendingForAdmin(req.admin);
+    const parsed = items.map((a) => ({ ...a, payload: parseJson(a.payload, {}) }));
+    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'payload'));
   } catch (e) { next(e); }
 });
 
@@ -102,7 +112,7 @@ router.post('/approvals/:id/:action', requirePermission('workflows.manage'), asy
   try {
     const { action } = req.params;
     if (!['confirm', 'deny'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
-    const result = await workflows.actById(Number(req.params.id), action, req.admin?.id);
+    const result = await workflows.actByIdForAdmin(Number(req.params.id), action, req.admin);
     if (!result.ok && result.reason === 'not_found') return res.status(404).json({ error: 'Approval not found' });
     if (!result.ok && result.reason === 'expired') return res.status(410).json({ error: 'Approval expired' });
     res.json(result);
@@ -112,34 +122,78 @@ router.post('/approvals/:id/:action', requirePermission('workflows.manage'), asy
 // --- Run history ---
 router.get('/runs/:runId/steps', requirePermission('workflows.view'), async (req, res, next) => {
   try {
-    const steps = await db('workflow_run_steps').where({ run_id: Number(req.params.runId) }).orderBy('id', 'asc');
+    const runId = Number(req.params.runId);
+    if (!(await workflows.canAccessWorkflowRun(req.admin, runId))) {
+      return res.status(404).json({ error: 'Workflow run not found' });
+    }
+    const steps = await db('workflow_run_steps').where({ run_id: runId }).orderBy('id', 'asc');
     res.json(steps.map((s) => ({ ...s, result: parseJson(s.result, null) })));
   } catch (e) { next(e); }
 });
 
 router.get('/:id/runs', requirePermission('workflows.view'), async (req, res, next) => {
   try {
-    const runs = await db('workflow_runs').where({ workflow_id: Number(req.params.id) }).orderBy('id', 'desc').limit(200);
-    res.json(runs.map((r) => ({ ...r, context: parseJson(r.context, {}) })));
+    const query = db('workflow_runs as r').where('r.workflow_id', Number(req.params.id))
+      .select('r.*').orderBy('r.id', 'desc').limit(200);
+    workflows.scopeWorkflowRunsQuery(query, req.admin, { alias: 'r', mode: 'view' });
+    const runs = await query;
+    const parsed = runs.map((r) => ({ ...r, context: parseJson(r.context, {}) }));
+    res.json(await workflows.withoutForeignRunSecrets(parsed, req.admin, 'context'));
   } catch (e) { next(e); }
 });
 
-// Test-fire: run the workflow on demand (default dry-run — side effects mocked,
+// Test-fire: dry-run the workflow on demand (side effects mocked,
 // waits skipped, gates auto-confirm) and return the step-by-step log.
 router.post('/:id/test-run', requirePermission('workflows.manage'), async (req, res, next) => {
   try {
     const { entityType, entityId, payload, dryRun } = req.body || {};
+    const normalizedEntityId = entityId != null && entityId !== '' ? Number(entityId) : null;
+    if (normalizedEntityId != null && (!Number.isInteger(normalizedEntityId) || normalizedEntityId <= 0)) {
+      return res.status(400).json({ error: 'Entity id must be a positive integer' });
+    }
+    const workflow = await db('workflows').where({ id: Number(req.params.id) }).first('trigger_type');
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+    // Request payload is deliberately attacker-controlled.  A live run could
+    // smuggle secondary invoice/contract/customer ids into action variables,
+    // so the HTTP test surface is dry-run only.
+    if (dryRun === false) return res.status(400).json({ error: 'Live test runs are not supported' });
+    // The current UI sends only an entity id.  Infer the durable entity table
+    // from the trigger so omitting entityType cannot skip the ownership check.
+    const inferredEntityType = entityTypeForTrigger(workflow.trigger_type);
+    if (entityType && inferredEntityType && entityType !== inferredEntityType) {
+      return res.status(400).json({ error: 'Entity type does not match the workflow trigger' });
+    }
+    const resolvedEntityType = inferredEntityType || entityType || null;
+    if (normalizedEntityId != null
+      && (!resolvedEntityType
+        || !(await workflows.canAccessWorkflowEntity(
+          req.admin, resolvedEntityType, normalizedEntityId, { mode: 'manage' },
+        )))) {
+      return res.status(404).json({ error: 'Workflow entity not found' });
+    }
+    const testPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload : {};
+    if (Object.prototype.hasOwnProperty.call(testPayload, 'customerAccountId')) {
+      const customerId = Number(testPayload.customerAccountId);
+      if (!Number.isInteger(customerId) || customerId <= 0
+        || !(await workflows.canAccessWorkflowEntity(
+          req.admin, 'customer', customerId, { mode: 'view' },
+        ))) {
+        return res.status(404).json({ error: 'Workflow entity not found' });
+      }
+    }
     const runId = await workflows.testRun(Number(req.params.id), {
-      entityType: entityType || null,
-      entityId: entityId != null && entityId !== '' ? Number(entityId) : null,
-      payload: payload && typeof payload === 'object' ? payload : {},
-      dryRun: dryRun !== false, // default true (safe)
+      entityType: resolvedEntityType,
+      entityId: normalizedEntityId,
+      payload: testPayload,
+      dryRun: true,
+      initiatedByAdminId: req.admin.id,
     });
     const run = await db('workflow_runs').where({ id: runId }).first();
     const steps = await db('workflow_run_steps').where({ run_id: runId }).orderBy('id', 'asc');
     res.json({
       runId,
-      dryRun: dryRun !== false,
+      dryRun: true,
       status: run?.status,
       steps: steps.map((s) => ({ ...s, result: parseJson(s.result, null) })),
     });
@@ -293,6 +347,12 @@ router.delete('/:id', requirePermission('workflows.manage'), async (req, res, ne
     const wf = await db('workflows').where({ id }).first();
     if (!wf) return res.status(404).json({ error: 'Workflow not found' });
     if (wf.is_builtin) return res.status(409).json({ error: 'Built-in workflows cannot be deleted' });
+    // A global definition may receive a foreign run between an ownership check
+    // and the loose-FK cascade below.  Only super_admin has authority over all
+    // run histories, so delegated workflow managers cannot delete definitions.
+    if (req.admin?.roleName !== 'super_admin') {
+      return res.status(403).json({ error: 'Only a super administrator can delete workflows' });
+    }
     await db.transaction(async (trx) => {
       const runIds = (await trx('workflow_runs').where({ workflow_id: id }).select('id')).map((r) => r.id);
       if (runIds.length) {

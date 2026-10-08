@@ -174,6 +174,20 @@ async function actById(id, decision, adminId) {
   return finalizeApproval(approval, decision, { acted_via: 'web', acted_by: adminId || null });
 }
 
+/** Admin-web equivalent of actById, with the run ownership check in-query. */
+async function actByIdForAdmin(id, decision, admin) {
+  const { scopeWorkflowRunsQuery } = require('./access');
+  const query = db('workflow_approvals as a')
+    .join('workflow_runs as r', 'r.id', 'a.run_id')
+    .where('a.id', id)
+    .select('a.*');
+  scopeWorkflowRunsQuery(query, admin, { alias: 'r', mode: 'manage' });
+  const approval = await query.first();
+  return finalizeApproval(approval, decision, {
+    acted_via: 'web', acted_by: admin?.id || null,
+  });
+}
+
 /**
  * Undecided approvals for the webview inbox, newest first, with workflow
  * name. An approval whose emailed link expired is still undecided and its
@@ -193,4 +207,25 @@ async function listPending(limit = 100) {
     .limit(limit);
 }
 
-module.exports = { hashToken, createApproval, actByToken, actById, listPending, peekApproval };
+/** Pending approvals visible to one admin under the workflow entity boundary. */
+async function listPendingForAdmin(admin, limit = 100) {
+  const { scopeWorkflowRunsQuery } = require('./access');
+  const query = db('workflow_approvals as a')
+    .join('workflow_runs as r', 'r.id', 'a.run_id')
+    .join('workflows as w', 'w.id', 'r.workflow_id')
+    .whereIn('a.status', ['pending', 'expired'])
+    .select(
+      'a.id', 'a.type', 'a.payload', 'a.created_at', 'a.expires_at',
+      'r.id as run_id', 'r.entity_type', 'r.entity_id',
+      'w.id as workflow_id', 'w.name as workflow_name',
+    )
+    .orderBy('a.created_at', 'desc')
+    .limit(limit);
+  scopeWorkflowRunsQuery(query, admin, { alias: 'r', mode: 'view' });
+  return query;
+}
+
+module.exports = {
+  hashToken, createApproval, actByToken, actById, actByIdForAdmin,
+  listPending, listPendingForAdmin, peekApproval,
+};

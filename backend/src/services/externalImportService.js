@@ -21,12 +21,13 @@ const fs = require('fs').promises;
 const sharp = require('sharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
-const { resolveExternalPath, getExternalMediaRoot } = require('./externalMediaService');
+const { getExternalMediaRoot } = require('./externalMediaService');
 const { assertRealpathUnder } = require('../utils/fileSecurityUtils');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const { photoCapOf, insertPhotoWithinCap } = require('./photoCap');
 const jobState = require('./maintenanceJobState');
+const externalAccess = require('./externalMediaAccess');
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 
@@ -97,11 +98,16 @@ async function existingRelpaths(eventId, relpaths) {
 const MAX_WALK_DEPTH = 16;
 const MAX_WALK_ENTRIES = 100000;
 
+// How often a running import authorises its source again.
+const REAUTHORIZE_EVERY_FILES = 500;
+const REAUTHORIZE_EVERY_MS = 30000;
+
 // Helper to recursively collect files under a directory, filtered by image
 // extensions. `budget` is shared across the recursion: entries left to look
 // at, and whether a bound was hit.
-async function walkDir(dir, baseDir, budget = { entries: MAX_WALK_ENTRIES, truncated: false }, depth = 0) {
+async function walkDir(dir, baseDir, budget = { entries: MAX_WALK_ENTRIES, truncated: false }, depth = 0, access = null) {
   const results = [];
+  if (access) await externalAccess.authorizeSelectedFile(access, dir);
   if (depth > MAX_WALK_DEPTH) {
     budget.truncated = true;
     return results;
@@ -119,7 +125,7 @@ async function walkDir(dir, baseDir, budget = { entries: MAX_WALK_ENTRIES, trunc
     if (e.isSymbolicLink()) continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      results.push(...await walkDir(full, baseDir, budget, depth + 1));
+      results.push(...await walkDir(full, baseDir, budget, depth + 1, access));
     } else if (e.isFile()) {
       const ext = path.extname(e.name).toLowerCase();
       if (IMAGE_EXTENSIONS.includes(ext)) {
@@ -166,11 +172,11 @@ async function importExternalFolder({
   automatic = false,
   settleMs = 0,
 }) {
-  const external_path = externalPath;
-
   // Load event
   const event = await db('events').where('id', eventId).first();
   if (!event) throw new EventNotFoundError(eventId);
+  let access = await externalAccess.authorizeImport(eventId, externalPath, { actor, automatic });
+  const external_path = access.relativePath;
 
   // The claim comes AFTER the event lookup and BEFORE anything touches the
   // filesystem: a large tree takes long enough that a run looks hung and
@@ -201,8 +207,7 @@ async function importExternalFolder({
       .select('source_mode', 'external_path', 'external_watch', 'is_active', 'is_archived')
       .first();
     return Boolean(now)
-      && now.source_mode === 'reference'
-      && (now.external_path || '') === String(external_path)
+      && externalAccess.isStoredBinding(now, external_path)
       && Boolean(now.external_watch)
       && Boolean(now.is_active)
       && !now.is_archived;
@@ -217,7 +222,7 @@ async function importExternalFolder({
   heartbeatTimer.unref?.();
 
   try {
-    const baseAbs = resolveExternalPath({ external_path }, '');
+    const baseAbs = access.target;
     // resolveExternalPath checks the string; this checks the filesystem. A
     // symlink inside EXTERNAL_MEDIA_ROOT chosen as the folder would otherwise
     // import whatever it points at and persist paths that lead back there.
@@ -233,7 +238,7 @@ async function importExternalFolder({
 
     // Collect files
     const walkBudget = { entries: MAX_WALK_ENTRIES, truncated: false };
-    const files = recursive ? await walkDir(baseAbs, baseAbs, walkBudget) : (await fs.readdir(baseAbs, { withFileTypes: true }))
+    const files = recursive ? await walkDir(baseAbs, baseAbs, walkBudget, 0, access) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
       .map(e => ({ full: path.join(baseAbs, e.name), rel: e.name, name: e.name }))
       .filter(f => IMAGE_EXTENSIONS.includes(path.extname(f.name).toLowerCase()));
@@ -242,6 +247,7 @@ async function importExternalFolder({
     let skipped = 0;
     const preparedFiles = [];
     for (const f of files) {
+      await externalAccess.authorizeSelectedFile(access, f.full);
       try {
         const stats = await fs.stat(f.full);
         const segs = f.rel.split(path.sep);
@@ -316,6 +322,12 @@ async function importExternalFolder({
     }
 
     if (lost) throw new ImportInProgressError(eventId);
+    access = await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+    // From here the source is authorised again every REAUTHORIZE_EVERY_FILES
+    // files or REAUTHORIZE_EVERY_MS, whichever comes first, not per file: each
+    // check is several queries and realpaths, and a run can be 100000 files.
+    let authorizedAt = Date.now();
+    let filesSinceAuthorized = 0;
 
     if (automatic) {
       // Follow the row, never write it. Writing source_mode/external_path
@@ -392,6 +404,12 @@ async function importExternalFolder({
 
     // Insert photos
     for (const f of dedupeMap.values()) {
+      filesSinceAuthorized += 1;
+      if (filesSinceAuthorized >= REAUTHORIZE_EVERY_FILES || Date.now() - authorizedAt >= REAUTHORIZE_EVERY_MS) {
+        await externalAccess.authorizeImport(eventId, external_path, { actor, automatic });
+        authorizedAt = Date.now();
+        filesSinceAuthorized = 0;
+      }
       considered += 1;
       if (lost) {
         // Either another process took the claim over — it is walking this
@@ -553,6 +571,7 @@ async function importExternalFolder({
           await db('external_import_exclusions').where({ event_id: eventId, external_relpath: relFromRoot }).delete();
         }
       } catch (e) {
+        if (e instanceof externalAccess.ExternalMediaAccessError || e.code === 'PATH_OUTSIDE_BASE') throw e;
         skipped++;
       }
     }

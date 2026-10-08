@@ -1,282 +1,121 @@
 /**
- * Same-origin proxy for the admin-configured analytics tracker.
- *
- * WHY THIS EXISTS
- * ---------------
- * Settings → Analytics lets an admin point PicPeak at a self-hosted Umami or
- * Rybbit instance on an arbitrary domain, but the shipped CSP is a static
- * allowlist (`script-src 'self' https://www.google.com …` in
- * `frontend/nginx.conf` and in helmet's directives in `server.js`). Injecting
- * `<script src="https://analytics.example.com/script.js">` was therefore
- * ALWAYS blocked by the browser — silently, with only a console error, so
- * "not configured" and "configured but broken" looked identical to the admin.
- * The tracker's beacon endpoint had the same problem against `connect-src`.
- *
- * The CSP itself can't be made dynamic in the default Docker deployment:
- * nginx serves `index.html` off disk (`try_files … /index.html`) and strips
- * the backend's CSP with `proxy_hide_header Content-Security-Policy`, so
- * nginx's static header is the only policy governing the SPA document, and
- * the tracker URL lives in the DB rather than the environment.
- *
- * So instead of widening the policy, we remove the need to: the tracker
- * script and every endpoint it talks to are served from PicPeak's own origin
- * and proxied here. `script-src 'self'` and `connect-src 'self'` already
- * cover that, unchanged. This is the same first-party proxy setup both
- * vendors document (and recommend — it also survives ad blockers).
- *
- * SECURITY MODEL
- * --------------
- * The upstream base URL is admin-supplied, so this is an SSRF surface. It is
- * bounded by:
- *   - scheme restricted to http/https; userinfo (`https://u:p@host`) dropped
- *     by rebuilding from `origin` + `pathname`;
- *   - a DNS-resolving private/internal-address check (`isHostAllowed`) in
- *     production when the config is (re)loaded, matching the `s3Storage`
- *     precedent — development keeps working against a localhost tracker;
- *   - connection pinning on every outbound request: the socket goes through
- *     `integrationHttp`, whose lookup validates every DNS answer at connect
- *     time and hands only vetted addresses to the connector (no agent, no
- *     socket reuse), so a host whose DNS flips to an internal address after
- *     the preflight (rebinding) is refused rather than reached. Outside
- *     production private answers are admitted for the dev tracker; the
- *     metadata and link-local ranges never are;
- *   - a per-provider allowlist of the exact paths each tracker's script
- *     actually calls, so this is not an open relay to the tracker host;
- *   - no redirect following, a request timeout, a request-body cap and a
- *     streamed response-body cap;
- *   - a fixed forwarded-header set (never cookies, Authorization or
- *     arbitrary client headers);
- *   - a sanitised response Content-Type plus `nosniff`, so a tracker host
- *     cannot serve HTML/SVG through PicPeak's origin and get it rendered.
- *
- * The threat model is a TRUSTED admin and a possibly hostile tracker host or
- * visitor — not a hostile admin. The request is confined to the allowlisted
- * paths with no PicPeak credentials attached.
+ * PicPeak-owned, data-only telemetry. Never load or re-serve provider code.
+ * Legacy script, arbitrary beacon, config, feature-flag and replay endpoints
+ * are intentionally absent. The one POST builds a closed provider payload,
+ * pins each network connection, and discards all upstream content except a
+ * bounded opaque Umami cache token returned in our own JSON envelope.
  */
-
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { getAppSetting } = require('../utils/appSettings');
-const { isHostAllowed } = require('../utils/networkValidation');
 const { integrationRelay } = require('../utils/integrationHttp');
 const { clientIpForAudit } = require('../utils/clientIp');
+const { validateEvent, validCache } = require('../utils/analyticsEventPolicy');
+const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
-
 const router = express.Router();
-
-const REQUEST_TIMEOUT_MS = 5000;
-// Beacon payloads are a few hundred bytes; 64 KB is generous headroom.
-const MAX_REQUEST_BYTES = 64 * 1024;
-// Umami's script.js is ~6 KB; Rybbit's full bundle (rrweb session replay)
-// is a few hundred KB. 2 MB caps a hostile/broken upstream.
-const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-// The settings read happens per beacon, so cache the resolved upstream.
-// Short enough that saving Settings → Analytics takes effect without a
-// restart, which is the whole point of not templating this at boot.
-const CONFIG_TTL_MS = 30 * 1000;
-
-/**
- * Per-provider mapping. `prefix` is what the tracker's own path is relative
- * to on the upstream, and `routes` is the closed set of method + path pairs
- * the tracker script is known to call.
- *
- * Umami   — `<script-dir>/script.js`, collect at `<script-dir>/api/send`
- *           (tracker: `host = data-host-url || currentScript.src` dir,
- *           `endpoint = host + '/api/send'`).
- * Rybbit  — `<prefix>/script.js` upstream `/api/script.js`, and the script
- *           derives `analyticsHost = src.split('/script.js')[0]`, then calls
- *           `<prefix>/track`, `<prefix>/site/tracking-config/<id>` and
- *           `<prefix>/site/<id>/feature-flags/evaluate`. That matches the
- *           mapping in Rybbit's own proxy guide.
- *           Session replay (`<prefix>/session-replay/record/<id>`) is
- *           deliberately NOT proxied: replaying gallery pages would ship the
- *           share token in the recording (GHSA-7m6c).
- */
-const PROVIDERS = {
-  umami: {
-    urlKey: 'analytics_umami_url',
-    prefix: '',
-    routes: [
-      ['GET', /^\/script\.js$/],
-      ['POST', /^\/api\/send$/],
-    ],
-  },
-  rybbit: {
-    urlKey: 'analytics_rybbit_url',
-    prefix: '/api',
-    routes: [
-      ['GET', /^\/script\.js$/],
-      ['POST', /^\/track$/],
-      ['GET', /^\/site\/tracking-config\/[A-Za-z0-9_-]{1,64}$/],
-      ['POST', /^\/site\/[A-Za-z0-9_-]{1,64}\/feature-flags\/evaluate$/],
-    ],
-  },
-};
-
-// Client request headers forwarded upstream. `user-agent` and the client IP
-// are what let the tracker keep doing device/geo attribution once traffic is
-// first-party; `x-umami-cache` is an opaque session token Umami's own script
-// echoes back. Everything else — cookies, Authorization, Referer, Origin —
-// is dropped.
-const FORWARDED_HEADERS = ['accept', 'accept-language', 'content-type', 'user-agent', 'x-umami-cache'];
-
-// Response Content-Types we are willing to re-serve from our own origin.
-// Anything else (text/html, image/svg+xml, …) becomes an inert download.
-const SAFE_CONTENT_TYPES = new Set([
-  'text/javascript',
-  'application/javascript',
-  'application/json',
-  'text/plain',
-]);
-
+const MAX_RESPONSE_BYTES = 16 * 1024;
 let cache = { at: 0, value: undefined };
 
-/**
- * Read the tracker settings and turn them into `{ base, spec }`, or null when
- * no proxyable tracker is configured. Mirrors `services/trackers/index.js`'s
- * back-compat: a pre-#663 install with only `analytics_umami_enabled` set
- * still resolves to Umami.
- */
-async function loadUpstream() {
-  const explicit = await getAppSetting('analytics_tracker_provider', null);
-  let provider = typeof explicit === 'string' && PROVIDERS[explicit] ? explicit : null;
-  if (!explicit) {
-    const legacy = await getAppSetting('analytics_umami_enabled', false);
-    if (legacy === true || legacy === 'true') provider = 'umami';
-  }
-  if (!provider) return null;
-
-  const spec = PROVIDERS[provider];
-  const raw = await getAppSetting(spec.urlKey, null);
-  if (!raw || typeof raw !== 'string') return null;
-
-  let parsed;
-  try {
-    parsed = new URL(raw.trim());
-  } catch {
-    logger.warn('Analytics tracker proxy: configured URL is not a valid URL', { provider });
-    return null;
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-    logger.warn('Analytics tracker proxy: refusing non-HTTP tracker URL', {
-      provider,
-      protocol: parsed.protocol,
-    });
-    return null;
-  }
-
-  // SSRF: resolve-and-vet the host. Prod-only, matching the s3Storage /
-  // MinIO gate — a dev install legitimately points at a localhost tracker,
-  // and a tracker that is only reachable on an internal network could never
-  // have worked from the browser anyway.
-  if (process.env.NODE_ENV === 'production' && !(await isHostAllowed(parsed.hostname))) {
-    logger.warn('Analytics tracker proxy: tracker host resolves to a private or internal address', {
-      provider,
-      host: parsed.hostname,
-    });
-    return null;
-  }
-
-  // Rebuild from origin + pathname: drops any userinfo, query and fragment
-  // the admin may have pasted along with the base URL.
-  const base = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
-  return { base, spec };
-}
-
 async function resolveUpstream() {
-  if (cache.value !== undefined && Date.now() - cache.at < CONFIG_TTL_MS) {
-    return cache.value;
+  if (cache.value !== undefined && Date.now() - cache.at < 30000) return cache.value;
+  const explicit = await getAppSetting('analytics_tracker_provider', null);
+  const legacy = !explicit && await getAppSetting('analytics_umami_enabled', false);
+  const provider = explicit || ((legacy === true || legacy === 'true') ? 'umami' : 'none');
+  let value = null;
+  if (provider === 'umami' || provider === 'rybbit') {
+    const raw = await getAppSetting('analytics_' + provider + '_url', null);
+    const site = await getAppSetting('analytics_' + provider + '_website_id', null);
+    // No collector configured yet is a normal state, not a warning per request.
+    if (raw) {
+      try {
+        const url = new URL(raw);
+        const insecureDev = process.env.NODE_ENV !== 'production' && process.env.ANALYTICS_ALLOW_INSECURE_HTTP === 'true';
+        if ((url.protocol === 'https:' || (url.protocol === 'http:' && insecureDev))
+          && typeof site === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(site)) {
+          // Strip userinfo, query and fragment. Existing base subpaths survive.
+          value = { provider, site, base: url.origin + url.pathname.replace(/\/+$/, '') };
+        } else logger.warn('Analytics: configure an HTTPS collector and valid site ID; custom scripts are disabled');
+      } catch (_) { logger.warn('Analytics: invalid collector URL'); }
+    }
   }
-  const value = await loadUpstream();
   cache = { at: Date.now(), value };
   return value;
 }
 
-function safeContentType(raw) {
-  const base = String(raw || '').split(';')[0].trim().toLowerCase();
-  return SAFE_CONTENT_TYPES.has(base)
-    ? `${base}; charset=utf-8`
-    : 'application/octet-stream';
-}
-
-// Gallery visitors are anonymous, so this route has to be unauthenticated —
-// cap how hard one client can make PicPeak fetch from the tracker. A real
-// visitor fires a handful of beacons a minute; this only bites abuse. Its own
-// limiter rather than the app-wide one because that is created asynchronously
-// after the database is up, long after this router is mounted.
+router.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 router.use(rateLimit({
-  windowMs: 60 * 1000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => res.sendStatus(429),
+  windowMs: 60000, max: 120, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: rateLimitKey, handler: (req, res) => res.sendStatus(429),
 }));
-
-// Raw body: mounted before the app-wide express.json so the tracker's beacon
-// payload (JSON, or text/plain from navigator.sendBeacon) reaches us intact.
-router.use(express.raw({ type: () => true, limit: MAX_REQUEST_BYTES }));
-
-router.all('*', async (req, res) => {
-  const upstream = await resolveUpstream();
+router.post('/events', express.json({ limit: '4kb', strict: true }), async (req, res) => {
+  const event = validateEvent(req.body);
+  if (!event) return res.status(400).json({ error: 'Invalid analytics event' });
+  // Independent of the browser preference, never relay an opted-out request.
+  if (req.get('DNT') === '1' || req.get('Sec-GPC') === '1') return res.sendStatus(204);
+  let upstream;
+  try { upstream = await resolveUpstream(); }
+  catch (err) {
+    logger.debug('Analytics: collector settings unavailable', { error: err.message });
+    return res.sendStatus(502);
+  }
   if (!upstream) return res.sendStatus(404);
-
-  const path = req.path;
-  const allowed = upstream.spec.routes.some(([method, re]) => method === req.method && re.test(path));
-  if (!allowed) return res.sendStatus(404);
-
-  const headers = {};
-  for (const name of FORWARDED_HEADERS) {
-    const value = req.get(name);
-    if (value) headers[name] = value;
-  }
-  // Let the tracker keep attributing visitors now that every request arrives
-  // from PicPeak's server. req.ip (not the raw header) so Express's
-  // trust-proxy configuration decides what is trustworthy.
+  // The site reports its own hostname; the browser's claim is never relayed.
+  let hostname = req.hostname || '';
+  try { hostname = new URL(await getFrontendBaseUrl(req)).hostname || hostname; } catch (_) { /* no public origin known */ }
+  const headers = { 'content-type': 'application/json' };
+  if (req.get('user-agent')) headers['user-agent'] = req.get('user-agent');
   const ip = clientIpForAudit(req);
-  if (ip) {
-    headers['x-forwarded-for'] = ip;
-    headers['x-real-ip'] = ip;
+  if (ip) { headers['x-forwarded-for'] = ip; headers['x-real-ip'] = ip; }
+  let payload; let endpoint;
+  if (upstream.provider === 'umami') {
+    endpoint = '/api/send';
+    payload = { type: 'event', payload: {
+      website: upstream.site, hostname, language: event.language,
+      screen: event.screenWidth + 'x' + event.screenHeight,
+      url: event.path, title: '', referrer: '',
+      ...(event.type === 'event' ? { name: event.name, data: event.data } : {}),
+    } };
+    if (event.cache?.site === upstream.site) headers['x-umami-cache'] = event.cache.token;
+  } else {
+    endpoint = '/api/track';
+    payload = {
+      site_id: upstream.site, hostname, pathname: event.path,
+      querystring: '', screenWidth: event.screenWidth, screenHeight: event.screenHeight,
+      language: event.language, page_title: '', referrer: '',
+      type: event.type === 'pageview' ? 'pageview' : 'custom_event',
+      ...(event.type === 'event' ? { event_name: event.name, properties: JSON.stringify(event.data) } : {}),
+    };
   }
-
-  const body = Buffer.isBuffer(req.body) && req.body.length ? req.body : undefined;
   const controller = new AbortController();
-  // The timeout deliberately stays armed across the body read too, so a
-  // slow-loris upstream can't pin a request open past REQUEST_TIMEOUT_MS.
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  let buffer;
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    // integrationRelay pins the socket to DNS answers vetted at connect time
-    // (see SECURITY MODEL), never follows a redirect — an upstream 30x would
-    // move the request (and the visitor's forwarded IP) to a host that never
-    // passed the checks above — and drains the body under MAX_RESPONSE_BYTES
-    // so a hostile or broken tracker can't stream us out of memory.
-    const response = await integrationRelay(`${upstream.base}${upstream.spec.prefix}${path}`, {
-      method: req.method,
-      headers,
-      body,
-      signal: controller.signal,
-      maxBytes: MAX_RESPONSE_BYTES,
+    const response = await integrationRelay(upstream.base + endpoint, {
+      method: 'POST', headers, body: Buffer.from(JSON.stringify(payload)),
+      signal: controller.signal, maxBytes: MAX_RESPONSE_BYTES,
       allowPrivate: process.env.NODE_ENV !== 'production',
     });
-    buffer = response.body;
-    res.status(response.status);
-    res.setHeader('Content-Type', safeContentType(response.headers['content-type']));
+    if (response.status < 200 || response.status >= 300) return res.sendStatus(502);
+    // Never forward status/body/headers verbatim, including JavaScript MIME,
+    // Set-Cookie, redirects, provider globals or response-defined commands.
+    let safeCache;
+    if (upstream.provider === 'umami') {
+      try {
+        const parsed = JSON.parse(response.body.toString('utf8'));
+        const candidate = { site: upstream.site, token: parsed?.cache };
+        if (validCache(candidate)) safeCache = candidate;
+      } catch (_) { /* An opaque/non-JSON provider response is discarded. */ }
+    }
+    return res.json(safeCache ? { cache: safeCache } : {});
   } catch (err) {
-    logger.debug('Analytics tracker proxy: upstream request failed', {
-      path,
-      error: err.message,
-    });
+    logger.debug('Analytics: event forwarding failed', { error: err.message });
     return res.sendStatus(502);
-  } finally {
-    clearTimeout(timer);
-  }
-
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Only the tracker script is safe to cache; beacons and per-site config
-  // responses never are.
-  res.setHeader('Cache-Control', path === '/script.js' ? 'public, max-age=300' : 'no-store');
-  return res.send(buffer);
+  } finally { clearTimeout(timer); }
 });
-
+router.all('*', (req, res) => res.sendStatus(404));
 module.exports = router;
