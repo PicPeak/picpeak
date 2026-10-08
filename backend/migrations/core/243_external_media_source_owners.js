@@ -1,3 +1,4 @@
+// Stable numbering: 243 here, 274 on main.
 // Historical external_path values were chosen without source authorization.
 // Never turn them into grants; an instance owner must assign sources explicitly.
 exports.up = async function (knex) {
