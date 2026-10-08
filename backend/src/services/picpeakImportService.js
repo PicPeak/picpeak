@@ -582,6 +582,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     const hasAccountingHistory = await trx.schema.hasTable('accounting_change_history');
     const tablesToClear = new Set(tables);
     if (hasAccountingHistory) tablesToClear.add('accounting_change_history');
+    // Mail ledgers contain installation-specific runtime state, not lookup
+    // seeds. Clear local copies even when a pre-270 archive cannot list them.
+    for (const table of ['mail_intake_state', 'mail_intake_files']) {
+      if (await trx.schema.hasTable(table)) tablesToClear.add(table);
+    }
     for (const table of tablesToClear) {
       await trx(table).del();
     }
@@ -624,6 +629,10 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       // migration 238 rewrote once on this target (issue 1733).
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
     }
+
+    // Rebuild only missing legacy accounting from the RESTORED rows in this
+    // same transaction. Modern archives keep their rate/audit reservations.
+    await require('../utils/mailIntakeLedger').backfillMailIntake(trx);
 
     // Restore the constraint the load ran without. Deduping first because the
     // incoming rows may be exactly the duplicates migration 186 removes; the

@@ -8,8 +8,7 @@ const { assertPathInside } = require('../utils/safePath');
 const { whereTimestamp } = require('../utils/dbCompat');
 const { auditedDelete } = require('./accountingHistory');
 
-const META_BYTES = 16384;
-const AUDIT_BYTES = 65536;
+const { META_BYTES, AUDIT_BYTES } = require('../utils/mailIntakeLedger');
 const CLAIM_MS = 10 * 60 * 1000;
 const HOUR = 3600000;
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
