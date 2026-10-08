@@ -113,4 +113,3 @@ test('modern archive preserves recorded audit allowances and admission windows r
   expect(mockDownloads).toHaveLength(0);
   expect((await db('received_emails').where({ status: 'error' }).first()).error).toMatch(/rate/);
 });
-
