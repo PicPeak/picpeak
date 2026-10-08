@@ -6368,6 +6368,7 @@
     "exportCsv": "Export CSV",
     "exportFailed": "Export failed. Please try again.",
     "errorTitle": "Could not load tax report",
+    "completeViewRequired": "This report covers every invoice of the studio. Your account only sees its own documents, so the report is not available to you. Ask a super admin to produce it.",
     "empty": "No invoices in this period.",
     "statusCancelled": "Cancelled",
     "totalsByVatRate": "Totals by VAT rate",

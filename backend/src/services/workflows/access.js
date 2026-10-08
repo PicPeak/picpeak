@@ -234,12 +234,21 @@ async function canAccessWorkflowEntity(admin, entityType, entityId, { mode = 'vi
   return false;
 }
 
+/**
+ * Run a query narrowed by scopeWorkflowRunsQuery. The scope already spells out
+ * who may see which CRM-bound run, so the CRM row policy is not applied on top
+ * of it: stacked, the two nest deep enough to overflow SQLite's parser.
+ */
+function runScopedWorkflowQuery(query) {
+  return require('../../database/crmAccess').withTrustedCrmAccess('workflow run scope', () => query);
+}
+
 async function canAccessWorkflowRun(admin, runId, { mode = 'view' } = {}) {
   const query = db('workflow_runs as workflow_access_run')
     .where('workflow_access_run.id', runId)
     .select('workflow_access_run.id');
   scopeWorkflowRunsQuery(query, admin, { alias: 'workflow_access_run', mode });
-  return Boolean(await query.first());
+  return Boolean(await runScopedWorkflowQuery(query.first()));
 }
 
 // Run vars that open a gallery on their own: galleryLink is the share URL,
@@ -275,5 +284,6 @@ module.exports = {
   canAccessWorkflowEntity,
   canAccessWorkflowRun,
   scopeWorkflowRunsQuery,
+  runScopedWorkflowQuery,
   withoutForeignRunSecrets,
 };

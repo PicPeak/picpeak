@@ -65,7 +65,10 @@ async function customerAuth(req, res, next) {
       preferredLanguage: customer.preferred_language || 'en',
     };
     req.token = token;
-    next();
+    // CRM authorization here is the typed customer session plus the existing
+    // per-document customer/action-token checks, not a photographer principal.
+    const { withTrustedCrmAccess } = require('../database/crmAccess');
+    withTrustedCrmAccess('authenticated customer capability', next);
   } catch (error) {
     logger.error('Customer auth middleware error:', error);
     res.status(error.statusCode || 401).json({
