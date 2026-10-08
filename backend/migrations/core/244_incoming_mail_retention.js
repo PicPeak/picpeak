@@ -1,3 +1,4 @@
+// Stable numbering. Main carries this migration as 275_incoming_mail_retention.js.
 const { backfillMailIntake } = require('../../src/utils/mailIntakeLedger');
 
 async function add(knex, table, column, builder) {

@@ -583,7 +583,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     const tablesToClear = new Set(tables);
     if (hasAccountingHistory) tablesToClear.add('accounting_change_history');
     // Mail ledgers contain installation-specific runtime state, not lookup
-    // seeds. Clear local copies even when a pre-270 archive cannot list them.
+    // seeds. Clear local copies even when a pre-244 archive cannot list them.
     for (const table of ['mail_intake_state', 'mail_intake_files']) {
       if (await trx.schema.hasTable(table)) tablesToClear.add(table);
     }

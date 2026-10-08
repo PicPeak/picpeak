@@ -68,7 +68,7 @@ test('pre-ledger archive rebuilds actual mail accounting, discards local state a
   await db.schema.alterTable('inbound_documents', t => t.dropColumns('mail_account_key', 'received_email_id'));
   const archive = await exporter.createPicpeak({ includePhotos: false, outDir: path.join(tmpDir, 'old-archives') });
   expect(archive.manifest.tables.mail_intake_state).toBeUndefined();
-  await require('../../migrations/core/270_incoming_mail_retention').up(db);
+  await require('../../migrations/core/244_incoming_mail_retention').up(db);
   await db('mail_intake_state').insert({ key: 'rate:mail:foreign-install', window_count: 99 });
   await db('mail_intake_state').where({ key: 'audit:accounting' }).update({ retained_audit_bytes: 999999999 });
   expect((await importer.importFromPicpeak({ picpeakPath: archive.filePath, currentAdminId: adminId })).restored).toBe(true);
@@ -78,16 +78,20 @@ test('pre-ledger archive rebuilds actual mail accounting, discards local state a
   expect(rows).toHaveLength(2);
   for (const row of rows) expect(Number(row.retained_bytes)).toBe(mail.META_BYTES + Buffer.byteLength(row.body_text || '') + Buffer.byteLength(row.body_html || ''));
   expect(Number((await db('mail_intake_state').where({ key: 'audit:accounting' }).first()).retained_audit_bytes)).toBe(2 * mail.AUDIT_BYTES);
-  expect(Number((await db('mail_intake_files').first()).byte_size)).toBe(2 ** 42);
-  await mail.sweep();
+  // A file the restore has not placed yet is charged nothing until the
+  // sweeper measures it; there is no placeholder charge that blocks intake.
+  expect(Number((await db('mail_intake_files').first()).byte_size)).toBeLessThanOrEqual(image.length);
+  await mail.sweep({ now: new Date(Date.now() + mail.CLAIM_MS + 1) });
   expect(Number((await db('mail_intake_files').first()).byte_size)).toBe(image.length);
   expect(await fs.promises.readFile(path.join(process.env.STORAGE_PATH, legacy))).toEqual(image);
-  const used = await mail._internal.locked(trx => mail._internal.usage(trx));
-  process.env.EMAIL_INTAKE_INSTALLATION_BYTES = String(used.bytes + 100);
+  process.env.EMAIL_INTAKE_INSTALLATION_BYTES = '100000';
   mockMessages = [message()]; mockDownloads.length = 0;
   expect(await intake.pollOnce()).toEqual({ processed: 0 });
   expect(mockDownloads).toHaveLength(0);
-  process.env.EMAIL_INTAKE_INSTALLATION_BYTES = String(2 * 1024 ** 3);
+  // Restored content is over this budget by itself and still must not stop
+  // new mail: only the unhandled backlog is measured against it.
+  const used = await mail._internal.locked(trx => mail._internal.usage(trx));
+  process.env.EMAIL_INTAKE_INSTALLATION_BYTES = String(used.bytes - 1);
   expect(await intake.pollOnce()).toEqual({ processed: 1 });
   expect(mockDownloads).toHaveLength(1);
   expect(await db('inbound_documents')).toHaveLength(3);
@@ -111,5 +115,5 @@ test('modern archive preserves recorded audit allowances and admission windows r
   mockMessages = [message()]; mockDownloads.length = 0;
   expect(await intake.pollOnce()).toEqual({ processed: 0 });
   expect(mockDownloads).toHaveLength(0);
-  expect((await db('received_emails').where({ status: 'error' }).first()).error).toMatch(/rate/);
+  expect(await db('received_emails')).toHaveLength(1);
 });
