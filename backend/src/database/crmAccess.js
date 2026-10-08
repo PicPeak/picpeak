@@ -579,12 +579,15 @@ async function workflowCrmActor(run, workflow, initiatingAdminId, graph) {
   const roots = { quote: 'quotes', invoice: 'invoices', contract: 'contracts', event: 'events' };
   const root = roots[run.entity_type];
   const inherited = currentCrmActor();
-  const originId = initiatingAdminId || inherited?.id;
+  // Operational/audit IDs are not authenticated provenance. A shipped system
+  // capability may use a legacy super-admin FK; a graph creator is similarly
+  // not an authenticated origin. Only the real auth boundaries stamp this.
+  const originId = initiatingAdminId || inherited?.originAdminId;
   const builtinKeys = new Set(['invoice_dunning', 'pre_event_email', 'booking_full', 'booking_simple', 'booking_invoice_only', 'contract_completed_invoice']);
   const builtin = [true, 1, '1'].includes(workflow?.is_builtin) && builtinKeys.has(workflow?.builtin_key)
     && await isShippedCrmGraph(workflow, graph);
   let actor;
-  if (originId) actor = await loadCrmActor({ id: Number(originId) });
+  if (originId) actor = { ...(await loadCrmActor({ id: Number(originId) })), originAdminId: Number(originId) };
   else if (!builtin && workflow?.created_by) actor = await loadCrmActor({ id: Number(workflow.created_by) });
   else if (!builtin) throw new ForbiddenError('Workflow has no live CRM actor');
   // A globally editable graph cannot inherit a creator's super-admin
