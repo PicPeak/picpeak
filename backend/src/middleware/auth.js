@@ -74,7 +74,7 @@ async function adminAuth(req, res, next) {
     };
     req.token = token; // Store token for potential revocation
 
-    withCrmActor(await loadCrmActor(req.admin), next);
+    withCrmActor({ ...(await loadCrmActor(req.admin)), originAdminId: Number(req.admin.id) }, next);
   } catch (error) {
     logger.error('Auth middleware error:', error);
     res.status(error.statusCode || 401).json({

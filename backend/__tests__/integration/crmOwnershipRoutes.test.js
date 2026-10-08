@@ -14,8 +14,8 @@ beforeAll(async () => {
   ({ adminId: ownerId, customerId } = await seedMinimal(db));
   const [role] = await db('roles').insert({ name: 'crm_ownership_test', display_name: 'CRM test photographer' }).returning('id');
   const roleId = role.id ?? role;
-  const permissions = await db('permissions').whereIn('name', ['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage', 'contracts.view', 'contracts.manage']);
-  expect(permissions).toHaveLength(6);
+  const permissions = await db('permissions').whereIn('name', ['quotes.view', 'quotes.manage', 'bills.view', 'bills.manage', 'contracts.view', 'contracts.manage', 'workflows.manage']);
+  expect(permissions).toHaveLength(7);
   await db('role_permissions').insert(permissions.map(p => ({ role_id: roleId, permission_id: p.id })));
   await db('admin_users').where('id', ownerId).update({ role_id: roleId, is_active: formatBoolean(true) });
   const [other] = await db('admin_users').insert({ username: 'other-photographer', email: 'other@example.test', password_hash: 'unused', role_id: roleId,
@@ -128,12 +128,15 @@ test('real API-token authentication carries its live owner into shared CRM servi
   router.get('/:id', apiTokenAuth, requireApiScope('read'), requirePermission('bills.view'), async (req, res, next) => {
     try {
       const result = await require('../../src/services/invoiceService').getInvoiceById(Number(req.params.id));
-      return result ? res.json({ id: result.invoice.id }) : res.sendStatus(404);
+      return result ? res.json({ id: result.invoice.id,
+        originAdminId: require('../../src/database/crmAccess').currentCrmActor().originAdminId }) : res.sendStatus(404);
     } catch (error) { return next(error); }
   });
   const app = buildRouteApp('/api/v1/crm-fixture', router);
   const get = id => request(app).get(`/api/v1/crm-fixture/${id}`).set('Authorization', `Bearer ${token.plaintext}`);
-  expect((await get(ids.invoices[0])).status).toBe(200);
+  const own = await get(ids.invoices[0]);
+  expect(own.status).toBe(200);
+  expect(own.body.originAdminId).toBe(ownerId);
   expect((await get(ids.invoices[1])).status).toBe(404);
   await db('api_tokens').where('hashed_token', token.hashed).update({ revoked_at: new Date().toISOString() });
   expect((await get(ids.invoices[0])).status).toBe(401);
@@ -157,7 +160,7 @@ test('direct shared-service callers retain ownership and fail without an explici
 });
 
 test('workflow CRM authority is entity-bound and rehydrates the originating live actor after a wait', async () => {
-  const { loadCrmActor, withCrmActor, withTrustedCrmAccess } = require('../../src/database/crmAccess');
+  const { withTrustedCrmAccess } = require('../../src/database/crmAccess');
   const registry = require('../../src/services/workflows/registry');
   const engine = require('../../src/services/workflows/engine');
   registry.registerAction('crm_scope_fixture', async ctx => ({ updated: await ctx.db('invoices')
@@ -180,12 +183,14 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
       from_node: from, to_node: ['wait', 'update'][i] })));
     return workflowId;
   }
-  const actor = await loadCrmActor({ id: ownerId });
+  const workflowApp = buildRouteApp('/api/admin/workflows', require('../../src/routes/adminWorkflows'));
   const wf = await graph({ targetId: ids.invoices[1] });
-  const [runId] = await withCrmActor(actor, () => engine.emitWorkflowEvent('crm.scope.fixture', {
-    entityType: 'invoice', entityId: ids.invoices[0], targetWorkflowId: wf,
-    payload: { crmInitiatedByAdminId: superId, entityId: ids.invoices[1] },
-  }));
+  const started = await request(workflowApp).post('/api/admin/workflows/' + wf + '/test-run').set(auth('owner')).send({
+    entityType: 'invoice', entityId: ids.invoices[0], dryRun: false,
+    payload: { crmInitiatedByAdminId: superId, originAdminId: superId, entityId: ids.invoices[1] },
+  });
+  expect(started.status).toBe(200);
+  const runId = started.body.runId;
   expect(JSON.parse((await db('workflow_runs').where('id', runId).first()).context).crmInitiatedByAdminId).toBe(ownerId);
   await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(runId));
   expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
@@ -215,20 +220,33 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
     from_node: e.from_node, to_node: e.to_node, from_handle: e.from_handle || null, loop_back: formatBoolean(!!e.loop_back) })));
   const oldCondition = registry.getCondition('invoice_paid');
   const oldAction = registry.getAction('queue_payment_check');
+  const descendantWorkflow = await graph({ creator: superId, targetId: ids.invoices[1] });
   registry.registerCondition('invoice_paid', async () => false);
-  registry.registerAction('queue_payment_check', async ctx => ({
-    foreign: await ctx.db('invoices').where('id', ids.invoices[1]).update({ status: 'overdue' }),
-    primary: await ctx.db('invoices').where('id', ctx.run.entity_id).update({ status: 'overdue' }),
-  }));
+  registry.registerAction('queue_payment_check', async ctx => {
+    const foreign = await ctx.db('invoices').where('id', ids.invoices[1]).update({ status: 'overdue' });
+    const primary = await ctx.db('invoices').where('id', ctx.run.entity_id).update({ status: 'overdue' });
+    const [descendant] = await engine.emitWorkflowEvent('crm.scope.fixture', {
+      entityType: 'invoice', entityId: ids.invoices[1], targetWorkflowId: descendantWorkflow, dedupSuffix: String(ctx.run.id),
+    });
+    return { foreign, primary, descendant };
+  });
   try {
-    const [systemRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('invoice.sent', {
-      entityType: 'invoice', entityId: ids.invoices[0], targetWorkflowId: builtIn, payload: { dueDate: '2020-01-01' },
-    }));
-    for (let i = 0; i < 2; i++) await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(systemRun));
-    const paymentStep = await db('workflow_run_steps').where({ run_id: systemRun, node_key: 'paymentCheck' }).first();
-    expect(JSON.parse(paymentStep.result)).toEqual({ foreign: 0, primary: 1 });
-    expect((await db('invoices').where('id', ids.invoices[0]).first()).status).toBe('overdue');
-    expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
+    for (const primaryId of [ids.invoices[0], ids.invoices[2]]) {
+      // The ownerless primary uses a real super-admin ID only for audit FKs.
+      // It must not manufacture a super-admin origin in an editable descendant.
+      const [systemRun] = await withTrustedCrmAccess('isolated scheduler fixture', () => engine.emitWorkflowEvent('invoice.sent', {
+        entityType: 'invoice', entityId: primaryId, targetWorkflowId: builtIn, payload: { dueDate: '2020-01-01' },
+      }));
+      for (let i = 0; i < 2; i++) await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(systemRun));
+      const paymentStep = await db('workflow_run_steps').where({ run_id: systemRun, node_key: 'paymentCheck' }).first();
+      const result = JSON.parse(paymentStep.result);
+      expect(result).toEqual(expect.objectContaining({ foreign: 0, primary: 1 }));
+      expect(JSON.parse((await db('workflow_runs').where('id', result.descendant).first()).context).crmInitiatedByAdminId).toBeNull();
+      await withTrustedCrmAccess('isolated scheduler fixture', () => engine.resumeRun(result.descendant));
+      expect((await db('workflow_runs').where('id', result.descendant).first()).status).toBe('failed');
+      expect((await db('invoices').where('id', primaryId).first()).status).toBe('overdue');
+      expect((await db('invoices').where('id', ids.invoices[1]).first()).status).not.toBe('overdue');
+    }
   } finally {
     if (oldCondition) registry.registerCondition('invoice_paid', oldCondition); else registry.conditions.delete('invoice_paid');
     if (oldAction) registry.registerAction('queue_payment_check', oldAction); else registry.actions.delete('queue_payment_check');
@@ -236,11 +254,6 @@ test('workflow CRM authority is entity-bound and rehydrates the originating live
 
   // Real typed-auth edits claim execution authority for the actual editor,
   // regardless of caller-supplied creator/system fields.
-  const workflowPermission = await db('permissions').where('name', 'workflows.manage').first();
-  const ownerRow = await db('admin_users').where('id', ownerId).first();
-  await db('role_permissions').insert({ role_id: ownerRow.role_id, permission_id: workflowPermission.id });
-  require('../../src/middleware/permissions').clearPermissionCache();
-  const workflowApp = buildRouteApp('/api/admin/workflows', require('../../src/routes/adminWorkflows'));
   const editedNodes = shipped.nodes.map(n => n.node_key === 'paymentCheck'
     ? { ...n, config: { action: 'crm_scope_fixture', targetId: ids.invoices[1] } } : n);
   const edit = await request(workflowApp).put('/api/admin/workflows/' + builtIn).set(auth('owner')).send({

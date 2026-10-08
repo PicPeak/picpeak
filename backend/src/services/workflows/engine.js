@@ -339,7 +339,7 @@ async function emitWorkflowEvent(triggerType, { entityType = null, entityId = nu
           entity_type: entityType,
           entity_id: entityId,
           status: 'pending',
-          context: JSON.stringify({ vars: { ...payload }, crmInitiatedByAdminId: currentCrmActor()?.id || null }),
+          context: JSON.stringify({ vars: { ...payload }, crmInitiatedByAdminId: currentCrmActor()?.originAdminId || null }),
           dedup_key: dedupKey,
         });
       } catch (e) {
@@ -627,7 +627,7 @@ async function testRun(workflowId, { entityType = null, entityId = null, payload
     entity_type: entityType,
     entity_id: entityId,
     status: 'pending',
-    context: JSON.stringify({ vars, crmInitiatedByAdminId: currentCrmActor()?.id || null }),
+    context: JSON.stringify({ vars, crmInitiatedByAdminId: currentCrmActor()?.originAdminId || null }),
     dedup_key: dedupKey,
     updated_at: db.fn.now(),
   });
