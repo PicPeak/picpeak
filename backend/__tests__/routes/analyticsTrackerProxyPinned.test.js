@@ -14,6 +14,7 @@ jest.mock('../../src/utils/appSettings', () => ({
   getAppSetting: async (key, fallback = null) => Object.hasOwn(settings, key) ? settings[key] : fallback,
 }));
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), debug: jest.fn() }));
+jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrl: async () => 'https://picpeak.example' }));
 const EVENT = { type: 'pageview', path: '/gallery/wedding/short?token=SECRET', hostname: 'picpeak.example',
   language: 'en', screenWidth: 1280, screenHeight: 800 };
 const LOOPBACK = [{ address: '127.0.0.1', family: 4 }];

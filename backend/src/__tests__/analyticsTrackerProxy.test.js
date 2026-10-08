@@ -7,6 +7,8 @@ jest.mock('../utils/appSettings', () => ({
 }));
 jest.mock('../utils/integrationHttp', () => ({ integrationRelay: (...args) => mockRelay(...args) }));
 jest.mock('../utils/logger', () => ({ warn: jest.fn(), debug: jest.fn() }));
+const mockSiteUrl = jest.fn();
+jest.mock('../utils/frontendUrl', () => ({ getFrontendBaseUrl: (...args) => mockSiteUrl(...args) }));
 const SITE = '11111111-1111-4111-8111-111111111111';
 const EVENT = { type: 'pageview', path: '/gallery/wedding/short-secret?token=QUERY#HASH',
   hostname: 'picpeak.example', language: 'de-DE', screenWidth: 1920, screenHeight: 1080 };
@@ -27,6 +29,8 @@ beforeEach(() => {
   for (const key of Object.keys(settings)) delete settings[key];
   delete process.env.ANALYTICS_ALLOW_INSECURE_HTTP;
   mockRelay.mockReset();
+  mockSiteUrl.mockReset();
+  mockSiteUrl.mockResolvedValue('https://site.example');
   mockRelay.mockResolvedValue({ status: 200, headers: { 'content-type': 'application/javascript', 'set-cookie': 'admin_token=evil' },
     body: Buffer.from('fetch("/api/admin/users")') });
 });
@@ -78,16 +82,31 @@ describe('closed data-only boundary', () => {
     configured();
     await post().expect(200);
     expect(JSON.parse(mockRelay.mock.calls[0][1].body)).toEqual({
-      type: 'event', payload: { website: SITE, hostname: EVENT.hostname, language: 'de-DE',
+      type: 'event', payload: { website: SITE, hostname: 'site.example', language: 'de-DE',
         screen: '1920x1080', url: '/gallery/wedding/[redacted]', title: '', referrer: '' },
     });
     configured('rybbit');
     await post().expect(200);
     expect(mockRelay.mock.calls[1][0]).toBe('https://collector.example/base/api/track');
     expect(JSON.parse(mockRelay.mock.calls[1][1].body)).toEqual({
-      site_id: SITE, hostname: EVENT.hostname, pathname: '/gallery/wedding/[redacted]', querystring: '',
+      site_id: SITE, hostname: 'site.example', pathname: '/gallery/wedding/[redacted]', querystring: '',
       screenWidth: 1920, screenHeight: 1080, language: 'de-DE', page_title: '', referrer: '', type: 'pageview',
     });
+  });
+  it.each(['umami', 'rybbit'])('reports the site hostname for %s, never the client-supplied one', async provider => {
+    configured(provider);
+    const sent = () => JSON.parse(mockRelay.mock.calls.at(-1)[1].body);
+    const reported = () => (provider === 'umami' ? sent().payload.hostname : sent().hostname);
+    await post(buildApp(), { ...EVENT, hostname: 'attacker.example' }).expect(200);
+    expect(reported()).toBe('site.example');
+    const { hostname: _omitted, ...withoutHostname } = EVENT;
+    await post(buildApp(), withoutHostname).expect(200);
+    expect(reported()).toBe('site.example');
+    // No public origin known: the host this request arrived on.
+    mockSiteUrl.mockResolvedValue('');
+    await post(buildApp(), { ...EVENT, hostname: 'attacker.example' }).set('Host', 'direct.example').expect(200);
+    expect(reported()).toBe('direct.example');
+    expect(JSON.stringify(mockRelay.mock.calls)).not.toContain('attacker.example');
   });
   it.each(['umami', 'rybbit'])('preserves gallery events for %s without identifiers/free text', async provider => {
     configured(provider);
@@ -152,6 +171,16 @@ describe('input and privacy enforcement on every event', () => {
 
 describe('bounded pinned transport and header boundary', () => {
   beforeEach(() => configured());
+  it.each([undefined, null, ''])('stays quiet while no collector URL is configured (%p)', async url => {
+    settings.analytics_umami_url = url;
+    const app = buildApp();
+    await post(app).expect(404);
+    expect(require('../utils/logger').warn).not.toHaveBeenCalled();
+    expect(mockRelay).not.toHaveBeenCalled();
+    settings.analytics_umami_url = 'not a URL';
+    await post(buildApp()).expect(404);
+    expect(require('../utils/logger').warn).toHaveBeenCalledWith('Analytics: invalid collector URL');
+  });
   it.each(['http://collector.example', 'file:///tmp/data', 'not a URL'])('rejects %s without dev opt-in', async url => {
     settings.analytics_umami_url = url;
     await post().expect(404); expect(mockRelay).not.toHaveBeenCalled();

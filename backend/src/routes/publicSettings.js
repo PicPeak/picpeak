@@ -174,13 +174,11 @@ router.get('/', async (req, res) => {
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',
-      // Umami analytics configuration (only if enabled). Kept for
-      // back-compat: pre-#663 installs without `analytics_tracker_provider`
-      // still surface Umami settings under their original keys so the
-      // data-only client switches over cleanly.
+      // Legacy Umami flag. Kept for back-compat: on pre-#663 installs without
+      // `analytics_tracker_provider` the data-only client still reads it. The
+      // collector URLs and site IDs stay server-side; the client only needs
+      // to know which provider is on.
       umami_enabled: settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true',
-      umami_url: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_url || null) : null,
-      umami_website_id: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_website_id || null) : null,
       // The share URL is the bearer link to the whole Umami dashboard, not
       // tracker bootstrap; the admin analytics page reads it from
       // /admin/settings, so it never leaves the authenticated API.
@@ -197,14 +195,6 @@ router.get('/', async (req, res) => {
           ? 'umami'
           : 'none';
       })(),
-      // Rybbit native provider (#663). Only exposed when actively chosen
-      // — otherwise hidden.
-      rybbit_url: settingsObject.analytics_tracker_provider === 'rybbit'
-        ? (settingsObject.analytics_rybbit_url || null)
-        : null,
-      rybbit_website_id: settingsObject.analytics_tracker_provider === 'rybbit'
-        ? (settingsObject.analytics_rybbit_website_id || null)
-        : null,
       // Never distribute administrator-supplied executable HTML, including
       // legacy rows written through another generic settings endpoint.
       analytics_custom_head_html: '',
