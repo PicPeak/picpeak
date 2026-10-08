@@ -3,8 +3,9 @@
 #
 # Its own compose project, host ports (72xx) and no fixed container names, so
 # it runs next to the dev stack (71xx) without touching it. Postgres lives on a
-# tmpfs: every `up` starts from an empty database, the migrations seed the
-# admin below, and nothing a previous run changed can leak into the next one.
+# tmpfs: the runner starts each suite with `down -v`, so migrations seed a
+# fresh database. Storage survives backend recreation within that suite and
+# is removed with the same teardown; neither can leak into the next run.
 #
 # OIDC is off because a fresh database has no OIDC settings. The auth rate
 # limit is raised by the runner after boot, not here: it is an app_settings
@@ -49,6 +50,9 @@ services:
       # instead of the email. Never set outside a test stack.
       - PICPEAK_ECHO_INVITE_TOKEN=1
     volumes:
+      # The runner's post-seed `up` may recreate this container while keeping
+      # PostgreSQL. Preserve its paired, immutable storage identity and files.
+      - e2e-storage:/app/storage
       - ./.e2e/external-media:/external-media:ro
     ports:
       - "127.0.0.1:7201:3000"
@@ -107,3 +111,6 @@ services:
       - RING_SIZE=200
     ports:
       - "127.0.0.1:7207:8888"
+
+volumes:
+  e2e-storage:

@@ -91,6 +91,7 @@ describe('backup destinations, restores and portable import are Super Admin only
     operatorToken = await tokenFor('restore-operator', 'restore-operator');
 
     app = express();
+    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter());
     app.use(express.json());
     app.use('/api/admin/backup', require('../../src/routes/adminBackup'));
     app.use('/api/admin/restore', require('../../src/routes/adminRestore'));

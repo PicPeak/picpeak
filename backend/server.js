@@ -264,7 +264,7 @@ const corsOptions = {
 // caller-header exemption to ordinary admission. It also precedes health,
 // analytics, body parsing, static rendering and every application API.
 app.use(require('./src/routes/portableRestoreControl').createRestoreControlRouter({ cors: cors(corsOptions) }));
-app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter());
+app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter({ shouldServe: () => !restoreCoordinator.isReady() }));
 app.use(createApplicationWorkMiddleware({ admitRequest: () => restoreCoordinator.admitRequest() }));
 app.use('/api', cors(corsOptions));
 // Handle preflight explicitly for API paths

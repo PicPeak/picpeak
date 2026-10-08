@@ -11,7 +11,7 @@ const SHELL_PATHS = ['/admin', '/admin/login', '/admin/settings', '/admin/backup
 const HASHED_ASSET = /^\/assets\/[a-zA-Z0-9_-]{1,120}-[a-zA-Z0-9_-]{8,32}\.(js|css|png|svg|webp|jpg|jpeg|gif|ico|woff2?|ttf)$/;
 
 function createRestoreShellRouter({ frontendDir = process.env.FRONTEND_DIR || path.resolve(__dirname, '../../../frontend/dist'),
-  serveFrontend = process.env.SERVE_FRONTEND } = {}) {
+  serveFrontend = process.env.SERVE_FRONTEND, shouldServe = () => true } = {}) {
   const router = express.Router();
   if (serveFrontend === 'false') return router;
   let root, html;
@@ -28,7 +28,7 @@ function createRestoreShellRouter({ frontendDir = process.env.FRONTEND_DIR || pa
   // Express automatically answers OPTIONS for matching GET routes. The
   // asset wildcard must not answer ordinary API preflights before admission.
   router.use((req, _res, next) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') return next('router');
+    if (!shouldServe() || (req.method !== 'GET' && req.method !== 'HEAD')) return next('router');
     return next();
   });
 

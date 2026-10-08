@@ -33,6 +33,11 @@ teardown() {
 }
 trap teardown EXIT
 
+capture_backend_log() {
+  mkdir -p test-results
+  "${COMPOSE[@]}" logs --no-color backend > test-results/e2e-backend.log 2>&1 || true
+}
+
 # Per-run credentials for the throwaway stack, generated rather than committed.
 # New values recreate the containers, and Postgres runs on tmpfs, so the admin
 # the migrations seed always matches. Saved to .e2e/credentials.env so a stack
@@ -78,7 +83,10 @@ mkdir -p "$E2E_EXTERNAL_MEDIA_DIR"
 
 echo "▶ Starting the E2E stack…"
 # shellcheck disable=SC2086 — empty when E2E_NO_BUILD=1
-"${COMPOSE[@]}" up -d $BUILD_FLAG --wait
+if ! "${COMPOSE[@]}" up -d $BUILD_FLAG --wait; then
+  capture_backend_log
+  exit 1
+fi
 
 # Known state on top of the fresh database:
 #  - the migration seeds the admin with must_change_password=true; the specs
@@ -105,7 +113,10 @@ SQL
 # The limiters and the upload filter cache their settings, so restart the
 # backend to pick up the rows above.
 "${COMPOSE[@]}" restart backend >/dev/null
-"${COMPOSE[@]}" up -d --wait >/dev/null
+if ! "${COMPOSE[@]}" up -d --wait >/dev/null; then
+  capture_backend_log
+  exit 1
+fi
 
 # The same values a kept stack is reused with.
 set -a
