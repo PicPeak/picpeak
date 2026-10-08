@@ -7,7 +7,11 @@ const MiB = 1024 * 1024;
 const SHARP_MAX_PIXELS = 268402689;
 // Refusals that say "not now", never "not this image". Background work
 // requeues on them; a request answers 503 with Retry-After.
-const TRANSIENT = new Set(['IMAGE_QUEUE_FULL', 'IMAGE_TIMEOUT', 'IMAGE_CANCELLED', 'IMAGE_WORKER_UNAVAILABLE']);
+const TRANSIENT = new Set(['IMAGE_QUEUE_FULL', 'IMAGE_TIMEOUT', 'IMAGE_CANCELLED', 'IMAGE_WORKER_UNAVAILABLE',
+  // The same for ffmpeg/ffprobe/exiftool work. A media job that ran out of
+  // its own time (MEDIA_TIMEOUT) is not here: its budget starts when it
+  // starts, so running it again would only take as long again.
+  'MEDIA_QUEUE_FULL', 'MEDIA_CANCELLED', 'MEDIA_WORKER_UNAVAILABLE', 'MEDIA_LEASE_BUSY', 'MEDIA_LEASE_UNAVAILABLE', 'MEDIA_ADMISSION_UNAVAILABLE']);
 
 function refusal(message, code = 'IMAGE_RESOURCE_LIMIT', detail) {
   return Object.assign(new Error(message), { code, status: TRANSIENT.has(code) ? 503 : 422 }, detail);

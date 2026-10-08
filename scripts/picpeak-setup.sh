@@ -1168,7 +1168,9 @@ setup_native_installation() {
     # Install backend production dependencies
     cd "$NATIVE_APP_DIR/app/backend"
     npm install --production
-    npm run build:native
+    # Optional hardening (process guard, kernel leases): needs a C compiler
+    # and the Node headers. PicPeak runs without it; see docs/MEDIA_PROCESSING.md.
+    npm run build:native || log_warn "Native media hardening was not built (no C compiler or Node headers?); media processing runs without it"
     # Ensure SQLite data directory exists for native installs
     mkdir -p "$NATIVE_APP_DIR/app/backend/data"
 
@@ -1687,7 +1689,7 @@ update_native_installation() {
     # Update backend dependencies
     cd "$NATIVE_APP_DIR/app/backend"
     run_as_user "npm install --production"
-    run_as_user "npm run build:native"
+    run_as_user "npm run build:native" || log_warn "Native media hardening was not built (no C compiler or Node headers?); media processing runs without it"
     
     # Run migrations
     run_as_user "npm run migrate"

@@ -28,7 +28,7 @@ const fsp = require('fs').promises;
 const os = require('os');
 const crypto = require('crypto');
 const mediaProcesses = require('./mediaProcessService');
-const { isResourceError } = require('./imageResourcePolicy');
+const { isInterruption, configuration: mediaPolicy, renditionBudget } = require('./mediaProcessPolicy');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
@@ -49,7 +49,6 @@ function capUtf8Bytes(str, max) {
 const SETTING_KEY = 'general_video_web_rendition';
 const CACHE_TTL_MS = 60_000;
 
-const TIMEOUT_MS = require('./mediaProcessPolicy').configuration().renditionMs;
 const MAX_EDGE = Math.min(4096, Math.max(240, parseInt(process.env.VIDEO_RENDITION_MAX_EDGE || '1920', 10) || 1920));
 const CRF = Math.min(51, Math.max(0, parseInt(process.env.VIDEO_RENDITION_CRF || '23', 10) || 23));
 
@@ -86,7 +85,10 @@ function clearCache() {
  */
 async function backfillPending({ eventId } = {}) {
   const { formatBoolean } = require('../utils/dbCompat');
-  const rows = await db('photos')
+  // One UPDATE and nothing else: the settings request that switches the
+  // feature on must not probe a back catalogue. The queue probes each video
+  // when its turn comes, and a long backlog simply waits.
+  return db('photos')
     .modify((q) => { if (eventId != null) q.where('event_id', eventId); })
     // An archived gallery's originals are in its zip, not in storage: queuing
     // its rows would only fail. The restore route backfills the event again.
@@ -98,25 +100,7 @@ async function backfillPending({ eventId } = {}) {
     .where(function () {
       this.where('processing_status', 'complete').orWhereNull('processing_status');
     })
-    .select('*');
-  let queued = 0;
-  for (const photo of rows) queued += await enqueueWeb(photo);
-  return queued;
-}
-
-/** Every optional/legacy producer shares upload's signature and work admission. */
-async function enqueueWeb(photo) {
-  if (['pending', 'processing'].includes(photo.web_status) || Number(photo.web_attempts || 0) >= mediaAttempts.MAX_ATTEMPTS) return 0;
-  try {
-    await require('./mediaWorkAdmission').ensureQueued(photo);
-    return await db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename, web_status: photo.web_status ?? null })
-      .update({ web_status: 'pending', web_error: null, web_started_at: null });
-  } catch (error) {
-    await db('photos').where({ id: photo.id, path: photo.path, filename: photo.filename, web_status: photo.web_status ?? null })
-      .update({ web_status: 'failed', web_error: String(error.message).slice(0, 1000) });
-    logger.warn('Video work admission refused', { photoId: photo.id, code: error.code, error: error.message });
-    return 0;
-  }
+    .update({ web_status: 'pending', web_error: null, web_started_at: null, web_attempts: 0, web_retry_at: null });
 }
 
 /**
@@ -196,6 +180,7 @@ async function probe(localPath) {
     // (arib-std-b67). The primaries (bt2020) alone do not make a video HDR.
     colorTransfer: video?.color_transfer || null,
     colorPrimaries: video?.color_primaries || null,
+    duration: Number(metadata.format?.duration) || null,
   };
 }
 
@@ -236,9 +221,9 @@ let toneMapSupport = null;
 function canToneMap() {
   if (!toneMapSupport) {
     toneMapSupport = mediaProcesses.run('ffmpeg', ['-hide_banner', '-filters'], {
-      memoryBytes: 768 * 1024 * 1024, wallMs: 10000, cpuSeconds: 5,
+      memoryBytes: mediaPolicy().nativeBytes, wallMs: 10000, cpuSeconds: 10,
     }).then(({ stdout }) => /\bzscale\b/.test(stdout.toString()) && /\btonemap\b/.test(stdout.toString()))
-      .catch(error => { if (isResourceError(error)) { toneMapSupport = null; throw error; } return false; });
+      .catch(error => { if (isInterruption(error)) { toneMapSupport = null; throw error; } return false; });
   }
   return toneMapSupport;
 }
@@ -276,14 +261,22 @@ function transcodeOptions({ toneMap = false } = {}) {
   ];
 }
 
-function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS, toneMap = false } = {}) {
+/**
+ * `duration` (seconds, from the probe) sizes the time budget: a long video
+ * gets longer than VIDEO_RENDITION_TIMEOUT_MS, which is only the minimum.
+ * `timeoutMs` overrides it (tests).
+ */
+function transcode(localPath, outPath, { timeoutMs, toneMap = false, duration } = {}) {
   return mediaProcesses.withSnapshot(localPath, 'rendition', async (snapshot, details) => {
-    await mediaProcesses.probeSnapshot(snapshot, details);
+    const { policy } = details;
+    const metadata = await mediaProcesses.probeSnapshot(snapshot, details);
+    const budget = renditionBudget(Number.isFinite(duration) ? duration : Number(metadata.format?.duration), policy);
     await mediaProcesses.run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
-      ...mediaProcesses.inputOptions(details.format), '-i', snapshot,
-      ...transcodeOptions({ toneMap }), '-threads', '1', '-filter_threads', '1', '-filter_complex_threads', '1', outPath], {
-      memoryBytes: details.policy.nativeBytes, wallMs: Math.min(timeoutMs, details.policy.renditionMs),
-      cpuSeconds: Math.min(7200, Math.ceil(details.policy.renditionMs / 1000)), fileBytes: details.policy.outputBytes,
+      ...mediaProcesses.inputOptions(details.format, policy.threads), '-i', snapshot,
+      ...transcodeOptions({ toneMap }), '-threads', String(policy.threads), '-filter_threads', String(policy.threads), outPath], {
+      // Its own lane, so posters and probes never wait behind a transcode.
+      lane: 'long', memoryBytes: policy.transcodeBytes, wallMs: timeoutMs || budget.wallMs, cpuSeconds: budget.cpuSeconds,
+      fileBytes: policy.outputBytes || 1024 * 1024 * 1024 * 1024,
     });
   });
 }
@@ -295,7 +288,7 @@ function transcode(localPath, outPath, { timeoutMs = TIMEOUT_MS, toneMap = false
 async function renderWebCopy(photoId) {
   if (!mediaAttempts.current()) {
     const claimed = await mediaAttempts.claimNext('web', photoId);
-    if (!claimed) throw require('./mediaProcessPolicy').refusal('Video has no current pending execution attempt', 'MEDIA_ATTEMPT_REQUIRED');
+    if (!claimed || claimed.exhausted) throw require('./mediaProcessPolicy').refusal(`Video ${photoId} is not pending, or is being converted already`, 'MEDIA_ATTEMPT_REQUIRED');
     return mediaAttempts.execute(claimed, 'web', () => renderWebCopy(photoId));
   }
   const attempt = mediaAttempts.current();
@@ -346,10 +339,11 @@ async function renderWebCopy(photoId) {
       logger.warn(`videoRendition: photo ${photoId} is HDR (${probed.colorTransfer}) but this ffmpeg lacks zscale/tonemap; the copy is not tone-mapped`);
     }
     try {
-      await transcode(localPath, tmpPath, { toneMap });
+      await transcode(localPath, tmpPath, { toneMap, duration: probed.duration });
       const stat = await fsp.stat(tmpPath).catch(() => null);
       if (!stat || stat.size === 0) throw new Error('ffmpeg produced no output');
-      if (stat.size > require('./mediaProcessPolicy').configuration().outputBytes) throw require('./mediaProcessPolicy').refusal('Video rendition output exceeds the processing budget');
+      const { outputBytes } = mediaPolicy();
+      if (outputBytes && stat.size > outputBytes) throw require('./mediaProcessPolicy').refusal(`Video copy is larger than ${outputBytes / 1048576} MiB (MEDIA_MAX_VIDEO_OUTPUT_MIB)`);
       await attempt.assertCurrent();
       await getStorage().putFromFile(webKey, tmpPath, { contentType: 'video/mp4' });
       await attempt.assertCurrent();
@@ -371,6 +365,8 @@ async function renderWebCopy(photoId) {
       logger.info(`videoRendition: photo ${photoId} changed during the transcode, dropped ${webKey}`);
       return 'superseded';
     }
+    // The copy an earlier attempt or source left behind is unreferenced now.
+    if (photo.web_path && photo.web_path !== webKey) await getStorage().delete(photo.web_path).catch(() => {});
     logger.info(`videoRendition: wrote ${webKey} for photo ${photoId} (${probed.videoCodec}/${probed.audioCodec || 'no audio'}, ${probed.majorBrand || probed.formatName}${toneMap ? ', HDR tone-mapped' : ''})`);
     return 'complete';
   });
@@ -388,7 +384,6 @@ module.exports = {
   isEnabled,
   clearCache,
   backfillPending,
-  enqueueWeb,
   webKeyFor,
   hasFaststart,
   probe,

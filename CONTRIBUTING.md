@@ -97,6 +97,12 @@ Unsure where to begin? You can start by looking through these issues:
 - Docker & Docker Compose
 - Git
 
+The backend's native media pieces (`backend/native/`: a process guard for
+ffmpeg/exiftool and a kernel-lease addon) are optional and Linux-only. On
+macOS and Windows there is nothing to build, and the backend and its test
+suites run without them; on Linux `cd backend && npm run build:native` builds
+them if you have a C compiler. See `docs/MEDIA_PROCESSING.md`.
+
 ### Local Development
 
 ```bash

@@ -222,13 +222,10 @@ async function processNewPhoto(filePath) {
       size_bytes: stats.size,
       mime_type: mimeType,
       ...(dimensions && { width: dimensions.width, height: dimensions.height }),
+      ...(webCopyEnabled ? { web_status: 'pending' } : {}),
       ...credit
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
-    if (webCopyEnabled) {
-      const photo = await db('photos').where({ id: photoId }).first();
-      if (photo) await require('./videoRenditionService').enqueueWeb(photo);
-    }
 
     logger.info(`Added new photo: ${relativePath}`);
     downloadZipService.invalidate(event.id);

@@ -16,6 +16,7 @@ static void *held_thread(void *unused) { (void)unused; for (;;) pause(); return 
 int main(int argc, char **argv) {
     if (argc < 2) return 1;
     if (!strcmp(argv[1], "ordinary-error")) return 234;
+    if (!strcmp(argv[1], "exit125")) return 125;
     if (!strcmp(argv[1], "uring")) {
         struct io_uring_params parameters; memset(&parameters, 0, sizeof(parameters));
         int descriptor = syscall(SYS_io_uring_setup, 1, &parameters);

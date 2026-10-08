@@ -261,6 +261,12 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // A replaced video is queued for a new copy while the setting is on;
       // anything else starts over with none.
       web_path: null,
+      // The new file starts its own attempts: a worker still busy with the
+      // old one loses its claim and can publish nothing.
+      processing_attempt_id: null,
+      web_attempt_id: null,
+      web_attempts: 0,
+      web_retry_at: null,
       web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
       web_started_at: null,
       web_error: null,

@@ -12,7 +12,7 @@ jest.mock('fluent-ffmpeg');
 jest.mock('../../src/services/mediaProcessService', () => ({
   probeVideo: path => new Promise((resolve, reject) => require('fluent-ffmpeg').ffprobe(path, (error, value) => error ? reject(error) : resolve(value))),
   probeSnapshot: jest.fn(async () => ({})), inputOptions: () => [],
-  withSnapshot: (path, _kind, callback) => callback(path, { format: 'mov,mp4', policy: { nativeBytes: 768 * 1024 * 1024, renditionMs: 3600000, outputBytes: 512 * 1024 * 1024 } }),
+  withSnapshot: (path, _kind, callback) => callback(path, { format: 'mov,mp4', policy: { nativeBytes: 2048 * 1024 * 1024, transcodeBytes: 0, threads: 2, renditionMs: 3600000, renditionMaxMs: 86400000, outputBytes: null } }),
   run: (_command, args) => new Promise((resolve, reject) => {
     const ffmpeg = require('fluent-ffmpeg');
     if (args.includes('-filters')) return ffmpeg.getAvailableFilters((error, filters) => error ? reject(error) : resolve({ stdout: Buffer.from(Object.keys(filters).join(' ')) }));

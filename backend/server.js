@@ -1424,6 +1424,11 @@ async function startServer() {
     require('./src/services/isolatedSharp').prepare()
       .catch((err) => logger.warn('Image worker check failed at boot', { error: err.message }));
 
+    // The same for ffmpeg/ffprobe/exiftool: one startup line says which of
+    // the optional protections (process guard, kernel leases) this host runs
+    // and what to do about the ones it does not. Never a reason not to start.
+    require('./src/services/mediaCapabilities').probe();
+
     // Public upload leases: heartbeat this process's live requests and reap
     // the ones a dead process left behind, now and every 30 s.
     const publicUploadQuota = require('./src/services/publicUploadQuota');
