@@ -22,6 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const sha256 = bytes => require('crypto').createHash('sha256').update(bytes).digest('hex');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 
@@ -60,6 +61,7 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
     await db('app_settings').insert([
       { setting_key: 'backup_destination_type',    setting_value: JSON.stringify('local'), setting_type: 'backup' },
       { setting_key: 'backup_destination_path',    setting_value: JSON.stringify(dest),    setting_type: 'backup' },
+      { setting_key: 'backup_manifest_path',       setting_value: JSON.stringify(path.join(dest, 'manifests')), setting_type: 'backup' },
       { setting_key: 'backup_enabled',             setting_value: JSON.stringify(true),    setting_type: 'backup' },
       { setting_key: 'backup_email_on_failure',    setting_value: JSON.stringify(false),   setting_type: 'backup' },
     ]).onConflict('setting_key').merge();
@@ -80,6 +82,7 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
 
   beforeEach(async () => {
     mockBackupFn.mockReset();
+    fs.writeFileSync(dumpFileAbs, 'pretend this is a pg_dump'.repeat(100));
     // Default to "dump produced this file with this size" — the per-test
     // setup overrides as needed.
     mockBackupFn.mockResolvedValue({
@@ -87,7 +90,7 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
       path: dumpFileAbs,
       size: fs.statSync(dumpFileAbs).size,
       duration: 1,
-      checksum: 'abc',
+      checksum: sha256(fs.readFileSync(dumpFileAbs)),
     });
 
     // Re-seed the database_backup_runs row that getDatabaseBackupInfo
@@ -100,6 +103,7 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
       backup_type: 'pg',
       file_path: dumpFileAbs,
       file_size_bytes: fs.statSync(dumpFileAbs).size,
+      checksum: sha256(fs.readFileSync(dumpFileAbs)),
       destination_path: dumpFileAbs,
     });
   });
@@ -141,6 +145,32 @@ describe('backupService — inline DB dump + fail-loud guard', () => {
 
     const run = await db('backup_runs').orderBy('id', 'desc').first();
     expect(run.status).toBe('completed');
+  });
+
+  it('opt-out refuses changed scheduled-dump bytes instead of signing their replacement checksum', async () => {
+    await db('app_settings').insert({
+      setting_key: 'backup_database_inline_dump', setting_value: 'false', setting_type: 'backup',
+    }).onConflict('setting_key').merge();
+    const recorded = await db('database_backup_runs').first();
+    fs.writeFileSync(dumpFileAbs, 'attacker replacement dump bytes');
+    await backupService.runBackup(true);
+    const run = await db('backup_runs').orderBy('id', 'desc').first();
+    expect(run.status).toBe('failed');
+    expect(run.error_message).toMatch(/database backup.*checksum/i);
+    expect(run.manifest_path).toBeNull();
+    expect((await db('database_backup_runs').first()).checksum).toBe(recorded.checksum);
+  });
+
+  it('opt-out refuses a dump with no independently recorded checksum', async () => {
+    await db('app_settings').insert({
+      setting_key: 'backup_database_inline_dump', setting_value: 'false', setting_type: 'backup',
+    }).onConflict('setting_key').merge();
+    await db('database_backup_runs').update({ checksum: null });
+    await backupService.runBackup(true);
+    const run = await db('backup_runs').orderBy('id', 'desc').first();
+    expect(run.status).toBe('failed');
+    expect(run.error_message).toMatch(/database backup.*checksum/i);
+    expect(run.manifest_path).toBeNull();
   });
 
   it('opt-out + no recent dump: fails loud with a clear error', async () => {

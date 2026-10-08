@@ -681,6 +681,15 @@
     "creditNameHelp": "Wird bei Uploads dieses Kontos als Fotograf angegeben, wenn die Datei keinen Fotografennamen in den Metadaten enthält."
   },
   "systemHealth": {
+    "backupAuthentication": {
+      "title": "Authentizität der Sicherung",
+      "keyReady": "Der externe Signaturschlüssel für Sicherungen ist verfügbar.",
+      "keyMissing": "Der Signaturschlüssel fehlt oder ist ungültig. Eine authentifizierte Wiederherstellung ist nicht bereit.",
+      "verified": "Das neueste Sicherungsmanifest wurde mit einem aufbewahrten Schlüssel authentifiziert.",
+      "unverified": "Das neueste Sicherungsmanifest ist nicht verfügbar oder nicht authentifiziert. Ein abgeschlossener Lauf allein belegt keine Authentizität.",
+      "legacy": "Das neueste Sicherungsmanifest wurde erstellt, bevor Manifeste authentifiziert wurden. Die nächste Sicherung wird authentifiziert; bis dahin lässt sich diese nur mit einer ausdrücklichen Wiederherstellungsfreigabe zurückspielen.",
+      "hint": "Bewahren Sie eine Kopie des Signaturschlüssels außerhalb dieses Hosts auf, bei der Person, die auch die Sicherungen verwahrt: Ohne ihn lässt sich eine Sicherung auf einem Ersatzhost nicht verifizieren. Übernehmen Sie ihn niemals aus der wiederherzustellenden Sicherung; entfernen Sie eine einmalige Freigabe für nicht authentifizierte Wiederherstellung anschließend."
+    },
     "retry": "Erneut versuchen",
     "dismiss": "Verwerfen",
     "retriedToast": "E-Mail erneut eingereiht.",

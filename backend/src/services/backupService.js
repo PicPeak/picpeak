@@ -126,6 +126,7 @@ async function resolveConfigWithFallback() {
 }
 
 const { getStoragePath } = require('../config/storage');
+const backupManifestKey = require('../utils/backupManifestKey');
 const { localDestinationHint } = require('../utils/localBackupDestination');
 
 function normalizeBoolean(value) {
@@ -325,6 +326,19 @@ async function ensureDatabaseDumpForBackup(config) {
       'Refusing to proceed with file backup to avoid shipping a manifest with no DB content.'
     );
   }
+
+  // The dump lives in mutable backup storage. Its independently recorded
+  // creation digest is the authority; rehashing and replacing that digest
+  // would launder changed store bytes into a newly authenticated manifest.
+  const expected = typeof databaseInfo.checksum === 'string' ? databaseInfo.checksum.trim().toLowerCase() : '';
+  if (!/^[a-f0-9]{64}$/.test(expected)) {
+    throw new Error('Database backup has no valid recorded checksum. Create a fresh database dump before signing a file backup.');
+  }
+  if (await calculateChecksum(databaseInfo.backupFile) !== expected) {
+    throw new Error('Database backup does not match its recorded checksum; refusing to sign changed dump bytes.');
+  }
+  databaseInfo.size = dumpStat.size;
+  databaseInfo.checksum = expected;
 
   return databaseInfo;
 }
@@ -1000,18 +1014,25 @@ async function performRsyncBackup(config, files) {
   });
   const stats = parseRsyncStats(stdout);
 
-  const backedUpFiles = files.map(file => file.relativePath);
-
   const totalSize = typeof stats.totalSize === 'number'
     ? stats.totalSize
     : files.reduce((acc, file) => acc + file.size, 0);
 
+  const backedUpFiles = [];
   for (const file of files) {
     try {
       const checksum = await calculateChecksum(file.path);
+      file.checksum = checksum;
       await updateFileState(file.relativePath, checksum, file.size, file.modified);
+      backedUpFiles.push(file.relativePath);
     } catch (error) {
-      logger.error(`Failed to update rsync file state for ${file.relativePath}:`, error);
+      // Deleted between the walk and this hash (a photo removed mid-backup):
+      // leave it out of the manifest rather than fail the whole run.
+      if (error.code === 'ENOENT') {
+        logger.warn(`rsync backup: ${file.relativePath} disappeared before it could be hashed; left out of the manifest`);
+        continue;
+      }
+      throw new Error(`Cannot authenticate rsync file ${file.relativePath}: ${error.message}`);
     }
   }
 
@@ -1165,11 +1186,16 @@ async function getPreviousSuccessfulBackup(currentRunId) {
   return record || null;
 }
 
-function buildManifestFiles(backedUpFiles, allFiles) {
+function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
   const fileMap = new Map();
   allFiles.forEach(file => {
     fileMap.set(file.relativePath, file);
   });
+  if (databaseInfo?.backupFile) {
+    fileMap.set(path.posix.join('database', path.basename(databaseInfo.backupFile)), {
+      size: databaseInfo.size, checksum: databaseInfo.checksum,
+    });
+  }
 
   return backedUpFiles.map(relativePath => {
     const source = fileMap.get(relativePath) || {};
@@ -1259,6 +1285,7 @@ async function runBackupInternal(isManual = false) {
     if (clashingFolder) {
       throw new Error(destinationIsBackedUpFolderMessage(clashingFolder));
     }
+    backupManifestKey.loadKey({ create: true });
 
     // Inline DB dump + fail-loud verification. The returned `databaseInfo`
     // is reused at manifest-build time below so we don't pay a second
@@ -1296,7 +1323,6 @@ async function runBackupInternal(isManual = false) {
       logger.info('Generating backup manifest...');
 
       const previousBackup = await getPreviousSuccessfulBackup(runId);
-      const manifestFiles = buildManifestFiles(result.backedUpFiles, files);
       // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
       // top of this run — reuse it so manifest building doesn't pay a
       // second `getDatabaseBackupInfo()` round-trip. The
@@ -1304,6 +1330,7 @@ async function runBackupInternal(isManual = false) {
       // (S3, future destinations) that override the local info on the result
       // object; falls back to the verified copy otherwise.
       const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
+      const manifestFiles = buildManifestFiles(result.backedUpFiles, files, databaseInfo);
 
       // Rows naming a legacy-root document are pointed at its backed-up path
       // on restore (restoreService). rsync leaves those documents out.
@@ -1363,6 +1390,7 @@ async function runBackupInternal(isManual = false) {
       }
     } catch (error) {
       logger.error('Failed to generate backup manifest:', error);
+      throw error;
     }
 
     // Per-Stage-B-path stats — bucket the actually-backed-up files
@@ -1577,13 +1605,15 @@ async function getBackupStatus(limit = 10) {
 
     const lastRun = runs[0];
     let manifestValid = false;
+    let manifestAuthentication = { authenticated: false, state: 'unavailable' };
 
     if (lastRun && lastRun.manifest_path) {
       try {
         // Use validateBackupManifest which handles both local and S3 paths
         const result = await validateBackupManifest(lastRun.manifest_path);
         manifestValid = result.valid;
-        if (!result.valid) {
+        manifestAuthentication = result.authentication || { authenticated: false, state: 'unverified' };
+        if (!result.valid && manifestAuthentication.state !== 'legacy') {
           logger.warn('Manifest validation failed:', result.error);
         }
       } catch (error) {
@@ -1591,7 +1621,8 @@ async function getBackupStatus(limit = 10) {
       }
     }
 
-    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid } : null;
+    const signingKey = backupManifestKey.keyStatus();
+    const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid, authentication: manifestAuthentication } : null;
 
     // Separate "most recent attempt" from "most recent SUCCESS" so the
     // dashboard widget can distinguish:
@@ -1618,7 +1649,12 @@ async function getBackupStatus(limit = 10) {
 
     return {
       isRunning,
-      isHealthy: Boolean(lastRun && lastRun.status === 'completed'),
+      // A latest manifest that merely predates authentication is not a fault:
+      // the next backup signs a new one. It still cannot be restored as-is.
+      isHealthy: Boolean(lastRun && lastRun.status === 'completed' && signingKey.ready
+        && (manifestAuthentication.state === 'legacy' || (manifestValid && manifestAuthentication.authenticated))),
+      signingKey,
+      manifestAuthentication,
       lastRun: lastRunWithManifest,
       lastBackup: lastRunWithManifest, // Alias for frontend compatibility
       lastSuccessfulBackup: lastSuccessful, // NEW — see comment above
@@ -1743,7 +1779,7 @@ async function loadManifestFromAnywhere(manifestPath, config) {
 // disk whether or not the download or the parse succeeded.
 const MAX_S3_MANIFEST_BYTES = 16 * 1024 * 1024;
 
-async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
+async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel, options = {}) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'backup-manifest-'));
   const tempPath = path.join(tempDir, `manifest-${backupRunLabel}.json`);
   try {
@@ -1764,7 +1800,7 @@ async function loadManifestFromS3Bounded(s3Client, key, backupRunLabel) {
     });
     const body = await s3Client.downloadStream(key);
     await pipeline(body, limiter, fsSync.createWriteStream(tempPath));
-    return await backupManifest.loadManifest(tempPath);
+    return await backupManifest.loadManifest(tempPath, options);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -1780,9 +1816,12 @@ async function getBackupManifest(backupRunId) {
   }
 
   if (!run.manifest_path.startsWith('s3://')) {
-    const manifest = await backupManifest.loadManifest(run.manifest_path);
+    // Reading is not restoring: a manifest from before authentication is
+    // still shown, flagged, instead of answering 404.
+    const manifest = await backupManifest.loadManifest(run.manifest_path, { inspect: true });
     return {
       manifest,
+      authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
       summary: backupManifest.generateSummaryReport
         ? backupManifest.generateSummaryReport(manifest)
         : null
@@ -1826,10 +1865,11 @@ async function getBackupManifest(backupRunId) {
     ...backupS3Access(config)
   });
 
-  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId);
+  const manifest = await loadManifestFromS3Bounded(s3Client, key, backupRunId, { inspect: true });
 
   return {
     manifest,
+    authenticated: backupManifest.getAuthentication(manifest).authenticated === true,
     summary: backupManifest.generateSummaryReport
       ? backupManifest.generateSummaryReport(manifest)
       : null
@@ -1863,16 +1903,22 @@ async function validateBackupManifest(manifestPath) {
         ...backupS3Access(config)
       });
 
-      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`);
+      manifest = await loadManifestFromS3Bounded(s3Client, key, `validate-${Date.now()}`, { inspect: true });
     } else {
-      manifest = await backupManifest.loadManifest(manifestPath);
+      manifest = await backupManifest.loadManifest(manifestPath, { inspect: true });
     }
 
     if (backupManifest.validateManifest) {
-      backupManifest.validateManifest(manifest);
+      backupManifest.validateManifest(manifest, { inspect: true });
     }
 
-    return { valid: true, manifest };
+    const authentication = backupManifest.getAuthentication(manifest);
+    // Intact but written before manifests were authenticated: still not
+    // valid, and named as its own state so health can tell it from damage.
+    if (!authentication.valid) {
+      return { valid: false, error: authentication.error, authentication: { authenticated: false, state: 'legacy' } };
+    }
+    return { valid: true, manifest, authentication };
   } catch (error) {
     return { valid: false, error: error.message };
   }

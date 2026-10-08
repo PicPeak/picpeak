@@ -80,7 +80,7 @@ describe('backupService — bounded S3 manifest download', () => {
       files: { count: 0, manifest: [] }, database: {},
       verification: { total_checksum: null, checksum_algorithm: 'sha256' },
     };
-    manifest.verification.total_checksum = backupManifest.calculateManifestChecksum(manifest, { keyed: false });
+    backupManifest.signManifest(manifest);
     const client = {
       getMetadata: jest.fn().mockResolvedValue({ ContentLength: 10 }),
       downloadStream: jest.fn().mockResolvedValue(Readable.from([Buffer.from(JSON.stringify(manifest))])),
