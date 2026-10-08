@@ -12,6 +12,7 @@ const cronParser = require('cron-parser');
 const { db } = require('../database/db');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
@@ -2028,7 +2029,9 @@ async function validateBackupManifest(manifestPath) {
 service.getBackupConfig = getBackupConfigInternal;
 service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;
-service.runBackup = runBackupInternal;
+service.runBackup = (...args) => applicationWork.track(
+  'file backup', () => runBackupInternal(...args),
+);
 service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;

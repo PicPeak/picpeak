@@ -20,6 +20,7 @@
 
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 
 const SUMMARY_TYPE = 'api_photos_downloaded';
 const AUDIT_TYPE = 'api_photo_downloaded';
@@ -117,9 +118,9 @@ async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
 /** Count one single download into its token/event/hour bell entry. */
 function recordSingleDownload({ tokenId, tokenName, eventId, actor }) {
   const key = `${tokenId}:${eventId}`;
-  const next = (chains.get(key) || Promise.resolve())
+  const next = applicationWork.track('API download notification', () => (chains.get(key) || Promise.resolve())
     .then(() => bumpSummary({ tokenId, tokenName, eventId, actor }))
-    .catch((err) => logger.warn('API download notification could not be recorded', { error: err.message }));
+  ).catch((err) => logger.warn('API download notification could not be recorded', { error: err.message }));
   chains.set(key, next);
   next.then(() => {
     if (chains.get(key) === next) chains.delete(key);

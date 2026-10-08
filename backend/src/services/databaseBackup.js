@@ -8,6 +8,7 @@ const { createReadStream, createWriteStream, realpathSync, constants: fsConstant
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const packageJson = require('../../package.json');
@@ -571,7 +572,12 @@ class DatabaseBackupService {
   /**
    * Main backup method
    */
-  async backup(options = {}) {
+  backup(options = {}) {
+    return applicationWork.track('database backup',
+      () => this.backupInternal(options));
+  }
+
+  async backupInternal(options = {}) {
     if (this.isRunning) {
       throw new Error('Backup already in progress');
     }

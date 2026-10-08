@@ -35,6 +35,7 @@ const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolve
 const { parseResolution } = require('../utils/downloadResolutions');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 
 const blockedFoldersOf = (eventId) => require('./folderTreeService').downloadBlockedFolderIds(eventId);
 
@@ -203,7 +204,8 @@ class DownloadJobService {
       // Fire and forget — the row is the source of truth for progress. The
       // liveBuilds entry is what makes a pending/building row reusable; a row
       // without one is an orphan from a previous process.
-      const promise = this._build(id, event, resolution, resolvedIds, watermark, accessLevel)
+      const promise = applicationWork.track('download job',
+        () => this._build(id, event, resolution, resolvedIds, watermark, accessLevel))
         .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }))
         .finally(() => this.liveBuilds.delete(id));
       this.liveBuilds.set(id, promise);
