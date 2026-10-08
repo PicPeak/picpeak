@@ -4,6 +4,7 @@
  * storage a destination ends up holding.
  */
 const request = require('supertest');
+const { decodeSettingValue } = require('../helpers/settingValue');
 const express = require('express');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken,
@@ -20,7 +21,7 @@ describe('standalone snapshot retention routes', () => {
   let db; let cleanup; let app; let token;
   const stored = async key => {
     const row = await db('app_settings').where('setting_key', key).first();
-    return row ? JSON.parse(row.setting_value) : undefined;
+    return row ? decodeSettingValue(db, row.setting_value) : undefined;
   };
   const put = body => request(app).put('/backup/config').set('Authorization', 'Bearer ' + token).send(body);
   const cleanupS3 = body => request(app).delete('/backup/s3/cleanup').set('Authorization', 'Bearer ' + token).send(body);
