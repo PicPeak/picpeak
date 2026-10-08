@@ -22,14 +22,17 @@ upgrade, so existing source paths are not converted into grants and need none.
 It also means revoking or transferring a grant stops browsing and new bindings,
 not the galleries already bound to the folder; switch such a gallery to managed
 uploads, or point it elsewhere, to detach it. Saving a gallery without changing
-its folder asks for no source access. Paths saved by earlier releases with a
-leading slash or a colon in a folder name are still read; new input accepts
-neither.
+its folder asks for no source access. A leading slash on a path is ignored and a colon
+in a folder name is allowed, as before; backslashes, control characters and
+`..` segments are refused.
 
-Automatic imports run on behalf of the gallery's creator, who must be an active
-account holding `photos.upload`; an ownerless gallery's watcher follows its
-stored folder. When a watcher is refused, the server log carries one warning
-per gallery with the gallery, the folder and the reason. Published originals
+Automatic imports follow the folder the gallery is bound to and do not depend on
+the creator's account: a watched gallery keeps importing when its creator is
+deactivated or loses `photos.upload`, as it did before source grants. An active
+account with the right permission is still required for every interactive
+action and for every new binding. A watcher is refused only when its folder is
+not a valid path inside the mount; the server log then carries one warning per
+gallery with the gallery, the folder and the reason. Published originals
 are read from wherever their stored path leads inside the mount, including
 through a directory link that stays inside it; a link leaving the mount is
 refused.

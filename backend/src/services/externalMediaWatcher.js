@@ -299,8 +299,8 @@ async function reconcile() {
       if (!refusedLogged.has(event.id)) {
         refusedLogged.add(event.id);
         logger.warn(`[externalMediaWatcher] event ${event.id} (${event.slug}): not watching '${event.external_path}' (${error.message}). `
-          + 'The gallery needs an active owner with the photos.upload permission, and a folder inside EXTERNAL_MEDIA_ROOT; '
-          + 'a SuperAdmin can assign the folder to that owner under External source owners in the gallery\'s folder picker, or re-save the gallery\'s Photo source.');
+          + 'The folder must be a readable path inside EXTERNAL_MEDIA_ROOT that no link leads out of; '
+          + 'choose the folder again under the gallery\'s Photo source to fix it.');
       }
     }
   }

@@ -13,13 +13,12 @@ class ExternalMediaAccessError extends Error {
   }
 }
 
-// `stored` reads a path already saved on an event. Before source grants the
-// event form only trimmed it, so `/clients/a` and `2026-05-01 12:00` are on
-// existing rows: a leading slash is dropped and `:` (no separator on Linux) is
-// let through. New input stays strict.
-function normalizeSourcePath(value, { stored = false } = {}) {
+// A path under the mount, as typed or as stored. Before source grants the event
+// form only trimmed it, so `/clients/a` and `2026-05-01 12:00` are on existing
+// rows and stay valid: a leading slash is dropped, and `:` is no separator on
+// Linux.
+function normalizeSourcePath(value) {
   if (typeof value !== 'string' || value.length > 1024 || value.includes('\\')
-    || (!stored && (value.startsWith('/') || value.includes(':')))
     || [...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) {
     throw new ExternalMediaAccessError('Invalid external media path', 400);
   }
@@ -35,17 +34,17 @@ function normalizeSourcePath(value, { stored = false } = {}) {
 function storedBinding(event) {
   if (event?.source_mode !== 'reference' || !event.external_path) return null;
   try {
-    return normalizeSourcePath(event.external_path, { stored: true }) || null;
+    return normalizeSourcePath(event.external_path) || null;
   } catch (_) {
     return null;
   }
 }
 
-// Whether two paths, read the way a stored one is, name the same folder.
+// Whether two paths name the same folder.
 function sameSourcePath(a, b) {
   if ((a || '') === (b || '')) return true;
   try {
-    return normalizeSourcePath(a || '', { stored: true }) === normalizeSourcePath(b || '', { stored: true });
+    return normalizeSourcePath(a || '') === normalizeSourcePath(b || '');
   } catch (_) {
     return false;
   }
@@ -55,7 +54,7 @@ function isStoredBinding(event, value) {
   const bound = storedBinding(event);
   if (bound === null) return false;
   try {
-    return normalizeSourcePath(value, { stored: true }) === bound;
+    return normalizeSourcePath(value) === bound;
   } catch (_) {
     return false;
   }
@@ -121,8 +120,9 @@ async function authorizeSource(adminId, value, permission = 'photos.view') {
 // chosen by an admin who was allowed to choose it, under the rules of the day
 // (before source grants, any admin with the picker). Importing, rescanning and
 // watching that same folder for that same gallery asks for no grant, so an
-// upgrade or a later revocation does not strand a gallery. Grants gate new
-// bindings and browsing. Only the filesystem is checked: the folder, followed
+// upgrade or a later revocation does not strand a gallery, and an automatic
+// pass asks nothing of the creator's account either: the watcher ran whatever
+// became of it before grants existed. Grants gate new bindings and browsing. Only the filesystem is checked: the folder, followed
 // through any link, must still be inside the mount, and every file inside the
 // folder (authorizeSelectedFile).
 async function authorizeStoredBinding(event) {
@@ -139,10 +139,9 @@ async function authorizeImport(eventId, value, { actor = null, automatic = false
   const bound = isStoredBinding(event, value);
   let admin = null;
   if (automatic) {
-    // A system watcher is a deputy for the gallery's creator, never a global
-    // root. An ownerless gallery has no one to stand in for, and its watcher
-    // only ever follows the folder the gallery is already bound to.
-    if (event.created_by != null || !bound) admin = await principal(event.created_by, permission);
+    // The watcher follows the folder the gallery is bound to. For any other
+    // folder it is a deputy for the gallery's creator, never a global root.
+    if (!bound) admin = await principal(event.created_by, permission);
   } else {
     admin = await principal(actor?.type === 'admin' ? actor.id : null, permission);
     // The rule the event routes enforce (requireEventOwnership), on a principal
