@@ -113,6 +113,20 @@ test.each(['127.0.0.1', '::1'])('a trusted certificate with matching IP %s remai
   }
 });
 
+test('DB_SSL_SERVERNAME verifies the certificate name when the host is an IP', async () => {
+  const before = startupMessages;
+  await expect(connect({ DB_SSL: 'true', DB_SSL_CA: certificate, DB_SSL_SERVERNAME: 'localhost' }, '127.0.0.1'))
+    .resolves.toBeUndefined();
+  expect(startupMessages).toBe(before + 1);
+});
+
+test('DB_SSL_SERVERNAME replaces the verified name, it does not add one', async () => {
+  const before = startupMessages;
+  await expect(connect({ DB_SSL: 'true', DB_SSL_CA: certificate, DB_SSL_SERVERNAME: 'db.example.com' }))
+    .rejects.toThrow(/altname|not in the cert/i);
+  expect(startupMessages).toBe(before);
+});
+
 test('the documented explicit insecure override remains compatible', async () => {
   const before = startupMessages;
   await expect(connect({ DB_SSL: 'true', DB_SSL_REJECT_UNAUTHORIZED: 'false' })).resolves.toBeUndefined();

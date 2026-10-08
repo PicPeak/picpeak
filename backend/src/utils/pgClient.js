@@ -14,7 +14,7 @@ function quoteConnectionValue(value) {
   return `'${value.replace(/['\\]/g, '\\$&')}'`;
 }
 
-async function defaultCaBundle(host, port) {
+async function defaultCaBundle(host, port, name = host) {
   // sslrootcert=system is unavailable on PostgreSQL 15. Export Node's trust
   // roots as PEM so the app and its libpq tools authenticate the same peer.
   if (typeof tls.getCACertificates === 'function') {
@@ -24,10 +24,10 @@ async function defaultCaBundle(host, port) {
   // CA locations or substitute bundled roots. Authenticate a credential-free
   // SSLRequest with Node's actual store, then pin that verified issuer chain
   // for libpq (which verifies the hostname again).
-  return verifiedPeerCa(host, port);
+  return verifiedPeerCa(host, port, name);
 }
 
-function verifiedPeerCa(host, port) {
+function verifiedPeerCa(host, port, name) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host, port: Number(port) });
     let secure;
@@ -42,8 +42,8 @@ function verifiedPeerCa(host, port) {
     socket.once('connect', () => socket.write(Buffer.from([0, 0, 0, 8, 4, 210, 22, 47])));
     socket.once('data', (response) => {
       if (response.toString() !== 'S') return finish(new Error('PostgreSQL server did not accept TLS'));
-      secure = tls.connect({ socket, host, servername: net.isIP(host) ? undefined : host,
-        rejectUnauthorized: true, checkServerIdentity: checkPgServerIdentity });
+      secure = tls.connect({ socket, host, servername: net.isIP(name) ? undefined : name,
+        rejectUnauthorized: true, checkServerIdentity: (_host, certificate) => checkPgServerIdentity(name, certificate) });
       secure.once('error', finish);
       secure.once('secureConnect', () => {
         const certificates = [];
@@ -67,11 +67,17 @@ function verifiedPeerCa(host, port) {
  * backups, restores and rollback. libpq's default "prefer" does not verify
  * certificates. An inherited PGSSLMODE or a dbname parsed as conninfo must
  * not override DB_SSL. Every repository caller supplies a named -d argument.
+ *
+ * DB_SSL_SERVERNAME: libpq has no option for "verify this name instead of the
+ * host". For an IP host the name goes in `host` and the IP in `hostaddr`,
+ * which keeps verify-full. For a DNS host that differs from the name there is
+ * no such split without resolving DNS here, so those children fall back to
+ * verify-ca: the chain is verified against the CA, the name is not.
  */
 async function preparePgClient(args, options = {}) {
   const env = { ...(options.env || process.env) };
   const ssl = pgSslFromEnv(env);
-  const sslmode = !ssl ? 'disable' : ssl.rejectUnauthorized ? 'verify-full' : 'require';
+  let sslmode = !ssl ? 'disable' : ssl.rejectUnauthorized ? 'verify-full' : 'require';
   let directory;
   const cleanup = () => {
     if (directory) fs.rmSync(directory, { recursive: true, force: true });
@@ -100,7 +106,12 @@ async function preparePgClient(args, options = {}) {
     if (databases.length !== 1) throw new Error('PostgreSQL client requires exactly one named database argument');
     const { index, database, prefix } = databases[0];
     const quotedDatabase = quoteConnectionValue(database);
-    const quotedHost = quoteConnectionValue(host);
+    const servername = (env.DB_SSL_SERVERNAME || '').trim();
+    let hostInfo = `host=${quoteConnectionValue(host)}`;
+    if (sslmode === 'verify-full' && servername && servername !== host) {
+      if (net.isIP(host)) hostInfo = `host=${quoteConnectionValue(servername)} hostaddr=${quoteConnectionValue(host)}`;
+      else sslmode = 'verify-ca';
+    }
     if (ssl && (typeof host !== 'string' || host.split(',').some((entry) => !entry || entry.startsWith('/')))) {
       throw new Error('PostgreSQL TLS requires a TCP host, not a Unix socket');
     }
@@ -109,7 +120,7 @@ async function preparePgClient(args, options = {}) {
       directory = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-pg-ca-'));
       rootCert = path.join(directory, 'root.crt');
       if (ssl.rejectUnauthorized) {
-        fs.writeFileSync(rootCert, ssl.ca || await defaultCaBundle(host, port), { mode: 0o600 });
+        fs.writeFileSync(rootCert, ssl.ca || await defaultCaBundle(host, port, servername || host), { mode: 0o600 });
       }
       // For the explicit insecure override, keep root.crt absent: libpq's
       // "require" otherwise switches to verify-ca when a default CA exists.
@@ -118,7 +129,7 @@ async function preparePgClient(args, options = {}) {
     env.PGSSLMODE = sslmode;
 
     const protectedArgs = [...args];
-    protectedArgs[index] = `${prefix}dbname=${quotedDatabase} host=${quotedHost} sslmode=${quoteConnectionValue(sslmode)}` +
+    protectedArgs[index] = `${prefix}dbname=${quotedDatabase} ${hostInfo} sslmode=${quoteConnectionValue(sslmode)}` +
       (rootCert ? ` sslrootcert=${quoteConnectionValue(rootCert)}` : '');
     return { args: protectedArgs, options: { ...options, env }, cleanup };
   } catch (error) {

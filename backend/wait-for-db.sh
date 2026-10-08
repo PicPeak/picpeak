@@ -265,8 +265,12 @@ echo "Waiting for PostgreSQL at $host:$port..."
 # First, wait for PostgreSQL server to be reachable
 max_attempts=30
 attempt=0
+last_error=""
 while [ $attempt -lt $max_attempts ]; do
-  if PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' >/dev/null 2>&1; then
+  # Keep the client's stderr (psql never prints the password) for the final
+  # failure message; a TLS rejection is otherwise indistinguishable from a
+  # database that is still starting.
+  if last_error=$(PGPASSWORD="$DB_PASSWORD" pg_client -h "$host" -p "$port" -U "$user" -d "$target_db" -c '\q' 2>&1 >/dev/null); then
     >&2 echo "PostgreSQL is up - database \"$target_db\" is accessible."
     break
   fi
@@ -296,6 +300,14 @@ done
 
 if [ $attempt -eq $max_attempts ]; then
   >&2 echo "Failed to connect to PostgreSQL after $max_attempts attempts."
+  if [ -n "$last_error" ]; then
+    >&2 printf 'Last error from the PostgreSQL client:\n%s\n' "$last_error"
+  fi
+  case "$(printf '%s' "${DB_SSL:-}" | tr 'A-Z' 'a-z' | tr -d ' ')" in
+    true|1|yes|on)
+      >&2 echo "DB_SSL is on. If the certificate was rejected: set DB_SSL_CA to the server's CA (recommended), or DB_SSL_REJECT_UNAUTHORIZED=false to accept any certificate (insecure)."
+      ;;
+  esac
   exit 1
 fi
 
