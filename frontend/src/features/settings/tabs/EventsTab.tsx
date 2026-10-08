@@ -25,7 +25,8 @@ interface EventsTabProps {
 const FEEDBACK_TYPE_DEFAULTS: Array<{
   key: 'event_default_allow_ratings' | 'event_default_allow_likes'
     | 'event_default_allow_favorites' | 'event_default_allow_comments'
-    | 'event_default_allow_reactions' | 'event_default_allow_color_labels';
+    | 'event_default_allow_reactions' | 'event_default_allow_color_labels'
+    | 'event_default_allow_decisions';
   label: string;
   fallback: string;
 }> = [
@@ -35,6 +36,7 @@ const FEEDBACK_TYPE_DEFAULTS: Array<{
   { key: 'event_default_allow_comments', label: 'settings.events.defaultAllowComments', fallback: 'Comments' },
   { key: 'event_default_allow_reactions', label: 'settings.events.defaultAllowReactions', fallback: 'Emoji reactions' },
   { key: 'event_default_allow_color_labels', label: 'settings.events.defaultAllowColorLabels', fallback: 'Color labels' },
+  { key: 'event_default_allow_decisions', label: 'settings.events.defaultAllowDecisions', fallback: 'Approve / reject per photo' },
 ];
 
 export const EventsTab: React.FC<EventsTabProps> = ({

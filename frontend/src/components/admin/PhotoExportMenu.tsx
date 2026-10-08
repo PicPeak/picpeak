@@ -123,6 +123,7 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
         // #1044 — lets "export only the greens" round-trip to Lightroom.
         color_labels: filters.colorLabels?.length ? filters.colorLabels : undefined,
         my_color_labels: filters.myColorLabels?.length ? filters.myColorLabels : undefined,
+        decisions: filters.decisions?.length ? filters.decisions : undefined,
         category_id: filters.categoryId,
         logic: filters.logic,
         sort: filters.sort,
@@ -144,7 +145,8 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
     filters.hasFavorites ||
     filters.hasComments ||
     (filters.colorLabels?.length || 0) > 0 ||
-    (filters.myColorLabels?.length || 0) > 0
+    (filters.myColorLabels?.length || 0) > 0 ||
+    (filters.decisions?.length || 0) > 0
   );
 
   const isDisabled = disabled || (!hasSelection && !hasFilters);

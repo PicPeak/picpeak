@@ -10,7 +10,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const { archiveEvent } = require('../../services/archiveService');
 const logger = require('../../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
-const { requireEventOwnership, filterOwnedEventIds } = require('../../middleware/ownership');
+const { requireEventOwner, filterOwnedEventIds } = require('../../middleware/ownership');
 const { deleteEventCascade } = require('./helpers');
 
 
@@ -33,7 +33,7 @@ module.exports = (router) => {
 
 
   // Archive event
-  router.post('/:id/archive', adminAuth, requirePermission('events.archive'), requireEventOwnership, async (req, res) => {
+  router.post('/:id/archive', adminAuth, requirePermission('events.archive'), requireEventOwner, async (req, res) => {
     try {
       const { id } = req.params;
 

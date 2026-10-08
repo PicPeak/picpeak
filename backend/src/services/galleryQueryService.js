@@ -19,6 +19,7 @@ const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
+const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
@@ -48,12 +49,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     })
     .select('photos.*');
 
-  // Guests only see visible photos; clients see all
-  if (!isClient) {
-    photosQuery = photosQuery.where(function() {
-      this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
-    });
-  }
+  // Guests only see visible photos; clients see all but those under review
+  photosQuery = applyPhotoVisibilityFilter(photosQuery, accessLevel);
 
   // Live Slideshow category filter (#202). Enforced server-side so the kiosk
   // viewer can't widen the set: when the event pins show_category_id, the
@@ -236,6 +233,30 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     });
   }
 
+  // Per-viewer approve / reject (issue 744) and the reason given, same
+  // identity resolution and hidden-row rule as the rating above, and read
+  // only when the event has decisions switched on. The viewer's own choice,
+  // so not gated on showFeedbackToGuests either.
+  const decisionsOn = parseBooleanInput(feedbackSettings.feedback_enabled, false)
+    && parseBooleanInput(feedbackSettings.allow_decisions, false);
+  const myDecisionByPhoto = {};
+  if (photos.length > 0 && decisionsOn) {
+    const decisionQuery = db('photo_feedback')
+      .where({ event_id: event.id, feedback_type: 'decision', is_hidden: formatBoolean(false) })
+      .whereIn('photo_id', photos.map(p => p.id));
+    if (identity.guestId) {
+      decisionQuery.where('guest_id', identity.guestId);
+    } else {
+      decisionQuery.where('guest_identifier', identity.guestIdentifier);
+    }
+    const decisionRows = await decisionQuery.select('id', 'photo_id', 'decision', 'comment_text', 'created_at', 'updated_at');
+    Array.from(decisionRows).sort(feedbackService.lastMutatedFirst).forEach(row => {
+      if (row.decision && myDecisionByPhoto[row.photo_id] === undefined) {
+        myDecisionByPhoto[row.photo_id] = { decision: row.decision, reason: row.comment_text || null };
+      }
+    });
+  }
+
   // OTHER viewers' colour labels, per photo (#1178).
   //
   // The lightbox has always shown these — /photos/:id/feedback returns
@@ -319,10 +340,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
   }
 
   // Get actual categories used by photos in this event
-  // This includes both global categories and event-specific ones
-  const usedFilterIds = hiddenForGuest ? [] : await db('photos')
+  // This includes both global categories and event-specific ones. Only
+  // photos this viewer may see count, as for the folders below: a category
+  // holding nothing but hidden photos, or a team upload under review
+  // (issue 743), must not ship its name.
+  const usedFilterIds = hiddenForGuest ? [] : await applyPhotoVisibilityFilter(db('photos')
     .where('event_id', event.id)
-    .whereNotNull('category_id')
+    .whereNotNull('category_id'), accessLevel)
     .distinct('category_id')
     .pluck('category_id');
   // Folders (issue 1786): every folder that holds photos, plus all of its
@@ -339,7 +363,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       .where('event_id', event.id)
       .whereNotNull('folder_id')
       .where((q) => q.where('processing_status', 'complete').orWhereNull('processing_status'));
-    if (!isClient) directQuery = directQuery.where((q) => q.where('visibility', 'visible').orWhereNull('visibility'));
+    directQuery = applyPhotoVisibilityFilter(directQuery, accessLevel);
     const direct = await directQuery.distinct('folder_id').pluck('folder_id');
     for (const id of direct) {
       let cur = folderById.get(Number(id));
@@ -701,6 +725,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         // grid can show them beside the viewer's own badge. Empty with
         // sharing off — it is other people's feedback.
         other_color_labels: otherColorLabelsByPhoto[photo.id] || [],
+        // Approve / reject (issue 744): the tallies are aggregate data and
+        // follow show_feedback_to_guests; the viewer's own decision and
+        // reason do not, like my_color_label.
+        approved_count: showFeedbackToGuests ? (photo.approved_count || 0) : 0,
+        rejected_count: showFeedbackToGuests ? (photo.rejected_count || 0) : 0,
+        my_decision: myDecisionByPhoto[photo.id]?.decision || null,
+        my_decision_reason: myDecisionByPhoto[photo.id]?.reason || null,
         // People in this photo (#1074). Empty array when the feature is
         // off for this event or hidden from guests, so the frontend has
         // one shape to handle. Riding along on this payload is what keeps

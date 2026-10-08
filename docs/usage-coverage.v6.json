@@ -666,6 +666,7 @@
       "route_signatures": [
         "POST /",
         "GET /",
+        "GET /assignable-admins",
         "GET /:id",
         "POST /:id/send-gallery-email",
         "POST /:id/publish",
@@ -1097,6 +1098,8 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/moderation",
+        "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",
         "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/download",

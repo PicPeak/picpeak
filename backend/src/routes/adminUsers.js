@@ -31,6 +31,7 @@ function transformUser(user, { ssoEligibility = false } = {}) {
     roleName: user.role_name,
     roleDisplayName: user.role_display_name,
     createdByUsername: user.created_by_username,
+    creditName: user.credit_name ?? null,
     // Only a super_admin can confirm an email for SSO linking, and only they
     // are shown the state, so the field travels for them alone. Undefined
     // before migration 227 has run, which the Users page reads as eligible.

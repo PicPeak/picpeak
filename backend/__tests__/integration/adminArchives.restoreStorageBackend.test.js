@@ -102,6 +102,7 @@ describe('archive routes read and write through the storage backend', () => {
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
       requireEventOwnership: (_req, _res, next) => next(),
+      requireEventOwner: (_req, _res, next) => next(),
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());

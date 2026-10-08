@@ -21,10 +21,11 @@ const { db } = require('../database/db');
 /**
  * Apply the visibility predicate a given audience is allowed to see.
  * Mirrors gallery.js: guests get 'visible' (or NULL, pre-migration rows),
- * clients get everything. Also excludes photos still being processed, which
+ * clients get everything but the photos under review (migration 269), the
+ * admin gets everything. Also excludes photos still being processed, which
  * are invisible in the gallery payload too.
  */
-function applyVisibilityScope(query, { isClient }) {
+function applyVisibilityScope(query, { isClient, forAdmin = false }) {
   query.where(function () {
     this.where('photos.processing_status', 'complete').orWhereNull('photos.processing_status');
   });
@@ -32,6 +33,8 @@ function applyVisibilityScope(query, { isClient }) {
     query.where(function () {
       this.where('photos.visibility', 'visible').orWhereNull('photos.visibility');
     });
+  } else if (!forAdmin) {
+    query.whereNull('photos.moderation_status');
   }
   return query;
 }
@@ -64,7 +67,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       .join('photos', 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
-    { isClient }
+    { isClient, forAdmin }
   )
     .groupBy('photo_faces.person_id')
     .select('photo_faces.person_id')
@@ -81,7 +84,7 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       .join('photos', 'photos.id', 'photo_faces.photo_id')
       .where('photo_faces.event_id', eventId)
       .whereNotNull('photo_faces.person_id'),
-    { isClient }
+    { isClient, forAdmin }
   )
     .orderBy('photo_faces.det_score', 'desc')
     .select(
@@ -208,7 +211,7 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
  * Scan progress for the admin status line and the gallery's "Finding
  * people… 240/1200" indicator.
  */
-async function getScanStatus(eventId, { isClient = true } = {}) {
+async function getScanStatus(eventId, { isClient = true, forAdmin = true } = {}) {
   // `isClient` defaults to TRUE (the admin/photographer view) because every
   // existing caller is an admin surface. A guest must pass isClient:false:
   // counting every photo with a face_status would otherwise tell them how
@@ -216,7 +219,7 @@ async function getScanStatus(eventId, { isClient = true } = {}) {
   // covers are already scoped against, arriving through the progress bar.
   const rows = await applyVisibilityScope(
     db('photos').where({ event_id: eventId }).whereNotNull('face_status'),
-    { isClient }
+    { isClient, forAdmin }
   )
     .groupBy('face_status')
     .select('face_status')

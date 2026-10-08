@@ -71,7 +71,8 @@
     "confirmCancelInvitation": {
       "title": "Отменить приглашение",
       "message": "Вы уверены, что хотите отменить приглашение для {{email}}?"
-    }
+    },
+    "creditNameHelp": "Указывается на фото, загруженных этой учётной записью, если в метаданных файла нет имени фотографа."
   },
   "common": {
     "loading": "Загрузка...",
@@ -896,8 +897,14 @@
         "folderStructureOn": "Структура папок включена",
         "folderStructureOff": "Загрузки без папок",
         "firstLookDue": "первая подборка, полная галерея к {{date}}",
-        "firstLook": "первая подборка, остальное позже"
-      }
+        "firstLook": "первая подборка, остальное позже",
+        "teamMembers_one": "{{count}} участник команды",
+        "teamMembers_few": "{{count}} участника команды",
+        "teamMembers_many": "{{count}} участников команды",
+        "teamMembers_other": "{{count}} участников команды",
+        "teamReview": "загрузки команды проверяются"
+      },
+      "passwordOwnerOnly": "Только владелец галереи может изменить пароль или отключить его."
     },
     "folders": {
       "sectionTitle": "Папки",
@@ -959,6 +966,19 @@
       "structureApplied_other": "{{count}} фото перемещено в папки",
       "structureNothing": "Все фото из вложенных папок уже находятся в папках",
       "structureFailed": "Не удалось применить структуру папок"
+    },
+    "team": {
+      "label": "Участники команды",
+      "help": "Добавленные здесь учётные записи администраторов могут работать с этой галереей как вы, в пределах своей роли. Данные клиентов и счетов остаются вашими.",
+      "removeAria": "Удалить {{name}}",
+      "placeholder": "Поиск учётных записей администраторов",
+      "loading": "Загрузка…",
+      "loadFailed": "Не удалось загрузить учётные записи администраторов.",
+      "noResults": "Других подходящих учётных записей нет.",
+      "reviewUploads": "Проверять загрузки участников команды перед публикацией",
+      "reviewUploadsHelp": "Задерживает загрузки участников команды, чья роль не имеет разрешения «Review Team Uploads»: они скрыты от гостей и клиентов, пока вы или проверяющий не одобрите их на вкладке «Фото». Роли Admin, Editor и Solo Photographer имеют это разрешение по умолчанию, поэтому их загрузки никогда не задерживаются.",
+      "reviewUploadsHelpMember": "Ваши загрузки в эту галерею скрыты от гостей и клиентов, пока владелец или проверяющий их не одобрит.",
+      "reviewUploadsHelpReviewer": "Загрузки участников команды без разрешения «Review Team Uploads» ждут одобрения на вкладке «Фото». Ваши публикуются сразу."
     }
   },
   "settings": {
@@ -1003,7 +1023,9 @@
       "accountSaveSuccess": "Данные аккаунта обновлены",
       "adminLanguage": "Ваш язык админ-панели",
       "adminLanguageHelp": "Применяется к админ-панели, только для вас на этом устройстве. Действует сразу — сохранять не нужно.",
-      "customerLanguage": "Язык галереи и гостей"
+      "customerLanguage": "Язык галереи и гостей",
+      "accountCreditName": "Автор фото",
+      "accountCreditNameHelp": "Указывается на загруженных вами фото, если в метаданных файла нет имени фотографа. Оставьте пустым, чтобы не указывать."
     },
     "publicSite": {
       "badge": "Публичная страница",
@@ -1191,7 +1213,8 @@
       "firstLookKeywords": "Ключевые слова",
       "firstLookKeywordsHelp": "Через запятую. Регистр, пробелы, дефисы и подчёркивания игнорируются, поэтому «FirstLook» совпадает и с «first-look».",
       "deliveryDays": "Срок полной галереи через (дней)",
-      "deliveryDaysHelp": "Если первая подборка начинается без обещанной даты, срок полной галереи наступает через столько дней после даты события."
+      "deliveryDaysHelp": "Если первая подборка начинается без обещанной даты, срок полной галереи наступает через столько дней после даты события.",
+      "defaultAllowDecisions": "Одобрение / отклонение каждого фото"
     },
     "imageSecurity": {
       "title": "Защита изображений",
@@ -1964,7 +1987,18 @@
       "categoryHeroUpdated": "Главное фото категории обновлено",
       "publicSiteResetToDefault": "Публичный сайт сброшен к значениям по умолчанию",
       "cmsPageLogoUploaded": "Логотип CMS-страницы загружен: {{slug}}",
-      "adminPasswordResetByAdmin": "Пароль администратора сброшен другим администратором: {{username}}"
+      "adminPasswordResetByAdmin": "Пароль администратора сброшен другим администратором: {{username}}",
+      "eventTeamChanged": "Команда изменена: {{eventName}}",
+      "photosReviewApproved_one": "{{count}} загрузка команды одобрена в {{eventName}}",
+      "photosReviewApproved_few": "{{count}} загрузки команды одобрены в {{eventName}}",
+      "photosReviewApproved_many": "{{count}} загрузок команды одобрено в {{eventName}}",
+      "photosReviewApproved_other": "{{count}} загрузок команды одобрено в {{eventName}}",
+      "photosReviewRejected_one": "{{count}} загрузка команды отклонена в {{eventName}}",
+      "photosReviewRejected_few": "{{count}} загрузки команды отклонены в {{eventName}}",
+      "photosReviewRejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
+      "photosReviewRejected_other": "{{count}} загрузок команды отклонено в {{eventName}}",
+      "photoDecision": "Фото одобрено или отклонено в {{eventName}}",
+      "guestFeedbackDecision": "Гость одобрил или отклонил фото в {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "Все уведомления отмечены как прочитанные",
@@ -2028,7 +2062,9 @@
         "filterLabel": "Фильтр по автору",
         "filterAll": "Все имена",
         "filterNone": "Без имени"
-      }
+      },
+      "approvedBy": "Одобрено: {{value}}",
+      "rejectedBy": "Отклонено: {{value}}"
     },
     "events": {
       "tabs": {
@@ -2234,7 +2270,18 @@
       "delivery_first_look_started": "Первая подборка начата для «{{eventName}}»",
       "delivery_completed": "Полная галерея выдана: {{eventName}}",
       "delivery_due_soon": "Скоро срок полной галереи «{{eventName}}»",
-      "delivery_overdue": "Полная галерея «{{eventName}}» просрочена"
+      "delivery_overdue": "Полная галерея «{{eventName}}» просрочена",
+      "photo_decision": "Фото одобрено или отклонено в {{eventName}}",
+      "guest_feedback_decision": "Гость одобрил или отклонил фото в {{eventName}}",
+      "event_team_changed": "Команда изменена: {{eventName}}",
+      "photos_review_approved_one": "{{count}} загрузка команды одобрена в {{eventName}}",
+      "photos_review_approved_few": "{{count}} загрузки команды одобрены в {{eventName}}",
+      "photos_review_approved_many": "{{count}} загрузок команды одобрено в {{eventName}}",
+      "photos_review_approved_other": "{{count}} загрузок команды одобрено в {{eventName}}",
+      "photos_review_rejected_one": "{{count}} загрузка команды отклонена в {{eventName}}",
+      "photos_review_rejected_few": "{{count}} загрузки команды отклонены в {{eventName}}",
+      "photos_review_rejected_many": "{{count}} загрузок команды отклонено в {{eventName}}",
+      "photos_review_rejected_other": "{{count}} загрузок команды отклонено в {{eventName}}"
     },
     "catalogedMedia": "{{size}} в каталоге",
     "storageUnavailable": "недоступно",
@@ -2974,7 +3021,9 @@
       "keybindColors": "Только цвета (самый простой вариант)",
       "keybindColorsDesc": "1 — зелёный (1-й выбор), 2 — жёлтый (2-й выбор), 3 — красный (отклонено)",
       "keybindLightroom": "Как в Lightroom",
-      "keybindLightroomDesc": "1–5 ставят звёзды, 6–9 — красный / жёлтый / зелёный / синий"
+      "keybindLightroomDesc": "1–5 ставят звёзды, 6–9 — красный / жёлтый / зелёный / синий",
+      "decisions": "Одобрение / отклонение каждого фото",
+      "decisionsDesc": "Гости одобряют или отклоняют каждое фото и при желании указывают причину. Вы фильтруете и экспортируете по их решению"
     },
     "settingsUpdated": "Настройки отзывов обновлены",
     "settingsUpdateError": "Не удалось обновить настройки",
@@ -2997,7 +3046,8 @@
       "like": "Лайки",
       "comment": "Комментарии",
       "favorite": "Избранное",
-      "reaction": "Реакции"
+      "reaction": "Реакции",
+      "decision": "Одобрение / отклонение"
     },
     "allStatuses": "Все статусы",
     "status": {
@@ -3074,7 +3124,25 @@
     "removeColorLabel": "Убрать метку «{{color}}»",
     "setColorLabel": "Отметить как «{{color}}»",
     "markedAs": "Отмечено как «{{color}}»",
-    "alsoMarkedBy": "Также отмечено другими: {{colors}}"
+    "alsoMarkedBy": "Также отмечено другими: {{colors}}",
+    "decisions": {
+      "approved": "Одобрено",
+      "rejected": "Отклонено"
+    },
+    "totalDecisions": "Одобрено / отклонено",
+    "decisionsTitle": "Одобрение / отклонение",
+    "decisionApprove": "Одобрить",
+    "decisionReject": "Отклонить",
+    "decisionClear": "Отменить решение",
+    "decisionReasonEdit": "Почему? (необязательно)",
+    "decisionReasonLabel": "Почему вы отклоняете это фото? (необязательно)",
+    "decisionReasonPlaceholder": "например, закрыты глаза, неудачный ракурс",
+    "decisionReasonSave": "Сохранить причину",
+    "decisionReasonBlocked": "Причина содержит недопустимые слова.",
+    "decisionError": "Не удалось сохранить решение",
+    "decisionType": "ваше решение",
+    "youApproved": "Вы одобрили это фото",
+    "youRejected": "Вы отклонили это фото"
   },
   "filter": {
     "feedbackFilters": "Фильтры отзывов",
@@ -3097,7 +3165,11 @@
     "colorLabels": "Цветовые метки",
     "showOnlyColor": "Показать только «{{color}}»",
     "myColorLabels": "Ваши отметки",
-    "showOnlyMyColor": "Показать только мои отметки «{{color}}»"
+    "showOnlyMyColor": "Показать только мои отметки «{{color}}»",
+    "decisions": "Одобрение / отклонение",
+    "decisionApproved": "Одобрено",
+    "decisionRejected": "Отклонено",
+    "decisionUndecided": "Без решения"
   },
   "adminLogin": {
     "title": "Вход для администратора",
@@ -3266,6 +3338,39 @@
       "waitingForAdmin_few": "Запросов на папки, ожидающих администратора: {{count}}. До тех пор их фото ({{photos}}) находятся в ближайшей существующей папке.",
       "waitingForAdmin_many": "Запросов на папки, ожидающих администратора: {{count}}. До тех пор их фото ({{photos}}) находятся в ближайшей существующей папке.",
       "waitingForAdmin_other": "Запросов на папки, ожидающих администратора: {{count}}. До тех пор их фото ({{photos}}) находятся в ближайшей существующей папке."
+    },
+    "review": {
+      "pendingOwner_one": "{{count}} загрузка вашей команды ждёт проверки",
+      "pendingOwner_few": "{{count}} загрузки вашей команды ждут проверки",
+      "pendingOwner_many": "{{count}} загрузок вашей команды ждут проверки",
+      "pendingOwner_other": "{{count}} загрузок вашей команды ждут проверки",
+      "pendingMember_one": "{{count}} загрузка команды ждёт проверки владельцем",
+      "pendingMember_few": "{{count}} загрузки команды ждут проверки владельцем",
+      "pendingMember_many": "{{count}} загрузок команды ждут проверки владельцем",
+      "pendingMember_other": "{{count}} загрузок команды ждут проверки владельцем",
+      "nonePending": "Нет загрузок, ожидающих проверки.",
+      "filterPending": "На проверке ({{count}})",
+      "filterRejected": "Отклонены ({{count}})",
+      "showAll": "Все фото",
+      "approve": "Одобрить",
+      "reject": "Отклонить",
+      "approved_one": "{{count}} фото одобрено и опубликовано",
+      "approved_few": "{{count}} фото одобрены и опубликованы",
+      "approved_many": "{{count}} фото одобрено и опубликовано",
+      "approved_other": "{{count}} фото одобрено и опубликовано",
+      "rejected_one": "{{count}} фото отклонено",
+      "rejected_few": "{{count}} фото отклонены",
+      "rejected_many": "{{count}} фото отклонено",
+      "rejected_other": "{{count}} фото отклонено",
+      "failed": "Не удалось проверить фото",
+      "pendingBadge": "На проверке",
+      "rejectedBadge": "Отклонено",
+      "uploadedBy": "Загрузил(а) {{name}}",
+      "hiddenUntilApproved": "Скрыто от гостей и клиентов до одобрения",
+      "skippedOnShow_one": "{{count}} фото ждёт проверки и остаётся скрытым до одобрения",
+      "skippedOnShow_few": "{{count}} фото ждут проверки и остаются скрытыми до одобрения",
+      "skippedOnShow_many": "{{count}} фото ждут проверки и остаются скрытыми до одобрения",
+      "skippedOnShow_other": "{{count}} фото ждут проверки и остаются скрытыми до одобрения"
     }
   },
   "customer": {
