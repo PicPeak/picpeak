@@ -4,6 +4,9 @@ const fsSync = require('fs');
 const { pipeline } = require('stream/promises');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+// Legacy geometry-only callers must not initialise a database connection.
+const quota = () => require('./publicUploadQuota');
+const admitted = () => require('./adminChunkedAdmission');
 
 // Get storage path from environment or default
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
@@ -122,7 +125,7 @@ async function initializeUpload(options) {
   // carry the whole per-file allowance and made the merge below read it into
   // memory in one piece.
   const size = Number(fileSize);
-  if (!Number.isInteger(size) || size <= 0) {
+  if (!Number.isSafeInteger(size) || size <= 0) {
     throw invalidChunkError('fileSize must be a positive integer');
   }
   const expectedChunks = Math.ceil(size / CHUNK_SIZE);
@@ -137,8 +140,20 @@ async function initializeUpload(options) {
   const uploadId = crypto.randomUUID();
 
   // Create chunks directory for this upload
-  const uploadDir = path.join(getChunksPath(), uploadId);
-  await fs.mkdir(uploadDir, { recursive: true });
+  let admission = null;
+  if (options.admission) {
+    if (size > Number(maxFileSizeBytes)) throw fileTooLargeError(Number(maxFileSizeBytes));
+    try { quota().configuration('admin'); } catch (_) { throw quota().refusal('UPLOAD_QUOTA_UNAVAILABLE', 503); }
+    admission = await quota().begin({ eventId, mode: 'admin', maxFiles: 1,
+      requestedBytes: size, stagingFiles: expectedChunks + 3 });
+  }
+  const uploadDir = admission ? path.join(admission.dir, 'chunks') : path.join(getChunksPath(), uploadId);
+  try {
+    await fs.mkdir(uploadDir, { recursive: true, mode: 0o700 });
+  } catch (err) {
+    if (admission) await quota().finish(admission);
+    throw err;
+  }
 
   // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
   // client-declared fileSize the init route checks: a client can declare
@@ -161,11 +176,13 @@ async function initializeUpload(options) {
     // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
     chunkSizes: new Map(),
     maxFileSizeBytes: sizeCap,
+    admission,
     uploadDir,
     createdAt: Date.now(),
     expiresAt: Date.now() + UPLOAD_EXPIRATION_MS,
     status: 'in_progress'
   };
+  if (admission) admission.isCancelled = () => !!uploadMeta.cancelled;
 
   activeUploads.set(uploadId, uploadMeta);
 
@@ -286,6 +303,19 @@ async function uploadChunk(uploadId, chunkIndex, source, { declaredBytes, owner 
   if (Date.now() > uploadMeta.expiresAt) {
     await abortUpload(uploadId);
     throw uploadStateError('Upload expired', 410);
+  }
+
+  if (uploadMeta.admission) {
+    if (!Number.isSafeInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= uploadMeta.expectedChunks) {
+      throw invalidChunkError(`Invalid chunk index ${chunkIndex}: expected 0-${uploadMeta.expectedChunks - 1}`);
+    }
+    const banked = totalReceivedBytes(uploadMeta) - (uploadMeta.chunkSizes.get(chunkIndex) || 0);
+    const announced = Buffer.isBuffer(source) ? source.length : declaredBytes;
+    if (Number.isFinite(announced) && announced > uploadMeta.maxFileSizeBytes - banked) {
+      await abortUpload(uploadId);
+      throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
+    }
+    return admitted().upload(uploadMeta, chunkIndex, source, declaredBytes, CHUNK_SIZE);
   }
 
   // Only the announced chunk indices are valid — anything else would merge
@@ -431,6 +461,18 @@ async function completeUpload(uploadId, { owner } = {}) {
   if (uploadMeta.status !== 'in_progress') {
     throw uploadStateError(`Upload is ${uploadMeta.status}`, 409);
   }
+  if (Date.now() > uploadMeta.expiresAt) {
+    await abortUpload(uploadId);
+    throw uploadStateError('Upload expired', 410);
+  }
+  if (uploadMeta.admission) {
+    try {
+      return await admitted().complete(uploadMeta);
+    } catch (err) {
+      if (uploadMeta.status === 'failed') await abortUpload(uploadId);
+      throw err;
+    }
+  }
 
   // Verify all chunks received
   if (uploadMeta.receivedChunks.size !== uploadMeta.expectedChunks) {
@@ -517,6 +559,12 @@ async function abortUpload(uploadId, { owner } = {}) {
 
   if (!uploadMeta) return false;
 
+  if (uploadMeta.admission) {
+    await admitted().abort(uploadMeta);
+    activeUploads.delete(uploadId);
+    return true;
+  }
+
   try {
     await fs.rm(uploadMeta.uploadDir, { recursive: true, force: true });
   } catch (err) {
@@ -527,6 +575,15 @@ async function abortUpload(uploadId, { owner } = {}) {
 
   logger.info('Chunked upload aborted', { uploadId });
   return true;
+}
+
+// The route calls this only in its processor's finally block. Abort/expiry
+// can request cancellation earlier, but cannot release a live processor.
+async function finishUpload(uploadId, { owner } = {}) {
+  const meta = findOwnedUpload(uploadId, owner);
+  if (!meta || !meta.admission) return false;
+  admitted().processingSettled(meta);
+  return abortUpload(uploadId, { owner });
 }
 
 /**
@@ -570,7 +627,7 @@ async function cleanupExpiredUploads() {
   }
 
   for (const uploadId of expiredIds) {
-    await abortUpload(uploadId);
+    await abortUpload(uploadId).catch(err => logger.warn('Expired upload cleanup failed; reservation retained', { uploadId, error: err.message }));
   }
 
   if (expiredIds.length > 0) {
@@ -591,6 +648,7 @@ module.exports = {
   uploadChunk,
   completeUpload,
   abortUpload,
+  finishUpload,
   getUploadStatus,
   cleanupExpiredUploads,
   CHUNK_SIZE

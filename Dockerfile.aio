@@ -40,6 +40,9 @@ WORKDIR /app
 
 COPY backend/package*.json ./
 RUN npm ci --omit=dev
+COPY backend/native/ ./native/
+COPY backend/scripts/build-native-runner.js ./scripts/build-native-runner.js
+RUN apk add --no-cache --virtual .media-build build-base linux-headers && npm run build:native
 
 # ---------------------------------------------------------------------------
 # Runtime — mirrors backend/Dockerfile's production stage + the frontend dist
@@ -89,6 +92,8 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 
 COPY --from=backend-builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --chown=nodejs:nodejs backend/ .
+COPY --from=backend-builder --chown=nodejs:nodejs /app/bin/media-process-guard ./bin/media-process-guard
+COPY --from=backend-builder --chown=nodejs:nodejs /app/bin/local-process-lease.node ./bin/local-process-lease.node
 
 RUN chmod -R a+r /app && chmod +x wait-for-db.sh
 

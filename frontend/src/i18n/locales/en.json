@@ -775,6 +775,17 @@
     "language": "Language"
   },
   "upload": {
+    "capacity": {
+      "decoded": "This media or batch exceeds the server's processing budget. Please use fewer frames, lower dimensions, shorter videos, or a smaller batch.",
+      "signature": "This file does not contain a supported video or RAW image. Please upload the original media file.",
+      "processing": "Image processing could not complete within the server's resource limits. Please contact the owner.",
+      "batch": "This upload exceeds the server's batch limit or remaining allowance. Please send fewer or smaller files, or contact the owner.",
+      "lifetime": "This gallery or file request has reached its upload allowance. Please contact the owner.",
+      "busy": "Other uploads or processing jobs are using the available capacity. Please try again later.",
+      "rate": "The upload byte or request limit for this hour has been reached. Please try again later.",
+      "unavailable": "Upload storage capacity is unavailable. Please contact the owner.",
+      "timeout": "The upload took too long. Please try a smaller batch."
+    },
     "photoCategory": "Photo Category",
     "noCategory": "No category",
     "eventSpecific": "(Event specific)",

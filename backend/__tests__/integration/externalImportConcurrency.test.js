@@ -60,7 +60,7 @@ describe('concurrent external imports (#1162)', () => {
     // The window. In production this is a real decode of a NAS-hosted file —
     // hundreds of milliseconds during which the row we just proved absent can
     // appear. Standing in for the other run here makes that deterministic.
-    jest.doMock('sharp', () => () => ({
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({
       metadata: async () => {
         if (stealDuringMetadata) {
           const { db: liveDb } = require('../../src/database/db');

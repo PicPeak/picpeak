@@ -61,7 +61,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
     process.env.EXTERNAL_MEDIA_WATCH_RECONCILE_INTERVAL_MS = '3600000';
 
     jest.resetModules();
-    jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn(async () => 'thumbnails/mock.jpg'),
       extractCaptureDate: jest.fn(async () => null),

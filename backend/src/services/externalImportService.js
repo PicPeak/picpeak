@@ -18,7 +18,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { resolveExternalPath, getExternalMediaRoot } = require('./externalMediaService');
@@ -447,6 +447,7 @@ async function importExternalFolder({
           ({ width, height } = orientedDimensions(metadata));
         } catch (dimErr) {
           logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
+          if (require('./imageResourcePolicy').isResourceError(dimErr)) { skipped++; continue; }
         }
 
         // Capture date from EXIF (#1172). Managed uploads get this from

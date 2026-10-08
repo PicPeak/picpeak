@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db } = require('../database/db');
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
@@ -315,6 +315,7 @@ class SecureImageService {
       return await image.toBuffer();
     } catch (error) {
       logger.error('Error processing protected image:', error);
+      if (require('./imageResourcePolicy').isResourceError(error)) throw error;
       // Return original on error
       return await fs.readFile(imagePath);
     }

@@ -18,6 +18,7 @@ import { UploadCloud, CheckCircle, AlertCircle, X, File as FileIcon } from 'luci
 
 import { Button, Loading } from '../../components/common';
 import { transfersService } from '../../services/transfers.service';
+import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
@@ -92,8 +93,9 @@ export const TransferUploadPage: React.FC = () => {
       await transfersService.upload(token as string, files, setProgress);
       setDone(true);
     } catch (err) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
-        || t('transfers.upload.failed', 'Upload failed. Please try again.');
+      const details = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
+      const capacityKey = publicUploadErrorKey(details?.code);
+      const msg = capacityKey ? t(capacityKey) : details?.error || t('transfers.upload.failed', 'Upload failed. Please try again.');
       toast.error(msg);
     } finally {
       setUploading(false);

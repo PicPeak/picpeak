@@ -207,8 +207,9 @@ int main(int argc, char **argv) {
         if (result < 0 && errno != EINTR) return 125;
         struct timespec delay = { 0, 10000000 }; (void)nanosleep(&delay, NULL);
     }
-    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s}\n",
-        timed_out ? "true" : "false", cancelled ? "true" : "false");
+    dprintf(3, "{\"terminal\":true,\"timedOut\":%s,\"cancelled\":%s,\"childSignal\":%d}\n",
+        timed_out ? "true" : "false", cancelled ? "true" : "false",
+        WIFSIGNALED(final_status) ? WTERMSIG(final_status) : 0);
     close(3);
     if (timed_out) return 124;
     if (cancelled) return 130;

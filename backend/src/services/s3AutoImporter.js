@@ -17,7 +17,7 @@
 
 const path = require('path');
 const mime = require('mime-types');
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -119,6 +119,7 @@ async function processEvent(event, storage) {
           });
         } catch (err) {
           logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
+          if (require('./imageResourcePolicy').isResourceError(err)) continue;
         }
       }
 

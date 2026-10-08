@@ -32,13 +32,15 @@ const request = require('supertest');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { admissionVideo } = require('../fixtures/admissionVideo');
+jest.mock('../../src/services/downloadZipService', () => ({ invalidate: jest.fn() }));
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
 const SLUG = 'video-size-test-event';
 // Resolved lazily: bootCrmDb() repoints STORAGE_PATH at its own tmp dir, so a
 // path captured at module load is not the one the route uploads into.
-const tempRoot = () => path.join(process.env.STORAGE_PATH, 'temp');
+const tempRoot = () => path.join(process.env.STORAGE_PATH, 'temp', 'public-uploads');
 
 describe('admin upload per-file video size limit (general_max_video_size_mb)', () => {
   let db;
@@ -70,7 +72,7 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
   const postUpload = (bytes, filename, contentType) => request(app)
     .post(`/api/admin/photos/${eventId}/upload`)
     .set('Authorization', `Bearer ${adminToken}`)
-    .attach('photos', Buffer.alloc(bytes, 0x41), { filename, contentType });
+    .attach('photos', contentType.startsWith('video/') ? admissionVideo(bytes) : Buffer.alloc(bytes, 0x41), { filename, contentType });
 
   const postVideo = (bytes) => postUpload(bytes, 'clip.mp4', 'video/mp4');
   const postPhoto = (bytes) => postUpload(bytes, 'shot.jpg', 'image/jpeg');
@@ -80,7 +82,7 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
     let entries = [];
     for (let i = 0; i < 40; i++) {
       entries = fs.existsSync(tempRoot()) ? fs.readdirSync(tempRoot()) : [];
-      if (entries.length === 0) return entries;
+      if (entries.length === 0 && !(await db('public_upload_requests').where({ active: 1 }).first())) return entries;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     return entries;
@@ -134,15 +136,14 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
   }, 120000);
 
+  afterEach(async () => { expect(await tempEntriesAfterSettle()).toEqual([]); });
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   it('lets a video past the size gate that the photo cap would have rejected', async () => {
     await setCaps({ photoMb: 1, videoMb: 10 });
     const res = await postVideo(2 * 1024 * 1024);
-    // Junk bytes, so it still fails on the content check — that is the point:
-    // the failure is no longer about size.
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('File content does not match declared type: clip.mp4');
+    expect(res.status).toBe(202);
+    expect(res.body.count).toBe(1);
   });
 
   it('still holds a photo to the photo cap even though multer streamed against the video cap', async () => {
@@ -168,7 +169,8 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
 
     await setCaps({ photoMb: 1, videoMb: 10 });
     const res = await postVideo(2 * 1024 * 1024);
-    expect(res.body.error).toBe('File content does not match declared type: clip.mp4');
+    expect(res.status).toBe(202);
+    expect(res.body.count).toBe(1);
   });
 
   it('defaults the video cap to 500MB when the setting is absent', async () => {
@@ -179,7 +181,8 @@ describe('admin upload per-file video size limit (general_max_video_size_mb)', (
 
     expect(await uploadSettings.getMaxVideoSizeMb()).toBe(500);
     const res = await postVideo(2 * 1024 * 1024);
-    expect(res.body.error).toBe('File content does not match declared type: clip.mp4');
+    expect(res.status).toBe(202);
+    expect(res.body.count).toBe(1);
   });
 
   it('leaves no temp files behind when an upload is rejected', async () => {

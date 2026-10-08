@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Upload, X, CheckCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -6,6 +6,7 @@ import { Button } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
+import { publicUploadErrorKey } from '../../utils/publicUploadErrors';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -31,6 +32,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   // instead of a static 100% bar while the backend works.
   const [processingFiles, setProcessingFiles] = useState<{ [key: string]: boolean }>({});
   const [isDragOver, setIsDragOver] = useState(false);
+  const pendingUploadIdsRef = useRef<string[]>([]);
 
   const { data: publicSettings } = usePublicSettings();
 
@@ -151,6 +153,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // Set when the photo limit stopped the batch; its own message already
     // explains every file that was not sent.
     let stoppedAtPhotoCap = false;
+    let stoppedForCapacity = false;
 
     for (const [index, file] of files.entries()) {
       // The gallery's photo limit refuses this file and every one after it:
@@ -207,7 +210,8 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
             break;
           }
           failedCount++;
-          const reason = firstError?.error || t('upload.someFilesFailed');
+          const capacityKey = publicUploadErrorKey(firstError?.code);
+          const reason = capacityKey ? t(capacityKey) : firstError?.error || t('upload.someFilesFailed');
           toast.error(`${file.name}: ${reason}`);
           continue;
         }
@@ -223,6 +227,16 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           stopAtPhotoCap(error.response.data.limit);
           break;
         }
+        const capacityKey = publicUploadErrorKey(error.response?.data?.code);
+        if (capacityKey) {
+          failedCount += files.length - index;
+          toast.error(t(capacityKey));
+          // Do not turn a capacity refusal into hundreds of repeated requests.
+          // Leave unsent files selected and retain earlier processing groups.
+          stoppedForCapacity = true;
+          setFiles(files.slice(index));
+          break;
+        }
         // Upload error handled - user notified via UI
         failedCount++;
         
@@ -236,10 +250,16 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
-      onUploadComplete(uploadIds);
+    }
+    if (stoppedForCapacity) {
+      // Keep the dialog and unsent files; report stored groups on retry.
+      pendingUploadIdsRef.current = [...pendingUploadIdsRef.current, ...uploadIds];
+    } else if (successCount > 0 || pendingUploadIdsRef.current.length > 0) {
+      onUploadComplete([...pendingUploadIdsRef.current, ...uploadIds]);
+      pendingUploadIdsRef.current = [];
     }
     
-    if (failedCount > 0 && !stoppedAtPhotoCap) {
+    if (failedCount > 0 && !stoppedAtPhotoCap && !stoppedForCapacity) {
       toast.error(`${failedCount} ${t('upload.someFilesFailed')}`);
     }
 
