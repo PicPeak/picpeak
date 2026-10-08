@@ -3,9 +3,12 @@ const { PassThrough } = require('stream');
 const { isPublicAddress } = require('./rsyncConnection');
 
 /** Try only approved literal TCP destinations, and only before connection. */
-function connectApprovedAddresses(addresses, { signal, timeoutMs = 10000 } = {}) {
+function connectApprovedAddresses(addresses, { signal, timeoutMs = 10000, port = 22 } = {}) {
   if (!Array.isArray(addresses) || !addresses.length || !addresses.every(isPublicAddress)) {
     return Promise.reject(new Error('The SSH relay requires only public IP literals'));
+  }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return Promise.reject(new Error('The SSH relay requires a port from 1 to 65535'));
   }
   return new Promise((resolve, reject) => {
     let index = 0; let current; let timer; let settled = false;
@@ -23,7 +26,7 @@ function connectApprovedAddresses(addresses, { signal, timeoutMs = 10000 } = {})
       const address = addresses[index++];
       let attemptDone = false;
       try {
-        current = net.createConnection({ host: address, port: 22, family: net.isIP(address),
+        current = net.createConnection({ host: address, port, family: net.isIP(address),
           lookup: (_host, _options, callback) => callback(new Error('DNS is forbidden in the SSH relay')) });
       } catch { next(); return; }
       const socket = current;
@@ -44,7 +47,7 @@ function connectApprovedAddresses(addresses, { signal, timeoutMs = 10000 } = {})
   });
 }
 
-async function runProxy(addresses) {
+async function runProxy([portArg, ...addresses]) {
   const controller = new AbortController();
   // Buffer SSH's initial banner with backpressure until the socket connects;
   // also consume EOF so a cancelled parent cannot leave a pending relay alive.
@@ -60,7 +63,8 @@ async function runProxy(addresses) {
   process.stdin.once('end', () => { if (!socket) controller.abort(); });
   process.stdin.pipe(input);
   try {
-    socket = await connectApprovedAddresses(addresses, { signal: controller.signal });
+    socket = await connectApprovedAddresses(addresses, {
+      signal: controller.signal, port: /^[0-9]{1,5}$/.test(portArg || '') ? Number(portArg) : NaN });
     socket.once('error', failure);
     socket.once('close', () => { input.destroy(); process.stdin.destroy(); });
     input.pipe(socket); socket.pipe(process.stdout);

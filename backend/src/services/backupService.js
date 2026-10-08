@@ -956,7 +956,7 @@ async function buildRsyncArgs(config, extraExcludes = []) {
   // independently resolved hostname, controls the actual SSH socket.
   const { resolveRsyncConnection } = require('../utils/rsyncConnection');
   const connection = await resolveRsyncConnection({ host: config.backup_rsync_host,
-    user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key });
+    user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key, port: config.backup_rsync_port });
   args.push('-e', connection.rsyncShell);
   args.push(source, `${connection.rsyncTarget}:${remotePath}`);
   return args;
@@ -993,7 +993,11 @@ async function performRsyncBackup(config, files) {
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
   const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
-  const { stdout } = await spawnAsync('rsync', rsyncArgs);
+  const { stdout } = await spawnAsync('rsync', rsyncArgs).catch((error) => {
+    // The run's error_message, failure email and System Health then name
+    // the refused host key instead of a bare "rsync exited with code 255".
+    throw require('../utils/rsyncConnection').hostKeyFailure(error.stderr || error.message) || error;
+  });
   const stats = parseRsyncStats(stdout);
 
   const backedUpFiles = files.map(file => file.relativePath);
@@ -1492,6 +1496,8 @@ function resolveScheduleCron(config) {
 async function startBackupService() {
   try {
     const config = await resolveConfigWithFallback();
+    const trustWarning = require('../utils/rsyncConnection').missingKnownHostsWarning(config);
+    if (trustWarning) logger.warn(trustWarning);
     if (!config || !normalizeBoolean(config.backup_enabled)) {
       if (backupJob) {
         backupJob.stop();

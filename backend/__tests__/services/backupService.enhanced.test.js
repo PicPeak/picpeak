@@ -540,6 +540,38 @@ describe('Enhanced Backup Service Tests', () => {
       expect(resolveHost).toHaveBeenCalledTimes(1);
     });
 
+    it('records a refused host key under its code, not as a bare rsync exit, and uses the stored port', async () => {
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true, backup_email_on_failure: true,
+        backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup',
+        backup_rsync_port: 2222 });
+      mockDb.select.mockResolvedValue([]); mockDb.first.mockResolvedValue(null);
+      mockDb.where.mockImplementation(function where(column) {
+        return column === 'is_active' ? Promise.resolve([{ email: 'admin@example.com' }]) : this;
+      });
+      resolveHost.mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] });
+      const stderr = 'Host key verification failed.\r\nrsync error: unexplained error (code 255)';
+      spawnAsync.mockRejectedValue(Object.assign(new Error(`rsync exited with code 255: ${stderr}`), { code: 255, stderr }));
+      mockStorage({ '/storage/events/active': {} });
+      await backupService.runBackup();
+      const shell = spawnAsync.mock.calls[0][1][spawnAsync.mock.calls[0][1].indexOf('-e') + 1];
+      expect(shell).toContain('\'-p\' \'2222\'');
+      expect(shell).toContain('HostKeyAlias=[backup.example.com]:2222');
+      const failure = expect.objectContaining({ error_message: expect.stringMatching(/^RSYNC_SSH_HOST_KEY_UNTRUSTED: /) });
+      expect(mockDb.update).toHaveBeenCalledWith(failure);
+      expect(queueEmail).toHaveBeenCalledWith(null, 'admin@example.com', 'backup_failed', failure);
+    });
+
+    it('keeps any other rsync failure as it was reported', async () => {
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true,
+        backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup' });
+      mockDb.select.mockResolvedValue([]); mockDb.first.mockResolvedValue(null);
+      resolveHost.mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] });
+      spawnAsync.mockRejectedValue(Object.assign(new Error('rsync exited with code 23: partial transfer'), { stderr: 'partial transfer' }));
+      mockStorage({ '/storage/events/active': {} });
+      await backupService.runBackup();
+      expect(mockDb.update).toHaveBeenCalledWith(expect.objectContaining({ error_message: 'rsync exited with code 23: partial transfer' }));
+    });
+
     it('does not start rsync or mark a run complete when the stored host rebounds private', async () => {
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true,
         backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup' });

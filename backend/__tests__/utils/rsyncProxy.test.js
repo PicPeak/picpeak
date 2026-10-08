@@ -54,3 +54,14 @@ test('a timed-out connect is destroyed before trying the next approved address',
   expect(first.destroy).toHaveBeenCalled(); expect(connect).toHaveBeenCalledTimes(2);
   expect(jest.getTimerCount()).toBe(0);
 });
+
+test('connects to the configured SSH port and refuses anything that is not one', async () => {
+  const first = socket(); const connect = jest.spyOn(net, 'createConnection').mockReturnValue(first);
+  const result = connectApprovedAddresses(['8.8.8.8'], { port: 2222 }); first.emit('connect'); await result;
+  expect(connect.mock.calls[0][0].port).toBe(2222);
+  connect.mockClear();
+  for (const port of [0, 65536, NaN, '2222', 22.5]) {
+    await expect(connectApprovedAddresses(['8.8.8.8'], { port })).rejects.toThrow(/port from 1 to 65535/);
+  }
+  expect(connect).not.toHaveBeenCalled();
+});

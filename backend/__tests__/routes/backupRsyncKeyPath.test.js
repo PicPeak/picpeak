@@ -126,6 +126,23 @@ describe('rsync SSH key is a key file path', () => {
     });
   });
 
+  describe('PUT /config (rsync port)', () => {
+    beforeEach(() => setBackupSettings({ backup_destination_type: 'rsync' }));
+
+    it('stores a whole-number port', async () => {
+      const res = await as(request(app).put('/api/admin/backup/config')).send({ backup_rsync_port: 2222 });
+      expect(res.status).toBe(200);
+      expect(await stored('backup_rsync_port')).toBe(2222);
+    });
+
+    it.each([0, 65536, 22.5, '2222', '22 -oProxyCommand=x', null, [22]])('refuses %p and stores nothing', async (port) => {
+      const res = await as(request(app).put('/api/admin/backup/config')).send({ backup_rsync_port: port });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('RSYNC_CONFIG_INVALID');
+      expect(await stored('backup_rsync_port')).toBeUndefined();
+    });
+  });
+
   describe('POST /test-connection (rsync)', () => {
     let trustDir;
     beforeEach(() => {
@@ -204,6 +221,28 @@ describe('rsync SSH key is a key file path', () => {
       } finally { lookup.mockRestore(); spawn.mockRestore(); }
     });
 
+    it('passes the port to ssh and maps a refused host key to its code', async () => {
+      const { EventEmitter } = require('events');
+      const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
+        const proc = new EventEmitter();
+        proc.stdout = new EventEmitter(); proc.stderr = new EventEmitter();
+        setImmediate(() => { proc.stderr.emit('data', 'Host key verification failed.\r\n'); proc.emit('close', 255); });
+        return proc;
+      });
+      try {
+        const res = await testRsync({ ssh_key: '', port: 2222 });
+        const [, args] = spawn.mock.calls[0];
+        expect(args[args.indexOf('-p') + 1]).toBe('2222');
+        expect(args).toContain('HostKeyAlias=[8.8.8.8]:2222');
+        expect(res.body).toMatchObject({ success: false, code: 'RSYNC_SSH_HOST_KEY_UNTRUSTED' });
+        expect(res.body.message).toContain('unknown or changed');
+        spawn.mockClear();
+        const bad = await testRsync({ ssh_key: '', port: '22;id' });
+        expect(bad.body).toMatchObject({ success: false, code: 'RSYNC_CONFIG_INVALID' });
+        expect(spawn).not.toHaveBeenCalled();
+      } finally { spawn.mockRestore(); }
+    });
+
     it('rejects malformed host/user instead of stripping them into another destination', async () => {
       const { EventEmitter } = require('events');
       const spawn = jest.spyOn(require('child_process'), 'spawn').mockImplementation(() => {
@@ -223,6 +262,26 @@ describe('rsync SSH key is a key file path', () => {
   });
 
   describe('the rsync backup', () => {
+    it('warns at service start when the destination has a key but no known_hosts file', async () => {
+      const backupService = require('../../src/services/backupService');
+      const logger = require('../../src/utils/logger');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-rsync-boot-'));
+      const key = path.join(dir, 'backup_ed25519');
+      fs.writeFileSync(key, 'fixture private key');
+      await setBackupSettings({ backup_enabled: false, backup_destination_type: 'rsync',
+        backup_rsync_host: 'Backup.Example.com', backup_rsync_path: '/srv/backups', backup_rsync_ssh_key: key });
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      try {
+        await backupService.startBackupService();
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain(`ssh-keyscan backup.example.com >> ${path.join(dir, 'known_hosts')}`);
+        warn.mockClear();
+        fs.writeFileSync(path.join(dir, 'known_hosts'), 'backup.example.com ssh-ed25519 fixture-only\n');
+        await backupService.startBackupService();
+        expect(warn).not.toHaveBeenCalled();
+      } finally { warn.mockRestore(); fs.rmSync(dir, { recursive: true, force: true }); }
+    });
+
     it('names a stored pasted key plainly', async () => {
       const backupService = require('../../src/services/backupService');
       await expect(backupService.buildRsyncArgs({

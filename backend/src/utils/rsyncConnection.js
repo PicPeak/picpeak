@@ -38,6 +38,14 @@ function validateUser(value) {
   return value;
 }
 
+// A whole number only: the value reaches ssh, the relay and known_hosts.
+function validatePort(value) {
+  if (value == null || value === '') return 22;
+  const port = typeof value === 'string' && /^[0-9]{1,5}$/.test(value) ? Number(value) : value;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) invalid('Invalid rsync SSH port: a whole number from 1 to 65535 is required');
+  return port;
+}
+
 function filePath(value, label) {
   if (typeof value !== 'string' || value.length > 1024 || !path.isAbsolute(value) || !/^[a-zA-Z0-9._/@:-]+$/.test(value)) {
     invalid(`Invalid ${label}: an absolute file path without spaces or shell syntax is required`);
@@ -55,10 +63,17 @@ function validateKey(value) {
   invalid('SSH key file not found');
 }
 
+/** The selected trust file: BACKUP_SSH_KNOWN_HOSTS, else known_hosts beside the key. */
+const knownHostsPath = key => process.env.BACKUP_SSH_KNOWN_HOSTS || (key && path.join(path.dirname(key), 'known_hosts')) || null;
+
+// The name a known_hosts line must carry, as OpenSSH and ssh-keyscan write
+// it: the bare lower-case host on port 22, "[host]:port" on any other.
+const hostKeyAlias = (host, port) => (port === 22 ? host : `[${host}]:${port}`);
+
 function hostKeyOptions(key) {
   const options = ['-o', 'StrictHostKeyChecking=yes', '-o', 'CheckHostIP=no',
     '-o', 'VerifyHostKeyDNS=no', '-o', 'UpdateHostKeys=no'];
-  const knownHosts = process.env.BACKUP_SSH_KNOWN_HOSTS || (key && path.join(path.dirname(key), 'known_hosts'));
+  const knownHosts = knownHostsPath(key);
   if (knownHosts) {
     const trust = filePath(knownHosts, 'BACKUP_SSH_KNOWN_HOSTS');
     try {
@@ -87,11 +102,11 @@ const shellQuote = value => '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
 const rsyncQuote = value => '\'' + value.replace(/'/g, '\'\'') + '\'';
 
 /** Resolve once, consume that result, and never let SSH re-resolve the name. */
-async function resolveRsyncConnection({ host: value, user: username, sshKey: keyValue }) {
+async function resolveRsyncConnection({ host: value, user: username, sshKey: keyValue, port: portValue }) {
   const host = validateHost(value);
   const user = validateUser(username);
+  const port = validatePort(portValue);
   const key = validateKey(keyValue);
-  const trustOptions = hostKeyOptions(key);
   const result = await resolveHost(host);
   if (result.reason === 'unresolved') {
     throw new RsyncConnectionError('RSYNC_HOST_UNRESOLVED', 'Rsync host could not be resolved');
@@ -101,26 +116,61 @@ async function resolveRsyncConnection({ host: value, user: username, sshKey: key
   if (!approved) {
     throw new RsyncConnectionError('RSYNC_HOST_FORBIDDEN', 'Host cannot be a private, internal or reserved network address');
   }
+  // After the address check: a forbidden host is reported as forbidden, not
+  // as a missing trust file.
+  const trustOptions = hostKeyOptions(key);
   const addresses = [...new Set(result.addresses.map(record => record.address))];
   const address = addresses[0];
   // Preserve native SSH's pre-connect fallback without a second DNS lookup.
   // The application-owned relay consumes only this immutable literal set and
   // never retries once a socket is established or SSH/rsync has begun work.
   const proxy = addresses.length > 1
-    ? [process.execPath, path.join(__dirname, 'rsyncProxy.js'), ...addresses]
+    ? [process.execPath, path.join(__dirname, 'rsyncProxy.js'), String(port), ...addresses]
       .map(value => shellQuote(value.replace(/%/g, '%%'))).join(' ')
     : 'none';
   // Ignore local/system SSH aliases, proxies, canonicalization and control
   // sockets. Otherwise they can redirect even a vetted literal destination.
-  const sshArgs = ['-F', '/dev/null', '-o', `Hostname=${address}`, '-o', `HostKeyAlias=${host}`,
+  const sshArgs = ['-F', '/dev/null', '-p', String(port), '-o', `Hostname=${address}`,
+    '-o', `HostKeyAlias=${hostKeyAlias(host, port)}`,
     '-o', 'CanonicalizeHostname=no', '-o', `ProxyCommand=${proxy}`, '-o', 'ProxyJump=none',
     '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'BatchMode=yes', '-o', `ConnectTimeout=${10 * addresses.length}`,
     ...trustOptions];
   if (key) sshArgs.push('-i', key);
   const rsyncHost = net.isIPv6(host) ? `[${host}]` : host;
-  return { host, address, addresses, target: user ? `${user}@${host}` : host,
+  return { host, port, address, addresses, target: user ? `${user}@${host}` : host,
     rsyncTarget: user ? `${user}@${rsyncHost}` : rsyncHost, sshArgs,
     rsyncShell: ['ssh', ...sshArgs].map(rsyncQuote).join(' ') };
 }
 
-module.exports = { resolveRsyncConnection, isPublicAddress };
+const HOST_KEY_FAILURE = /REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/;
+
+/** The coded error for ssh/rsync output that reports a refused host key, else null. */
+function hostKeyFailure(output) {
+  if (!HOST_KEY_FAILURE.test(String(output || ''))) return null;
+  return new RsyncConnectionError('RSYNC_SSH_HOST_KEY_UNTRUSTED',
+    'The destination host key is unknown or changed. Independently verify it and provision the approved known_hosts entry before retrying.');
+}
+
+/**
+ * A warning for an rsync destination whose selected trust file is missing,
+ * else null. Releases before the pinned connection accepted any host key, so
+ * an upgraded install has no such file and its next run is refused.
+ */
+function missingKnownHostsWarning(config) {
+  if (!config || config.backup_destination_type !== 'rsync' || !config.backup_rsync_host) return null;
+  let host; let port; let trust;
+  try {
+    host = validateHost(config.backup_rsync_host);
+    port = validatePort(config.backup_rsync_port);
+    trust = knownHostsPath(validateKey(config.backup_rsync_ssh_key));
+    if (!trust || fs.statSync(filePath(trust, 'BACKUP_SSH_KNOWN_HOSTS')).isFile()) return null;
+  } catch (error) {
+    // A broken host, port or key is reported by the run itself.
+    if (error instanceof RsyncConnectionError) return null;
+  }
+  return `Rsync backups to ${host} will fail with RSYNC_SSH_TRUST_REQUIRED: the SSH known_hosts file ${trust} does not exist. `
+    + `Create it with "ssh-keyscan${port === 22 ? '' : ` -p ${port}`} ${host} >> ${trust}" and compare the key fingerprint with the server's own before trusting it. `
+    + `The entry must be named ${hostKeyAlias(host, port)} exactly (lower case, no trailing dot).`;
+}
+
+module.exports = { resolveRsyncConnection, isPublicAddress, hostKeyFailure, missingKnownHostsWarning };
