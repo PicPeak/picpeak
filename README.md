@@ -88,7 +88,7 @@ the real client address. The installer selects these settings in proxy mode.
 > `COOKIE_SECURE=true`, and bind the origin to loopback
 > (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
 > native install). The Compose files now publish the raw backend port on host
-> loopback only and pin `TRUST_PROXY=1`. Unattended installer runs require
+> loopback only and pass `TRUST_PROXY` through unchanged (the installer writes an exact hop count for new installs). Unattended installer runs require
 > `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file

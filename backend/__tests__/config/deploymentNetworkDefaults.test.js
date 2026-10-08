@@ -9,7 +9,7 @@ describe('shipped deployment network boundaries', () => {
     '%s keeps the frontend reachable on upgrade and the raw backend on loopback',
     (file) => {
       const compose = read(file);
-      expect(compose).toContain('TRUST_PROXY=${TRUST_PROXY:-1}');
+      expect(compose).toContain('TRUST_PROXY=${TRUST_PROXY:-}');
       expect(compose).toContain('COOKIE_SECURE=${COOKIE_SECURE:-auto}');
       expect(compose).toContain('${PICPEAK_BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-3001}:3000');
       expect(compose).toContain('${PICPEAK_BIND_ADDRESS:-0.0.0.0}:${FRONTEND_PORT:-3000}:80');

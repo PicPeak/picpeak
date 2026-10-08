@@ -15,7 +15,7 @@
  * correctly. Express's trust-proxy machinery is the only thing that
  * knows which upstream hops are trustworthy. With `TRUST_PROXY` unset,
  * `server.js` keeps the legacy `'loopback, linklocal, uniquelocal'` trust.
- * The installer and Compose files set a topology-specific boundary
+ * The installer writes a topology-specific boundary
  * (`loopback` for native installs or a hop count for Compose); other operators
  * should provide the exact proxy boundary through `TRUST_PROXY`.
  *
