@@ -205,6 +205,9 @@ async function tryInstallFromBackup(db, logger) {
     const result = await restoreService.restore({
       source: 'local',
       manifestPath: trigger.manifestPath,
+      // The points found above live under BACKUP_ROOT, which the settings
+      // of a fresh install do not name as a backup location.
+      allowedRoots: [backupRoot],
       restoreType: 'full',
       // Force=true because the fresh-install admin auto-created by
       // migration 001 trips the "1 active admin" warning — we WANT to

@@ -14,7 +14,9 @@ const crypto = require('crypto');
 const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 const { findWriteBlocker, localDestinationHint } = require('../utils/localBackupDestination');
-const { resolveBackupPointLocation, parseS3Location } = require('../utils/backupRestorePoint');
+const {
+  STANDALONE_SNAPSHOT_RE, isStandaloneRestorePoint, resolveBackupPointLocation, parseS3Location,
+} = require('../utils/backupRestorePoint');
 const {
   APPROVAL_SETTING: S3_APPROVAL_SETTING,
   backupS3Access,
@@ -206,6 +208,14 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
     // two directories.
     if (typeof (updates || {}).backup_destination_path === 'string') {
       updates.backup_destination_path = updates.backup_destination_path.trim();
+    }
+
+    // How many standalone restore points a local or S3 destination keeps;
+    // 0 keeps all. A whole number only: the backup prunes by it unattended.
+    if (Object.prototype.hasOwnProperty.call(updates || {}, 'backup_retention_count')
+        && (!Number.isInteger(updates.backup_retention_count)
+          || updates.backup_retention_count < 0 || updates.backup_retention_count > 1000)) {
+      return res.status(400).json({ error: 'backup_retention_count must be a whole number between 0 and 1000' });
     }
 
     const restricted = await changedRestrictedBackupSettings(updates);
@@ -995,15 +1005,39 @@ router.delete('/s3/cleanup', adminAuth, requirePermission('backup.delete'), asyn
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
     
-    // List all backup files
-    const backupFiles = await s3Adapter.list('backups/', { maxKeys: 1000 });
+    // The adapter returns AWS Contents (Key, LastModified, Size), one page at
+    // a time, under the configured prefix. Objects are grouped by backup run
+    // so a run only ever goes whole, once its newest object has aged out;
+    // the newest run always stays.
+    const listPrefix = path.posix.join(config.backup_s3_prefix ? String(config.backup_s3_prefix) : 'backups', '/');
+    if (listPrefix === '/') {
+      return res.status(400).json({ error: 'S3 backup prefix is not usable for cleanup' });
+    }
+    const groups = new Map();
+    let continuationToken;
+    do {
+      const page = await s3Adapter.list(listPrefix, { maxKeys: 1000, continuationToken });
+      for (const file of page.Contents || []) {
+        if (typeof file.Key !== 'string' || !file.Key.startsWith(listPrefix)) continue;
+        const parts = file.Key.split('/');
+        const runAt = parts.findIndex((part) => /^backup-\d+$/.test(part) || STANDALONE_SNAPSHOT_RE.test(part));
+        const groupKey = runAt >= 0 && runAt < parts.length - 1 ? parts.slice(0, runAt + 1).join('/') : file.Key;
+        const group = groups.get(groupKey) || { run: groupKey !== file.Key, newest: 0, size: 0, keys: [] };
+        group.newest = Math.max(group.newest, new Date(file.LastModified).getTime() || Date.now());
+        group.size += file.Size || 0;
+        group.keys.push(file.Key);
+        groups.set(groupKey, group);
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    const newestRun = Math.max(...[...groups.values()].filter((group) => group.run).map((group) => group.newest));
     const filesToDelete = [];
     let totalSize = 0;
-    
-    for (const file of backupFiles.objects || []) {
-      if (file.lastModified && new Date(file.lastModified) < cutoffDate) {
-        filesToDelete.push(file.key);
-        totalSize += file.size || 0;
+    for (const group of groups.values()) {
+      if (group.newest < cutoffDate.getTime() && !(group.run && group.newest === newestRun)) {
+        filesToDelete.push(...group.keys);
+        totalSize += group.size;
       }
     }
     
@@ -1124,8 +1158,18 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
       res.attachment(`picpeak-backup-${backupRun.id}.zip`);
       archive.pipe(res);
         
-      // Add backup directory contents
-      archive.directory(backupPath, false);
+      // Add backup directory contents. A legacy run's tree is the destination
+      // root, which now also holds every standalone snapshot; those are not
+      // part of it.
+      if (isStandaloneRestorePoint(manifest)) {
+        archive.directory(backupPath, false);
+      } else {
+        for (const entry of await fs.readdir(backupPath, { withFileTypes: true })) {
+          if (STANDALONE_SNAPSHOT_RE.test(entry.name)) continue;
+          if (entry.isDirectory()) archive.directory(path.join(backupPath, entry.name), entry.name);
+          else if (entry.isFile()) archive.file(path.join(backupPath, entry.name), { name: entry.name });
+        }
+      }
         
       // Add manifest if exists
       if (backupRun.manifest_path && await fs.access(backupRun.manifest_path).then(() => true).catch(() => false)) {

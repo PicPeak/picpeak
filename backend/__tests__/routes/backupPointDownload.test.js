@@ -135,6 +135,35 @@ describe('selected backup-point download', () => {
       expect(await fs.readFile(path.join(process.env.STORAGE_PATH, 'a.jpg'), 'utf8')).toBe('selected snapshot bytes');
     } finally { await zip.close(); }
   });
+  it('leaves standalone snapshots out of a legacy run\'s archive of the destination root', async () => {
+    const legacyRoot = path.join(root, 'legacy-destination');
+    const snapshot = path.join(legacyRoot, 'backup-00000000-0000-4000-8000-000000000001');
+    await fs.mkdir(path.join(legacyRoot, 'events', 'active'), { recursive: true });
+    await fs.mkdir(path.join(legacyRoot, 'manifests'), { recursive: true });
+    await fs.mkdir(snapshot, { recursive: true });
+    await fs.writeFile(path.join(legacyRoot, 'events', 'active', 'a.jpg'), 'legacy mirror bytes');
+    await fs.writeFile(path.join(legacyRoot, 'top-level.txt'), 'legacy file');
+    await fs.writeFile(path.join(snapshot, 'a.jpg'), 'another run entirely');
+    const manifestPath = path.join(legacyRoot, 'manifests', 'backup-manifest-legacy.json');
+    await fs.writeFile(manifestPath, '{}');
+    await config({ backup_destination_path: legacyRoot });
+    selectedManifest = { backup: { type: 'full' }, metadata: { destination_type: 'local' } };
+    const response = await download(await run(manifestPath)).buffer(true).parse((res, callback) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => callback(null, Buffer.concat(chunks)));
+    });
+    expect(response.status).toBe(200);
+    const zipPath = path.join(root, 'legacy-download.zip');
+    await fs.writeFile(zipPath, response.body);
+    const zip = new (require('node-stream-zip').async)({ file: zipPath });
+    try {
+      const names = Object.keys(await zip.entries()).filter(name => !name.endsWith('/')).sort();
+      expect(names).toEqual([
+        'events/active/a.jpg', 'manifest.json', 'manifests/backup-manifest-legacy.json', 'top-level.txt',
+      ]);
+    } finally { await zip.close(); }
+  });
   it('refuses an out-of-root snapshot path in the selected manifest', async () => {
     selectedManifest.backup.path = '/not-an-operator-configured-root';
     selectedManifest.metadata.destination_type = 'local';

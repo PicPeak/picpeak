@@ -164,6 +164,27 @@ describe('installFromBackupBoot', () => {
     expect(mockRestore).toHaveBeenCalledWith(expect.objectContaining({ manifestPath: newer }));
   });
 
+  it('hands the roots gate a BACKUP_ROOT the fresh install\'s settings do not name', async () => {
+    const manifestPath = standaloneManifest();
+    fs.writeFileSync(path.join(backupRoot, 'RESTORE_ON_INSTALL'), '');
+    // restore() itself needs a real database swap; the gate it runs first is
+    // the real one, fed the hook's own options and the stored settings.
+    const { resolveBackupPointLocation } = jest.requireActual('../../src/utils/backupRestorePoint');
+    const config = await require('../../src/services/backupService').getBackupConfig();
+    expect(path.resolve(config.backup_destination_path)).not.toBe(path.resolve(backupRoot));
+    const manifest = {
+      backup: { type: 'full', parent_backup_id: null, path: '/gone/' + path.basename(path.dirname(path.dirname(manifestPath))) },
+      metadata: { restore_point: 'standalone-v1', destination_type: 'local', restore_point_manifest_layout: 'nested' },
+    };
+    mockRestore.mockImplementation(async (options) => {
+      await resolveBackupPointLocation(manifest, options, config);
+      return { success: true };
+    });
+    expect(await tryInstallFromBackup(db)).toMatchObject({ ran: true, manifestPath });
+    await expect(resolveBackupPointLocation(manifest, { source: 'local', manifestPath }, config))
+      .rejects.toThrow(/outside configured/);
+  });
+
   it('compares legacy and standalone manifests without preferring the legacy directory', async () => {
     const older = path.join(manifestsDir, 'backup-manifest-legacy.yaml');
     fs.writeFileSync(older, '{}');

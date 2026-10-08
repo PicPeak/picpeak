@@ -210,10 +210,12 @@ cover storage outside the configured backup scope.
 
 Local/S3 `backup_incremental` settings no longer skip unchanged files. Plan
 capacity for a full copy per retained point and temporary space for one S3
-upload file. Backup-history retention is not an artifact-retention policy:
-manage retained snapshot directories/object prefixes separately. An earlier
-point is not overwritten by a later run, and deleting history or separately
-retained database dumps does not invalidate a standalone point.
+upload file. After each successful run the newest `backup_retention_count`
+points of the current destination are kept (default 7, `0` keeps all) and
+older ones are removed whole with their history entries. Legacy backup trees
+are never pruned. An earlier point is not overwritten by a later run, a run
+that fails removes its partial copy, and deleting separately retained
+database dumps does not invalidate a standalone point.
 
 Select the point's manifest in the restore wizard. A rescued local mount must
 be under a configured backup location (or `RESTORE_ALLOWED_ROOTS`); its
@@ -234,7 +236,9 @@ avoid changed timestamps after copying a rescue mount, name the exact manifest
 in the trigger instead of leaving it empty.
 
 Older ambiguous incremental local/S3 backups cannot prove a complete file set
-and are refused for full/file restores, including forced restores. Database-only
+and are refused for full/file restores, including forced restores and
+`RESTORE_ON_INSTALL`. A legacy local backup whose manifest is a full catalogue
+(the first run into a destination) still restores. Database-only
 and selective file recovery remain available; they do not establish complete
 recovery. Take and test a new standalone point before relying on it. Existing
 rsync catalogue behavior and portable `.picpeak` exports are unchanged.

@@ -12,6 +12,14 @@ jest.mock('../../src/services/storage/s3Storage', () => jest.fn().mockImplementa
   upload: mockUpload,
   getMetadata: jest.fn(async key => ({ ContentLength: mockObjects.get(key)?.length })),
   downloadStream: jest.fn(async key => require('stream').Readable.from([mockObjects.get(key)])),
+  list: jest.fn(async prefix => ({
+    Contents: [...mockObjects.keys()].filter(key => key.startsWith(prefix)).map(Key => ({ Key })),
+    IsTruncated: false,
+  })),
+  deleteMany: jest.fn(async keys => {
+    keys.forEach(key => mockObjects.delete(key));
+    return { Deleted: keys.map(Key => ({ Key })), Errors: [] };
+  }),
 })));
 
 jest.setTimeout(120000);
@@ -45,6 +53,9 @@ describe('complete standalone backup restore points', () => {
     return db('backup_runs').orderBy('id', 'desc').first();
   }
 
+  const snapshotDirs = async () => (await fs.readdir(destination).catch(() => []))
+    .filter(name => name.startsWith('backup-'));
+
   async function manifestFor(runRow) {
     if (runRow.manifest_path.startsWith('s3://')) {
       const key = runRow.manifest_path.replace(/^s3:\/\/[^/]+\//, '');
@@ -72,6 +83,7 @@ describe('complete standalone backup restore points', () => {
     jest.restoreAllMocks();
     mockUpload.mockClear();
     mockObjects.clear();
+    await fs.rm(destination, { recursive: true, force: true });
     await db('backup_runs').del();
     await db('backup_file_states').del();
     await db('app_settings').where('setting_type', 'backup').del();
@@ -200,17 +212,136 @@ describe('complete standalone backup restore points', () => {
       return original(source, ...args);
     });
     expect((await run()).status).toBe('failed');
+    // The first file was already copied; the partial snapshot must not stay.
+    expect(await snapshotDirs()).toEqual([]);
   });
 
   it('fails the run rather than claiming completion after a required S3 upload fails', async () => {
     await setting('backup_destination_type', 's3');
-    mockUpload.mockRejectedValueOnce(new Error('fixture upload failure'));
+    const upload = mockUpload.getMockImplementation();
+    mockUpload.mockImplementationOnce(upload).mockRejectedValueOnce(new Error('fixture upload failure'));
     expect((await run()).status).toBe('failed');
+    expect(mockUpload).toHaveBeenCalledTimes(2);
+    expect([...mockObjects.keys()]).toEqual([]);
   });
 
   it('fails the run if its manifest cannot be published', async () => {
     jest.spyOn(manifests, 'saveManifest').mockRejectedValueOnce(new Error('fixture manifest failure'));
     expect((await run()).status).toBe('failed');
+    expect(await snapshotDirs()).toEqual([]);
+  });
+
+  it('writes a manifest beside its target and renames it into place', async () => {
+    const target = path.join(fixtureRoot, 'atomic', 'backup-manifest-atomic.json');
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const rename = jest.spyOn(fs, 'rename');
+    await manifests.saveManifest({ complete: true }, target);
+    expect(rename).toHaveBeenCalledTimes(1);
+    expect(path.dirname(rename.mock.calls[0][0])).toBe(path.dirname(target));
+    expect(rename.mock.calls[0][1]).toBe(target);
+    rename.mockRejectedValueOnce(new Error('fixture rename failure'));
+    await expect(manifests.saveManifest({ complete: false }, target)).rejects.toThrow('fixture rename failure');
+    expect(JSON.parse(await fs.readFile(target, 'utf8'))).toEqual({ complete: true });
+    expect(await fs.readdir(path.dirname(target))).toEqual(['backup-manifest-atomic.json']);
+  });
+
+  it('removes the S3 objects of a run whose manifest cannot be published', async () => {
+    await setting('backup_destination_type', 's3');
+    jest.spyOn(manifests, 'saveManifest').mockRejectedValueOnce(new Error('fixture manifest failure'));
+    expect((await run()).status).toBe('failed');
+    expect([...mockObjects.keys()]).toEqual([]);
+  });
+
+  it('keeps a snapshot whose manifest was written even if recording the run fails afterwards', async () => {
+    jest.spyOn(manifests, 'generateSummaryReport').mockImplementation(() => ({ toJSON() { throw new Error('fixture record failure'); } }));
+    expect((await run()).status).toBe('failed');
+    const [kept] = await snapshotDirs();
+    expect(await fs.readdir(path.join(destination, kept, 'manifests'))).toHaveLength(1);
+  });
+
+  describe('retention of standalone snapshots', () => {
+    it('keeps the newest local points and removes older ones whole with their rows', async () => {
+      await setting('backup_retention_count', 2);
+      // Never candidates: a legacy mirror, a legacy-shaped run directory and
+      // a legacy history row.
+      await fs.mkdir(path.join(destination, 'events', 'active'), { recursive: true });
+      await fs.writeFile(path.join(destination, 'events', 'active', 'legacy.jpg'), 'legacy mirror');
+      await fs.mkdir(path.join(destination, 'backup-1756692000000'), { recursive: true });
+      await fs.mkdir(path.join(destination, 'manifests'), { recursive: true });
+      const legacyManifest = path.join(destination, 'manifests', 'backup-manifest-legacy.json');
+      await fs.writeFile(legacyManifest, '{}');
+      await db('backup_runs').insert({
+        started_at: new Date('2026-09-01T02:00:00Z').toISOString(),
+        completed_at: new Date('2026-09-01T02:05:00Z').toISOString(),
+        status: 'completed', backup_type: 'scheduled', manifest_path: legacyManifest,
+      });
+
+      const first = await run();
+      const firstPoint = (await manifestFor(first)).backup.path;
+      const second = await run();
+      expect(await fs.stat(firstPoint)).toBeTruthy();
+      const third = await run();
+      expect(third.status).toBe('completed');
+
+      await expect(fs.stat(firstPoint)).rejects.toMatchObject({ code: 'ENOENT' });
+      const rows = await db('backup_runs').orderBy('id').select('id', 'manifest_path');
+      expect(rows.map(row => row.id)).toEqual([first.id - 1, second.id, third.id]);
+      for (const row of rows.slice(1)) {
+        expect((await manifestFor(row)).files.manifest.map(file => file.path)).toEqual(expect.arrayContaining(media));
+      }
+      expect((await snapshotDirs()).sort()).toEqual([
+        'backup-1756692000000', path.basename((await manifestFor(second)).backup.path),
+        path.basename((await manifestFor(third)).backup.path),
+      ].sort());
+      expect(await fs.readFile(path.join(destination, 'events', 'active', 'legacy.jpg'), 'utf8')).toBe('legacy mirror');
+      expect(await fs.readFile(legacyManifest, 'utf8')).toBe('{}');
+    });
+
+    it('keeps every point when the count is 0', async () => {
+      await setting('backup_retention_count', 0);
+      for (let i = 0; i < 3; i += 1) expect((await run()).status).toBe('completed');
+      expect(await db('backup_runs')).toHaveLength(3);
+    });
+
+    it('prunes a point whose manifest lives in backup_manifest_path', async () => {
+      const external = path.join(fixtureRoot, 'external-manifests');
+      await setting('backup_retention_count', 1);
+      await setting('backup_manifest_path', external);
+      const first = await run();
+      const firstPoint = (await manifestFor(first)).backup.path;
+      const second = await run();
+      await expect(fs.stat(firstPoint)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.stat(first.manifest_path)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect((await db('backup_runs')).map(row => row.id)).toEqual([second.id]);
+      expect(await fs.stat((await manifestFor(second)).backup.path)).toBeTruthy();
+    });
+
+    it('never removes a snapshot directory that is a symlink out of the destination', async () => {
+      await setting('backup_retention_count', 1);
+      const first = await run();
+      const firstPoint = (await manifestFor(first)).backup.path;
+      const moved = path.join(fixtureRoot, 'moved-point');
+      await fs.rename(firstPoint, moved);
+      await fs.symlink(moved, firstPoint, 'dir');
+      expect((await run()).status).toBe('completed');
+      expect(await fs.readFile(path.join(moved, media[0]), 'utf8')).toBe('unchanged original');
+      expect(await db('backup_runs').where('id', first.id).first()).toBeTruthy();
+    });
+
+    it('removes older S3 prefixes and leaves other objects in the bucket', async () => {
+      await setting('backup_destination_type', 's3');
+      await setting('backup_retention_count', 1);
+      mockObjects.set('restore-points/2026/09/01/backup-1756692000000/events/legacy.jpg', Buffer.from('legacy'));
+      const first = await run();
+      const firstPrefix = first.manifest_path.replace(/^s3:\/\/[^/]+\//, '').replace(/\/manifests\/.*$/, '');
+      const second = await run();
+      const secondPrefix = second.manifest_path.replace(/^s3:\/\/[^/]+\//, '').replace(/\/manifests\/.*$/, '');
+      const keys = [...mockObjects.keys()];
+      expect(keys.filter(key => key.startsWith(firstPrefix + '/'))).toEqual([]);
+      expect(keys.filter(key => key.startsWith(secondPrefix + '/')).length).toBeGreaterThan(2);
+      expect(keys).toContain('restore-points/2026/09/01/backup-1756692000000/events/legacy.jpg');
+      expect((await db('backup_runs')).map(row => row.id)).toEqual([second.id]);
+    });
   });
   it.each(['json', 'yaml'])('round-trips an authenticated standalone %s catalogue', async format => {
     const originalKey = process.env.BACKUP_MANIFEST_KEY;
