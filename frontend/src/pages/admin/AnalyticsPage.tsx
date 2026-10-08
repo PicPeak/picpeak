@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { analyticsDashboardFrameProps } from '../../utils/analyticsDashboardUrl';
+import { analyticsDashboardFrameProps, analyticsDashboardUrl } from '../../utils/analyticsDashboardUrl';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -9,6 +9,7 @@ import {
   Smartphone,
   Monitor,
   Activity,
+  ExternalLink,
   RefreshCw,
   Tablet
 } from 'lucide-react';
@@ -55,9 +56,23 @@ export const AnalyticsPage: React.FC = () => {
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('7d');
   const [isEmbedMode, setIsEmbedMode] = useState(false);
   
-  // Check if Umami is configured from settings or environment
+  // Check if Umami is configured in the admin settings
   const [umamiConfig, setUmamiConfig] = useState<{ url?: string; shareUrl?: string; enabled?: boolean; cookieDomain?: string | null }>({});
   const dashboardProps = analyticsDashboardFrameProps(umamiConfig.shareUrl, umamiConfig.cookieDomain);
+  // The new tab is the primary way in: it needs neither credentialless iframe
+  // support nor the dashboard origin in the deployment's frame-src.
+  const dashboardUrl = analyticsDashboardUrl(umamiConfig.shareUrl, umamiConfig.cookieDomain);
+  const dashboardLink = dashboardUrl && (
+    <a
+      href={dashboardUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-2 text-sm font-medium text-accent hover:opacity-80"
+    >
+      <ExternalLink className="w-4 h-4" />
+      {t('analytics.openDashboard')}
+    </a>
+  );
 
   // Fetch analytics data from backend
   const { data: apiData, isLoading, refetch } = useQuery({
@@ -101,36 +116,11 @@ export const AnalyticsPage: React.FC = () => {
             enabled: true
           });
         } else {
-          // Fall back to environment variables if they exist
-          const envUrl = import.meta.env.VITE_UMAMI_URL;
-          const envWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-          
-          if (envUrl && envWebsiteId) {
-            setUmamiConfig({
-              url: envUrl,
-              shareUrl: import.meta.env.VITE_UMAMI_SHARE_URL,
-              cookieDomain: settings.analytics_dashboard_cookie_domain,
-              enabled: true
-            });
-          } else {
-            setUmamiConfig({ enabled: false });
-          }
+          setUmamiConfig({ enabled: false });
         }
       } catch (error) {
         console.error('Failed to fetch Umami config:', error);
-        // Fall back to environment variables if they exist
-        const envUrl = import.meta.env.VITE_UMAMI_URL;
-        const envWebsiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID;
-        
-        if (envUrl && envWebsiteId) {
-          setUmamiConfig({
-            url: envUrl,
-            shareUrl: import.meta.env.VITE_UMAMI_SHARE_URL,
-            enabled: true
-          });
-        } else {
-          setUmamiConfig({ enabled: false });
-        }
+        setUmamiConfig({ enabled: false });
       }
     };
 
@@ -245,14 +235,18 @@ export const AnalyticsPage: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-heading">{t('analytics.title')}</h1>
             <p className="text-soft mt-1">{t('analytics.detailedSubtitle')}</p>
+            <p className="text-soft mt-2 text-sm">{t('analytics.embedCspHint')}</p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setIsEmbedMode(false)}
-            leftIcon={<BarChart3 className="w-4 h-4" />}
-          >
-            {t('analytics.showSummaryView')}
-          </Button>
+          <div className="flex items-center gap-3">
+            {dashboardLink}
+            <Button
+              variant="outline"
+              onClick={() => setIsEmbedMode(false)}
+              leftIcon={<BarChart3 className="w-4 h-4" />}
+            >
+              {t('analytics.showSummaryView')}
+            </Button>
+          </div>
         </div>
         
         <Card padding="none" className="overflow-hidden" style={{ height: '800px' }}>
@@ -278,8 +272,12 @@ export const AnalyticsPage: React.FC = () => {
           {umamiConfig.shareUrl && !dashboardProps && (
             <p className="text-soft mt-2 text-sm" role="status">{t('analytics.embedUnavailable')}</p>
           )}
+          {dashboardProps && (
+            <p className="text-soft mt-2 text-sm">{t('analytics.embedCspHint')}</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
+          {dashboardLink}
           {dashboardProps && (
             <Button
               variant="outline"

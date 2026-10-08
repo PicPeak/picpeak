@@ -5,9 +5,9 @@ import { getApiBaseUrl } from '../utils/url';
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
-export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
+export type TrackerProvider = 'none' | 'umami' | 'rybbit';
 type InitConfig = { provider: TrackerProvider; doNotTrack?: boolean; autoTrack?: boolean;
-  hostUrl?: string; websiteId?: string; domains?: string[]; maskPatterns?: string[]; customHeadHtml?: string };
+  websiteId?: string; domains?: string[] };
 type Cache = { site: string; token: string };
 const PRIVATE_ROOTS = new Set(['admin', 'customer', 's', 'invite', 'quote', 'contract',
   'payment-check', 'transfer', 'transfer-upload', 'slideshow']);
@@ -74,7 +74,7 @@ class AnalyticsService {
 
   initialize(config: InitConfig) {
     if (this.initialized) return;
-    // Legacy custom configurations remain inert, including cached snippets.
+    // Anything else, a legacy custom configuration included, stays inert.
     this.provider = config.provider === 'umami' || config.provider === 'rybbit' ? config.provider : 'none';
     this.domains = config.domains;
     this.initialized = true;

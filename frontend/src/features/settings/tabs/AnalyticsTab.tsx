@@ -135,7 +135,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 leftIcon={<Activity className="w-5 h-5 text-neutral-400" />}
               />
               <p className="text-xs text-muted mt-1">
-                {t('settings.analytics.shareUrlHelp')}
+                {t('settings.analytics.shareUrlHelp')} {t('analytics.embedCspHint')}
               </p>
             </div>
 

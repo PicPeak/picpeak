@@ -15,7 +15,7 @@ describe('PicPeak-owned tracker transport', () => {
     const service = fresh();
     service.handleRouteChange(window.location.pathname); service.trackPageView();
     expect(fetchMock).not.toHaveBeenCalled();
-    service.initialize({ provider, hostUrl: 'https://hostile.example', websiteId: 'site-1', autoTrack: true });
+    service.initialize({ provider, websiteId: 'site-1', autoTrack: true });
     service.trackPageView(window.location.pathname + window.location.search);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(document.head.querySelectorAll('script, iframe, link, meta')).toHaveLength(0);
