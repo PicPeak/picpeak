@@ -11,7 +11,7 @@ linux('mandatory native media process boundary', () => {
   beforeAll(async () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-media-runner-test-'));
     fixture = path.join(dir, 'fixture');
-    execFileSync(process.env.CC || 'cc', ['-O0', path.join(__dirname, 'fixtures/mediaProcessFixture.c'), '-o', fixture]);
+    execFileSync(process.env.CC || 'cc', ['-O0', '-pthread', path.join(__dirname, 'fixtures/mediaProcessFixture.c'), '-o', fixture]);
   });
   beforeEach(() => runner.start());
   afterEach(() => runner.stop());
@@ -31,6 +31,13 @@ linux('mandatory native media process boundary', () => {
   test('ordinary child observes hard AS/CPU/file limits and cannot multiply them with fork', async () => {
     expect((await run('limits')).stdout.toString().trim()).toBe('67108864 1 65536');
     expect((await run('fork')).stdout.toString().trim()).toBe('process fork denied');
+    expect((await run('untraced')).stdout.toString().trim()).toBe('untraced clone denied');
+  });
+  test('tiny-stack native threads cannot exceed the hard per-job count', async () => {
+    let pid;
+    await expect(run('threads', { memoryBytes: 256 * 1024 * 1024, threadLimit: 8, onStart: lease => { pid = lease.pid; } }))
+      .rejects.toMatchObject({ code: 'MEDIA_RESOURCE_LIMIT', threadLimit: true });
+    await dead(pid);
   });
   test('ordinary supervised Node retains FD9 and runs SQLite, crypto and worker threads under a hard native cap', async () => {
     const code = `(async()=>{
@@ -49,6 +56,15 @@ linux('mandatory native media process boundary', () => {
       memoryBytes: 768 * 1024 * 1024, cpuSeconds: 30, wallMs: 30000, leasePath: path.join(dir, 'node-worker.lease'),
     });
     expect(JSON.parse(result.stdout.toString())).toEqual({ fd9: true, crypto: 8, sqlite: 7, thread: 42 });
+  });
+  test('the ordinary image worker can load and decode Sharp under its production native cap', async () => {
+    const result = await runner.run(process.execPath,
+      ['--jitless', '--no-expose-wasm', '--max-old-space-size=64', '-e',
+        "const sharp=require('sharp');sharp({create:{width:16,height:16,channels:3,background:'white'}}).jpeg().toBuffer().then(bytes=>sharp(bytes).metadata()).then(meta=>process.stdout.write(JSON.stringify({width:meta.width,height:meta.height,format:meta.format}))).catch(error=>{process.stderr.write(error.stack);process.exitCode=1})"],
+      { memoryBytes: 768 * 1024 * 1024, cpuSeconds: 30, wallMs: 30000 }).catch(error => {
+      throw new Error(`Owned ordinary Sharp control failed (${error.exitCode}/${error.signal}): ${error.cause?.message || error.message}`, { cause: error });
+    });
+    expect(JSON.parse(result.stdout.toString())).toEqual({ width: 16, height: 16, format: 'jpeg' });
   });
   test('memory, CPU, file and pipe-output refusals terminate before promises settle', async () => {
     for (const [mode, options, args] of [

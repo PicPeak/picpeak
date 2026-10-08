@@ -52,12 +52,13 @@ async function execute(entry) {
   if (remaining <= 0) throw errorFor(entry, 'Native processing deadline exceeded', 'TIMEOUT');
   const result = await new Promise((resolve, reject) => {
     const child = spawn(GUARD, [String(process.pid), String(entry.memoryBytes), String(entry.cpuSeconds),
-      String(entry.fileBytes), String(remaining), '128', entry.leasePath || '-', entry.command, ...entry.args], {
+      String(entry.fileBytes), String(remaining), String(entry.threads), entry.leasePath || '-', entry.command, ...entry.args], {
       stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'], detached: true,
       env: { ...process.env, OMP_NUM_THREADS: '1', OPENBLAS_NUM_THREADS: '1', VIPS_CONCURRENCY: '1', MALLOC_ARENA_MAX: '2', ...entry.env },
     });
     entry.child = child;
-    let spawnError, terminal = false, nativeSignal, handshake = '', stdoutBytes = 0, stderrBytes = 0;
+    let spawnError, terminal = false, nativeSignal, threadLimit = false, supervisorFailed = false;
+    let handshake = '', stdoutBytes = 0, stderrBytes = 0;
     const stdout = [], stderr = [];
     const writes = [];
     let output;
@@ -89,6 +90,7 @@ async function execute(entry) {
           }
           if (value.terminal === true) {
             terminal = true;
+            threadLimit = value.threadLimit === true; supervisorFailed = value.supervisorFailed === true;
             if (Number.isSafeInteger(value.childSignal) && value.childSignal >= 0) nativeSignal = value.childSignal;
           }
         } catch (_) { entry.fail(errorFor(entry, 'Invalid native supervisor response', 'WORKER_FAILED')); }
@@ -127,18 +129,21 @@ async function execute(entry) {
         try { await entry.onFinish?.(entry.lease); } catch (error) { teardownError ||= error; }
         if (entry.failure) throw entry.failure;
         if (teardownError) throw teardownError;
-        if (spawnError || code === 125) throw errorFor(entry, 'Linux native media supervisor is unavailable; run npm run build:native with a C compiler', 'WORKER_UNAVAILABLE');
+        if (spawnError || (code === 125 && !threadLimit && !supervisorFailed)) throw errorFor(entry, 'Linux native media supervisor is unavailable; run npm run build:native with a C compiler', 'WORKER_UNAVAILABLE');
         if (code === 123) throw errorFor(entry, 'Native execution lease is still held', 'LEASE_BUSY');
         if (code === 127) throw Object.assign(new Error(`${entry.command} is not installed`), { code: 'ENOENT' });
         if (code === 124) throw errorFor(entry, 'Native processing deadline exceeded', 'TIMEOUT');
         if (!terminal) throw errorFor(entry, 'Native supervisor failed after confirmed child termination', 'WORKER_FAILED');
+        if (supervisorFailed) throw errorFor(entry, 'Linux per-job thread supervision is unavailable', 'WORKER_UNAVAILABLE');
         if (!terminal || code !== 0) {
           const detail = Buffer.concat(stderr).toString().slice(0, 8192);
           // FFmpeg can exit with a wrapped negative errno (for example 234),
           // so only the guardian's actual signal proves a native kill.
-          if ((nativeSignal === undefined ? code >= 128 : nativeSignal > 0) ||
+          if (threadLimit || (nativeSignal === undefined ? code >= 128 : nativeSignal > 0) ||
               /cannot allocate memory|out of memory|memory allocation|resource temporarily unavailable/i.test(detail)) {
-            throw errorFor(entry, 'Native processing exceeded its resource budget', 'RESOURCE_LIMIT');
+            throw Object.assign(errorFor(entry, 'Native processing exceeded its resource budget', 'RESOURCE_LIMIT'), {
+              exitCode: code, signal: nativeSignal, threadLimit, cause: new Error(detail || 'Native child was signalled'),
+            });
           }
           throw Object.assign(new Error(`${path.basename(entry.command)} failed (${signal || code}): ${detail}`), { exitCode: code, signal });
         }
@@ -174,6 +179,7 @@ function run(command, args, options = {}) {
   Object.assign(entry, { command, args, memoryBytes, outputBytes: integer(options.outputBytes || MiB, 64 * MiB, 'output budget'),
     fileBytes: integer(options.fileBytes || 64 * MiB, 10 * 1024 * MiB, 'file budget'),
     cpuSeconds: integer(options.cpuSeconds || 30, 7200, 'CPU budget'), deadline: Date.now() + wallMs,
+    threads: integer(options.threadLimit || 128, 128, 'thread budget'),
     signal: options.signal, input: options.input, stdoutPath: options.stdoutPath, env: options.env,
     onStart: options.onStart, onFinish: options.onFinish, leasePath: options.leasePath });
   entry.settled = new Promise(resolve => { entry.finished = resolve; });
