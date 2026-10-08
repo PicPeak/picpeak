@@ -4,11 +4,18 @@ const crypto = require('crypto');
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const quota = require('../services/publicUploadQuota');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const logger = require('../utils/logger');
 
+// After a mid-body refusal, this much more of the request is read and thrown
+// away (never staged) so the refusal is not lost to a connection reset.
+const DRAIN_BYTES = 1024 * 1024;
+const DRAIN_MS = 2000;
+
 /** Wrap Multer, not just its storage engine: skipped files, unknown parts and
- * multipart framing consume the same raw byte budget. No Content-Length trust.
- * The factory receives guarded storage/stream options and the reserved count. */
+ * multipart framing consume the same raw byte budget. Content-Length only
+ * sizes the reservation; the stream is metered against it regardless.
+ * The factory receives guarded storage/stream options and the admitted count. */
 async function withPublicUpload(req, res, scope, makeUploader, handler) {
   let session;
   const writers = new Set();
@@ -33,18 +40,26 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
   const failStream = err => {
     if (stopped) return;
     stopped = true;
+    if (scope.mode === 'admin') quota.forAdmin(err);
     req.unpipe(guard);
     req.pause();
-    // Respond before closing; never drain an attacker-controlled infinite
-    // body just to let Multer invoke its callback. Close also cancels busboy.
-    if (!res.headersSent && !res.destroyed) {
-      res.set('Connection', 'close');
-      res.status(err.status || 400).json({ error: err.message, code: err.code || 'UPLOAD_REJECTED' });
-    }
     if (parser && !parser.destroyed) parser.destroy(err);
     if (guard && !guard.destroyed) guard.destroy();
-    if (res.writableFinished || res.destroyed) req.destroy();
-    else res.once('finish', () => req.destroy());
+    if (res.headersSent || res.destroyed) { req.destroy(); return; }
+    res.status(err.status || 400).json({ error: err.message, code: err.code || 'UPLOAD_REJECTED' });
+    // Closing a socket that still has unread request bytes resets it, and the
+    // reset can discard the refusal before the client reads it (which is also
+    // what `Connection: close` makes Node do as soon as the response is
+    // flushed). Discard a bounded remainder first, then close; never drain an
+    // attacker-controlled infinite body. A request that declared its length
+    // was already refused at admission, before any of its body was read.
+    let drained = 0;
+    const close = () => { clearTimeout(drainTimer); req.destroy(); };
+    const drainTimer = setTimeout(close, DRAIN_MS);
+    drainTimer.unref();
+    req.on('data', chunk => { drained += chunk.length; if (drained > DRAIN_BYTES) close(); });
+    req.once('end', () => clearTimeout(drainTimer));
+    req.resume();
   };
   // Multer drains a rejected body to avoid EPIPE. Keep that drain inside our
   // raw byte/deadline budget, with no further parsing, file writes or buffering
@@ -62,7 +77,10 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
   };
   try {
     await quota.cleanupAbandoned();
-    session = await quota.begin(scope);
+    const length = req.headers['transfer-encoding'] ? NaN : Number(req.headers['content-length']);
+    session = await quota.begin({
+      ...scope, clientKey: rateLimitKey(req), declaredBytes: Number.isSafeInteger(length) && length >= 0 ? length : null,
+    });
     session.isCancelled = () => Boolean(stopped || req.aborted || res.destroyed);
     if (req.destroyed || session.isCancelled()) throw quota.refusal('UPLOAD_CANCELLED', 400);
     phase = 'staging';
@@ -83,7 +101,9 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
         const meter = new Transform({ transform(chunk, _encoding, next) { size += chunk.length; next(null, chunk); } });
         const fileGuard = scope.fileGuard?.(file);
         if (fileGuard) fileGuard.on('error', discardBody);
-        const writer = pipeline(file.stream, ...(fileGuard ? [fileGuard] : []), meter, fs.createWriteStream(filePath, { flags: 'wx', mode: 0o600 }));
+        // Each file part past the first claims its own slot before staging.
+        const writer = quota.reserveFile(session)
+          .then(() => pipeline(file.stream, ...(fileGuard ? [fileGuard] : []), meter, fs.createWriteStream(filePath, { flags: 'wx', mode: 0o600 })));
         writers.add(writer);
         writer.then(() => cb(null, { destination: session.dir, filename, path: filePath, size }), err => cb(err))
           .finally(() => writers.delete(writer));
@@ -129,7 +149,7 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
     if (!req.is('multipart/form-data')) {
       throw Object.assign(new Error('Expected a multipart/form-data upload.'), { status: 400, code: 'UPLOAD_REJECTED' });
     }
-    const uploader = makeUploader({ storage, streamHandler, maxFiles: session.files, rejectBody: discardBody });
+    const uploader = makeUploader({ storage, streamHandler, maxFiles: session.maxFiles, rejectBody: discardBody });
     await new Promise((resolve, reject) => uploader(req, res, err => err ? reject(err) : resolve()));
     clearTimeout(timer);
     if (countBody) req.removeListener('data', countBody);
@@ -137,17 +157,19 @@ async function withPublicUpload(req, res, scope, makeUploader, handler) {
     phase = 'handling';
     if (session.isCancelled()) throw quota.refusal('UPLOAD_CANCELLED', 400);
     await Promise.all([...writers]);
-    const files = req.files ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat()) : req.file ? [req.file] : [];
-    await quota.staged(session, files.reduce((total, file) => total + file.size, 0), files.length);
     await handler(session, reply);
   } catch (err) {
+    if (scope.mode === 'admin') quota.forAdmin(err);
     if (!res.headersSent && !res.destroyed) {
       // Public callers never receive filesystem paths or adapter errors.
       const publicError = err.status && /^UPLOAD_/.test(err.code || '');
       const formatted = !publicError && phase === 'staging' ? scope.formatError?.(err) : null;
       const status = formatted?.status || (publicError ? err.status : phase === 'staging' ? 400 : phase === 'handling' ? 500 : 503);
       const body = formatted?.body || {
-        error: publicError ? err.message : err.code === 'LIMIT_FILE_SIZE' ? scope.fileLimitMessage || 'File exceeds the configured size limit.' : 'Upload failed',
+        // Multer's own limit messages and a route's validation refusals
+        // (`expose`) are fixed, safe strings; anything else stays generic.
+        error: publicError ? err.message : err.code === 'LIMIT_FILE_SIZE' ? scope.fileLimitMessage || 'File exceeds the configured size limit.'
+          : err.name === 'MulterError' || err.expose === true ? err.message : 'Upload failed',
         code: publicError ? err.code : phase === 'admission' ? 'UPLOAD_QUOTA_UNAVAILABLE' : 'UPLOAD_REJECTED',
       };
       // Unsupported content types / invalid boundaries may fail before Multer

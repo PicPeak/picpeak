@@ -161,8 +161,8 @@ describe('Admin photos in reference mode', () => {
     await db.schema.createTable('app_settings', table => {
       table.string('setting_key'); table.string('setting_value');
     });
-    await require('../../migrations/core/266_public_upload_quotas').up(db);
-    await require('../../migrations/core/267_admin_upload_admission').up(db);
+    await require('../../migrations/core/276_public_upload_quotas').up(db);
+    await require('../../migrations/core/277_admin_upload_admission').up(db);
 
     await db('events').insert({
       id: 1,
