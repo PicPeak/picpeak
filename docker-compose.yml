@@ -135,6 +135,7 @@ services:
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage
       - PUBLIC_UPLOAD_LIMITS_JSON=${PUBLIC_UPLOAD_LIMITS_JSON:-}
+      - ADMIN_UPLOAD_LIMITS_JSON=${ADMIN_UPLOAD_LIMITS_JSON:-}
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
       # External-media folder watcher (issue 1187); all optional, see .env.example.

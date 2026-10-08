@@ -46,7 +46,34 @@ PUBLIC_UPLOAD_LIMITS_JSON={"requestBytes":209715200,"gallery":{"bytes":107374182
 
 Available top-level scalars: `requestBytes`, `requestTimeoutMs`, `headroomBytes` (default 512 MiB), `headroomPercent` (default 5), `headroomFiles` (default 1,024 free inodes). Each of `gallery`, `guest`, `transfer`, `account`, `deployment` accepts `bytes`, `files`, `pendingBytes`, `pendingFiles`, `requests`, `hourBytes`. Larger bodies still need matching proxy limits.
 
-Low-storage admission requires measurable byte/inode capacity and leaves the greater of absolute/percentage byte headroom plus absolute inode headroom. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room. These public-ingress controls do not replace budgets for derived media, private/admin import paths, subprocesses, inbound mail or other writers.
+Low-storage admission requires measurable byte/inode capacity and leaves the greater of absolute/percentage byte headroom plus absolute inode headroom. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room. These public-ingress controls do not replace budgets for derived media, import paths, subprocesses, inbound mail or other writers.
+
+## Authenticated admin and API uploads
+
+Uploads by a signed-in admin (the admin UI, both multipart aliases, resumable uploads, PicTransfer deliverables) and through an API-v1 token come from the operator's own users. They are **not** rate-limited and **not** charged: there is no hourly, lifetime or per-gallery cap, they never count against a public allowance, and a public allowance never refuses them. Auth, permissions and ownership still apply, and so do the per-file settings. Admission only bounds what is in flight at once, so a full disk or a runaway client cannot take the server down:
+
+| Bound | Default | Override key |
+| --- | --- | --- |
+| Free-disk headroom | 512 MiB or 5% of the volume, whichever is larger, and 1,024 free inodes | `headroomBytes`, `headroomPercent`, `headroomFiles` |
+| Bytes all authenticated requests hold in staging together | the smaller of 50 GiB and 25% of the free space | `stagedBytes` |
+| Files they hold in staging together | 50,000 | `stagedFiles` |
+| Concurrent requests per uploading admin account | 16 | `accountRequests` |
+| Concurrent requests per deployment | 64 | `requests` |
+| Deadline for one request body (multipart request or one chunk) | 10 minutes | `requestTimeoutMs` |
+
+A request that is alone is always admitted when the disk has room: one file up to `general_max_file_size_mb` / `general_max_video_size_mb` never fails on the staging bound. One multipart request may carry `general_max_upload_batch_size_mb` (95 MiB when unset) and never less than one maximum file plus 1 MiB of framing; set `requestBytes` to lower that. The admin UI sends larger single files through the resumable path.
+
+A resumable upload is **one** request from init to completion, however many 10-MiB chunks or re-sent chunks it takes. Init reserves the declared file size, and local room for the chunks plus their merged copy. Video chunk zero is classified first (any ISO base media `ftyp` brand, a classic QuickTime `moov`/`mdat`/`wide`/`free` atom for `.mov`, RIFF AVI or WebM; still-image brands are refused); later indices can arrive out of order. Disk headroom is rechecked before each chunk, before the merge and before promotion.
+
+Capacity refusals are transient and the admin UI waits and retries them: `UPLOAD_PENDING_LIMIT` and `UPLOAD_CONCURRENCY_LIMIT` (429), and `UPLOAD_TIMEOUT` / `UPLOAD_REQUEST_TIMEOUT` (408). `UPLOAD_STORAGE_LOW` (507) is not: free disk space first.
+
+Authenticated requests are recorded in the same tables for this accounting only (`upload_kind = 'admin'`). Their rows are released when the upload completes or fails, and nothing remains charged afterwards, including for a photo whose processing later fails. They hold the same heartbeat lease as public requests: after a restart, the reaper releases a request or resumable session whose process died and removes its staging directory with its chunks. A resumable session that receives no chunk for 15 minutes (a closed tab) is released with its chunks; the client starts that file again.
+
+Configure `ADMIN_UPLOAD_LIMITS_JSON` in the backend environment with the same positive-integer rules as the public profile; only the keys in the table and `requestBytes` are accepted, anything else fails closed. Compose forwards the variable. For example, to let authenticated uploads stage up to 200 GiB at once with 32 requests per account:
+
+```dotenv
+ADMIN_UPLOAD_LIMITS_JSON={"stagedBytes":214748364800,"accountRequests":32}
+```
 
 ## Cleanup and capacity recovery
 

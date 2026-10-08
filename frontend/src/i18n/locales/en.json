@@ -805,6 +805,14 @@
       "timeout": "The upload took too long. Please try a smaller batch.",
       "gone": "This gallery or file request no longer exists."
     },
+    "adminCapacity": {
+      "batch": "This upload is larger than the server accepts in one request. Lower the upload batch size in the settings.",
+      "busy": "The server stayed busy with other uploads and had no room for these files in time. Upload them again in a moment.",
+      "storage": "The server is short on disk space. Free up space, then upload these files again.",
+      "unavailable": "The server could not reserve room for this upload. Check the server log and ADMIN_UPLOAD_LIMITS_JSON.",
+      "timeout": "The upload took too long and was stopped. Check the connection and upload these files again.",
+      "waiting": "Waiting for upload capacity on the server (retry {{attempt}} of {{total}})…"
+    },
     "photoCategory": "Photo Category",
     "noCategory": "No category",
     "eventSpecific": "(Event specific)",
