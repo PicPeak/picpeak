@@ -10,6 +10,7 @@ const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const { queueTimestamp, toUtcIso } = require('../utils/queueTimestamps');
+const { PROTECTED_PENDING_STATUS } = require('../utils/emailQueueEncryption');
 const router = express.Router();
 
 /**
@@ -277,7 +278,7 @@ router.get('/health', adminAuth, requirePermission('settings.view'), async (req,
 
     // Check email queue
     const [pendingEmails] = await db('email_queue')
-      .where('status', 'pending')
+      .whereIn('status', ['pending', PROTECTED_PENDING_STATUS])
       .count('* as count');
     
     // Failures of the last day, by created_at: scheduled_at is NULL for mail

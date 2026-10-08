@@ -71,6 +71,10 @@ describe('transferService.assertUploadable', () => {
   it('allows when uploads enabled and not expired', () => {
     expect(transferService.assertUploadable(make({ allow_uploads: true })).ok).toBe(true);
   });
+  it('403s a transfer the admin deactivated while an upload was in flight', () => {
+    expect(transferService.assertUploadable(make({ allow_uploads: true, is_active: false })))
+      .toMatchObject({ ok: false, code: 'UPLOADS_DISABLED', status: 403 });
+  });
   it('410s when the upload window has passed', () => {
     expect(transferService.assertUploadable(make({ allow_uploads: true, upload_expires_at: new Date(Date.now() - HOUR) })))
       .toMatchObject({ ok: false, code: 'UPLOAD_EXPIRED', status: 410 });

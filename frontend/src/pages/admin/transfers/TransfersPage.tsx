@@ -634,7 +634,7 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
                 </>
               ) : (
                 <p className="text-sm text-neutral-400">
-                  {t('transfers.uploadHint', 'Enable this to give the client a 6-character code to send you files (logos etc.).')}
+                  {t('transfers.uploadHint', 'Enable this to give the client a short code to send you files (logos etc.).')}
                 </p>
               )}
             </div>

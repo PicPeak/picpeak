@@ -68,9 +68,10 @@ export const authService = {
     return normalizeGalleryResponse(response.data);
   },
 
-  async clientLogin(slug: string, password: string): Promise<GalleryAuthResponse> {
+  async clientLogin(slug: string, password: string, token: string): Promise<GalleryAuthResponse> {
     const response = await api.post<GalleryAuthResponse>(`/auth/gallery/${slug}/client-login`, {
-      password
+      password,
+      token,
     });
     return normalizeGalleryResponse(response.data);
   },

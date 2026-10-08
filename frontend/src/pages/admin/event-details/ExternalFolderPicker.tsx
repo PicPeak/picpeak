@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderTreeNode } from './FolderTreeNode';
+import { ExternalSourceAssignments } from './ExternalSourceAssignments';
 
 export const ExternalFolderPicker: React.FC<{ value: string; onChange: (p: string) => void }> = ({ value, onChange }) => {
   const { t } = useTranslation();
@@ -55,6 +56,7 @@ export const ExternalFolderPicker: React.FC<{ value: string; onChange: (p: strin
           toggleExpand={toggleExpand}
         />
       </div>
+      <ExternalSourceAssignments selectedPath={value} />
     </div>
   );
 };
