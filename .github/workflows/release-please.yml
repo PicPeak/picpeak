@@ -14,6 +14,8 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+      release_id: ${{ steps.release.outputs.id }}
       version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
     steps:
       - name: Run Release Please
@@ -47,6 +49,22 @@ jobs:
   # Best-effort "What's New" highlights on the freshly-created release. Runs in
   # this same workflow run (not a `release:` trigger) because release-please
   # creates the release with GITHUB_TOKEN, which never starts new workflow runs.
+  # Same-commit reusable workflow: exact outputs from the pinned action, not
+  # an arbitrary tag/release event. No RELEASE_PLEASE_TOKEN is passed onward.
+  publish-images:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      security-events: write
+    uses: ./.github/workflows/docker-build.yml
+    with:
+      release_tag: ${{ needs.release-please.outputs.tag_name }}
+      release_sha: ${{ needs.release-please.outputs.sha }}
+      release_id: ${{ needs.release-please.outputs.release_id }}
+
   whatsnew:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
@@ -56,4 +74,3 @@ jobs:
     uses: ./.github/workflows/whatsnew-highlights.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-

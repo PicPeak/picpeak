@@ -3,8 +3,9 @@ name: Build and Push Docker Images
 # This workflow is triggered by:
 # - Push to main/stable branches (main → ':main' rolling tag for active-dev
 #   builds; stable → ':stable' + ':latest' for the curated channel)
-# - Version tags from Release Please (e.g., v1.2.0 -> builds versioned images)
-# - GitHub Releases (created by Release Please)
+# - Trusted reusable invocation after Release Please creates an exact version
+# Version tags/releases never trigger this workflow directly. Apply the external
+# protections in docs/RELEASE_IMAGE_SECURITY.md before enabling publication.
 # - Pull requests (build verification only, no push by default)
 # - Manual workflow dispatch
 #
@@ -22,11 +23,8 @@ name: Build and Push Docker Images
 on:
   push:
     branches: [ main, stable ]
-    tags: [ 'v*.*.*', 'v*.*.*-beta.*' ]  # Triggered by Release Please tags (stable and beta)
   pull_request:
     branches: [ main, stable ]
-  release:
-    types: [ published ]  # Triggered when Release Please creates a release
   workflow_dispatch:
     inputs:
       push:
@@ -38,14 +36,21 @@ on:
           - 'true'
           - 'false'
 
-# Once release-please authors releases with a PAT (#719), a new version fires
-# BOTH the tag-push and the release-published triggers (GITHUB_TOKEN used to
-# suppress them). They build the same immutable version, so collapse them into a
-# single run by grouping on the ref. Branch and PR builds use different refs and
-# still run independently; a superseding push cancels an in-flight run for the
-# same ref (only the newest build per ref is kept).
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+      release_sha:
+        type: string
+        required: true
+      release_id:
+        type: string
+        required: true
+
+# Separate rolling and exact-version runs; do not cancel the caller workflow.
 concurrency:
-  group: docker-build-${{ github.ref }}
+  group: docker-build-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -64,10 +69,68 @@ permissions:
   contents: read
 
 jobs:
+  publication-policy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      publish: ${{ steps.policy.outputs.publish }}
+      sha: ${{ steps.policy.outputs.sha }}
+      release_tag: ${{ steps.policy.outputs.release_tag }}
+      channel: ${{ steps.policy.outputs.channel }}
+      tags: ${{ steps.policy.outputs.tags }}
+    steps:
+    - name: Checkout triggering workflow source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Test publication policy and wiring
+      run: node --test .github/scripts/*.test.cjs
+    - name: Validate publication provenance and configuration
+      id: policy
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+      env:
+        RELEASE_TAG: ${{ inputs.release_tag || '' }}
+        RELEASE_SHA: ${{ inputs.release_sha || '' }}
+        RELEASE_ID: ${{ inputs.release_id || '' }}
+        PUSH_REQUESTED: ${{ inputs.push || 'false' }}
+      with:
+        script: |
+          const policy = require('./.github/scripts/image-publication-policy.cjs');
+          const result = await policy({ github, context,
+            workflowRef: process.env.GITHUB_WORKFLOW_REF,
+            inputs: { release_tag: process.env.RELEASE_TAG, release_sha: process.env.RELEASE_SHA,
+              release_id: process.env.RELEASE_ID, push: process.env.PUSH_REQUESTED } });
+          for (const [key, value] of Object.entries(result)) core.setOutput(key, value);
+          await core.summary.addHeading(result.publish === 'true' ? 'Publication requested' : 'Verify only')
+            .addTable([['Source commit', result.sha],
+              ['Version / channel', result.release_tag || result.channel || 'none']])
+            .write();
+
+  approve-publication:
+    needs: publication-policy
+    if: needs.publication-policy.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment: picpeak-release
+    permissions:
+      contents: read
+    steps:
+    - name: Record approved immutable publication
+      env:
+        SOURCE_SHA: ${{ needs.publication-policy.outputs.sha }}
+        RELEASE_TAG: ${{ needs.publication-policy.outputs.release_tag }}
+        CHANNEL: ${{ needs.publication-policy.outputs.channel }}
+      run: |
+        printf 'Approved source: %s\nVersion: %s\nChannel: %s\n' "$SOURCE_SHA" "$RELEASE_TAG" "$CHANNEL" >> "$GITHUB_STEP_SUMMARY"
+
   # -----------------------------------------------------------------------------
   # Backend: per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
   build-backend:
+    needs: [publication-policy, approve-publication]
+    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +151,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Compute image names (lowercase for GHCR)
       run: |
@@ -114,9 +180,8 @@ jobs:
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      if: needs.publication-policy.outputs.publish == 'true'
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
@@ -125,21 +190,20 @@ jobs:
 
     - name: Determine if pushing
       id: push-decision
+      env:
+        PUBLISH: ${{ needs.publication-policy.outputs.publish }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
+        echo "push=$PUBLISH" >> "$GITHUB_OUTPUT"
 
     - name: Extract metadata for Backend (labels only)
       id: meta-backend
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags || format('type=raw,value=sha-{0}', needs.publication-policy.outputs.sha) }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak Backend
           org.opencontainers.image.description=PicPeak photo sharing platform backend service
           org.opencontainers.image.vendor=PicPeak
@@ -162,7 +226,7 @@ jobs:
         build-args: |
           CACHEBUST=${{ github.run_number }}
           BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
+          VCS_REF=${{ needs.publication-policy.outputs.sha }}
           VERSION=${{ steps.meta-backend.outputs.version }}
 
     - name: Export digest
@@ -233,7 +297,8 @@ jobs:
         category: 'backend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
 
   merge-backend:
-    needs: build-backend
+    needs: [publication-policy, approve-publication, build-backend]
+    environment: picpeak-release
     runs-on: ubuntu-latest
     # No security-events permission here — vulnerability scanning moved
     # to per-arch build-backend jobs (#476). This job's only job is to
@@ -241,8 +306,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    # Only run when at least one digest was pushed (i.e. not on PRs without push intent).
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+    # Only the shared policy plus approved prerequisite can authorize publication.
+    if: needs.publication-policy.outputs.publish == 'true'
 
     steps:
     - name: Compute image names (lowercase for GHCR)
@@ -272,25 +337,17 @@ jobs:
 
     - name: Log in to Container Registry
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          # Active-dev branch (`main`, renamed from `beta` per #669) produces
-          # prereleases; the `-beta.N` version-suffix scheme is unchanged.
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
+    - name: Checkout approved immutable source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
@@ -311,38 +368,13 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
           ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/backend' || '' }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak Backend
           org.opencontainers.image.description=PicPeak photo sharing platform backend service
           org.opencontainers.image.vendor=PicPeak
           maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim (v3.45.0 / v3.84.0-beta.0)
-          # so users can pin the same string as the GitHub release. metadata-action's
-          # `pattern=v{{version}}` silently dropped it on prereleases, so use type=ref.
-          type=ref,event=tag
-          type=sha,format=short
-          # `:latest` + `:stable` follow the stable channel (the `stable` branch +
-          # stable release tags). The default branch is now `main` (active dev),
-          # so `is_default_branch` no longer maps to "stable" — be explicit.
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-          # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
-          # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
-          # tag remains frozen at its last build — operators should update.
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests
@@ -363,6 +395,8 @@ jobs:
   # Frontend: per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
   build-frontend:
+    needs: [publication-policy, approve-publication]
+    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -381,7 +415,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Compute image names (lowercase for GHCR)
       run: |
@@ -407,9 +444,8 @@ jobs:
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      if: needs.publication-policy.outputs.publish == 'true'
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
@@ -418,21 +454,20 @@ jobs:
 
     - name: Determine if pushing
       id: push-decision
+      env:
+        PUBLISH: ${{ needs.publication-policy.outputs.publish }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
+        echo "push=$PUBLISH" >> "$GITHUB_OUTPUT"
 
     - name: Extract metadata for Frontend (labels only)
       id: meta-frontend
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags || format('type=raw,value=sha-{0}', needs.publication-policy.outputs.sha) }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak Frontend
           org.opencontainers.image.description=PicPeak photo sharing platform frontend application
           org.opencontainers.image.vendor=PicPeak
@@ -455,7 +490,7 @@ jobs:
         build-args: |
           CACHEBUST=${{ github.run_number }}
           BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
+          VCS_REF=${{ needs.publication-policy.outputs.sha }}
           VERSION=${{ steps.meta-frontend.outputs.version }}
 
     - name: Export digest
@@ -509,14 +544,15 @@ jobs:
         category: 'frontend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
 
   merge-frontend:
-    needs: build-frontend
+    needs: [publication-policy, approve-publication, build-frontend]
+    environment: picpeak-release
     runs-on: ubuntu-latest
     # See merge-backend — vulnerability scanning moved to the per-arch
     # build-frontend matrix (#476). This job only publishes the manifest.
     permissions:
       contents: read
       packages: write
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+    if: needs.publication-policy.outputs.publish == 'true'
 
     steps:
     - name: Compute image names (lowercase for GHCR)
@@ -546,25 +582,17 @@ jobs:
 
     - name: Log in to Container Registry
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          # Active-dev branch (`main`, renamed from `beta` per #669) produces
-          # prereleases; the `-beta.N` version-suffix scheme is unchanged.
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
+    - name: Checkout approved immutable source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
@@ -585,38 +613,13 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
           ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/frontend' || '' }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak Frontend
           org.opencontainers.image.description=PicPeak photo sharing platform frontend application
           org.opencontainers.image.vendor=PicPeak
           maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim (v3.45.0 / v3.84.0-beta.0)
-          # so users can pin the same string as the GitHub release. metadata-action's
-          # `pattern=v{{version}}` silently dropped it on prereleases, so use type=ref.
-          type=ref,event=tag
-          type=sha,format=short
-          # `:latest` + `:stable` follow the stable channel (the `stable` branch +
-          # stable release tags). The default branch is now `main` (active dev),
-          # so `is_default_branch` no longer maps to "stable" — be explicit.
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
-          # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
-          # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
-          # tag remains frozen at its last build — operators should update.
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests
@@ -639,6 +642,8 @@ jobs:
   # the repo root (Dockerfile.aio needs backend/ AND frontend/).
   # -----------------------------------------------------------------------------
   build-aio:
+    needs: [publication-policy, approve-publication]
+    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -656,7 +661,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Compute image name (lowercase for GHCR)
       run: |
@@ -672,9 +680,8 @@ jobs:
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      if: needs.publication-policy.outputs.publish == 'true'
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
@@ -683,21 +690,20 @@ jobs:
 
     - name: Determine if pushing
       id: push-decision
+      env:
+        PUBLISH: ${{ needs.publication-policy.outputs.publish }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
+        echo "push=$PUBLISH" >> "$GITHUB_OUTPUT"
 
     - name: Extract metadata for AIO (labels only)
       id: meta-aio
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags || format('type=raw,value=sha-{0}', needs.publication-policy.outputs.sha) }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak All-in-one
           org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
           org.opencontainers.image.vendor=PicPeak
@@ -719,7 +725,7 @@ jobs:
         build-args: |
           CACHEBUST=${{ github.run_number }}
           BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
+          VCS_REF=${{ needs.publication-policy.outputs.sha }}
           VERSION=${{ steps.meta-aio.outputs.version }}
 
     - name: Export digest
@@ -768,12 +774,13 @@ jobs:
         category: 'aio-vulnerabilities-${{ env.PLATFORM_PAIR }}'
 
   merge-aio:
-    needs: build-aio
+    needs: [publication-policy, approve-publication, build-aio]
+    environment: picpeak-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+    if: needs.publication-policy.outputs.publish == 'true'
 
     steps:
     - name: Compute image name (lowercase for GHCR)
@@ -802,23 +809,17 @@ jobs:
 
     - name: Log in to Container Registry
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
+    - name: Checkout approved immutable source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
@@ -839,30 +840,13 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
           ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/aio' || '' }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak All-in-one
           org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
           org.opencontainers.image.vendor=PicPeak
           maintainer=${{ github.repository_owner }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          # #668/#783: publish the git-tag name verbatim, same as backend/frontend.
-          type=ref,event=tag
-          type=sha,format=short
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests
@@ -885,6 +869,7 @@ jobs:
   # immutable asset caching, /health green, and the resolver landing on
   # SQLite. Mirrors the install-smoke workflow's build pattern.
   smoke-aio:
+    needs: publication-policy
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -892,7 +877,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -1127,7 +1115,8 @@ jobs:
   #   FACENET_ONNX_SHA256  <sha256 of that file>
   # See ml/README.md for producing them.
   build-ml:
-    if: vars.FACENET_ONNX_URL != ''
+    needs: [publication-policy, approve-publication]
+    if: always() && needs.publication-policy.result == 'success' && (needs.publication-policy.outputs.publish == 'false' || needs.approve-publication.result == 'success') && vars.FACENET_ONNX_URL != ''
     strategy:
       fail-fast: false
       matrix:
@@ -1144,7 +1133,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Compute image names (lowercase for GHCR)
       run: |
@@ -1160,9 +1152,8 @@ jobs:
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
     - name: Log in to Container Registry
-      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      if: needs.publication-policy.outputs.publish == 'true'
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
@@ -1171,21 +1162,20 @@ jobs:
 
     - name: Determine if pushing
       id: push-decision
+      env:
+        PUBLISH: ${{ needs.publication-policy.outputs.publish }}
       run: |
-        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
-          echo "push=false" >> "$GITHUB_OUTPUT"
-        else
-          echo "push=true" >> "$GITHUB_OUTPUT"
-        fi
+        echo "push=$PUBLISH" >> "$GITHUB_OUTPUT"
 
     - name: Extract metadata for ML (labels only)
       id: meta-ml
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags || format('type=raw,value=sha-{0}', needs.publication-policy.outputs.sha) }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak ML
           org.opencontainers.image.description=PicPeak face detection and embedding sidecar
           org.opencontainers.image.vendor=PicPeak
@@ -1205,7 +1195,7 @@ jobs:
         build-args: |
           CACHEBUST=${{ github.run_number }}
           BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          VCS_REF=${{ github.sha }}
+          VCS_REF=${{ needs.publication-policy.outputs.sha }}
           VERSION=${{ steps.meta-ml.outputs.version }}
           FACENET_ONNX_URL=${{ vars.FACENET_ONNX_URL }}
           FACENET_ONNX_SHA256=${{ vars.FACENET_ONNX_SHA256 }}
@@ -1257,12 +1247,13 @@ jobs:
         category: 'ml-vulnerabilities-${{ env.PLATFORM_PAIR }}'
 
   merge-ml:
-    needs: build-ml
+    needs: [publication-policy, approve-publication, build-ml]
+    environment: picpeak-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    if: vars.FACENET_ONNX_URL != '' && (github.event_name != 'pull_request' || github.event.inputs.push == 'true')
+    if: vars.FACENET_ONNX_URL != '' && needs.publication-policy.outputs.publish == 'true'
 
     steps:
     - name: Compute image names (lowercase for GHCR)
@@ -1287,23 +1278,17 @@ jobs:
 
     - name: Log in to Container Registry
       id: login-ghcr
-      continue-on-error: true
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Determine build context
-      id: context
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
-          echo "channel=beta" >> $GITHUB_OUTPUT
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "channel=stable" >> $GITHUB_OUTPUT
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
+    - name: Checkout approved immutable source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_ENABLED == 'true'
@@ -1321,6 +1306,7 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
           ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/ml' || '' }}
         labels: |
+          org.opencontainers.image.revision=${{ needs.publication-policy.outputs.sha }}
           org.opencontainers.image.title=PicPeak ML
           org.opencontainers.image.description=PicPeak face detection and embedding sidecar
           org.opencontainers.image.vendor=PicPeak
@@ -1328,25 +1314,8 @@ jobs:
         # Identical tag scheme to backend/frontend: the sidecar's API contract
         # is versioned with the backend that calls it, so PICPEAK_CHANNEL
         # resolves the same string across all three images.
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
-          type=ref,event=tag
-          type=sha,format=short
-          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
-          # `:beta` follows the active development branch. This used to happen
-          # for free via `type=ref,event=branch` back when that branch was
-          # literally named `beta`; the rename to `main` silently retired the
-          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
-          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
-          # on. The ml sidecar was added after the rename and so never had a
-          # `:beta` at all, which left docker-compose.production.yml unable to
-          # resolve the image for any documented channel.
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
+        flavor: latest=false
+        tags: ${{ needs.publication-policy.outputs.tags }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests
@@ -1379,15 +1348,19 @@ jobs:
   # Only on `main` pushes for the canonical org repo: descriptions are
   # per-repository, not per-tag, so once per merge is exactly enough.
   dockerhub-descriptions:
-    needs: [merge-aio, merge-ml]
-    if: always() && github.repository == 'PicPeak/picpeak' && github.ref == 'refs/heads/main' && needs.merge-aio.result == 'success'
+    needs: [publication-policy, approve-publication, merge-aio, merge-ml]
+    environment: picpeak-release
+    if: always() && needs.publication-policy.outputs.publish == 'true' && needs.publication-policy.outputs.release_tag == '' && needs.publication-policy.outputs.channel == 'beta' && github.repository == 'PicPeak/picpeak' && needs.merge-aio.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        ref: ${{ needs.publication-policy.outputs.sha }}
+        persist-credentials: false
 
     - name: Update picpeak/aio description
       uses: peter-evans/dockerhub-description@432a30c9e07499fd01da9f8a49f0faf9e0ca5b77 # v4.0.2
@@ -1411,7 +1384,7 @@ jobs:
         readme-filepath: .github/dockerhub/ml.md
 
   summary:
-    needs: [build-backend, merge-backend, build-frontend, merge-frontend, build-aio, merge-aio, smoke-aio, build-ml, merge-ml]
+    needs: [publication-policy, approve-publication, build-backend, merge-backend, build-frontend, merge-frontend, build-aio, merge-aio, smoke-aio, build-ml, merge-ml]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -1434,6 +1407,15 @@ jobs:
         else
           echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
         fi
+
+    - name: Require successful provenance and approval gates
+      env:
+        POLICY_RESULT: ${{ needs.publication-policy.result }}
+        PUBLISH: ${{ needs.publication-policy.outputs.publish }}
+        APPROVAL_RESULT: ${{ needs.approve-publication.result }}
+      run: |
+        test "$POLICY_RESULT" = success
+        if [ "$PUBLISH" = true ]; then test "$APPROVAL_RESULT" = success; fi
 
     - name: Build Summary
       run: |
@@ -1532,9 +1514,9 @@ jobs:
         echo "### 🏷️ Tags" >> $GITHUB_STEP_SUMMARY
         echo "Images are tagged based on:" >> $GITHUB_STEP_SUMMARY
         echo "- Branch name (for branch pushes)" >> $GITHUB_STEP_SUMMARY
-        echo "- PR number (for pull requests, when push is enabled)" >> $GITHUB_STEP_SUMMARY
+        echo "- Pull requests are always verify-only" >> $GITHUB_STEP_SUMMARY
         echo "- Version tags (for releases)" >> $GITHUB_STEP_SUMMARY
         echo "- Short SHA" >> $GITHUB_STEP_SUMMARY
-        echo "- \`latest\` (for main branch)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`stable\` (for main branch and stable releases)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`beta\` (for beta branch and pre-releases)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`latest\` / \`stable\` (stable channel only)" >> $GITHUB_STEP_SUMMARY
+        echo "- Exact validated version and source SHA for releases" >> $GITHUB_STEP_SUMMARY
+        echo "- \`main\` / \`beta\` (rolling main branch only)" >> $GITHUB_STEP_SUMMARY
