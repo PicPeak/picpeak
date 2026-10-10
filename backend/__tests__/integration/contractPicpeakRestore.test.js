@@ -55,16 +55,18 @@ async function checkTemplateInColdRuntime() {
     const { db } = require('./src/database/db');
     (async () => {
       try {
+        // What server.js does at boot: the committed restore left the fence
+        // up, so this cold runtime recovers it before anything else starts.
+        if (!(await coordinator.pendingAtBoot())) throw new Error('The committed restore left no fence for the next start');
         await coordinator.initialize();
         await coordinator.waitForStartupAdmission();
         await work.track('cold contract template startup', () =>
           require('./src/services/contract/defaultTemplate').ensureDefaultTemplate());
-        coordinator.markReady();
         const control = await db('portable_restore_control').where({ id: 1 }).first();
         const system = await db('contract_templates').where({ is_system: require('./src/utils/dbCompat').formatBoolean(true) }).first();
         const version = await db('contract_template_versions').where({ template_id: system.id, status: 'published' }).first();
         process.stdout.write('PICPEAK_COLD_TEMPLATE=' + JSON.stringify({
-          instanceId: coordinator.instanceId(), ready: coordinator.isReady(),
+          instanceId: coordinator.instanceId(), ready: !coordinator.isFenced(),
           state: control.state, generation: control.generation, templateId: system.id,
           revision: version.system_revision, contentSha256: version.content_sha256,
         }) + '\\n');

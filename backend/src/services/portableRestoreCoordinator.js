@@ -378,10 +378,17 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
       await recordTerminal(row, result, recovery);
     } catch (error) {
       logger.error('Coordinated restore requires recovery', { attemptId: row.attempt_id, code: error.code || 'RESTORE_RECOVERY_REQUIRED' });
-      const latest = await read();
-      if (latest.epoch === row.epoch && latest.owner_instance_id === registration.instance_id && latest.state !== 'open') {
-        await cas(latest, { state: 'recovery_required', result_json: json({ outcome: 'recovery_required', recoveryAttempted: recovery,
-          error: describeError(error, 'RESTORE_RECOVERY_REQUIRED') }) });
+      // Nobody awaits this detached run: a control row that cannot be read or
+      // written now must not become an unhandled rejection. The row keeps its
+      // fenced state and the next tick or start takes it from there.
+      try {
+        const latest = await read();
+        if (latest.epoch === row.epoch && latest.owner_instance_id === registration.instance_id && latest.state !== 'open') {
+          await cas(latest, { state: 'recovery_required', result_json: json({ outcome: 'recovery_required', recoveryAttempted: recovery,
+            error: describeError(error, 'RESTORE_RECOVERY_REQUIRED') }) });
+        }
+      } catch (controlError) {
+        logger.error('Restore control row could not be updated after a failed run', { attemptId: row.attempt_id, error: controlError.message });
       }
     }
   }
@@ -771,6 +778,9 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     stopping = true;
     clearInterval(polling); polling = null;
     clearInterval(watching); watching = null;
+    // A registration in flight still uses the database; the caller destroys
+    // the pool next and a query left waiting on it would never settle.
+    if (registering) await registering.catch(() => {});
     await activeWatch;
     await activeTick;
     // The runtime FD deliberately remains held until actual Node lifetime
