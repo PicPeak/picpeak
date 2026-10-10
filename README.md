@@ -159,7 +159,7 @@ Capturing S3-primary backups uses a private temporary tree: provide temporary di
 
 Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers.
 
-Portable restores require coordinated Linux maintenance and a shared persistent local storage volume. The read-only progress UI remains available; restart every backend instance after a committed restore or verified rollback. See [Portable restore](docs/PORTABLE_RESTORE.md) for bounded worker/archive limits, recovery fences, S3 generation activation and deployment requirements.
+Restoring a `.picpeak` puts the instance into maintenance while the database and files are replaced. It is an optional feature (Linux, the native build and local storage); where the host does not qualify everything else runs normally and only the import is switched off. A restore that fails is rolled back and the instance reopens by itself; after a committed restore, restart the backend once. See [Portable restore](docs/PORTABLE_RESTORE.md) for requirements, limits, recovery and the S3 generation index.
 ### Mail network policy
 
 Every SMTP/IMAP connection validates and consumes only its current vetted DNS

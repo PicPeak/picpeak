@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Download, Upload, AlertTriangle, ShieldAlert, Info } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 
 import { Button, Card } from '../common';
 import { portableBackupService } from '../../services/portableBackup.service';
@@ -88,6 +89,15 @@ export const PicpeakRestoreCard: React.FC = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [restoring, setRestoring] = useState(false);
+  // Not every server can run a restore (it needs Linux, the native build and
+  // local storage). Where it cannot, say so here instead of failing an upload.
+  const { data: capability } = useQuery({
+    queryKey: ['picpeak-restore-capability'],
+    queryFn: () => portableBackupService.capability(),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const unavailable = capability?.available === false;
 
   const onFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -102,8 +112,13 @@ export const PicpeakRestoreCard: React.FC = () => {
       await portableBackupService.start(pendingFile);
       setPendingFile(null);
     } catch (e: any) {
-      const msg = e.response?.data?.error || t('backup.picpeak.restoreFailed', 'Restore failed.');
-      toast.error(msg);
+      // The server validates the file before it changes anything; its refusal
+      // names the reason by code, with its own text as the fallback.
+      const code = e.response?.data?.code as string | undefined;
+      const reason = code
+        ? t(`backup.picpeak.restoreError.${code}`, { defaultValue: t(`backup.picpeak.unavailable.${code}`, { defaultValue: e.response?.data?.error || '' }) })
+        : (e.response?.data?.error || '');
+      toast.error([t('backup.picpeak.restoreNotStarted', 'The restore was not started. Nothing was changed.'), reason].filter(Boolean).join(' '));
       setPendingFile(null);
     } finally {
       setRestoring(false);
@@ -118,10 +133,23 @@ export const PicpeakRestoreCard: React.FC = () => {
       <p className="mt-1 text-sm text-soft">
         {t('backup.picpeak.restoreIntro', 'Upload a .picpeak taken from this or another instance. Restoring a SQLite backup onto a PostgreSQL instance is supported (the upgrade path); other engine combinations must match.')}
       </p>
+      {unavailable && (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-line bg-subtle p-3" role="status">
+          <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-soft" />
+          <div className="text-sm text-body">
+            <p className="font-medium text-heading">{t('backup.picpeak.unavailableTitle', 'Restoring a .picpeak is not available on this server')}</p>
+            <p className="mt-1">
+              {t(`backup.picpeak.unavailable.${capability?.reason}`, { defaultValue: capability?.message || '' })}
+            </p>
+            <p className="mt-1 text-soft">{t('backup.picpeak.unavailableHelp', 'Everything else, including creating a .picpeak, works normally.')}</p>
+          </div>
+        </div>
+      )}
       <input ref={fileRef} type="file" accept=".picpeak,application/zip" className="hidden" onChange={onFilePick} />
       <Button
         variant="outline"
         className="mt-4"
+        disabled={unavailable}
         onClick={() => fileRef.current?.click()}
         leftIcon={<Upload className="h-4 w-4" />}
       >
