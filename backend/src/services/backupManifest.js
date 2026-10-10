@@ -182,7 +182,16 @@ class BackupManifestGenerator {
         content = JSON.stringify(manifest, null, 2);
       }
 
-      await fs.writeFile(filePath, content, 'utf8');
+      // Written beside the target and renamed into place, so a crash never
+      // leaves a truncated manifest under the final name.
+      const tempPath = `${filePath}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+      try {
+        await fs.writeFile(tempPath, content, 'utf8');
+        await fs.rename(tempPath, filePath);
+      } catch (error) {
+        await fs.rm(tempPath, { force: true }).catch(() => {});
+        throw error;
+      }
       logger.info(`Manifest saved to ${filePath} (format: ${format})`);
       
       return filePath;
