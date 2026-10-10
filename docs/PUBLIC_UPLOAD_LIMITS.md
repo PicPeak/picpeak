@@ -44,9 +44,9 @@ For example, to admit 200-MiB bodies and a 100-GiB gallery lifetime allowance:
 PUBLIC_UPLOAD_LIMITS_JSON={"requestBytes":209715200,"gallery":{"bytes":107374182400}}
 ```
 
-Available top-level scalars: `requestBytes`, `requestTimeoutMs`, `headroomBytes` (default 512 MiB), `headroomPercent` (default 5), `headroomFiles` (default 1,024 free inodes). Each of `gallery`, `guest`, `transfer`, `account`, `deployment` accepts `bytes`, `files`, `pendingBytes`, `pendingFiles`, `requests`, `hourBytes`. Larger bodies still need matching proxy limits.
+Available top-level scalars: `requestBytes`, `requestTimeoutMs`, `headroomBytes` (default 512 MiB), `headroomPercent` (default 0, off; set 1–50 to also keep a share of the volume free), `headroomFiles` (default 1,024 free inodes). Each of `gallery`, `guest`, `transfer`, `account`, `deployment` accepts `bytes`, `files`, `pendingBytes`, `pendingFiles`, `requests`, `hourBytes`. Larger bodies still need matching proxy limits.
 
-Low-storage admission requires measurable byte/inode capacity and leaves the greater of absolute/percentage byte headroom plus absolute inode headroom. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room. These public-ingress controls do not replace budgets for derived media, import paths, subprocesses, inbound mail or other writers.
+Low-storage admission leaves the greater of the absolute and the optional percentage byte headroom, plus the inode headroom on filesystems that count inodes (btrfs, exFAT and many network mounts report none and are not checked for it). A volume that reports no usable size at all is not checked; the backend logs that once. Local storage reserves room for staging plus promotion, with a second check on the actual destination mount immediately before promotion; S3 reserves local staging room. These public-ingress controls do not replace budgets for derived media, import paths, subprocesses, inbound mail or other writers.
 
 ## Authenticated admin and API uploads
 
@@ -54,7 +54,7 @@ Uploads by a signed-in admin (the admin UI, both multipart aliases, resumable up
 
 | Bound | Default | Override key |
 | --- | --- | --- |
-| Free-disk headroom | 512 MiB or 5% of the volume, whichever is larger, and 1,024 free inodes | `headroomBytes`, `headroomPercent`, `headroomFiles` |
+| Free-disk headroom | 512 MiB (plus a percentage of the volume if `headroomPercent` is set), and 1,024 free inodes where the filesystem counts inodes | `headroomBytes`, `headroomPercent`, `headroomFiles` |
 | Bytes all authenticated requests hold in staging together | the smaller of 50 GiB and 25% of the free space | `stagedBytes` |
 | Files they hold in staging together | 50,000 | `stagedFiles` |
 | Concurrent requests per uploading admin account | 16 | `accountRequests` |

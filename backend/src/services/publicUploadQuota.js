@@ -26,7 +26,7 @@ const LEGACY_TTL_MS = 60000;
 // Multipart boundaries and part headers ride on top of the file bytes.
 const FRAMING_BYTES = MiB;
 const DEFAULTS = Object.freeze({
-  requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 5, headroomFiles: 1024,
+  requestBytes: 95 * MiB, headroomBytes: 512 * MiB, headroomPercent: 0, headroomFiles: 1024,
   requestTimeoutMs: 300000,
   gallery: { bytes: 50 * GiB, files: 20000, pendingBytes: 20 * GiB, pendingFiles: 5000, requests: 16, hourBytes: 20 * GiB },
   // Same as the gallery: guests without an identity are bucketed by client
@@ -42,7 +42,7 @@ const DEFAULTS = Object.freeze({
 // once is bounded. stagedBytes defaults to min(50 GiB, 25% of free space).
 // No requestBytes: one request may carry the admin's own batch setting.
 const ADMIN_DEFAULTS = Object.freeze({
-  headroomBytes: 512 * MiB, headroomPercent: 5, headroomFiles: 1024,
+  headroomBytes: 512 * MiB, headroomPercent: 0, headroomFiles: 1024,
   requestTimeoutMs: 600000,
   stagedFiles: 50000, accountRequests: 16, requests: 64,
 });
@@ -66,7 +66,8 @@ function configuration(mode = 'public') {
   for (const [key, value] of Object.entries(overrides)) {
     if (scalar.includes(key)) {
       const maximum = key === 'headroomPercent' ? 50 : key === 'requestTimeoutMs' ? 3600000 : UNLIMITED;
-      if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+      // 0 switches the percentage floor off; every other scalar must be positive.
+      if (!Number.isSafeInteger(value) || value < (key === 'headroomPercent' ? 0 : 1) || value > maximum) {
         throw new Error(`Invalid public upload limit: ${key}`);
       }
       result[key] = value;
@@ -197,6 +198,7 @@ async function diskStat(directory) {
   }
 }
 
+let warnedUnmeasurable = false;
 async function headroom(trx, stat, bytes, limits, files = 0) {
   const free = Number(stat.bavail) * Number(stat.bsize);
   const total = Number(stat.blocks) * Number(stat.bsize);
@@ -206,9 +208,24 @@ async function headroom(trx, stat, bytes, limits, files = 0) {
   const freeFiles = Number(stat.ffree);
   // Local promotion temporarily needs both copies. S3 needs staging space.
   const copies = getStorage().kind() === 'local' ? 2 : 1;
+  // A volume that reports no usable size (some FUSE and network mounts) cannot
+  // be judged; refusing every upload there would break a working install.
+  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0) {
+    if (!warnedUnmeasurable) {
+      warnedUnmeasurable = true;
+      logger.warn('Upload storage reports no usable capacity figures; the free-space check is skipped for it');
+    }
+    return;
+  }
+  // The percentage floor is opt-in: 5% of a large volume is hundreds of
+  // gigabytes, and an install that full but far from out of space must keep
+  // accepting uploads after an upgrade.
   const floor = Math.max(limits.headroomBytes, Math.ceil(total * limits.headroomPercent / 100));
-  if (!Number.isSafeInteger(free) || !Number.isSafeInteger(total) || total <= 0 || free - copies * (bytes + other.bytes + promoting.bytes) < floor
-    || !Number.isSafeInteger(freeFiles) || freeFiles - copies * (files + other.files + promoting.files) - other.count - 1 < limits.headroomFiles) {
+  // btrfs, exFAT and many network filesystems have no inode table and report
+  // zero inodes in total; there is nothing to run out of.
+  const countsInodes = Number(stat.files) > 0 && Number.isSafeInteger(freeFiles);
+  if (free - copies * (bytes + other.bytes + promoting.bytes) < floor
+    || (countsInodes && freeFiles - copies * (files + other.files + promoting.files) - other.count - 1 < limits.headroomFiles)) {
     throw refusal('UPLOAD_STORAGE_LOW', 507);
   }
 }
