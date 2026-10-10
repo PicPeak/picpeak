@@ -73,6 +73,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
     }));
 
     ({ db } = await require('../integration/helpers/crmDb').bootCrmDb());
+    await require('../integration/helpers/externalMediaFixture').seedExternalAdminFixture(db);
     watcher = require('../../src/services/externalMediaWatcher');
     jobState = require('../../src/services/maintenanceJobState');
   }, 180000);
@@ -103,6 +104,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
       share_link: `extwatch-${Math.random()}`,
       expires_at: new Date().toISOString(),
       source_mode: 'reference',
+      created_by: 1,
       external_path: 'nas',
       external_watch: 1,
       is_active: 1,
@@ -232,7 +234,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
 
     // Pressing Import is the explicit intent: the file comes back and the
     // exclusion is cleared, so later automatic passes keep it.
-    const manual = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin' } });
+    const manual = await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin', id: 1 } });
     expect(manual).toMatchObject({ imported: 1 });
     expect(await db('external_import_exclusions').where({ event_id: eventId })).toHaveLength(0);
   });
@@ -267,7 +269,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
   it('a photo deleted while the pass is settling stays deleted', async () => {
     const eventId = await seedEvent();
     const { importExternalFolder, recordExclusions } = require('../../src/services/externalImportService');
-    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin' } });
+    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin', id: 1 } });
     const [row] = await db('photos').where({ event_id: eventId });
 
     // A new file makes the pass wait for the settle window; inside that
@@ -288,7 +290,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
   it('records an exclusion for a replaced external photo too', async () => {
     const eventId = await seedEvent();
     const { importExternalFolder, recordExclusions } = require('../../src/services/externalImportService');
-    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin' } });
+    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin', id: 1 } });
     const [row] = await db('photos').where({ event_id: eventId });
 
     // photoReplacementService flips the row to managed but keeps the relpath.
@@ -323,7 +325,7 @@ describe('externalMediaWatcher (issue 1187)', () => {
     expect((await db('events').where('id', eventId).first()).external_path).toBe('other');
 
     // The manual Import is what writes the folder onto the event.
-    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin' } });
+    await importExternalFolder({ eventId, externalPath: 'nas', actor: { type: 'admin', id: 1 } });
     expect((await db('events').where('id', eventId).first()).external_path).toBe('nas');
   });
 

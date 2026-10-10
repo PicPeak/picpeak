@@ -88,9 +88,7 @@ export function validateRateLimitSettings(settings: RateLimitSettings): keyof ty
 export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
 
 export interface AnalyticsSettings {
-  // Tracker-provider switch (#663 Phase 1). Drives which provider's
-  // settings panel renders + which tracker script gets injected into the
-  // public gallery. 'none' = no tracker; 'custom' = paste-your-own HTML.
+  // 'custom' identifies a disabled legacy configuration in the settings UI.
   tracker_provider: TrackerProvider;
   umami_enabled: boolean;
   umami_url: string;
@@ -106,9 +104,7 @@ export interface AnalyticsSettings {
   rybbit_url: string;
   rybbit_website_id: string;
   rybbit_api_key: string;
-  // Custom-mode HTML snippet (#663). Sanitised server-side on save via
-  // sanitize-html with a tracker-script allowlist. Rendered into the
-  // public gallery <head> as-is on every request.
+  // Legacy admin-only value, never rendered or re-submitted.
   custom_head_html: string;
 }
 
@@ -479,6 +475,7 @@ export function useSettingsState() {
         // API keys (Umami / Rybbit) are returned masked as `••••••••` on
         // GET so they don't leak in the response body. Don't re-save the
         // sentinel — silently preserve whatever's already stored.
+        if (key === 'custom_head_html') return;
         if ((key === 'umami_api_key' || key === 'rybbit_api_key') && value === '••••••••') return;
         settingsData[`analytics_${key}`] = value;
       });

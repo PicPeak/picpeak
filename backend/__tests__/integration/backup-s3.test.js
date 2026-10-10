@@ -1,6 +1,7 @@
 const { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } = require('@jest/globals');
 const { S3Client, CreateBucketCommand, DeleteBucketCommand, ListObjectsV2Command, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
+const os = require('os');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 
@@ -72,8 +73,7 @@ describe('S3 Backup Integration Tests', () => {
     }
 
     // Create test storage directory
-    testStoragePath = path.join(__dirname, '../fixtures/test-storage');
-    await fs.mkdir(testStoragePath, { recursive: true });
+    testStoragePath = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-s3-backup-storage-'));
     process.env.STORAGE_PATH = testStoragePath;
 
     // Set up test data
@@ -244,6 +244,8 @@ describe('S3 Backup Integration Tests', () => {
       await db('app_settings')
         .where('setting_key', 'backup_include_database')
         .update({ setting_value: 'true' });
+      await db('app_settings').where('setting_key', 'backup_database_inline_dump')
+        .update({ setting_value: 'false' });
 
       // Run backup
       await backupService.runBackup();
@@ -255,8 +257,8 @@ describe('S3 Backup Integration Tests', () => {
     });
   });
 
-  describe('Incremental Backup', () => {
-    it('should only upload changed files in incremental backup', async () => {
+  describe('Standalone Restore Points', () => {
+    it('should upload unchanged files in every complete restore point', async () => {
       if (process.env.SKIP_S3_TESTS === 'true') return;
 
       // First backup - full
@@ -266,8 +268,6 @@ describe('S3 Backup Integration Tests', () => {
         .orderBy('started_at', 'desc')
         .first();
 
-      const firstObjectCount = (await listS3Objects()).length;
-
       // Wait a moment to ensure different timestamps
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -275,7 +275,7 @@ describe('S3 Backup Integration Tests', () => {
       const modifiedFile = path.join(testStoragePath, 'events/active/event1/photo1.jpg');
       await fs.writeFile(modifiedFile, 'modified content');
 
-      // Second backup - incremental
+      // Second point remains complete even with backup_incremental enabled.
       await backupService.runBackup();
 
       const secondRun = await db('backup_runs')
@@ -283,16 +283,16 @@ describe('S3 Backup Integration Tests', () => {
         .first();
 
       expect(secondRun.id).not.toBe(firstRun.id);
-      expect(Number(secondRun.files_backed_up)).toBe(1); // Only modified file
+      expect(secondRun.status).toBe('completed');
+      expect(Number(secondRun.files_backed_up)).toBe(Number(firstRun.files_backed_up));
 
-      // Check manifest indicates incremental. The current manifest schema
-      // groups counts under `incremental.changes.*` (added/modified/deleted/
-      // unchanged + size_difference) — see backupManifest.generateIncrementalManifest.
       if (secondRun.manifest_path) {
         const manifest = await backupService.getBackupManifest(secondRun.id);
-        expect(manifest.manifest.incremental).toBeDefined();
-        expect(manifest.manifest.incremental.changes).toBeDefined();
-        expect(manifest.manifest.incremental.changes.modified_files_count).toBe(1);
+        expect(manifest.manifest.backup.type).toBe('full');
+        expect(manifest.manifest.backup.parent_backup_id).toBeNull();
+        expect(manifest.manifest.metadata.restore_point).toBe('standalone-v1');
+        expect(manifest.manifest.files.manifest.map(file => file.path))
+          .toContain('events/active/event1/photo2.jpg');
       }
     });
 
@@ -371,7 +371,7 @@ describe('S3 Backup Integration Tests', () => {
       expect(backupRun.error_message).toBeDefined();
     });
 
-    it('should continue backup despite individual file failures', async () => {
+    it('should fail the point after a required individual upload fails', async () => {
       if (process.env.SKIP_S3_TESTS === 'true') return;
 
       // Create a file that will be deleted during backup
@@ -380,13 +380,8 @@ describe('S3 Backup Integration Tests', () => {
 
       // Mock file deletion during backup
       const originalUpload = S3StorageAdapter.prototype.upload;
-      let callCount = 0;
       S3StorageAdapter.prototype.upload = jest.fn(async function(localPath, s3Key, options) {
-        callCount++;
-        if (callCount === 2) {
-          // Delete the temp file to cause an error
-          await fs.unlink(tempFile).catch(() => {});
-        }
+        if (s3Key.endsWith('/temp.jpg')) throw new Error('required fixture upload failed');
         return originalUpload.call(this, localPath, s3Key, options);
       });
 
@@ -396,15 +391,14 @@ describe('S3 Backup Integration Tests', () => {
         .orderBy('started_at', 'desc')
         .first();
 
-      // Should complete despite one file error
-      expect(backupRun.status).toBe('completed');
-      expect(backupRun.files_backed_up).toBeGreaterThan(0);
-
       // Restore original method
       S3StorageAdapter.prototype.upload = originalUpload;
+      await fs.unlink(tempFile);
+      expect(backupRun.status).toBe('failed');
+      expect(backupRun.error_message).toContain('required fixture upload failed');
     });
 
-    it('should retry failed uploads with exponential backoff', async () => {
+    it('should create a complete new point after an interrupted upload', async () => {
       if (process.env.SKIP_S3_TESTS === 'true') return;
 
       // Mock S3 upload to fail twice then succeed
@@ -412,7 +406,7 @@ describe('S3 Backup Integration Tests', () => {
       let attemptCount = 0;
       S3StorageAdapter.prototype.upload = jest.fn(async function(localPath, s3Key, options) {
         attemptCount++;
-        if (attemptCount <= 2) {
+        if (attemptCount === 1) {
           const error = new Error('Network timeout');
           error.code = 'ETIMEDOUT';
           throw error;
@@ -421,17 +415,21 @@ describe('S3 Backup Integration Tests', () => {
       });
 
       await backupService.runBackup();
+      const failedRun = await db('backup_runs').orderBy('id', 'desc').first();
+      await backupService.runBackup();
 
       const backupRun = await db('backup_runs')
         .orderBy('started_at', 'desc')
         .first();
 
-      // Should succeed after retries
-      expect(backupRun.status).toBe('completed');
-      expect(attemptCount).toBeGreaterThan(2);
-
       // Restore original method
       S3StorageAdapter.prototype.upload = originalUpload;
+      expect(failedRun.status).toBe('failed');
+      expect(backupRun.status).toBe('completed');
+      expect(attemptCount).toBeGreaterThan(2);
+      const { manifest } = await backupService.getBackupManifest(backupRun.id);
+      expect(manifest.files.manifest.map(file => file.path)).toContain('events/active/event1/photo2.jpg');
+      expect(manifest.backup.parent_backup_id).toBeNull();
     });
   });
 
@@ -482,6 +480,7 @@ describe('S3 Backup Integration Tests', () => {
       { setting_key: 'backup_s3_ssl_enabled', setting_value: 'false' },
       { setting_key: 'backup_include_archived', setting_value: 'true' },
       { setting_key: 'backup_incremental', setting_value: 'true' },
+      { setting_key: 'backup_database_inline_dump', setting_value: 'true' },
       { setting_key: 'backup_max_file_size_mb', setting_value: '100' }
     ];
 

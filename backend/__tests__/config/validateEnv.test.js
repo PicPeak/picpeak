@@ -3,6 +3,78 @@ const crypto = require('crypto');
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
 const logger = require('../../src/utils/logger');
 const { validateEnvironment } = require('../../src/config/validateEnv');
+describe('startup backup manifest trust anchor', () => {
+  let previous; let exit; let status;
+  const keys = ['JWT_SECRET', 'BACKUP_MANIFEST_RECOVERY_SHA256', 'BACKUP_MANIFEST_RECOVERY_REASON'];
+  beforeEach(() => {
+    previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    delete process.env.BACKUP_MANIFEST_RECOVERY_SHA256;
+    delete process.env.BACKUP_MANIFEST_RECOVERY_REASON;
+    jest.clearAllMocks();
+    exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+    status = jest.spyOn(require('../../src/utils/backupManifestKey'), 'keyStatus');
+  });
+  afterEach(() => {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    status.mockRestore();
+    exit.mockRestore();
+  });
+
+  test('missing retained key warns without creating a replacement at startup', () => {
+    status.mockReturnValue({ ready: false, source: 'missing', keyId: null });
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.some(([message]) => /retain that external key separately/.test(message))).toBe(true);
+  });
+
+  // Any BACKUP_MANIFEST_KEY string was accepted before manifests were
+  // authenticated; exiting on one would restart-loop an upgraded install.
+  test('invalid key configuration warns loudly but does not stop startup', () => {
+    status.mockReturnValue({ ready: false, source: 'invalid', keyId: null });
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.some(([message]) => /BACKUP SIGNING IS DISABLED.*signing key configuration is invalid/.test(message))).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith('Environment validation passed');
+  });
+
+  test('a passphrase-style BACKUP_MANIFEST_KEY from before the upgrade does not stop startup or get logged', () => {
+    status.mockRestore();
+    const previousKey = process.env.BACKUP_MANIFEST_KEY;
+    process.env.BACKUP_MANIFEST_KEY = 'correct horse battery staple';
+    try {
+      validateEnvironment();
+      expect(exit).not.toHaveBeenCalled();
+      expect(logger.warn.mock.calls.some(([message]) => /BACKUP SIGNING IS DISABLED/.test(message))).toBe(true);
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('correct horse');
+    } finally {
+      if (previousKey === undefined) delete process.env.BACKUP_MANIFEST_KEY; else process.env.BACKUP_MANIFEST_KEY = previousKey;
+      status = jest.spyOn(require('../../src/utils/backupManifestKey'), 'keyStatus');
+    }
+  });
+
+  test('a ready external trust anchor permits normal startup', () => {
+    status.mockReturnValue({ ready: true, source: 'file', keyId: 'fixture-key-id' });
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.some(([message]) => /Backup manifest key not provisioned/.test(message))).toBe(false);
+  });
+
+  test('host recovery approval is explicitly warned without leaking its digest or reason', () => {
+    status.mockReturnValue({ ready: true, source: 'file', keyId: 'fixture-key-id' });
+    process.env.BACKUP_MANIFEST_RECOVERY_SHA256 = crypto.randomBytes(32).toString('hex');
+    process.env.BACKUP_MANIFEST_RECOVERY_REASON = 'Private offline inspection reason';
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.some(([message]) => /UNAUTHENTICATED backup recovery approval/.test(message))).toBe(true);
+    const logged = JSON.stringify([...logger.warn.mock.calls, ...logger.error.mock.calls]);
+    expect(logged).not.toContain(process.env.BACKUP_MANIFEST_RECOVERY_SHA256);
+    expect(logged).not.toContain(process.env.BACKUP_MANIFEST_RECOVERY_REASON);
+  });
+});
 
 describe('startup signing secret validation', () => {
   let originalSecret;
@@ -48,5 +120,41 @@ describe('startup signing secret validation', () => {
     validateEnvironment();
     expect(exit).toHaveBeenCalledWith(1);
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain(secret);
+  });
+});
+
+describe('startup email queue encryption key validation', () => {
+  const previous = {
+    emailQueueKey: process.env.EMAIL_QUEUE_ENCRYPTION_KEY,
+    jwtSecret: process.env.JWT_SECRET,
+  };
+  let exit;
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+    jest.clearAllMocks();
+    exit = jest.spyOn(process, 'exit').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    for (const [name, value] of [
+      ['EMAIL_QUEUE_ENCRYPTION_KEY', previous.emailQueueKey],
+      ['JWT_SECRET', previous.jwtSecret],
+    ]) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    exit.mockRestore();
+  });
+
+  test('rejects a configured key shorter than 32 characters', () => {
+    process.env.EMAIL_QUEUE_ENCRYPTION_KEY = 'too-short';
+    validateEnvironment();
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('too-short');
+  });
+
+  test('accepts a dedicated 32-character-or-longer key', () => {
+    process.env.EMAIL_QUEUE_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+    validateEnvironment();
+    expect(exit).not.toHaveBeenCalled();
   });
 });

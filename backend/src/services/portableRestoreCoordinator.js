@@ -22,6 +22,17 @@ const HEARTBEAT_STALE_MS = 90 * 1000;
 // it is this old (a restore being reserved writes it moments before its row).
 const MARKER_REPAIR_MS = 30 * 1000;
 
+// The coordinator's ticks are started from whatever asked for the restore: a
+// boot, a timer, an admin's upload request. Recovery, the worker launch and
+// the restart of background services must not inherit that caller's CRM
+// scope (or none at all); where this build has the CRM access policy they run
+// as trusted maintenance.
+function trusted(run) {
+  let policy;
+  try { policy = require('../database/crmAccess'); } catch (_) { return run(); }
+  return policy.withTrustedCrmAccess('coordinated portable restore', run);
+}
+
 function duration(name, fallback) {
   const value = Number(process.env[name]);
   return process.env[name] !== undefined && process.env[name] !== '' && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
@@ -506,7 +517,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     workerRunning = work.runUncontrolled(() => execute(admitted, true)).finally(() => { workerRunning = null; });
   }
   function tick() {
-    if (!activeTick) activeTick = work.runUncontrolled(tickInternal).catch(error => {
+    if (!activeTick) activeTick = work.runUncontrolled(() => trusted(tickInternal)).catch(error => {
       logger.error('Restore coordinator tick failed', { code: error.code || 'RESTORE_CONTROL_UNAVAILABLE', error: error.message });
     }).finally(() => { activeTick = null; });
     return activeTick;
@@ -547,7 +558,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     await tick();
   }
   function watch() {
-    if (!activeWatch) activeWatch = work.runUncontrolled(watchInternal).catch(error => {
+    if (!activeWatch) activeWatch = work.runUncontrolled(() => trusted(watchInternal)).catch(error => {
       logger.warn('Restore fence watch failed', { error: error.message });
     }).finally(() => { activeWatch = null; });
     return activeWatch;
