@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.3](https://github.com/PicPeak/picpeak/compare/v3.134.2...v3.134.3) (2026-10-10)
+
+
+### Bug Fixes
+
+* **backup:** recover files through the active storage adapter on stable ([#1867](https://github.com/PicPeak/picpeak/issues/1867)) ([d794c3f](https://github.com/PicPeak/picpeak/commit/d794c3f0ac910abbd0b7088358333c8216b4aa03))
+* **images:** bound native image processing resources (stable) ([#1883](https://github.com/PicPeak/picpeak/issues/1883)) ([b39d64a](https://github.com/PicPeak/picpeak/commit/b39d64a579f3a0c2c654890d37c871c3a56f74c1))
+* **media:** enforce native process budgets and execution fencing (stable) ([#1893](https://github.com/PicPeak/picpeak/issues/1893)) ([31aab30](https://github.com/PicPeak/picpeak/commit/31aab303b6ed0c1abb5c0dfa79b83f5655dfb8a9))
+* **upload:** keep uploads working on nearly full and inode-less volumes ([#1906](https://github.com/PicPeak/picpeak/issues/1906)) ([21ee021](https://github.com/PicPeak/picpeak/commit/21ee021c6453b88ed2d3ee676faf6bd0d127f6f9))
+
 ## [3.134.2](https://github.com/PicPeak/picpeak/compare/v3.134.1...v3.134.2) (2026-10-08)
 
 
