@@ -11,7 +11,7 @@ RUN apk upgrade --no-cache
 # exiftool: extract embedded JPEG previews from RAW/DNG uploads (#821) — kept in
 # sync with the production Dockerfile so dev/native runtimes don't accept a DNG
 # and then fail it with ENOENT.
-RUN apk add --no-cache dumb-init ffmpeg exiftool
+RUN apk add --no-cache dumb-init ffmpeg exiftool build-base linux-headers
 
 # Copy package files
 COPY package*.json ./
@@ -21,6 +21,7 @@ RUN npm install
 
 # Copy application files
 COPY . .
+RUN npm run build:native
 
 # Create necessary directories
 RUN mkdir -p storage/events/active storage/events/archived storage/thumbnails data logs

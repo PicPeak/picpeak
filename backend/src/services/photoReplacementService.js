@@ -245,6 +245,9 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       captured_at: capturedAt,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
+      // The new file starts its own attempts: a worker still busy with the
+      // old one loses its claim and can publish nothing.
+      processing_attempt_id: null,
       // The replacement lives in the managed backend, so the row has to say
       // so. resolvePhotoStorageKey gives photo.source_origin precedence over
       // everything and returns null for 'reference'/'external' — so leaving

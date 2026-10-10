@@ -678,6 +678,8 @@ router.post(
         // An explicit retry starts a new attempt cycle, due at once.
         processing_attempts: 0,
         processing_retry_at: null,
+        // A worker still holding the old attempt can no longer write.
+        processing_attempt_id: null,
       });
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {

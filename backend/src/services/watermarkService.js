@@ -344,12 +344,15 @@ class WatermarkService {
       const watermarkedBuffer = await this.applyWatermark(originalPath, settings);
 
       const ext = this.getFileExtension(photo.filename);
-      const outputFilename = `${photo.id}_watermarked${ext}`;
+      const attempt = require('./mediaAttemptContext').current();
+      const outputFilename = `${photo.id}_watermarked${attempt ? `_${attempt.id}` : ''}${ext}`;
       const relativePath = `watermarks/${outputFilename}`;
 
+      await attempt?.assertCurrent();
       await getStorage().put(relativePath, watermarkedBuffer, {
         contentType: ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg',
       });
+      await attempt?.assertCurrent();
 
       return {
         success: true,

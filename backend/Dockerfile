@@ -21,6 +21,7 @@ RUN npm ci --omit=dev
 
 # Copy application files
 COPY . .
+RUN apk add --no-cache --virtual .media-build build-base linux-headers && npm run build:native
 
 # Production stage
 FROM node:22-alpine
@@ -91,6 +92,8 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 # Copy from builder
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --chown=nodejs:nodejs . .
+COPY --from=builder --chown=nodejs:nodejs /app/bin/media-process-guard ./bin/media-process-guard
+COPY --from=builder --chown=nodejs:nodejs /app/bin/local-process-lease.node ./bin/local-process-lease.node
 
 # Ensure all source files are readable and wait script is executable
 RUN chmod -R a+r /app && chmod +x wait-for-db.sh
