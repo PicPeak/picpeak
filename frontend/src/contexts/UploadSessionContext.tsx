@@ -6,6 +6,9 @@ import { api } from '../config/api';
 import { appendUploadPlacement, photosService, type UploadPlacement } from '../services/photos.service';
 import { folderQueryKey } from '../services/folders.service';
 import { useUploadProgress } from '../hooks/useUploadProgress';
+import { uploadMultipartBudget } from '../utils/uploadMultipartBudget';
+import { adminUploadErrorKey, imageLimitMessage } from '../utils/publicUploadErrors';
+import { CAPACITY_RETRY_DELAYS_MS, isTransientUploadRefusal, retryWhileBusy } from '../utils/uploadCapacityRetry';
 
 // The admin upload runs here, outside the upload modal, so the modal can close
 // the moment the upload starts and the user keeps the rest of the admin while
@@ -56,6 +59,11 @@ export interface UploadSession {
    * and appear as it finishes; the counts above stop at what was known.
    */
   processingUnknown?: boolean;
+  /**
+   * The server is busy (staging room or a slot is taken): the current batch
+   * is waiting to be sent again, on this retry out of that many.
+   */
+  waitingForCapacity?: { attempt: number; total: number } | null;
 }
 
 /**
@@ -153,6 +161,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     // (10MB parts, reachable since #1377).
     // Each file keeps its batch's placement through both paths.
     const isLarge = (f: File) => photosService.shouldUseChunkedUpload(f.size, maxBytesPerChunk);
+    const payloadBudget = uploadMultipartBudget(maxBytesPerChunk);
     const largeFiles = batches.flatMap(({ files, placement }) =>
       files.filter(isLarge).map((file) => ({ file, placement })));
 
@@ -179,7 +188,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       let currentChunkSize = 0;
       for (const file of files.filter((f) => !isLarge(f))) {
         if (currentChunk.length >= maxFilesPerChunk ||
-            (currentChunkSize + file.size > maxBytesPerChunk && currentChunk.length > 0)) {
+            (currentChunkSize + file.size > payloadBudget && currentChunk.length > 0)) {
           chunks.push({ files: currentChunk, placement });
           currentChunk = [];
           currentChunkSize = 0;
@@ -225,6 +234,11 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
       // async worker.
       let largeSucceeded = 0;
       let unitIndex = 0;
+      let capacityRefused = false;
+      // A busy server is waited out, batch by batch. Only a refusal that
+      // waiting cannot cure (no disk space, a limit) stops the rest.
+      const whileBusy = { delaysMs: CAPACITY_RETRY_DELAYS_MS, signal: controller.signal,
+        onWaiting: (waitingForCapacity: UploadSession['waitingForCapacity']) => patch({ waitingForCapacity }) };
 
       try {
         // --- Large files: existing backend chunked-upload (10MB parts) ---
@@ -234,27 +248,37 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           patch({ currentChunk: index + 1, phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: 0 } });
           try {
             const { categoryId = null, ...folder } = placement;
-            await photosService.uploadLargeFile(eventId, file, categoryId, (pct) => {
+            await retryWhileBusy(() => photosService.uploadLargeFile(eventId, file, categoryId, (pct) => {
               // pct is 0–100 for this file's chunks only
               const overall = totalUnits > 0 ? ((index + Math.min(pct, 100) / 100) / totalUnits) * 100 : pct;
               patch({
                 progress: Math.round(overall),
                 phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: Math.round(Math.min(pct, 100)) },
               });
-            }, folder);
+            }, folder), whileBusy);
             largeSucceeded += 1;
             // complete() already ran ffmpeg + insert — refresh grid
             refreshEvent(eventId);
           } catch (error: any) {
+            if (controller.signal.aborted) return;
             console.error(`Error uploading large file ${file.name}:`, error);
-            const reason = error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
+            const code = error?.response?.data?.code;
+            const capacityKey = adminUploadErrorKey(code);
+            const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
             collected.push({ filename: file.name, reason, kind: 'transfer' });
+            if (capacityKey && !isTransientUploadRefusal(code)) {
+              capacityRefused = true;
+              const unsent = [...largeFilesToUpload.slice(index + 1).map(item => item.file), ...chunks.flatMap(item => item.files)];
+              collected.push(...unsent.map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+              break;
+            }
           }
           unitIndex += 1;
         }
 
         // --- Small files: existing multipart batch path ---
         for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          if (capacityRefused) break;
           if (controller.signal.aborted) return;
           const index = unitIndex;
           const { files: chunk, placement } = chunks[chunkIndex];
@@ -266,7 +290,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           patch({ currentChunk: index + 1, phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: 0 } });
 
           try {
-            const response = await api.post(`/admin/events/${eventId}/upload`, formData, {
+            const response = await retryWhileBusy(() => api.post(`/admin/events/${eventId}/upload`, formData, {
               signal: controller.signal,
               onUploadProgress: (progressEvent) => {
                 if (!progressEvent.total) return;
@@ -286,7 +310,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
                       : { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: Math.round(chunkProgress * 100) },
                 }));
               },
-            });
+            }), whileBusy);
 
             totalReplaced += (response.data?.replacedCount || 0);
             // The backend accepts the request (202) but may reject individual
@@ -297,7 +321,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
               for (const r of rejected) {
                 collected.push({
                   filename: r?.filename || t('upload.failures.unknownFile', 'Unknown file'),
-                  reason: r?.error || t('upload.failures.unknownReason', 'Unknown error'),
+                  reason: imageLimitMessage(t, r) ?? (r?.error || t('upload.failures.unknownReason', 'Unknown error')),
                   kind: 'rejected',
                 });
               }
@@ -315,9 +339,17 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           } catch (error: any) {
             if (controller.signal.aborted) return;
             console.error(`Error uploading chunk ${chunkIndex + 1}:`, error);
-            const reason = error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
+            const code = error?.response?.data?.code;
+            const capacityKey = adminUploadErrorKey(code);
+            const reason = capacityKey ? t(capacityKey) : error?.response?.data?.error || error?.message || t('upload.failures.transferReason', 'Transfer failed');
             collected.push(...chunk.map((f) => ({ filename: f.name, reason, kind: 'transfer' as const })));
-            // Continue with next chunk even if one fails
+            if (capacityKey && !isTransientUploadRefusal(code)) {
+              collected.push(...chunks.slice(chunkIndex + 1).flatMap(item => item.files)
+                .map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+              break;
+            }
+            // Ordinary per-file/transport failures, and a server that stayed
+            // busy through every retry, still allow later batches.
           }
           unitIndex += 1;
         }

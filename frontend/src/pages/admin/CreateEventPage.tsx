@@ -21,11 +21,12 @@ import { toast } from 'react-toastify';
 import { Button, Input, Card, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
+import { TeamMemberPicker } from '../../components/admin/TeamMemberPicker';
 import { GalleryRecipientsList } from '../../components/admin/GalleryRecipientsList';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { accountName, galleryRecipients } from '../../utils/galleryRecipients';
 import { UploaderNameSettings } from '../../components/admin/UploaderNameSettings';
-import type { GuestNameMode } from '../../types';
+import type { AssignedAdmin, GuestNameMode } from '../../types';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -90,6 +91,7 @@ interface FormData {
     allow_favorites: boolean;
     allow_reactions: boolean;
     allow_color_labels: boolean;
+    allow_decisions?: boolean;
     // Optional, mirroring the shared FeedbackSettings contract — the
     // <FeedbackSettings> editor's onChange emits that shape.
     keybind_mode?: 'colors' | 'lightroom';
@@ -107,6 +109,9 @@ interface FormData {
   // the full picker selection so chips render without an extra fetch;
   // only the ids are sent to the backend on submit.
   customer_accounts: Array<{ id: number; email: string; displayName: string | null }>;
+  // Team members (issue 743) and whether their uploads wait for review.
+  assigned_admins: AssignedAdmin[];
+  review_contributor_uploads: boolean;
 }
 
 // Fallback event types (used when API is unavailable)
@@ -179,6 +184,7 @@ export const CreateEventPage: React.FC = () => {
       allow_favorites: true,
       allow_reactions: true,
       allow_color_labels: false,
+      allow_decisions: false,
       keybind_mode: 'colors',
       require_name_email: false,
       moderate_comments: true,
@@ -189,6 +195,8 @@ export const CreateEventPage: React.FC = () => {
     client_password: '',
     default_photo_sort: 'upload_date_desc',
     customer_accounts: [],
+    assigned_admins: [],
+    review_contributor_uploads: false,
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -294,6 +302,8 @@ export const CreateEventPage: React.FC = () => {
   // customers.events, and active accounts that can sign in.
   const portalEnabled = useFeatureEnabled('customerPortal');
   const canAnnounceToAccounts = usePermission('customers.events');
+  // The team picker lists admin accounts, which needs events.edit.
+  const canPickTeam = usePermission('events.edit');
   const recipients = galleryRecipients(formData.customer_email, formData.customer_accounts, {
     portalEnabled,
     includeAccounts: canAnnounceToAccounts,
@@ -379,6 +389,7 @@ export const CreateEventPage: React.FC = () => {
         allow_comments: publicSettings.event_default_allow_comments !== false,
         allow_reactions: publicSettings.event_default_allow_reactions !== false,
         allow_color_labels: publicSettings.event_default_allow_color_labels === true,
+        allow_decisions: publicSettings.event_default_allow_decisions === true,
         keybind_mode: publicSettings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors'
       }
     }));
@@ -619,6 +630,7 @@ export const CreateEventPage: React.FC = () => {
       allow_favorites: feedbackSettings.allow_favorites,
       allow_reactions: feedbackSettings.allow_reactions,
       allow_color_labels: feedbackSettings.allow_color_labels,
+      allow_decisions: feedbackSettings.allow_decisions,
       keybind_mode: feedbackSettings.keybind_mode,
       require_name_email: feedbackSettings.require_name_email,
       moderate_comments: feedbackSettings.moderate_comments,
@@ -635,6 +647,11 @@ export const CreateEventPage: React.FC = () => {
       // array of ids; the backend service diffs against the existing
       // assignments and applies adds/removes inside one transaction.
       customer_account_ids: formData.customer_accounts.map((c) => c.id),
+      // Team members (issue 743). The creator owns the gallery.
+      ...(canPickTeam ? {
+        assigned_admin_ids: formData.assigned_admins.map((a) => a.id),
+        review_contributor_uploads: formData.review_contributor_uploads,
+      } : {}),
     };
 
     isSubmittingRef.current = true;
@@ -934,6 +951,33 @@ export const CreateEventPage: React.FC = () => {
                     skippedAccountCount={canAnnounceToAccounts ? 0 : galleryRecipients(formData.customer_email, formData.customer_accounts, { portalEnabled }).accounts.length}
                   />
                 </div>
+              )}
+
+              {/* Team members (issue 743) */}
+              {canPickTeam && (
+                <>
+                  <TeamMemberPicker
+                    value={formData.assigned_admins}
+                    onChange={(next) => setFormData((prev) => ({ ...prev, assigned_admins: next }))}
+                    ownerId={currentAdmin?.id ?? null}
+                  />
+                  <div>
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.review_contributor_uploads}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, review_contributor_uploads: e.target.checked }))}
+                        className="w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+                      />
+                      <span className="ml-2 text-sm text-body">
+                        {t('events.team.reviewUploads', 'Review team members\' uploads before they are published')}
+                      </span>
+                    </label>
+                    <p className="text-xs text-muted mt-1 ml-6">
+                      {t('events.team.reviewUploadsHelp', 'Holds uploads from team members whose role lacks the “Review Team Uploads” permission: they stay hidden from guests and clients until you or a reviewer approve them on the Photos tab. The Admin, Editor and Solo Photographer roles hold that permission by default, so their uploads are never held.')}
+                    </p>
+                  </div>
+                </>
               )}
 
               <Input

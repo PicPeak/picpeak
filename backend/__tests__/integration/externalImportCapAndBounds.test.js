@@ -41,7 +41,7 @@ describe('external import: photo cap and walk bounds', () => {
     process.env.EXTERNAL_MEDIA_ROOT = mediaRoot;
 
     jest.resetModules();
-    jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn(async () => 'thumbnails/mock.jpg'),
       ensureThumbnail: jest.fn(),
@@ -53,6 +53,7 @@ describe('external import: photo cap and walk bounds', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     ({ importExternalFolder } = require('../../src/services/externalImportService'));
   }, 180000);
 
@@ -84,7 +85,7 @@ describe('external import: photo cap and walk bounds', () => {
     await touch('capped/c.jpg');
     const eventId = await seedEvent({ photo_cap: 2 });
 
-    const result = await importExternalFolder({ eventId, externalPath: 'capped', recursive: true });
+    const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'capped', recursive: true });
 
     expect(result.imported).toBe(2);
     expect(result.capReached).toBe(true);
@@ -100,7 +101,7 @@ describe('external import: photo cap and walk bounds', () => {
       uploaded_at: new Date().toISOString(),
     });
 
-    const result = await importExternalFolder({ eventId, externalPath: 'capped2', recursive: true });
+    const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'capped2', recursive: true });
 
     expect(result.imported).toBe(0);
     expect(result.capReached).toBe(true);
@@ -113,7 +114,7 @@ describe('external import: photo cap and walk bounds', () => {
     await touch('open/c.jpg');
     const eventId = await seedEvent();
 
-    const result = await importExternalFolder({ eventId, externalPath: 'open', recursive: true });
+    const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'open', recursive: true });
 
     expect(result.imported).toBe(3);
     expect(result.capReached).toBe(false);
@@ -126,7 +127,7 @@ describe('external import: photo cap and walk bounds', () => {
     await touch(`deep/${deep}/bottom.jpg`);
     const eventId = await seedEvent();
 
-    const result = await importExternalFolder({ eventId, externalPath: 'deep', recursive: true });
+    const result = await importExternalFolder({ actor: { type: 'admin', id: 1 }, eventId, externalPath: 'deep', recursive: true });
 
     expect(result.truncated).toBe(true);
     expect(result.imported).toBe(1);

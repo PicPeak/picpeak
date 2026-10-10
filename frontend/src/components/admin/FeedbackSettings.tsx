@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag } from 'lucide-react';
+import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile, Palette, Keyboard, Tag, ThumbsUp } from 'lucide-react';
 import { Card } from '../common';
 import { useTranslation } from 'react-i18next';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, KEYBIND_SCHEMES, type KeybindMode } from '../../services/feedback.service';
@@ -18,6 +18,9 @@ interface FeedbackSettings {
   allow_favorites: boolean;
   allow_reactions: boolean;
   allow_color_labels: boolean;
+  // Approve / reject per photo (issue 744). Optional: rows and callers that
+  // predate it read as off.
+  allow_decisions?: boolean;
   keybind_mode?: KeybindMode;
   require_name_email: boolean;
   moderate_comments: boolean;
@@ -302,12 +305,31 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                     </div>
                   </div>
                 </label>
+
+                {/* Approve / reject per photo (issue 744) */}
+                <label className="flex items-center gap-3 p-3 bg-subtle rounded-lg cursor-pointer hover:bg-hover">
+                  <input
+                    type="checkbox"
+                    checked={!!settings.allow_decisions}
+                    onChange={() => handleToggle('allow_decisions')}
+                    className="w-4 h-4 text-accent bg-neutral-100 border-neutral-300 rounded focus:ring-primary-500"
+                  />
+                  <ThumbsUp className="w-5 h-5 text-soft" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-heading">
+                      {t('feedback.settings.decisions', 'Approve / reject per photo')}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {t('feedback.settings.decisionsDesc', 'Guests approve or reject each photo, optionally saying why. You filter and export by their decision')}
+                    </div>
+                  </div>
+                </label>
               </div>
             </div>
 
             {/* Keyboard scheme for the lightbox (#1044). Only meaningful once
                 color labels are on — stars alone already use 1-5. */}
-            {settings.allow_color_labels && (
+            {!!settings.allow_color_labels && (
               <div className="space-y-3">
                 <h3 className="text-sm font-medium text-body flex items-center gap-2">
                   <Keyboard className="w-4 h-4" />

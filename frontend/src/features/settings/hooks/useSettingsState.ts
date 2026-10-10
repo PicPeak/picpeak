@@ -91,9 +91,7 @@ export function validateRateLimitSettings(settings: RateLimitSettings): keyof ty
 export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
 
 export interface AnalyticsSettings {
-  // Tracker-provider switch (#663 Phase 1). Drives which provider's
-  // settings panel renders + which tracker script gets injected into the
-  // public gallery. 'none' = no tracker; 'custom' = paste-your-own HTML.
+  // 'custom' identifies a disabled legacy configuration in the settings UI.
   tracker_provider: TrackerProvider;
   umami_enabled: boolean;
   umami_url: string;
@@ -109,9 +107,7 @@ export interface AnalyticsSettings {
   rybbit_url: string;
   rybbit_website_id: string;
   rybbit_api_key: string;
-  // Custom-mode HTML snippet (#663). Sanitised server-side on save via
-  // sanitize-html with a tracker-script allowlist. Rendered into the
-  // public gallery <head> as-is on every request.
+  // Legacy admin-only value, never rendered or re-submitted.
   custom_head_html: string;
 }
 
@@ -131,6 +127,7 @@ export interface EventSettings {
   event_default_allow_comments: boolean;
   event_default_allow_reactions: boolean;
   event_default_allow_color_labels: boolean;
+  event_default_allow_decisions: boolean;
   event_default_keybind_mode: 'colors' | 'lightroom';
   // Download limit for new events (issue 1560). 0 = unlimited.
   event_default_download_limit: number;
@@ -250,6 +247,7 @@ export function useSettingsState() {
     event_default_allow_comments: true,
     event_default_allow_reactions: true,
     event_default_allow_color_labels: false,
+    event_default_allow_decisions: false,
     event_default_keybind_mode: 'colors',
     event_default_download_limit: 0,
     event_default_guest_name_mode: 'off',
@@ -296,13 +294,16 @@ export function useSettingsState() {
 
   const [accountForm, setAccountForm] = useState({
     username: '',
-    email: ''
+    email: '',
+    creditName: ''
   });
   const [accountErrors, setAccountErrors] = useState<Record<string, string>>({});
-  const accountDirty = !!adminProfile && (accountForm.username !== (adminProfile.username || '') || accountForm.email !== (adminProfile.email || ''));
+  const accountDirty = !!adminProfile && (accountForm.username !== (adminProfile.username || '')
+    || accountForm.email !== (adminProfile.email || '')
+    || accountForm.creditName !== (adminProfile.creditName || ''));
   const discardAccount = () => {
     if (!adminProfile) return;
-    setAccountForm({ username: adminProfile.username || '', email: adminProfile.email || '' });
+    setAccountForm({ username: adminProfile.username || '', email: adminProfile.email || '', creditName: adminProfile.creditName || '' });
     setAccountErrors({});
   };
 
@@ -414,6 +415,7 @@ export function useSettingsState() {
         event_default_allow_comments: toBoolean(settings.event_default_allow_comments, true),
         event_default_allow_reactions: toBoolean(settings.event_default_allow_reactions, true),
         event_default_allow_color_labels: toBoolean(settings.event_default_allow_color_labels, false),
+        event_default_allow_decisions: toBoolean(settings.event_default_allow_decisions, false),
         event_default_keybind_mode: settings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
         event_default_download_limit: Number(settings.event_default_download_limit) > 0
           ? Number(settings.event_default_download_limit)
@@ -457,7 +459,8 @@ export function useSettingsState() {
     if (adminProfile) {
       setAccountForm({
         username: adminProfile.username || '',
-        email: adminProfile.email || ''
+        email: adminProfile.email || '',
+        creditName: adminProfile.creditName || ''
       });
     }
   }, [adminProfile]);
@@ -549,6 +552,7 @@ export function useSettingsState() {
         // API keys (Umami / Rybbit) are returned masked as `••••••••` on
         // GET so they don't leak in the response body. Don't re-save the
         // sentinel — silently preserve whatever's already stored.
+        if (key === 'custom_head_html') return;
         if ((key === 'umami_api_key' || key === 'rybbit_api_key') && value === '••••••••') return;
         settingsData[`analytics_${key}`] = value;
       });
@@ -604,13 +608,14 @@ export function useSettingsState() {
   });
 
   const updateAdminProfileMutation = useMutation({
-    mutationFn: (payload: { username: string; email: string }) => adminService.updateAdminProfile(payload),
+    mutationFn: (payload: { username: string; email: string; credit_name?: string | null }) => adminService.updateAdminProfile(payload),
     onSuccess: (updatedUser) => {
       toast.success(t('settings.general.accountSaveSuccess'));
       setAccountErrors({});
       setAccountForm({
         username: updatedUser.username,
-        email: updatedUser.email
+        email: updatedUser.email,
+        creditName: updatedUser.creditName || ''
       });
       updateUserProfile(updatedUser);
       queryClient.invalidateQueries({ queryKey: ['admin-profile'] });
@@ -676,7 +681,7 @@ export function useSettingsState() {
   });
 
   // Handlers
-  const handleAccountChange = (field: 'username' | 'email') => (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAccountChange = (field: 'username' | 'email' | 'creditName') => (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     setAccountForm((prev) => ({ ...prev, [field]: value }));
     if (accountErrors[field]) {
@@ -712,7 +717,8 @@ export function useSettingsState() {
 
     updateAdminProfileMutation.mutate({
       username: trimmedUsername,
-      email: trimmedEmail
+      email: trimmedEmail,
+      credit_name: accountForm.creditName.trim() || null
     });
   };
 

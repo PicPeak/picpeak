@@ -21,6 +21,7 @@ RUN npm ci --omit=dev
 
 # Copy application files
 COPY . .
+RUN apk add --no-cache --virtual .media-build build-base linux-headers && npm run build:native
 
 # Production stage
 FROM node:22-alpine
@@ -91,6 +92,8 @@ RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
 # Copy from builder
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --chown=nodejs:nodejs . .
+COPY --from=builder --chown=nodejs:nodejs /app/bin/media-process-guard ./bin/media-process-guard
+COPY --from=builder --chown=nodejs:nodejs /app/bin/local-process-lease.node ./bin/local-process-lease.node
 
 # Ensure all source files are readable and wait script is executable
 RUN chmod -R a+r /app && chmod +x wait-for-db.sh
@@ -118,7 +121,7 @@ EXPOSE 3000
 # checks. wget is part of the Alpine base image. Long start-period covers
 # the wait-for-db.sh delay before the Node process starts listening.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["./wait-for-db.sh", "node", "server.js"]

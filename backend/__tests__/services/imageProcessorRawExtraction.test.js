@@ -33,6 +33,14 @@ jest.mock('child_process', () => ({
   ...jest.requireActual('child_process'),
   execFile: jest.fn(),
 }));
+jest.mock('../../src/services/mediaProcessService', () => ({
+  withSnapshot: (path, _kind, callback) => callback(path),
+  currentScope: () => null,
+  run: (command, args, options) => new Promise((resolve, reject) => {
+    require('child_process').execFile(command, args, { timeout: options.wallMs, killSignal: 'SIGKILL', maxBuffer: options.outputBytes },
+      (error, value) => error ? reject(error.killed ? Object.assign(error, { code: 'MEDIA_TIMEOUT' }) : error) : resolve({ ...value, stdout: Buffer.from(value.stdout) }));
+  }),
+}));
 
 const sharp = require('sharp');
 const { execFile } = require('child_process');
@@ -357,7 +365,7 @@ describe('extractRawPreview', () => {
     }
   });
 
-  it('moves to the next candidate when one extraction is killed at the deadline', async () => {
+  it('does not retry another native tag after the hard deadline is exhausted', async () => {
     // A single wedged tag must not cost the photo. The largest candidate is
     // the one that hangs, so the fallback is a real downgrade in size and the
     // test would not pass by accident.
@@ -380,13 +388,8 @@ describe('extractRawPreview', () => {
       }));
     });
 
-    const preview = await extractRawPreview('/tmp/DSC00632.ARW');
-    try {
-      expect((await sharp(preview.path).metadata()).width).toBe(1616);
-      expect(extractionTags()).toEqual(['-JpgFromRaw', '-PreviewImage']);
-    } finally {
-      await preview.cleanup();
-    }
+    await expect(extractRawPreview('/tmp/DSC00632.ARW')).rejects.toMatchObject({ code: 'MEDIA_TIMEOUT' });
+    expect(extractionTags()).toEqual(['-JpgFromRaw']);
   });
 
   it('reports the deadline when every extraction is killed at it', async () => {
@@ -404,10 +407,10 @@ describe('extractRawPreview', () => {
     });
 
     await expect(extractRawPreview('/tmp/DSC00632.ARW'))
-      .rejects.toThrow(/No usable embedded preview in RAW file DSC00632.ARW: Command failed/);
+      .rejects.toMatchObject({ code: 'MEDIA_TIMEOUT' });
     // Every tag is still tried: unlike a missing binary, one tag timing out
     // says nothing about the next.
-    expect(extractionTags()).toEqual(['-JpgFromRaw', '-PreviewImage', '-ThumbnailImage']);
+    expect(extractionTags()).toEqual(['-JpgFromRaw']);
   });
 
   it('fails when the file carries no embedded image at all', async () => {

@@ -102,3 +102,23 @@ describe('BackupConfiguration destination highlight', () => {
     expect(selected.className).not.toMatch(/border-primary(\s|$)|accent-dark\//);
   });
 });
+
+describe('BackupConfiguration restore-point retention', () => {
+  const field = () => screen.getByLabelText('backup.configuration.schedule.retentionCount') as HTMLInputElement;
+
+  it('defaults to 7 points when the install has no setting yet, and saves that', async () => {
+    const onSave = renderForm({});
+    expect(field().value).toBe('7');
+    await save();
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ backup_retention_count: 7 }));
+  });
+
+  it('shows the stored count, 0 included, and saves a change as a number', async () => {
+    const onSave = renderForm({ backup_retention_count: 0 });
+    expect(field().value).toBe('0');
+    await userEvent.clear(field());
+    await userEvent.type(field(), '3');
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ backup_retention_count: 3 }));
+  });
+});

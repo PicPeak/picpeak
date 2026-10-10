@@ -13,6 +13,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const packageJson = require('../../package.json');
 const recoveryFiles = require('./recoveryFiles');
 const { getStorage } = require('./storage');
+const { withTrustedCrmAccess } = require('../database/crmAccess');
 
 // Constants
 
@@ -272,7 +273,14 @@ class DatabaseBackupService {
   /**
    * Get table checksums for change detection
    */
-  async getTableChecksums() {
+  // The checksums read every table whole, CRM documents included, and return
+  // only counts and digests. Who may ask for them is the route's backup
+  // permission, so the read itself is not narrowed to one admin's documents.
+  getTableChecksums() {
+    return withTrustedCrmAccess('database backup checksums', () => this.getTableChecksumsInternal());
+  }
+
+  async getTableChecksumsInternal() {
     const checksums = {};
     const tables = await this.getTables();
     
@@ -569,9 +577,15 @@ class DatabaseBackupService {
   }
 
   /**
-   * Main backup method
+   * Main backup method. A backup covers the whole database whoever starts it
+   * (the schedule, or an admin holding backup.create), so it never runs under
+   * the caller's CRM document scope.
    */
-  async backup(options = {}) {
+  backup(options = {}) {
+    return withTrustedCrmAccess('database backup', () => this.backupInternal(options));
+  }
+
+  async backupInternal(options = {}) {
     if (this.isRunning) {
       throw new Error('Backup already in progress');
     }
@@ -1051,7 +1065,9 @@ async function startScheduledBackups() {
     // Default schedule: 3 AM daily (offset from file backups at 2 AM)
     const schedule = config.database_backup_schedule || '0 3 * * *';
 
-    backupSchedule = cron.schedule(schedule, async () => {
+    // The schedule can be restarted from an admin's settings save; the job
+    // must not keep running as that admin.
+    backupSchedule = cron.schedule(schedule, () => withTrustedCrmAccess('scheduled database backup', async () => {
       logger.info('Starting scheduled database backup');
       try {
         await databaseBackupService.backup();
@@ -1064,7 +1080,7 @@ async function startScheduledBackups() {
       } catch (error) {
         logger.error('Scheduled database backup failed:', error);
       }
-    });
+    }));
     
     logger.info(`Database backup service started with schedule: ${schedule}`);
   } catch (error) {

@@ -237,7 +237,8 @@ async function runSignalFlush() {
   await purgeOld();
 }
 
-const task = scheduledTask(runSignalFlush, { interval: 10 * 60 * 1000 });
+const task = scheduledTask(() => require('../../database/crmAccess')
+  .withTrustedCrmAccess('shipped signing-signal scheduler', runSignalFlush), { interval: 10 * 60 * 1000 });
 
 /** The last 24 hours per kind, and how many alerts went out (System Health). */
 async function summary(now = Date.now()) {

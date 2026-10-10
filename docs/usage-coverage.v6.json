@@ -666,6 +666,7 @@
       "route_signatures": [
         "POST /",
         "GET /",
+        "GET /assignable-admins",
         "GET /:id",
         "POST /:id/send-gallery-email",
         "POST /:id/publish",
@@ -856,9 +857,12 @@
       "signals": [
         "share_mounts"
       ],
-      "reason": "Only admin import operation; status/list/browse are not use. Snapshot checks external-path presence, never reports a path.",
+      "reason": "Only admin import operation is use; status, browsing and source-owner assignment/revocation are excluded. Snapshot checks external-path presence, never reports a path or owner.",
       "route_signatures": [
         "GET /list",
+        "GET /sources",
+        "PUT /sources",
+        "DELETE /sources/:sourceId",
         "POST /events/:id/import-external",
         "GET /events/:id/status"
       ]
@@ -1097,6 +1101,8 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/moderation",
+        "POST /:eventId/photos/moderation",
         "GET /:eventId/photos/credits",
         "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/download",
@@ -1471,8 +1477,10 @@
     "analyticsTrackerProxy.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
-      "route_signatures": []
+      "reason": "Optional data-only visitor telemetry is separate from product-usage reporting: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /events"
+      ]
     },
     "auth.js": {
       "decision": "partial",

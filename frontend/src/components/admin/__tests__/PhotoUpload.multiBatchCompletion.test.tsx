@@ -46,7 +46,8 @@ vi.mock('../../../hooks/useUploadProgress', () => ({
 vi.mock('../../../services/categories.service', () => ({
   categoriesService: { getEventCategories: vi.fn().mockResolvedValue([]) },
 }));
-// 2MB batch cap: three 1MB files make two multipart requests.
+// 2MB raw cap: two 900KiB files leave room for multipart framing, so
+// three files still exercise two requests rather than three exact-limit ones.
 vi.mock('../../../services/settings.service', () => ({
   settingsService: {
     getAllSettings: vi.fn().mockResolvedValue({
@@ -59,7 +60,7 @@ vi.mock('../../../services/settings.service', () => ({
 }));
 
 const file = (name: string) =>
-  new File([new Uint8Array(1024 * 1024)], name, { type: 'image/jpeg' });
+  new File([new Uint8Array(900 * 1024)], name, { type: 'image/jpeg' });
 
 describe('PhotoUpload multi-batch completion', () => {
   beforeEach(() => postMock.mockReset());
@@ -79,6 +80,8 @@ describe('PhotoUpload multi-batch completion', () => {
     await user.click(screen.getByRole('button', { name: /common\.upload/ }));
 
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+    expect(postMock.mock.calls[0][1].getAll('photos')).toHaveLength(2);
+    expect(postMock.mock.calls[1][1].getAll('photos')).toHaveLength(1);
     // Batch 1 is processed; batch 2 has no response yet. Not done.
     expect(toastMock.success).not.toHaveBeenCalled();
 

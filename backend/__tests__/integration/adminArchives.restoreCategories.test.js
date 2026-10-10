@@ -44,6 +44,7 @@ describe('archive restore restores categories (flat archives included)', () => {
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
       requireEventOwnership: (_req, _res, next) => next(),
+      requireEventOwner: (_req, _res, next) => next(),
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());

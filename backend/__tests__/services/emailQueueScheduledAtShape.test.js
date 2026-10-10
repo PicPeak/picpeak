@@ -46,10 +46,10 @@ describe('every pending-row writer names scheduled_at', () => {
     const bodies = statements.map((stmt) => (/^\s*row\s*\)?$/.test(stmt.replace(/\)\.returning\([^)]*\)/, ''))
       ? src.match(/const row = \{([\s\S]*?)\n\s*\};/)[1]
       : stmt));
-    const pendingBodies = bodies.filter((body) => /status:\s*'pending'/.test(body));
-    expect(pendingBodies.length).toBeGreaterThan(0);
-    // The key itself, not a comment that names it.
-    for (const body of pendingBodies) expect(body).toMatch(/scheduled_at\s*:/);
+    // These writers now choose ordinary/protected pending states at runtime.
+    // Require the schedule on every inserted queue body, independent of the
+    // status expression, so encrypted messages cannot escape this invariant.
+    for (const body of bodies) expect(body).toMatch(/scheduled_at\s*:/);
   });
 
   test('no writer leaves the column to its default any more', () => {

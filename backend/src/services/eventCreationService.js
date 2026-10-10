@@ -28,7 +28,7 @@ const { getStoragePath, getEventFieldRequirements, readBooleanSetting, getDownlo
 const { validateCreationInput } = require('./eventCreationValidation');
 const { normaliseDownloadLimit } = require('./downloadQuota');
 const { guestNameModeOf } = require('./photoCredit');
-const { resolveExternalPath } = require('./externalMediaService');
+const externalAccess = require('./externalMediaAccess');
 const { importExternalFolder } = require('./externalImportService');
 const { userHasAllPermissions } = require('../middleware/permissions');
 function creationError(body) {
@@ -86,6 +86,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_favorites: allowFavoritesInput,
     allow_reactions: allowReactionsInput,
     allow_color_labels: allowColorLabelsInput,
+    allow_decisions: allowDecisionsInput,
     keybind_mode: keybindModeInput,
     require_name_email = false,
     moderate_comments = true,
@@ -183,6 +184,13 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
   // gallery email, and the portal opens the gallery without its password.
   const portalOnly = !customerEmail && reachableAccounts.length > 0;
 
+  // Team members (issue 743), checked before anything is written. The
+  // creator owns the gallery, so leaving them in the list changes nothing.
+  const eventAdminAssignments = require('./eventAdminAssignmentsService');
+  const assignedAdminIds = Array.isArray(input.assigned_admin_ids)
+    ? await eventAdminAssignments.resolveAssignableIds(input.assigned_admin_ids, actor.id)
+    : [];
+
   // Conditional validation based on settings
   const validationErrors = [];
   if (fieldRequirements.require_customer_name && !customerName) {
@@ -253,6 +261,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     allow_favorites: allowFavoritesInput,
     allow_reactions: allowReactionsInput,
     allow_color_labels: allowColorLabelsInput,
+    allow_decisions: allowDecisionsInput,
     keybind_mode: keybindModeInput,
   }, await resolveEventFeedbackDefaults());
 
@@ -517,6 +526,8 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     external_path: photoSource.external_path,
     external_watch: formatBoolean(photoSource.external_watch),
     folder_structure: formatBoolean(folderStructure),
+    // Hold team members' uploads for review (issue 743). Off unless asked.
+    review_contributor_uploads: formatBoolean(parseBooleanInput(input.review_contributor_uploads, false)),
   };
     
   // The gallery row and its feedback configuration commit together.
@@ -534,6 +545,7 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         allow_favorites: formatBoolean(feedbackDefaults.allow_favorites),
         allow_reactions: formatBoolean(feedbackDefaults.allow_reactions),
         allow_color_labels: formatBoolean(feedbackDefaults.allow_color_labels),
+        allow_decisions: formatBoolean(feedbackDefaults.allow_decisions),
         keybind_mode: feedbackDefaults.keybind_mode,
         require_name_email: formatBoolean(require_name_email),
         moderate_comments: formatBoolean(moderate_comments),
@@ -544,6 +556,9 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
+    }
+    if (assignedAdminIds.length > 0) {
+      await eventAdminAssignments.setAssignedAdmins(eventId, assignedAdminIds, actor.id, trx);
     }
     
     return eventId;
@@ -568,6 +583,13 @@ async function createEvent(data, { actor, source = 'admin', frontendUrl } = {}) 
     eventId,
     { type: 'admin', id: actor.id, name: actor.username }
   );
+  if (assignedAdminIds.length > 0) {
+    await logActivity('event_team_changed',
+      { added: assignedAdminIds, removed: [], eventName: event_name },
+      eventId,
+      { type: 'admin', id: actor.id, name: actor.username }
+    );
+  }
 
   // Fire event.created webhook (#327). If the event is being published
   // immediately (not a draft), event.published also fires below.
@@ -738,24 +760,26 @@ async function resolveCreationSource({ source_mode, external_path, external_watc
   if (source_mode !== 'reference') {
     return { source_mode: 'managed', external_path: null, external_watch: false, import_now: false };
   }
-  const relPath = typeof external_path === 'string' ? external_path.trim().replace(/^\/+/, '') : '';
+  const inputPath = typeof external_path === 'string' ? external_path.trim() : '';
   // '', '.', './' and 'a/..' all name EXTERNAL_MEDIA_ROOT itself: a gallery
   // gets a folder under the root, never the whole mount.
-  if (!relPath || ['.', ''].includes(path.posix.normalize(relPath).replace(/\/+$/, ''))) {
+  if (!inputPath || ['.', '', '/'].includes(path.posix.normalize(inputPath).replace(/\/+$/, ''))) {
     throw new AppError('external_path is required when source_mode is reference', 400, 'EXTERNAL_PATH_REQUIRED');
   }
+  const relPath = externalAccess.normalizeSourcePath(inputPath);
   let resolved;
+  const watch = parseBooleanInput(external_watch, false);
+  const importNow = parseBooleanInput(import_now, false);
   try {
-    resolved = resolveExternalPath({ external_path: relPath }, '');
-  } catch (_) {
+    resolved = (await externalAccess.authorizeSource(actor.id, relPath, (watch || importNow) ? 'photos.upload' : 'photos.view')).target;
+  } catch (error) {
+    if (error instanceof externalAccess.ExternalMediaAccessError) throw new AppError(error.message, error.statusCode, 'EXTERNAL_SOURCE_DENIED');
     throw new AppError('Invalid external media path', 400, 'EXTERNAL_PATH_INVALID');
   }
   const stat = await fs.stat(resolved).catch(() => null);
   if (!stat || !stat.isDirectory()) {
     throw new AppError('The external folder does not exist', 400, 'EXTERNAL_PATH_NOT_FOUND');
   }
-  const watch = parseBooleanInput(external_watch, false);
-  const importNow = parseBooleanInput(import_now, false);
   if ((watch || importNow) && !(await userHasAllPermissions(actor.id, ['photos.upload']))) {
     throw new AppError('The photos.upload permission is required to import from this folder', 403, 'FORBIDDEN');
   }

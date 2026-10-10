@@ -3,6 +3,8 @@ const sessionAccess = require('../services/sessionAccessService');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest } = require('../utils/tokenUtils');
 const { roleEventScope } = require('./permissions');
+const { loadAssignedEventIds } = require('./ownership');
+const { loadCrmActor, withCrmActor } = require('../database/crmAccess');
 
 // GHSA-h4w8-57xq-53fx: must_change_password was written on reset (and on
 // invitation/OIDC-bypass paths) but nothing server-side ever checked it — a
@@ -67,6 +69,8 @@ async function adminAuth(req, res, next) {
       roleName: admin.role_name,
       // Which galleries beyond its own this role reaches (ownership.js).
       eventScope: await roleEventScope(admin.role_name),
+      // Galleries the admin is assigned to (ownership.canAccessEvent).
+      assignedEventIds: await loadAssignedEventIds(admin.id),
       mustChangePassword: !!admin.must_change_password,
       // From the token, not the database: it is a property of this session
       // rather than of the account (#1186). Carried so a route that reissues
@@ -76,7 +80,8 @@ async function adminAuth(req, res, next) {
     };
     req.token = token; // Store token for potential revocation
 
-    next();
+    const crmActor = await loadCrmActor(req.admin);
+    withCrmActor({ ...crmActor, originAdminId: Number(req.admin.id) }, next);
   } catch (error) {
     logger.error('Auth middleware error:', error);
     res.status(error.statusCode || 401).json({

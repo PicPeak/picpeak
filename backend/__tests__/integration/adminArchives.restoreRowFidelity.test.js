@@ -49,6 +49,7 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
       requireEventOwnership: (_req, _res, next) => next(),
+      requireEventOwner: (_req, _res, next) => next(),
     }));
 
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
@@ -557,14 +558,15 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.mkdir(path.join(storagePath, 'videos'), { recursive: true });
     const seed = async (name, extra) => {
-      await fs.promises.writeFile(path.join(dir, name), BYTES);
+      const videoBytes = require('../fixtures/admissionVideo').admissionVideo();
+      await fs.promises.writeFile(path.join(dir, name), videoBytes);
       const [r] = await db('photos').insert({
         event_id: eventId,
         filename: name,
         original_filename: name,
         path: `events/active/${slug}/individual/${name}`,
         type: 'individual',
-        size_bytes: BYTES.length,
+        size_bytes: videoBytes.length,
         media_type: 'video',
         mime_type: 'video/quicktime',
         processing_status: 'complete',
@@ -599,6 +601,32 @@ describe('archive restore rebuilds the photo row faithfully', () => {
       await db('app_settings').where({ setting_key: 'general_video_web_rendition' }).del();
       videoRendition.clearCache();
     }
+  });
+
+  it('brings a team upload archived under review back hidden and under review (issue 743)', async () => {
+    const [uploaderRow] = await db('admin_users').insert({
+      username: 'restore-uploader', email: 'restore-uploader@example.com', password_hash: 'x',
+    }).returning('id');
+    const uploaderId = typeof uploaderRow === 'object' ? uploaderRow.id : uploaderRow;
+    const archiveRelPath = await writeArchive('review.zip', {
+      'individual/pending.jpg': BYTES,
+      'individual/rejected.jpg': BYTES,
+      'individual/approved.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'pending.jpg', type: 'individual', moderation_status: 'pending', uploaded_by_admin_id: uploaderId },
+        { filename: 'rejected.jpg', type: 'individual', moderation_status: 'rejected', uploaded_by_admin_id: 987654 },
+        { filename: 'approved.jpg', type: 'individual', moderation_status: null },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'review-event');
+
+    await restore(eventId);
+
+    const rows = Object.fromEntries((await db('photos').where('event_id', eventId)).map((p) => [p.filename, p]));
+    expect(rows['pending.jpg']).toMatchObject({ moderation_status: 'pending', visibility: 'hidden', uploaded_by_admin_id: uploaderId });
+    // An uploader deleted since is not written back (a foreign key on PostgreSQL).
+    expect(rows['rejected.jpg']).toMatchObject({ moderation_status: 'rejected', visibility: 'hidden', uploaded_by_admin_id: null });
+    expect(rows['approved.jpg']).toMatchObject({ moderation_status: null, visibility: 'visible' });
   });
 
   it('keeps the original upload time rather than stamping the restore time', async () => {

@@ -15,6 +15,19 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
   const { t } = useTranslation();
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [clientPin, setClientPin] = useState('');
+  // The PIN and the client link are the owner's to change (issue 743); a
+  // team member sees the link but not these controls. Missing = owner.
+  const ownsEvent = event?.can_manage_assignments !== false;
+
+  const regenerateLink = async () => {
+    try {
+      await eventsService.updateEvent(event.id, { regenerate_client_token: true });
+      toast.success(t('clientAccess.tokenRegenerated'));
+      refetchEvent();
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
 
   return (
     <Card padding="md">
@@ -53,6 +66,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
         {!!event?.client_access_enabled && (
           <>
             {/* Set/Change PIN */}
+            {ownsEvent && (
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-body mb-1">
@@ -97,6 +111,7 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                 {t('clientAccess.setPin')}
               </Button>
             </div>
+            )}
 
             {/* Client access link */}
             {event?.client_share_token && (
@@ -135,23 +150,24 @@ export const ClientAccessCard: React.FC<ClientAccessCardProps> = ({ event, refet
                   </Button>
                 </div>
 
+                {ownsEvent && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="mt-2 text-xs"
-                  onClick={async () => {
-                    try {
-                      await eventsService.updateEvent(event.id, { regenerate_client_token: true });
-                      toast.success(t('clientAccess.tokenRegenerated'));
-                      refetchEvent();
-                    } catch {
-                      toast.error(t('common.error'));
-                    }
-                  }}
+                  onClick={regenerateLink}
                 >
                   {t('clientAccess.regenerateToken')}
                 </Button>
+                )}
               </div>
+            )}
+            {/* No link yet (older galleries): the PIN alone cannot sign a
+                client in, so the control that mints one stays reachable. */}
+            {!event?.client_share_token && (
+              <Button variant="ghost" size="sm" className="text-xs" onClick={regenerateLink}>
+                {t('clientAccess.regenerateToken')}
+              </Button>
             )}
           </>
         )}

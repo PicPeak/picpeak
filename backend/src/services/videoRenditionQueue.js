@@ -25,9 +25,13 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { createInterruptibleSleep } = require('../utils/interruptibleSleep');
 const { isEnabled, renderWebCopy } = require('./videoRenditionService');
+const mediaAttempts = require('./mediaAttemptService');
+const { isTransient } = require('./imageResourcePolicy');
+
+const RETRY_BACKOFF_MS = 60000;
 
 const POLL_INTERVAL_MS = parseInt(process.env.VIDEO_RENDITION_POLL_MS || '5000', 10);
-const CONCURRENCY = Math.max(1, parseInt(process.env.VIDEO_RENDITION_CONCURRENCY || '1', 10));
+const CONCURRENCY = Math.min(8, Math.max(1, parseInt(process.env.VIDEO_RENDITION_CONCURRENCY || '1', 10) || 1));
 const STUCK_TIMEOUT_MS = parseInt(process.env.VIDEO_RENDITION_STUCK_TIMEOUT_MS || '7200000', 10);
 const JANITOR_INTERVAL_MS = 60 * 1000;
 
@@ -39,52 +43,15 @@ let waits = null;
 let stopping = null;
 const sleep = (ms) => waits.sleep(ms);
 
-function isPostgres() {
-  const c = db.client.config.client;
-  return c === 'pg' || (typeof c === 'string' && c.includes('postgres'));
-}
-
 /**
  * Atomically claim the oldest pending video. Returns the row or null.
  * SKIP LOCKED on Postgres so multiple pods race cleanly, a status-guarded
  * UPDATE on SQLite. Timestamps as ISO strings (CLAUDE.md).
  */
 async function claimNext() {
-  if (isPostgres()) {
-    return db.transaction(async (trx) => {
-      const row = await trx('photos')
-        .where('web_status', 'pending')
-        .orderBy('id', 'asc')
-        .forUpdate()
-        .skipLocked()
-        .first();
-      if (!row) return null;
-      // The claim time doubles as the claim's token: completion and failure
-      // write back only while the row still carries it (renderWebCopy).
-      const claimedAt = new Date().toISOString();
-      await trx('photos').where('id', row.id).update({
-        web_status: 'processing',
-        web_started_at: claimedAt,
-      });
-      return { ...row, web_status: 'processing', web_started_at: claimedAt };
-    });
-  }
-
-  return db.transaction(async (trx) => {
-    const row = await trx('photos')
-      .where('web_status', 'pending')
-      .orderBy('id', 'asc')
-      .first();
-    if (!row) return null;
-    const claimedAt = new Date().toISOString();
-    const updated = await trx('photos')
-      .where({ id: row.id, web_status: 'pending' })
-      .update({
-        web_status: 'processing',
-        web_started_at: claimedAt,
-      });
-    return updated > 0 ? { ...row, web_status: 'processing', web_started_at: claimedAt } : null;
-  });
+  const outcome = await mediaAttempts.claimNext('web');
+  // A video that used up its attempts was recorded as failed by the claim.
+  return outcome?.exhausted ? null : outcome;
 }
 
 async function workerLoop(workerIdx) {
@@ -110,22 +77,35 @@ async function workerLoop(workerIdx) {
     }
 
     try {
-      await renderWebCopy(claimed.id, { claimedAt: claimed.web_started_at });
+      await mediaAttempts.execute(claimed, 'web', () => renderWebCopy(claimed.id));
     } catch (err) {
-      logger.error(`videoRenditionQueue[${workerIdx}]: video ${claimed.id} failed`, {
+      if (err.code === 'MEDIA_SUPERSEDED') continue;
+      // Guarded on this worker's attempt id and source: a delete, a
+      // replacement or the janitor meanwhile has already moved the row on,
+      // possibly into another worker's hands.
+      const mine = { id: claimed.id, web_status: 'processing', web_attempt_id: claimed.web_attempt_id,
+        path: claimed.path, filename: claimed.filename };
+      const attempts = Number(claimed.web_attempts || 0);
+      // A shutdown is not an attempt; "not now" is one, and is tried again
+      // after a growing pause. Only a verdict on the video is a failure.
+      const paused = !running && /_CANCELLED$/.test(err.code || '');
+      const requeue = paused || (isTransient(err) && attempts < mediaAttempts.MAX_ATTEMPTS);
+      logger[requeue ? 'warn' : 'error'](`videoRenditionQueue[${workerIdx}]: video ${claimed.id} ${requeue ? `requeued (${err.code})` : 'failed'}`, {
         error: err.message,
       });
       try {
-        // Guarded on this worker's own claim (status + claim time): a delete,
-        // a replacement or the janitor meanwhile has already moved it on,
-        // possibly into another worker's hands.
-        await db('photos').where({ id: claimed.id, web_status: 'processing', web_started_at: claimed.web_started_at }).update({
+        await db('photos').where(mine).update(requeue ? {
+          web_status: 'pending',
+          web_started_at: null,
+          ...(paused ? { web_attempts: Math.max(0, attempts - 1), web_retry_at: null }
+            : { web_retry_at: new Date(Date.now() + RETRY_BACKOFF_MS * attempts).toISOString() }),
+        } : {
           web_status: 'failed',
           web_started_at: null,
           web_error: String(err.message || err).split('\n')[0].slice(0, 1000),
         });
       } catch (updateErr) {
-        logger.error(`videoRenditionQueue[${workerIdx}]: failed to mark video ${claimed.id} as failed`, {
+        logger.error(`videoRenditionQueue[${workerIdx}]: failed to record the outcome of video ${claimed.id}`, {
           error: updateErr.message,
         });
       }
@@ -137,10 +117,7 @@ async function janitorLoop() {
   while (running) {
     try {
       const cutoff = new Date(Date.now() - STUCK_TIMEOUT_MS).toISOString();
-      const reset = await db('photos')
-        .where('web_status', 'processing')
-        .where('web_started_at', '<', cutoff)
-        .update({ web_status: 'pending', web_started_at: null });
+      const reset = await mediaAttempts.recover('web', cutoff);
       if (reset > 0) {
         logger.warn(`videoRenditionQueue: janitor reset ${reset} stuck video(s) from 'processing' to 'pending'`);
       }
@@ -159,6 +136,7 @@ function start() {
   }
 
   waits = createInterruptibleSleep();
+  require('./mediaProcessService').start();
   running = true;
   workerHandles = [];
   for (let i = 0; i < CONCURRENCY; i++) {
@@ -182,9 +160,10 @@ function stop() {
   if (stopping) return stopping;
   if (!running) return Promise.resolve();
   running = false;
+  mediaAttempts.cancel('web');
   // Interrupt idle waits only; a transcode in flight finishes first.
   waits.cancel();
-  stopping = Promise.all([...workerHandles, janitorHandle].filter(Boolean)).finally(() => {
+  stopping = Promise.all([...workerHandles, janitorHandle].filter(Boolean)).then(() => mediaAttempts.assertDrained('web')).finally(() => {
     workerHandles = [];
     janitorHandle = null;
     waits = null;

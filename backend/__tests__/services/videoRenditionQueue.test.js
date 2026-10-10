@@ -1,7 +1,9 @@
 /**
- * videoRenditionQueue.claimNext: the same claim contract backgroundProcessor
- * and faceQueue pin — SKIP LOCKED on Postgres, a status-guarded UPDATE on
- * SQLite, ISO-string timestamps.
+ * videoRenditionQueue.claimNext: the claim itself (SKIP LOCKED on Postgres, a
+ * status-guarded UPDATE on SQLite, the attempt id and limit) is the shared
+ * one in mediaAttemptService, exercised against a real database in
+ * __tests__/integration/mediaAttempts.test.js. Here: what this queue does
+ * with it.
  */
 
 jest.mock('../../src/services/videoRenditionService', () => ({
@@ -9,61 +11,28 @@ jest.mock('../../src/services/videoRenditionService', () => ({
   renderWebCopy: jest.fn(),
 }));
 jest.mock('../../src/utils/logger', () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }));
-
-function makeFakeDb({ pendingRow = null, updateResult = 1, clientName = 'pg' } = {}) {
-  const queries = [];
-  const builder = () => {
-    const recorded = { wheres: [], updates: null, locked: false, skipped: false };
-    queries.push(recorded);
-    const chain = {
-      where: jest.fn(function (...args) { recorded.wheres.push(args); return chain; }),
-      orderBy: jest.fn(function () { return chain; }),
-      forUpdate: jest.fn(function () { recorded.locked = true; return chain; }),
-      skipLocked: jest.fn(function () { recorded.skipped = true; return chain; }),
-      first: jest.fn(async function () { return pendingRow ? { ...pendingRow } : null; }),
-      update: jest.fn(async function (data) { recorded.updates = data; return updateResult; }),
-    };
-    return chain;
-  };
-  const trxFn = () => builder();
-  trxFn.client = { config: { client: clientName } };
-  trxFn.transaction = async (cb) => cb(trxFn);
-  return { db: trxFn, queries };
-}
-
-function loadQueue(db) {
-  jest.resetModules();
-  jest.doMock('../../src/database/db', () => ({ db }));
-  return require('../../src/services/videoRenditionQueue');
-}
+jest.mock('../../src/database/db', () => ({ db: Object.assign(jest.fn(), { client: { config: { client: 'sqlite3' } } }) }));
+jest.mock('../../src/services/mediaAttemptService', () => ({ MAX_ATTEMPTS: 5, claimNext: jest.fn(), execute: jest.fn(), recover: jest.fn(), cancel: jest.fn(), assertDrained: jest.fn() }));
 
 describe('videoRenditionQueue.claimNext', () => {
+  const mediaAttempts = require('../../src/services/mediaAttemptService');
+  const queue = require('../../src/services/videoRenditionQueue');
+  beforeEach(() => jest.clearAllMocks());
+
   it('returns null when nothing is pending', async () => {
-    const { db } = makeFakeDb({ pendingRow: null });
-    expect(await loadQueue(db).claimNext()).toBeNull();
+    mediaAttempts.claimNext.mockResolvedValue(null);
+    expect(await queue.claimNext()).toBeNull();
+    expect(mediaAttempts.claimNext).toHaveBeenCalledWith('web');
   });
 
-  it('claims with FOR UPDATE SKIP LOCKED on Postgres and flips the row to processing', async () => {
-    const pendingRow = { id: 42, web_status: 'pending' };
-    const { db, queries } = makeFakeDb({ pendingRow, clientName: 'pg' });
-    // The claim comes back with its token: the time the worker fences on.
-    expect(await loadQueue(db).claimNext()).toEqual({ ...pendingRow, web_status: 'processing', web_started_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) });
-    expect(queries[0].locked).toBe(true);
-    expect(queries[0].skipped).toBe(true);
-    expect(queries[0].wheres[0]).toEqual(['web_status', 'pending']);
-    expect(queries[1].updates.web_status).toBe('processing');
-    expect(queries[1].updates.web_started_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  it('returns the claimed row with its attempt id', async () => {
+    const row = { id: 42, web_status: 'processing', web_attempt_id: 'a', web_started_at: new Date().toISOString() };
+    mediaAttempts.claimNext.mockResolvedValue(row);
+    expect(await queue.claimNext()).toBe(row);
   });
 
-  it('on SQLite returns the row only when the guarded UPDATE wins', async () => {
-    const pendingRow = { id: 7 };
-    const lost = makeFakeDb({ pendingRow, clientName: 'sqlite3', updateResult: 0 });
-    expect(await loadQueue(lost.db).claimNext()).toBeNull();
-
-    const won = makeFakeDb({ pendingRow, clientName: 'sqlite3', updateResult: 1 });
-    expect(await loadQueue(won.db).claimNext()).toEqual({ ...pendingRow, web_status: 'processing', web_started_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/) });
-    expect(won.queries[0].locked).toBe(false);
-    const update = won.queries.find((q) => q.updates);
-    expect(update.wheres[0]).toEqual([{ id: 7, web_status: 'pending' }]);
+  it('claims nothing for a video that used up its attempts', async () => {
+    mediaAttempts.claimNext.mockResolvedValue({ exhausted: 7 });
+    expect(await queue.claimNext()).toBeNull();
   });
 });

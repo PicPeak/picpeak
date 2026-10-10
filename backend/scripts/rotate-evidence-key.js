@@ -162,6 +162,11 @@ async function main() {
   }
 }
 
-if (require.main === module) main();
+// A CLI has no signed-in admin. The operator who can run it already owns the
+// database, so it reads and rewrites every signer row under explicit trusted
+// access rather than failing for want of a request context.
+if (require.main === module) {
+  require('../src/database/crmAccess').withTrustedCrmAccess('operator CLI: rotate-evidence-key', main);
+}
 
 module.exports = { rotate, census, COLUMNS };

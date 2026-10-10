@@ -46,12 +46,14 @@ describe('a second external import (#1163)', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
-    jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn(async () => 'thumbnails/mock.jpg'),
       ensureThumbnail: jest.fn(),
@@ -61,6 +63,7 @@ describe('a second external import (#1163)', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
     ({ resolvePhotoFilePath } = require('../../src/services/photoResolver'));
 
     app = express();

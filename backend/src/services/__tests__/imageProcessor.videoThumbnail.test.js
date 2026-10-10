@@ -23,7 +23,7 @@ jest.mock('../../database/db', () => {
       return { where: () => ({ first: () => Promise.resolve({ id: 7, slug: 'summer-wedding' }) }) };
     }
     if (table === 'photos') {
-      return { where: () => ({ update: photosUpdate }) };
+      return { where: () => ({ first: async () => ({ id: 42 }), update: photosUpdate }) };
     }
     throw new Error(`unexpected table: ${table}`);
   });
@@ -82,10 +82,10 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
 
     expect(processUploadedVideo).toHaveBeenCalledWith(
       '/storage/events/active/summer-wedding/individual/clip.mp4',
-      'thumbnails/thumb_clip.jpg'
+      expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/)
     );
-    expect(result).toBe('thumbnails/thumb_clip.jpg');
-    expect(db.photosUpdate).toHaveBeenCalledWith({ thumbnail_path: 'thumbnails/thumb_clip.jpg' });
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
+    expect(db.photosUpdate).toHaveBeenCalledWith({ thumbnail_path: expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/) });
   });
 
   it('recognises a video by mime type alone, for rows predating media_type', async () => {
@@ -94,7 +94,7 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     const result = await ensureThumbnail({ ...legacyRow, id: 43 });
 
     expect(processUploadedVideo).toHaveBeenCalled();
-    expect(result).toBe('thumbnails/thumb_clip.jpg');
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });
 
   it('reads an external video straight off its mount, under a per-photo key', async () => {
@@ -108,9 +108,9 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     expect(resolvePhotoFilePath).toHaveBeenCalled();
     expect(processUploadedVideo).toHaveBeenCalledWith(
       '/mnt/nas/2026/clip.mp4',
-      'thumbnails/thumb_ext44_clip.jpg'
+      expect.stringMatching(/^thumbnails\/thumb_ext44_clip_[a-f0-9-]{36}\.jpg$/)
     );
-    expect(result).toBe('thumbnails/thumb_ext44_clip.jpg');
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_ext44_clip_[a-f0-9-]{36}\.jpg$/));
   });
 
   it('returns null instead of throwing when the video cannot be thumbnailed at all', async () => {
@@ -130,10 +130,10 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     expect(storage.stat).toHaveBeenCalledWith('events/active/summer-wedding/individual/clip.mp4');
     expect(storage.getToFile).not.toHaveBeenCalled();
     expect(processUploadedVideo).not.toHaveBeenCalled();
-    expect(storage.put).toHaveBeenCalledWith('thumbnails/thumb_clip.jpg', expect.any(Buffer), {
+    expect(storage.put).toHaveBeenCalledWith(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/), expect.any(Buffer), {
       contentType: 'image/jpeg'
     });
-    expect(result).toBe('thumbnails/thumb_clip.jpg');
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });
 
   it('downloads a video under the size bound and takes the poster frame', async () => {
@@ -144,9 +144,9 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     const result = await ensureThumbnail({ ...managedVideo, id: 48 });
 
     expect(storage.getToFile).toHaveBeenCalled();
-    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), 'thumbnails/thumb_clip.jpg');
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
     expect(storage.put).not.toHaveBeenCalled();
-    expect(result).toBe('thumbnails/thumb_clip.jpg');
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });
 
   it('skips the bound for the admin regenerate job and takes the real poster frame', async () => {
@@ -158,9 +158,9 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
 
     expect(storage.stat).not.toHaveBeenCalled();
     expect(storage.getToFile).toHaveBeenCalled();
-    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), 'thumbnails/thumb_clip.jpg');
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
     expect(storage.put).not.toHaveBeenCalled();
-    expect(result).toBe('thumbnails/thumb_clip.jpg');
+    expect(result).toEqual(expect.stringMatching(/^thumbnails\/thumb_clip_[a-f0-9-]{36}\.jpg$/));
   });
 
   it('leaves still images on the image path', async () => {

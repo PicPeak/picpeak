@@ -68,6 +68,12 @@ async function archiveEvent(event) {
           // Turned into folder_path below (issue 1786), not written out.
           'photos.folder_id',
           'photos.first_look',
+          // A team upload still under review (issue 743) has to come back
+          // under review, not published by the restore.
+          'photos.moderation_status',
+          // Who uploaded it (issue 743), for the review badge; restored only
+          // while that account still exists.
+          'photos.uploaded_by_admin_id',
         );
       // The folder a photo lives in, as a path ("Saturday/Activity B"):
       // folder ids do not survive a restore into a fresh database, names do.

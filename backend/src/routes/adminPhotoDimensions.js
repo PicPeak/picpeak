@@ -127,7 +127,7 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
     setImmediate(async () => {
       let sharp;
       try {
-        sharp = require('sharp');
+        sharp = require('../services/isolatedSharp');
       } catch (err) {
         logger.error('Sharp not available for dimension repair:', err.message);
         lease.stop();
@@ -623,7 +623,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
     res.json({ message: `Checking orientation for ${photos.length} photos`, count: photos.length });
 
     setImmediate(async () => {
-      const sharp = require('sharp');
+      const sharp = require('../services/isolatedSharp');
       const {
         orientedDimensions, hasOrientationTransform, withLocalCopy, withProcessableImage,
         deletePreviewTiers, deleteThumbnailTiers, previewTierKeys, thumbnailTierKeys,
@@ -894,7 +894,8 @@ router.get('/repair-orientation/status', adminAuth, requirePermission('system.ma
  * nothing must be repeatable once it is back. Same claim + lease shape too.
  *
  * Candidates are rows whose credit nobody has decided yet: credit_source IS
- * NULL. That skips `manual` (the admin's call is final), `guest` (a guest
+ * NULL, or 'account' (the uploader's fallback name, issue 743, which a name
+ * in the file replaces). That skips `manual` (the admin's call is final), `guest` (a guest
  * upload credits the guest, never EXIF) and `exif` (already read). Guest
  * uploads without a name are skipped on uploaded_by — their EXIF is phone
  * noise the resolver deliberately ignores. Guest photos queued before #1561
@@ -904,7 +905,7 @@ router.get('/repair-orientation/status', adminAuth, requirePermission('system.ma
 function creditCandidates() {
   return db('photos')
     .join('events', 'photos.event_id', 'events.id')
-    .whereNull('photos.credit_source')
+    .where((q) => q.whereNull('photos.credit_source').orWhere('photos.credit_source', 'account'))
     .where(function () {
       this.where('photos.uploaded_by', '!=', 'guest').orWhereNull('photos.uploaded_by');
     })
@@ -1010,11 +1011,12 @@ router.post('/repair-credits', adminAuth, requirePermission('system.manage'), as
 
             // Fenced on the identity that was read (a replacement mid-run
             // swaps the file under the row, see the capture-date backfill) and
-            // on credit_source still being NULL, so an admin correction or a
-            // guest credit written meanwhile is never overwritten.
+            // on credit_source still being NULL (or the account fallback), so
+            // an admin correction or a guest credit written meanwhile is never
+            // overwritten.
             const updated = await db('photos')
               .where({ id: photo.id, path: photo.path, filename: photo.filename })
-              .whereNull('credit_source')
+              .where((q) => q.whereNull('credit_source').orWhere('credit_source', 'account'))
               .update({ credit_name: name, credit_source: 'exif' });
             if (updated) successCount++; else skippedCount++;
           } catch (error) {

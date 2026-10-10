@@ -16,6 +16,7 @@ const {
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+const { normalizeDecisionFilter, whereDecision } = require('../utils/photoFilterBuilder');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
@@ -38,8 +39,12 @@ const watermarkGeneratorService = require('../services/watermarkGeneratorService
 const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
 const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
+const { mayReviewUploads, adminUploadColumns, moderatePhotos, moderationCounts, MODERATION_STATUSES, MAX_MODERATION_IDS } = require('../services/uploadReviewService');
 const { getStorage } = require('../services/storage');
 const { errorResponse } = require('../utils/routeHelpers');
+const { withPublicUpload } = require('../middleware/publicUploadStream');
+const { createUploadFileGuard } = require('../utils/uploadAdmissionType');
+const uploadQuota = require('../services/publicUploadQuota');
 const logger = require('../utils/logger');
 const router = express.Router();
 
@@ -63,42 +68,9 @@ async function folderIdUpdate(eventId, raw) {
   if (!folder) return { error: `Unknown folder_id ${id}` };
   return { folder_id: id };
 }
-const { photoCapOf, countEventPhotos } = require('../services/photoCap');
+const { photoCapOf, countEventPhotos, insertPhotoWithinCap } = require('../services/photoCap');
 const { manualCreditFields, CREDIT_NONE } = require('../services/photoCredit');
 
-// Configure multer for file uploads
-// IMPORTANT: Using synchronous functions to prevent file corruption
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    logger.info('Multer destination called for file:', file.originalname);
-
-    // We'll validate the event exists in the route handler
-    // For now, just create a temp destination.
-    // One directory per REQUEST, not per file: this callback runs for every
-    // file and used to overwrite req.tempUploadPath each time, so cleanup
-    // only ever removed the last file's directory and a multi-file upload
-    // left the rest behind. Temp filenames are already collision-proof.
-    if (!req.tempUploadPath) {
-      const tempPath = path.join(getStoragePath(), 'temp', `upload_${Date.now()}_${Math.random().toString(36).substring(7)}`);
-
-      // Create directory synchronously
-      require('fs').mkdirSync(tempPath, { recursive: true });
-      logger.info('Temp destination path:', tempPath);
-
-      // Store temp path for cleanup
-      req.tempUploadPath = tempPath;
-    }
-
-    cb(null, req.tempUploadPath);
-  },
-  filename: (req, file, cb) => {
-    logger.info('Multer filename called for file:', file.originalname);
-    // Use a simple temporary filename
-    const tempName = `temp_${Date.now()}_${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    logger.info('Temp filename:', tempName);
-    cb(null, tempName);
-  }
-});
 
 const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, isRawUploadFilename } = require('../utils/fileSecurityUtils');
 
@@ -119,8 +91,9 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, is
 // photos.upload could send thousands of multi-megabyte text parts and hold
 // them all on the heap.
 const UPLOAD_TEXT_FIELDS = 5;
-const createUpload = (maxFileSizeBytes, maxFiles) => multer({
-  storage: storage,
+const createUpload = (maxFileSizeBytes, maxFiles, { storage, streamHandler, rejectBody }) => multer({
+  storage,
+  streamHandler,
   limits: {
     fileSize: maxFileSizeBytes,
     files: maxFiles,
@@ -144,7 +117,9 @@ const createUpload = (maxFileSizeBytes, maxFiles) => multer({
     if (validateFileType(file.originalname, file.mimetype, allowedMimeTypes)) {
       return cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Check allowed file types in system settings.'));
+      const error = new Error('Invalid file type. Check allowed file types in system settings.');
+      rejectBody(error);
+      cb(error);
     }
   },
   abortOnLimit: true
@@ -168,11 +143,8 @@ const validateUploadContent = async (req, res, next) => {
   const videoCapBytes = req.maxVideoSizeBytes || DEFAULT_MAX_VIDEO_SIZE_MB * 1024 * 1024;
   const capFor = (file) => (isVideoMimeType(file.mimetype) ? videoCapBytes : photoCapBytes);
 
-  // Photos and videos have separate caps (general_max_file_size_mb /
-  // general_max_video_size_mb), but multer's limit is global — it streamed
-  // against the larger of the two because it can't branch on MIME type. So
-  // the per-kind decision has to happen here, where the type is known,
-  // otherwise a 50MB photo cap would be silently raised to the video cap.
+  // The storage guard already enforces per-kind caps while streaming. Keep
+  // this check and full signature validation as a downstream backstop.
   const oversized = (req.files || []).find((file) => file.size > capFor(file));
   if (oversized) {
     const capMb = Math.floor(capFor(oversized) / (1024 * 1024));
@@ -189,91 +161,54 @@ const validateUploadContent = async (req, res, next) => {
   return validator(req, res, next);
 };
 
-// Remove the multer temp directory on every exit path — success, validation
-// 4xx, multer error, server 5xx or a client disconnect. Registered BEFORE
-// multer runs (the closure reads req.tempUploadPath lazily) because a
-// rejected upload never reaches the final handler, where this used to live:
-// every rejection leaked its temp directory and the file inside it.
-const registerTempUploadCleanup = (req, res, next) => {
-  let cleanupDone = false;
-  const cleanupTempDir = async () => {
-    if (cleanupDone || !req.tempUploadPath) return;
-    cleanupDone = true;
-    try {
-      await fs.rm(req.tempUploadPath, { recursive: true, force: true });
-    } catch (e) {
-      logger.error('Failed to clean up temp upload directory:', e);
-    }
-  };
-  res.on('finish', cleanupTempDir);
-  res.on('close', cleanupTempDir);
-  next();
-};
-
-// Request timeout middleware for uploads
-const uploadTimeout = (timeout = 300000) => { // 5 minutes default
-  return (req, res, next) => {
-    // Set timeout for the request
-    req.setTimeout(timeout, () => {
-      logger.error('Upload request timed out');
-      if (!res.headersSent) {
-        res.status(408).json({ error: 'Upload request timed out' });
-      }
-    });
-    
-    // Set response timeout as well
-    res.setTimeout(timeout, () => {
-      logger.error('Upload response timed out');
-    });
-    
-    next();
-  };
-};
-
-// Upload photos for an event
-// Max file count and max file size are configurable via general settings
-router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, uploadTimeout(600000), resolveAllowedTypes, registerTempUploadCleanup, async (req, res, next) => { // 10 minute timeout
+// Both mounted admin aliases share this raw-body and persistent admission.
+router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, resolveAllowedTypes, async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(eventId) || eventId < 1) {
+    if (!req.readableEnded) res.set('Connection', 'close');
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  // SQLite accepts exponential numeric strings in a lookup, while parseInt
+  // interprets them differently. Every downstream consumer must use one id.
+  req.params.eventId = String(eventId);
   let maxFilesPerUpload;
-  let maxFileSizeBytes;
-  let maxVideoSizeBytes;
   try {
-    maxFilesPerUpload = await getMaxFilesPerUpload();
-    maxFileSizeBytes = await getMaxFileSizeBytes();
-    maxVideoSizeBytes = await getMaxVideoSizeBytes();
+    [maxFilesPerUpload, req.maxFileSizeBytes, req.maxVideoSizeBytes] = await Promise.all([
+      getMaxFilesPerUpload(), getMaxFileSizeBytes(), getMaxVideoSizeBytes(),
+    ]);
   } catch (error) {
     return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
-  req.maxFileSizeBytes = maxFileSizeBytes;
-  req.maxVideoSizeBytes = maxVideoSizeBytes;
-  // multer's limit is global, so it has to be the larger of the two caps;
-  // validateUploadContent then holds each file to the cap for its own kind.
-  const multerLimitBytes = Math.max(maxFileSizeBytes, maxVideoSizeBytes);
-  const maxFileSizeMb = Math.floor(multerLimitBytes / (1024 * 1024));
-
-  createUpload(multerLimitBytes, maxFilesPerUpload).array('photos', maxFilesPerUpload)(req, res, (err) => {
-    if (err) {
-      logger.error('Multer error:', err);
-      if (err instanceof multer.MulterError) {
-        if (err.code === 'LIMIT_FILE_SIZE') {
-          return res.status(400).json({ error: `File too large. Maximum size is ${maxFileSizeMb} MB per file.` });
-        }
-        if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
-          return res.status(400).json({ error: `Too many files. Maximum ${maxFilesPerUpload} files per upload.` });
-        }
-        return res.status(400).json({ error: `Upload error: ${err.message}` });
-      }
-      return res.status(400).json({ error: err.message || 'Upload failed' });
-    }
-    next();
+  await withPublicUpload(req, res, {
+    eventId, mode: 'admin', accountId: req.admin.id, maxFiles: maxFilesPerUpload, fileField: 'photos',
+    maxFileBytes: Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes),
+    fileExtension: file => path.extname(file.originalname).toLowerCase(),
+    fileGuard: file => createUploadFileGuard(file, req.maxFileSizeBytes, req.maxVideoSizeBytes),
+    formatError: err => ({
+      status: 400,
+      body: { error: err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE'
+        ? `Too many files. Maximum ${maxFilesPerUpload} files per upload.`
+        : err.code === 'LIMIT_FILE_SIZE'
+          ? `File too large. Maximum size is ${Math.floor(Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes) / (1024 * 1024))} MB per file.`
+          : err instanceof multer.MulterError ? `Upload error: ${err.message}`
+            : 'Invalid file type. Check allowed file types in system settings.' },
+    }),
+  }, options => createUpload(Math.max(req.maxFileSizeBytes, req.maxVideoSizeBytes), options.maxFiles, options).array('photos', options.maxFiles),
+  async (_session, reply) => {
+    let proceed = false;
+    await validateUploadContent(req, reply, () => { proceed = true; });
+    if (!proceed) return;
+    proceed = false;
+    await validateUploadedFiles(req, reply, () => { proceed = true; });
+    if (proceed) await handleAdminPhotoUpload(req, reply);
   });
-}, validateUploadContent, validateUploadedFiles, async (req, res) => {
-  // Temp-directory cleanup is registered by registerTempUploadCleanup above,
-  // before multer runs, so it also covers the exit paths that never reach
-  // this handler (multer errors and validation 4xx).
+});
+
+async function handleAdminPhotoUpload(req, res) {
   try {
     const { eventId } = req.params;
     const { category_id, replace_by_name, match_mode } = req.body;
-    const replaceByName = replace_by_name === 'true' || replace_by_name === true;
+    let replaceByName = replace_by_name === 'true' || replace_by_name === true;
     // How replace_by_name finds its target (#745). 'exact' is the historical
     // behaviour and stays the default; 'number_token' matches on the trailing
     // digit run so a render renamed in Lightroom still lands on its proof.
@@ -293,6 +228,12 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
       logger.error('Event not found:', eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
+    // The uploading account, and hidden + pending for a team member whose
+    // uploads are reviewed (issue 743). Such an upload never replaces a
+    // photo: that would change a published photo without the review.
+    // Matching files are uploaded as new photos and wait like the rest.
+    const uploadColumns = await adminUploadColumns(req.admin, event);
+    if (uploadColumns.moderation_status) replaceByName = false;
 
     // Enforce photo cap if set (replacements don't count as new)
     if (event.photo_cap && event.photo_cap > 0) {
@@ -383,6 +324,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             originalFilename: file.originalname,
             mimeType: file.mimetype,
             event,
+            uploadReservation: req.publicUploadReservation,
           });
           if (result.success) {
             capabilityEvidence(res, 'photo_replacement');
@@ -443,7 +385,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     let counter = (parseInt(existingCount.count) || 0) + 1;
     const storage = getStorage();
 
+    const imageAdmission = require('../services/imageWorkAdmission');
+    const preparedImages = await imageAdmission.prepareBatch(filesToUpload, req.publicUploadReservation?.signal);
     for (const file of filesToUpload) {
+      let object;
+      let promotionSettled = false;
       try {
         const tempStats = await fs.stat(file.path);
         if (tempStats.size === 0) {
@@ -463,12 +409,16 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
         const relativePath = path.posix.join(event.slug, newFilename);
         const isVideo = isVideoMimeType(file.mimetype);
 
+        if (!isVideo) await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
+
         // 1. Move file to its final storage key first. If the worker
         //    later picks up the photo row, the file is guaranteed to
         //    exist at the recorded path.
+        object = await uploadQuota.prepareObject(req.publicUploadReservation, finalKey, tempStats.size);
         await storage.putFromFile(finalKey, file.path, {
           contentType: file.mimetype,
         });
+        promotionSettled = true;
         await fs.unlink(file.path).catch(() => {});
 
         // Sanity check the round-tripped size — same guard as before.
@@ -482,31 +432,36 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
         // 2. Insert a pending photo row. The background processor
         //    will pick it up, generate thumbnail/dimensions/EXIF, and
         //    flip status to 'complete' (or 'failed' with the error).
-        const inserted = await db('photos')
-          .insert({
-            event_id: parseInt(eventId, 10),
-            filename: newFilename,
-            original_filename: file.originalname,
-            // Camera-original name, kept separate so a later replace can
-            // overwrite original_filename without losing the Lightroom
-            // round-trip's match key (migration 193, #745).
-            source_filename: file.originalname,
-            path: relativePath,
-            thumbnail_path: null,
-            type: photoType,
-            ...placementColumns(placement),
-            size_bytes: tempStats.size,
-            captured_at: null,
-            media_type: isVideo ? 'video' : 'image',
-            mime_type: file.mimetype,
-            processing_status: 'pending',
-            upload_id: uploadId,
-            // Explicit rather than the column default (#1561); the worker
-            // reads the EXIF credit for admin rows.
-            uploaded_by: 'admin',
-          })
-          .returning('id');
-        const photoId = inserted[0]?.id || inserted[0];
+        const photoData = {
+          event_id: parseInt(eventId, 10),
+          filename: newFilename,
+          original_filename: file.originalname,
+          // Camera-original name, kept separate so a later replace can
+          // overwrite original_filename without losing the Lightroom
+          // round-trip's match key (migration 193, #745).
+          source_filename: file.originalname,
+          path: relativePath,
+          thumbnail_path: null,
+          type: photoType,
+          ...placementColumns(placement),
+          size_bytes: tempStats.size,
+          captured_at: null,
+          media_type: isVideo ? 'video' : 'image',
+          mime_type: file.mimetype,
+          processing_status: 'pending',
+          upload_id: uploadId,
+          // Explicit rather than the column default (#1561); the worker
+          // reads the EXIF credit for admin rows.
+          uploaded_by: 'admin',
+          // The uploading account, and hidden + pending under review
+          // (issue 743), resolved once above.
+          ...uploadColumns,
+        };
+        const photoId = await uploadQuota.commitObject(object, 'photo', async conn => {
+          const inserted = await insertPhotoWithinCap(photoData, photoCapOf(event), conn);
+          if (!inserted) throw new Error('Photo cap reached');
+          return inserted[0]?.id || inserted[0];
+        });
 
         acceptedUpload(res, { video: isVideo, raw: isRawUploadFilename(file.originalname), s3: process.env.STORAGE_BACKEND === 's3' });
 
@@ -519,8 +474,15 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
           media_type: isVideo ? 'video' : 'image',
         });
       } catch (err) {
+        if (object) {
+          try { await uploadQuota.failedObject(object, { storage, settled: promotionSettled }); }
+          catch (cleanupError) {
+            logger.warn('Admin upload object cleanup failed; charge retained', { objectId: object.id, error: cleanupError.message });
+          }
+        }
         logger.error(`Error queuing file ${file.originalname}:`, err);
-        errors.push({ filename: file.originalname, error: err.message });
+        errors.push({ filename: file.originalname, error: err.message,
+          ...require('../services/imageResourcePolicy').describe(err) });
       }
     }
     
@@ -593,11 +555,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     // 202 Accepted — files stored, processing happens in background.
     res.status(202).json(response);
   } catch (error) {
-    // Temp directory cleanup is handled by the response finish/close
-    // listeners above, regardless of which exit path fires.
+    // The stream wrapper waits for actual writers/promotions before cleanup.
     errorResponse(res, error, 500, 'Failed to upload photos');
   }
-});
+}
 
 // Helper — load the upload group + verify the requesting admin owns the
 // underlying event. Returns { event, photos } or sends a 4xx response.
@@ -763,6 +724,11 @@ router.post(
         processing_status: 'pending',
         processing_error: null,
         processing_started_at: null,
+        // An explicit retry starts a new attempt cycle, due at once.
+        processing_attempts: 0,
+        processing_retry_at: null,
+        // A worker still holding the old attempt can no longer write.
+        processing_attempt_id: null,
       });
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {
@@ -945,6 +911,11 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
     // Handle visibility update (#172)
     if (visibility !== undefined) {
       if (['visible', 'hidden'].includes(visibility)) {
+        // A photo under review (issue 743) is published by approving it
+        // (POST /photos/moderation), which only the owner can do.
+        if (visibility === 'visible' && photo.moderation_status) {
+          return res.status(409).json({ error: 'This photo is waiting for review. Approve it to publish it.', code: 'PHOTO_UNDER_REVIEW' });
+        }
         updateData.visibility = visibility;
       }
     }
@@ -1220,10 +1191,32 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    await db('photos')
-      .whereIn('id', photoIds)
-      .where('event_id', eventId)
-      .update(updateData);
+    // Photos under review (issue 743) keep their visibility: only approving
+    // them (POST /photos/moderation) publishes them. They are counted back to
+    // the caller rather than failing the whole selection.
+    const { visibility: visibilityUpdate, ...otherUpdates } = updateData;
+    let skippedUnderReview = 0;
+    if (Object.keys(otherUpdates).length > 0) {
+      await db('photos')
+        .whereIn('id', photoIds)
+        .where('event_id', eventId)
+        .update(otherUpdates);
+    }
+    if (visibilityUpdate !== undefined) {
+      // Counted, not derived from the update's row count: PostgreSQL leaves an
+      // unchanged row out of it, and foreign ids are not "under review".
+      const [{ count }] = await db('photos')
+        .whereIn('id', photoIds)
+        .where('event_id', eventId)
+        .whereNotNull('moderation_status')
+        .count('id as count');
+      skippedUnderReview = Number(count) || 0;
+      await db('photos')
+        .whereIn('id', photoIds)
+        .where('event_id', eventId)
+        .whereNull('moderation_status')
+        .update({ visibility: visibilityUpdate });
+    }
 
     // Visibility/category changes alter the guest download bundle — drop the
     // cached ZIP so it rebuilds fresh (codex review).
@@ -1234,9 +1227,64 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
       downloadZipService.invalidate(parseInt(eventId, 10));
     }
 
-    res.json({ message: `${photoIds.length} photos updated successfully` });
+    res.json({ message: `${photoIds.length} photos updated successfully`, skipped_under_review: skippedUnderReview });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photos');
+  }
+});
+
+// How many photos of the event wait for review, or were rejected (issue 743),
+// for the photo grid's banner.
+router.get('/:eventId/photos/moderation', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    res.json({ moderation: await moderationCounts(req.params.eventId) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to count photos under review');
+  }
+});
+
+// Review of team members' uploads (issue 743): approve publishes the photos,
+// reject keeps them hidden as 'rejected'. Only photos under review move. The
+// owner decides, or a holder of photos.review (a project lead) on a gallery it
+// reaches; a team member without it reaches the event through
+// requireEventOwnership but not past mayReviewUploads.
+router.post('/:eventId/photos/moderation', adminAuth, requirePermission(['photos.edit', 'photos.review']), requireEventOwnership, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { photoIds, action } = req.body || {};
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'action must be approve or reject' });
+    }
+    if (!Array.isArray(photoIds) || photoIds.length === 0
+      || !photoIds.every((id) => Number.isInteger(id) && id > 0)) {
+      return res.status(400).json({ error: 'Invalid photo IDs' });
+    }
+    if (photoIds.length > MAX_MODERATION_IDS) {
+      return res.status(400).json({ error: `At most ${MAX_MODERATION_IDS} photos per request` });
+    }
+
+    const event = await db('events').where({ id: eventId }).first();
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+    if (!(await mayReviewUploads(req.admin, event))) {
+      return res.status(403).json({ error: 'Only the gallery owner or a reviewer can review uploads', code: 'REVIEWER_REQUIRED' });
+    }
+
+    const { updated, photoIds: moved } = await moderatePhotos(event.id, photoIds, action);
+    if (updated > 0) {
+      // Approved photos join the guest download bundle.
+      if (action === 'approve') downloadZipService.invalidate(event.id);
+      await logActivity(action === 'approve' ? 'photos_review_approved' : 'photos_review_rejected',
+        { count: updated, photoIds: moved, eventName: event.event_name },
+        event.id,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+    }
+
+    res.json({ updated, moderation: await moderationCounts(event.id) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to review photos');
   }
 });
 
@@ -1357,7 +1405,16 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     let query = db('photos')
       .where({ 'photos.event_id': eventId })
       .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-      .select('photos.*', 'photo_categories.name as pc_name', 'photo_categories.slug as pc_slug');
+      // The account that uploaded it (issue 743), shown on photos under review.
+      .leftJoin('admin_users as uploader', 'photos.uploaded_by_admin_id', 'uploader.id')
+      .select('photos.*', 'photo_categories.name as pc_name', 'photo_categories.slug as pc_slug',
+        'uploader.username as uploader_username');
+
+    // Review of team members' uploads (issue 743): the photos waiting for
+    // the owner, or the ones the owner turned down.
+    if (MODERATION_STATUSES.includes(req.query.moderation)) {
+      query = query.where('photos.moderation_status', req.query.moderation);
+    }
 
     // Filter by category_id
     if (category_id !== undefined && category_id !== '' && category_id !== '0') {
@@ -1491,6 +1548,12 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
           .where('photo_admin_marks.admin_id', req.admin.id)
           .whereIn('photo_admin_marks.color_label', requestedMyColorLabels);
       }));
+    }
+    // Approve / reject (issue 744): approved, rejected and/or undecided,
+    // comma-separated — the same condition the export filter applies.
+    const requestedDecisions = normalizeDecisionFilter(req.query.decision);
+    if (requestedDecisions.length > 0) {
+      feedbackConditions.push(qb => whereDecision(qb, requestedDecisions));
     }
     if (feedbackConditions.length > 0) {
       if (logic === 'OR') {
@@ -1627,6 +1690,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         like_count: photo.like_count || 0,
         favorite_count: photo.favorite_count || 0,
         color_label_count: photo.color_label_count || 0,
+        // Approve / reject tallies across guests (issue 744).
+        approved_count: photo.approved_count || 0,
+        rejected_count: photo.rejected_count || 0,
         color_labels: colorLabelMap[photo.id] || {},
         dominant_color_label: dominantColorLabel(colorLabelMap[photo.id]),
         // The requesting admin's own mark — never the whole team's, and never
@@ -1643,7 +1709,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // event's show-to-guests switch says.
         credit_name: photo.credit_name || null,
         credit_source: photo.credit_source || null,
-        uploaded_by: photo.uploaded_by === 'guest' ? 'guest' : 'admin'
+        uploaded_by: photo.uploaded_by === 'guest' ? 'guest' : 'admin',
+        // Review of team members' uploads (issue 743): null, 'pending' or
+        // 'rejected', and the admin account that ran the upload.
+        moderation_status: photo.moderation_status || null,
+        uploaded_by_admin: photo.uploaded_by_admin_id
+          ? { id: photo.uploaded_by_admin_id, username: photo.uploader_username || null }
+          : null,
       }))
     });
   } catch (error) {
@@ -1852,7 +1924,16 @@ router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requi
 // ============================================
 
 // Initialize a chunked upload
-router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
+const canonicalChunkEvent = (req, res, next) => {
+  const id = Number(req.params.eventId);
+  if (!/^\d+$/.test(req.params.eventId) || !Number.isSafeInteger(id) || id < 1) {
+    if (!req.readableEnded) res.set('Connection', 'close');
+    return res.status(404).json({ error: 'Event not found' });
+  }
+  req.params.eventId = String(id);
+  next();
+};
+router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
   try {
     const { eventId } = req.params;
     const { filename, fileSize, totalChunks } = req.body;
@@ -1869,20 +1950,6 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
     }
 
 
-    // Validate file size against the configured per-file cap. Hardcoding 10GB
-    // here let the chunked path sidestep general_max_file_size_mb entirely.
-    let maxSize;
-    try {
-      maxSize = await getMaxFileSizeBytes();
-    } catch {
-      maxSize = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
-    }
-    if (fileSize > maxSize) {
-      return res.status(400).json({
-        error: `File too large. Maximum size is ${Math.floor(maxSize / (1024 * 1024))} MB per file.`
-      });
-    }
-
     // The client-declared mimeType is not trusted. It used to be stored on
     // the photo row verbatim and echoed as Content-Type by the gallery
     // routes, so a JPEG/HTML polyglot declared as text/html rendered inline
@@ -1897,25 +1964,33 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
     if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
       return res.status(400).json({ error: 'File type not allowed' });
     }
+    const maxSize = isVideoMimeType(mimeType) ? await getMaxVideoSizeBytes() : await getMaxFileSizeBytes();
+    if (Number(fileSize) > maxSize) {
+      return res.status(400).json({
+        error: `File too large. Maximum size is ${Math.floor(maxSize / (1024 * 1024))} MB per file.`
+      });
+    }
 
     const result = await chunkedUpload.initializeUpload({
       filename,
       fileSize,
       mimeType,
-      eventId: parseInt(eventId),
+      eventId: event.id,
       adminId: req.admin.id,
       totalChunks,
       // The declared fileSize check above is client-controlled; the service
       // enforces this cap on the bytes it actually receives and merges.
-      maxFileSizeBytes: maxSize
+      maxFileSizeBytes: maxSize,
+      admission: true
     });
 
     res.json(result);
   } catch (error) {
     // A declared size and chunk count that do not fit together is the
     // client's mistake, and carries its own status.
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({ error: error.message });
+    uploadQuota.forAdmin(error);
+    if (error.statusCode || error.status) {
+      return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }
     errorResponse(res, error, 500, 'Failed to initialize upload');
   }
@@ -1927,9 +2002,9 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
 // event and admin the call is for and answers 404 unless the upload was
 // initialised by that admin for that event — a leaked id must not let a scoped
 // admin touch another event's upload.
-const uploadOwner = (req) => ({ eventId: parseInt(req.params.eventId), adminId: req.admin.id });
+const uploadOwner = (req) => ({ eventId: Number(req.params.eventId), adminId: req.admin.id });
 
-router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
+router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
   try {
     const { uploadId, chunkIndex } = req.params;
 
@@ -1940,7 +2015,8 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     // memory. Buffering it first meant a rejected 300MB request still cost
     // 300MB of heap.
     const declaredBytes = Number(req.headers['content-length']);
-    const result = await chunkedUpload.uploadChunk(uploadId, parseInt(chunkIndex), req, {
+    const index = /^\d+$/.test(chunkIndex) ? Number(chunkIndex) : NaN;
+    const result = await chunkedUpload.uploadChunk(uploadId, index, req, {
       declaredBytes: Number.isFinite(declaredBytes) ? declaredBytes : undefined,
       owner: uploadOwner(req),
     });
@@ -1950,7 +2026,8 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
     // Client-caused states (unknown/finished/expired upload, bad index, too
     // large) carry their own status. Only a genuinely unexpected error should
     // reach the 500 below and the error log with it.
-    if (error.statusCode) {
+    uploadQuota.forAdmin(error);
+    if (error.statusCode || error.status) {
       // Refusing the body early is the point — but it leaves unread bytes in
       // flight on a connection this response still advertises as keep-alive.
       // Node does not drain them, so the NEXT request on that socket hangs
@@ -1958,7 +2035,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
       if (!req.readableEnded) {
         res.set('Connection', 'close');
       }
-      return res.status(error.statusCode).json({ error: error.message });
+      return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }
     logger.error('Error uploading chunk:', error);
     res.status(500).json({ error: 'Failed to upload chunk' });
@@ -1966,7 +2043,14 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
 });
 
 // Complete chunked upload and process the file
-router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
+router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePermission('photos.upload'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
+  let mergedFile;
+  const cancel = () => {
+    if (req.aborted || !res.writableEnded) chunkedUpload.abortUpload(req.params.uploadId, { owner: uploadOwner(req) })
+      .catch(err => logger.warn('Disconnected chunk upload cleanup unavailable', { error: err.message }));
+  };
+  req.once('aborted', cancel);
+  res.once('close', cancel);
   try {
     const { eventId, uploadId } = req.params;
     const { category_id } = req.body;
@@ -1994,7 +2078,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     }
 
     // Complete the chunked upload (merge chunks)
-    const mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
+    mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
 
     // Process the merged file as a regular upload
     const fileObj = {
@@ -2011,7 +2095,9 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       mergedFile.eventId,
       'admin',
       category_id || null,
-      placementColumns(placement)
+      // Same uploader + review columns as the batch route (issue 743).
+      { ...placementColumns(placement), ...(await adminUploadColumns(req.admin, event)) },
+      mergedFile.uploadReservation
     );
     await afterUploadPlacement(mergedFile.eventId, placement, uploadedPhotos.length,
       { type: 'admin', id: req.admin.id, name: req.admin.username });
@@ -2036,16 +2122,24 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   } catch (error) {
     // Same rule as the chunk route: a tagged status is a client-caused state
     // (unknown/expired upload, missing chunks), not a server fault.
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({ error: error.message });
+    uploadQuota.forAdmin(error);
+    if (error.statusCode || error.status) {
+      return res.status(error.statusCode || error.status).json({ error: error.message, code: error.code });
     }
     logger.error('Error completing chunked upload:', error);
     res.status(500).json({ error: 'Failed to complete upload' });
+  } finally {
+    req.removeListener('aborted', cancel);
+    res.removeListener('close', cancel);
+    if (mergedFile?.uploadReservation) {
+      await chunkedUpload.finishUpload(req.params.uploadId, { owner: uploadOwner(req) })
+        .catch(err => logger.warn('Chunk upload cleanup unavailable; admission retained', { error: err.message }));
+    }
   }
 });
 
 // Get upload status
-router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermission('photos.view'), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
   try {
     const { uploadId } = req.params;
 
@@ -2062,7 +2156,9 @@ router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermis
 });
 
 // Abort chunked upload
-router.delete('/:eventId/chunked-upload/:uploadId', adminAuth, requirePermission('photos.delete'), requireEventOwnership, async (req, res) => {
+// This removes only the caller's uncommitted upload staging, never a photo
+// row. Upload-only principals must be able to cancel their own admission.
+router.delete('/:eventId/chunked-upload/:uploadId', adminAuth, requirePermission(['photos.upload', 'photos.delete']), canonicalChunkEvent, requireEventOwnership, async (req, res) => {
   try {
     const { uploadId } = req.params;
 

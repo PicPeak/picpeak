@@ -1,6 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
-const sharp = require('sharp');
+const sharp = require('../services/isolatedSharp');
 const logger = require('../utils/logger');
 
 /**
@@ -28,7 +28,7 @@ async function validateUploadedFile(filePath) {
         }).metadata();
       } catch (metadataError) {
         // If metadata reading fails, the file is likely incomplete
-        throw new Error(`Invalid image file: ${metadataError.message}`);
+        throw Object.assign(new Error(`Invalid image file: ${metadataError.message}`), { code: metadataError.code, imageLimit: metadataError.imageLimit, imageMax: metadataError.imageMax });
       }
       
       if (!metadata || !metadata.width || !metadata.height) {
@@ -49,7 +49,7 @@ async function validateUploadedFile(filePath) {
           .resize(10, 10) // Try to resize to very small size
           .toBuffer();
       } catch (decodeError) {
-        throw new Error(`Image decode failed - file may be corrupted: ${decodeError.message}`);
+        throw Object.assign(new Error(`Image decode failed - file may be corrupted: ${decodeError.message}`), { code: decodeError.code, imageLimit: decodeError.imageLimit, imageMax: decodeError.imageMax });
       }
       
       return true;
@@ -72,17 +72,31 @@ async function validateUploadedFiles(req, res, next) {
   
   const validFiles = [];
   const invalidFiles = [];
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+  const entries = req.files.filter(file => imageExtensions.includes(path.extname(file.path).toLowerCase())).map(file => file.path);
+  let validated = null;
+  if (entries.length >= 8) {
+    try { validated = new Map((await sharp.metadataBatch(entries, { validate: true, signal: req.publicUploadReservation?.signal })).map(result => [result.input, result])); }
+    catch (error) { validated = null; } // Each file is then checked on its own, below.
+  }
   
   // Validate each file
   for (const file of req.files) {
     try {
-      await validateUploadedFile(file.path);
+      const cached = validated?.get(file.path);
+      if (cached?.error) throw Object.assign(new Error(cached.error.message), cached.error);
+      const stat = cached && await fs.stat(file.path);
+      if (!cached || !Object.entries(cached.fingerprint).every(([key, value]) => stat[key] === value)) await validateUploadedFile(file.path);
       validFiles.push(file);
     } catch (error) {
+      // A busy or unavailable image worker says nothing about the file: it is
+      // kept, and background processing decides.
+      if (require('../services/imageResourcePolicy').isTransient(error)) { validFiles.push(file); continue; }
       logger.warn(`Removing invalid upload ${file.originalname}: ${error.message}`);
       invalidFiles.push({
         filename: file.originalname,
-        error: error.message
+        error: error.message,
+        ...require('../services/imageResourcePolicy').describe(error)
       });
       
       // Delete the invalid file

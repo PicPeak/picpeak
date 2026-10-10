@@ -203,7 +203,10 @@ async function writeHistory(trx, table, action, before, after, context) {
   if (action === 'updated' && Object.keys(changes).length === 0) return;
   const [documentType, documentId] = config.document(row);
   const actor = normalizeActor(context.actor);
-  await trx('accounting_change_history').insert({
+  // Parent ownership/permission was checked in this same audited transaction.
+  // A deletion has removed the FK target by this point; keep its append-only
+  // audit entry without granting the caller an unscoped history query.
+  await require('../database/crmAccess').withTrustedCrmAccess('authorized accounting audit append', () => trx('accounting_change_history').insert({
     document_type: documentType,
     document_id: Number(documentId),
     entity_type: config.entity,
@@ -215,7 +218,7 @@ async function writeHistory(trx, table, action, before, after, context) {
     actor_name: actor.name,
     source: context.source ? String(context.source).slice(0, 100) : null,
     created_at: new Date().toISOString(),
-  });
+  }));
 }
 
 /**

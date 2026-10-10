@@ -19,6 +19,7 @@ import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { systemHealthService, type StuckEmail } from '../../services/systemHealth.service';
+import { mailPolicyMessage } from '../../utils/mailErrors';
 
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
@@ -166,7 +167,7 @@ export const SystemHealthPage: React.FC = () => {
                     'Not running on this instance. Queued emails are written to the database but nothing is sending them.')
                   : processorState === 'degraded'
                     ? t('systemHealth.processor.degraded',
-                      'Running, but the last pass could not send: {{error}}', { error: processor.lastError })
+                      'Running, but the last pass could not send: {{error}}', { error: mailPolicyMessage(processor.lastErrorCode, t) || processor.lastError })
                     : t('systemHealth.processor.running', 'Running.')}
               </p>
               <p className="text-xs text-muted mt-1">
@@ -257,6 +258,30 @@ export const SystemHealthPage: React.FC = () => {
 
       {/* Where the key for signing evidence comes from (#1446) — never the key
           itself. Shown while contracts are on, or once a key exists. */}
+      {!isLoading && data?.backupAuthentication && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-muted" />
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-heading">{t('systemHealth.backupAuthentication.title')}</h2>
+              <p className="text-sm text-body mt-1">
+                {t(data.backupAuthentication.signingKey.ready
+                  ? 'systemHealth.backupAuthentication.keyReady' : 'systemHealth.backupAuthentication.keyMissing')}
+                {data.backupAuthentication.signingKey.keyId && (
+                  <span className="font-mono"> · {data.backupAuthentication.signingKey.keyId}</span>
+                )}
+              </p>
+              <p className="text-sm text-body mt-1">
+                {t(data.backupAuthentication.latestManifest.authenticated
+                  ? 'systemHealth.backupAuthentication.verified'
+                  : data.backupAuthentication.latestManifest.state === 'legacy'
+                    ? 'systemHealth.backupAuthentication.legacy' : 'systemHealth.backupAuthentication.unverified')}
+              </p>
+              <p className="text-xs text-soft mt-2">{t('systemHealth.backupAuthentication.hint')}</p>
+            </div>
+          </div>
+        </Card>
+      )}
       {!isLoading && data?.evidenceKey && (flags.contracts || data.evidenceKey.source !== 'none') && (
         <Card padding="lg" className="mb-4">
           <div className="flex items-start gap-3">

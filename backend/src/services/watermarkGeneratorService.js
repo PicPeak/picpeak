@@ -96,12 +96,19 @@ class WatermarkGeneratorService {
 
       if (result.success) {
         // Update database with watermark path
-        await db('photos')
-          .where({ id: photoId })
-          .update({
-            watermark_path: result.watermarkPath,
-            watermark_generated_at: db.fn.now()
-          });
+        const attempt = require('./mediaAttemptContext').current();
+        await attempt?.assertCurrent();
+        const query = attempt ? require('./mediaAttemptService').guard(attempt) : db('photos').where({ id: photoId });
+        const written = await query.update({
+          watermark_path: result.watermarkPath,
+          watermark_generated_at: db.fn.now()
+        });
+        if (attempt) {
+          const { getStorage } = require('./storage');
+          // A lost claim removes its own file; a kept one, its predecessor's.
+          if (!written) await getStorage().delete(result.watermarkPath).catch(() => {});
+          else await require('./mediaAttemptService').dropSuperseded(getStorage(), photo.watermark_path, result.watermarkPath);
+        }
       }
 
       return result;

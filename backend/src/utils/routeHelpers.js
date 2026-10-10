@@ -99,6 +99,12 @@ const errorResponse = (res, error, statusCode = 500, publicMessage) => {
     error: error instanceof Error ? error.message : error,
     stack: error instanceof Error ? error.stack : undefined
   });
+  // The image worker said "not now" (busy, unavailable, deadline): the same
+  // request can succeed in a moment, so say that instead of a 500.
+  if (require('../services/imageResourcePolicy').isTransient(error)) {
+    res.set({ 'Retry-After': String(error.retryAfter || 5), 'Cache-Control': 'no-store' });
+    return res.status(503).json({ error: 'Image processing is busy, try again shortly', code: error.code });
+  }
   res.status(statusCode).json({ error: message });
 };
 

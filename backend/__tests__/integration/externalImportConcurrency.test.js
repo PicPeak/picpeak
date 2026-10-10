@@ -51,16 +51,18 @@ describe('concurrent external imports (#1162)', () => {
       adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester', roleName: 'admin' }; next(); },
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
+      ...jest.requireActual('../../src/middleware/permissions'),
       requirePermission: () => (_req, _res, next) => next(),
     }));
     jest.doMock('../../src/middleware/ownership', () => ({
+      ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
 
     // The window. In production this is a real decode of a NAS-hosted file —
     // hundreds of milliseconds during which the row we just proved absent can
     // appear. Standing in for the other run here makes that deterministic.
-    jest.doMock('sharp', () => () => ({
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({
       metadata: async () => {
         if (stealDuringMetadata) {
           const { db: liveDb } = require('../../src/database/db');
@@ -84,6 +86,7 @@ describe('concurrent external imports (#1162)', () => {
     }));
 
     ({ db } = await require('./helpers/crmDb').bootCrmDb());
+    await require('./helpers/externalMediaFixture').seedExternalAdminFixture(db);
 
     app = express();
     app.use(express.json());

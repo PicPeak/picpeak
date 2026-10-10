@@ -149,11 +149,15 @@ describe('video poster-frame note and retry (issue 1430)', () => {
       expect(res.status).toBe(409);
     });
 
-    it('still takes a failed row', async () => {
+    it('still takes a failed row, and starts its attempts over', async () => {
+      // As the background processor leaves a photo that used up its attempts.
+      await db('photos').where({ id: failedId }).update({
+        processing_attempts: 5, processing_retry_at: new Date(Date.now() + 60000).toISOString(),
+      });
       const res = await retry(failedId);
       expect(res.status).toBe(200);
       expect(await db('photos').where({ id: failedId }).first()).toMatchObject({
-        processing_status: 'pending', processing_error: null,
+        processing_status: 'pending', processing_error: null, processing_attempts: 0, processing_retry_at: null,
       });
     });
 

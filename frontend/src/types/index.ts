@@ -3,6 +3,14 @@
 // Uploader names (#1561).
 export type GuestNameMode = 'off' | 'optional' | 'required';
 
+/** An admin account on a gallery's team (issue 743). */
+export interface AssignedAdmin {
+  id: number;
+  username: string;
+  /** The role's display name. */
+  role_name: string | null;
+}
+
 export interface Event {
   id: number;
   slug: string;
@@ -106,6 +114,16 @@ export interface Event {
   // Set when the API withheld the gallery links because the admin sees this
   // event but cannot act on it (another owner's gallery).
   share_secrets_hidden?: boolean;
+  // Team members (issue 743): admin accounts assigned to the gallery, from
+  // the event details. Only the owner changes them (can_manage_assignments);
+  // the owner or a photos.review holder reviews the uploads held by
+  // review_contributor_uploads (can_review_uploads).
+  assigned_admins?: AssignedAdmin[];
+  // The owner's admin id; null for a legacy ownerless gallery.
+  created_by?: number | null;
+  can_manage_assignments?: boolean;
+  can_review_uploads?: boolean;
+  review_contributor_uploads?: boolean | number;
   // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk
   // link minted on demand; null token = disabled. Settings drive the running
   // projector and can be changed live.
@@ -276,6 +294,12 @@ export interface Photo {
   // else was visible in fullscreen and invisible on the tile. Empty when the
   // gallery has show_feedback_to_guests off — it is other people's feedback.
   other_color_labels?: string[];
+  // Approve / reject (issue 744). The tallies follow show_feedback_to_guests
+  // like color_label_count; the viewer's own decision and reason do not.
+  approved_count?: number;
+  rejected_count?: number;
+  my_decision?: 'approved' | 'rejected' | null;
+  my_decision_reason?: string | null;
 }
 
 // Download resolutions (#858).
@@ -442,6 +466,9 @@ export interface AdminUser {
   createdAt?: string | null;
   updatedAt?: string | null;
   createdByUsername?: string;
+  // Photo credit for the account's uploads when a file has no EXIF name
+  // (issue 743).
+  creditName?: string | null;
   /**
    * Whether a first SSO login may link to this admin by email
    * (admin_users.email_link_eligible, migration 227). Undefined on a backend
