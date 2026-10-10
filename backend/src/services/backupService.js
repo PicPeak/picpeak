@@ -12,6 +12,7 @@ const cronParser = require('cron-parser');
 const { db } = require('../database/db');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
@@ -622,7 +623,9 @@ const FLAG_ALIASES = {
 
 // Filesystem noise that must never land in a backup: NFS silly-rename
 // artifacts (issue #871 showed .nfs* files uploaded to S3) and OS metadata.
-const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db'];
+// .picpeak-maintenance is the private workspace of a portable restore (the
+// uploaded archive, its extracted copy, undo copies): never backup content.
+const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db', '.picpeak-maintenance'];
 
 /**
  * Resolve the walker's target subdirectories from `backup_paths`.
@@ -2160,7 +2163,10 @@ service.getDatabaseBackupInfo = getDatabaseBackupInfoInternal;
 service.getFilesToBackup = getFilesToBackupInternal;
 // A backup covers the whole install whoever starts it (the schedule, or an
 // admin holding backup.create), so it never runs under the caller's CRM scope.
-service.runBackup = (isManual) => withTrustedCrmAccess('file backup', () => runBackupInternal(isManual));
+// It is tracked application work: a portable restore waits for it to end.
+service.runBackup = (isManual) => applicationWork.track(
+  'file backup', () => withTrustedCrmAccess('file backup', () => runBackupInternal(isManual)),
+);
 service.startBackupService = startBackupService;
 service.stopBackupService = stopBackupService;
 service.triggerManualBackup = triggerManualBackup;

@@ -1,11 +1,12 @@
 const cron = require('node-cron');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 /** One owner for a periodic job, with no overlapping runs and a draining stop. */
 function scheduledTask(run, { schedule, interval, initialDelay } = {}) {
   let started = false, timer = null, first = null, running = null;
   const tick = () => {
     if (!started || running) return running;
-    running = Promise.resolve().then(run).catch(error => {
+    running = applicationWork.track('scheduled task', run).catch(error => {
       logger.error('Scheduled task failed', { error: error.message });
     }).finally(() => { running = null; });
     return running;
