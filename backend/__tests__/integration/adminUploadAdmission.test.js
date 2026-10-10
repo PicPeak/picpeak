@@ -17,7 +17,7 @@ const originalLimits = process.env.ADMIN_UPLOAD_LIMITS_JSON;
 const GiB = 1024 * 1024 * 1024;
 // 4 TiB free of 8 TiB: admission outcomes must not depend on the CI disk.
 const disk = (freeBytes = 4096 * GiB) => jest.spyOn(fs.promises, 'statfs')
-  .mockResolvedValue({ bavail: Math.floor(freeBytes / 4096), bsize: 4096, blocks: 2 * 1024 * 1024 * 1024, ffree: 100000000 });
+  .mockResolvedValue({ bavail: Math.floor(freeBytes / 4096), bsize: 4096, blocks: 2 * 1024 * 1024 * 1024, files: 10000000, ffree: 100000000 });
 const idOf = rows => rows[0]?.id || rows[0];
 const setting = (key, value) => db('app_settings').insert({
   setting_key: key, setting_value: JSON.stringify(value), setting_type: 'general',
@@ -134,7 +134,7 @@ test('an actual MP4 above the photo cap retains its configured video cap and pen
 test('the defaults carry a 2000-photo wedding: no hourly, lifetime or per-gallery cap on authenticated uploads', async () => {
   disk();
   const limits = quota.configuration('admin');
-  expect(limits).toEqual({ headroomBytes: 512 * 1024 * 1024, headroomPercent: 5, headroomFiles: 1024, requestTimeoutMs: 600000,
+  expect(limits).toEqual({ headroomBytes: 512 * 1024 * 1024, headroomPercent: 0, headroomFiles: 1024, requestTimeoutMs: 600000,
     stagedFiles: 50000, accountRequests: 16, requests: 64 });
   // 700 batches of 90 MiB in one hour: 61 GiB. The previous defaults stopped
   // at 10 GiB/hour, 600 requests/hour and 100 GiB per gallery.
@@ -155,7 +155,8 @@ test('one resumable file of any allowed size is admitted when the disk has room,
   process.env.ADMIN_UPLOAD_LIMITS_JSON = '{"stagedBytes":1048576}';
   expect((await initChunk(9 * GiB, 'ceremony.mp4')).status).toBe(200);
   for (const id of chunkUploads) await require('../../src/services/chunkedUploadService').abortUpload(id);
-  fs.promises.statfs.mockRestore(); disk(20 * GiB);
+  // Two local copies of 9 GiB leave less than the 512 MiB floor on 18 GiB.
+  fs.promises.statfs.mockRestore(); disk(18 * GiB);
   const low = await initChunk(9 * GiB, 'ceremony.mp4');
   expect(low.status).toBe(507); expect(low.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(low.body.error).toMatch(/disk space/); expect(low.body.error).not.toMatch(/gallery owner/);
@@ -467,7 +468,7 @@ test('a stalled chunk body times out, closes its writer, retains its resumable a
 });
 test('resumed chunk receipt rechecks disk headroom before reading a body or starting another writer', async () => {
   const init = await initChunk(jpeg.length);
-  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4096, blocks: 1000000, ffree: 100000 });
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4096, blocks: 1000000, files: 10000000, ffree: 100000 });
   const res = await sendChunk(init.body.uploadId, jpeg);
   expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(stagedBytes).toBe(0);
@@ -477,7 +478,7 @@ test('merge rechecks inode headroom and cannot leave an unreserved partial copy'
   const init = await initChunk(jpeg.length);
   expect((await sendChunk(init.body.uploadId, jpeg)).status).toBe(200);
   const hold = await db('public_upload_requests').where({ active: 1 }).first();
-  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 1000000, ffree: 1 });
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 1000000, files: 10000000, ffree: 1 });
   const res = await completeChunk(init.body.uploadId);
   expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(storage.putFromFile).not.toHaveBeenCalled();

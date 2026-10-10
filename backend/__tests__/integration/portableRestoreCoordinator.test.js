@@ -243,6 +243,32 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       await drive('restoring', a);
     });
 
+    const crmPolicy = require('fs').existsSync(require('path').resolve(__dirname, '../../src/database/crmAccess.js'))
+      ? require('../../src/database/crmAccess') : null;
+    (crmPolicy ? it : it.skip)('runs the worker launch and the restart of services as trusted maintenance, not under the uploading admin', async () => {
+      let depth = 0;
+      const entered = [];
+      const trustedAccess = jest.spyOn(crmPolicy, 'withTrustedCrmAccess').mockImplementation(async (reason, run) => {
+        depth += 1;
+        try { return await run(); } finally { depth -= 1; }
+      });
+      try {
+        const a = create();
+        a.resumeServices.mockImplementation(async () => { entered.push(['resume', depth]); });
+        worker.startWorker.mockImplementationOnce(async args => { entered.push(['worker', depth]); await args.onStart(); throw new Error('worker failed'); });
+        terminal.result = { outcome: 'rolled_back', summary: {} };
+        terminal.resolve();
+        await a.coordinator.activate();
+        // The reservation comes from an admin's request, which carries no trusted access.
+        await crmPolicy.withoutCrmContext(() => a.coordinator.start({ archivePath: require('path').join(directory, 'x') }).catch(() => {}));
+        await a.coordinator.start({ archivePath: await upload(), operatorId: 10 });
+        await drive('open', a);
+        await a.coordinator.tick();
+        expect(entered).toEqual([['worker', 1], ['resume', 1]]);
+        expect(trustedAccess).toHaveBeenCalledWith('coordinated portable restore', expect.any(Function));
+      } finally { trustedAccess.mockRestore(); }
+    });
+
     it('a crashed worker is recovered once and the instance reopens when recovery rolls back', async () => {
       const a = create();
       await a.coordinator.activate();

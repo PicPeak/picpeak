@@ -171,7 +171,7 @@ describe('authenticated upload admission', () => {
   });
 
   it('refuses an upload the disk has no headroom for', async () => {
-    jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4096, blocks: 1000000, ffree: 100000 });
+    jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1, bsize: 4096, blocks: 1000000, files: 10000000, ffree: 100000 });
     const res = await addFiles();
     expect(res.status).toBe(507);
     expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');

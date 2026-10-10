@@ -244,8 +244,23 @@ test('low disk capacity refuses before body staging', async () => {
   const res = await attach(galleryRequest(), 'photos'); expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(mockStorage.putFromFile).not.toHaveBeenCalled();
 });
+test('a nearly full large volume with gigabytes free keeps accepting uploads by default', async () => {
+  // 10 TiB volume, 2% free (about 200 GiB): far above the absolute floor.
+  const blocks = 10 * 1024 * 1024 * 1024 * 1024 / 4096;
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: Math.floor(blocks * 0.02), bsize: 4096, blocks, files: 10000000, ffree: 5000000 });
+  expect(quota.configuration().headroomPercent).toBe(0);
+  const res = await attach(galleryRequest(), 'photos'); expect(res.status).not.toBe(507);
+  limits({ headroomPercent: 5 });
+  const strict = await attach(galleryRequest(), 'photos'); expect(strict.status).toBe(507);
+});
+test('a filesystem without an inode table, or without usable size figures, is not refused', async () => {
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 2000000, files: 0, ffree: 0 });
+  expect((await attach(galleryRequest(), 'photos')).status).not.toBe(507);
+  fs.promises.statfs.mockResolvedValue({ bavail: 0, bsize: 0, blocks: 0, files: 0, ffree: 0 });
+  expect((await attach(galleryRequest(), 'photos')).status).not.toBe(507);
+});
 test('free bytes do not bypass inode headroom', async () => {
-  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 2000000, ffree: 2 });
+  jest.spyOn(fs.promises, 'statfs').mockResolvedValue({ bavail: 1000000, bsize: 4096, blocks: 2000000, files: 10000000, ffree: 2 });
   const res = await attach(galleryRequest(), 'photos'); expect(res.status).toBe(507); expect(res.body.code).toBe('UPLOAD_STORAGE_LOW');
   expect(mockStorage.putFromFile).not.toHaveBeenCalled();
 });

@@ -184,9 +184,12 @@ describe('portable restore: validate before fencing, verify tables, operator res
     });
   });
 
-  it('keeps the restore workspace out of file backups and rsync runs', () => {
+  it('keeps the restore workspace out of file backups and rsync runs', async () => {
     const backup = require('../../src/services/backupService');
-    const args = backup.buildRsyncArgs({ backup_rsync_host: 'backup.example.com', backup_rsync_path: '/backups' }, [], process.env.STORAGE_PATH);
+    // The pinned connection resolves the host; this test is about the excludes.
+    jest.spyOn(require('../../src/utils/rsyncConnection'), 'resolveRsyncConnection')
+      .mockResolvedValue({ rsyncShell: 'ssh -p 22', rsyncTarget: 'backup.example.com' });
+    const args = await backup.buildRsyncArgs({ backup_rsync_host: 'backup.example.com', backup_rsync_path: '/backups' }, [], process.env.STORAGE_PATH);
     expect(args[args.indexOf('.picpeak-maintenance') - 1]).toBe('--exclude');
   });
 });
