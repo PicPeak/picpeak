@@ -17,8 +17,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Clock, AlertTriangle } from 'lucide-react';
-import { Button, Card, LocalizedDateInput, TimeField } from '../common';
+import { Clock } from 'lucide-react';
+import {
+  Button, Card, LocalizedDateInput, TimeField, useConfirm, Notice, EmptyState, ErrorState,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
+} from '../common';
 import { DecimalInput } from '../common/DecimalInput';
 import { parseLocaleDecimal, parseDuration } from '../../utils/parsers';
 import { customerAdminService } from '../../services/customerAdmin.service';
@@ -51,6 +54,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
   customerId, customerHourlyRateMinor, billingCadence, onHourlyRateChange, compact,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { flags } = useFeatureFlags();
@@ -85,11 +89,12 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
     setEndTime(`${eh}:${em}`);
   };
 
-  const { data: entries = [], isLoading } = useQuery({
+  const { data: entriesData, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['admin-customer-hour-entries', customerId],
     queryFn: () => customerAdminService.listHourEntries(customerId),
     enabled: Number.isFinite(customerId) && customerId > 0,
   });
+  const entries = useMemo(() => entriesData ?? [], [entriesData]);
 
   // Pull the configured default currency so the hint can show
   // "{{currency}} 150" instead of the hardcoded "CHF 150". Same cache
@@ -192,7 +197,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
     toast.success(msg);
     // Open the new scheduled invoice so the admin can add other line
     // items in addition to the hours before it ships.
-    if (invoiceId) navigate(`/admin/clients/bills/${invoiceId}/edit`);
+    if (invoiceId) navigate(`/admin/clients/bills/${invoiceId}`);
   };
 
   const runBill = async (includeRebills: boolean) => {
@@ -294,30 +299,20 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
               </p>
             </>
           ) : noRateConfigured ? (
-            <div className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
-              <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
-                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-medium">
-                    {t('customers.hours.noRate.title', 'No hourly rate configured')}
-                  </p>
-                  <p className="mt-0.5 text-amber-700 dark:text-amber-300">
-                    {t('customers.hours.noRate.body',
-                      'Logging needs a rate. Set one for this customer, type a per-entry override below, or configure an install-wide default.')}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <Link to={`/admin/clients/accounts/${customerId}`}
-                      className="text-accent-dark hover:underline font-medium">
-                      {t('customers.hours.noRate.setForCustomer', 'Set a rate for this customer')}
-                    </Link>
-                    <Link to="/admin/settings?tab=businessProfile" target="_blank" rel="noopener noreferrer"
-                      className="text-accent-dark hover:underline font-medium">
-                      {t('customers.hours.noRate.setInstallDefault', 'Set an install-wide default')}
-                    </Link>
-                  </div>
-                </div>
+            <Notice tone="warning" title={t('customers.hours.noRate.title', 'No hourly rate configured')}>
+              {t('customers.hours.noRate.body',
+                'Logging needs a rate. Set one for this customer, type a per-entry override below, or configure an install-wide default.')}
+              <div className="mt-2 flex flex-wrap gap-3">
+                <Link to={`/admin/clients/accounts/${customerId}`}
+                  className="text-accent hover:underline font-medium">
+                  {t('customers.hours.noRate.setForCustomer', 'Set a rate for this customer')}
+                </Link>
+                <Link to="/admin/settings?tab=businessProfile" target="_blank" rel="noopener noreferrer"
+                  className="text-accent hover:underline font-medium">
+                  {t('customers.hours.noRate.setInstallDefault', 'Set an install-wide default')}
+                </Link>
               </div>
-            </div>
+            </Notice>
           ) : (
             <p className="text-sm text-heading">
               <span className="tabular-nums font-medium">
@@ -413,7 +408,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
         />
         <div className="mt-3 flex items-center justify-end gap-3">
           {noRateConfigured && !overrideTyped && (
-            <span className="text-xs text-amber-700 dark:text-amber-300">
+            <span className="text-xs text-warning-text">
               {t('customers.hours.form.needRate', 'Set a rate or enter an override to log time.')}
             </span>
           )}
@@ -433,24 +428,27 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
           visible in compact mode so the customer-detail page can
           still trigger the on-demand billing action. */}
       {!isMonthly && unbilledCount > 0 && canBill && (
-        <div className="mb-4 flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 rounded p-3">
-          <span className="text-sm">
-            {t('customers.hours.unbilledCount',
-              '{{count}} unbilled entries totaling {{total}}',
-              {
-                count: unbilledCount,
-                total: unbilledTotalMajor.toFixed(2),
-              })}
-          </span>
-          <Button
-            variant="primary"
-            disabled={billBusy}
-            isLoading={billBusy}
-            onClick={handleBillHours}
-          >
-            {t('customers.hours.billButton', 'Create draft invoice')}
-          </Button>
-        </div>
+        <Notice
+          tone="info"
+          className="mb-4"
+          action={
+            <Button
+              variant="primary"
+              disabled={billBusy}
+              isLoading={billBusy}
+              onClick={handleBillHours}
+            >
+              {t('customers.hours.billButton', 'Create draft invoice')}
+            </Button>
+          }
+        >
+          {t('customers.hours.unbilledCount',
+            '{{count}} unbilled entries totaling {{total}}',
+            {
+              count: unbilledCount,
+              total: unbilledTotalMajor.toFixed(2),
+            })}
+        </Notice>
       )}
 
       <CrossAddInvoiceDialog
@@ -465,90 +463,91 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
       {/* Entry list table. */}
       {isLoading ? (
         <p className="text-sm text-muted">{t('common.loading', 'Loading…')}</p>
+      ) : isError && !entriesData ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
       ) : entries.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.hours.empty', 'No entries logged yet.')}
-        </p>
+        <EmptyState size="inline" title={t('customers.hours.empty', 'No entries logged yet.')} />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase text-muted">
-                <th className="py-2 pr-3">{t('customers.hours.col.date', 'Date')}</th>
-                <th className="py-2 pr-3">{t('customers.hours.col.range', 'Time')}</th>
-                <th className="py-2 pr-3 text-right">{t('customers.hours.col.hours', 'Hours')}</th>
-                <th className="py-2 pr-3 text-right">{t('customers.hours.col.rate', 'Rate')}</th>
-                <th className="py-2 pr-3 text-right">{t('customers.hours.col.total', 'Total')}</th>
-                <th className="py-2 pr-3">{t('customers.hours.col.note', 'Note')}</th>
-                <th className="py-2 pr-3">{t('customers.hours.col.status', 'Status')}</th>
-                <th className="py-2 pr-3"></th>
+          <Table>
+            <TableHead>
+              <tr>
+                <TableHeaderCell>{t('customers.hours.col.date', 'Date')}</TableHeaderCell>
+                <TableHeaderCell>{t('customers.hours.col.range', 'Time')}</TableHeaderCell>
+                <TableHeaderCell align="right">{t('customers.hours.col.hours', 'Hours')}</TableHeaderCell>
+                <TableHeaderCell align="right">{t('customers.hours.col.rate', 'Rate')}</TableHeaderCell>
+                <TableHeaderCell align="right">{t('customers.hours.col.total', 'Total')}</TableHeaderCell>
+                <TableHeaderCell>{t('customers.hours.col.note', 'Note')}</TableHeaderCell>
+                <TableHeaderCell>{t('customers.hours.col.status', 'Status')}</TableHeaderCell>
+                <TableHeaderCell />
               </tr>
-            </thead>
-            <tbody>
+            </TableHead>
+            <TableBody>
               {entries.map((e) => {
                 const rate = e.hourlyRateMinorOverride ?? effectiveDefaultRateMinor ?? 0;
                 const hours = e.durationMinutes / 60;
                 const total = (hours * rate) / 100;
                 const locked = isLocked(e);
                 return (
-                  <tr key={e.id} className="border-t border-line">
-                    <td className="py-1.5 pr-3 tabular-nums">{fmtDate(e.entryDate)}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{fmtTime(e.startTime)}–{fmtTime(e.endTime)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{hours.toFixed(2)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums">{(rate / 100).toFixed(2)}</td>
-                    <td className="py-1.5 pr-3 text-right tabular-nums font-medium">{total.toFixed(2)}</td>
-                    <td className="py-1.5 pr-3 max-w-xs truncate" title={e.description || ''}>
+                  <TableRow key={e.id}>
+                    <TableCell className="tabular-nums">{fmtDate(e.entryDate)}</TableCell>
+                    <TableCell className="tabular-nums">{fmtTime(e.startTime)}–{fmtTime(e.endTime)}</TableCell>
+                    <TableCell align="right">{hours.toFixed(2)}</TableCell>
+                    <TableCell align="right">{(rate / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right" className="font-medium">{total.toFixed(2)}</TableCell>
+                    <TableCell className="max-w-xs truncate" title={e.description || ''}>
                       {e.description || '—'}
-                    </td>
-                    <td className="py-1.5 pr-3">
+                    </TableCell>
+                    <TableCell>
                       {e.status === 'billed' ? (
                         e.invoiceId ? (
                           // Link straight to the invoice so a "Billed: R-…" entry
                           // is one click from its (possibly draft) invoice.
                           <Link
                             to={`/admin/clients/bills/${e.invoiceId}`}
-                            className="text-xs text-green-700 dark:text-green-300 underline hover:no-underline"
+                            className="text-xs text-success-text underline hover:no-underline"
                           >
                             {e.invoiceNumber
                               ? t('customers.hours.status.billedOn', 'Billed: {{number}}', { number: e.invoiceNumber })
                               : t('customers.hours.status.billed', 'Billed')}
                           </Link>
                         ) : (
-                          <span className="text-xs text-green-700 dark:text-green-300">
+                          <span className="text-xs text-success-text">
                             {e.invoiceNumber
                               ? t('customers.hours.status.billedOn', 'Billed: {{number}}', { number: e.invoiceNumber })
                               : t('customers.hours.status.billed', 'Billed')}
                           </span>
                         )
                       ) : (
-                        <span className="text-xs text-amber-700 dark:text-amber-300">
+                        <span className="text-xs text-warning-text">
                           {t('customers.hours.status.unbilled', 'Unbilled')}
                         </span>
                       )}
-                    </td>
-                    <td className="py-1.5 pr-3 text-right">
+                    </TableCell>
+                    <TableCell align="right">
                       <button
                         type="button"
                         disabled={locked || deleteMutation.isPending}
-                        onClick={() => {
-                          if (window.confirm(t('customers.hours.confirmDelete',
-                            'Delete this entry? If it has been billed onto a draft, the matching invoice line will also be removed.') as string)) {
-                            deleteMutation.mutate(e.id);
-                          }
+                        onClick={async () => {
+                          if (!(await confirm({
+                            message: t('customers.hours.confirmDelete',
+                              'Delete this entry? If it has been billed onto a draft, the matching invoice line will also be removed.') as string,
+                            variant: 'danger',
+                            confirmLabel: t('customers.hours.deleteEntry', 'Delete entry') as string,
+                          }))) return;
+                          deleteMutation.mutate(e.id);
                         }}
-                        className="text-xs text-red-600 hover:underline disabled:text-neutral-400 disabled:cursor-not-allowed"
+                        className="text-xs text-danger-text hover:underline disabled:text-faint disabled:cursor-not-allowed"
                         title={locked ? t('customers.hours.locked',
                           'Locked: invoice already armed for send') as string : undefined}
                       >
                         {t('common.delete', 'Delete')}
                       </button>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
       )}
     </Card>
   );

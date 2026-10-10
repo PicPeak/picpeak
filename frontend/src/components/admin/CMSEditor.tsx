@@ -39,7 +39,7 @@ import {
   HelpCircle,
   Save
 } from 'lucide-react';
-import { Button } from '../common';
+import { Button, Modal } from '../common';
 import DOMPurify from 'dompurify';
 import '../../styles/prose-overrides.css';
 
@@ -486,7 +486,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                 onChange={(e) => setLinkUrl(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && addLink()}
                 placeholder={t('cms.editor.linkUrlPlaceholder', 'Enter URL...')}
-                className="flex-1 px-3 py-1 border border-accent-dark/30 bg-shell text-heading rounded-md focus:ring-2 focus:ring-primary-500"
+                className="flex-1 px-3 py-1 border border-accent-dark/30 bg-shell text-heading rounded-md focus:ring-2 focus:ring-accent"
                 autoFocus
               />
               <Button size="sm" onClick={addLink}>{t('cms.editor.addLink', 'Add Link')}</Button>
@@ -537,79 +537,72 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
       </div>
 
       {/* Help Modal */}
-      {showHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-shell text-heading rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold mb-4">
-                {t('cms.editor.helpTitle', 'Editor Help & Keyboard Shortcuts')}
-              </h2>
+      <Modal
+        open={showHelp}
+        onClose={() => setShowHelp(false)}
+        title={t('cms.editor.helpTitle', 'Editor Help & Keyboard Shortcuts')}
+        size="lg"
+        closeOnBackdrop={false}
+        footer={<Button onClick={() => setShowHelp(false)}>{t('common.close', 'Close')}</Button>}
+      >
+        <div className="space-y-4 text-body">
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpFormatting', 'Text Formatting')}</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><kbd>Ctrl+B</kbd> - {t('cms.editor.tool.boldShort', 'Bold')}</div>
+              <div><kbd>Ctrl+I</kbd> - {t('cms.editor.tool.italicShort', 'Italic')}</div>
+              <div><kbd>Ctrl+E</kbd> - {t('cms.editor.tool.inlineCodeShort', 'Inline code')}</div>
+              <div><kbd>Ctrl+K</kbd> - {t('cms.editor.tool.addLinkShort', 'Add link')}</div>
+            </div>
+          </div>
 
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpFormatting', 'Text Formatting')}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+B</kbd> - {t('cms.editor.tool.boldShort', 'Bold')}</div>
-                    <div><kbd>Ctrl+I</kbd> - {t('cms.editor.tool.italicShort', 'Italic')}</div>
-                    <div><kbd>Ctrl+E</kbd> - {t('cms.editor.tool.inlineCodeShort', 'Inline code')}</div>
-                    <div><kbd>Ctrl+K</kbd> - {t('cms.editor.tool.addLinkShort', 'Add link')}</div>
-                  </div>
-                </div>
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpHeadings', 'Headings')}</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><kbd>Ctrl+Alt+1</kbd> - {t('cms.editor.tool.heading1Short', 'Heading 1')}</div>
+              <div><kbd>Ctrl+Alt+2</kbd> - {t('cms.editor.tool.heading2Short', 'Heading 2')}</div>
+              <div><kbd>Ctrl+Alt+3</kbd> - {t('cms.editor.tool.heading3Short', 'Heading 3')}</div>
+              <div><kbd>Ctrl+Alt+4</kbd> - {t('cms.editor.tool.heading4Short', 'Heading 4')}</div>
+              <div><kbd>Ctrl+Alt+5</kbd> - {t('cms.editor.tool.heading5Short', 'Heading 5')}</div>
+              <div><kbd>Ctrl+Alt+6</kbd> - {t('cms.editor.tool.heading6Short', 'Heading 6')}</div>
+            </div>
+          </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpHeadings', 'Headings')}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Alt+1</kbd> - {t('cms.editor.tool.heading1Short', 'Heading 1')}</div>
-                    <div><kbd>Ctrl+Alt+2</kbd> - {t('cms.editor.tool.heading2Short', 'Heading 2')}</div>
-                    <div><kbd>Ctrl+Alt+3</kbd> - {t('cms.editor.tool.heading3Short', 'Heading 3')}</div>
-                    <div><kbd>Ctrl+Alt+4</kbd> - {t('cms.editor.tool.heading4Short', 'Heading 4')}</div>
-                    <div><kbd>Ctrl+Alt+5</kbd> - {t('cms.editor.tool.heading5Short', 'Heading 5')}</div>
-                    <div><kbd>Ctrl+Alt+6</kbd> - {t('cms.editor.tool.heading6Short', 'Heading 6')}</div>
-                  </div>
-                </div>
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpLists', 'Lists & Blocks')}</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><kbd>Ctrl+Shift+8</kbd> - {t('cms.editor.tool.bulletListShort', 'Bullet list')}</div>
+              <div><kbd>Ctrl+Shift+9</kbd> - {t('cms.editor.tool.numberedListShort', 'Numbered list')}</div>
+              <div><kbd>Ctrl+Shift+B</kbd> - {t('cms.editor.tool.blockquoteShort', 'Blockquote')}</div>
+              <div><kbd>Ctrl+Alt+C</kbd> - {t('cms.editor.tool.codeBlockShort', 'Code block')}</div>
+            </div>
+          </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpLists', 'Lists & Blocks')}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Shift+8</kbd> - {t('cms.editor.tool.bulletListShort', 'Bullet list')}</div>
-                    <div><kbd>Ctrl+Shift+9</kbd> - {t('cms.editor.tool.numberedListShort', 'Numbered list')}</div>
-                    <div><kbd>Ctrl+Shift+B</kbd> - {t('cms.editor.tool.blockquoteShort', 'Blockquote')}</div>
-                    <div><kbd>Ctrl+Alt+C</kbd> - {t('cms.editor.tool.codeBlockShort', 'Code block')}</div>
-                  </div>
-                </div>
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpAlignment', 'Text Alignment')}</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>{t('cms.editor.helpAlignmentClick', 'Click alignment buttons in toolbar')}</div>
+              <div>{t('cms.editor.helpAlignmentScope', 'Works on paragraphs and headings')}</div>
+            </div>
+          </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpAlignment', 'Text Alignment')}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>{t('cms.editor.helpAlignmentClick', 'Click alignment buttons in toolbar')}</div>
-                    <div>{t('cms.editor.helpAlignmentScope', 'Works on paragraphs and headings')}</div>
-                  </div>
-                </div>
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpLineBreaks', 'Line Breaks')}</h3>
+            <div className="space-y-1 text-sm">
+              <div><kbd>Enter</kbd> - {t('cms.editor.helpNewParagraph', 'New paragraph')}</div>
+              <div><kbd>Shift+Enter</kbd> - {t('cms.editor.helpLineBreak', 'Line break (preserves formatting)')}</div>
+            </div>
+          </div>
 
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpLineBreaks', 'Line Breaks')}</h3>
-                  <div className="space-y-1 text-sm">
-                    <div><kbd>Enter</kbd> - {t('cms.editor.helpNewParagraph', 'New paragraph')}</div>
-                    <div><kbd>Shift+Enter</kbd> - {t('cms.editor.helpLineBreak', 'Line break (preserves formatting)')}</div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="font-semibold mb-2">{t('cms.editor.helpNavigation', 'Navigation')}</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Z</kbd> - {t('cms.editor.tool.undoShort', 'Undo')}</div>
-                    <div><kbd>Ctrl+Y</kbd> - {t('cms.editor.tool.redoShort', 'Redo')}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <Button onClick={() => setShowHelp(false)}>{t('common.close', 'Close')}</Button>
-              </div>
+          <div>
+            <h3 className="font-semibold text-heading mb-2">{t('cms.editor.helpNavigation', 'Navigation')}</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><kbd>Ctrl+Z</kbd> - {t('cms.editor.tool.undoShort', 'Undo')}</div>
+              <div><kbd>Ctrl+Y</kbd> - {t('cms.editor.tool.redoShort', 'Redo')}</div>
             </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Plus, Search, FolderKanban } from 'lucide-react';
-import { Button, Card, Input, Loading } from '../../../components/common';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Loading, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell } from '../../../components/common';
 import { projectsService, type ProjectSummary } from '../../../services/projects.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { formatMoneyMinor } from '../../../utils/money';
@@ -37,7 +37,7 @@ export const ProjectsListPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [newName, setNewName] = useState('');
 
-  const { data: projects, isLoading } = useQuery({
+  const { data: projects, isLoading, isError, isRefetching, refetch } = useQuery({
     queryKey: ['projects', { search }],
     queryFn: () => projectsService.list({ q: search || undefined }),
   });
@@ -58,9 +58,10 @@ export const ProjectsListPage: React.FC = () => {
   return (
     <div>
       <SectionPageHeader
+        feature="projects"
         icon={FolderKanban}
         title={t('projects.title', 'Project Overview')}
-        description={t('projects.subtitle', 'Group events into projects and see every email, document, gallery and hour in one cockpit.')}
+        description={t('projects.subtitle', 'Group galleries into projects and see every email, document and hour in one cockpit.')}
       />
 
       {/* Inline create */}
@@ -90,7 +91,7 @@ export const ProjectsListPage: React.FC = () => {
 
       {/* Search */}
       <div className="relative mb-3 max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -101,49 +102,57 @@ export const ProjectsListPage: React.FC = () => {
 
       {isLoading ? (
         <Loading />
+      ) : isError && !projects ? (
+        <Card>
+          <ErrorState
+            size="inline"
+            title={t('projects.loadFailed', 'Could not load the projects')}
+            onRetry={() => refetch()}
+            retrying={isRefetching}
+          />
+        </Card>
       ) : !projects || projects.length === 0 ? (
         <Card>
-          <div className="text-center py-10 text-muted">
-            {t('projects.empty', 'No projects yet. Create one above, or events you already have were grouped automatically.')}
-          </div>
+          <EmptyState
+            size="inline"
+            icon={<FolderKanban />}
+            title={search
+              ? t('projects.noMatches', 'No projects match this search')
+              : t('projects.emptyTitle', 'No projects yet')}
+            description={search ? undefined : t('projects.empty', 'Create one above, or galleries you already have were grouped automatically.')}
+          />
         </Card>
       ) : (
-        <div className="rounded-lg border border-line overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-subtle text-left">
-                <tr>
-                  <th className="px-4 py-2 font-medium">{t('projects.col.name', 'Project')}</th>
-                  <th className="px-4 py-2 font-medium">{t('projects.col.customer', 'Customer')}</th>
-                  <th className="px-4 py-2 font-medium text-right">{t('projects.col.events', 'Events')}</th>
-                  <th className="px-4 py-2 font-medium text-right">{t('projects.col.value', 'Value')}</th>
-                  <th className="px-4 py-2 font-medium">{t('projects.col.status', 'Status')}</th>
-                  <th className="px-4 py-2 font-medium">{t('projects.col.updated', 'Updated')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((p: ProjectSummary) => (
-                  <tr
-                    key={p.id}
-                    onClick={() => navigate(`/admin/clients/projects/${p.id}`)}
-                    className="border-t border-line-faint hover:bg-neutral-50 dark:hover:bg-neutral-800/60 cursor-pointer"
-                  >
-                    <td className="px-4 py-2 font-medium text-heading">{p.name}</td>
-                    <td className="px-4 py-2 text-soft">{p.customerEmail || '—'}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{p.eventCount ?? 0}</td>
-                    <td className="px-4 py-2 text-right tabular-nums font-medium text-heading">{formatValuation(p)}</td>
-                    <td className="px-4 py-2">
-                      <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-inset text-body">
-                        {t(`projects.status.${p.status}`, p.status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-muted">{p.updatedAt ? format(p.updatedAt) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeaderCell>{t('projects.col.name', 'Project')}</TableHeaderCell>
+              <TableHeaderCell>{t('projects.col.customer', 'Customer')}</TableHeaderCell>
+              <TableHeaderCell align="right">{t('projects.col.events', 'Galleries')}</TableHeaderCell>
+              <TableHeaderCell align="right">{t('projects.col.value', 'Value')}</TableHeaderCell>
+              <TableHeaderCell>{t('projects.col.status', 'Status')}</TableHeaderCell>
+              <TableHeaderCell>{t('projects.col.updated', 'Updated')}</TableHeaderCell>
+            </tr>
+          </TableHead>
+          <TableBody>
+            {projects.map((p: ProjectSummary) => (
+              <TableRow
+                key={p.id}
+                interactive
+                onClick={() => navigate(`/admin/clients/projects/${p.id}`)}
+              >
+                <TableCell className="font-medium text-heading">{p.name}</TableCell>
+                <TableCell className="text-soft">{p.customerEmail || '—'}</TableCell>
+                <TableCell align="right">{p.eventCount ?? 0}</TableCell>
+                <TableCell align="right" className="font-medium text-heading">{formatValuation(p)}</TableCell>
+                <TableCell>
+                  <Badge>{t(`projects.status.${p.status}`, p.status)}</Badge>
+                </TableCell>
+                <TableCell className="text-muted">{p.updatedAt ? format(p.updatedAt) : '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </div>
   );

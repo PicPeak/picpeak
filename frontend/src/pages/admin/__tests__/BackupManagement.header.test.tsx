@@ -52,7 +52,7 @@ describe('BackupManagement header', () => {
     await renderWithStatus({ lastBackup: failed, lastSuccessfulBackup: completed });
 
     const label = screen.getByText(/backup.status.latestAttemptFailed/);
-    expect(label).toHaveClass('text-red-700');
+    expect(label).toHaveClass('text-danger-text');
     expect(label).toHaveTextContent(`at ${failed.created_at}`);
     expect(screen.getByText(/backup.status.lastSuccessfulBackup/)).toHaveTextContent(`at ${completed.created_at}`);
     expect(screen.queryByText(/backup.status.lastBackup:/)).not.toBeInTheDocument();
@@ -60,12 +60,12 @@ describe('BackupManagement header', () => {
 
   it('shows a running newest attempt in blue', async () => {
     await renderWithStatus({ lastBackup: running, lastSuccessfulBackup: completed });
-    expect(screen.getByText(/backup.status.latestAttemptRunning/)).toHaveClass('text-blue-600');
+    expect(screen.getByText(/backup.status.latestAttemptRunning/)).toHaveClass('text-info-text');
   });
 
   it('shows a completed newest attempt as the last backup, in green', async () => {
     await renderWithStatus({ lastBackup: completed, lastSuccessfulBackup: completed });
     const label = screen.getByText(/backup.status.lastBackup:/);
-    expect(label.previousElementSibling).toHaveClass('text-green-500');
+    expect(label.previousElementSibling).toHaveClass('text-success');
   });
 });

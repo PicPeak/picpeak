@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { History } from 'lucide-react';
 
-import { Button, Card, Loading } from '../common';
+import { Button, Card, EmptyState, ErrorState, Loading } from '../common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { customerAdminService, type CustomerActivityEntry } from '../../services/customerAdmin.service';
 
@@ -22,7 +22,7 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
   const {
-    data, isLoading, isError, fetchNextPage, hasNextPage, isFetchingNextPage,
+    data, isLoading, isError, isFetching, refetch, fetchNextPage, hasNextPage, isFetchingNextPage,
   } = useInfiniteQuery({
     queryKey: ['admin-customer-activity', customerId],
     queryFn: ({ pageParam }) => customerAdminService.activity(customerId, pageParam),
@@ -53,14 +53,15 @@ export const CustomerActivityCard: React.FC<{ customerId: number }> = ({ custome
       <p className="text-xs text-muted mb-4">
         {t('customers.activity.hint', 'What happened on this customer\'s account and documents, newest first.')}
       </p>
-      {isLoading ? <Loading /> : isError ? (
-        <p className="text-sm text-red-600 dark:text-red-400">
-          {t('customers.activity.loadError', 'Could not load the activity.')}
-        </p>
+      {isLoading ? <Loading /> : isError && !data ? (
+        <ErrorState
+          size="inline"
+          title={t('customers.activity.loadError', 'Could not load the activity.')}
+          onRetry={() => refetch()}
+          retrying={isFetching}
+        />
       ) : entries.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.activity.empty', 'No activity yet.')}
-        </p>
+        <EmptyState size="inline" title={t('customers.activity.empty', 'No activity yet.')} />
       ) : (
         <>
           <ol className="divide-y divide-line">

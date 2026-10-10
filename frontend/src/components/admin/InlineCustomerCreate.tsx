@@ -273,7 +273,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
         <button
           type="button"
           onClick={onCancel}
-          className="ml-auto p-1 rounded text-neutral-500 hover:text-heading"
+          className="ml-auto p-1 rounded text-muted hover:text-heading"
           aria-label={t('common.cancel', 'Cancel') as string}
         >
           <X className="w-4 h-4" />

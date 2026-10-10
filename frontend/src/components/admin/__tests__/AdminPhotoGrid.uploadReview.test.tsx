@@ -15,6 +15,12 @@ import type { AdminPhoto } from '../../../services/photos.service';
 
 const moderatePhotos = vi.fn();
 
+// Delete and archive ask through the app's confirm dialog; these cases never
+// reach one, so a provider-free stub keeps the render self-contained.
+vi.mock('../../common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common')>()),
+  useConfirm: () => async () => true,
+}));
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
   return {

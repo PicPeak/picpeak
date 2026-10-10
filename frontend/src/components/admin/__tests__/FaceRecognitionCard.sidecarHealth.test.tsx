@@ -16,6 +16,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { FaceRecognitionCard } from '../FaceRecognitionCard';
 
+// Delete and archive ask through the app's confirm dialog; these cases never
+// reach one, so a provider-free stub keeps the render self-contained.
+vi.mock('../../common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common')>()),
+  useConfirm: () => async () => true,
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, opts?: any) => opts?.defaultValue ?? _key,

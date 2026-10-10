@@ -16,7 +16,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Link as LinkIcon, Trash2, Plus, Check } from 'lucide-react';
-import { Button, Card, Input } from '../common';
+import { Button, Card, Input, useConfirm } from '../common';
 import { shortUrlsService, type GalleryShortUrl } from '../../services/shortUrls.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
@@ -35,6 +35,7 @@ function buildShortUrl(slug: string): string {
 
 export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { formatDateTime } = useLocalizedDate();
   const qc = useQueryClient();
 
@@ -110,19 +111,23 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
     }
   };
 
-  const handleDelete = (row: GalleryShortUrl) => {
-    const confirm = window.confirm(t(
-      'events.shortUrls.confirmDelete',
-      'Delete short URL /s/{{slug}}? The link will stop working immediately.',
-      { slug: row.short_slug },
-    ) as string);
-    if (confirm) deleteMutation.mutate(row.id);
+  const handleDelete = async (row: GalleryShortUrl) => {
+    const ok = await confirm({
+      message: t(
+        'events.shortUrls.confirmDelete',
+        'Delete short URL /s/{{slug}}? The link will stop working immediately.',
+        { slug: row.short_slug },
+      ) as string,
+      variant: 'danger',
+      confirmLabel: t('events.shortUrls.deleteAction', 'Delete short URL') as string,
+    });
+    if (ok) deleteMutation.mutate(row.id);
   };
 
   return (
     <Card padding="md">
       <div className="flex items-center gap-2 mb-3">
-        <LinkIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+        <LinkIcon className="w-5 h-5 text-accent" />
         <h3 className="text-lg font-semibold text-heading">
           {t('events.shortUrls.title', 'Branded short URLs')}
         </h3>
@@ -163,7 +168,7 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
           <button
             type="button"
             onClick={handleUseSuggested}
-            className="mt-2 text-xs text-primary-600 dark:text-primary-400 underline hover:no-underline"
+            className="mt-2 text-xs text-accent underline hover:no-underline"
           >
             {t('events.shortUrls.useSuggested', 'Use “{{suggested}}” instead', { suggested })}
           </button>
@@ -212,17 +217,17 @@ export const ShortUrlsCard: React.FC<Props> = ({ eventId }) => {
                 <button
                   type="button"
                   onClick={() => handleCopy(row)}
-                  className="p-2 text-neutral-500 hover:text-primary-600 dark:hover:text-primary-400"
+                  className="p-2 text-muted hover:text-accent"
                   title={t('common.copy', 'Copy') as string}
                   aria-label={t('common.copy', 'Copy') as string}
                 >
-                  {copiedId === row.id ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  {copiedId === row.id ? <Check className="w-4 h-4 text-success-text" /> : <Copy className="w-4 h-4" />}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDelete(row)}
                   disabled={deleteMutation.isPending}
-                  className="p-2 text-neutral-500 hover:text-red-600"
+                  className="p-2 text-muted hover:text-danger-text"
                   title={t('common.delete', 'Delete') as string}
                   aria-label={t('common.delete', 'Delete') as string}
                 >

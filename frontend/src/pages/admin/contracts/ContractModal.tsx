@@ -44,7 +44,7 @@ export const ContractModal: React.FC<{
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           <button type="button" onClick={onClose} aria-label={t('common.close', 'Close') as string}
-            className="p-1 rounded hover:bg-hover-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600">
+            className="p-1 rounded hover:bg-hover-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent">
             <X className="w-5 h-5" />
           </button>
         </div>

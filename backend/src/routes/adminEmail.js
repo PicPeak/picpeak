@@ -1294,7 +1294,7 @@ router.post('/templates/:key/preview', adminAuth, requirePermission('email.view'
     }
 
     // Wrap in the full styled email template with header/footer/logo
-    const wrappedHtml = await wrapEmailHtml(htmlContent, subject, language);
+    const wrappedHtml = await wrapEmailHtml(htmlContent, subject, language, { seededTemplate: true });
 
     res.json({
       subject,

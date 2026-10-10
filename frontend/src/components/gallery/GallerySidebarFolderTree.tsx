@@ -28,7 +28,7 @@ export interface SidebarFolderTreeProps {
 
 const itemClass = (active: boolean) => `
   gallery-btn w-full text-left px-2 py-1.5 rounded-lg transition-colors flex items-center gap-2 min-w-0
-  ${active ? 'bg-accent-dark text-white' : 'hover:bg-black/10 text-muted-theme'}
+  ${active ? 'bg-accent-dark text-accent-fg' : 'hover-surface text-muted-theme'}
 `;
 
 export const GallerySidebarFolderTree: React.FC<SidebarFolderTreeProps> = ({
@@ -84,7 +84,7 @@ export const GallerySidebarFolderTree: React.FC<SidebarFolderTreeProps> = ({
                   aria-label={isExpanded
                     ? t('gallery.collapseFolder', 'Collapse {{name}}', { name: node.category.name })
                     : t('gallery.expandFolder', 'Expand {{name}}', { name: node.category.name })}
-                  className="shrink-0 p-1 rounded text-muted-theme hover:bg-black/10"
+                  className="shrink-0 p-1 rounded text-muted-theme hover-surface"
                 >
                   <ChevronRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                 </button>

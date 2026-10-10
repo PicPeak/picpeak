@@ -14,6 +14,7 @@ import { customerAdminService } from '../../../services/customerAdmin.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { toast } from 'react-toastify';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
+import { useEscapeClose } from '../../../components/common/useEscapeClose';
 
 const STATUSES: InvoiceStatus[] = ['scheduled', 'pending_delivery', 'sent', 'paid', 'overdue', 'cancelled', 'skipped'];
 
@@ -65,7 +66,7 @@ export const BillsListPage: React.FC = () => {
       <SectionPageHeader
         icon={Receipt}
         title={t('bills.title', 'Invoices')}
-        beta
+        feature="bills"
         description={t('bills.subtitle', 'Schedule, send, track payments and chase late invoices.')}
         actions={(
           <>
@@ -87,7 +88,7 @@ export const BillsListPage: React.FC = () => {
       <Card padding="lg">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="text"
               placeholder={t('bills.searchPlaceholder', 'Search by number or customer…') as string}
@@ -149,7 +150,7 @@ export const BillsListPage: React.FC = () => {
                               cancellation documents instantly
                               recognisable. */}
                           {inv.kind === 'storno' && (
-                            <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 uppercase tracking-wide">
+                            <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-storno-soft text-storno-text uppercase tracking-wide">
                               {t('bills.kind.storno', 'Storno')}
                             </span>
                           )}
@@ -159,7 +160,7 @@ export const BillsListPage: React.FC = () => {
                               from Storno (blue vs purple) so the two
                               kinds are visually unambiguous. */}
                           {inv.kind !== 'storno' && inv.replacesInvoiceId && (
-                            <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 uppercase tracking-wide">
+                            <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-info-soft text-info-text uppercase tracking-wide">
                               {t('bills.kind.reissue', 'Reissue')}
                             </span>
                           )}
@@ -185,17 +186,17 @@ export const BillsListPage: React.FC = () => {
                             // Held invoice: 'scheduled' with no send date (incl. the
                             // monthly/manual accumulator) never auto-ships, so badge it
                             // honestly as "Draft" rather than "Scheduled".
-                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-storno-soft text-storno-text">
                               {t('bills.status.draft', 'Draft')}
                             </span>
                           ) : (
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              inv.status === 'paid' ? 'bg-green-100 text-green-800'
-                                : inv.status === 'overdue' ? 'bg-red-100 text-red-800'
-                                : inv.status === 'sent' ? 'bg-blue-100 text-blue-800'
-                                : inv.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
-                                : inv.status === 'skipped' ? 'bg-neutral-100 text-neutral-500 italic'
-                                : 'bg-amber-100 text-amber-800'
+                              inv.status === 'paid' ? 'bg-success-soft text-success-text'
+                                : inv.status === 'overdue' ? 'bg-danger-soft text-danger-text'
+                                : inv.status === 'sent' ? 'bg-info-soft text-info-text'
+                                : inv.status === 'cancelled' ? 'bg-fill text-soft'
+                                : inv.status === 'skipped' ? 'bg-inset text-muted italic'
+                                : 'bg-warning-soft text-warning-text'
                             }`}>{t(`bills.status.${inv.status}`, inv.status)}</span>
                           )}
                         </td>
@@ -239,6 +240,8 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
   const [paidMajor, setPaidMajor] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Escape cancels the import; it waits while the upload runs.
+  useEscapeClose(true, onClose, { enabled: !submitting });
 
   const { data: customerOptions } = useQuery({
     queryKey: ['customer-search', customerSearch],
@@ -291,7 +294,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-muted">
             {t('bills.importHelp',
               'Attach a PDF from a previous billing system. The customer sees this original document in their portal — picpeak does not regenerate it.')}
           </p>
@@ -305,7 +308,7 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
               <div className="flex items-center gap-2 text-sm">
                 <span className="px-2 py-1 rounded bg-subtle">{customerLabel}</span>
                 <button type="button" onClick={() => { setCustomerId(null); setCustomerLabel(''); }}
-                  className="text-xs text-neutral-500 hover:underline">
+                  className="text-xs text-muted hover:underline">
                   {t('common.change', 'Change')}
                 </button>
               </div>
@@ -325,12 +328,12 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
                           }}
                           className="w-full text-left px-3 py-1.5 text-sm hover:bg-hover-soft">
                           {c.companyName || c.displayName || c.email}
-                          <span className="text-xs text-neutral-500 ml-2">{c.email}</span>
+                          <span className="text-xs text-muted ml-2">{c.email}</span>
                         </button>
                       </li>
                     ))}
                     {(customerOptions as any[]).length === 0 && (
-                      <li className="px-3 py-2 text-xs text-neutral-500">{t('bills.noMatch', 'No matches')}</li>
+                      <li className="px-3 py-2 text-xs text-muted">{t('bills.noMatch', 'No matches')}</li>
                     )}
                   </ul>
                 )}
@@ -401,10 +404,10 @@ const ImportHistoricalInvoiceModal: React.FC<ImportModalProps> = ({ onClose }) =
               type="file"
               accept="application/pdf"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-primary-700"
+              className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-accent-strong file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white"
             />
             {file && (
-              <p className="text-xs text-neutral-500 mt-1">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>
+              <p className="text-xs text-muted mt-1">{file.name} · {(file.size / 1024).toFixed(1)} KB</p>
             )}
           </div>
         </div>

@@ -132,7 +132,7 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
           <select
             value={filters.minRating ?? ''}
             onChange={(e) => handleRatingChange(e.target.value === '' ? null : parseFloat(e.target.value))}
-            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
             disabled={isLoading}
           >
             {RATING_OPTIONS.map(option => (
@@ -150,10 +150,10 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
               type="checkbox"
               checked={filters.hasLikes || false}
               onChange={() => handleCheckboxChange('hasLikes')}
-              className="rounded border-neutral-300 text-accent focus:ring-primary-500"
+              className="rounded border-line-strong text-accent focus:ring-accent"
               disabled={isLoading}
             />
-            <Heart className="w-4 h-4 text-red-500" />
+            <Heart className="w-4 h-4 text-danger" />
             <span className="text-sm text-body">
               {t('filter.hasLikes', 'Has likes')}
               {summary && (
@@ -167,10 +167,10 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
               type="checkbox"
               checked={filters.hasFavorites || false}
               onChange={() => handleCheckboxChange('hasFavorites')}
-              className="rounded border-neutral-300 text-accent focus:ring-primary-500"
+              className="rounded border-line-strong text-accent focus:ring-accent"
               disabled={isLoading}
             />
-            <Bookmark className="w-4 h-4 text-yellow-500" />
+            <Bookmark className="w-4 h-4 text-rating" />
             <span className="text-sm text-body">
               {t('filter.hasFavorites', 'Has favorites')}
               {summary && (
@@ -184,10 +184,10 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
               type="checkbox"
               checked={filters.hasComments || false}
               onChange={() => handleCheckboxChange('hasComments')}
-              className="rounded border-neutral-300 text-accent focus:ring-primary-500"
+              className="rounded border-line-strong text-accent focus:ring-accent"
               disabled={isLoading}
             />
-            <MessageCircle className="w-4 h-4 text-blue-500" />
+            <MessageCircle className="w-4 h-4 text-info" />
             <span className="text-sm text-body">
               {t('filter.hasComments', 'Has comments')}
               {summary && (
@@ -248,8 +248,8 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
             </span>
             <div className="flex flex-wrap items-center gap-2">
               {([
-                { value: 'approved', icon: <ThumbsUp className="w-3.5 h-3.5 text-green-600 dark:text-green-400" aria-hidden="true" />, label: t('filter.decisionApproved', 'Approved'), count: summary?.withApproved || 0 },
-                { value: 'rejected', icon: <ThumbsDown className="w-3.5 h-3.5 text-red-600 dark:text-red-400" aria-hidden="true" />, label: t('filter.decisionRejected', 'Rejected'), count: summary?.withRejected || 0 },
+                { value: 'approved', icon: <ThumbsUp className="w-3.5 h-3.5 text-success-text" aria-hidden="true" />, label: t('filter.decisionApproved', 'Approved'), count: summary?.withApproved || 0 },
+                { value: 'rejected', icon: <ThumbsDown className="w-3.5 h-3.5 text-danger-text" aria-hidden="true" />, label: t('filter.decisionRejected', 'Rejected'), count: summary?.withRejected || 0 },
                 { value: 'undecided', icon: <CircleDashed className="w-3.5 h-3.5 text-muted" aria-hidden="true" />, label: t('filter.decisionUndecided', 'Undecided'), count: Math.max(0, (summary?.total || 0) - (summary?.withDecisions || 0)) },
               ] as Array<{ value: DecisionFilter; icon: React.ReactNode; label: string; count: number }>).map((option) => {
                 const isActive = (filters.decisions || []).includes(option.value);

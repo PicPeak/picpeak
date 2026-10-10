@@ -12,9 +12,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const api = vi.hoisted(() => ({ get: vi.fn(), delete: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
+const confirmDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../config/api', () => ({ api }));
 vi.mock('react-toastify', () => ({ toast }));
+vi.mock('../../common', async () => {
+  const actual = await vi.importActual<typeof import('../../common')>('../../common');
+  return { ...actual, useConfirm: () => confirmDialog };
+});
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
   return {
@@ -76,7 +81,7 @@ beforeEach(() => {
   api.delete.mockReset();
   toast.success.mockReset();
   toast.error.mockReset();
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  confirmDialog.mockReset().mockResolvedValue(true);
 });
 
 describe('BackupHistory delete (issue 1711)', () => {
@@ -85,7 +90,10 @@ describe('BackupHistory delete (issue 1711)', () => {
     const { invalidate } = renderHistory();
     await clickDelete();
 
-    expect(window.confirm).toHaveBeenCalledWith('backup.history.deleteConfirm:2026-09-01');
+    expect(confirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'backup.history.deleteConfirm:2026-09-01',
+      variant: 'danger',
+    }));
     await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/admin/backup/runs/42'));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('backup.history.deleteSuccess'));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['backup-history'] });
@@ -99,9 +107,10 @@ describe('BackupHistory delete (issue 1711)', () => {
   });
 
   it('does nothing when the confirmation is declined', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    confirmDialog.mockResolvedValue(false);
     const { invalidate } = renderHistory();
     await clickDelete();
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalled());
     expect(api.delete).not.toHaveBeenCalled();
     expect(invalidate).not.toHaveBeenCalled();
   });

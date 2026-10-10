@@ -144,7 +144,7 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        */
       style={{ contentVisibility: 'auto' }}
       fadeInWhenVisible={animationType === 'fade'}
-      skeletonClassName="skeleton aspect-square w-full rounded-lg"
+      skeletonClassName="skeleton bg-border-token aspect-square w-full rounded-lg"
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
@@ -175,12 +175,12 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
         <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 flex items-center gap-1 z-10`}>
           {(likeCount > 0 || liked) && (
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-              <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+              <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
             </span>
           )}
           {averageRating > 0 && (
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Rated">
-              <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
+              <Star className="w-3.5 h-3.5 text-rating" fill="currentColor" />
             </span>
           )}
           {commentCount > 0 && (
@@ -249,6 +249,7 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   isClient = false,
   onToggleVisibility
 }) => {
+  const { t } = useTranslation();
   const { theme } = useTheme();
   const gallerySettings = theme.gallerySettings || {};
   const animation = gallerySettings.photoAnimation || 'fade';
@@ -310,16 +311,24 @@ export const GridGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             {/* Client visibility toggle overlay (#172) */}
             {isClient && onToggleVisibility && (
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleVisibility(photo.id, photo.visibility || 'visible');
                 }}
                 className={`absolute top-2 left-2 z-10 p-1.5 rounded-full shadow-md transition-colors ${
                   isHidden
-                    ? 'bg-red-500/90 text-white hover:bg-red-600'
-                    : 'bg-white/90 text-neutral-700 hover:bg-white dark:bg-neutral-800/90 dark:text-neutral-200 dark:hover:bg-neutral-700'
+                    ? 'bg-danger text-white hover:opacity-90'
+                    // On the photo: a fixed white chip, whatever the theme.
+                    : 'bg-white/90 text-neutral-700 hover:bg-white'
                 }`}
-                title={isHidden ? 'Hidden from guests' : 'Visible to guests'}
+                title={isHidden
+                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
+                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
+                aria-label={isHidden
+                  ? t('clientAccess.hiddenFromGuests', 'Hidden from guests')
+                  : t('clientAccess.visibleToGuests', 'Visible to guests')}
+                aria-pressed={isHidden}
               >
                 {isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>

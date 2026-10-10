@@ -13,7 +13,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Inbox, Send, XCircle } from 'lucide-react';
 
-import { Button } from '../common';
+import { Badge, Button, EmptyState, ErrorState } from '../common';
+import type { BadgeTone } from '../common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import {
   customerDocumentsAdminService,
@@ -23,10 +24,10 @@ import { calendarDay } from '../../utils/calendarDay';
 
 const inputClass = 'h-9 w-full rounded-lg border border-line-strong bg-panel px-2 text-sm text-heading';
 
-const STATUS_STYLE: Record<AdminDocumentRequest['status'], string> = {
-  open: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  fulfilled: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  cancelled: 'bg-subtle text-body',
+const STATUS_TONE: Record<AdminDocumentRequest['status'], BadgeTone> = {
+  open: 'warning',
+  fulfilled: 'success',
+  cancelled: 'neutral',
 };
 
 export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage: boolean }> = ({ customerId, canManage }) => {
@@ -34,11 +35,12 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
   const qc = useQueryClient();
   const { format: fmtDate } = useLocalizedDate();
   const queryKey = ['admin-customer-document-requests', customerId];
-  const { data: requests = [] } = useQuery({
+  const { data, isError, isFetching, refetch } = useQuery({
     queryKey,
     queryFn: () => customerDocumentsAdminService.listRequests(customerId),
     enabled: canManage,
   });
+  const requests = data ?? [];
   const [title, setTitle] = useState('');
   const [note, setNote] = useState('');
   const [due, setDue] = useState('');
@@ -125,10 +127,10 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
         </Button>
       </div>
 
-      {requests.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.documents.requests.empty', 'Nothing requested yet.')}
-        </p>
+      {isError && !data ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+      ) : requests.length === 0 ? (
+        <EmptyState size="inline" title={t('customers.documents.requests.empty', 'Nothing requested yet.')} />
       ) : (
         <ul className="divide-y divide-line">
           {requests.map((req) => (
@@ -136,9 +138,9 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium text-heading break-words">{req.title}</span>
-                  <span className={`text-[11px] px-1.5 py-0.5 rounded font-semibold ${STATUS_STYLE[req.status]}`}>
+                  <Badge tone={STATUS_TONE[req.status]}>
                     {statusLabel(req.status)}
-                  </span>
+                  </Badge>
                 </div>
                 {req.note && <p className="text-xs text-soft mt-0.5 break-words">{req.note}</p>}
                 <p className="text-xs text-muted mt-0.5">

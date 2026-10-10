@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input } from '../common';
+import { Button, Input, Modal } from '../common';
 import { GalleryRecipientsList } from './GalleryRecipientsList';
 
 interface SendGalleryEmailDialogProps {
@@ -63,21 +63,29 @@ export const SendGalleryEmailDialog: React.FC<SendGalleryEmailDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-md w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-heading">
-            {t('events.sendGalleryEmail.title', 'Send gallery email')}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-body"
-            aria-label={t('common.close', 'Close')}
+    <Modal
+      open
+      onClose={onClose}
+      title={t('events.sendGalleryEmail.title', 'Send gallery email')}
+      size="sm"
+      closeOnBackdrop={false}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isSending}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={isSending}
+            isLoading={isSending}
+            leftIcon={<Mail className="w-4 h-4" />}
           >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+            {t('events.sendGalleryEmail.button', 'Send gallery email')}
+          </Button>
+        </>
+      }
+    >
         <p className="text-soft mb-2">
           {t('events.sendGalleryEmail.descriptionList', {
             eventName,
@@ -123,21 +131,6 @@ export const SendGalleryEmailDialog: React.FC<SendGalleryEmailDialogProps> = ({
           </div>
         )}
 
-        <div className="flex flex-col-reverse gap-3">
-          <Button variant="outline" onClick={onClose} disabled={isSending}>
-            {t('common.cancel', 'Cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={isSending}
-            isLoading={isSending}
-            leftIcon={<Mail className="w-4 h-4" />}
-          >
-            {t('events.sendGalleryEmail.button', 'Send gallery email')}
-          </Button>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };

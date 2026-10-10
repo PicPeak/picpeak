@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Copy, Check, Trash2 } from 'lucide-react';
+import { Copy, Check, Trash2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Input, Loading } from '../common';
+import { Badge, Button, Input, Loading, Modal } from '../common';
 import { guestsService, GuestInvite } from '../../services/guests.service';
 import { useMutationWithToast } from '../../hooks';
 
@@ -56,23 +56,13 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
   const invites = data?.invites || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 pt-16">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-shell rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-4 border-b border-line flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-heading">
-            {t('admin.guests.invitesTitle', 'Guest invites')}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-neutral-500 hover:text-heading"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="overflow-y-auto p-4 space-y-4">
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={t('admin.guests.invitesTitle', 'Guest invites')}
+    >
+        <div className="space-y-4">
           {/* Create form */}
           <div className="p-4 bg-subtle rounded">
             <h3 className="text-sm font-medium text-heading mb-3">
@@ -135,17 +125,17 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
                           )}
                         </div>
                         <div className="text-xs mt-1">
-                          <span
-                            className={`inline-block px-2 py-0.5 rounded-full font-medium ${
+                          <Badge
+                            tone={
                               invite.status === 'redeemed'
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                ? 'success'
                                 : invite.status === 'revoked'
-                                ? 'bg-fill text-body'
-                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
-                            }`}
+                                ? 'neutral'
+                                : 'info'
+                            }
                           >
                             {t(`admin.guests.inviteStatus.${invite.status}`, invite.status)}
-                          </span>
+                          </Badge>
                         </div>
                         <div className="text-xs text-muted truncate mt-1 font-mono">
                           {invite.url}
@@ -157,11 +147,11 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
                             <button
                               type="button"
                               onClick={() => copy(invite)}
-                              className="p-1.5 text-neutral-500 hover:text-accent"
+                              className="p-1.5 text-muted hover:text-accent"
                               title={t('admin.guests.copyLink', 'Copy link')}
                             >
                               {copiedId === invite.id ? (
-                                <Check className="w-4 h-4 text-green-600" />
+                                <Check className="w-4 h-4 text-success-text" />
                               ) : (
                                 <Copy className="w-4 h-4" />
                               )}
@@ -169,7 +159,7 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
                             <button
                               type="button"
                               onClick={() => revokeMutation.mutate(invite.id)}
-                              className="p-1.5 text-neutral-500 hover:text-red-600"
+                              className="p-1.5 text-muted hover:text-danger-text"
                               title={t('admin.guests.revokeInvite', 'Revoke')}
                             >
                               <Trash2 className="w-4 h-4" />
@@ -184,7 +174,6 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

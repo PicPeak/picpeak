@@ -10,13 +10,14 @@
  * not merge anything. Which row survives decides the name and verification
  * state the merged guest keeps, and that is the admin's call.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
 import { AdminGuestsList } from '../AdminGuestsList';
+import { ConfirmDialogProvider } from '../../common';
 
 const getEventGuests = vi.fn();
 
@@ -59,7 +60,11 @@ vi.mock('../../../services/guests.service', () => ({
 
 const wrapper = ({ children }: { children: ReactNode }) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
+    </QueryClientProvider>
+  );
 };
 
 const guest = (
@@ -158,8 +163,10 @@ describe('duplicate guests in the admin list (#1210)', () => {
 
     // Choosing one enables it, and that is the id the merge keeps.
     await userEvent.click(screen.getByRole('radio', { name: /Keep Tina Ferrarelli/i }));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     await userEvent.click(screen.getByRole('button', { name: /merge selected/i }));
+    // The merge cannot be undone, so it asks first; confirming runs it.
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /merge selected/i }));
 
     expect(guestsService.mergeGuests).toHaveBeenCalledWith(7, 1, [2]);
   });

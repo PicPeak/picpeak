@@ -140,7 +140,7 @@ export const ClientsLayout: React.FC = () => {
     return (
       <div>
         <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
-          <Briefcase className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
+          <Briefcase className="w-10 h-10 mx-auto mb-3 text-faint" />
           <h2 className="text-lg font-semibold text-heading mb-1">
             {t('clients.empty.title', 'No CRM features enabled')}
           </h2>

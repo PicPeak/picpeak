@@ -60,11 +60,11 @@ export const MinRatingFilterChips: React.FC<MinRatingFilterChipsProps> = ({
               title={`${t('gallery.filterByMinRating', 'My rating: {{min}} stars or more', { min })}${count > 0 ? ` (${count})` : ''}`}
               className={`flex items-center gap-1 pl-1.5 pr-2 h-8 rounded-full border text-xs transition-all ${
                 isActive
-                  ? 'border-current ring-2 ring-offset-1 ring-current text-yellow-500'
+                  ? 'border-current ring-2 ring-offset-1 ring-current text-rating'
                   : 'border-black/15 text-muted-theme hover:border-current'
               }`}
             >
-              <Star className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'fill-yellow-500' : ''}`} aria-hidden="true" />
+              <Star className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'fill-rating' : ''}`} aria-hidden="true" />
               <span className="font-medium">{min}{min < 5 ? '+' : ''}</span>
               {/* Bracketed like the category chips: "3+ 1" reads as one number. */}
               {count > 0 && <span>({count})</span>}

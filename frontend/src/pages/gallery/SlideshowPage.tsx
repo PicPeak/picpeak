@@ -393,7 +393,7 @@ export function SlideshowPage() {
             {t('slideshow.start', 'Start slideshow')}
           </div>
           {eventName && <div style={{ fontSize: 16, opacity: 0.7, marginTop: 8 }}>{eventName}</div>}
-          {error && <div style={{ color: '#f87171', marginTop: 24, fontSize: 16 }}>{error}</div>}
+          {error && <div role="alert" style={{ color: 'color-mix(in srgb, var(--status-danger) 55%, #fff)', marginTop: 24, fontSize: 16 }}>{error}</div>}
         </div>
       )}
 

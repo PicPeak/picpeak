@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../../types';
-import { Button, Input, LocalizedDateInput, PasswordGenerator } from '../../../../components/common';
+import { Button, Input, LocalizedDateInput, PasswordGenerator, Notice } from '../../../../components/common';
 import { FeedbackSettings } from '../../../../components/admin';
 import { CustomerAccountPicker } from '../../../../components/admin/CustomerAccountPicker';
 import { TeamMemberPicker } from '../../../../components/admin/TeamMemberPicker';
@@ -24,9 +24,9 @@ export interface FieldsProps {
   set: (patch: Partial<EventFields>) => void;
 }
 
-export const inputClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark disabled:bg-inset disabled:text-soft';
+export const inputClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark disabled:bg-inset disabled:text-soft';
 export const labelClass = 'block text-sm font-medium text-body mb-1';
-export const checkboxClass = 'w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500';
+export const checkboxClass = 'w-4 h-4 text-accent border-line-strong rounded focus:ring-accent';
 
 /**
  * One block of a section, flat inside the section panel (the panel is the
@@ -82,8 +82,8 @@ export const GeneralSection: React.FC<FieldsProps & {
           />
         </div>
         {emailNeedsPassword(f) && (
-          <div className="md:col-span-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 space-y-3">
-            <p className="text-sm text-amber-700 dark:text-amber-400">
+          <div className="md:col-span-2 rounded-lg border border-warning-line bg-warning-soft p-4 space-y-3">
+            <p className="text-sm text-warning-text">
               {t('events.recipients.passwordForEmailHint', 'This gallery was shared through the customer portal only, so its password was generated and nobody knows it. The gallery email to this address includes the password, so set one now.')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -249,9 +249,9 @@ export const AccessSection: React.FC<FieldsProps & { ownsEvent?: boolean }> = ({
           </div>
         </label>
         {!f.require_password && (
-          <div className="mt-2 rounded-md border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/30 p-3 text-xs text-orange-800 dark:text-orange-300">
+          <Notice tone="warning" size="sm" className="mt-2">
             {t('events.publicGalleryWarning', 'Public galleries are accessible to anyone with the link. Consider enabling download watermarks and monitoring activity.')}
-          </div>
+          </Notice>
         )}
       </div>
       {!ownsEvent && (
@@ -360,7 +360,7 @@ export const GuestsSection: React.FC<FieldsProps & {
                 type="datetime-local"
                 value={f.reveal_at}
                 onChange={(e) => set({ reveal_at: e.target.value })}
-                className="px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
               />
               <p className="text-xs text-muted mt-1">
                 {t('events.revealAtHelp', 'Leave empty to reveal manually with the "Reveal now" button.')}
@@ -411,7 +411,7 @@ const SourceImport: React.FC<{ event: Event; unsaved: boolean; canEdit: boolean 
           <>
             <p className="text-body">{t('events.settingsTab.sourceImportHelp', 'Imports new photos from this folder now. It runs in the background; they appear on the Photos tab.')}</p>
             {imp.failed ? (
-              <p className="mt-0.5 text-red-700 dark:text-red-400" role="alert">{imp.failureText}</p>
+              <p className="mt-0.5 text-danger-text" role="alert">{imp.failureText}</p>
             ) : (
               <p className="mt-0.5 text-soft" role="status">{imp.statusText}</p>
             )}
@@ -478,7 +478,7 @@ export const SourceSection: React.FC<FieldsProps & { event: Event; canEdit?: boo
           <label className={`flex items-start gap-2 ${canEnableWatch || f.external_watch ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
             <input
               type="checkbox"
-              className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
+              className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
               checked={f.external_watch === true}
               disabled={!canEnableWatch && !f.external_watch}
               onChange={(e) => set({ external_watch: e.target.checked })}

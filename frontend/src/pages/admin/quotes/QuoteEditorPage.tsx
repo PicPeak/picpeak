@@ -1,22 +1,25 @@
 /**
- * Quote editor — create or edit. Five sections:
+ * The quote form — create or edit. Five sections:
  *  1. Customer
  *  2. Event data
  *  3. Line items (LineItemsTable)
  *  4. Payment conditions
  *  5. Intro/outro + CC PDF email + internal notes
  *
- * Send is a deliberate two-step action (confirm dialog) since it emails
- * the customer. Preview PDF is available before save (POST /preview)
- * and after save (GET /:id/pdf) for the "what does my customer see?"
- * check.
+ * One page per quote: `QuoteForm` is the body of a draft's own page
+ * (QuoteDetailPage, which owns the header, the save bar and Send) and of
+ * /quotes/new (QuoteEditorPage below). It holds the fields and saving; the
+ * page asks it to save, discard or preview through a ref.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, RefreshCw, Send } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { Button, Card, Loading, Input, LocalizedDateInput, TimeField } from '../../../components/common';
+import { DocumentHeader } from '../../../components/admin/DocumentHeader';
+import { useConfirm } from '../../../components/common/ConfirmDialog';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import {
   quotesService,
   type QuoteCreatePayload,
@@ -149,8 +152,9 @@ export function buildPayload(f: FormState): QuoteCreatePayload {
     paymentNetDaysTemplateId: f.paymentNetDaysTemplateId || undefined,
     paymentTimingTemplateId: f.paymentTimingTemplateId || undefined,
     // Ad-hoc installments (commit #6) — overrides the template's
-    // installments on the snapshot. Sent only when populated.
-    installments: f.installments && f.installments.length > 0 ? f.installments : undefined,
+    // installments on the snapshot. An empty list clears the override
+    // (the server stores null), so a plan removed in the editor goes away.
+    installments: f.installments && f.installments.length > 0 ? f.installments : [],
     vatRate: f.vatRate,
     vatCode: f.vatCode,
     shippingAmountMinor: toMinor(f.shippingAmount),
@@ -170,13 +174,76 @@ export function buildPayload(f: FormState): QuoteCreatePayload {
   };
 }
 
-export const QuoteEditorPage: React.FC = () => {
+/** The form state of a saved quote. */
+function formFromExisting(existing: Awaited<ReturnType<typeof quotesService.get>>): FormState {
+  const q = existing.quote;
+  return {
+    customerAccountId: q.customerAccountId,
+    customerLabel: q.customer.companyName || q.customer.displayName || q.customer.email || '',
+    customerIsPassive: Boolean(q.customer.isPassive),
+    language: q.language,
+    currency: q.currency,
+    issueDate: q.issueDate,
+    validUntil: q.validUntil || '',
+    eventName: q.eventName || '',
+    eventDate: q.eventDate || '',
+    eventType: q.eventType || '',
+    bookingWorkflowId: q.bookingWorkflowId ?? null,
+    eventTimeStart: q.eventTimeStart || '',
+    eventTimeEnd: q.eventTimeEnd || '',
+    expectedDurationHours: q.expectedDurationHours?.toString() || '',
+    paymentTermTemplateId: q.paymentTermTemplateId,
+    paymentNetDaysTemplateId: q.paymentNetDaysTemplateId,
+    paymentTimingTemplateId: q.paymentTimingTemplateId,
+    installments: q.installmentsOverride ?? null,
+    vatRate: Number(q.vatRate || 0),
+    vatCode: (q as { vatCode?: string | null }).vatCode ?? null,
+    shippingAmount: Number(q.shippingAmountMinor || 0) / 100,
+    introText: q.introText || '',
+    outroText: q.outroText || '',
+    internalNotes: q.internalNotes || '',
+    ccPdfEmail: q.ccPdfEmail || '',
+    businessBankAccountId: q.businessBankAccountId,
+    projectId: q.projectId ?? null,
+    hours: q.hours ?? null,
+    days: q.days ?? null,
+    lineItems: existing.lineItems.map(toEditableLineItem),
+  };
+}
+
+/** What the page can ask of the form. */
+export interface QuoteFormHandle {
+  /** Validates and writes the draft; resolves to the saved quote's id, or null when it did not save. */
+  save: () => Promise<number | null>;
+  /** Puts the fields back to the saved quote. */
+  discard: () => void;
+  /** Opens the PDF of the fields as they are now, saved or not. */
+  previewUnsaved: () => Promise<void>;
+  /** Re-applies today's customer / default rates (drafts only). */
+  recalculateRates: () => Promise<void>;
+}
+
+export interface QuoteFormState {
+  dirty: boolean;
+  busy: boolean;
+  /** The installment split adds up; Save needs it. */
+  valid: boolean;
+  canRecalculate: boolean;
+}
+
+interface QuoteFormProps {
+  /** The quote to edit; omitted on /quotes/new. */
+  quoteId?: number;
+  onStateChange?: (state: QuoteFormState) => void;
+}
+
+export const QuoteForm = forwardRef<QuoteFormHandle, QuoteFormProps>(({ quoteId, onStateChange }, ref) => {
   const { t } = useTranslation();
-  const { id } = useParams<{ id?: string }>();
+  const id = quoteId ? String(quoteId) : undefined;
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isEdit = id && id !== 'new';
+  const confirm = useConfirm();
+  const isEdit = !!quoteId;
 
   const [form, setForm] = useState<FormState>(empty);
   const [installmentsValid, setInstallmentsValid] = useState(true);
@@ -255,40 +322,7 @@ export const QuoteEditorPage: React.FC = () => {
   });
 
   useEffect(() => {
-    if (existing) {
-      const q = existing.quote;
-      setForm({
-        customerAccountId: q.customerAccountId,
-        customerLabel: q.customer.companyName || q.customer.displayName || q.customer.email || '',
-        customerIsPassive: Boolean(q.customer.isPassive),
-        language: q.language,
-        currency: q.currency,
-        issueDate: q.issueDate,
-        validUntil: q.validUntil || '',
-        eventName: q.eventName || '',
-        eventDate: q.eventDate || '',
-        eventType: q.eventType || '',
-        bookingWorkflowId: q.bookingWorkflowId ?? null,
-        eventTimeStart: q.eventTimeStart || '',
-        eventTimeEnd: q.eventTimeEnd || '',
-        expectedDurationHours: q.expectedDurationHours?.toString() || '',
-        paymentTermTemplateId: q.paymentTermTemplateId,
-        paymentNetDaysTemplateId: q.paymentNetDaysTemplateId,
-        paymentTimingTemplateId: q.paymentTimingTemplateId,
-        vatRate: Number(q.vatRate || 0),
-        vatCode: (q as { vatCode?: string | null }).vatCode ?? null,
-        shippingAmount: Number(q.shippingAmountMinor || 0) / 100,
-        introText: q.introText || '',
-        outroText: q.outroText || '',
-        internalNotes: q.internalNotes || '',
-        ccPdfEmail: q.ccPdfEmail || '',
-        businessBankAccountId: q.businessBankAccountId,
-        projectId: q.projectId ?? null,
-        hours: q.hours ?? null,
-        days: q.days ?? null,
-        lineItems: existing.lineItems.map(toEditableLineItem),
-      });
-    }
+    if (existing) setForm(formFromExisting(existing));
   }, [existing]);
 
   // Customer autocomplete moved into <CustomerPicker> (C.5).
@@ -416,21 +450,11 @@ export const QuoteEditorPage: React.FC = () => {
     return tpl?.installments || [];
   }, [timingTemplates, form.paymentTimingTemplateId, ptTemplates, form.paymentTermTemplateId]);
 
-  const handleSave = async (then?: 'send' | 'preview') => {
+  const handleSave = async (): Promise<number | null> => {
     if (!form.customerAccountId) {
       toast.error(t('quotes.errors.customerRequired', 'Pick a customer first.'));
-      return;
+      return null;
     }
-    // If the user asked to preview, confirm/cancel BEFORE async work so
-    // the popup opens directly off the click (browsers block popups
-    // that happen after an `await`). We open a blank window now and
-    // point it at the blob URL once it's ready.
-    const previewWindow = then === 'preview' ? window.open('about:blank', '_blank') : null;
-    if (then === 'preview' && !previewWindow) {
-      toast.error(t('quotes.errors.popupBlocked', 'Allow pop-ups for this site to preview the PDF.'));
-      return;
-    }
-
     setBusy(true);
     try {
       const payload = buildPayload(form);
@@ -438,27 +462,13 @@ export const QuoteEditorPage: React.FC = () => {
         ? await quotesService.update(parseInt(id!, 10), payload)
         : await quotesService.create(payload);
       queryClient.invalidateQueries({ queryKey: ['quotes'] });
-
-      if (then === 'send') {
-        if (!window.confirm(t('quotes.confirmSend', 'Send this quote to the customer now?'))) {
-          setBusy(false);
-          return;
-        }
-        await quotesService.send(saved.quote.id);
-        toast.success(t('quotes.sentToast', 'Quote sent to customer.'));
-        navigate(`/admin/clients/quotes/${saved.quote.id}`);
-      } else if (then === 'preview') {
-        const url = await quotesService.pdfUrl(saved.quote.id);
-        if (previewWindow) previewWindow.location.href = url;
-        navigate(`/admin/clients/quotes/${saved.quote.id}`);
-      } else {
-        toast.success(t('quotes.savedToast', 'Quote saved as draft.'));
-        navigate(`/admin/clients/quotes/${saved.quote.id}`);
+      if (isEdit) {
+        // The refetch puts the saved values back into the form and the
+        // snapshot, so the page reads clean.
+        await queryClient.invalidateQueries({ queryKey: ['quote', id] });
       }
+      return saved.quote.id;
     } catch (err: any) {
-      // Close the placeholder window if the save failed so it doesn't
-      // sit there showing "about:blank".
-      if (previewWindow) previewWindow.close();
       // Server returns a friendly code for the "customer feature off"
       // case — surface a clearer message so admins know to flip the
       // toggle on the customer detail page.
@@ -476,6 +486,7 @@ export const QuoteEditorPage: React.FC = () => {
       } else {
         toast.error(quoteErrorText(err, t, 'Save failed'));
       }
+      return null;
     } finally {
       setBusy(false);
     }
@@ -510,7 +521,10 @@ export const QuoteEditorPage: React.FC = () => {
     && form.lineItems.some((li) => li.rateSource === 'customer' || li.rateSource === 'default');
   const handleRecalculateRates = async () => {
     if (!isEdit) return;
-    if (!window.confirm(t('quotes.recalculateRatesConfirm', 'Apply today\'s rates to this draft? Unsaved changes on this page are discarded.'))) return;
+    if (!(await confirm({
+      message: t('quotes.recalculateRatesConfirm', 'Apply today\'s rates to this draft? Unsaved changes on this page are discarded.'),
+      confirmLabel: t('quotes.recalculateRates', 'Recalculate with current rates'),
+    }))) return;
     setBusy(true);
     try {
       await quotesService.recalculateRates(parseInt(id!, 10));
@@ -523,43 +537,25 @@ export const QuoteEditorPage: React.FC = () => {
     }
   };
 
+  // Dirty: the payload the form would send differs from the one it was
+  // loaded with. A new quote is unsaved until it is created.
+  const savedPayload = useMemo(() => (existing ? JSON.stringify(buildPayload(formFromExisting(existing))) : null), [existing]);
+  const dirty = !isEdit || (savedPayload !== null && JSON.stringify(buildPayload(form)) !== savedPayload);
+  useEffect(() => {
+    onStateChange?.({ dirty, busy, valid: installmentsValid, canRecalculate });
+  }, [dirty, busy, installmentsValid, canRecalculate, onStateChange]);
+
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    discard: () => { if (existing) setForm(formFromExisting(existing)); },
+    previewUnsaved: handlePreviewUnsaved,
+    recalculateRates: handleRecalculateRates,
+  }));
+
   if (isEdit && isLoading) return <Loading />;
 
   return (
     <div className="space-y-4">
-      {/* Wraps: up to five controls here — Cancel, Recalculate, Preview PDF,
-          Save, Save & send — and they do not fit a phone in any language. */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-xl font-bold">
-            {isEdit ? `${t('quotes.edit', 'Edit quote')} ${existing?.quote.quoteNumber || ''}` : t('quotes.new', 'New quote')}
-          </h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {/* The only exit that does not write. These editors have no other
-              cancel, and the sidebar is an off-canvas drawer below lg, so a
-              named control beats relying on browser-back. An edit returns to
-              the record it came from; a new one has no detail page yet. */}
-          <Button variant="outline" onClick={() => navigate(isEdit ? `/admin/clients/quotes/${id}` : '/admin/clients/quotes')} disabled={busy}>
-            {t('common.cancel', 'Cancel')}
-          </Button>
-          {canRecalculate && (
-            <Button variant="outline" onClick={handleRecalculateRates} disabled={busy}>
-              <RefreshCw className="w-4 h-4 mr-1" />{t('quotes.recalculateRates', 'Recalculate with current rates')}
-            </Button>
-          )}
-          <Button variant="outline" onClick={handlePreviewUnsaved} disabled={busy}>
-            <Eye className="w-4 h-4 mr-1" />{t('quotes.preview', 'Preview PDF')}
-          </Button>
-          <Button variant="outline" onClick={() => handleSave()} disabled={busy || !installmentsValid}>
-            {t('common.save', 'Save')}
-          </Button>
-          <Button onClick={() => handleSave('send')} disabled={busy || !installmentsValid}>
-            <Send className="w-4 h-4 mr-1" />{t('quotes.saveAndSend', 'Save & send')}
-          </Button>
-        </div>
-      </div>
-
       {/* Section: Customer */}
       <Card>
         <h3 className="font-semibold mb-2">1. {t('quotes.section.customer', 'Customer')}</h3>
@@ -801,7 +797,7 @@ export const QuoteEditorPage: React.FC = () => {
               <TextBlockPicker id="quote-intro-block" blocks={textBlocks}
                 onPick={(body) => setForm((f) => ({ ...f, introText: appendTextBlock(f.introText, body) }))} />
             </div>
-            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
               value={form.introText} onChange={(e) => setForm((f) => ({ ...f, introText: e.target.value }))} />
           </div>
           <div>
@@ -810,7 +806,7 @@ export const QuoteEditorPage: React.FC = () => {
               <TextBlockPicker id="quote-outro-block" blocks={textBlocks}
                 onPick={(body) => setForm((f) => ({ ...f, outroText: appendTextBlock(f.outroText, body) }))} />
             </div>
-            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
               value={form.outroText} onChange={(e) => setForm((f) => ({ ...f, outroText: e.target.value }))} />
           </div>
 
@@ -837,7 +833,7 @@ export const QuoteEditorPage: React.FC = () => {
                     const email = e.target.value;
                     if (email) setForm((prev) => ({ ...prev, ccPdfEmail: email }));
                   }}
-                  className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                  className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-accent focus:border-accent-dark"
                 >
                   <option value="">{t('quotes.field.ccPdfCustom', 'Custom email')}</option>
                   {activeAdmins.map((a: any) => (
@@ -850,11 +846,65 @@ export const QuoteEditorPage: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1">{t('quotes.field.internalNotes', 'Internal notes (not on PDF)')}</label>
-            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            <textarea rows={3} className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
               value={form.internalNotes} onChange={(e) => setForm((f) => ({ ...f, internalNotes: e.target.value }))} />
           </div>
         </div>
       </Card>
+    </div>
+  );
+});
+QuoteForm.displayName = 'QuoteForm';
+
+/**
+ * /quotes/new: the quote form before the quote exists. Cancel leaves without
+ * saving; "Create draft" in the save bar creates it and opens its page, which
+ * is the same form from then on (UX.md § 1, editors).
+ */
+export const QuoteEditorPage: React.FC = () => {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const formRef = useRef<QuoteFormHandle>(null);
+  const [state, setState] = useState<QuoteFormState>({ dirty: true, busy: false, valid: true, canRecalculate: false });
+  // Created: the form no longer counts as unsaved, so opening the new page
+  // does not trip the leave guard.
+  const [createdId, setCreatedId] = useState<number | null>(null);
+  useEffect(() => {
+    if (createdId) navigate(`/admin/clients/quotes/${createdId}`, { replace: true });
+  }, [createdId, navigate]);
+
+  const create = async () => {
+    const newId = await formRef.current?.save();
+    if (newId) {
+      toast.success(t('quotes.createdToast', 'Draft created.'));
+      setCreatedId(newId);
+    }
+  };
+
+  return (
+    <div>
+      <DocumentHeader
+        title={t('quotes.new', 'New quote')}
+        actions={(
+          <>
+            <Button variant="outline" onClick={() => formRef.current?.previewUnsaved()} disabled={state.busy} leftIcon={<Eye className="w-4 h-4" />}>
+              {t('quotes.preview', 'Preview PDF')}
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/admin/clients/quotes')} disabled={state.busy}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+          </>
+        )}
+      />
+      <QuoteForm ref={formRef} onStateChange={setState} />
+      <SettingsSaveBar
+        isDirty={!createdId}
+        isSaving={state.busy}
+        canSave={state.valid}
+        saveLabel={t('quotes.createDraft', 'Create draft')}
+        onSave={() => { void create(); }}
+        onDiscard={() => navigate('/admin/clients/quotes')}
+      />
     </div>
   );
 };

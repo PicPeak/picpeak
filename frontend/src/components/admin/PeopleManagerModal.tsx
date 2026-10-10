@@ -17,9 +17,9 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, Merge, Scissors, EyeOff, Ban, Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 
-import { Button, Loading } from '../common';
+import { Button, Loading, Modal, Notice } from '../common';
 import { api } from '../../config/api';
 import { faceCropStyle } from '../gallery/faceCrop';
 import { adminFacePreviewUrl, adminPhotoPreviewUrl } from '../gallery/imageTiers';
@@ -155,7 +155,7 @@ const FaceInContext: React.FC<{
         {canBox && (
           <span
             aria-hidden
-            className="absolute border-2 border-primary-400 rounded-sm"
+            className="absolute border-2 border-accent rounded-sm"
             style={{
               left: `${(bx / face.photo_width!) * 100}%`,
               top: `${(by / face.photo_height!) * 100}%`,
@@ -384,477 +384,467 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+  // Four views share the one window: the people list, and three sub-views
+  // (face in context, cover picker, split picker) that each bring their own
+  // help line and footer.
+  let help: React.ReactNode = null;
+  let body: React.ReactNode;
+  let footer: React.ReactNode;
 
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative bg-shell text-heading rounded-xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col"
-      >
-        {/* One datalist for every row's rename input — a per-row copy would
-            duplicate the whole name list once per person. */}
-        {knownNames.length > 0 && (
-          <datalist id="picpeak-people-names">
-            {knownNames.map((name) => <option key={name} value={name} />)}
-          </datalist>
+  if (viewing) {
+    // --- face in context ------------------------------------------------
+    const faces = faceData?.faces || [];
+    // -1 means "whichever face the row is showing". Resolved here rather
+    // than at click time because the list is not loaded yet then — and
+    // index 0 is NOT the answer: it is the top-scoring face, which stops
+    // being the cover the moment someone picks a different one.
+    const coverIdx = faces.findIndex((f) => f.id === viewing.person.cover?.face_id);
+    const index = viewing.index >= 0
+      ? Math.min(viewing.index, Math.max(faces.length - 1, 0))
+      : Math.max(coverIdx, 0);
+    const face = faces[index];
+    const step = (delta: number) => setViewing((v) =>
+      v && faces.length ? { ...v, index: (index + delta + faces.length) % faces.length } : v);
+    // The endpoint caps a person's list; say so rather than let the
+    // counter imply this is everything they appear in.
+    // Against the person's REAL total, not the cap: someone with exactly
+    // 500 faces has a complete list and should not be told otherwise.
+    const truncated = (viewing.person.total_face_count ?? faces.length) > faces.length;
+    help = (
+      <Notice tone="neutral" size="sm">
+        {t('admin.people.contextHelp', {
+          defaultValue: 'The detected face, outlined in its original photo — who they were standing next to is usually what settles whether two similar people are the same one.',
+        })}
+      </Notice>
+    );
+    body = facesLoading ? <Loading /> : !face ? (
+      // facesLoading goes false with an empty array on a zero-face
+      // person or a failed request; without this the panel span
+      // forever on a spinner that would never resolve.
+      <p className="text-sm text-muted text-center py-10">
+        {t('admin.people.contextUnavailable', {
+          defaultValue: 'No photo could be loaded for this person.',
+        })}
+      </p>
+    ) : (
+      <>
+        <FaceInContext eventId={eventId} face={face} />
+        {truncated && (
+          <p className="mt-2 text-center text-xs text-muted">
+            {t('admin.people.contextTruncated', {
+              limit: PERSON_FACES_LIMIT,
+              defaultValue: `Showing the first ${PERSON_FACES_LIMIT} appearances of this person.`,
+            })}
+          </p>
         )}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-          <div>
-            <h2 className="text-lg font-medium text-heading">
-              {t('admin.people.title', { defaultValue: 'People in this gallery' })}
-            </h2>
-            <p className="text-sm text-muted">
-              {t('admin.people.subtitle', {
-                defaultValue: 'Rename, merge people who were split apart, or hide someone from guests.',
-              })}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="p-2 -m-2 text-neutral-400 hover:text-body">
-            <X size={20} />
-          </button>
+      </>
+    );
+    footer = (
+      <>
+        <div className="flex items-center gap-2 mr-auto">
+          <Button
+            variant="outline" size="sm" disabled={faces.length < 2}
+            onClick={() => step(-1)}
+            aria-label={t('admin.people.contextPrev', { defaultValue: 'Previous photo of this person' })}
+          >
+            <ChevronLeft size={16} />
+          </Button>
+          <span className="text-sm text-muted tabular-nums">
+            {faces.length ? `${index + 1} / ${faces.length}${truncated ? '+' : ''}` : '—'}
+          </span>
+          <Button
+            variant="outline" size="sm" disabled={faces.length < 2}
+            onClick={() => step(1)}
+            aria-label={t('admin.people.contextNext', { defaultValue: 'Next photo of this person' })}
+          >
+            <ChevronRight size={16} />
+          </Button>
         </div>
-
-        {/* --- face in context ---------------------------------------------- */}
-        {viewing ? (() => {
-          const faces = faceData?.faces || [];
-          // -1 means "whichever face the row is showing". Resolved here rather
-          // than at click time because the list is not loaded yet then — and
-          // index 0 is NOT the answer: it is the top-scoring face, which stops
-          // being the cover the moment someone picks a different one.
-          const coverIdx = faces.findIndex((f) => f.id === viewing.person.cover?.face_id);
-          const index = viewing.index >= 0
-            ? Math.min(viewing.index, Math.max(faces.length - 1, 0))
-            : Math.max(coverIdx, 0);
-          const face = faces[index];
-          const step = (delta: number) => setViewing((v) =>
-            v && faces.length ? { ...v, index: (index + delta + faces.length) % faces.length } : v);
-          // The endpoint caps a person's list; say so rather than let the
-          // counter imply this is everything they appear in.
-          // Against the person's REAL total, not the cap: someone with exactly
-          // 500 faces has a complete list and should not be told otherwise.
-          const truncated = (viewing.person.total_face_count ?? faces.length) > faces.length;
+        <Button variant="outline" size="sm" onClick={() => setViewing(null)}>
+          {t('common.back', { defaultValue: 'Back' })}
+        </Button>
+      </>
+    );
+  } else if (coverFor) {
+    // --- cover picker ---------------------------------------------------
+    help = (
+      <Notice tone="neutral" size="sm">
+        {t('admin.people.coverHelp', {
+          defaultValue: 'Pick the photo that best shows this person. It becomes their avatar here and in the guest-facing people strip.',
+        })}
+        {(faceData?.faces?.length || 0) >= Math.min(
+          PERSON_FACES_LIMIT, coverFor.total_face_count ?? PERSON_FACES_LIMIT
+        ) && (coverFor.total_face_count ?? 0) > PERSON_FACES_LIMIT && (
+          <span className="block mt-1 text-xs text-muted">
+            {t('admin.people.coverTruncated', {
+              limit: PERSON_FACES_LIMIT,
+              defaultValue: `Showing the ${PERSON_FACES_LIMIT} highest-confidence faces of this person.`,
+            })}
+          </span>
+        )}
+      </Notice>
+    );
+    body = facesLoading ? <Loading /> : (
+      <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+        {(faceData?.faces || []).map((face, idx) => {
+          const current = coverFor.cover?.face_id === face.id;
           return (
-            <>
-              <div className="px-5 py-3 bg-subtle border-b border-line text-sm text-body">
-                {t('admin.people.contextHelp', {
-                  defaultValue: 'The detected face, outlined in its original photo — who they were standing next to is usually what settles whether two similar people are the same one.',
-                })}
-              </div>
-              <div className="flex-1 overflow-y-auto p-5">
-                {facesLoading ? <Loading /> : !face ? (
-                  // facesLoading goes false with an empty array on a zero-face
-                  // person or a failed request; without this the panel span
-                  // forever on a spinner that would never resolve.
-                  <p className="text-sm text-muted text-center py-10">
-                    {t('admin.people.contextUnavailable', {
-                      defaultValue: 'No photo could be loaded for this person.',
-                    })}
-                  </p>
-                ) : (
-                  <>
-                    <FaceInContext eventId={eventId} face={face} />
-                    {truncated && (
-                      <p className="mt-2 text-center text-xs text-muted">
-                        {t('admin.people.contextTruncated', {
-                          limit: PERSON_FACES_LIMIT,
-                          defaultValue: `Showing the first ${PERSON_FACES_LIMIT} appearances of this person.`,
-                        })}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-line">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline" size="sm" disabled={faces.length < 2}
-                    onClick={() => step(-1)}
-                    aria-label={t('admin.people.contextPrev', { defaultValue: 'Previous photo of this person' })}
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <span className="text-sm text-muted tabular-nums">
-                    {faces.length ? `${index + 1} / ${faces.length}${truncated ? '+' : ''}` : '—'}
-                  </span>
-                  <Button
-                    variant="outline" size="sm" disabled={faces.length < 2}
-                    onClick={() => step(1)}
-                    aria-label={t('admin.people.contextNext', { defaultValue: 'Next photo of this person' })}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setViewing(null)}>
-                  {t('common.back', { defaultValue: 'Back' })}
-                </Button>
-              </div>
-            </>
-          );
-        })() : coverFor ? (
-          <>
-            <div className="px-5 py-3 bg-subtle border-b border-line text-sm text-body">
-              {t('admin.people.coverHelp', {
-                defaultValue: 'Pick the photo that best shows this person. It becomes their avatar here and in the guest-facing people strip.',
-              })}
-              {(faceData?.faces?.length || 0) >= Math.min(
-                PERSON_FACES_LIMIT, coverFor.total_face_count ?? PERSON_FACES_LIMIT
-              ) && (coverFor.total_face_count ?? 0) > PERSON_FACES_LIMIT && (
-                <span className="block mt-1 text-xs text-muted">
-                  {t('admin.people.coverTruncated', {
-                    limit: PERSON_FACES_LIMIT,
-                    defaultValue: `Showing the ${PERSON_FACES_LIMIT} highest-confidence faces of this person.`,
-                  })}
+            <div key={face.id} className="relative group">
+              <button
+                type="button"
+                disabled={busy}
+                title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
+                onClick={() => chooseCover(face.id)}
+                className={`block rounded-lg overflow-hidden border-2 transition-colors ${
+                  current ? 'border-accent' : 'border-transparent hover:border-line-strong'
+                }`}
+              >
+                <FaceThumb
+                  eventId={eventId}
+                  photoId={face.photo_id}
+                  bbox={face.bbox}
+                  photoWidth={face.photo_width}
+                  photoHeight={face.photo_height}
+                  size={88}
+                />
+              </button>
+              {current && (
+                <span className="absolute top-1 right-1 bg-accent-strong text-white rounded-full p-0.5 pointer-events-none">
+                  <Check size={12} />
                 </span>
               )}
+              {/* Its own affordance: the tile body already means
+                  "use as cover", so looking needs a separate target.
+                  Visible by default where there is no hover to reveal
+                  it — on a tablet the opacity-0 version was simply
+                  unreachable. */}
+              <button
+                type="button"
+                title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
+                onClick={() => setViewing({ person: coverFor, index: idx })}
+                className="absolute bottom-1 right-1 bg-white/90 dark:bg-neutral-900/90 text-body rounded-full p-1 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              >
+                <Maximize2 size={12} />
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              {facesLoading ? <Loading /> : (
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                  {(faceData?.faces || []).map((face, idx) => {
-                    const current = coverFor.cover?.face_id === face.id;
-                    return (
-                      <div key={face.id} className="relative group">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
-                          onClick={() => chooseCover(face.id)}
-                          className={`block rounded-lg overflow-hidden border-2 transition-colors ${
-                            current ? 'border-primary-600' : 'border-transparent hover:border-line-strong'
-                          }`}
-                        >
-                          <FaceThumb
-                            eventId={eventId}
-                            photoId={face.photo_id}
-                            bbox={face.bbox}
-                            photoWidth={face.photo_width}
-                            photoHeight={face.photo_height}
-                            size={88}
-                          />
-                        </button>
-                        {current && (
-                          <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5 pointer-events-none">
-                            <Check size={12} />
-                          </span>
-                        )}
-                        {/* Its own affordance: the tile body already means
-                            "use as cover", so looking needs a separate target.
-                            Visible by default where there is no hover to reveal
-                            it — on a tablet the opacity-0 version was simply
-                            unreachable. */}
-                        <button
-                          type="button"
-                          title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
-                          onClick={() => setViewing({ person: coverFor, index: idx })}
-                          className="absolute bottom-1 right-1 bg-white/90 dark:bg-neutral-900/90 text-body rounded-full p-1 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                        >
-                          <Maximize2 size={12} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+          );
+        })}
+      </div>
+    );
+    footer = (
+      <Button variant="outline" size="sm" onClick={() => setCoverFor(null)}>
+        {t('common.cancel', { defaultValue: 'Cancel' })}
+      </Button>
+    );
+  } else if (splitting) {
+    // --- split picker ---------------------------------------------------
+    help = (
+      <Notice tone="warning" size="sm">
+        {t('admin.people.splitHelp', {
+          defaultValue: 'Pick the photos that are NOT this person. They become a new entry, and everything else stays.',
+        })}
+      </Notice>
+    );
+    body = facesLoading ? <Loading /> : (
+      <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+        {(faceData?.faces || []).map((face) => {
+          const picked = splitFaceIds.includes(face.id);
+          return (
+            <button
+              key={face.id}
+              type="button"
+              onClick={() => setSplitFaceIds((p) =>
+                p.includes(face.id) ? p.filter((x) => x !== face.id) : [...p, face.id])}
+              className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
+                picked ? 'border-accent' : 'border-transparent hover:border-line-strong'
+              }`}
+            >
+              <FaceThumb
+                eventId={eventId}
+                photoId={face.photo_id}
+                bbox={face.bbox}
+                photoWidth={face.photo_width}
+                photoHeight={face.photo_height}
+                size={88}
+              />
+              {picked && (
+                <span className="absolute top-1 right-1 bg-accent-strong text-white rounded-full p-0.5">
+                  <Check size={12} />
+                </span>
               )}
-            </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-line">
-              <Button variant="outline" size="sm" onClick={() => setCoverFor(null)}>
-                {t('common.cancel', { defaultValue: 'Cancel' })}
-              </Button>
-            </div>
-          </>
-        ) : splitting ? (
-          <>
-            <div className="px-5 py-3 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-100 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
-              {t('admin.people.splitHelp', {
-                defaultValue: 'Pick the photos that are NOT this person. They become a new entry, and everything else stays.',
+            </button>
+          );
+        })}
+      </div>
+    );
+    footer = (
+      <>
+        <span className="text-sm text-muted mr-auto self-center">
+          {t('admin.people.splitSelected', {
+            count: splitFaceIds.length,
+            defaultValue: `${splitFaceIds.length} selected`,
+          })}
+        </span>
+        <Button variant="outline" size="sm" onClick={() => { setSplitting(null); setSplitFaceIds([]); }}>
+          {t('common.cancel', { defaultValue: 'Cancel' })}
+        </Button>
+        <Button variant="primary" size="sm" disabled={!splitFaceIds.length || busy} onClick={doSplit}>
+          {t('admin.people.doSplit', { defaultValue: 'Split out' })}
+        </Button>
+      </>
+    );
+  } else {
+    // --- people grid ----------------------------------------------------
+    body = isLoading ? <Loading /> : people.length === 0 ? (
+      <p className="text-sm text-muted text-center py-10">
+        {t('admin.people.empty', { defaultValue: 'No people detected yet.' })}
+      </p>
+    ) : (
+      <div className="space-y-1">
+        {/* --- merge suggestions (#1107) -------------------------
+            The band below the auto-merge threshold. These are asked
+            rather than done: an over-eager merge of two people is
+            much harder to unpick than a missed one, and this is
+            biometric grouping, so the uncertain cases get a human.
+            Dismissal is sticky — a pair told "not the same" does not
+            come back after the next scan. */}
+        {suggestionPairs.length > 0 && (
+          <div className="mb-4 rounded-lg border border-warning-line bg-warning-soft overflow-hidden">
+            <p className="px-3 py-2 text-xs text-warning-text border-b border-warning-line">
+              {t('admin.people.suggestionsHeading', {
+                count: suggestionPairs.length,
+                defaultValue: 'These might be the same person. Grouping was not confident enough to merge them on its own.',
               })}
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              {facesLoading ? <Loading /> : (
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                  {(faceData?.faces || []).map((face) => {
-                    const picked = splitFaceIds.includes(face.id);
-                    return (
-                      <button
-                        key={face.id}
-                        type="button"
-                        onClick={() => setSplitFaceIds((p) =>
-                          p.includes(face.id) ? p.filter((x) => x !== face.id) : [...p, face.id])}
-                        className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
-                          picked ? 'border-primary-600' : 'border-transparent hover:border-line-strong'
-                        }`}
-                      >
+            </p>
+            <div className="divide-y divide-warning-line">
+              {suggestionPairs.map(({ a, b, score }) => (
+                <div key={`${a.id}-${b.id}`} className="flex items-center gap-3 p-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    {[a, b].map((person) => (
+                      <div key={person.id} className="flex items-center gap-2">
                         <FaceThumb
                           eventId={eventId}
-                          photoId={face.photo_id}
-                          bbox={face.bbox}
-                          photoWidth={face.photo_width}
-                          photoHeight={face.photo_height}
-                          size={88}
+                          photoId={person.cover?.photo_id ?? 0}
+                          bbox={person.cover?.bbox}
+                          photoWidth={person.cover?.photo_width}
+                          photoHeight={person.cover?.photo_height}
+                          size={48}
                         />
-                        {picked && (
-                          <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5">
-                            <Check size={12} />
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-line">
-              <span className="text-sm text-muted">
-                {t('admin.people.splitSelected', {
-                  count: splitFaceIds.length,
-                  defaultValue: `${splitFaceIds.length} selected`,
-                })}
-              </span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setSplitting(null); setSplitFaceIds([]); }}>
-                  {t('common.cancel', { defaultValue: 'Cancel' })}
-                </Button>
-                <Button variant="primary" size="sm" disabled={!splitFaceIds.length || busy} onClick={doSplit}>
-                  {t('admin.people.doSplit', { defaultValue: 'Split out' })}
-                </Button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* --- people grid --------------------------------------------- */}
-            <div className="flex-1 overflow-y-auto p-5">
-              {isLoading ? <Loading /> : people.length === 0 ? (
-                <p className="text-sm text-muted text-center py-10">
-                  {t('admin.people.empty', { defaultValue: 'No people detected yet.' })}
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {/* --- merge suggestions (#1107) -------------------------
-                      The band below the auto-merge threshold. These are asked
-                      rather than done: an over-eager merge of two people is
-                      much harder to unpick than a missed one, and this is
-                      biometric grouping, so the uncertain cases get a human.
-                      Dismissal is sticky — a pair told "not the same" does not
-                      come back after the next scan. */}
-                  {suggestionPairs.length > 0 && (
-                    <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 overflow-hidden">
-                      <p className="px-3 py-2 text-xs text-amber-900 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800">
-                        {t('admin.people.suggestionsHeading', {
-                          count: suggestionPairs.length,
-                          defaultValue: 'These might be the same person. Grouping was not confident enough to merge them on its own.',
-                        })}
-                      </p>
-                      <div className="divide-y divide-amber-200 dark:divide-amber-800">
-                        {suggestionPairs.map(({ a, b, score }) => (
-                          <div key={`${a.id}-${b.id}`} className="flex items-center gap-3 p-3 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              {[a, b].map((person) => (
-                                <div key={person.id} className="flex items-center gap-2">
-                                  <FaceThumb
-                                    eventId={eventId}
-                                    photoId={person.cover?.photo_id ?? 0}
-                                    bbox={person.cover?.bbox}
-                                    photoWidth={person.cover?.photo_width}
-                                    photoHeight={person.cover?.photo_height}
-                                    size={48}
-                                  />
-                                  <span className="text-xs text-body">
-                                    {person.label || t('admin.people.photoCount', {
-                                      count: person.total_face_count ?? person.face_count,
-                                      defaultValue: `${person.total_face_count ?? person.face_count} photos`,
-                                    })}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                            <span className="text-xs text-muted tabular-nums">
-                              {t('admin.people.suggestionScore', {
-                                percent: Math.round(score * 100),
-                                defaultValue: `${Math.round(score * 100)}% alike`,
-                              })}
-                            </span>
-                            <div className="flex gap-2 ml-auto">
-                              <Button
-                                variant="outline" size="sm" disabled={busy}
-                                onClick={() => dismissSuggestion(a, b)}
-                              >
-                                {t('admin.people.suggestionReject', { defaultValue: 'Not the same' })}
-                              </Button>
-                              <Button
-                                variant="primary" size="sm" disabled={busy}
-                                onClick={() => acceptSuggestion(a, b)}
-                                leftIcon={<Merge className="w-3.5 h-3.5" />}
-                              >
-                                {t('admin.people.suggestionAccept', { defaultValue: 'Same person' })}
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                        <span className="text-xs text-body">
+                          {person.label || t('admin.people.photoCount', {
+                            count: person.total_face_count ?? person.face_count,
+                            defaultValue: `${person.total_face_count ?? person.face_count} photos`,
+                          })}
+                        </span>
                       </div>
-                    </div>
-                  )}
-
-                  {people.map((person) => {
-                    const isSelected = selected.includes(person.id);
-                    return (
-                      <div
-                        key={person.id}
-                        className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
-                          isSelected ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/30' : 'border-transparent hover:bg-hover-soft'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleSelect(person.id)}
-                          aria-pressed={isSelected}
-                          aria-label={t('admin.people.select', { defaultValue: 'Select for merging' })}
-                          className="flex-shrink-0"
-                        >
-                          <FaceThumb
-                            eventId={eventId}
-                            photoId={person.cover?.photo_id ?? 0}
-                            bbox={person.cover?.bbox}
-                            photoWidth={person.cover?.photo_width}
-                            photoHeight={person.cover?.photo_height}
-                            dim={person.is_ignored || person.is_hidden}
-                          />
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          {renaming === person.id ? (
-                            <input
-                              autoFocus
-                              value={draftLabel}
-                              onChange={(e) => setDraftLabel(e.target.value)}
-                              onBlur={() => saveLabel(person)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveLabel(person);
-                                if (e.key === 'Escape') setRenaming(null);
-                              }}
-                              placeholder={t('admin.people.namePlaceholder', { defaultValue: 'Add a name' })}
-                              list={knownNames.length ? 'picpeak-people-names' : undefined}
-                              className="w-full max-w-xs px-2 py-1 text-sm border border-line-strong bg-panel text-heading rounded focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => { setRenaming(person.id); setDraftLabel(person.label || ''); }}
-                              className="text-sm text-left text-heading hover:underline"
-                            >
-                              {person.label || (
-                                <span className="text-neutral-400 italic">
-                                  {t('admin.people.unnamed', { defaultValue: 'Add a name' })}
-                                </span>
-                              )}
-                            </button>
-                          )}
-                          <p className="text-xs text-muted">
-                            {t('admin.people.photoCount', {
-                              count: person.total_face_count ?? person.face_count,
-                              defaultValue: `${person.total_face_count ?? person.face_count} photos`,
-                            })}
-                            {person.is_hidden && ` · ${t('admin.people.hidden', { defaultValue: 'hidden from guests' })}`}
-                            {person.is_ignored && ` · ${t('admin.people.ignored', { defaultValue: 'ignored' })}`}
-                          </p>
-                        </div>
-
-                        {/* Five 32px actions plus a 64px avatar exceed a
-                            320px row. flex-wrap alone does not help — the
-                            toolbar still claims its max-content width first
-                            and the name collapses to nothing. Capping the
-                            basis makes the buttons wrap to a second line and
-                            leaves the label its space. */}
-                        <div className="flex items-center gap-1 flex-wrap justify-end basis-[88px] sm:basis-auto">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
-                            onClick={() => setViewing({ person, index: -1 })}
-                            className="p-2 text-neutral-400 hover:text-body rounded"
-                          >
-                            <Maximize2 size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            title={t('admin.people.coverAction', { defaultValue: 'Choose which photo represents this person' })}
-                            onClick={() => setCoverFor(person)}
-                            className="p-2 text-neutral-400 hover:text-body rounded"
-                          >
-                            <ImageIcon size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            title={t('admin.people.splitAction', { defaultValue: 'Split out photos that are someone else' })}
-                            onClick={() => { setSplitting(person); setSplitFaceIds([]); }}
-                            className="p-2 text-neutral-400 hover:text-body rounded"
-                          >
-                            <Scissors size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            title={t('admin.people.hideAction', { defaultValue: 'Hide from guests' })}
-                            onClick={() => setFlag(person, 'is_hidden', !person.is_hidden)}
-                            className={`p-2 rounded ${person.is_hidden ? 'text-primary-600' : 'text-neutral-400 hover:text-body'}`}
-                          >
-                            <EyeOff size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            title={t('admin.people.ignoreAction', { defaultValue: 'Not a real person — ignore' })}
-                            onClick={() => setFlag(person, 'is_ignored', !person.is_ignored)}
-                            className={`p-2 rounded ${person.is_ignored ? 'text-red-600' : 'text-neutral-400 hover:text-body'}`}
-                          >
-                            <Ban size={16} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+                  <span className="text-xs text-muted tabular-nums">
+                    {t('admin.people.suggestionScore', {
+                      percent: Math.round(score * 100),
+                      defaultValue: `${Math.round(score * 100)}% alike`,
+                    })}
+                  </span>
+                  <div className="flex gap-2 ml-auto">
+                    <Button
+                      variant="outline" size="sm" disabled={busy}
+                      onClick={() => dismissSuggestion(a, b)}
+                    >
+                      {t('admin.people.suggestionReject', { defaultValue: 'Not the same' })}
+                    </Button>
+                    <Button
+                      variant="primary" size="sm" disabled={busy}
+                      onClick={() => acceptSuggestion(a, b)}
+                      leftIcon={<Merge className="w-3.5 h-3.5" />}
+                    >
+                      {t('admin.people.suggestionAccept', { defaultValue: 'Same person' })}
+                    </Button>
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-
-            {/* Merge only becomes available at two, and the wording names the
-                target explicitly so nobody has to guess which name survives. */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-line">
-              <span className="text-sm text-muted">
-                {selected.length > 0
-                  ? t('admin.people.selectedCount', {
-                    count: selected.length,
-                    defaultValue: `${selected.length} selected`,
-                  })
-                  : t('admin.people.mergeHint', {
-                    defaultValue: 'Tap two or more faces to merge them into one person.',
-                  })}
-              </span>
-              <div className="flex gap-2">
-                {selected.length > 0 && (
-                  <Button variant="outline" size="sm" onClick={() => setSelected([])}>
-                    {t('common.clear', { defaultValue: 'Clear' })}
-                  </Button>
-                )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={selected.length < 2 || busy}
-                  onClick={doMerge}
-                  leftIcon={busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Merge className="w-4 h-4" />}
-                >
-                  {t('admin.people.merge', { defaultValue: 'Merge' })}
-                </Button>
-              </div>
-            </div>
-          </>
+          </div>
         )}
+
+        {people.map((person) => {
+          const isSelected = selected.includes(person.id);
+          return (
+            <div
+              key={person.id}
+              className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
+                isSelected ? 'border-accent bg-accent-soft' : 'border-transparent hover:bg-hover-soft'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => toggleSelect(person.id)}
+                aria-pressed={isSelected}
+                aria-label={t('admin.people.select', { defaultValue: 'Select for merging' })}
+                className="flex-shrink-0"
+              >
+                <FaceThumb
+                  eventId={eventId}
+                  photoId={person.cover?.photo_id ?? 0}
+                  bbox={person.cover?.bbox}
+                  photoWidth={person.cover?.photo_width}
+                  photoHeight={person.cover?.photo_height}
+                  dim={person.is_ignored || person.is_hidden}
+                />
+              </button>
+
+              <div className="flex-1 min-w-0">
+                {renaming === person.id ? (
+                  <input
+                    autoFocus
+                    value={draftLabel}
+                    onChange={(e) => setDraftLabel(e.target.value)}
+                    onBlur={() => saveLabel(person)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveLabel(person);
+                      if (e.key === 'Escape') {
+                        // Cancels the rename only; the window stays open.
+                        e.stopPropagation();
+                        setRenaming(null);
+                      }
+                    }}
+                    placeholder={t('admin.people.namePlaceholder', { defaultValue: 'Add a name' })}
+                    list={knownNames.length ? 'picpeak-people-names' : undefined}
+                    className="w-full max-w-xs px-2 py-1 text-sm border border-line-strong bg-panel text-heading rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setRenaming(person.id); setDraftLabel(person.label || ''); }}
+                    className="text-sm text-left text-heading hover:underline"
+                  >
+                    {person.label || (
+                      <span className="text-faint italic">
+                        {t('admin.people.unnamed', { defaultValue: 'Add a name' })}
+                      </span>
+                    )}
+                  </button>
+                )}
+                <p className="text-xs text-muted">
+                  {t('admin.people.photoCount', {
+                    count: person.total_face_count ?? person.face_count,
+                    defaultValue: `${person.total_face_count ?? person.face_count} photos`,
+                  })}
+                  {person.is_hidden && ` · ${t('admin.people.hidden', { defaultValue: 'hidden from guests' })}`}
+                  {person.is_ignored && ` · ${t('admin.people.ignored', { defaultValue: 'ignored' })}`}
+                </p>
+              </div>
+
+              {/* Five 32px actions plus a 64px avatar exceed a
+                  320px row. flex-wrap alone does not help — the
+                  toolbar still claims its max-content width first
+                  and the name collapses to nothing. Capping the
+                  basis makes the buttons wrap to a second line and
+                  leaves the label its space. */}
+              <div className="flex items-center gap-1 flex-wrap justify-end basis-[88px] sm:basis-auto">
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
+                  onClick={() => setViewing({ person, index: -1 })}
+                  className="p-2 text-faint hover:text-body rounded"
+                >
+                  <Maximize2 size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={t('admin.people.coverAction', { defaultValue: 'Choose which photo represents this person' })}
+                  onClick={() => setCoverFor(person)}
+                  className="p-2 text-faint hover:text-body rounded"
+                >
+                  <ImageIcon size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={t('admin.people.splitAction', { defaultValue: 'Split out photos that are someone else' })}
+                  onClick={() => { setSplitting(person); setSplitFaceIds([]); }}
+                  className="p-2 text-faint hover:text-body rounded"
+                >
+                  <Scissors size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={t('admin.people.hideAction', { defaultValue: 'Hide from guests' })}
+                  onClick={() => setFlag(person, 'is_hidden', !person.is_hidden)}
+                  className={`p-2 rounded ${person.is_hidden ? 'text-accent' : 'text-faint hover:text-body'}`}
+                >
+                  <EyeOff size={16} />
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  title={t('admin.people.ignoreAction', { defaultValue: 'Not a real person — ignore' })}
+                  onClick={() => setFlag(person, 'is_ignored', !person.is_ignored)}
+                  className={`p-2 rounded ${person.is_ignored ? 'text-danger-text' : 'text-faint hover:text-body'}`}
+                >
+                  <Ban size={16} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+    );
+    // Merge only becomes available at two, and the wording names the
+    // target explicitly so nobody has to guess which name survives.
+    footer = (
+      <>
+        <span className="text-sm text-muted mr-auto self-center">
+          {selected.length > 0
+            ? t('admin.people.selectedCount', {
+              count: selected.length,
+              defaultValue: `${selected.length} selected`,
+            })
+            : t('admin.people.mergeHint', {
+              defaultValue: 'Tap two or more faces to merge them into one person.',
+            })}
+        </span>
+        {selected.length > 0 && (
+          <Button variant="outline" size="sm" onClick={() => setSelected([])}>
+            {t('common.clear', { defaultValue: 'Clear' })}
+          </Button>
+        )}
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={selected.length < 2 || busy}
+          onClick={doMerge}
+          leftIcon={busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Merge className="w-4 h-4" />}
+        >
+          {t('admin.people.merge', { defaultValue: 'Merge' })}
+        </Button>
+      </>
+    );
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="xl"
+      title={t('admin.people.title', { defaultValue: 'People in this gallery' })}
+      description={t('admin.people.subtitle', {
+        defaultValue: 'Rename, merge people who were split apart, or hide someone from guests.',
+      })}
+      footer={footer}
+    >
+      {/* One datalist for every row's rename input — a per-row copy would
+          duplicate the whole name list once per person. */}
+      {knownNames.length > 0 && (
+        <datalist id="picpeak-people-names">
+          {knownNames.map((name) => <option key={name} value={name} />)}
+        </datalist>
+      )}
+      {help && <div className="mb-4">{help}</div>}
+      {body}
+    </Modal>
   );
 };
 

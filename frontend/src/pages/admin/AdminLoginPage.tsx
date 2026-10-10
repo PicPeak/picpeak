@@ -288,9 +288,9 @@ export const AdminLoginPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Form Error */}
             {errors.form && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800">{errors.form}</p>
+              <div className="bg-danger-soft border border-danger-line rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-danger-text flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-danger-text">{errors.form}</p>
               </div>
             )}
 
@@ -350,7 +350,7 @@ export const AdminLoginPage: React.FC = () => {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 text-accent border-neutral-300 rounded focus:ring-primary-500"
+                  className="w-4 h-4 text-accent border-neutral-300 rounded focus:ring-accent"
                 />
                 <span className="ml-2 text-sm text-neutral-700">{t('adminLogin.rememberMe')}</span>
               </label>
@@ -405,8 +405,8 @@ export const AdminLoginPage: React.FC = () => {
           ) : (
           <form onSubmit={handleMfaSubmit} className="space-y-6">
             <div className="text-center">
-              <div className="mx-auto mb-3 w-12 h-12 rounded-full flex items-center justify-center bg-primary-50 dark:bg-primary-900/30">
-                <ShieldCheck className="w-6 h-6" style={{ color: 'var(--color-primary, #5C8762)' }} />
+              <div className="mx-auto mb-3 w-12 h-12 rounded-full flex items-center justify-center bg-accent-soft">
+                <ShieldCheck className="w-6 h-6" style={{ color: 'var(--color-accent-dark)' }} />
               </div>
               <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text, #171717)' }}>
                 {t('adminLogin.mfa.title')}
@@ -417,9 +417,9 @@ export const AdminLoginPage: React.FC = () => {
             </div>
 
             {mfaError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-800">{mfaError}</p>
+              <div className="bg-danger-soft border border-danger-line rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-danger-text flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-danger-text">{mfaError}</p>
               </div>
             )}
 
@@ -470,7 +470,7 @@ export const AdminLoginPage: React.FC = () => {
                   setMfaError(null);
                 }}
                 className="hover:underline"
-                style={{ color: 'var(--color-primary, #5C8762)' }}
+                style={{ color: 'var(--color-accent-dark)' }}
               >
                 {useRecoveryCode ? t('adminLogin.mfa.useAuthenticator') : t('adminLogin.mfa.useRecoveryCode')}
               </button>
@@ -489,7 +489,7 @@ export const AdminLoginPage: React.FC = () => {
               <a
                 href={`mailto:${settingsData.branding_support_email}`}
                 className="hover:underline"
-                style={{ color: 'var(--color-primary, #5C8762)' }}
+                style={{ color: 'var(--color-accent-dark)' }}
               >
                 {settingsData.branding_support_email}
               </a>
@@ -500,8 +500,8 @@ export const AdminLoginPage: React.FC = () => {
 
         {/* Development Hint */}
         {import.meta.env.DEV && (
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800 text-center">
+          <div className="mt-6 p-4 bg-info-soft border border-info-line rounded-lg">
+            <p className="text-sm text-info-text text-center">
               {t('adminLogin.devModeHint')}
             </p>
           </div>

@@ -180,17 +180,17 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         <div className="gallery-premium-feedback">
           {(likeCount > 0 || isLiked) && (
             <span className="gallery-premium-feedback-indicator" title="Liked">
-              <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+              <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
             </span>
           )}
           {averageRating > 0 && (
             <span className="gallery-premium-feedback-indicator" title="Rated">
-              <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
+              <Star className="w-3.5 h-3.5 text-rating" fill="currentColor" />
             </span>
           )}
           {commentCount > 0 && (
             <span className="gallery-premium-feedback-indicator" title="Commented">
-              <MessageSquare className="w-3.5 h-3.5 text-blue-500" fill="currentColor" />
+              <MessageSquare className="w-3.5 h-3.5 text-info" fill="currentColor" />
             </span>
           )}
         </div>
@@ -579,7 +579,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>
+        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
       </div>
     );
   }

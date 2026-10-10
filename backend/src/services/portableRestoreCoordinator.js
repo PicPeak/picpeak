@@ -144,7 +144,7 @@ function createCoordinator({ database, work = applicationWork, leases, worker, i
     // The migration normally created these. A runtime that boots into a fence
     // left by a previous run reads them before migrations run, and concurrent
     // first use can race CREATE TABLE: only a complete schema may continue.
-    try { await control(() => require('../../migrations/core/280_portable_restore_control').up(db())); }
+    try { await control(() => require('../../migrations/core/282_portable_restore_control').up(db())); }
     catch (error) {
       for (const [table, columns] of [[CONTROL, ['storage_id', 'epoch', 'revision', 'worker_lease_json']],
         [INSTANCES, ['lease_json', 'host_id', 'startup_ready_epoch', 'heartbeat_at']], ['portable_restore_commits', ['attempt_id', 'format_version', 'options_digest']]]) {

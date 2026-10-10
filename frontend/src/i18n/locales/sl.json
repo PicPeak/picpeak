@@ -949,7 +949,6 @@
     "clients": "Stranke",
     "accounting": "Računovodstvo",
     "workflows": "Delovni tokovi",
-    "betaTag": "Beta",
     "automation": "Avtomatizacija",
     "sharing": "Deljenje"
   },
@@ -2691,7 +2690,6 @@
         "automation": "Avtomatizacija"
       },
       "status": {
-        "stable": "stabilno",
         "beta": "beta",
         "new": "novo",
         "experimental": "eksperimentalno",
@@ -3420,7 +3418,6 @@
     },
     "pdfTheme": {
       "title": "Tema PDF",
-      "description": "Barve, pisava, noga in številke strani za ponudbe, račune in pogodbe. Prazna polja podedujejo iz »Vsi dokumenti«, nato iz poslovnega profila.",
       "scopeLabel": "Vrsta dokumenta",
       "scope": {
         "default": "Vsi dokumenti",
@@ -3436,7 +3433,6 @@
         "subtle": "Noga in številke strani",
         "rule": "Črte"
       },
-      "inherited": "Podedovano",
       "inherit": "Podeduj ({{value}})",
       "reset": "Ponastavi",
       "titleSize": "Velikost naslova",
@@ -3464,12 +3460,8 @@
       "marginsNote": "Zgornji rob določata naslovno okno in glava dokumenta. Podpisna stran pogodbe ohrani svojo fiksno postavitev ne glede na robove, zato podpisi vedno padejo v svoja polja.",
       "preview": "Predogled PDF-ja",
       "resetScope": "Ponastavi na podedovano",
-      "save": "Shrani temo",
-      "saved": "Tema PDF shranjena",
-      "saveFailed": "Teme PDF ni bilo mogoče shraniti",
       "previewFailed": "Predogleda ni bilo mogoče izrisati",
       "presets": "Začni s prednastavitvijo",
-      "presetsHint": "Prednastavitev izpolni obrazec; nič se ne shrani, dokler teme ne shranite.",
       "preset": {
         "classic": "Klasično",
         "modern": "Moderno",
@@ -4441,7 +4433,6 @@
       "user": "Uporabniško ime",
       "pass": "Geslo",
       "folder": "Mapa",
-      "save": "Shrani nastavitve prejete pošte",
       "detectFolders": "Zaznaj",
       "folderHint": "Vnesite gostitelja, uporabniško ime in geslo, nato kliknite Zaznaj za prikaz map nabiralnika.",
       "foldersDetected": "Najdenih map: {{count}}.",
@@ -6078,8 +6069,6 @@
       "quotes": "Ponudbe",
       "bills": "Računi",
       "profile": "Profil",
-      "soon": "Kmalu",
-      "new": "Novo",
       "contracts": "Pogodbe",
       "documents": "Dokumenti"
     },
@@ -7502,7 +7491,6 @@
       "customerMessage": "Sporočilo stranke"
     },
     "savedToast": "Ponudba shranjena kot osnutek.",
-    "edit": "Uredi ponudbo",
     "new": "Nova ponudba",
     "preview": "Predogled PDF-ja",
     "saveAndSend": "Shrani in pošlji",
@@ -7940,7 +7928,6 @@
     "savedToast": "Račun shranjen.",
     "savedToastMulti": "Ustvarjenih računov: {{n}}.",
     "saveAndSpawn": "Ustvari {{n}} računov",
-    "edit": "Uredi račun",
     "customerSearch": "Išči po e-pošti ali podjetju…",
     "qrFormat": {
       "none": "Brez",
@@ -8502,7 +8489,6 @@
       "auditTrail": "Revizijska sled",
       "auditTrailHelp": "Vsak dogodek, zabeležen pri tej pogodbi. Seznam je samo za dodajanje in je vir resnice v primeru spora glede pogodbe.",
       "blocks": "Vključeni sklopi",
-      "cancel": "Prekliči",
       "cancelConfirm": "Prekličem to pogodbo? Povezava za podpis stranke bo razveljavljena.",
       "cancelError": "Preklic ni uspel",
       "cancelledToast": "Pogodba preklicana.",
@@ -8527,7 +8513,6 @@
       "dates": "Datumi",
       "downloadPdf": "Prenesi PDF",
       "downloadSignedPdf": "Prenesi podpisani PDF",
-      "edit": "Uredi",
       "fromQuote": "Iz ponudbe",
       "issued": "Izdano",
       "linkedInvoice": "Račun",
@@ -8633,13 +8618,11 @@
       }
     },
     "editor": {
-      "backToDetail": "Nazaj na pogodbo",
       "create": "Ustvari osnutek",
       "createdToast": "Pogodba ustvarjena.",
       "customer": "Stranka",
       "disclaimerBody": "Prednastavljena besedila sklopov so primeri, ki jih je napisal vzdrževalec, ne pravnik. Pred pošiljanjem pogodbe naj sklope, ki jih vključujete, za vašo jurisdikcijo in namen pregleda pravnik — za vsebino ste odgovorni vi. To vam ne preprečuje shranjevanja osnutka.",
       "disclaimerTitle": "Priporočen je pravni pregled",
-      "saving": "Shranjevanje…",
       "disclaimerLink": "Preberite pravno obvestilo CRM",
       "errors": {
         "createNotSaved": "Osnutek ni bil shranjen.",
@@ -8680,20 +8663,13 @@
       "intro": "Uvodno besedilo (neobvezno)",
       "issueDate": "Datum izdaje",
       "language": "Jezik",
-      "locked": "Poslanih pogodb ni mogoče urejati. Za spremembe prekličite pogodbo in ustvarite novo.",
       "noBlocksInSection": "V tem razdelku še ni sklopov.",
       "outro": "Zaključno besedilo (neobvezno)",
-      "popupBlocked": "Dovolite pojavna okna za to spletno mesto, da si lahko ogledate PDF.",
-      "preview": "Predogled PDF-ja",
-      "previewAfterSave": "Najprej shranite osnutek, nato odprite predogled.",
-      "previewError": "Predogled ni uspel",
-      "save": "Shrani",
       "saveError": "Shranjevanje ni uspelo",
       "savedToast": "Pogodba shranjena.",
       "schriftformWarning": "Vrsta podpisa: preprost elektronski podpis (SES). Zadostuje za običajne fotografske pogodbe v CH / DE / AT / FL. NE zadostuje za dokumente, za katere zakon zahteva Schriftform / form qualifiée: Bürgschaft (DE § 766 BGB), Verbraucherdarlehensvertrag (DE § 492 BGB), befristete Arbeitsverträge (DE § 14 Abs. 4 TzBfG) in podobno. Zanje je potreben kvalificiran elektronski podpis (QES) ponudnika storitev zaupanja — PicPeak ne zagotavlja QES.",
       "searchCustomer": "Išči po e-pošti …",
       "systemBadge": "Sistem",
-      "titleEdit": "Uredi pogodbo",
       "titleField": "Naslov pogodbe",
       "titleNew": "Nova pogodba",
       "titlePlaceholder": "npr. Poročna pogodba Novak / Müller",
@@ -9443,10 +9419,7 @@
     "empty": "Kampanj še ni.",
     "allStatuses": "Vsa stanja",
     "filterByStatus": "Filtriraj po stanju",
-    "backToList": "Vse kampanje",
     "recipientsTitle": "Prejemniki",
-    "notEditable": "Ta kampanja je že v čakalni vrsti in je ni več mogoče urejati.",
-    "viewCampaign": "Ogled kampanje",
     "status": {
       "draft": "Osnutek",
       "queued": "V čakalni vrsti",
@@ -9497,7 +9470,6 @@
     "refreshPreview": "Osveži predogled",
     "previewTitle": "Predogled e-novic",
     "sendTest": "Preizkus",
-    "queueButton": "Dodaj kampanjo v čakalno vrsto",
     "queueBlocked": "Pred pošiljanjem so potrebni zadeva, vsebina in vsaj en prejemnik.",
     "queueTitle": "Pošljem to kampanjo?",
     "queueBody": "S tem boste poslali e-pošto {{count}} strankam s hitrostjo {{rate}} na minuto (približno {{minutes}} min). Ko se pošiljanje začne, dejanja ni mogoče razveljaviti.",

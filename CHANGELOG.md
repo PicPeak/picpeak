@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.167.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.5-beta.0...v3.167.6-beta.0) (2026-10-10)
+
+
+### Bug Fixes
+
+* **backup:** recover files through the active storage adapter ([#1866](https://github.com/PicPeak/picpeak/issues/1866)) ([4b5f3f7](https://github.com/PicPeak/picpeak/commit/4b5f3f7c675751a395e6eef305b54ef04a60f959))
+* **upload:** keep uploads working on nearly full and inode-less volumes ([#1905](https://github.com/PicPeak/picpeak/issues/1905)) ([10c8801](https://github.com/PicPeak/picpeak/commit/10c88015a4a8a9ccc3f8e02d0642111530eab904))
+
 ## [3.167.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.4-beta.0...v3.167.5-beta.0) (2026-10-08)
 
 

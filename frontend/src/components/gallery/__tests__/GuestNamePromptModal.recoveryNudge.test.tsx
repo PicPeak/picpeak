@@ -68,7 +68,7 @@ describe('returning-guest nudge (#1210)', () => {
   it('leaves the ordinary registration path alone', async () => {
     render(<GuestNamePromptModal />);
 
-    await userEvent.type(screen.getByLabelText(/your name/i), 'Tina');
+    await userEvent.type(screen.getByLabelText(/^your name/i), 'Tina');
     await userEvent.click(screen.getByRole('button', { name: /^Continue$/i }));
 
     // A first-time guest still just registers — the nudge is an offer beside

@@ -26,6 +26,10 @@ same order.
 | Tabs | `Overview` first, `Settings` last | `EventTabs.tsx` |
 | Tab body | see below | |
 
+A feature that is not plain stable shows its state next to the page title
+(New, Beta, Experimental), from the one feature-state list (STYLING.md ›
+Feature state): `SectionPageHeader feature=…`. Never in the sidebar.
+
 There is **no back link** on list and detail pages: they navigate by the
 sidebar, where the list is on screen (#1730). Only an **editor** — a page
 you can leave without saving — gets a named exit: **Cancel** back to the
@@ -169,8 +173,8 @@ Every data view has five states. Design all of them.
 | State | Do | Reference |
 |---|---|---|
 | Loading | `Skeleton*` for lists/grids, `Loading` for a page; keep the layout's shape | `EventDetailsPage` |
-| Empty | say what is missing and offer the next step ("No photos yet — Upload") | |
-| Error | say it failed and offer **Retry**. Never fall through to the empty state — "couldn't load" and "there is nothing" are different messages | `PhotosTab.tsx` |
+| Empty | `EmptyState`: say what is missing and offer the next step ("No photos yet — Upload") | |
+| Error | `ErrorState`: say it failed and offer **Retry**. Never fall through to the empty state — "couldn't load" and "there is nothing" are different messages | `PhotosTab.tsx` |
 | Read-only | see §3 | `EventSettingsTab` |
 | Archived / expired | banner + read-only; actions that still make sense stay (restore, extend) | |
 
@@ -189,6 +193,8 @@ Every data view has five states. Design all of them.
 **Do**
 - Confirm with `useConfirm({ message, variant: 'danger' })`, and say what is
   lost in the message ("Delete "X" and all its photos? This cannot be undone.").
+  Its confirm button is `Button variant="danger"`; use the same variant for
+  a destructive button on a page.
 - Put delete and archive in the Danger zone (Settings) and/or the `⋯` menu,
   never next to the primary action.
 - Name the button after the action ("Delete gallery"), not "OK".
@@ -258,10 +264,32 @@ See STYLING.md › Layout and spacing for the rules. The checks:
 
 - German at 390 px and at desktop width: nothing overflows, every row wraps.
 - Dark mode via tokens: toggle it and look at every new surface.
-- Keyboard: every control reachable with Tab, menus close on Escape and on
-  outside click, icon-only buttons have `aria-label`.
+- Keyboard: every control reachable with Tab, menus and popups close on
+  Escape (popups without saving, below) and on outside click, icon-only
+  buttons have `aria-label`.
 - The admin sidebar is a drawer below `lg`; don't remove a control on the
   assumption that "it's in the sidebar".
+
+### Popups and dialogs close with Escape
+
+Every popup — dialog, confirm, prompt, sheet, the gallery's own dialogs —
+closes with **Escape, without saving**. Escape is Cancel: whatever was typed
+into the dialog is dropped and nothing is sent. Use the primitives, which do
+this already: `Modal`, `useConfirm`, `usePrompt` in the admin and portal,
+`useGalleryDialog` for the gallery's themed dialogs.
+
+- Escape closes only the **top** dialog. A confirm opened over a dialog
+  closes the confirm and leaves the dialog open (they share one stack,
+  `pushDialogLayer`).
+- **While a request runs**, closing waits: Escape, the backdrop and the X do
+  nothing until the save or upload has answered, so a half-sent change is
+  never abandoned behind the user's back. Say so in the dialog (a busy
+  button is enough).
+- **A dialog that must be answered** — the mandatory password change — has
+  no Escape, no X and no backdrop close. That is the only exception; it
+  needs a reason in the code and in the PR body.
+- Never make Escape save, and never put the only way out of a dialog
+  behind a button that saves.
 
 ## 9. Removing or moving things
 
@@ -286,9 +314,11 @@ Run before opening a PR that touches the admin UI.
 6. Destructive actions: `useConfirm` with `danger`, consequence in the text?
 7. Any removed control — where did its function go? Old URLs redirected?
 8. German at 390 px: does every row wrap? Dark mode: anything invisible?
+   Does every new popup close with Escape without saving (UX.md § 8)?
 9. New strings in `en.json` and `de.json`, inline fallbacks matching?
-10. `npm run lint` (UI tokens), `npm run build`, and before/after screenshots
-    on the `pr-assets` branch (CONTRIBUTING.md).
+10. `npm run lint` (UI tokens and palette colours: no raw `text-red-600`, no
+    hex in a style), `npm run build`, and before/after screenshots on the
+    `pr-assets` branch (CONTRIBUTING.md) in light and dark.
 11. **E2E selectors:** run the specs in `tests/e2e` that cover the page you
     changed. In specs, prefer `getByRole` and test ids over visible text —
     copy changes are what keep breaking the scheduled suite.

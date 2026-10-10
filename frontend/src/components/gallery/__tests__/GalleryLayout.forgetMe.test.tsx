@@ -47,11 +47,10 @@ vi.mock('../../../contexts/GuestIdentityContext', () => ({
   }),
 }));
 
-function confirmTextFor(identityMode: 'simple' | 'guest') {
+function renderLayout(identityMode: 'simple' | 'guest') {
   identityState.identityMode = identityMode;
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const { unmount } = render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <GalleryLayout event={{ event_name: 'ZZTEST Wedding' }}>
@@ -60,14 +59,21 @@ function confirmTextFor(identityMode: 'simple' | 'guest') {
       </MemoryRouter>
     </QueryClientProvider>
   );
+}
+
+function confirmTextFor(identityMode: 'simple' | 'guest') {
+  const { unmount } = renderLayout(identityMode);
   fireEvent.click(screen.getByRole('button', { name: 'Forget me ({{name}})' }));
-  const text = confirm.mock.calls[0]?.[0];
+  const text = screen.getByRole('alertdialog').querySelector('p')?.textContent;
   unmount();
   return text;
 }
 
 describe('GalleryLayout "Forget me"', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    forget.mockClear();
+  });
 
   it('promises the selections go only in guest identity mode', () => {
     expect(confirmTextFor('guest')).toBe('Your name and selections will be removed from this gallery.');
@@ -76,5 +82,22 @@ describe('GalleryLayout "Forget me"', () => {
   it('names only the uploads for an uploader-only identity', () => {
     expect(confirmTextFor('simple')).toBe('Your name will be removed from the photos you uploaded to this gallery.');
     expect(forget).not.toHaveBeenCalled();
+  });
+
+  it('asks in a themed dialog, not window.confirm, and forgets only on confirm', () => {
+    const nativeConfirm = vi.spyOn(window, 'confirm');
+    renderLayout('guest');
+    fireEvent.click(screen.getByRole('button', { name: 'Forget me ({{name}})' }));
+    expect(nativeConfirm).not.toHaveBeenCalled();
+
+    // Escape cancels and forgets nothing.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(forget).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forget me ({{name}})' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forget me' }));
+    expect(forget).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

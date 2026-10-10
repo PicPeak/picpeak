@@ -226,18 +226,18 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
   }, [searchParams, setSearchParams]);
 
   if (isLoading) return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <Loading />
     </div>
   );
 
   const notFound = (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="max-w-md text-center">
-        <h1 className="text-2xl font-bold mb-2 text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-2xl font-bold mb-2 text-theme">
           {t('quoteResponse.notFound', 'Quote not found')}
         </h1>
-        <p className="text-neutral-600 dark:text-neutral-400">
+        <p className="text-muted-theme">
           {t('quoteResponse.notFoundBody', 'This link may have expired or been revoked. Please contact the photographer for a new quote.')}
         </p>
       </div>
@@ -299,7 +299,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
+    <div className="min-h-screen bg-background text-theme">
       <div className="max-w-3xl mx-auto py-8 px-4">
         {/* Issuer header — logo + company name. The logo URL is
             built server-side under /uploads/, so it works even on
@@ -321,212 +321,216 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
             })()}
             <h2 className="text-xl font-bold">{quote.issuer.companyName}</h2>
             {quote.issuer.website && (
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">{quote.issuer.website}</p>
+              <p className="text-sm text-muted-theme">{quote.issuer.website}</p>
             )}
           </div>
         )}
 
-        <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-6 md:p-8">
+        <div className="bg-surface rounded-xl shadow-sm border border-border-token p-6 md:p-8">
           <div className="flex items-baseline justify-between mb-4 gap-3 flex-wrap">
             <h1 className="text-2xl font-bold">{t('quoteResponse.title', 'Quote')} {quote.quoteNumber}</h1>
-            <span className={`text-xs font-medium px-2 py-1 rounded ${
-              quote.status === 'accepted' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-                : quote.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
+            <span className={`text-xs font-medium px-2 py-1 rounded status-chip ${
+              quote.status === 'accepted' ? 'hue-success'
+                : quote.status === 'declined' ? 'hue-danger'
+                : 'hue-info'
             }`}>{t(`quotes.status.${quote.status}`, quote.status)}</span>
           </div>
 
           {quote.recipient && (
-            <div className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
+            <div className="mb-4 text-sm text-theme">
               <p className="font-medium">{quote.recipient.companyName || quote.recipient.displayName}</p>
               <p>{quote.recipient.email}</p>
             </div>
           )}
 
           {quote.eventName && (
-            <p className="text-neutral-600 dark:text-neutral-400 mb-2">
+            <p className="text-muted-theme mb-2">
               <strong>{t('quoteResponse.event', 'Event')}:</strong> {quote.eventName}
               {quote.eventDate && ` · ${formatShortDate(quote.eventDate)}`}
             </p>
           )}
-          <p className="text-neutral-600 dark:text-neutral-400 mb-4">
+          <p className="text-muted-theme mb-4">
             <strong>{t('quoteResponse.issueDate', 'Issued')}:</strong> {formatShortDate(quote.issueDate)}
             {quote.validUntil && ` · ${t('quoteResponse.validUntil', 'valid until')} ${formatShortDate(quote.validUntil)}`}
           </p>
 
           {quote.introText && (
-            <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300 mb-4">{quote.introText}</p>
+            <p className="whitespace-pre-line text-theme mb-4">{quote.introText}</p>
           )}
 
           {canChoose && (
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            <p className="text-sm text-muted-theme">
               {changeAddOnsUntil
                 ? t('quoteResponse.addons.changeUntil', 'You can change your add-ons until {{time}}. Accept again to confirm a change.', { time: changeAddOnsUntil })
                 : t('quoteResponse.addons.hint', 'Book the add-ons you would like. The total updates as you choose.')}
             </p>
           )}
 
-          <table className="w-full text-sm my-4">
-            <thead>
-              <tr className="border-b border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400">
-                <th className="text-left py-2 w-10">#</th>
-                <th className="text-left py-2">{t('quoteResponse.description', 'Description')}</th>
-                <th className="text-right py-2 w-16">{t('quoteResponse.qty', 'Qty')}</th>
-                <th className="text-right py-2 w-24">{t('quoteResponse.unit', 'Unit')}</th>
-                <th className="text-right py-2 w-24">{t('quoteResponse.total', 'Total')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                // Migration 119 — sub-items + details_text. Top-level
-                // items get a numeric position; sub-items show empty
-                // position + indented description + parenthesised
-                // (display-only) line total. A non-empty detailsText
-                // renders as a small italic grey line directly below
-                // its parent. Sub-items with unit_price = 0 leave the
-                // price columns empty (transparency list only).
-                let topCount = 0;
-                const rows: React.ReactNode[] = [];
-                // A package whose price is the sum of its sub-items has no
-                // unit price of its own — the same rule as the PDF.
-                const parents = new Set<string>();
-                for (const item of quote.lineItems) {
-                  if (item.parentLineItemId != null) parents.add(`id:${item.parentLineItemId}`);
-                  if (item.parentPosition != null) parents.add(`pos:${item.parentPosition}`);
-                }
-                for (const li of quote.lineItems) {
-                  const isSub = li.parentLineItemId != null || li.parentPosition != null;
-                  // Discount lines (#1451) are numbered, but carry no quantity or unit price.
-                  const isDiscount = li.lineKind === 'discount';
-                  if (!isSub) topCount += 1;
-                  const priceless = isSub && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
-                  const packageSum = !isSub && !Number(li.unitPriceMinor)
-                    && (parents.has(`id:${li.id}`) || parents.has(`pos:${li.position}`));
-                  const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
-                  const quantityText = isDiscount
-                    ? ''
-                    : li.unit === 'flat' ? unitLabel : `${Number(li.quantity)}${unitLabel ? ` ${unitLabel}` : ''}`;
-                  // Optional add-ons (#1451): sub-items follow their parent.
-                  const addOnPosition = isSub ? li.parentPosition : li.position;
-                  const isAddOn = !!li.isOptional && !isDiscount;
-                  const addOnChosen = isAddOn && addOnPosition != null ? isChosen(addOnPosition, li.selected) : true;
-                  // A not-booked add-on is dimmed — except its Book button.
-                  const dim = addOnChosen ? '' : 'opacity-60';
-                  const lineTotalMinor = lineTotalOverrides.get(li.position) ?? Number(li.lineTotalMinor);
-                  const hasDetails = !!li.detailsText && String(li.detailsText).trim().length > 0;
-                  // An add-on's status (with its Book / Remove booking button)
-                  // is the last line of the item: title, details, status.
-                  const hasStatus = isAddOn && !isSub;
-                  const itemBorder = 'border-b border-neutral-100 dark:border-neutral-700/70';
-                  rows.push(
-                    <tr key={`row-${li.position}`} className={`${hasDetails || hasStatus ? '' : itemBorder} ${
-                      isSub ? 'text-neutral-600 dark:text-neutral-400' : ''
-                    }`}>
-                      <td className={`py-2 ${dim}`}>{isSub ? '' : topCount}</td>
-                      <td className={`py-2 whitespace-pre-line ${isSub ? 'pl-6' : ''} ${dim}`}>
-                        {isSub ? '• ' : ''}{li.description}
-                        {hasStatus && canChoose && (
-                          <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                            {t('quoteResponse.addons.optional', 'Optional')}
-                          </span>
-                        )}
-                      </td>
-                      <td className={`py-2 text-right ${dim}`}>{quantityText}</td>
-                      <td className={`py-2 text-right tabular-nums ${dim}`}>
-                        {priceless || isDiscount || packageSum ? '' : formatMoneyMinor(Number(li.unitPriceMinor), quote.currency)}
-                      </td>
-                      <td className={`py-2 text-right tabular-nums ${isSub ? 'italic' : ''} ${dim}`}>
-                        {priceless
-                          ? ''
-                          : isSub
-                            ? `(${formatMoneyMinor(lineTotalMinor, quote.currency)})`
-                            : formatMoneyMinor(lineTotalMinor, quote.currency)}
-                      </td>
-                    </tr>
-                  );
-                  if (hasDetails) {
-                    rows.push(
-                      <tr key={`details-${li.position}`} className={hasStatus ? '' : itemBorder}>
-                        <td className="py-1"></td>
-                        <td className={`py-1 text-xs italic text-neutral-500 dark:text-neutral-400 whitespace-pre-line ${isSub ? 'pl-10' : 'pl-4'} ${dim}`}
-                          colSpan={4}>
-                          {li.detailsText}
-                        </td>
-                      </tr>
-                    );
+          {/* On a phone the unit price column steps aside (quantity and total
+              stay); anything still too wide scrolls inside the card. */}
+          <div className="overflow-x-auto my-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border-token text-muted-theme">
+                  <th className="text-left py-2 w-10">#</th>
+                  <th className="text-left py-2">{t('quoteResponse.description', 'Description')}</th>
+                  <th className="text-right py-2 pl-2 sm:pl-4 w-16 whitespace-nowrap">{t('quoteResponse.qty', 'Qty')}</th>
+                  <th className="hidden sm:table-cell text-right py-2 pl-4 w-24 whitespace-nowrap">{t('quoteResponse.unit', 'Unit')}</th>
+                  <th className="text-right py-2 pl-2 sm:pl-4 w-24 whitespace-nowrap">{t('quoteResponse.total', 'Total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  // Migration 119 — sub-items + details_text. Top-level
+                  // items get a numeric position; sub-items show empty
+                  // position + indented description + parenthesised
+                  // (display-only) line total. A non-empty detailsText
+                  // renders as a small italic grey line directly below
+                  // its parent. Sub-items with unit_price = 0 leave the
+                  // price columns empty (transparency list only).
+                  let topCount = 0;
+                  const rows: React.ReactNode[] = [];
+                  // A package whose price is the sum of its sub-items has no
+                  // unit price of its own — the same rule as the PDF.
+                  const parents = new Set<string>();
+                  for (const item of quote.lineItems) {
+                    if (item.parentLineItemId != null) parents.add(`id:${item.parentLineItemId}`);
+                    if (item.parentPosition != null) parents.add(`pos:${item.parentPosition}`);
                   }
-                  if (hasStatus) {
+                  for (const li of quote.lineItems) {
+                    const isSub = li.parentLineItemId != null || li.parentPosition != null;
+                    // Discount lines (#1451) are numbered, but carry no quantity or unit price.
+                    const isDiscount = li.lineKind === 'discount';
+                    if (!isSub) topCount += 1;
+                    const priceless = isSub && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
+                    const packageSum = !isSub && !Number(li.unitPriceMinor)
+                      && (parents.has(`id:${li.id}`) || parents.has(`pos:${li.position}`));
+                    const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
+                    const quantityText = isDiscount
+                      ? ''
+                      : li.unit === 'flat' ? unitLabel : `${Number(li.quantity)}${unitLabel ? ` ${unitLabel}` : ''}`;
+                    // Optional add-ons (#1451): sub-items follow their parent.
+                    const addOnPosition = isSub ? li.parentPosition : li.position;
+                    const isAddOn = !!li.isOptional && !isDiscount;
+                    const addOnChosen = isAddOn && addOnPosition != null ? isChosen(addOnPosition, li.selected) : true;
+                    // A not-booked add-on is dimmed — except its Book button.
+                    const dim = addOnChosen ? '' : 'opacity-60';
+                    const lineTotalMinor = lineTotalOverrides.get(li.position) ?? Number(li.lineTotalMinor);
+                    const hasDetails = !!li.detailsText && String(li.detailsText).trim().length > 0;
+                    // An add-on's status (with its Book / Remove booking button)
+                    // is the last line of the item: title, details, status.
+                    const hasStatus = isAddOn && !isSub;
+                    const itemBorder = 'border-b border-border-token';
                     rows.push(
-                      <tr key={`status-${li.position}`} className={itemBorder}>
-                        <td className="pb-2"></td>
-                        <td className="pb-2" colSpan={4}>
-                          {canChoose ? (
-                            <div className="flex items-center gap-2 flex-wrap text-xs">
-                              <span className={`italic text-neutral-500 dark:text-neutral-400 ${dim}`}>
-                                <AddOnBookingState booked={addOnChosen} />
-                              </span>
-                              <AddOnBookButton
-                                booked={addOnChosen}
-                                disabled={busy}
-                                onToggle={() => toggleAddOn(li.position, !addOnChosen)}
-                              />
-                            </div>
-                          ) : (
-                            <span className={`inline-block rounded px-1.5 py-0.5 text-xs bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200 ${dim}`}>
-                              {addOnChosen
-                                ? t('quoteResponse.addons.included', 'Booked')
-                                : t('quoteResponse.addons.notChosen', 'Not booked')}
+                      <tr key={`row-${li.position}`} className={`${hasDetails || hasStatus ? '' : itemBorder} ${
+                        isSub ? 'text-muted-theme' : ''
+                      }`}>
+                        <td className={`py-2 ${dim}`}>{isSub ? '' : topCount}</td>
+                        <td className={`py-2 whitespace-pre-line ${isSub ? 'pl-6' : ''} ${dim}`}>
+                          {isSub ? '• ' : ''}{li.description}
+                          {hasStatus && canChoose && (
+                            <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs bg-elevated text-theme">
+                              {t('quoteResponse.addons.optional', 'Optional')}
                             </span>
                           )}
                         </td>
+                        <td className={`py-2 pl-2 sm:pl-4 text-right whitespace-nowrap ${dim}`}>{quantityText}</td>
+                        <td className={`hidden sm:table-cell py-2 pl-4 text-right tabular-nums whitespace-nowrap ${dim}`}>
+                          {priceless || isDiscount || packageSum ? '' : formatMoneyMinor(Number(li.unitPriceMinor), quote.currency)}
+                        </td>
+                        <td className={`py-2 pl-2 sm:pl-4 text-right tabular-nums whitespace-nowrap ${isSub ? 'italic' : ''} ${dim}`}>
+                          {priceless
+                            ? ''
+                            : isSub
+                              ? `(${formatMoneyMinor(lineTotalMinor, quote.currency)})`
+                              : formatMoneyMinor(lineTotalMinor, quote.currency)}
+                        </td>
                       </tr>
                     );
+                    if (hasDetails) {
+                      rows.push(
+                        <tr key={`details-${li.position}`} className={hasStatus ? '' : itemBorder}>
+                          <td className="py-1"></td>
+                          <td className={`py-1 text-xs italic text-muted-theme whitespace-pre-line ${isSub ? 'pl-10' : 'pl-4'} ${dim}`}
+                            colSpan={4}>
+                            {li.detailsText}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    if (hasStatus) {
+                      rows.push(
+                        <tr key={`status-${li.position}`} className={itemBorder}>
+                          <td className="pb-2"></td>
+                          <td className="pb-2" colSpan={4}>
+                            {canChoose ? (
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                <span className={`italic text-muted-theme ${dim}`}>
+                                  <AddOnBookingState booked={addOnChosen} />
+                                </span>
+                                <AddOnBookButton
+                                  booked={addOnChosen}
+                                  disabled={busy}
+                                  onToggle={() => toggleAddOn(li.position, !addOnChosen)}
+                                />
+                              </div>
+                            ) : (
+                              <span className={`inline-block rounded px-1.5 py-0.5 text-xs bg-elevated text-theme ${dim}`}>
+                                {addOnChosen
+                                  ? t('quoteResponse.addons.included', 'Booked')
+                                  : t('quoteResponse.addons.notChosen', 'Not booked')}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    }
                   }
-                }
-                return rows;
-              })()}
-            </tbody>
-          </table>
+                  return rows;
+                })()}
+              </tbody>
+            </table>
+          </div>
 
-          <div className="flex flex-col items-end gap-1 text-sm border-t border-neutral-200 dark:border-neutral-700 pt-3">
-            <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('quoteResponse.subtotal', 'Subtotal')}:</span>
+          <div className="flex flex-col items-end gap-1 text-sm border-t border-border-token pt-3">
+            <div className="flex gap-6"><span className="text-muted-theme">{t('quoteResponse.subtotal', 'Subtotal')}:</span>
               <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.netAmountMinor), quote.currency)}</span></div>
             {shown.vatAmountMinor > 0 && (
-              <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('quoteResponse.vat', 'VAT')} ({Number(quote.vatRate || 0).toFixed(1)}%):</span>
+              <div className="flex gap-6"><span className="text-muted-theme">{t('quoteResponse.vat', 'VAT')} ({Number(quote.vatRate || 0).toFixed(1)}%):</span>
                 <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.vatAmountMinor), quote.currency)}</span></div>
             )}
             <div className="flex gap-6 font-semibold text-base"><span>{t('quoteResponse.total', 'Total')}:</span>
               <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.totalAmountMinor), quote.currency)}</span></div>
             {canChoose && totalsQuery.isFetching && (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400" aria-live="polite">
+              <p className="text-xs text-muted-theme" aria-live="polite">
                 {t('quoteResponse.addons.updating', 'Updating the total…')}
               </p>
             )}
           </div>
 
           {quote.outroText && (
-            <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300 mt-4">{quote.outroText}</p>
+            <p className="whitespace-pre-line text-theme mt-4">{quote.outroText}</p>
           )}
 
           {/* Response area */}
-          <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-700 text-center">
-            {error && <p className="text-red-600 dark:text-red-400 mb-4 text-sm">{error}</p>}
+          <div className="mt-8 pt-6 border-t border-border-token text-center">
+            {error && <p className="text-danger-text mb-4 text-sm">{error}</p>}
             {busy && (
-              <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+              <p className="text-sm text-muted-theme mb-4">
                 {t('quoteResponse.submitting', 'Recording your response…')}
               </p>
             )}
             {/* What the customer wrote with their acceptance, shown back. */}
             {quote.customerMessage && quote.status !== 'declined' && (
-              <div className="text-left max-w-prose mx-auto mb-4 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-4">
-                <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
+              <div className="text-left max-w-prose mx-auto mb-4 rounded-md border border-border-token bg-elevated p-4">
+                <p className="text-xs font-medium text-muted-theme mb-1">
                   {t('quoteResponse.message.yours', 'Your message')}
                 </p>
-                <p className="text-sm whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-200">{quote.customerMessage}</p>
+                <p className="text-sm whitespace-pre-wrap break-words text-theme">{quote.customerMessage}</p>
               </div>
             )}
             {locked ? (
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              <p className="text-sm text-muted-theme">
                 {responseStatus === 'accepted'
                   ? t('quoteResponse.acceptedLocked', 'You accepted this quote on {{date}}. The decision is final.', { date: quote.respondedAt ? fmtDateTime(quote.respondedAt) : '' })
                   : responseStatus === 'declined'
@@ -535,7 +539,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
               </p>
             ) : (
               <>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+                <p className="text-sm text-muted-theme mb-4">
                   {quote.respondedAt
                     ? t('quoteResponse.changeWithin', 'You can change your response until {{at}}.', (() => {
                         // Provide both variables so EN ("until {{at}}")
@@ -562,13 +566,13 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     text + optional link come from settings; both can
                     be empty if only the checkbox + label is wanted. */}
                 {quote.tos && (quote.tos.text || quote.tos.required) && (
-                  <div className="text-left max-w-prose mx-auto mb-4 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-4">
+                  <div className="text-left max-w-prose mx-auto mb-4 rounded-md border border-border-token bg-elevated p-4">
                     {quote.tos.text && (
-                      <div className="text-xs text-neutral-700 dark:text-neutral-300 whitespace-pre-line mb-3 max-h-48 overflow-y-auto">
+                      <div className="text-xs text-theme whitespace-pre-line mb-3 max-h-48 overflow-y-auto">
                         {quote.tos.text}
                       </div>
                     )}
-                    <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300 cursor-pointer">
+                    <label className="flex items-start gap-2 text-sm text-theme cursor-pointer">
                       <input
                         type="checkbox"
                         className="mt-0.5"
@@ -582,7 +586,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                           <>
                             {' '}
                             <a href={quote.tos.url} target="_blank" rel="noopener noreferrer"
-                              className="underline text-primary-600 dark:text-primary-400">
+                              className="underline text-accent">
                               {t('quoteResponse.tosLink', 'Read the full Terms')}
                             </a>
                           </>
@@ -595,7 +599,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                 {/* Optional message to the business, sent with Accept. */}
                 <div className="text-left max-w-prose mx-auto mb-4">
                   <label htmlFor="quote-customer-message"
-                    className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    className="block text-sm font-medium text-theme mb-1">
                     {t('quoteResponse.message.label', 'Your message to us (optional)')}
                   </label>
                   <textarea
@@ -606,7 +610,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     disabled={busy}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder={t('quoteResponse.message.placeholder', 'Anything we should know? It is sent with your acceptance.')}
-                    className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    className="input-themed h-auto"
                   />
                 </div>
 
@@ -616,7 +620,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     see the preselectedAction comment above for why
                     auto-submit is unsafe (link prefetchers). */}
                 {preselectedAction && (
-                  <p className="text-center text-sm text-neutral-600 dark:text-neutral-300 mb-3">
+                  <p className="text-center text-sm text-muted-theme mb-3">
                     {preselectedAction === 'accept'
                       ? t('quoteResponse.preselectAcceptHint', 'You followed the "Accept" link from the email — click the button below to confirm.')
                       : t('quoteResponse.preselectDeclineHint', 'You followed the "Decline" link from the email — click the button below to confirm.')}
@@ -627,15 +631,15 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
                     type="button"
                     disabled={busy || (quote.tos?.required && !tosAccepted) || !totalsReady}
                     onClick={() => handleRespond('accept')}
-                    className={`px-6 py-3 rounded-md bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 ${
-                      preselectedAction === 'accept' ? 'ring-4 ring-green-300 dark:ring-green-700 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900' : ''
+                    className={`px-6 py-3 rounded-md bg-success hover:opacity-90 text-white font-medium disabled:opacity-50 ${
+                      preselectedAction === 'accept' ? 'ring-4 ring-success ring-offset-2 ring-offset-surface' : ''
                     }`}
                   >{t('quoteResponse.accept', 'Accept quote')}</button>
                   <button
                     type="button" disabled={busy}
                     onClick={() => handleRespond('decline')}
-                    className={`px-6 py-3 rounded-md border border-neutral-300 dark:border-neutral-600 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 font-medium disabled:opacity-50 ${
-                      preselectedAction === 'decline' ? 'ring-4 ring-neutral-400 dark:ring-neutral-500 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900' : ''
+                    className={`px-6 py-3 rounded-md border border-border-token hover:bg-elevated text-theme font-medium disabled:opacity-50 ${
+                      preselectedAction === 'decline' ? 'ring-4 ring-text-secondary ring-offset-2 ring-offset-surface' : ''
                     }`}
                   >{t('quoteResponse.decline', 'Decline')}</button>
                 </div>
@@ -645,7 +649,7 @@ export const QuoteResponseView: React.FC<{ adapter: QuoteDocumentAdapter }> = ({
         </div>
 
         {quote.issuer?.footerLine && (
-          <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 mt-4">{quote.issuer.footerLine}</p>
+          <p className="text-center text-xs text-muted-theme mt-4">{quote.issuer.footerLine}</p>
         )}
       </div>
     </div>

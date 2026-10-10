@@ -145,7 +145,7 @@ export const CustomerEventPage: React.FC = () => {
 
       {sections.quotes && data.quotes.length > 0 && (
         <Section title={t('customer.nav.quotes', 'Quotes')}>
-          <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+          <ul className="divide-y divide-border-token">
             {data.quotes.map((q) => (
               <li key={q.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
@@ -167,7 +167,7 @@ export const CustomerEventPage: React.FC = () => {
 
       {sections.contracts && data.contracts.length > 0 && (
         <Section title={t('customer.nav.contracts', 'Contracts')}>
-          <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+          <ul className="divide-y divide-border-token">
             {data.contracts.map((c) => (
               <li key={c.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
@@ -189,7 +189,7 @@ export const CustomerEventPage: React.FC = () => {
 
       {sections.invoices && data.invoices.length > 0 && (
         <Section title={t('customer.nav.bills', 'Invoices')}>
-          <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+          <ul className="divide-y divide-border-token">
             {data.invoices.map((i) => (
               <li key={i.id} className="p-4 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">

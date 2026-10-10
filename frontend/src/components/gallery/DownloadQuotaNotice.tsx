@@ -41,7 +41,7 @@ export const DownloadQuotaNotice: React.FC<DownloadQuotaNoticeProps> = ({ photos
     const exhausted = remaining === 0;
     return (
       <div
-        className={`inline-flex items-center gap-1.5 text-sm ${exhausted ? 'text-red-600' : 'text-muted-theme'} ${className}`}
+        className={`inline-flex items-center gap-1.5 text-sm ${exhausted ? 'text-status hue-danger' : 'text-muted-theme'} ${className}`}
         role="status"
         data-testid="download-quota-counter"
       >
@@ -61,7 +61,7 @@ export const DownloadQuotaNotice: React.FC<DownloadQuotaNoticeProps> = ({ photos
   const fits = cost <= remaining;
   return (
     <div
-      className={`inline-flex items-center gap-1.5 text-sm ${fits ? 'text-muted-theme' : 'text-red-600 font-medium'} ${className}`}
+      className={`inline-flex items-center gap-1.5 text-sm ${fits ? 'text-muted-theme' : 'text-status hue-danger font-medium'} ${className}`}
       role={fits ? 'status' : 'alert'}
       data-testid="download-quota-selection"
     >

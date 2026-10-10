@@ -22,31 +22,36 @@
  */
 import { ESLint } from 'eslint';
 
-const RULE = 'ui-tokens/no-raw-dark-palette';
-const SCOPE = [
-  'src/components/admin',
-  'src/pages/admin',
-  'src/features',
-  'src/components/common',
+// Each rule with the files it covers (eslint.config.js).
+const RULES = [
+  ['ui-tokens/no-raw-dark-palette', ['src/components/admin', 'src/pages/admin', 'src/features', 'src/components/common']],
+  ['ui-tokens/no-raw-palette', ['src']],
 ];
 
 const check = process.argv.includes('--check');
 
-// Pass 1: count what the rule reports (before any fix is applied).
-const reporter = new ESLint({ ruleFilter: ({ ruleId }) => ruleId === RULE });
-const before = await reporter.lintFiles(SCOPE);
-let pairs = 0;
-const files = new Set();
-for (const r of before) {
-  const n = r.messages.filter((m) => m.ruleId === RULE).length;
-  if (n > 0) { pairs += n; files.add(r.filePath); }
-}
+let left = 0;
+for (const [RULE, SCOPE] of RULES) {
+  // Pass 1: count what the rule can fix (before any fix is applied).
+  const reporter = new ESLint({ ruleFilter: ({ ruleId }) => ruleId === RULE });
+  const before = await reporter.lintFiles(SCOPE);
+  let fixable = 0;
+  let manual = 0;
+  const files = new Set();
+  for (const r of before) {
+    for (const m of r.messages.filter((msg) => msg.ruleId === RULE)) {
+      if (m.fix) { fixable += 1; files.add(r.filePath); } else manual += 1;
+    }
+  }
 
-// Pass 2: apply only this rule's fixer.
-if (!check && pairs > 0) {
-  const fixer = new ESLint({ fix: (m) => m.ruleId === RULE, ruleFilter: ({ ruleId }) => ruleId === RULE });
-  await ESLint.outputFixes(await fixer.lintFiles(SCOPE));
-}
+  // Pass 2: apply only this rule's fixer.
+  if (!check && fixable > 0) {
+    const fixer = new ESLint({ fix: (m) => m.ruleId === RULE, ruleFilter: ({ ruleId }) => ruleId === RULE });
+    await ESLint.outputFixes(await fixer.lintFiles(SCOPE));
+  }
 
-console.log(`${check ? 'would rewrite' : 'rewrote'} ${pairs} pairs in ${files.size} files (scope: ${SCOPE.join(', ')})`);
-if (check && pairs > 0) process.exit(1);
+  console.log(`${RULE}: ${check ? 'would rewrite' : 'rewrote'} ${fixable} class lists in ${files.size} files`
+    + (manual ? `; ${manual} classes need a person to pick a token` : ''));
+  left += fixable + manual;
+}
+if (check && left > 0) process.exit(1);

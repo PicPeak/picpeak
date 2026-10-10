@@ -43,7 +43,7 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({ expiresAt, class
 
   if (timeLeft.isExpired) {
     return (
-      <div className={`flex items-center gap-2 text-red-600 ${className}`}>
+      <div className={`flex items-center gap-2 text-status hue-danger ${className}`}>
         <AlertCircle className="w-5 h-5" />
         <span className="font-semibold">{t('gallery.expired')}</span>
       </div>
@@ -56,22 +56,22 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({ expiresAt, class
   }
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
-      <Clock className="w-5 h-5 text-orange-600 animate-pulse" />
+    <div className={`flex items-center gap-3 hue-warning ${className}`}>
+      <Clock className="w-5 h-5 text-status animate-pulse" />
       <div className="flex items-center gap-1 font-mono text-lg">
-        <div className="bg-orange-100 text-orange-900 px-2 py-1 rounded">
+        <div className="status-chip px-2 py-1 rounded">
           {String(timeLeft.hours).padStart(2, '0')}
         </div>
-        <span className="text-orange-600">:</span>
-        <div className="bg-orange-100 text-orange-900 px-2 py-1 rounded">
+        <span className="text-status">:</span>
+        <div className="status-chip px-2 py-1 rounded">
           {String(timeLeft.minutes).padStart(2, '0')}
         </div>
-        <span className="text-orange-600">:</span>
-        <div className="bg-orange-100 text-orange-900 px-2 py-1 rounded">
+        <span className="text-status">:</span>
+        <div className="status-chip px-2 py-1 rounded">
           {String(timeLeft.seconds).padStart(2, '0')}
         </div>
       </div>
-      <span className="text-sm text-orange-600 font-medium">{t('gallery.remaining')}</span>
+      <span className="text-sm text-status font-medium">{t('gallery.remaining')}</span>
     </div>
   );
 };

@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="min-h-[400px] flex items-center justify-center p-4">
           <div className="text-center max-w-md">
-            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <AlertTriangle className="w-12 h-12 text-danger mx-auto mb-4" />
             <h2 className="text-lg font-semibold text-neutral-900 mb-2">
               {i18n.t('errors.somethingWentWrong')}
             </h2>
@@ -96,7 +96,7 @@ export class PageErrorBoundary extends Component<Props, State> {
       return (
         <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
-            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-6" />
+            <AlertTriangle className="w-16 h-16 text-danger mx-auto mb-6" />
             <h1 className="text-2xl font-bold text-neutral-900 mb-4">
               {i18n.t('errors.oopsSomethingWentWrong')}
             </h1>

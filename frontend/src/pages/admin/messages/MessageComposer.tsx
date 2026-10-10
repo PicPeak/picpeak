@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useMutation } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
-import { X, Send as SendIcon } from 'lucide-react';
+import { Send as SendIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { emailService } from '../../../services/email.service';
-import { Button } from '../../../components/common';
+import { Button, Modal } from '../../../components/common';
 
 /**
  * Compose / reply modal. The body is pre-loaded with the rendered template (or a
@@ -44,12 +44,6 @@ export const MessageComposer: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
-
   const send = useMutation({
     mutationFn: () => emailService.sendMessage({
       to: to.trim(),
@@ -66,54 +60,50 @@ export const MessageComposer: React.FC<{
   const canSend = !!to.trim() && !!subject.trim() && !send.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onClick={onClose}>
-      <div className="bg-shell rounded-xl w-[min(920px,97vw)] h-[min(780px,92vh)] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-line-faint">
-          <span className="text-sm font-semibold text-heading">{title || t('messages.compose', 'Compose message')}</span>
-          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft" aria-label={t('messages.close', 'Close')}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
-          <label className="flex items-center gap-2 text-sm">
-            <span className="w-16 text-muted">{t('messages.to', 'To')}</span>
-            <input className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="w-16 text-muted">Cc</span>
-            <input className={inputCls} value={cc} onChange={(e) => setCc(e.target.value)} placeholder={t('messages.optional', 'optional')} />
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="w-16 text-muted">{t('messages.subject', 'Subject')}</span>
-            <input className={inputCls} value={subject} onChange={(e) => setSubject(e.target.value)} />
-          </label>
-          <div className="flex-1 min-h-0 flex flex-col">
-            <div className="text-xs text-muted mb-1">
-              {t('messages.bodyHint', 'Edit the message freely — add a note anywhere before sending.')}
-            </div>
-            <div
-              ref={bodyRef}
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              aria-multiline="true"
-              className="min-h-[240px] flex-1 overflow-y-auto rounded-lg border border-line-strong bg-canvas p-3 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
-            />
+    <Modal
+      open
+      onClose={onClose}
+      title={title || t('messages.compose', 'Compose message')}
+      size="xl"
+      footer={(
+        <>
+          <span className="mr-auto self-center text-xs text-muted">{t('messages.sendsFromHint', 'Sends from your configured outgoing address.')}</span>
+          <Button variant="outline" onClick={onClose}>{t('messages.cancel', 'Cancel')}</Button>
+          <Button variant="primary" onClick={() => send.mutate()} isLoading={send.isPending} disabled={!canSend} leftIcon={<SendIcon className="w-4 h-4" />}>
+            {t('messages.send', 'Send')}
+          </Button>
+        </>
+      )}
+    >
+      <div className="flex flex-col gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="w-16 text-muted">{t('messages.to', 'To')}</span>
+          <input className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} placeholder="name@example.com" />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="w-16 text-muted">Cc</span>
+          <input className={inputCls} value={cc} onChange={(e) => setCc(e.target.value)} placeholder={t('messages.optional', 'optional')} />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="w-16 text-muted">{t('messages.subject', 'Subject')}</span>
+          <input className={inputCls} value={subject} onChange={(e) => setSubject(e.target.value)} />
+        </label>
+        <div className="flex flex-col">
+          <div className="text-xs text-muted mb-1">
+            {t('messages.bodyHint', 'Edit the message freely — add a note anywhere before sending.')}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-line-faint">
-          <span className="text-xs text-neutral-400">{t('messages.sendsFromHint', 'Sends from your configured outgoing address.')}</span>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" onClick={onClose}>{t('messages.cancel', 'Cancel')}</Button>
-            <Button variant="primary" onClick={() => send.mutate()} isLoading={send.isPending} disabled={!canSend} leftIcon={<SendIcon className="w-4 h-4" />}>
-              {t('messages.send', 'Send')}
-            </Button>
-          </div>
+          <div
+            ref={bodyRef}
+            contentEditable
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label={t('messages.body', 'Message')}
+            className="min-h-[320px] rounded-lg border border-line-strong bg-canvas p-3 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
+          />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

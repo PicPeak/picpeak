@@ -6,11 +6,11 @@
  */
 import React, { useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Card, ReCaptcha, PoweredBy } from '../../components/common';
+import { Button, Input, Card, Notice, ReCaptcha, PoweredBy } from '../../components/common';
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { customerService } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -131,12 +131,8 @@ export const CustomerLoginPage: React.FC = () => {
       // Visual structure mirrors AdminLoginPage so admin and customer
       // landings feel like the same product: tinted logo frame above
       // the title, "Need help?" support email below the form, "Powered
-      // by PicPeak" footer line. The .customer-surface marker class
-      // lets the global stylesheet retheme <Card>/<Input> for dark
-      // backgrounds (admin uses the dark: trigger; customer uses theme
-      // tokens).
-      className="customer-surface min-h-screen flex items-center justify-center p-4"
-      style={{ backgroundColor: 'var(--color-background, #fafafa)' }}
+      // by PicPeak" footer line. Colours are the operator's theme tokens.
+      className="min-h-screen flex items-center justify-center p-4 bg-background"
     >
       <div className="w-full max-w-md">
         {/* Logo / header — matches AdminLoginPage. The frame and size
@@ -167,10 +163,10 @@ export const CustomerLoginPage: React.FC = () => {
               />
             );
           })()}
-          <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text, #171717)' }}>
+          <h1 className="text-3xl font-bold text-theme">
             {t('customer.login.title', 'Customer login')}
           </h1>
-          <p className="mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>
+          <p className="mt-2 text-theme opacity-70">
             {t('customer.login.subtitle', 'Access all of your photo galleries in one place.')}
           </p>
         </div>
@@ -178,18 +174,7 @@ export const CustomerLoginPage: React.FC = () => {
         <Card padding="lg">
           <form onSubmit={handleSubmit} className="space-y-6">
             {errors.form && (
-              <div
-                role="alert"
-                className="flex items-start gap-2 p-3 rounded-lg border"
-                style={{
-                  borderColor: 'var(--color-surface-border, #e5e5e5)',
-                  color: 'var(--color-text)',
-                  backgroundColor: 'var(--color-elevated, rgba(220, 38, 38, 0.05))',
-                }}
-              >
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-status hue-danger" />
-                <span className="text-sm">{errors.form}</span>
-              </div>
+              <Notice tone="danger">{errors.form}</Notice>
             )}
 
             <div>
@@ -197,6 +182,7 @@ export const CustomerLoginPage: React.FC = () => {
                 {t('customer.login.email', 'Email')}
               </label>
               <Input
+                themed
                 id="customer-email"
                 name="email"
                 type="email"
@@ -204,7 +190,7 @@ export const CustomerLoginPage: React.FC = () => {
                 onChange={handleInputChange('email')}
                 error={errors.email}
                 placeholder={t('customer.login.emailPlaceholder', 'you@example.com')}
-                leftIcon={<Mail className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<Mail className="w-5 h-5" />}
                 autoComplete="email"
                 autoFocus
               />
@@ -216,6 +202,7 @@ export const CustomerLoginPage: React.FC = () => {
               </label>
               <div className="relative">
                 <Input
+                  themed
                   id="customer-password"
                   name="current-password"
                   type={showPassword ? 'text' : 'password'}
@@ -223,13 +210,13 @@ export const CustomerLoginPage: React.FC = () => {
                   onChange={handleInputChange('password')}
                   error={errors.password}
                   placeholder={t('customer.login.passwordPlaceholder', 'Your password')}
-                  leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Lock className="w-5 h-5" />}
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((p) => !p)}
-                  className="absolute right-3 top-3 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  className="absolute right-3 top-3 text-muted-theme hover:text-theme transition-colors"
                   tabIndex={-1}
                   aria-label={showPassword
                     ? t('customer.login.hidePassword', 'Hide password')
@@ -267,18 +254,17 @@ export const CustomerLoginPage: React.FC = () => {
             to /admin/login on their own. */}
         <div className="text-center mt-8">
           {settingsData?.branding_support_email && (
-            <p className="text-sm" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>
+            <p className="text-sm text-theme opacity-70">
               {t('customer.login.needHelp', 'Need help?')}{' '}
               <a
                 href={`mailto:${settingsData.branding_support_email}`}
-                className="hover:underline"
-                style={{ color: 'var(--color-primary, #5C8762)' }}
+                className="hover:underline text-accent-dark"
               >
                 {settingsData.branding_support_email}
               </a>
             </p>
           )}
-          <PoweredBy className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }} />
+          <PoweredBy className="text-xs mt-2 text-theme opacity-50" />
         </div>
       </div>
     </div>

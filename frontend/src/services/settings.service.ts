@@ -1,5 +1,6 @@
 import { api } from '../config/api';
 import type { SlideshowGlobalDefaults } from './slideshow.service';
+import { normalizeStatusColors, type StatusColors } from '../utils/statusColors';
 
 export interface BrandingSettings {
   company_name: string;
@@ -35,6 +36,8 @@ export interface BrandingSettings {
    * `colorMode` override is ignored. `null` means no force (default behavior).
    */
   force_color_mode?: 'dark' | 'light' | null;
+  /** Branding › Colours › Status. Missing keys use the built-in hue. */
+  status_colors?: StatusColors;
   /**
    * Login-page-only branding (#354 follow-up). Applies exclusively to
    * /admin/login and /customer/login. Frame default is true; size
@@ -390,6 +393,7 @@ export const settingsService = {
         : rawSettings.branding_force_color_mode === 'light'
           ? 'light'
           : null,
+      status_colors: normalizeStatusColors(rawSettings.branding_status_colors),
       // Login-only knobs (#354). Default to frame ON, size 'medium' so
       // installs that haven't toggled them keep the visual state shipped
       // before the controls existed.

@@ -21,7 +21,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Card, Input, Loading } from '../common';
+import { Badge, Button, Card, EmptyState, ErrorState, Input, Loading, useConfirm } from '../common';
 import { api } from '../../config/api';
 import { useMutationWithToast } from '../../hooks';
 // Per [[feedback_respect_general_format_settings]]: route every displayed
@@ -34,10 +34,10 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 const statusIcons = {
-  completed: { icon: CheckCircle, color: 'text-green-500' },
-  failed: { icon: XCircle, color: 'text-red-500' },
-  running: { icon: Loader2, color: 'text-blue-500 animate-spin' },
-  partial: { icon: AlertCircle, color: 'text-amber-500' }
+  completed: { icon: CheckCircle, color: 'text-success' },
+  failed: { icon: XCircle, color: 'text-danger' },
+  running: { icon: Loader2, color: 'text-info animate-spin' },
+  partial: { icon: AlertCircle, color: 'text-warning' }
 };
 
 // Codes DELETE /admin/backup/runs/:id answers with (issue 1711); each has a
@@ -54,6 +54,7 @@ const formatBytes = (bytes) => {
 
 export const BackupHistory = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -66,7 +67,7 @@ export const BackupHistory = () => {
   const { format, formatTime, formatDistanceToNow } = useLocalizedDate();
 
   // Fetch backup history
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['backup-history', currentPage, searchTerm, filterStatus],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -114,10 +115,13 @@ export const BackupHistory = () => {
     setExpandedRows(newExpanded);
   };
 
-  const handleDelete = (backup) => {
-    if (window.confirm(t('backup.history.deleteConfirm', { date: format(new Date(backup.created_at)) }))) {
-      deleteMutation.mutate(backup.id);
-    }
+  const handleDelete = async (backup) => {
+    const ok = await confirm({
+      message: t('backup.history.deleteConfirm', { date: format(new Date(backup.created_at)) }),
+      variant: 'danger',
+      confirmLabel: t('backup.history.deleteAction', 'Delete backup'),
+    });
+    if (ok) deleteMutation.mutate(backup.id);
   };
 
   if (isLoading) {
@@ -134,7 +138,7 @@ export const BackupHistory = () => {
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-faint" />
               <Input
                 type="text"
                 placeholder={t('backup.history.searchPlaceholder')}
@@ -149,7 +153,7 @@ export const BackupHistory = () => {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md focus:outline-none focus:ring-primary focus:border-primary"
+              className="px-3 py-2 border border-line-strong bg-panel text-heading rounded-md focus:outline-none focus:ring-accent focus:border-accent"
             >
               <option value="all">All Status</option>
               <option value="completed">Completed</option>
@@ -174,78 +178,87 @@ export const BackupHistory = () => {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
-                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+              <tr className="bg-subtle border-b border-line">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.status')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.dateTime')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.type')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.size')}
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.duration')}
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
                   {t('backup.history.columns.actions')}
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white dark:bg-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-700">
-              {backups.length === 0 ? (
+            <tbody className="bg-panel divide-y divide-line">
+              {isError && !data ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-neutral-500 dark:text-neutral-400">
-                    <FileArchive className="h-12 w-12 mx-auto mb-3 text-neutral-300 dark:text-neutral-600" />
-                    <p className="text-lg font-medium text-neutral-900 dark:text-neutral-100">No backups found</p>
-                    <p className="text-sm mt-1">Backups will appear here once created</p>
+                  <td colSpan={6}>
+                    <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+                  </td>
+                </tr>
+              ) : backups.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>
+                    <EmptyState
+                      size="inline"
+                      icon={<FileArchive />}
+                      title="No backups found"
+                      description="Backups will appear here once created"
+                    />
                   </td>
                 </tr>
               ) : (
                 backups.map((backup) => {
                   const StatusIcon = statusIcons[backup.status]?.icon || AlertCircle;
-                  const statusColor = statusIcons[backup.status]?.color || 'text-gray-500';
+                  const statusColor = statusIcons[backup.status]?.color || 'text-muted';
                   const isExpanded = expandedRows.has(backup.id);
                   const stats = backup.statistics || {};
 
                   return (
                     <React.Fragment key={backup.id}>
-                      <tr className="hover:bg-neutral-50 dark:hover:bg-neutral-700/50">
+                      <tr className="hover:bg-hover-soft">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <StatusIcon className={`h-5 w-5 ${statusColor}`} />
-                            <span className="ml-2 text-sm font-medium text-neutral-900 dark:text-neutral-100 capitalize">
+                            <span className="ml-2 text-sm font-medium text-heading capitalize">
                               {backup.status}
                             </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                            <p className="text-sm font-medium text-heading">
                               {format(new Date(backup.created_at))}
                             </p>
-                            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                            <p className="text-xs text-muted">
                               {formatTime(new Date(backup.created_at))} • {formatDistanceToNow(new Date(backup.created_at), { addSuffix: true })}
                             </p>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 capitalize">
+                          <Badge tone="info" className="capitalize">
                             {backup.backup_type || 'Manual'}
-                          </span>
+                          </Badge>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="text-sm text-neutral-900 dark:text-neutral-100">
+                          <p className="text-sm text-heading">
                             {formatBytes(stats.total_size || 0)}
                           </p>
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          <p className="text-xs text-muted">
                             {stats.files_processed || 0} {t('backup.dashboard.stats.files')}
                           </p>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-neutral-900 dark:text-neutral-100">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-heading">
                           {backup.duration_seconds
                             ? `${Math.round(backup.duration_seconds / 60)}m ${backup.duration_seconds % 60}s`
                             : '-'}
@@ -254,7 +267,7 @@ export const BackupHistory = () => {
                           <div className="flex items-center justify-end space-x-2">
                             <button
                               onClick={() => toggleRowExpansion(backup.id)}
-                              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                              className="text-faint hover:text-body"
                               title={t('backup.actions.view')}
                             >
                               {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -262,7 +275,7 @@ export const BackupHistory = () => {
                             {backup.manifest_path && (
                               <button
                                 onClick={() => window.open(`/api/admin/backup/download/${backup.id}`, '_blank')}
-                                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
+                                className="text-faint hover:text-body"
                                 title={t('backup.actions.download')}
                               >
                                 <Download size={20} />
@@ -270,7 +283,7 @@ export const BackupHistory = () => {
                             )}
                             <button
                               onClick={() => handleDelete(backup)}
-                              className="text-neutral-400 hover:text-red-600"
+                              className="text-faint hover:text-danger-text"
                               title={t('backup.actions.delete')}
                               disabled={deleteMutation.isPending}
                               aria-label={t('backup.actions.delete')}
@@ -284,24 +297,24 @@ export const BackupHistory = () => {
                       {/* Expanded Details Row */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan={6} className="px-6 py-4 bg-neutral-50 dark:bg-neutral-700/50">
+                          <td colSpan={6} className="px-6 py-4 bg-subtle">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* Backup Details */}
                               <div className="space-y-2">
-                                <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.history.details.backupDetails')}</h4>
+                                <h4 className="font-medium text-heading">{t('backup.history.details.backupDetails')}</h4>
                                 <div className="text-sm space-y-1">
                                   <div className="flex justify-between">
-                                    <span className="text-neutral-500 dark:text-neutral-400">{t('backup.history.details.destination')}:</span>
-                                    <span className="text-neutral-900 dark:text-neutral-100">{backup.destination_type || 'Unknown'}</span>
+                                    <span className="text-muted">{t('backup.history.details.destination')}:</span>
+                                    <span className="text-heading">{backup.destination_type || 'Unknown'}</span>
                                   </div>
                                   <div className="flex justify-between">
-                                    <span className="text-neutral-500 dark:text-neutral-400">{t('backup.history.details.started')}:</span>
-                                    <span className="text-neutral-900 dark:text-neutral-100">{formatTime(new Date(backup.created_at))}</span>
+                                    <span className="text-muted">{t('backup.history.details.started')}:</span>
+                                    <span className="text-heading">{formatTime(new Date(backup.created_at))}</span>
                                   </div>
                                   {backup.completed_at && (
                                     <div className="flex justify-between">
-                                      <span className="text-neutral-500 dark:text-neutral-400">{t('backup.history.details.completed')}:</span>
-                                      <span className="text-neutral-900 dark:text-neutral-100">{formatTime(new Date(backup.completed_at))}</span>
+                                      <span className="text-muted">{t('backup.history.details.completed')}:</span>
+                                      <span className="text-heading">{formatTime(new Date(backup.completed_at))}</span>
                                     </div>
                                   )}
                                 </div>
@@ -318,11 +331,11 @@ export const BackupHistory = () => {
                                       up when restoring a backup taken before this
                                       change shipped. */}
                               <div className="space-y-2">
-                                <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.history.details.contentBackedUp')}</h4>
+                                <h4 className="font-medium text-heading">{t('backup.history.details.contentBackedUp')}</h4>
                                 <div className="space-y-2">
                                   <div className="flex items-center space-x-2">
-                                    <Database className={`h-4 w-4 ${stats.database_backed_up ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                    <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('backup.configuration.whatToBackup.database')}</span>
+                                    <Database className={`h-4 w-4 ${stats.database_backed_up ? 'text-success' : 'text-faint'}`} />
+                                    <span className="text-sm text-body">{t('backup.configuration.whatToBackup.database')}</span>
                                   </div>
                                   {(() => {
                                     // Per-path breakdown when present
@@ -343,17 +356,17 @@ export const BackupHistory = () => {
                                         <>
                                           {entries.map(([pathKey, info]) => (
                                             <div key={pathKey} className="flex items-center space-x-2">
-                                              <FileArchive className={`h-4 w-4 ${info.count > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                              <span className="text-sm text-neutral-700 dark:text-neutral-300 font-mono">
+                                              <FileArchive className={`h-4 w-4 ${info.count > 0 ? 'text-success' : 'text-faint'}`} />
+                                              <span className="text-sm text-body font-mono">
                                                 {pathKey}
                                               </span>
-                                              <span className="text-sm text-neutral-500 dark:text-neutral-400 ml-auto">
+                                              <span className="text-sm text-muted ml-auto">
                                                 {info.count} {info.size ? `(${formatSize(info.size)})` : ''}
                                               </span>
                                             </div>
                                           ))}
-                                          <div className="flex items-center space-x-2 pt-1 border-t border-neutral-200 dark:border-neutral-700">
-                                            <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                                          <div className="flex items-center space-x-2 pt-1 border-t border-line">
+                                            <span className="text-xs uppercase tracking-wide text-muted">
                                               {t('backup.history.details.totalFiles', 'Total files')}: {stats.files_processed || 0}
                                             </span>
                                           </div>
@@ -371,25 +384,25 @@ export const BackupHistory = () => {
                                     return (
                                       <>
                                         <div className="flex items-center space-x-2">
-                                          <Image className={`h-4 w-4 ${stats.photos_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                          <Image className={`h-4 w-4 ${stats.photos_backed_up > 0 ? 'text-success' : 'text-faint'}`} />
+                                          <span className="text-sm text-body">
                                             Photos ({stats.photos_backed_up || 0} of {stats.total_photos || 0})
                                           </span>
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                          <FileArchive className={`h-4 w-4 ${stats.archives_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                          <FileArchive className={`h-4 w-4 ${stats.archives_backed_up > 0 ? 'text-success' : 'text-faint'}`} />
+                                          <span className="text-sm text-body">
                                             Archives ({stats.archives_backed_up || 0})
                                           </span>
                                         </div>
                                         <div className="flex items-center space-x-2">
-                                          <FileArchive className={`h-4 w-4 ${other > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                          <FileArchive className={`h-4 w-4 ${other > 0 ? 'text-success' : 'text-faint'}`} />
+                                          <span className="text-sm text-body">
                                             {t('backup.history.details.otherFiles', 'Business documents & other')} ({other})
                                           </span>
                                         </div>
-                                        <div className="flex items-center space-x-2 pt-1 border-t border-neutral-200 dark:border-neutral-700">
-                                          <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                                        <div className="flex items-center space-x-2 pt-1 border-t border-line">
+                                          <span className="text-xs uppercase tracking-wide text-muted">
                                             {t('backup.history.details.totalFiles', 'Total files')}: {total}
                                           </span>
                                         </div>
@@ -402,8 +415,8 @@ export const BackupHistory = () => {
                               {/* Error Information */}
                               {backup.error_message && (
                                 <div className="space-y-2">
-                                  <h4 className="font-medium text-red-900 dark:text-red-200">{t('backup.history.details.errorDetails')}</h4>
-                                  <p className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 p-2 rounded">
+                                  <h4 className="font-medium text-danger-text">{t('backup.history.details.errorDetails')}</h4>
+                                  <p className="text-sm text-danger-text bg-danger-soft p-2 rounded">
                                     {backupErrorText(backupErrorCode(backup.error_message), t) ?? backup.error_message}
                                   </p>
                                 </div>
@@ -412,8 +425,8 @@ export const BackupHistory = () => {
                               {/* Manifest Path */}
                               {backup.manifest_path && (
                                 <div className="space-y-2">
-                                  <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.history.details.manifest')}</h4>
-                                  <p className="text-sm text-neutral-600 dark:text-neutral-400 font-mono break-all">
+                                  <h4 className="font-medium text-heading">{t('backup.history.details.manifest')}</h4>
+                                  <p className="text-sm text-soft font-mono break-all">
                                     {backup.manifest_path}
                                   </p>
                                 </div>
@@ -432,7 +445,7 @@ export const BackupHistory = () => {
 
         {/* Pagination */}
         {pagination.pages > 1 && (
-          <div className="bg-white dark:bg-neutral-800 px-4 py-3 border-t border-neutral-200 dark:border-neutral-700 sm:px-6">
+          <div className="bg-panel px-4 py-3 border-t border-line sm:px-6">
             <div className="flex items-center justify-between">
               <div className="flex-1 flex justify-between sm:hidden">
                 <Button
@@ -454,7 +467,7 @@ export const BackupHistory = () => {
               </div>
               <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                  <p className="text-sm text-body">
                     {t('backup.history.pagination.showing', {
                       from: (currentPage - 1) * pagination.limit + 1,
                       to: Math.min(currentPage * pagination.limit, pagination.total),
@@ -467,7 +480,7 @@ export const BackupHistory = () => {
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm font-medium text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-line-strong bg-panel text-sm font-medium text-muted hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {t('backup.history.pagination.previous')}
                     </button>
@@ -480,8 +493,8 @@ export const BackupHistory = () => {
                           onClick={() => setCurrentPage(pageNum)}
                           className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
                             currentPage === pageNum
-                              ? 'z-10 bg-accent-dark/15 border-primary text-primary'
-                              : 'bg-white dark:bg-neutral-800 border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-700'
+                              ? 'z-10 bg-accent-soft border-accent text-on-accent-soft'
+                              : 'bg-panel border-line-strong text-body hover:bg-hover'
                           }`}
                         >
                           {pageNum}
@@ -492,7 +505,7 @@ export const BackupHistory = () => {
                     <button
                       onClick={() => setCurrentPage(p => Math.min(pagination.pages, p + 1))}
                       disabled={currentPage === pagination.pages}
-                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm font-medium text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-line-strong bg-panel text-sm font-medium text-muted hover:bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {t('backup.history.pagination.next')}
                     </button>

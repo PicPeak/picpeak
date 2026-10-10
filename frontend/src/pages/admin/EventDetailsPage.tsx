@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 
-import { Button, Card, Loading } from '../../components/common';
+import { Button, Card, EmptyState, Loading } from '../../components/common';
 import { PasswordResetModal, PublishGalleryDialog, SendGalleryEmailDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
@@ -336,10 +336,16 @@ export const EventDetailsPage: React.FC = () => {
   if (!event) {
     return (
       <Card padding="lg">
-        <p className="text-heading">{t('events.notFound', 'Event not found')}</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/events')}>
-          {t('events.backToEvents')}
-        </Button>
+        <EmptyState
+          size="inline"
+          title={t('events.notFound', 'Gallery not found')}
+          description={t('events.notFoundHint', 'It may have been deleted, or the link is wrong.')}
+          action={(
+            <Button variant="outline" onClick={() => navigate('/admin/events')}>
+              {t('events.backToEvents')}
+            </Button>
+          )}
+        />
       </Card>
     );
   }

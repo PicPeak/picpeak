@@ -226,7 +226,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  background-color: #ef4444;
+  background-color: var(--status-danger);
   font-size: 0.5rem;
   font-weight: 700;
   color: white;
@@ -573,8 +573,8 @@
 }
 
 .story-photo-card-btn.favorite {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
+  background-color: color-mix(in srgb, var(--status-danger) 20%, transparent);
+  color: var(--status-danger);
 }
 
 .story-photo-card-caption {

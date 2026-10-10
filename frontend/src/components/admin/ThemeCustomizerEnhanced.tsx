@@ -12,6 +12,8 @@ import { GalleryLayoutCard } from './theme-customizer/GalleryLayoutCard';
 import { HeaderStyleCard } from './theme-customizer/HeaderStyleCard';
 import { ControlsStyleCard } from './theme-customizer/ControlsStyleCard';
 import { ColorCustomizationCard } from './theme-customizer/ColorCustomizationCard';
+import type { ColorKey } from './theme-customizer/ThemeColorPreview';
+import type { StatusColors } from '../../utils/statusColors';
 import { TypographyStyleCard } from './theme-customizer/TypographyStyleCard';
 import { CssTemplateCard } from './theme-customizer/CssTemplateCard';
 import { CustomCssCard } from './theme-customizer/CustomCssCard';
@@ -47,6 +49,13 @@ interface ThemeCustomizerEnhancedProps {
   // so they live with the other typography choices rather than after
   // the always-bulky Custom CSS editor.
   slotBeforeCustomCss?: React.ReactNode;
+  // Branding only: site-wide status colours, edited in the Colours card.
+  statusColors?: StatusColors;
+  onStatusColorsChange?: (next: StatusColors) => void;
+  // The colour picker being hovered or edited, for a preview next to it.
+  onColorFocus?: (key: ColorKey | null) => void;
+  // Rendered right after the Colours card (Branding: the PDF theme).
+  slotAfterColors?: React.ReactNode;
 }
 
 // Layout descriptions will use translation keys
@@ -66,7 +75,11 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
   forceColorMode,
   onForceColorModeChange,
   onSyncFromBranding,
-  slotBeforeCustomCss
+  slotBeforeCustomCss,
+  statusColors,
+  onStatusColorsChange,
+  onColorFocus,
+  slotAfterColors,
 }) => {
   const { t } = useTranslation();
   // A force lock (instance-wide light/dark) overrides the per-theme color
@@ -294,7 +307,12 @@ export const ThemeCustomizerEnhanced: React.FC<ThemeCustomizerEnhancedProps> = (
         forceColorMode={forceColorMode}
         onForceColorModeChange={onForceColorModeChange}
         onSyncFromBranding={onSyncFromBranding}
+        statusColors={statusColors}
+        onStatusColorsChange={onStatusColorsChange}
+        onColorFocus={onColorFocus}
       />
+
+      {slotAfterColors}
 
       {/* Typography & Style */}
       <TypographyStyleCard

@@ -82,7 +82,7 @@ export const TeamMemberPicker: React.FC<Props> = ({ value, onChange, ownerId, di
                 <button
                   type="button"
                   onClick={() => onChange(value.filter((v) => v.id !== a.id))}
-                  className="ml-1 -mr-1 rounded hover:bg-neutral-200 dark:hover:bg-neutral-700 p-0.5"
+                  className="ml-1 -mr-1 rounded hover:bg-fill p-0.5"
                   aria-label={t('events.team.removeAria', 'Remove {{name}}', { name: a.username })}
                 >
                   <X className="w-3 h-3" />
@@ -112,7 +112,7 @@ export const TeamMemberPicker: React.FC<Props> = ({ value, onChange, ownerId, di
           {isLoading ? (
             <div className="px-3 py-3 text-sm text-muted">{t('events.team.loading', 'Loading…')}</div>
           ) : isError ? (
-            <div className="px-3 py-3 text-sm text-red-600 dark:text-red-400">
+            <div className="px-3 py-3 text-sm text-danger-text">
               {t('events.team.loadFailed', 'The admin accounts could not be loaded.')}
             </div>
           ) : results.length === 0 ? (

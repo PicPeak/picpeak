@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Clock, FolderTree, Sparkles } from 'lucide-react';
 import type { Event } from '../../../../types';
-import { Button, Input, LocalizedDateInput } from '../../../../components/common';
+import { Button, Input, LocalizedDateInput, Notice } from '../../../../components/common';
 import { useLocalizedDate } from '../../../../hooks/useLocalizedDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { eventsService } from '../../../../services/events.service';
@@ -108,7 +108,7 @@ export const DeliverySection: React.FC<FieldsProps & { event: Event; onChanged: 
                 })}
               </p>
               {due && (
-                <p className={`flex items-center gap-1.5 ${due.tone === 'overdue' ? 'text-red-600 dark:text-red-400' : due.tone === 'soon' ? 'text-amber-600 dark:text-amber-400' : 'text-body'}`}>
+                <p className={`flex items-center gap-1.5 ${due.tone === 'overdue' ? 'text-danger-text' : due.tone === 'soon' ? 'text-warning-text' : 'text-body'}`}>
                   <Clock className="w-4 h-4" />
                   {due.tone === 'overdue'
                     ? t('events.delivery.overdueSince', 'Promised by {{date}} — overdue', { date: format(due.date) })
@@ -187,9 +187,9 @@ export const DeliverySection: React.FC<FieldsProps & { event: Event; onChanged: 
         )}
 
         {f.delivery_status === 'complete' && savedPartial && (
-          <p className="text-xs rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 px-3 py-2">
+          <Notice tone="warning" size="sm">
             {t('events.delivery.switchOffHint', 'Saving "Complete" here only removes the note and placeholders — no email is sent. Use "Full gallery is ready" to tell the customer.')}
-          </p>
+          </Notice>
         )}
       </SectionCard>
 

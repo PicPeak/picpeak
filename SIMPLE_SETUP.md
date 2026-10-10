@@ -305,6 +305,9 @@ The event slug is visible in the admin panel URL or share link (e.g. `wedding-sm
 
 ```bash
 cd ~/picpeak
+# These use the compose file named by COMPOSE_FILE in ~/picpeak/.env — the
+# installer sets docker-compose.production.yml (prebuilt images). After a
+# manual quick start without that line, add -f docker-compose.production.yml.
 
 # Check status
 docker compose ps
@@ -434,7 +437,8 @@ sudo tar -czf /backup/photos-$(date +%Y%m%d).tar.gz /opt/picpeak/events/
 ### Updates
 
 ```bash
-# Docker
+# Docker (COMPOSE_FILE in .env selects docker-compose.production.yml;
+# after a manual quick start without it, add -f docker-compose.production.yml)
 cd ~/picpeak
 docker compose pull
 docker compose up -d

@@ -27,7 +27,7 @@ export const DashboardHomeLink: React.FC<DashboardHomeLinkProps> = ({ className 
       to={DASHBOARD_HREF}
       onClick={(e) => guardedLinkClick(e, DASHBOARD_HREF, { after: onNavigate })}
       title={t('navigation.dashboard', 'Dashboard')}
-      className={`focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 ${className}`}
+      className={`focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`}
     >
       {children}
     </Link>

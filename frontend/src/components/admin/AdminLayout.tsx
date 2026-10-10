@@ -15,6 +15,7 @@ import { MandatoryPasswordChangeModal } from './MandatoryPasswordChangeModal';
 import { CommandPalette } from './CommandPalette';
 import { BottomBarSlotContext } from './bottomBarSlot';
 import { FillViewportContext, useFillViewportCounter } from './fillViewport';
+import { useEscapeClose } from '../common/useEscapeClose';
 
 const SIDEBAR_COLLAPSED_KEY = 'admin-sidebar-collapsed';
 const ProductUsageNotice = lazy(() => import('./ProductUsageNotice'));
@@ -43,7 +44,7 @@ export const AdminLayout: React.FC = () => {
       <div className="min-h-screen bg-canvas flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-accent-dark border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-neutral-600">Loading...</p>
+          <p className="text-soft">Loading...</p>
         </div>
       </div>
     );
@@ -88,6 +89,8 @@ interface AdminLayoutInnerProps {
 }
 
 const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, mustChangePassword }) => {
+  // The phone drawer closes with Escape like any overlay (UX.md § 8).
+  useEscapeClose(sidebarOpen, () => setSidebarOpen(false));
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [bottomBarSlot, setBottomBarSlot] = useState<HTMLDivElement | null>(null);
   // Pages that give their panes their own scrollbars (useFillViewport).

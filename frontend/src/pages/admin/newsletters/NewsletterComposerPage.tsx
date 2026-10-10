@@ -1,5 +1,8 @@
 /**
- * Clients → Newsletters → composer (#1264).
+ * Clients → Newsletters → composer (#1264). One page per campaign: this is
+ * the body of a draft campaign's own page (NewsletterDetailPage renders it
+ * while the campaign is a draft and the admin may send newsletters), saved
+ * through the page save bar.
  *
  * Three columns: content, recipients, preview & send.
  *
@@ -12,14 +15,15 @@
  * body is already sanitized server-side; this is defence in depth, and it is
  * the only place campaign HTML is ever put in a DOM.
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Send, TestTube2, Users, Eye, ArrowLeft, AlertTriangle } from 'lucide-react';
+import { Send, TestTube2, Users, Eye, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import { Button, Card, Input, Loading, useConfirm } from '../../../components/common';
+import { Badge, Button, Card, Input, Loading, useConfirm } from '../../../components/common';
+import { DocumentHeader } from '../../../components/admin/DocumentHeader';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { EmailTemplateEditor } from '../../../components/admin/EmailTemplateEditor';
 import {
   newslettersService, type Campaign, type RecipientMode,
@@ -53,11 +57,8 @@ const VARIABLES = [
   'company_name', 'support_email', 'unsubscribe_url',
 ];
 
-export const NewsletterComposerPage: React.FC = () => {
+export const NewsletterComposerPage: React.FC<{ campaignId: number }> = ({ campaignId }) => {
   const { t } = useTranslation();
-  const { id } = useParams<{ id: string }>();
-  const campaignId = Number(id);
-  const navigate = useNavigate();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
 
@@ -199,8 +200,9 @@ export const NewsletterComposerPage: React.FC = () => {
     try {
       await newslettersService.queue(campaignId);
       queryClient.invalidateQueries({ queryKey: ['newsletters'] });
+      // The page turns into the sending view once the campaign is queued.
+      await queryClient.invalidateQueries({ queryKey: ['newsletter', campaignId] });
       toast.success(t('newsletters.queued', 'Campaign queued.'));
-      navigate(`/admin/clients/newsletters/${campaignId}`);
     } catch {
       toast.error(t('newsletters.queueFailed', 'Could not queue the campaign.'));
     }
@@ -232,52 +234,32 @@ export const NewsletterComposerPage: React.FC = () => {
     && (resolution?.recipientCount ?? 0) > 0
   ), [draft, resolution]);
 
-  if (isLoading || !draft) return <Loading />;
+  // Unsaved: the draft differs from the campaign as last saved.
+  const dirty = !!draft && !!data?.campaign && JSON.stringify(draft) !== JSON.stringify(data.campaign);
+  const saveNow = useCallback(async () => {
+    try {
+      await persistDraft();
+      toast.success(t('newsletters.saved', 'Campaign saved.'));
+    } catch {
+      toast.error(t('newsletters.saveFailed', 'Could not save the campaign.'));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
 
-  if (draft.status !== 'draft') {
-    return (
-      <Card>
-        <p className="text-body">
-          {t('newsletters.notEditable',
-            'This campaign has already been queued and can no longer be edited.')}
-        </p>
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => navigate(`/admin/clients/newsletters/${campaignId}`)}
-        >
-          {t('newsletters.viewCampaign', 'View campaign')}
-        </Button>
-      </Card>
-    );
-  }
+  if (isLoading || !draft) return <Loading />;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 gap-4">
-        <button
-          type="button"
-          onClick={() => navigate('/admin/clients/newsletters')}
-          className="flex items-center gap-1 text-sm text-soft hover:underline"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          {t('newsletters.backToList', 'All campaigns')}
-        </button>
-        <Button
-          onClick={async () => {
-            try {
-              await persistDraft();
-              toast.success(t('newsletters.saved', 'Campaign saved.'));
-            } catch {
-              toast.error(t('newsletters.saveFailed', 'Could not save the campaign.'));
-            }
-          }}
-          isLoading={save.isPending}
-          leftIcon={<Save className="w-4 h-4" />}
-        >
-          {t('common.save', 'Save')}
-        </Button>
-      </div>
+      <DocumentHeader
+        title={draft.name || t('newsletters.untitled', 'Untitled campaign')}
+        status={<Badge tone="neutral">{t('newsletters.status.draft', 'Draft')}</Badge>}
+        meta={draft.subject ? <span>{draft.subject}</span> : undefined}
+        actions={(
+          <Button onClick={() => { void queueCampaign(); }} disabled={!canQueue} leftIcon={<Send className="w-4 h-4" />}>
+            {t('newsletters.queueShort', 'Send campaign')}
+          </Button>
+        )}
+      />
 
       {/* Two columns, not three. An email body is 600px wide and the editor
           toolbar has ~14 controls; giving each of the three panels an equal
@@ -348,7 +330,7 @@ export const NewsletterComposerPage: React.FC = () => {
         {/* ---- 2. Recipients ---- */}
         <Card>
           <div className="flex items-center gap-2 mb-4">
-            <Users className="w-5 h-5 text-neutral-500" />
+            <Users className="w-5 h-5 text-muted" />
             <h3 className="font-semibold text-heading">
               {t('newsletters.section.recipients', 'Recipients & send')}
             </h3>
@@ -504,7 +486,8 @@ export const NewsletterComposerPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Test + queue live with the recipient rule they act on. */}
+          {/* The test send and the send check live with the recipient rule they
+              act on; the send itself is the header's primary action. */}
           <div className="mt-6 pt-4 border-t border-line space-y-3">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
@@ -529,11 +512,11 @@ export const NewsletterComposerPage: React.FC = () => {
             {(resolution?.recipientCount ?? 0) >= LARGE_SEND_THRESHOLD && (
               <div
                 data-testid="large-send-warning"
-                className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-3"
+                className="rounded-md border border-warning-line bg-warning-soft p-3"
               >
                 <div className="flex gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                  <AlertTriangle className="w-4 h-4 text-warning-text shrink-0 mt-0.5" />
+                  <div className="text-xs text-warning-text space-y-1">
                     <p className="font-medium">
                       {t('newsletters.largeSend.title',
                         'Large send — check your sending reputation first')}
@@ -564,14 +547,6 @@ export const NewsletterComposerPage: React.FC = () => {
               </div>
             )}
 
-            <Button
-              onClick={queueCampaign}
-              disabled={!canQueue}
-              className="w-full"
-              leftIcon={<Send className="w-4 h-4" />}
-            >
-              {t('newsletters.queueButton', 'Queue campaign')}
-            </Button>
             {!canQueue && (
               <p className="text-xs text-muted">
                 {t('newsletters.queueBlocked',
@@ -586,7 +561,7 @@ export const NewsletterComposerPage: React.FC = () => {
       <Card className="mt-6">
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
-            <Eye className="w-5 h-5 text-neutral-500" />
+            <Eye className="w-5 h-5 text-muted" />
             <h3 className="font-semibold text-heading">
               {t('newsletters.section.preview', 'Preview')}
             </h3>
@@ -615,6 +590,12 @@ export const NewsletterComposerPage: React.FC = () => {
           </div>
         )}
       </Card>
+      <SettingsSaveBar
+        isDirty={dirty}
+        isSaving={save.isPending}
+        onSave={() => { void saveNow(); }}
+        onDiscard={() => { if (data?.campaign) setDraft(data.campaign); }}
+      />
     </div>
   );
 };

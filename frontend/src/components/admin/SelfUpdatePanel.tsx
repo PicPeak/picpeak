@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react';
-import { Button, Input } from '../common';
+import { Button, Input, Notice } from '../common';
 import { selfUpdateService, SelfUpdateAgentStatus, SelfUpdateStatus } from '../../services/selfUpdate.service';
 
 // Remembers that this browser started an update, across the reload the new
@@ -195,15 +195,13 @@ export const SelfUpdatePanel: React.FC = () => {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-        <h4 className="text-sm font-semibold text-heading">
-          {t('admin.updates.selfUpdate.title', 'Update from here')}
-        </h4>
-      </div>
-      {children}
-    </div>
+    <Notice
+      tone="info"
+      icon={<Zap className="w-4 h-4" />}
+      title={<span className="font-semibold">{t('admin.updates.selfUpdate.title', 'Update from here')}</span>}
+    >
+      <div className="mt-2 space-y-3">{children}</div>
+    </Notice>
   );
 
   const progressLine = (text: string) => (
@@ -232,7 +230,7 @@ export const SelfUpdatePanel: React.FC = () => {
           : t('admin.updates.selfUpdate.result.lost', 'The update request did not reach the updater (PicPeak restarted, or the request was withdrawn). Nothing was changed.');
       return shell(
         <>
-          <p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
+          <p className="flex items-start gap-2 text-sm text-warning-text">
             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             {text}
           </p>
@@ -244,7 +242,7 @@ export const SelfUpdatePanel: React.FC = () => {
     if (job?.phase === 'backup_failed' || job?.phase === 'request_failed') {
       return shell(
         <>
-          <p className="flex items-start gap-2 text-sm text-red-700 dark:text-red-400">
+          <p className="flex items-start gap-2 text-sm text-danger-text">
             <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             {job.phase === 'backup_failed'
               ? t('admin.updates.selfUpdate.result.backupFailed', 'The database backup failed, so the update was not started. Nothing was changed.')
@@ -267,7 +265,7 @@ export const SelfUpdatePanel: React.FC = () => {
       }[run.state];
       return shell(
         <>
-          <p className={`flex items-start gap-2 text-sm ${ok ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+          <p className={`flex items-start gap-2 text-sm ${ok ? 'text-success-text' : 'text-danger-text'}`}>
             {ok ? <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />}
             {headline}
           </p>
@@ -301,7 +299,7 @@ export const SelfUpdatePanel: React.FC = () => {
           {t('admin.updates.selfUpdate.keepOpen', 'You can keep this window open. The site is unavailable for a minute or two while the new version starts.')}
         </p>
         {waitingTooLong && (
-          <p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
+          <p className="flex items-start gap-2 text-xs text-warning-text">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             {t('admin.updates.selfUpdate.phase.waitingLong', 'The updater has not picked up the request yet. Check that it is running on the server (journalctl -u picpeak-updater, or the updater container).')}
           </p>
@@ -324,7 +322,7 @@ export const SelfUpdatePanel: React.FC = () => {
       request_dir_not_writable: t('admin.updates.selfUpdate.requestDirNotWritable', 'PicPeak cannot write to its update request directory (update/request), so it cannot ask for an update. It has to be writable by UID 1001; see docs/self-update.md.'),
     }[data.reason];
     return shell(
-      <p className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400">
+      <p className="flex items-start gap-2 text-sm text-warning-text">
         <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
         {note}
       </p>

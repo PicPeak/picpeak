@@ -47,7 +47,7 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
               <p className="text-soft mb-2">
                 {t('branding.cssInstructions.variablesDesc', 'Use these CSS variables to match your theme presets:')}
               </p>
-              <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
+              <code className="block bg-neutral-800 text-success p-3 rounded text-xs overflow-x-auto">
 {`--color-background: ${localTheme.backgroundColor || '#fafafa'};
 --color-surface: ${localTheme.surfaceColor || '#ffffff'};
 --color-elevated: ${localTheme.elevatedColor || '#f5f5f5'};
@@ -69,7 +69,7 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
               <p className="text-soft mb-2">
                 {t('branding.cssInstructions.layoutsDesc', 'Target gallery elements with these selectors:')}
               </p>
-              <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
+              <code className="block bg-neutral-800 text-success p-3 rounded text-xs overflow-x-auto">
 {`.gallery-container { /* Main gallery wrapper */ }
 .gallery-grid { /* Photo grid container */ }
 .gallery-item { /* Individual photo card */ }
@@ -88,7 +88,7 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
               <p className="text-soft mb-2">
                 {t('branding.cssInstructions.glassEffectDesc', 'Create modern glass effects:')}
               </p>
-              <code className="block bg-neutral-800 text-green-400 p-3 rounded text-xs overflow-x-auto">
+              <code className="block bg-neutral-800 text-success p-3 rounded text-xs overflow-x-auto">
 {`.glass-panel {
   background: rgba(255, 255, 255, 0.25);
   backdrop-filter: blur(20px);
@@ -100,9 +100,9 @@ export const CustomCssCard: React.FC<CustomCssCardProps> = ({
             </div>
 
             {/* Tips */}
-            <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-blue-800 dark:text-blue-200 text-xs">
+            <div className="flex items-start gap-2 p-3 bg-info-soft border border-info-line rounded-lg">
+              <Info className="w-4 h-4 text-info-text flex-shrink-0 mt-0.5" />
+              <div className="text-info-text text-xs">
                 <strong>{t('branding.cssInstructions.tip', 'Tip')}:</strong>{' '}
                 {t('branding.cssInstructions.tipText', 'Use CSS Templates from Settings > CSS Templates for pre-built designs like Apple Liquid Glass.')}
               </div>

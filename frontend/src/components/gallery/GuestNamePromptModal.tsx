@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import { useGuestIdentity } from '../../contexts/GuestIdentityContext';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 interface GuestNamePromptModalProps {
   requireEmail?: boolean;
@@ -30,8 +31,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  if (!promptOpen) return null;
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const handleClose = () => {
     setName('');
@@ -41,6 +41,11 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
     closePrompt();
     onCancel?.();
   };
+
+  // Escape closes only when the prompt may be cancelled at all.
+  useGalleryDialog({ open: promptOpen, onClose: handleClose, panelRef, dismissible: allowCancel });
+
+  if (!promptOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,19 +78,26 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={allowCancel ? handleClose : undefined} />
-      <div className="relative bg-surface rounded-lg shadow-xl max-w-md w-full p-6">
+      <div className="fixed inset-0 bg-black/50" onClick={allowCancel ? handleClose : undefined} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guest-prompt-title"
+        className="relative bg-surface border border-border-token text-theme rounded-lg shadow-xl max-w-md w-full p-6"
+      >
         {allowCancel && (
           <button
             type="button"
             onClick={handleClose}
-            className="absolute top-4 right-4 p-1 hover:bg-black/10 rounded-lg transition-colors"
+            aria-label={t('common.close', 'Close')}
+            className="absolute top-4 right-4 p-1 hover-surface rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-muted-theme" />
           </button>
         )}
 
-        <h2 className="text-lg font-semibold text-theme mb-2">
+        <h2 id="guest-prompt-title" className="text-lg font-semibold text-theme mb-2">
           {t('gallery.guestPrompt.title', "Welcome — what's your name?")}
         </h2>
         <p className="text-sm text-muted-theme mb-4">
@@ -123,7 +135,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
           />
 
           {submitError && (
-            <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2">
+            <div role="alert" className="text-sm status-chip hue-danger rounded px-3 py-2">
               {submitError}
             </div>
           )}
@@ -159,10 +171,7 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
               this block would render dark grey on a dark surface. The rest of
               the modal uses text-theme / text-muted-theme for exactly this
               reason. */}
-          <div
-            className="pt-3 mt-1 border-t text-center"
-            style={{ borderColor: 'var(--color-surface-border, #e5e5e5)' }}
-          >
+          <div className="pt-3 mt-1 border-t border-border-token text-center">
             <p className="text-sm text-muted-theme">
               {t(
                 'gallery.guestPrompt.returningHint',

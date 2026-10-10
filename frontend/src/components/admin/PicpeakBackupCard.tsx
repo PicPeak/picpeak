@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Download, Upload, AlertTriangle, ShieldAlert, Info } from 'lucide-react';
+import { Download, Upload, ShieldAlert, Info } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 
-import { Button, Card } from '../common';
+import { Button, Card, Modal, Notice } from '../common';
 import { portableBackupService } from '../../services/portableBackup.service';
 
 // Portable ".picpeak" roundtrip, split across two Backup Manager tabs:
@@ -55,18 +55,15 @@ export const PicpeakExportCard: React.FC = () => {
         <label className="flex items-center gap-2 text-sm text-body">
           <input
             type="checkbox"
-            className="h-4 w-4 rounded border-neutral-300"
+            className="h-4 w-4 rounded border-line-strong"
             checked={includePhotos}
             onChange={(e) => setIncludePhotos(e.target.checked)}
           />
           {t('backup.picpeak.includePhotos', 'Include original gallery photos (larger file)')}
         </label>
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-900/20">
-          <ShieldAlert className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-xs text-amber-800 dark:text-amber-200">
-            {t('backup.picpeak.secretsWarning', 'This file contains secrets in plain text (email password, admin credentials, API keys). Store it securely and only transfer it over trusted channels.')}
-          </p>
-        </div>
+        <Notice tone="warning" size="sm" className="mt-3" icon={<ShieldAlert className="h-4 w-4" />}>
+          {t('backup.picpeak.secretsWarning', 'This file contains secrets in plain text (email password, admin credentials, API keys). Store it securely and only transfer it over trusted channels.')}
+        </Notice>
         <Button
           variant="outline"
           className="mt-3"
@@ -158,37 +155,32 @@ export const PicpeakRestoreCard: React.FC = () => {
 
 
       {/* Destructive confirmation */}
-      {pendingFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-panel p-6 shadow-xl">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-6 w-6 flex-shrink-0 text-red-600 dark:text-red-400" />
-              <div>
-                <h3 className="text-lg font-semibold text-heading">
-                  {t('backup.picpeak.confirmTitle', 'Restore will delete all current data')}
-                </h3>
-                <p className="mt-2 text-sm text-body">
-                  {t('backup.picpeak.confirmBody', 'This permanently replaces ALL data on this instance with the uploaded backup, except your current account. This cannot be undone.')}
-                </p>
-                <p className="mt-2 truncate text-xs text-muted">{pendingFile.name}</p>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setPendingFile(null)} disabled={restoring}>
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                className="!bg-red-600 hover:!bg-red-700"
-                isLoading={restoring}
-                onClick={confirmRestore}
-              >
-                {t('backup.picpeak.confirmRestore', 'Delete & restore')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={!!pendingFile}
+        onClose={() => { if (!restoring) setPendingFile(null); }}
+        closeOnBackdrop={false}
+        size="sm"
+        title={t('backup.picpeak.confirmTitle', 'Restore will delete all current data')}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPendingFile(null)} disabled={restoring}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              isLoading={restoring}
+              onClick={confirmRestore}
+            >
+              {t('backup.picpeak.confirmRestore', 'Delete & restore')}
+            </Button>
+          </>
+        }
+      >
+        <Notice tone="danger">
+          {t('backup.picpeak.confirmBody', 'This permanently replaces ALL data on this instance with the uploaded backup, except your current account. This cannot be undone.')}
+        </Notice>
+        <p className="mt-2 truncate text-xs text-muted">{pendingFile?.name}</p>
+      </Modal>
     </Card>
   );
 };

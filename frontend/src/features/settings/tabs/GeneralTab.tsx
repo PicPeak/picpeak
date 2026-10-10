@@ -85,7 +85,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 value={accountForm.username}
                 onChange={handleAccountChange('username')}
                 placeholder="admin"
-                leftIcon={<User className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<User className="w-5 h-5 text-faint" />}
                 error={accountErrors.username}
               />
               <p className="text-xs text-muted mt-1">
@@ -103,7 +103,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 value={accountForm.email}
                 onChange={handleAccountChange('email')}
                 placeholder="admin@example.com"
-                leftIcon={<Mail className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<Mail className="w-5 h-5 text-faint" />}
                 error={accountErrors.email}
               />
               <p className="text-xs text-muted mt-1">
@@ -121,7 +121,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 value={accountForm.creditName}
                 onChange={handleAccountChange('creditName')}
                 maxLength={100}
-                leftIcon={<Camera className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<Camera className="w-5 h-5 text-faint" />}
                 error={accountErrors.credit_name}
               />
               <p className="text-xs text-muted mt-1">
@@ -152,7 +152,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               value={generalSettings.site_url}
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, site_url: e.target.value }))}
               placeholder="https://yourdomain.com"
-              leftIcon={<Globe className="w-5 h-5 text-neutral-400" />}
+              leftIcon={<Globe className="w-5 h-5 text-faint" />}
               disabled={generalSettings.site_url_env_pinned}
               error={siteUrlError}
             />
@@ -210,7 +210,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                   type="checkbox"
                   checked={generalSettings.video_web_rendition}
                   onChange={(e) => setGeneralSettings(prev => ({ ...prev, video_web_rendition: e.target.checked }))}
-                  className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                  className="w-4 h-4 text-accent rounded focus:ring-accent"
                   data-testid="general-video-web-rendition"
                 />
                 <span className="ml-2 text-sm text-body">
@@ -294,7 +294,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               type="checkbox"
               checked={generalSettings.enable_analytics}
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, enable_analytics: e.target.checked }))}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">{t('settings.general.enableAnalytics')}</span>
           </label>
@@ -304,7 +304,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               type="checkbox"
               checked={generalSettings.enable_registration}
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, enable_registration: e.target.checked }))}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">{t('settings.general.enableRegistration')}</span>
           </label>
@@ -314,7 +314,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               type="checkbox"
               checked={generalSettings.maintenance_mode}
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, maintenance_mode: e.target.checked }))}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">{t('settings.general.maintenanceMode')}</span>
           </label>
@@ -325,7 +325,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 type="checkbox"
                 checked={generalSettings.short_gallery_urls}
                 onChange={(e) => setGeneralSettings(prev => ({ ...prev, short_gallery_urls: e.target.checked }))}
-                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <span className="ml-2 text-sm text-body">{t('settings.general.enableShortGalleryUrls')}</span>
             </label>
@@ -340,7 +340,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 type="checkbox"
                 checked={generalSettings.use_original_filenames_for_downloads}
                 onChange={(e) => setGeneralSettings(prev => ({ ...prev, use_original_filenames_for_downloads: e.target.checked }))}
-                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <span className="ml-2 text-sm text-body">{t('settings.general.useOriginalFilenames')}</span>
             </label>
@@ -372,7 +372,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               id="admin-language"
               value={i18n.language}
               onChange={(e) => { void i18n.changeLanguage(e.target.value); }}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
               {SUPPORTED_LANGUAGES.map(lang => (
                 <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -392,7 +392,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               id="gallery-language"
               value={generalSettings.default_language}
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, default_language: e.target.value }))}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
               {SUPPORTED_LANGUAGES.map(lang => (
                 <option key={lang.code} value={lang.code}>{lang.name}</option>
@@ -423,7 +423,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                   date_format: { format, locale }
                 }));
               }}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
               <option value="dd/MM/yyyy">DD/MM/YYYY (European)</option>
               <option value="MM/dd/yyyy">MM/DD/YYYY (US)</option>
@@ -445,7 +445,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 const time_format = e.target.value === '12h' ? '12h' : '24h';
                 setGeneralSettings(prev => ({ ...prev, time_format }));
               }}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
               <option value="24h">{t('settings.general.timeFormat24h', '24-hour (14:30)')}</option>
               <option value="12h">{t('settings.general.timeFormat12h', '12-hour (2:30 PM)')}</option>

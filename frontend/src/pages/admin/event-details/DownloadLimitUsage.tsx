@@ -5,6 +5,7 @@ import { Download, RotateCcw } from 'lucide-react';
 import { eventsService } from '../../../services/events.service';
 import { useAnyPermission } from '../../../hooks/usePermission';
 import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
+import { Badge, Button, useConfirm } from '../../../components/common';
 
 // Download limit usage on the event page (issue 1560): "7 / 10 downloaded",
 // plus Reset, which clears the gallery's downloads so its whole quota is free
@@ -21,6 +22,7 @@ interface DownloadLimitUsageProps {
 
 export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId, downloadLimit, ownedByOther = false }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   // Resetting is client help (events.edit or events.support).
   const canEdit = useAnyPermission(['events.edit', 'events.support']) && !ownedByOther;
 
@@ -42,36 +44,33 @@ export const DownloadLimitUsage: React.FC<DownloadLimitUsageProps> = ({ eventId,
   const used = usage?.downloads_used ?? 0;
   const exhausted = used >= downloadLimit;
 
-  const handleReset = () => {
-    if (!window.confirm(t(
-      'events.downloadLimitResetConfirm',
-      'Reset the downloads for this gallery? The client gets the full limit again, and photos already downloaded count again.'
-    ))) return;
-    resetMutation.mutate();
+  const handleReset = async () => {
+    const ok = await confirm({
+      message: t(
+        'events.downloadLimitResetConfirm',
+        'Reset the downloads for this gallery? The client gets the full limit again, and photos already downloaded count again.'
+      ),
+      variant: 'warning',
+      confirmLabel: t('events.downloadLimitResetAction', 'Reset downloads'),
+    });
+    if (ok) resetMutation.mutate();
   };
 
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="download-limit-usage">
-      <span
-        className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded ${
-          exhausted
-            ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-            : 'bg-inset text-body'
-        }`}
-      >
-        <Download className="w-3 h-3 mr-1" aria-hidden="true" />
+      <Badge tone={exhausted ? 'danger' : 'neutral'} icon={<Download />}>
         {t('events.downloadLimitUsage', '{{used}} / {{limit}} downloaded', { used, limit: downloadLimit })}
-      </span>
+      </Badge>
       {canEdit && used > 0 && (
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={handleReset}
           disabled={resetMutation.isPending}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-body border border-line-strong rounded hover:bg-hover-soft disabled:opacity-50"
+          leftIcon={<RotateCcw className="w-3 h-3" aria-hidden="true" />}
         >
-          <RotateCcw className="w-3 h-3" aria-hidden="true" />
           {t('events.downloadLimitReset', 'Reset')}
-        </button>
+        </Button>
       )}
     </div>
   );

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { GalleryLayout, PhotoFilterBar } from '../../components/gallery';
-import { Card } from '../../components/common';
 import { Camera } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { photoMatchesFilenameSearch, photoNameCompare } from '../../utils/photoFilename';
 
 // Mock photo data for preview
@@ -29,6 +29,7 @@ const mockCategories = [
 ];
 
 export const PreviewPage: React.FC = () => {
+  const { t } = useTranslation();
   const { setTheme } = useTheme();
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -98,10 +99,10 @@ export const PreviewPage: React.FC = () => {
   const PreviewPhotoGrid: React.FC<{ photos: any[] }> = ({ photos }) => (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
       {photos.map((photo) => (
-        <Card key={photo.id} className="overflow-hidden group cursor-pointer">
-          <div className="aspect-[4/3] bg-gradient-to-br from-neutral-200 to-neutral-300 relative">
+        <div key={photo.id} className="card-themed overflow-hidden group cursor-pointer">
+          <div className="aspect-[4/3] bg-elevated relative">
             <div className="absolute inset-0 flex items-center justify-center">
-              <Camera className="w-12 h-12 text-neutral-400" />
+              <Camera className="w-12 h-12 text-muted-theme" />
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
               <p className="text-white text-xs truncate">{photo.filename}</p>
@@ -110,7 +111,7 @@ export const PreviewPage: React.FC = () => {
               )}
             </div>
           </div>
-        </Card>
+        </div>
       ))}
     </div>
   );
@@ -124,8 +125,8 @@ export const PreviewPage: React.FC = () => {
     >
       <div className="mt-8">
         <div className="text-center mb-6">
-          <h2 className="text-xl font-semibold text-neutral-900">Theme Preview</h2>
-          <p className="text-neutral-600">This is how your galleries will look with the current theme settings</p>
+          <h2 className="text-xl font-semibold text-theme">{t('gallery.preview.title', 'Theme preview')}</h2>
+          <p className="text-muted-theme">{t('gallery.preview.description', 'This is how your galleries will look with the current theme settings.')}</p>
         </div>
 
         {/* Filters */}

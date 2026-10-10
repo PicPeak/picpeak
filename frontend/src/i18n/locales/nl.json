@@ -1391,7 +1391,6 @@
         "clients": "Klanten"
       },
       "status": {
-        "stable": "stabiel",
         "beta": "beta",
         "new": "nieuw",
         "experimental": "experimenteel",
@@ -3330,8 +3329,7 @@
       "calendar": "Agenda",
       "quotes": "Offertes",
       "bills": "Facturen",
-      "profile": "Profiel",
-      "soon": "Binnenkort"
+      "profile": "Profiel"
     },
     "comingSoon": {
       "tag": "Binnenkort"

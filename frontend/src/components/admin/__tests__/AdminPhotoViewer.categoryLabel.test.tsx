@@ -11,6 +11,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AdminPhotoViewer } from '../AdminPhotoViewer';
 import type { AdminPhoto } from '../../../services/photos.service';
 
+// Delete and archive ask through the app's confirm dialog; these cases never
+// reach one, so a provider-free stub keeps the render self-contained.
+vi.mock('../../common', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common')>()),
+  useConfirm: () => async () => true,
+}));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 vi.mock('react-i18next', async () => {

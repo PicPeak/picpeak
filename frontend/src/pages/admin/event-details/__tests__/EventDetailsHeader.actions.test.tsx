@@ -25,8 +25,9 @@ vi.mock('../../../../contexts/PermissionsContext', () => ({
     hasAnyPermission: (ps: string[]) => ps.some((p) => perms.granted.has(p)),
   }),
 }));
+const flagState: { flags: Record<string, boolean> } = { flags: {} };
 vi.mock('../../../../contexts/FeatureFlagsContext', () => ({
-  useFeatureFlags: () => ({ flags: {} }),
+  useFeatureFlags: () => ({ flags: flagState.flags }),
   useFeatureEnabled: () => false,
 }));
 vi.mock('../../../../hooks/usePermission', () => ({
@@ -79,6 +80,7 @@ const menuButtons = () => screen.queryAllByRole('button', { name: 'More actions'
 describe('EventDetailsHeader — actions', () => {
   beforeEach(() => {
     perms.granted = new Set(['events.edit', 'events.create', 'events.archive']);
+    flagState.flags = {};
   });
 
   it('shows the rename pen and Publish to an editor, and each opens its dialog', () => {

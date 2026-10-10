@@ -12,10 +12,10 @@ import { ContractModal } from './ContractModal';
 import { diffVersions, type ComparableVersion, type TextChange } from './templateDiff';
 
 const badge: Record<string, string> = {
-  added: 'bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-200',
-  removed: 'bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200',
-  moved: 'bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-200',
-  changed: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
+  added: 'bg-success-soft text-success-text',
+  removed: 'bg-danger-soft text-danger-text',
+  moved: 'bg-info-soft text-info-text',
+  changed: 'bg-warning-soft text-warning-text',
 };
 
 const TooLarge: React.FC = () => {
@@ -30,8 +30,8 @@ const Texts: React.FC<{ texts: TextChange[] }> = ({ texts }) => (
         <span className="mr-2 text-[10px] font-semibold uppercase text-muted">{locale}</span>
         {tooLarge && <TooLarge />}
         {ops.map((op, i) => {
-          if (op.type === 'add') return <ins key={i} className="bg-green-100 dark:bg-green-900/50 no-underline">{op.text}</ins>;
-          if (op.type === 'del') return <del key={i} className="bg-red-100 dark:bg-red-900/50">{op.text}</del>;
+          if (op.type === 'add') return <ins key={i} className="bg-success-soft no-underline">{op.text}</ins>;
+          if (op.type === 'del') return <del key={i} className="bg-danger-soft">{op.text}</del>;
           return <span key={i}>{op.text}</span>;
         })}
       </p>

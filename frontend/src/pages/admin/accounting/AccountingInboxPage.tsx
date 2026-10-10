@@ -10,8 +10,9 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Camera, Upload, Inbox, X, Circle, Eye, RotateCcw, Send, Pencil } from 'lucide-react';
-import { Button, Card, CardContent, Input, LocalizedDateInput, Loading } from '../../../components/common';
+import { Camera, Upload, Inbox, Circle, Eye, RotateCcw, Send, Pencil } from 'lucide-react';
+import { Badge, Button, Card, CardContent, EmptyState, ErrorState, Input, LocalizedDateInput, Loading, Modal } from '../../../components/common';
+import type { BadgeTone } from '../../../components/common';
 import { DecimalInput } from '../../../components/common/DecimalInput';
 import { CustomerAccountPicker, type SelectedCustomer } from '../../../components/admin/CustomerAccountPicker';
 import { EventBookingSelect } from '../../../components/admin/EventBookingSelect';
@@ -31,11 +32,11 @@ const PAYMENT_METHODS: PaymentMethod[] = ['bank_transfer', 'cash', 'twint', 'pay
 // (eigener_aufwand) always books to the company — no event picker.
 const BOOKING_DISPOSITIONS: Disposition[] = ['rebill', 'durchlaufend'];
 
-const statusClasses: Record<string, string> = {
-  unsorted: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  categorized: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  declined: 'bg-fill text-body',
-  duplicate: 'bg-fill text-body',
+const statusTones: Record<string, BadgeTone> = {
+  unsorted: 'warning',
+  categorized: 'info',
+  declined: 'neutral',
+  duplicate: 'neutral',
 };
 
 const labelCls = 'block text-sm font-medium text-body mb-1';
@@ -68,9 +69,9 @@ const DocumentPreview: React.FC<{ doc: InboundDocument; maxHeight?: string; init
   return (
     <div>
       <div className="overflow-auto rounded-md border border-line bg-subtle" style={{ maxHeight }}>
-        {previewError ? <div className="flex items-center justify-center px-3 py-16 text-center text-sm text-neutral-500">{t('accounting.inbox.previewError', 'Preview unavailable — enter the fields manually.')}</div>
+        {previewError ? <div className="flex items-center justify-center px-3 py-16 text-center text-sm text-muted">{t('accounting.inbox.previewError', 'Preview unavailable — enter the fields manually.')}</div>
           : imgUrl ? <img src={imgUrl} alt="document page" className="w-full h-auto" />
-            : <div className="flex items-center justify-center px-3 py-16 text-sm text-neutral-500">{t('accounting.inbox.previewLoading', 'Loading preview…')}</div>}
+            : <div className="flex items-center justify-center px-3 py-16 text-sm text-muted">{t('accounting.inbox.previewLoading', 'Loading preview…')}</div>}
       </div>
       {/* Always show the pager for PDFs (disabled at the ends) so the control
           is consistent even on single-page invoices. */}
@@ -98,35 +99,35 @@ const PayModal: React.FC<{ doc: InboundDocument; onClose: () => void; onDone: ()
     onSuccess: () => onDone(),
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      {/* Wider, two-column: preview on the left so the admin can read the
-          QR-bill while confirming payment — #1. */}
-      <div className="mt-12 w-full max-w-3xl rounded-xl bg-shell shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-base font-semibold text-heading">{t('accounting.incoming.payTitle', 'Mark supplier paid')}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="order-2 lg:order-1"><DocumentPreview doc={doc} maxHeight="50vh" initialPage="last" /></div>
-          <div className="order-1 lg:order-2 space-y-3">
-            <p className="text-sm text-soft">
-              {t('accounting.incoming.outstanding', 'Outstanding')}: <span className="font-semibold text-heading">{doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : '—'}</span>
-            </p>
-            <div><label className={labelCls}>{t('accounting.ledger.paidDate', 'Payment date')}</label><LocalizedDateInput value={paidAt} onChange={setPaidAt} /></div>
-            <div><label className={labelCls}>{t('accounting.ledger.method', 'Method')}</label>
-              <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} className={selectCls}>
-                {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{t(`accounting.paymentMethod.${m}`, m)}</option>)}
-              </select>
-            </div>
-            <div><label className={labelCls}>{t('accounting.ledger.reference', 'Reference (optional)')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="xl"
+      title={t('accounting.incoming.payTitle', 'Mark supplier paid')}
+      footer={(
+        <>
           <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? t('common.saving', 'Saving…') : t('accounting.incoming.confirmPaid', 'Mark paid')}</Button>
+        </>
+      )}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="order-2 lg:order-1"><DocumentPreview doc={doc} maxHeight="50vh" initialPage="last" /></div>
+        <div className="order-1 lg:order-2 space-y-3">
+          <p className="text-sm text-soft">
+            {t('accounting.incoming.outstanding', 'Outstanding')}: <span className="font-semibold text-heading">{doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : '—'}</span>
+          </p>
+          <div><label className={labelCls}>{t('accounting.ledger.paidDate', 'Payment date')}</label><LocalizedDateInput value={paidAt} onChange={setPaidAt} /></div>
+          <div><label className={labelCls}>{t('accounting.ledger.method', 'Method')}</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} className={selectCls}>
+              {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{t(`accounting.paymentMethod.${m}`, m)}</option>)}
+            </select>
+          </div>
+          <div><label className={labelCls}>{t('accounting.ledger.reference', 'Reference (optional)')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} /></div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -142,34 +143,36 @@ const ViewModal: React.FC<{ doc: InboundDocument; onClose: () => void }> = ({ do
     </div>
   );
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-10 w-full max-w-4xl rounded-xl bg-shell shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-lg font-semibold text-heading">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="order-2 lg:order-1"><DocumentPreview doc={doc} /></div>
-          <div className="order-1 lg:order-2">
-            {field(t('accounting.inbox.field.supplier', 'Supplier'), doc.supplierName)}
-            {field(t('accounting.inbox.field.total', 'Total'), doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : null)}
-            {field(t('accounting.inbox.field.invoiceDate', 'Invoice date'), doc.invoiceDate ? format(doc.invoiceDate) : null)}
-            {field(t('accounting.inbox.field.disposition', 'Disposition'), doc.disposition ? t(`accounting.disposition.${doc.disposition}`, doc.disposition) : null)}
-            {doc.customerName && field(t('accounting.inbox.field.customer', 'Client'), doc.customerName)}
-            {field(t('accounting.inbox.status.label', 'Status'), doc.customerAccountId && !doc.billedInvoiceId
-              ? t('accounting.incoming.pendingRebill', 'Pending re-bill')
-              : t(`accounting.inbox.status.${doc.status}`, doc.status))}
-            {field(t('accounting.incoming.paid', 'Paid'), doc.supplierPaid
-              ? (doc.supplierPaidAt ? format(doc.supplierPaidAt) : t('common.yes', 'Yes'))
-              : t('common.no', 'No'))}
-            {doc.note && field(t('accounting.inbox.field.note', 'Note'), doc.note)}
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="xl"
+      title={doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}
+      footer={(
+        <>
           <Button variant="outline" onClick={onClose}>{t('common.close', 'Close')}</Button>
+        </>
+      )}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="order-2 lg:order-1"><DocumentPreview doc={doc} /></div>
+        <div className="order-1 lg:order-2">
+          {field(t('accounting.inbox.field.supplier', 'Supplier'), doc.supplierName)}
+          {field(t('accounting.inbox.field.total', 'Total'), doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : null)}
+          {field(t('accounting.inbox.field.invoiceDate', 'Invoice date'), doc.invoiceDate ? format(doc.invoiceDate) : null)}
+          {field(t('accounting.inbox.field.disposition', 'Disposition'), doc.disposition ? t(`accounting.disposition.${doc.disposition}`, doc.disposition) : null)}
+          {doc.customerName && field(t('accounting.inbox.field.customer', 'Client'), doc.customerName)}
+          {field(t('accounting.inbox.status.label', 'Status'), doc.customerAccountId && !doc.billedInvoiceId
+            ? t('accounting.incoming.pendingRebill', 'Pending re-bill')
+            : t(`accounting.inbox.status.${doc.status}`, doc.status))}
+          {field(t('accounting.incoming.paid', 'Paid'), doc.supplierPaid
+            ? (doc.supplierPaidAt ? format(doc.supplierPaidAt) : t('common.yes', 'Yes'))
+            : t('common.no', 'No'))}
+          {doc.note && field(t('accounting.inbox.field.note', 'Note'), doc.note)}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -238,90 +241,16 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
   const cannotSave = rebillNeedsCustomer || rebillNeedsAmount;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="mt-10 w-full max-w-4xl rounded-xl bg-shell shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-lg font-semibold text-heading">{t('accounting.incoming.triageTitle', 'Categorize incoming invoice')}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="px-5 py-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="order-2 lg:order-1"><DocumentPreview doc={doc} /></div>
-
-          <div className="order-1 lg:order-2 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.supplier', 'Supplier')}</label><Input value={supplier} onChange={(e) => setSupplier(e.target.value)} /></div>
-              <div><label className={labelCls}>{t('accounting.inbox.field.total', 'Total')}</label><DecimalInput value={amountMajor} onChange={setAmountMajor} fractionDigits={2} className={selectCls} /></div>
-              <div><label className={labelCls}>{t('accounting.inbox.field.currency', 'Currency')}</label><Input value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></div>
-              <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.supplierCountry', 'Supplier country')}</label>
-                <select value={supplierCountry} onChange={(e) => setSupplierCountry(e.target.value)} className={selectCls}>
-                  <option value="">{t('accounting.inbox.field.supplierCountryNone', '— unknown —')}</option>
-                  {sortedCountryOptions(i18n.language).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
-                </select>
-                <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.supplierCountryHint', 'Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable).')}</p>
-              </div>
-              <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.invoiceDate', 'Invoice date')}</label><LocalizedDateInput value={invoiceDate} onChange={setInvoiceDate} /></div>
-              <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.reference', 'Payment reference')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('accounting.inbox.field.referenceHint', 'QR / ESR reference or message') as string} /></div>
-              <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.note', 'Note')}</label>
-                <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={selectCls} placeholder={t('accounting.inbox.field.noteHint', 'Internal note for this invoice (optional)') as string} /></div>
-            </div>
-
-            <div><label className={labelCls}>{t('accounting.inbox.field.disposition', 'Disposition')}</label>
-              <select value={disposition} onChange={(e) => setDisposition(e.target.value as Disposition)} className={selectCls}>
-                {DISPOSITIONS.map((d) => <option key={d} value={d}>{t(`accounting.disposition.${d}`, d)}</option>)}
-              </select>
-              {/* Explain the selected disposition — re-bill vs pass-through vs
-                  company expense aren't obvious from the labels alone. */}
-              <p className="mt-1 rounded-md bg-neutral-50 dark:bg-neutral-800/60 px-2.5 py-1.5 text-xs text-soft">
-                {t(`accounting.disposition.help.${disposition}`, '')}
-              </p>
-            </div>
-
-            {BOOKING_DISPOSITIONS.includes(disposition) && (
-              <div>
-                <label className={labelCls}>{t('accounting.booking.label', 'Book to')}</label>
-                <EventBookingSelect value={eventId} onChange={setEventId} className={selectCls} />
-                <p className="mt-1 text-xs text-muted">{t('accounting.booking.inboundHint', 'Which event carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to.')}</p>
-              </div>
-            )}
-
-            {disposition === 'eigener_aufwand' && (
-              <div><label className={labelCls}>{t('accounting.inbox.field.category', 'Category')}</label>
-                <select value={categoryId ?? ''} onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : undefined)} className={selectCls}>
-                  <option value="">{t('accounting.inbox.field.categoryNone', '— none —')}</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{categoryLabel(c, t)}</option>)}
-                </select>
-              </div>
-            )}
-
-            {BOOKING_DISPOSITIONS.includes(disposition) && (
-              <div className="space-y-3 rounded-lg border border-line p-3">
-                <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} {disposition === 'rebill' ? '*' : ''}</label>
-                  {/* portalAssignment={false} — same reason as the expenses
-                      ledger: this is an `incomingInvoices` flow, not a
-                      customer-portal one, and the rebill disposition's
-                      required field would otherwise render label-only. */}
-                  <CustomerAccountPicker portalAssignment={false} value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
-                  {disposition === 'durchlaufend' && <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.passthroughCustomerHint', 'Optional — attach a client to re-bill this passthrough; leave empty to only book it to the event.')}</p>}
-                </div>
-                {/* Markup is a re-bill concept only. A pass-through is invoiced
-                    at cost (VAT-neutral), so no markup control here. */}
-                {disposition === 'rebill' && (<>
-                  <div><label className={labelCls}>{t('accounting.inbox.field.markup', 'Markup')}</label>
-                    <select value={markupType} onChange={(e) => setMarkupType(e.target.value as MarkupType)} className={selectCls}>
-                      <option value="none">{t('accounting.markup.none', 'None / from contract')}</option>
-                      <option value="percent">{t('accounting.markup.percent', 'Percent')}</option>
-                      <option value="flat">{t('accounting.markup.flat', 'Flat')}</option>
-                    </select>
-                  </div>
-                  {markupType !== 'none' && <DecimalInput value={markupValue} onChange={setMarkupValue} fractionDigits={2} className={selectCls} placeholder={markupType === 'percent' ? '%' : currency} />}
-                </>)}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3">
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="xl"
+      title={t('accounting.incoming.triageTitle', 'Categorize incoming invoice')}
+      footer={(
+        <>
           {rebillNeedsAmount && (
-            <span className="mr-auto text-xs text-amber-600 dark:text-amber-400">
+            <span className="mr-auto text-xs text-warning-text">
               {t('accounting.incoming.amountRequired', 'Enter the invoice amount before re-billing (0 is allowed).')}
             </span>
           )}
@@ -329,9 +258,85 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
           {/* #5: categorize-only OR categorize then continue to mark paid. */}
           <Button variant="outline" onClick={() => save.mutate(true)} disabled={save.isPending || cannotSave}>{t('accounting.inbox.saveCategorizePay', 'Save & mark paid')}</Button>
           <Button onClick={() => save.mutate(false)} disabled={save.isPending || cannotSave}>{save.isPending ? t('common.saving', 'Saving…') : t('accounting.inbox.saveCategorize', 'Save')}</Button>
+        </>
+      )}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="order-2 lg:order-1"><DocumentPreview doc={doc} /></div>
+
+        <div className="order-1 lg:order-2 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.supplier', 'Supplier')}</label><Input value={supplier} onChange={(e) => setSupplier(e.target.value)} /></div>
+            <div><label className={labelCls}>{t('accounting.inbox.field.total', 'Total')}</label><DecimalInput value={amountMajor} onChange={setAmountMajor} fractionDigits={2} className={selectCls} /></div>
+            <div><label className={labelCls}>{t('accounting.inbox.field.currency', 'Currency')}</label><Input value={currency} maxLength={3} onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></div>
+            <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.supplierCountry', 'Supplier country')}</label>
+              <select value={supplierCountry} onChange={(e) => setSupplierCountry(e.target.value)} className={selectCls}>
+                <option value="">{t('accounting.inbox.field.supplierCountryNone', '— unknown —')}</option>
+                {sortedCountryOptions(i18n.language).map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+              <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.supplierCountryHint', 'Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable).')}</p>
+            </div>
+            <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.invoiceDate', 'Invoice date')}</label><LocalizedDateInput value={invoiceDate} onChange={setInvoiceDate} /></div>
+            <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.reference', 'Payment reference')}</label><Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder={t('accounting.inbox.field.referenceHint', 'QR / ESR reference or message') as string} /></div>
+            <div className="col-span-2"><label className={labelCls}>{t('accounting.inbox.field.note', 'Note')}</label>
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={selectCls} placeholder={t('accounting.inbox.field.noteHint', 'Internal note for this invoice (optional)') as string} /></div>
+          </div>
+
+          <div><label className={labelCls}>{t('accounting.inbox.field.disposition', 'Disposition')}</label>
+            <select value={disposition} onChange={(e) => setDisposition(e.target.value as Disposition)} className={selectCls}>
+              {DISPOSITIONS.map((d) => <option key={d} value={d}>{t(`accounting.disposition.${d}`, d)}</option>)}
+            </select>
+            {/* Explain the selected disposition — re-bill vs pass-through vs
+                company expense aren't obvious from the labels alone. */}
+            <p className="mt-1 rounded-md bg-subtle px-2.5 py-1.5 text-xs text-soft">
+              {t(`accounting.disposition.help.${disposition}`, '')}
+            </p>
+          </div>
+
+          {BOOKING_DISPOSITIONS.includes(disposition) && (
+            <div>
+              <label className={labelCls}>{t('accounting.booking.label', 'Book to')}</label>
+              <EventBookingSelect value={eventId} onChange={setEventId} className={selectCls} />
+              <p className="mt-1 text-xs text-muted">{t('accounting.booking.inboundHint', 'Which gallery carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to.')}</p>
+            </div>
+          )}
+
+          {disposition === 'eigener_aufwand' && (
+            <div><label className={labelCls}>{t('accounting.inbox.field.category', 'Category')}</label>
+              <select value={categoryId ?? ''} onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : undefined)} className={selectCls}>
+                <option value="">{t('accounting.inbox.field.categoryNone', '— none —')}</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{categoryLabel(c, t)}</option>)}
+              </select>
+            </div>
+          )}
+
+          {BOOKING_DISPOSITIONS.includes(disposition) && (
+            <div className="space-y-3 rounded-lg border border-line p-3">
+              <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} {disposition === 'rebill' ? '*' : ''}</label>
+                {/* portalAssignment={false} — same reason as the expenses
+                    ledger: this is an `incomingInvoices` flow, not a
+                    customer-portal one, and the rebill disposition's
+                    required field would otherwise render label-only. */}
+                <CustomerAccountPicker portalAssignment={false} value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
+                {disposition === 'durchlaufend' && <p className="mt-1 text-xs text-muted">{t('accounting.inbox.field.passthroughCustomerHint', 'Optional — attach a client to re-bill this passthrough; leave empty to only book it to the gallery.')}</p>}
+              </div>
+              {/* Markup is a re-bill concept only. A pass-through is invoiced
+                  at cost (VAT-neutral), so no markup control here. */}
+              {disposition === 'rebill' && (<>
+                <div><label className={labelCls}>{t('accounting.inbox.field.markup', 'Markup')}</label>
+                  <select value={markupType} onChange={(e) => setMarkupType(e.target.value as MarkupType)} className={selectCls}>
+                    <option value="none">{t('accounting.markup.none', 'None / from contract')}</option>
+                    <option value="percent">{t('accounting.markup.percent', 'Percent')}</option>
+                    <option value="flat">{t('accounting.markup.flat', 'Flat')}</option>
+                  </select>
+                </div>
+                {markupType !== 'none' && <DecimalInput value={markupValue} onChange={setMarkupValue} fractionDigits={2} className={selectCls} placeholder={markupType === 'percent' ? '%' : currency} />}
+              </>)}
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 
@@ -348,7 +353,7 @@ export const AccountingInboxPage: React.FC = () => {
 
   // Auto-refresh so emails the IMAP poller ingests in the background appear
   // without a manual reload (the poller runs server-side every 60s).
-  const { data, isLoading } = useQuery({ queryKey: ['accounting-inbound'], queryFn: () => accountingService.listInbound({ pageSize: 100 }), refetchInterval: 30000, refetchOnWindowFocus: true });
+  const { data, isLoading, isError, isRefetching, refetch } = useQuery({ queryKey: ['accounting-inbound'], queryFn: () => accountingService.listInbound({ pageSize: 100 }), refetchInterval: 30000, refetchOnWindowFocus: true });
   const { data: categories } = useQuery({ queryKey: ['expense-categories'], queryFn: () => accountingService.listCategories() });
   // Per-event customers carrying pending (categorised, unbilled) re-bills (#3).
   const { data: pending } = useQuery({ queryKey: ['accounting-pending-rebills'], queryFn: () => accountingService.listPendingRebills(), refetchInterval: 30000 });
@@ -369,7 +374,7 @@ export const AccountingInboxPage: React.FC = () => {
       toast.success(t('accounting.incoming.bundledToast', 'Bundled {{count}} re-bill(s) into one invoice.', { count }));
       qc.invalidateQueries({ queryKey: ['accounting-inbound'] });
       qc.invalidateQueries({ queryKey: ['accounting-pending-rebills'] });
-      navigate(`/admin/clients/bills/${invoiceId}/edit`);
+      navigate(`/admin/clients/bills/${invoiceId}`);
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e.message || 'Failed'),
   });
@@ -389,6 +394,7 @@ export const AccountingInboxPage: React.FC = () => {
   return (
     <div>
       <SectionPageHeader
+        feature="incomingInvoices"
         icon={Inbox}
         title={t('accounting.subnav.incomingInvoices', 'Incoming invoices')}
         description={t('accounting.inbox.subtitle', 'Supplier invoices captured by camera, upload or the incoming mailbox, ready to categorise and re-bill.')}
@@ -430,11 +436,23 @@ export const AccountingInboxPage: React.FC = () => {
         </CardContent></Card>
       )}
 
-      {isLoading ? <Loading /> : items.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
-          <Inbox className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
-          <p className="text-sm text-soft">{t('accounting.inbox.empty', 'No documents yet — capture one above.')}</p>
-        </div>
+      {isLoading ? <Loading /> : isError && !data ? (
+        <Card>
+          <ErrorState
+            size="inline"
+            title={t('accounting.inbox.loadFailed', 'Could not load the incoming invoices')}
+            onRetry={() => refetch()}
+            retrying={isRefetching}
+          />
+        </Card>
+      ) : items.length === 0 ? (
+        <Card>
+          <EmptyState
+            size="inline"
+            icon={<Inbox />}
+            title={t('accounting.inbox.empty', 'No documents yet — capture one above.')}
+          />
+        </Card>
       ) : (
         <div className="space-y-2">
           {items.map((doc) => (
@@ -454,10 +472,10 @@ export const AccountingInboxPage: React.FC = () => {
                   {/* #1: once paid, the front status reads "Paid" — not the
                       stale "categorized". */}
                   {doc.supplierPaid
-                    ? <span className="inline-block rounded px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">{t('accounting.incoming.paid', 'Paid')}</span>
-                    : <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${statusClasses[doc.status] || ''}`}>{t(`accounting.inbox.status.${doc.status}`, doc.status)}</span>}
+                    ? <Badge tone="success">{t('accounting.incoming.paid', 'Paid')}</Badge>
+                    : <Badge tone={statusTones[doc.status] || 'neutral'}>{t(`accounting.inbox.status.${doc.status}`, doc.status)}</Badge>}
                   <span className="text-sm font-medium text-heading truncate hover:underline">{doc.supplierName || doc.originalFilename || t('accounting.inbox.untitled', 'Untitled document')}</span>
-                  {doc.source === 'camera' && <Camera className="w-3.5 h-3.5 text-neutral-400" />}
+                  {doc.source === 'camera' && <Camera className="w-3.5 h-3.5 text-faint" />}
                 </div>
                 <div className="text-xs text-muted">
                   {doc.totalAmountMinor != null ? formatMoneyMinor(doc.totalAmountMinor, doc.currency || 'CHF') : t('accounting.inbox.noAmount', 'amount not entered')}
@@ -465,7 +483,7 @@ export const AccountingInboxPage: React.FC = () => {
                   {doc.disposition && <>{' · '}{t(`accounting.disposition.${doc.disposition}`, doc.disposition)}</>}
                   {/* Pending re-bill = attached to a client but not yet on an invoice. */}
                   {doc.customerAccountId && !doc.billedInvoiceId && (
-                    <span className="text-indigo-600 dark:text-indigo-400">{' · '}{t('accounting.incoming.pendingRebill', 'Pending re-bill')}{doc.customerName ? ` → ${doc.customerName}` : ''}</span>
+                    <span className="text-info-text">{' · '}{t('accounting.incoming.pendingRebill', 'Pending re-bill')}{doc.customerName ? ` → ${doc.customerName}` : ''}</span>
                   )}
                 </div>
               </button>

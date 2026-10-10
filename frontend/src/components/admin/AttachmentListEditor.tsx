@@ -23,9 +23,9 @@ export interface AttachmentRow {
   isActive: boolean;
 }
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 px-2 py-1 rounded-md border border-line-strong '
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 px-2 py-1 rounded-md border border-line-strong '
   + 'bg-panel text-sm text-heading';
-const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
+const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
   + 'disabled:opacity-40 hover:bg-hover';
 
 export const AttachmentListEditor: React.FC<{
@@ -78,7 +78,7 @@ export const AttachmentListEditor: React.FC<{
                   {t('contracts.attachments.pages', '{{count}} pages', { count: row.pages })} · {formatAttachmentSize(row.bytes)}
                 </span>
                 {!row.isActive && (
-                  <span className="ml-2 text-xs text-red-700 dark:text-red-400">
+                  <span className="ml-2 text-xs text-danger-text">
                     {t('contracts.attachments.archivedInLibrary', 'Archived in the library')}
                   </span>
                 )}

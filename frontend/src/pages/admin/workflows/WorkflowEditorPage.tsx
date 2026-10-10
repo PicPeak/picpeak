@@ -38,8 +38,8 @@ const TRIGGERS = [
 ];
 
 const COLORS: Record<string, string> = {
-  trigger: '#1D9E75', condition: '#BA7517', branch: '#BA7517', loop: '#378ADD',
-  wait: '#888780', action: '#534AB7', gate: '#7F77DD', webhook: '#888780',
+  trigger: 'var(--chart-2)', condition: 'var(--chart-3)', branch: 'var(--chart-3)', loop: 'var(--chart-1)',
+  wait: 'var(--ui-text-faint)', action: 'var(--chart-4)', gate: 'var(--chart-5)', webhook: 'var(--ui-text-faint)',
 };
 const SOURCE_HANDLES: Record<string, string[]> = {
   condition: ['yes', 'no'], branch: ['yes', 'no'], gate: ['confirm', 'deny'], loop: ['loop', 'exit'],
@@ -81,7 +81,7 @@ function describeNode(type: string, config: any = {}, triggerType?: string): str
 
 function WfNode({ data }: { data: any }) {
   const handles = SOURCE_HANDLES[data.nodeType];
-  const color = COLORS[data.nodeType] || '#888780';
+  const color = COLORS[data.nodeType] || 'var(--ui-text-faint)';
   const label = describeNode(data.nodeType, data.config, data.triggerType);
   const pos = (i: number, n: number) => `${(100 / (n + 1)) * (i + 1)}%`;
   return (
@@ -339,7 +339,7 @@ export const WorkflowEditorPage: React.FC = () => {
             className="w-full font-mono text-xs p-2 rounded border border-line-strong bg-subtle text-heading"
             style={{ height: '62vh' }}
           />
-          {textErr && <p className="text-xs text-red-600 dark:text-red-400">{textErr}</p>}
+          {textErr && <p className="text-xs text-danger-text">{textErr}</p>}
           <div className="flex gap-2">
             <Button variant="outline" onClick={copyText}>{t('common.copy', 'Copy')}</Button>
             <Button variant="primary" onClick={applyText}>{t('workflows.editor.loadText', 'Load into editor')}</Button>
@@ -367,7 +367,7 @@ export const WorkflowEditorPage: React.FC = () => {
                 {(selectedNode.data as any).nodeType} · {selectedNode.id}
               </div>
               <Button variant="ghost" size="sm" onClick={deleteSelected} aria-label={t('common.delete', 'Delete') as string}>
-                <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                <Trash2 className="w-4 h-4 text-danger-text" />
               </Button>
             </div>
             <NodeConfigPanel

@@ -72,9 +72,9 @@ export const SortableHeader: React.FC<SortableHeaderProps> = ({
       <button
         type="button"
         onClick={() => onSort(columnKey)}
-        className={`group inline-flex items-center gap-1 font-medium transition-colors hover:text-theme ${
+        className={`group inline-flex items-center gap-1 font-medium transition-colors hover:text-heading ${
           align === 'right' ? 'flex-row-reverse' : ''
-        } ${active ? 'text-theme' : ''}`}
+        } ${active ? 'text-heading' : ''}`}
       >
         <span>{label}</span>
         {active ? (

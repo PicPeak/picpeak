@@ -32,7 +32,6 @@ const HEADING_FILES = [
   'pages/admin/settings/SettingsBusinessProfilePage.tsx',
   'pages/admin/settings/CrmSettingsPage.tsx',
   'pages/admin/settings/ReminderTemplatesPage.tsx',
-  'pages/public/LegalPage.tsx',
   // Follow-up (QA B14): these three were the known remaining offenders —
   // they set `text-theme` explicitly, which beats the AdminLayout default.
   'pages/admin/SystemHealthPage.tsx',
@@ -72,9 +71,18 @@ describe('branding-theme text colour leak (QA S3 / S4 / S13)', () => {
     expect(THEMED_TEXT_CLASS.test(read(rel))).toBe(false);
   });
 
-  it('gives the LegalPage CMS body an explicit colour instead of the themed body colour', () => {
+  // The legal pages used to be light-chromed (neutral-50 floor, white card),
+  // so themed text on them leaked. They now follow the branding palette as a
+  // whole: the text may be themed only because every surface under it is too.
+  it('keeps the LegalPage text and the surfaces under it on the same theme tokens', () => {
     const source = read('pages/public/LegalPage.tsx');
-    expect(source).toMatch(/className="prose prose-neutral max-w-none text-neutral-\d00"/);
+    expect(source).toMatch(/className="prose prose-neutral max-w-none text-theme"/);
+    expect(source).toContain('usePublicDarkMode();');
+    expect(source).not.toMatch(/\bbg-(white|neutral-\d+)\b/);
+    for (const match of source.matchAll(HEADING_TAG)) {
+      const className = /className="([^"]*)"/.exec(match[2] || '')?.[1] ?? '';
+      expect(className).toMatch(/\btext-theme\b/);
+    }
   });
 
   it('keeps the CMS 404 card surface on the same theme tokens as its text', () => {

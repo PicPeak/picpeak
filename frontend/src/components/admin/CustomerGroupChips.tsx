@@ -41,7 +41,7 @@ export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, cla
       <span className="truncate">{group.name}</span>
       {group.isArchived && (
         <Archive
-          className="h-3 w-3 shrink-0 text-neutral-400"
+          className="h-3 w-3 shrink-0 text-faint"
           aria-label={t('customers.groups.archived', 'Archived')}
         />
       )}
@@ -71,7 +71,7 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
   const [expanded, setExpanded] = useState(false);
   const restId = useId();
   if (!groups || groups.length === 0) {
-    return <span className="text-xs text-neutral-400">{t('customers.groups.none', '—')}</span>;
+    return <span className="text-xs text-faint">{t('customers.groups.none', '—')}</span>;
   }
   const shown = groups.slice(0, max);
   const rest = groups.slice(max);
@@ -191,7 +191,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
             <GroupDot color={group.color} />
             {group.name}
             {group.memberCount !== undefined && (
-              <span className={active ? 'opacity-70' : 'text-neutral-400'}>{group.memberCount}</span>
+              <span className={active ? 'opacity-70' : 'text-faint'}>{group.memberCount}</span>
             )}
           </button>
         );
@@ -199,7 +199,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
       <button type="button" onClick={onToggleUngrouped} aria-pressed={ungrouped} className={pillClass(ungrouped)}>
         {t('customers.groups.ungrouped', 'Ungrouped')}
         {ungroupedCount !== undefined && (
-          <span className={ungrouped ? 'opacity-70' : 'text-neutral-400'}>{ungroupedCount}</span>
+          <span className={ungrouped ? 'opacity-70' : 'text-faint'}>{ungroupedCount}</span>
         )}
       </button>
       {selectedIds.length >= 2 && (

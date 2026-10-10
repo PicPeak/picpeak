@@ -52,7 +52,7 @@ export const GalleryRecipientsList: React.FC<GalleryRecipientsListProps> = ({
         </li>
       )}
       {skippedAccountCount > 0 && (
-        <li className="flex items-start gap-2 text-amber-700 dark:text-amber-400">
+        <li className="flex items-start gap-2 text-warning-text">
           <UserX className="w-4 h-4 mt-0.5 shrink-0" />
           <span className="min-w-0 break-words">
             {t('events.recipients.skippedAccounts', {

@@ -65,7 +65,7 @@ export const SettingsSaveBar: React.FC<SettingsSaveBarProps> = ({
         {isDirty && (
           <span
             role="status"
-            className="mr-auto text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1.5"
+            className="mr-auto text-xs text-warning-text flex items-center gap-1.5"
           >
             <AlertCircle className="w-3.5 h-3.5" />
             {t('settings.saveBar.unsaved', 'You have unsaved changes')}

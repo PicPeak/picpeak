@@ -15,7 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FileText, ExternalLink, Download } from 'lucide-react';
 import { customerService, type CustomerQuote } from '../../services/customer.service';
-import { Card, Loading } from '../../components/common';
+import { Card, EmptyState, ErrorState, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
 import { formatMoney } from '../../utils/money';
 import { formatShortDate } from '../../utils/dateShort';
@@ -40,7 +40,7 @@ const STATUS_OPTIONS: { value: StatusFilter; key: string; fallback: string }[] =
 
 export const CustomerQuotesPage: React.FC = () => {
   const { t } = useTranslation();
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['customer-quotes'],
     queryFn: () => customerService.listQuotes(),
   });
@@ -75,7 +75,7 @@ export const CustomerQuotesPage: React.FC = () => {
     if (status === 403) {
       return (
         <div className="container py-8">
-          <h1 className="text-2xl font-bold mb-2">{t('customer.quotes.title', 'Quotes')}</h1>
+          <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.quotes.title', 'Quotes')}</h1>
           <p className="text-muted-theme">
             {t('customer.quotes.disabled',
               'This feature is currently disabled for your account. Please contact your photographer if you expected to see quotes here.')}
@@ -85,7 +85,11 @@ export const CustomerQuotesPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-status hue-danger">{t('customer.quotes.loadError', 'Could not load quotes.')}</p>
+        <ErrorState
+          title={t('customer.quotes.loadError', 'Could not load quotes.')}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
       </div>
     );
   }
@@ -106,9 +110,7 @@ export const CustomerQuotesPage: React.FC = () => {
 
       {allQuotes.length === 0 ? (
         <Card padding="lg">
-          <p className="text-center text-muted-theme py-8">
-            {t('customer.quotes.empty', 'No quotes yet.')}
-          </p>
+          <EmptyState size="inline" title={t('customer.quotes.empty', 'No quotes yet.')} />
         </Card>
       ) : (
         <>
@@ -120,7 +122,7 @@ export const CustomerQuotesPage: React.FC = () => {
             visibleRowCount={visible.length}
           />
           <Card padding="none">
-            <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+            <ul className="divide-y divide-border-token">
               {visible.map((q: CustomerQuote) => (
                 <QuoteRow key={q.id} q={q} />
               ))}
@@ -155,12 +157,7 @@ function FilterSortBar<S extends string>({
         <select
           value={statusFilter}
           onChange={(e) => onStatusChange(e.target.value as S)}
-          className="text-sm px-2 py-1 rounded border"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-surface-border)',
-            color: 'var(--color-text)',
-          }}
+          className="input-themed h-9 w-auto"
         >
           {statusOptions.map((o) => (
             <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
@@ -172,12 +169,7 @@ function FilterSortBar<S extends string>({
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value as SortKey)}
-          className="text-sm px-2 py-1 rounded border"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-surface-border)',
-            color: 'var(--color-text)',
-          }}
+          className="input-themed h-9 w-auto"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>

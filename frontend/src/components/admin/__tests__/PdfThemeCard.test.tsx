@@ -1,6 +1,7 @@
 /**
- * PDF theme card (#1445): per-document scopes, inherited values, saving,
- * resetting and previewing with unsaved settings.
+ * PDF theme card (#1445): per-document scopes, inherited values, saving
+ * through the page (usePdfThemeDrafts), resetting and previewing with
+ * unsaved settings. A colour nothing sets follows Branding › Colours.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,9 +33,8 @@ vi.mock('react-i18next', async () => {
 });
 
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-vi.mock('../PermissionGate', () => ({
-  PermissionGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+const canEdit = vi.fn(() => true);
+vi.mock('../../../hooks/usePermission', () => ({ usePermission: () => canEdit() }));
 
 const list = vi.fn();
 const save = vi.fn();
@@ -47,7 +47,7 @@ vi.mock('../../../services/pdfThemes.service', () => ({
   },
 }));
 
-import { PdfThemeCard } from '../PdfThemeCard';
+import { PdfThemeCard, usePdfThemeDrafts } from '../PdfThemeCard';
 
 const resolved = (scope: string, extra: Record<string, unknown> = {}) => ({
   scope,
@@ -74,9 +74,22 @@ const themes = {
   fontFamilies: ['Inter', 'Jost'],
 };
 
-function renderCard() {
+// The Branding page in miniature: it owns the drafts and the save button.
+function Page({ brandAccent }: { brandAccent?: string }) {
+  const state = usePdfThemeDrafts();
+  return (
+    <>
+      <PdfThemeCard state={state} brandAccent={brandAccent} />
+      <button type="button" disabled={!state.isDirty || state.invalidScopes.length > 0} onClick={() => { void state.save(); }}>
+        Save page
+      </button>
+    </>
+  );
+}
+
+function renderCard(brandAccent?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PdfThemeCard /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><Page brandAccent={brandAccent} /></QueryClientProvider>);
 }
 
 beforeEach(() => {
@@ -90,10 +103,10 @@ it('saves only what was changed for the chosen document type', async () => {
   const user = userEvent.setup();
   renderCard();
 
-  await user.click(await screen.findByRole('button', { name: 'Quotes' }));
+  await user.click(await screen.findByRole('tab', { name: 'Quotes' }));
   fireEvent.change(screen.getByLabelText(/Title and headings/), { target: { value: '#123456' } });
   await user.selectOptions(screen.getByLabelText('Font'), 'Jost');
-  await user.click(screen.getByRole('button', { name: 'Save theme' }));
+  await user.click(screen.getByRole('button', { name: 'Save page' }));
 
   await waitFor(() => expect(save).toHaveBeenCalledWith('quote', { colors: { accent: '#123456' }, fontFamily: 'Jost' }));
 });
@@ -102,12 +115,15 @@ it('shows inherited values and resets a scope', async () => {
   const user = userEvent.setup();
   renderCard();
 
-  await user.click(await screen.findByRole('button', { name: 'Contracts' }));
+  await user.click(await screen.findByRole('tab', { name: 'Contracts' }));
   expect(screen.getByLabelText('Title size')).toHaveValue('19');
   expect(screen.getByRole('option', { name: 'Inherit (No footer)' })).toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Reset to inherited' }));
+  await user.click(screen.getByRole('button', { name: 'Save page' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('contract', {}));
+  // Only the changed document type is written.
+  expect(save).toHaveBeenCalledTimes(1);
 });
 
 it('previews with the unsaved settings', async () => {
@@ -131,7 +147,7 @@ it('a preset fills in the layout, which is saved with the theme (#1445)', async 
   await user.click(screen.getByRole('button', { name: 'Large print' }));
   expect(screen.getByLabelText('Body text size')).toHaveValue('12');
   expect(screen.getByLabelText(/Left margin/)).toHaveValue(25);
-  await user.click(screen.getByRole('button', { name: 'Save theme' }));
+  await user.click(screen.getByRole('button', { name: 'Save page' }));
   await waitFor(() => expect(save).toHaveBeenCalledWith('default', expect.objectContaining({
     bodySize: 12, lineHeight: 1.5, layout: { margins: { left: 25, right: 20, bottom: 20 } },
   })));
@@ -142,12 +158,12 @@ it('a margin outside its bounds blocks saving; readability warnings inform witho
   renderCard();
   const left = await screen.findByLabelText(/Left margin/);
   await user.type(left, '12');
-  expect(screen.getByRole('button', { name: 'Save theme' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Save page' })).toBeDisabled();
   await user.clear(left);
   await user.selectOptions(screen.getByLabelText('Body text size'), '9');
   expect(screen.getByText(/Body text of 9 pt is hard to read/)).toBeInTheDocument();
   expect(screen.getByText(/Lines run to about \d+ characters/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Save theme' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Save page' })).toBeEnabled();
 });
 
 it('names an archived uploaded font as an uploaded font, not by its internal id', async () => {
@@ -162,4 +178,27 @@ it('names an archived uploaded font as an uploaded font, not by its internal id'
   const select = await screen.findByLabelText('Font');
   await waitFor(() => expect(select).toHaveDisplayValue('Uploaded font (no longer available)'));
   expect(screen.queryByText(/upload 1/)).toBeNull();
+});
+
+it('says where an inherited colour comes from, and follows the Colours card live', async () => {
+  const user = userEvent.setup();
+  const { unmount } = renderCard('#014e4e');
+  await user.click(await screen.findByRole('tab', { name: 'Invoices' }));
+  expect(screen.getByText('From Colours · #014e4e')).toBeInTheDocument();
+  expect(screen.getAllByText(/^Built-in · /).length).toBe(4);
+  unmount();
+
+  // Too pale for paper: the built-in black stays.
+  renderCard('#ffe066');
+  await screen.findByRole('tab', { name: 'Invoices' });
+  expect(screen.queryByText(/From Colours/)).toBeNull();
+});
+
+it('is read-only without settings.banking and saves nothing', async () => {
+  canEdit.mockReturnValue(false);
+  renderCard();
+  expect(await screen.findByText('You can see the PDF theme but not change it.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Font')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
+  canEdit.mockReturnValue(true);
 });

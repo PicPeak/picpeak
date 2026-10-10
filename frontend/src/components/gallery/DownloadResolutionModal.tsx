@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Check, AlertCircle, X, Loader2 } from 'lucide-react';
 
-import { Button, Card } from '../common';
+import { Button } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import type { DownloadResolutionChoice, DownloadJobStatus } from '../../types';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
@@ -11,6 +11,7 @@ import {
   type QuotaPhoto,
 } from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * Resolution picker for gallery downloads (#858).
@@ -155,35 +156,31 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     onClose();
   }, [slug, filename, onClose, t]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useGalleryDialog({ open: true, onClose, panelRef });
 
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('gallery.chooseResolution', 'Choose a download size')}
     >
-      <Card
-        className="max-w-md w-full"
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('gallery.chooseResolution', 'Choose a download size')}
+        className="card-themed text-theme p-6 max-w-md w-full"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-lg font-semibold text-theme">
             {t('gallery.chooseResolution', 'Choose a download size')}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('common.close', 'Close')}
-            className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+            className="text-muted-theme hover:text-theme"
           >
             <X className="w-5 h-5" />
           </button>
@@ -197,8 +194,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
                   key={choice.id}
                   className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                     selected === choice.id
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                      : 'border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                      ? 'border-accent bg-accent-soft'
+                      : 'border-border-token hover-surface'
                   }`}
                 >
                   <input
@@ -207,14 +204,14 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
                     value={choice.id}
                     checked={selected === choice.id}
                     onChange={() => setSelected(choice.id)}
-                    className="accent-primary-600"
+                    className="accent-accent"
                   />
                   <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    <span className="block text-sm font-medium text-theme">
                       {choice.label}
                     </span>
                     {choice.width && choice.height && (
-                      <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="block text-xs text-muted-theme">
                         {t('gallery.resolutionUpTo', 'up to {{width}} × {{height}} px', {
                           width: choice.width,
                           height: choice.height,
@@ -241,11 +238,11 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
         {phase === 'preparing' && (
           <div className="py-6 text-center">
-            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-primary-600" />
-            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-accent" />
+            <p className="text-sm font-medium text-theme">
               {t('gallery.preparingDownload', 'Preparing your download…')}
             </p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted-theme mt-1">
               {photoCount > 0
                 ? t('gallery.preparingProgress', '{{count}} photos packaged', { count: photoCount })
                 : t('gallery.preparingHint', 'Resizing photos — this can take a moment for large galleries.')}
@@ -255,10 +252,10 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
         {phase === 'ready' && (
           <div className="py-6 text-center">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full status-chip hue-success flex items-center justify-center">
+              <Check className="w-6 h-6" />
             </div>
-            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-4">
+            <p className="text-sm font-medium text-theme mb-4">
               {t('gallery.downloadReady', 'Your download is ready')}
             </p>
             <Button variant="primary" onClick={download} leftIcon={<Download className="w-4 h-4" />}>
@@ -269,8 +266,8 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
 
         {phase === 'error' && (
           <div className="py-6 text-center">
-            <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-600 dark:text-red-400" />
-            <p className="text-sm text-neutral-700 dark:text-neutral-300 mb-4">{error}</p>
+            <AlertCircle className="w-8 h-8 mx-auto mb-3 text-status hue-danger" />
+            <p className="text-sm text-theme mb-4">{error}</p>
             <div className="flex justify-center gap-2">
               <Button variant="outline" onClick={onClose}>
                 {t('common.close', 'Close')}
@@ -281,7 +278,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 };

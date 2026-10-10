@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, ExternalLink, Copy, CheckCircle, ChevronDown, ChevronRight, ArrowUpCircle } from 'lucide-react';
+import { ExternalLink, Copy, CheckCircle, ChevronDown, ChevronRight, ArrowUpCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { api } from '../../config/api';
-import { Button, Card } from '../common';
+import { Button, Modal } from '../common';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { githubReleaseUrl } from '../../utils/githubReleaseUrl';
 import { SelfUpdatePanel, ManualUpdateSteps, useSelfUpdateActive } from './SelfUpdatePanel';
@@ -126,185 +125,32 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
     }
   };
 
-  const node = (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
-    >
-      <Card
-        padding="none"
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-line">
-          <div className="flex items-start gap-3">
-            <ArrowUpCircle className="w-6 h-6 text-blue-600 mt-0.5 flex-shrink-0" />
-            <div>
-              <h2 className="text-lg font-semibold text-heading">
-                {t('admin.updates.modalTitle', 'Update available')}
-              </h2>
-              <p className="text-sm text-muted mt-0.5">
-                {t('admin.updates.modalSubtitle', 'v{{current}} → v{{latest}}', {
-                  current: currentVersion,
-                  latest: latestVersion,
-                })}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-body"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Body — scrollable */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Upgrade instructions */}
-          <section>
-            <h3 className="text-sm font-semibold text-heading mb-2">
-              {t('admin.updates.howToUpgrade', 'How to upgrade')}
-            </h3>
-            {/* Renders nothing unless in-app updates are enabled; the manual
-                steps below stay as the fallback either way. */}
-            <div className="mb-3 empty:hidden">
-              <SelfUpdatePanel />
-            </div>
-            {instructionsLoading && (
-              <p className="text-sm text-neutral-500">{t('common.loading', 'Loading…')}</p>
-            )}
-            {!instructionsLoading && instructions?.instructions && (
-              <ManualUpdateSteps active={selfUpdateActive}>
-              <div className="space-y-3">
-                {instructions.environment?.description && (
-                  <p className="text-xs text-muted">
-                    {t('admin.updates.detectedEnv', 'Detected environment: {{env}}', {
-                      env: instructions.environment.description,
-                    })}
-                  </p>
-                )}
-                {instructions.instructions.steps.map((step, idx) => {
-                  const key = `step-${idx}`;
-                  return (
-                    <div key={key}>
-                      <p className="text-sm text-body mb-1">
-                        {idx + 1}. {step.description}
-                      </p>
-                      {step.command && (
-                        <div className="relative">
-                          <pre className="text-xs bg-neutral-900 text-neutral-100 rounded p-3 overflow-x-auto">
-                            <code>{step.command}</code>
-                          </pre>
-                          <button
-                            onClick={() => copy(step.command!, key)}
-                            className="absolute top-2 right-2 p-1.5 rounded hover:bg-neutral-700/50 text-neutral-300"
-                            aria-label={t('admin.updates.copyCommand', 'Copy command')}
-                          >
-                            {copiedKey === key
-                              ? <CheckCircle className="w-4 h-4 text-green-400" />
-                              : <Copy className="w-4 h-4" />}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {instructions.instructions.notes && instructions.instructions.notes.length > 0 && (
-                  <ul className="text-xs text-muted list-disc list-inside space-y-1">
-                    {instructions.instructions.notes.map((note, idx) => (
-                      <li key={idx}>{note}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              </ManualUpdateSteps>
-            )}
-          </section>
-
-          {/* Aggregated changelog */}
-          <section>
-            <h3 className="text-sm font-semibold text-heading mb-2">
-              {t('admin.updates.releaseNotes', 'Release notes')}
-            </h3>
-            {changelogLoading && (
-              <p className="text-sm text-neutral-500">{t('common.loading', 'Loading…')}</p>
-            )}
-            {changelogError && (
-              <p className="text-sm text-red-600">
-                {t('admin.updates.changelogError', 'Could not load release notes. Check the release pages directly on GitHub.')}
-              </p>
-            )}
-            {changelog?.releases.length === 0 && !changelogLoading && (
-              <p className="text-sm text-neutral-500">
-                {t('admin.updates.noReleases', 'No release notes available.')}
-              </p>
-            )}
-            {changelog && changelog.releases.length > 0 && (
-              <div className="space-y-2">
-                {changelog.releases.map((release) => {
-                  const isOpen = expanded.has(release.version);
-                  return (
-                    <div
-                      key={release.version}
-                      className="border border-line rounded"
-                    >
-                      <button
-                        onClick={() => toggle(release.version)}
-                        className="w-full flex items-center justify-between p-3 hover:bg-hover-soft"
-                      >
-                        <div className="flex items-center gap-2 text-left">
-                          {isOpen
-                            ? <ChevronDown className="w-4 h-4 text-neutral-500" />
-                            : <ChevronRight className="w-4 h-4 text-neutral-500" />}
-                          <span className="text-sm font-medium text-heading">
-                            {release.name}
-                          </span>
-                          {release.publishedAt && (
-                            <span className="text-xs text-neutral-500">
-                              {formatDate(release.publishedAt)}
-                            </span>
-                          )}
-                        </div>
-                        <a
-                          href={release.htmlUrl || githubReleaseUrl(release.version)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                        >
-                          {t('admin.updates.viewOnGitHub', 'View on GitHub')}
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </button>
-                      {isOpen && release.body && (
-                        <div className="px-4 pb-4 pt-1 border-t border-line-faint">
-                          <MarkdownContent
-                            source={release.body}
-                            className="text-sm prose prose-sm dark:prose-invert max-w-none"
-                          />
-                        </div>
-                      )}
-                      {isOpen && !release.body && (
-                        <div className="px-4 pb-4 pt-1 text-sm text-neutral-500 italic">
-                          {t('admin.updates.noNotes', 'No release notes provided.')}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between gap-3 p-4 border-t border-line bg-neutral-50 dark:bg-neutral-900/50">
+  // Modal portals to document.body: it is rendered from VersionInfo inside
+  // the AdminSidebar, whose root carries a `transform` (mobile slide-in). A
+  // transformed ancestor becomes the containing block for `position: fixed`
+  // descendants, so without the portal the backdrop sized itself to the
+  // 256px sidebar column instead of the viewport (QA B.07).
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      size="lg"
+      title={
+        <span className="flex items-center gap-2">
+          <ArrowUpCircle className="w-6 h-6 text-info-text flex-shrink-0" />
+          {t('admin.updates.modalTitle', 'Update available')}
+        </span>
+      }
+      description={t('admin.updates.modalSubtitle', 'v{{current}} → v{{latest}}', {
+        current: currentVersion,
+        latest: latestVersion,
+      })}
+      footer={
+        <>
           <Button
             variant="ghost"
             size="sm"
+            className="mr-auto"
             onClick={() => {
               onDismiss(latestVersion);
               onClose();
@@ -315,15 +161,146 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
           <Button variant="primary" size="sm" onClick={onClose}>
             {t('common.close', 'Close')}
           </Button>
-        </div>
-      </Card>
-    </div>
-  );
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {/* Upgrade instructions */}
+        <section>
+          <h3 className="text-sm font-semibold text-heading mb-2">
+            {t('admin.updates.howToUpgrade', 'How to upgrade')}
+          </h3>
+          {/* Renders nothing unless in-app updates are enabled; the manual
+              steps below stay as the fallback either way. */}
+          <div className="mb-3 empty:hidden">
+            <SelfUpdatePanel />
+          </div>
+          {instructionsLoading && (
+            <p className="text-sm text-muted">{t('common.loading', 'Loading...')}</p>
+          )}
+          {!instructionsLoading && instructions?.instructions && (
+            <ManualUpdateSteps active={selfUpdateActive}>
+            <div className="space-y-3">
+              {instructions.environment?.description && (
+                <p className="text-xs text-muted">
+                  {t('admin.updates.detectedEnv', 'Detected environment: {{env}}', {
+                    env: instructions.environment.description,
+                  })}
+                </p>
+              )}
+              {instructions.instructions.steps.map((step, idx) => {
+                const key = `step-${idx}`;
+                return (
+                  <div key={key}>
+                    <p className="text-sm text-body mb-1">
+                      {idx + 1}. {step.description}
+                    </p>
+                    {step.command && (
+                      <div className="relative">
+                        <pre className="text-xs bg-inset text-heading rounded p-3 overflow-x-auto">
+                          <code>{step.command}</code>
+                        </pre>
+                        <button
+                          onClick={() => copy(step.command!, key)}
+                          className="absolute top-2 right-2 p-1.5 rounded hover:bg-hover text-muted"
+                          aria-label={t('admin.updates.copyCommand', 'Copy command')}
+                        >
+                          {copiedKey === key
+                            ? <CheckCircle className="w-4 h-4 text-success" />
+                            : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {instructions.instructions.notes && instructions.instructions.notes.length > 0 && (
+                <ul className="text-xs text-muted list-disc list-inside space-y-1">
+                  {instructions.instructions.notes.map((note, idx) => (
+                    <li key={idx}>{note}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            </ManualUpdateSteps>
+          )}
+        </section>
 
-  // Portal to body: the modal is rendered from VersionInfo inside the
-  // AdminSidebar, whose root carries a `transform` (mobile slide-in). A
-  // transformed ancestor becomes the containing block for `position: fixed`
-  // descendants, so without this the backdrop sized itself to the 256px
-  // sidebar column instead of the viewport (QA B.07).
-  return createPortal(node, document.body);
+        {/* Aggregated changelog */}
+        <section>
+          <h3 className="text-sm font-semibold text-heading mb-2">
+            {t('admin.updates.releaseNotes', 'Release notes')}
+          </h3>
+          {changelogLoading && (
+            <p className="text-sm text-muted">{t('common.loading', 'Loading...')}</p>
+          )}
+          {changelogError && (
+            <p className="text-sm text-danger-text">
+              {t('admin.updates.changelogError', 'Could not load release notes. Check the release pages directly on GitHub.')}
+            </p>
+          )}
+          {changelog?.releases.length === 0 && !changelogLoading && (
+            <p className="text-sm text-muted">
+              {t('admin.updates.noReleases', 'No release notes available.')}
+            </p>
+          )}
+          {changelog && changelog.releases.length > 0 && (
+            <div className="space-y-2">
+              {changelog.releases.map((release) => {
+                const isOpen = expanded.has(release.version);
+                return (
+                  <div
+                    key={release.version}
+                    className="border border-line rounded"
+                  >
+                    <button
+                      onClick={() => toggle(release.version)}
+                      className="w-full flex items-center justify-between p-3 hover:bg-hover-soft"
+                    >
+                      <div className="flex items-center gap-2 text-left">
+                        {isOpen
+                          ? <ChevronDown className="w-4 h-4 text-muted" />
+                          : <ChevronRight className="w-4 h-4 text-muted" />}
+                        <span className="text-sm font-medium text-heading">
+                          {release.name}
+                        </span>
+                        {release.publishedAt && (
+                          <span className="text-xs text-muted">
+                            {formatDate(release.publishedAt)}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={release.htmlUrl || githubReleaseUrl(release.version)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-xs text-info-text hover:underline flex items-center gap-1"
+                      >
+                        {t('admin.updates.viewOnGitHub', 'View on GitHub')}
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </button>
+                    {isOpen && release.body && (
+                      <div className="px-4 pb-4 pt-1 border-t border-line-faint">
+                        <MarkdownContent
+                          source={release.body}
+                          className="text-sm prose prose-sm dark:prose-invert max-w-none"
+                        />
+                      </div>
+                    )}
+                    {isOpen && !release.body && (
+                      <div className="px-4 pb-4 pt-1 text-sm text-muted italic">
+                        {t('admin.updates.noNotes', 'No release notes provided.')}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </Modal>
+  );
 };

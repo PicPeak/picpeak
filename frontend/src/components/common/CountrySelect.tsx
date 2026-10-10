@@ -53,7 +53,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
         value={current}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={clsx('input', error && 'border-red-500 focus-visible:ring-red-500')}
+        className={clsx('input', error && 'border-danger focus-visible:ring-accent')}
         aria-invalid={error ? 'true' : 'false'}
         aria-describedby={error ? `${selectId}-error` : undefined}
       >
@@ -68,7 +68,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
         ))}
       </select>
       {error && (
-        <p id={`${selectId}-error`} className="mt-1.5 text-sm text-red-600 dark:text-red-400">
+        <p id={`${selectId}-error`} className="mt-1.5 text-sm text-danger-text">
           {error}
         </p>
       )}

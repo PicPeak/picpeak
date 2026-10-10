@@ -90,19 +90,19 @@ export const ThemePresetsCard: React.FC<ThemePresetsCardProps> = ({
 
       {/* Warning: Beta preset with low thumbnail resolution */}
       {isBetaLayout && isThumbnailTooSmall && !showGalleryLayouts && (
-        <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+        <div className="mt-4 p-4 bg-warning-soft border border-warning-line rounded-lg">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="w-5 h-5 text-warning-text flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+              <p className="text-sm font-medium text-warning-text">
                 {t('branding.betaThumbnailWarningTitle')}
               </p>
-              <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">
+              <p className="text-sm text-warning-text mt-1">
                 {t('branding.betaThumbnailWarningText', { width: thumbnailWidth, height: thumbnailHeight, recommended: minRecommendedThumbnailSize })}
               </p>
               <a
                 href="/admin/settings"
-                className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-amber-800 dark:text-amber-300 hover:underline"
+                className="inline-flex items-center gap-1 mt-2 text-sm font-medium text-warning-text hover:underline"
                 onClick={(e) => {
                   e.preventDefault();
                   window.location.href = '/admin/settings';

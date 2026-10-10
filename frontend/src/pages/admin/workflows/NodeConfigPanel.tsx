@@ -283,7 +283,7 @@ export const NodeConfigPanel: React.FC<Props> = ({ nodeType, config, onChange, w
       {showJson && (
         <div className="space-y-1">
           <textarea className={`${field} font-mono`} rows={8} value={jsonText} onChange={(e) => applyJson(e.target.value)} />
-          {jsonErr && <p className="text-xs text-red-600 dark:text-red-400">{jsonErr}</p>}
+          {jsonErr && <p className="text-xs text-danger-text">{jsonErr}</p>}
         </div>
       )}
     </div>

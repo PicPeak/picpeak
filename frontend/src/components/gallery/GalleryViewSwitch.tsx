@@ -27,7 +27,7 @@ export const GalleryViewSwitch: React.FC<GalleryViewSwitchProps> = ({ view, onCh
     <div
       role="group"
       aria-label={t('gallery.viewSwitch', 'Show photos by')}
-      className={`inline-flex items-center gap-1 p-1 rounded-lg border border-surface ${className}`}
+      className={`inline-flex items-center gap-1 p-1 rounded-lg border border-border-token ${className}`}
       style={{ backgroundColor: 'var(--color-background)' }}
     >
       {options.map(({ value, label, Icon }) => {
@@ -38,7 +38,7 @@ export const GalleryViewSwitch: React.FC<GalleryViewSwitchProps> = ({ view, onCh
             type="button"
             aria-pressed={active}
             onClick={() => { if (!active) onChange(value); }}
-            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+            className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors focus:outline-none focus:ring-2 focus:ring-accent ${
               active ? 'bg-surface shadow-sm font-medium' : 'text-muted-theme hover:opacity-80'
             }`}
             style={active ? { color: 'var(--color-text)' } : undefined}

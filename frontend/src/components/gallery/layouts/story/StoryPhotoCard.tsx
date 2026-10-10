@@ -106,7 +106,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         {/* The placeholder keeps the card's box while the image is still
             out of range, so nothing reflows when it arrives. */}
         {!isNearViewport ? (
-          <div className="w-full h-full bg-neutral-200 dark:bg-neutral-800" aria-hidden="true" />
+          <div className="w-full h-full bg-elevated" aria-hidden="true" />
         ) : (
         <AuthenticatedImage
           // A card tile, and it used to render the full ORIGINAL at

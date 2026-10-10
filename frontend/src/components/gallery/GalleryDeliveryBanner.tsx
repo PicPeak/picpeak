@@ -72,11 +72,11 @@ export const GalleryDeliveryBanner: React.FC<GalleryDeliveryBannerProps> = ({
   return (
     <div className={className} data-testid="gallery-delivery-banner">
       <div
-        className="flex items-start gap-4 p-4 sm:p-5 rounded-lg border border-surface bg-surface"
+        className="flex items-start gap-4 p-4 sm:p-5 rounded-lg border border-border-token bg-surface"
         style={{ borderLeft: '3px solid var(--color-accent)' }}
       >
         <span
-          className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full border border-surface"
+          className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full border border-border-token"
           style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-accent)' }}
           aria-hidden="true"
         >
@@ -119,10 +119,9 @@ export const GalleryDeliveryBanner: React.FC<GalleryDeliveryBannerProps> = ({
           {Array.from({ length: placeholders }, (_, index) => (
             <div
               key={index}
-              className="skeleton aspect-square"
               // The .skeleton class paints a fixed light grey; the gallery
               // theme's border tone keeps it right on dark themes (#358).
-              style={{ backgroundColor: 'var(--color-surface-border)' }}
+              className="skeleton bg-border-token aspect-square"
             />
           ))}
         </div>

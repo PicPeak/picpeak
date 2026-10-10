@@ -13,7 +13,7 @@ import {
   Search
 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Card, Button, Input, Loading } from '../common';
+import { Card, Button, Input, Loading, useConfirm, Badge, EmptyState, ErrorState, type BadgeTone } from '../common';
 import { feedbackService } from '../../services/feedback.service';
 import { useMutationWithToast } from '../../hooks';
 
@@ -28,6 +28,7 @@ interface WordFilter {
 
 export const WordFilterManager: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   
   const [newWord, setNewWord] = useState('');
@@ -38,10 +39,11 @@ export const WordFilterManager: React.FC = () => {
   const [editSeverity, setEditSeverity] = useState<'low' | 'moderate' | 'high' | 'block'>('moderate');
 
   // Fetch word filters
-  const { data: filters = [], isLoading } = useQuery({
+  const { data: filtersData, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['word-filters'],
     queryFn: () => feedbackService.getWordFilters()
   });
+  const filters = filtersData ?? [];
 
   // Add word filter mutation
   const addMutation = useMutation({
@@ -122,39 +124,42 @@ export const WordFilterManager: React.FC = () => {
     });
   };
 
-  const handleDelete = (id: number) => {
-    if (confirm(t('settings.moderation.confirmDelete', 'Are you sure you want to delete this word filter?'))) {
-      deleteMutation.mutate(id);
-    }
+  const handleDelete = async (id: number) => {
+    const ok = await confirm({
+      message: t('settings.moderation.confirmDelete', 'Delete this word filter? Comments are no longer checked against it. This cannot be undone.'),
+      variant: 'danger',
+      confirmLabel: t('settings.moderation.deleteAction', 'Delete filter'),
+    });
+    if (ok) deleteMutation.mutate(id);
   };
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
       case 'low':
-        return <Shield className="w-4 h-4 text-blue-500" />;
+        return <Shield className="w-4 h-4 text-info" />;
       case 'moderate':
-        return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
+        return <AlertTriangle className="w-4 h-4 text-warning" />;
       case 'high':
-        return <XCircle className="w-4 h-4 text-orange-500" />;
+        return <XCircle className="w-4 h-4 text-danger" />;
       case 'block':
-        return <XCircle className="w-4 h-4 text-red-600" />;
+        return <XCircle className="w-4 h-4 text-danger-text" />;
       default:
-        return <Shield className="w-4 h-4 text-gray-500" />;
+        return <Shield className="w-4 h-4 text-muted" />;
     }
   };
 
-  const getSeverityBadgeClass = (severity: string) => {
+  const getSeverityTone = (severity: string): BadgeTone => {
     switch (severity) {
       case 'low':
-        return 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300';
+        return 'info';
       case 'moderate':
-        return 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300';
+        return 'warning';
       case 'high':
-        return 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300';
+        return 'danger';
       case 'block':
-        return 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300';
+        return 'danger';
       default:
-        return 'bg-inset text-heading';
+        return 'neutral';
     }
   };
 
@@ -188,7 +193,7 @@ export const WordFilterManager: React.FC = () => {
 
           {/* Add new filter */}
           <div className="mb-6 p-4 bg-subtle rounded-lg">
-            <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 dark:text-neutral-100 mb-3">
+            <h3 className="text-sm font-medium text-heading mb-3">
               {t('settings.moderation.addFilter', 'Add New Filter')}
             </h3>
             <div className="flex gap-3">
@@ -203,7 +208,7 @@ export const WordFilterManager: React.FC = () => {
               <select
                 value={newSeverity}
                 onChange={(e) => setNewSeverity(e.target.value as any)}
-                className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 <option value="low">{t('settings.moderation.severityLow', 'Low')}</option>
                 <option value="moderate">{t('settings.moderation.severityModerate', 'Moderate')}</option>
@@ -228,19 +233,27 @@ export const WordFilterManager: React.FC = () => {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder={t('settings.moderation.searchFilters', 'Search filters...')}
-              leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+              leftIcon={<Search className="w-5 h-5 text-faint" />}
             />
           </div>
 
           {/* Filters list */}
           <div className="space-y-2">
-            {filteredFilters.length === 0 ? (
-              <div className="text-center py-8 text-muted">
-                {searchTerm ? 
-                  t('settings.moderation.noMatchingFilters', 'No matching filters found') : 
+            {isError && !filtersData ? (
+              <ErrorState
+                title={t('settings.moderation.loadFailed', 'Could not load the word filters')}
+                onRetry={() => refetch()}
+                retrying={isFetching}
+                size="inline"
+              />
+            ) : filteredFilters.length === 0 ? (
+              <EmptyState
+                title={searchTerm ?
+                  t('settings.moderation.noMatchingFilters', 'No matching filters found') :
                   t('settings.moderation.noFilters', 'No word filters configured yet')
                 }
-              </div>
+                size="inline"
+              />
             ) : (
               filteredFilters.map((filter: WordFilter) => (
                 <div
@@ -261,7 +274,7 @@ export const WordFilterManager: React.FC = () => {
                         <select
                           value={editSeverity}
                           onChange={(e) => setEditSeverity(e.target.value as any)}
-                          className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500"
+                          className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent"
                         >
                           <option value="low">{t('settings.moderation.severityLow', 'Low')}</option>
                           <option value="moderate">{t('settings.moderation.severityModerate', 'Moderate')}</option>
@@ -296,13 +309,12 @@ export const WordFilterManager: React.FC = () => {
                           type="checkbox"
                           checked={filter.is_active}
                           onChange={() => handleToggleActive(filter)}
-                          className="w-4 h-4 text-accent rounded focus:ring-primary-500"
+                          className="w-4 h-4 text-accent rounded focus:ring-accent"
                         />
                         <span className="font-medium text-heading">{filter.word}</span>
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getSeverityBadgeClass(filter.severity)}`}>
-                          {getSeverityIcon(filter.severity)}
+                        <Badge tone={getSeverityTone(filter.severity)} icon={getSeverityIcon(filter.severity)}>
                           {filter.severity}
-                        </span>
+                        </Badge>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -319,7 +331,7 @@ export const WordFilterManager: React.FC = () => {
                           leftIcon={<Trash2 className="w-4 h-4" />}
                           onClick={() => handleDelete(filter.id)}
                           isLoading={deleteMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="text-danger-text hover:bg-danger-soft"
                         >
                           {t('common.delete', 'Delete')}
                         </Button>

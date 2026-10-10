@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowDown, ArrowUp, Archive, ArchiveRestore, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import { Button, Card, Input, Loading } from '../common';
+import { Button, Card, EmptyState, ErrorState, Input, Loading, Notice } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import { customerAdminService, type CustomerGroup } from '../../services/customerAdmin.service';
 import { contrastRatio } from '../../utils/contrast';
@@ -61,7 +61,7 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
   const [edit, setEdit] = useState<DraftState>(EMPTY);
   const [confirmDelete, setConfirmDelete] = useState<CustomerGroup | null>(null);
 
-  const { data: groups, isLoading, error } = useQuery({
+  const { data: groups, isLoading, error, isFetching, refetch } = useQuery({
     queryKey: ['admin-customer-groups'],
     queryFn: () => customerAdminService.listGroups(true),
   });
@@ -129,12 +129,15 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
   };
 
   if (isLoading) return <Loading />;
-  if (error) {
+  if (error && !groups) {
     return (
       <Card padding="lg">
-        <p className="text-sm text-red-600 dark:text-red-400">
-          {t('customers.groups.loadError', 'The groups could not be loaded. Reload the page to try again.')}
-        </p>
+        <ErrorState
+          size="inline"
+          message={t('customers.groups.loadError', 'The groups could not be loaded. Reload the page to try again.')}
+          onRetry={() => refetch()}
+          retrying={isFetching}
+        />
       </Card>
     );
   }
@@ -190,9 +193,7 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
       )}
 
       {ordered.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">
-          {t('customers.groups.empty', 'No groups yet. Create one to organise your customers.')}
-        </p>
+        <EmptyState size="inline" title={t('customers.groups.empty', 'No groups yet. Create one to organise your customers.')} />
       ) : (
         <ul className="divide-y divide-line">
           {ordered.map((group, index) => (
@@ -294,19 +295,22 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
       )}
 
       {confirmDelete && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
-          <p className="text-sm text-red-800 dark:text-red-200">
-            {t('customers.groups.confirmDelete', 'Delete "{{name}}"? No customer is removed by this.', { name: confirmDelete.name })}
-          </p>
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" variant="danger" isLoading={deleteGroup.isPending} onClick={() => deleteGroup.mutate(confirmDelete.id)}>
-              {t('customers.groups.delete', 'Delete')}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)} leftIcon={<X className="h-4 w-4" />}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-          </div>
-        </div>
+        <Notice
+          tone="danger"
+          className="mt-4"
+          action={
+            <>
+              <Button size="sm" variant="danger" isLoading={deleteGroup.isPending} onClick={() => deleteGroup.mutate(confirmDelete.id)}>
+                {t('customers.groups.delete', 'Delete')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)} leftIcon={<X className="h-4 w-4" />}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+            </>
+          }
+        >
+          {t('customers.groups.confirmDelete', 'Delete "{{name}}"? No customer is removed by this.', { name: confirmDelete.name })}
+        </Notice>
       )}
     </Card>
   );
@@ -348,7 +352,7 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
             title={t(`customers.groups.palette.${key}`, name)}
             aria-pressed={value.toUpperCase() === color}
             className={`h-6 w-6 rounded-full border-2 ${
-              value.toUpperCase() === color ? 'border-neutral-900 dark:border-neutral-100' : 'border-transparent'
+              value.toUpperCase() === color ? 'border-heading' : 'border-transparent'
             }`}
             style={{ backgroundColor: color }}
           />
@@ -364,7 +368,7 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
       {/* Advice, not a refusal: the name carries the meaning and the dot has
           a ring, so any colour is safe — some are just hard to make out. */}
       {lowContrastTheme(value) && (
-        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400" role="status">
+        <p className="mt-1 text-xs text-warning-text" role="status">
           {lowContrastTheme(value) === 'light'
             ? t('customers.groups.lowContrastLight', 'This colour is hard to see in light mode.')
             : t('customers.groups.lowContrastDark', 'This colour is hard to see in dark mode.')}

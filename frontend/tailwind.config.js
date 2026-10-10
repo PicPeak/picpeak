@@ -7,6 +7,11 @@ export default {
   ],
   theme: {
     extend: {
+      // `text-accent` reads the accent nudged until it reads as text
+      // (tokens.css › --accent-text); fills and borders keep the raw accent.
+      textColor: {
+        accent: 'var(--accent-text)',
+      },
       colors: {
         // 8-token CI palette aliases — these read CSS variables that are set
         // either by ThemeContext.applyTheme (gallery + branding) or by the
@@ -28,6 +33,21 @@ export default {
         soft: 'var(--ui-text-soft)',
         muted: 'var(--ui-text-muted)',
         faint: 'var(--ui-text-faint)',
+        // Status (tokens.css › Status): bg-success for a dot, text-success-text
+        // on a panel, bg-success-soft + border-success-line for a box. The
+        // Badge and Notice components use these; prefer the components.
+        success: { DEFAULT: 'var(--ui-success)', text: 'var(--ui-success-text)', soft: 'var(--ui-success-soft)', line: 'var(--ui-success-line)' },
+        warning: { DEFAULT: 'var(--ui-warning)', text: 'var(--ui-warning-text)', soft: 'var(--ui-warning-soft)', line: 'var(--ui-warning-line)' },
+        danger: { DEFAULT: 'var(--ui-danger)', text: 'var(--ui-danger-text)', soft: 'var(--ui-danger-soft)', line: 'var(--ui-danger-line)' },
+        info: { DEFAULT: 'var(--ui-info)', text: 'var(--ui-info-text)', soft: 'var(--ui-info-soft)', line: 'var(--ui-info-line)' },
+        storno: { DEFAULT: 'var(--ui-storno)', text: 'var(--ui-storno-text)', soft: 'var(--ui-storno-soft)', line: 'var(--ui-storno-line)' },
+        // Data colours (tokens.css › Data colours): chart-1 … chart-8, in order.
+        chart: { 1: 'var(--chart-1)', 2: 'var(--chart-2)', 3: 'var(--chart-3)', 4: 'var(--chart-4)', 5: 'var(--chart-5)', 6: 'var(--chart-6)', 7: 'var(--chart-7)', 8: 'var(--chart-8)' },
+        // Rating stars (tokens.css › Data colours).
+        rating: 'var(--color-rating)',
+        // Admin accent (tokens.css › Accent).
+        'accent-strong': 'var(--ui-accent-strong)',
+        'accent-fg': 'var(--ui-accent-fg)',
         line: { DEFAULT: 'var(--ui-line)', strong: 'var(--ui-line-strong)', faint: 'var(--ui-line-faint)' },
         // Theme tokens — operator-themed surfaces (gallery, portal, public pages).
         background: 'var(--color-background)',
@@ -38,27 +58,6 @@ export default {
         'text-secondary': 'var(--color-muted-text)',
         accent: 'var(--color-accent)',
         'accent-dark': 'var(--color-accent-dark)',
-        primary: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',
-          600: '#5C8762', // Main brand color from scrappbook.de
-          700: '#4a6f4f',
-          800: '#3f5d42',
-          900: '#365238',
-        },
-        sand: {
-          50: '#fdfcfb',
-          100: '#f7f5f2',
-          200: '#f0ebe5',
-          300: '#e6ddd4',
-          400: '#d4c2b0',
-          500: '#c2a68c',
-          600: '#b18b68',
-        },
         neutral: {
           50: '#fafafa',
           100: '#f5f5f5',

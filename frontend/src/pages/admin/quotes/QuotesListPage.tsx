@@ -57,7 +57,7 @@ export const QuotesListPage: React.FC = () => {
       <SectionPageHeader
         icon={FileText}
         title={t('quotes.title', 'Quotes')}
-        beta
+        feature="quotes"
         description={t('quotes.subtitle', 'Send, track and convert quotes into events.')}
         actions={(
           <>
@@ -75,7 +75,7 @@ export const QuotesListPage: React.FC = () => {
       <Card padding="lg">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="text"
               placeholder={t('quotes.searchPlaceholder', 'Search by number, customer, event…') as string}
@@ -134,10 +134,10 @@ export const QuotesListPage: React.FC = () => {
                         </td>
                         <td className="px-3 py-2">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            q.status === 'accepted' || q.status === 'converted' ? 'bg-green-100 text-green-800'
-                              : q.status === 'declined' ? 'bg-red-100 text-red-800'
-                              : q.status === 'sent' ? 'bg-blue-100 text-blue-800'
-                              : 'bg-neutral-100 text-neutral-700'
+                            q.status === 'accepted' || q.status === 'converted' ? 'bg-success-soft text-success-text'
+                              : q.status === 'declined' ? 'bg-danger-soft text-danger-text'
+                              : q.status === 'sent' ? 'bg-info-soft text-info-text'
+                              : 'bg-inset text-body'
                           }`}>{t(`quotes.status.${q.status}`, q.status)}</span>
                         </td>
                       </tr>

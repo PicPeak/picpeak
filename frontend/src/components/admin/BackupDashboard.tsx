@@ -13,14 +13,14 @@ import {
   Cloud,
   Play,
   Loader2,
-  AlertTriangle,
   Info
 } from 'lucide-react';
 // Per [[feedback_respect_general_format_settings]] — route every
 // displayed date/time through useLocalizedDate so general_date_format
 // and general_time_format settings apply uniformly.
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { Card, Button } from '../common';
+import { Card, Button, Badge, Notice } from '../common';
+import type { BadgeTone } from '../common';
 import { backupErrorCode, backupErrorText } from '../../utils/backupErrors';
 
 export type HealthStatus = 'excellent' | 'good' | 'warning' | 'critical';
@@ -82,10 +82,10 @@ interface BackupDashboardProps {
 // Full class names, never assembled from parts: Tailwind only emits classes
 // it finds verbatim in the source (issue 1641).
 const statCardColors: Record<string, { box: string; icon: string }> = {
-  blue: { box: 'bg-blue-100 dark:bg-blue-900/40', icon: 'text-blue-600 dark:text-blue-400' },
-  green: { box: 'bg-green-100 dark:bg-green-900/40', icon: 'text-green-600 dark:text-green-400' },
-  purple: { box: 'bg-purple-100 dark:bg-purple-900/40', icon: 'text-purple-600 dark:text-purple-400' },
-  gray: { box: 'bg-gray-100 dark:bg-gray-900/40', icon: 'text-gray-600 dark:text-gray-400' },
+  blue: { box: 'bg-info-soft', icon: 'text-info-text' },
+  green: { box: 'bg-success-soft', icon: 'text-success-text' },
+  purple: { box: 'bg-inset', icon: 'text-chart-4' },
+  gray: { box: 'bg-inset', icon: 'text-muted' },
 };
 
 const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color = 'blue', subtext }) => (
@@ -113,11 +113,11 @@ const formatBytes = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
-const healthColors: Record<HealthStatus, { badge: string; ring: string }> = {
-  excellent: { badge: 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300', ring: 'text-green-500' },
-  good: { badge: 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300', ring: 'text-blue-500' },
-  warning: { badge: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300', ring: 'text-amber-500' },
-  critical: { badge: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300', ring: 'text-red-500' },
+const healthColors: Record<HealthStatus, { badge: BadgeTone; ring: string }> = {
+  excellent: { badge: 'success', ring: 'text-success' },
+  good: { badge: 'info', ring: 'text-info' },
+  warning: { badge: 'warning', ring: 'text-warning' },
+  critical: { badge: 'danger', ring: 'text-danger' },
 };
 
 export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config, onRunBackup, isBackupRunning }) => {
@@ -176,28 +176,18 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
     <div className="space-y-6">
       {/* Configuration Alert */}
       {!isConfigured && (
-        <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-          <div className="flex">
-            <AlertTriangle className="h-5 w-5 text-amber-400 mt-0.5" />
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200">
-                {t('backup.dashboard.notConfigured.title')}
-              </h3>
-              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
-                {t('backup.dashboard.notConfigured.message')}
-              </p>
-            </div>
-          </div>
-        </div>
+        <Notice tone="warning" title={t('backup.dashboard.notConfigured.title')}>
+          {t('backup.dashboard.notConfigured.message')}
+        </Notice>
       )}
 
       {/* Health Score Card */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-heading">{t('backup.dashboard.health.title')}</h3>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${healthColors[health.status].badge}`}>
+          <Badge tone={healthColors[health.status].badge}>
             {t(`backup.dashboard.healthStatus.${health.status}`)}
-          </span>
+          </Badge>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -210,7 +200,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 stroke="currentColor"
                 strokeWidth="8"
                 fill="none"
-                className="text-neutral-200 dark:text-neutral-700"
+                className="text-fill"
               />
               <circle
                 cx="48"
@@ -244,16 +234,16 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
             {lastBackup && lastBackup.id !== lastSuccessfulBackup?.id && (
               <p className={`text-sm mt-1 ${
                 lastBackup.status === 'failed'
-                  ? 'text-red-600 dark:text-red-400 font-medium'
+                  ? 'text-danger-text font-medium'
                   : lastBackup.status === 'running'
-                    ? 'text-blue-600 dark:text-blue-400'
+                    ? 'text-info-text'
                     : 'text-muted'
               }`}>
                 {t('backup.dashboard.lastAttempt', 'Last attempt')}: {formatDistanceToNow(new Date(lastBackup.created_at), { addSuffix: true })}
                 {' · '}
                 {t(`backup.dashboard.status.${lastBackup.status}`, lastBackup.status)}
                 {lastBackup.status === 'failed' && lastBackup.error_message && (
-                  <span className="block text-xs text-red-600 dark:text-red-400 mt-0.5">
+                  <span className="block text-xs text-danger-text mt-0.5">
                     {backupErrorText(backupErrorCode(lastBackup.error_message), t)
                       ?? lastBackup.error_message.split('\n')[0].slice(0, 200)}
                   </span>
@@ -264,7 +254,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                 Admin needs to know they may be looking at a hung row
                 that won't ever flip to completed. */}
             {zombieRuns.length > 0 && (
-              <p className="text-sm mt-1 text-amber-700 dark:text-amber-300 font-medium">
+              <p className="text-sm mt-1 text-warning-text font-medium">
                 {t('backup.dashboard.zombieRuns',
                   '{{count}} backup(s) running >30min — may have crashed without completing',
                   { count: zombieRuns.length })}
@@ -337,11 +327,11 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
               <div key={backup.id} className="flex items-center justify-between py-3 border-b border-line last:border-0">
                 <div className="flex items-center space-x-3">
                   {backup.status === 'completed' ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-success" />
                   ) : backup.status === 'failed' ? (
-                    <AlertCircle className="h-5 w-5 text-red-500" />
+                    <AlertCircle className="h-5 w-5 text-danger" />
                   ) : (
-                    <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                    <Loader2 className="h-5 w-5 text-info animate-spin" />
                   )}
                   <div>
                     <p className="font-medium text-heading">
@@ -373,19 +363,17 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Database className="h-5 w-5 text-neutral-400" />
+                <Database className="h-5 w-5 text-faint" />
                 <span className="text-body">Database</span>
               </div>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                statistics.database_backed_up ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-inset text-body'
-              }`}>
+              <Badge tone={statistics.database_backed_up ? 'success' : 'neutral'}>
                 {statistics.database_backed_up ? t('backup.dashboard.coverage.included') : t('backup.dashboard.coverage.excluded')}
-              </span>
+              </Badge>
             </div>
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Image className="h-5 w-5 text-neutral-400" />
+                <Image className="h-5 w-5 text-faint" />
                 <span className="text-body">{t('backup.configuration.whatToBackup.photos')}</span>
               </div>
               <span className="text-sm text-muted">
@@ -395,7 +383,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <FileArchive className="h-5 w-5 text-neutral-400" />
+                <FileArchive className="h-5 w-5 text-faint" />
                 <span className="text-body">{t('backup.configuration.whatToBackup.archives')}</span>
               </div>
               <span className="text-sm text-muted">
@@ -410,11 +398,11 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
           <div className="space-y-3">
             <div className="flex items-center space-x-3">
               {config?.backup_destination_type === 's3' ? (
-                <Cloud className="h-5 w-5 text-blue-500" />
+                <Cloud className="h-5 w-5 text-info" />
               ) : config?.backup_destination_type === 'rsync' ? (
-                <Server className="h-5 w-5 text-purple-500" />
+                <Server className="h-5 w-5 text-chart-4" />
               ) : (
-                <HardDrive className="h-5 w-5 text-neutral-500" />
+                <HardDrive className="h-5 w-5 text-muted" />
               )}
               <div>
                 <p className="font-medium text-heading">
@@ -437,7 +425,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
             {config?.backup_retention_days && (
               <div className="mt-4 p-3 bg-inset rounded-lg">
                 <div className="flex items-center space-x-2">
-                  <Info className="h-4 w-4 text-neutral-400" />
+                  <Info className="h-4 w-4 text-faint" />
                   <span className="text-sm text-body">
                     {t('backup.configuration.schedule.retentionDays')} {config.backup_retention_days} {t('backup.configuration.schedule.retentionHelp').replace('days (older backups will be automatically deleted)', '')}
                   </span>

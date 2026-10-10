@@ -70,11 +70,12 @@ import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 // because FullCalendar applies these as inline `background-color` /
 // `border-color` styles on the rendered event chips — tailwind classes
 // wouldn't take effect.
-const COLOR_EVENT = '#3B82F6';      // blue-500
-const COLOR_HOURS = '#10B981';      // emerald-500
-const COLOR_HOURS_LOCKED = '#9CA3AF'; // gray-400 (greyed)
-const COLOR_QUOTE_BORDER = '#F59E0B'; // amber-500
-const COLOR_CONTRACT_BORDER = '#A855F7'; // purple-500
+// Data colours (tokens.css › Data colours); FullCalendar takes them as inline styles.
+const COLOR_EVENT = 'var(--chart-1)';
+const COLOR_HOURS = 'var(--chart-2)';
+const COLOR_HOURS_LOCKED = 'var(--ui-text-faint)'; // greyed
+const COLOR_QUOTE_BORDER = 'var(--chart-3)';
+const COLOR_CONTRACT_BORDER = 'var(--chart-4)';
 
 /**
  * Column-header text for the calendar's day headers.
@@ -469,6 +470,7 @@ export const CalendarPage: React.FC = () => {
   return (
     <div className="space-y-4">
       <SectionPageHeader
+        feature="calendar"
         icon={CalendarIcon}
         title={t('calendar.pageTitle', 'Calendar')}
         description={t('calendar.subtitle', 'Events, logged hours, and pending quotes/contracts in one view.')}
@@ -577,8 +579,8 @@ export const CalendarPage: React.FC = () => {
                 : created.description || 'Hours',
               start: `${created.entryDate}T${created.startTime}`,
               end: `${created.entryDate}T${created.endTime}`,
-              backgroundColor: '#10B981',
-              borderColor: '#10B981',
+              backgroundColor: COLOR_HOURS,
+              borderColor: COLOR_HOURS,
               editable: true,
               durationEditable: true,
               startEditable: true,
@@ -628,8 +630,7 @@ export const CalendarPage: React.FC = () => {
         /* Admin-toggle-aware chrome vars — gallery theme writes inline
            --color-* on :root which would otherwise override .dark; scope
            local vars so the calendar follows the admin light/dark toggle. */
-        .fc { --cal-border: #e5e5e5; --cal-muted: #737373; --cal-text: #171717; }
-        .dark .fc { --cal-border: #262626; --cal-muted: #a3a3a3; --cal-text: #f5f5f5; }
+        .fc { --cal-border: var(--ui-line); --cal-muted: var(--ui-text-muted); --cal-text: var(--ui-text-heading); }
         .cal-dashed {
           border-style: dashed !important;
           background-color: transparent !important;

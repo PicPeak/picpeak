@@ -470,7 +470,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   const iconClass = (isActive: boolean) => `w-5 h-5 flex-shrink-0 ${
     collapsed ? 'mr-3 lg:mr-0' : 'mr-3'
   } ${
-    isActive ? 'text-white' : 'text-neutral-400'
+    isActive ? 'text-white' : 'text-faint'
   }`;
 
   return (
@@ -553,7 +553,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
           <button
             onClick={onClose}
             className="lg:hidden px-6 text-faint hover:text-body"
-            aria-label="Close sidebar"
+            aria-label={t('navigation.closeMenu', 'Close menu')}
           >
             <X className="w-6 h-6" />
           </button>
@@ -594,7 +594,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             {searchable && (
               <div className="px-4 py-2">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
                   <input
                     ref={searchRef}
                     type="search"
@@ -620,7 +620,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
                     }}
                     placeholder={t('settings.search.placeholder', 'Search settings…')}
                     aria-label={t('settings.search.label', 'Search settings')}
-                    className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg bg-subtle text-heading placeholder:text-muted border border-transparent focus:bg-panel focus:border-line-strong focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full pl-9 pr-3 py-1.5 text-sm rounded-lg bg-subtle text-heading placeholder:text-muted border border-transparent focus:bg-panel focus:border-line-strong focus:outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
               </div>
@@ -737,7 +737,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="inline-flex items-center justify-center w-9 h-9 rounded-md text-neutral-500 hover:text-heading hover:bg-hover-soft transition-colors"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-md text-muted hover:text-heading hover:bg-hover-soft transition-colors"
               aria-label={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
               title={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
             >
@@ -810,9 +810,9 @@ const StorageInfo: React.FC = () => {
     ? Math.round((storageInfo.total_used / limitInUse) * 100)
     : 0;
   const isOverSoftLimit = limitInUse && storageInfo.total_used >= limitInUse;
-  const progressBarClass = isOverSoftLimit ? 'bg-red-600' : 'bg-accent-dark';
+  const progressBarClass = isOverSoftLimit ? 'bg-danger' : 'bg-accent-dark';
   const containerClass = isOverSoftLimit
-    ? 'bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800'
+    ? 'bg-danger-soft border border-danger-line'
     : 'bg-subtle';
   const softLimitDisplay = settingsService.formatBytes(limitInUse);
 

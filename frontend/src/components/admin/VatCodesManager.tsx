@@ -10,8 +10,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Plus, Pencil, Trash2 } from 'lucide-react';
-import { Button, Card, CardContent, Input, Loading } from '../common';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  Button, Card, CardContent, Input, Loading, Modal, useConfirm,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
+} from '../common';
+import { DecimalInput } from '../common/DecimalInput';
 import {
   ledgerService, type LedgerAccount, type VatCode, type VatDirection, type LedgerSettings,
 } from '../../services/ledger.service';
@@ -36,12 +40,12 @@ const VatModal: React.FC<{ vat?: VatCode; accounts: LedgerAccount[]; onClose: ()
   const isEdit = !!vat;
   const [code, setCode] = useState(vat?.code ?? '');
   const [name, setName] = useState(vat?.name ?? '');
-  const [rate, setRate] = useState<string>(vat ? String(vat.rate) : '8.1');
+  const [rate, setRate] = useState<number>(vat ? Number(vat.rate) : 8.1);
   const [direction, setDirection] = useState<VatDirection>(vat?.direction ?? 'input');
   const [accountId, setAccountId] = useState<number | ''>(vat?.account_id ?? '');
   const save = useMutationWithToast({
     mutationFn: () => {
-      const payload = { code, name, rate: Number(rate) || 0, direction, accountId: accountId === '' ? null : Number(accountId) };
+      const payload = { code, name, rate: Number.isFinite(rate) ? rate : 0, direction, accountId: accountId === '' ? null : Number(accountId) };
       return isEdit ? ledgerService.updateVatCode(vat!.id, payload) : ledgerService.createVatCode(payload);
     },
     successMessage: t('common.saved', 'Saved.'),
@@ -49,16 +53,22 @@ const VatModal: React.FC<{ vat?: VatCode; accounts: LedgerAccount[]; onClose: ()
     errorMessage: (e: any) => e?.response?.data?.error || e.message || 'Failed',
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4">
-      <div className="mt-20 w-full max-w-sm rounded-xl bg-shell shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-base font-semibold text-heading">{isEdit ? t('ledger.vat.editTitle', 'Edit VAT code') : t('ledger.vat.addTitle', 'Add VAT code')}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={isEdit ? t('ledger.vat.editTitle', 'Edit VAT code') : t('ledger.vat.addTitle', 'Add VAT code')}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !code || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
+        </>
+      )}
+    >
+        <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelCls}>{t('ledger.vat.code', 'Code')}</label><Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="VST81" /></div>
-            <div><label className={labelCls}>{t('ledger.vat.rate', 'Rate %')}</label><Input value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" /></div>
+            <div><label className={labelCls}>{t('ledger.vat.rate', 'Rate %')}</label><DecimalInput className="input" value={rate} onChange={setRate} /></div>
           </div>
           <div><label className={labelCls}>{t('ledger.vat.name', 'Name')}</label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div><label className={labelCls}>{t('ledger.vat.direction', 'Direction')}</label>
@@ -74,17 +84,13 @@ const VatModal: React.FC<{ vat?: VatCode; accounts: LedgerAccount[]; onClose: ()
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !code || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
 export const VatCodesManager: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [vatModal, setVatModal] = useState<{ vat?: VatCode } | null>(null);
 
@@ -153,35 +159,48 @@ export const VatCodesManager: React.FC = () => {
           <h2 className="text-base font-semibold text-heading">{t('ledger.vatCodes.title', 'VAT codes')}</h2>
           <Button size="sm" onClick={() => setVatModal({})}><Plus className="w-4 h-4 mr-1" /> {t('ledger.vat.addTitle', 'Add VAT code')}</Button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-muted border-b border-line">
-              <tr>
-                <th className="py-1.5 pr-3 font-medium">{t('ledger.vat.code', 'Code')}</th>
-                <th className="py-1.5 pr-3 font-medium">{t('ledger.vat.name', 'Name')}</th>
-                <th className="py-1.5 pr-3 font-medium text-right">{t('ledger.vat.rate', 'Rate %')}</th>
-                <th className="py-1.5 pr-3 font-medium">{t('ledger.vat.direction', 'Direction')}</th>
-                <th className="py-1.5 pr-3 font-medium text-right">{t('common.actions', 'Actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line-faint">
-              {(vatCodes ?? []).map((v) => (
-                <tr key={v.id} className={v.active ? '' : 'opacity-50'}>
-                  <td className="py-1.5 pr-3 font-medium text-heading">{v.code}</td>
-                  <td className="py-1.5 pr-3 text-body">{v.name}</td>
-                  <td className="py-1.5 pr-3 text-right tabular-nums text-body">{Number(v.rate).toFixed(1)}</td>
-                  <td className="py-1.5 pr-3 text-muted">{t(`ledger.vatDirection.${v.direction}`, v.direction)}</td>
-                  <td className="py-1.5 pr-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => setVatModal({ vat: v })} className="p-1 text-neutral-500 hover:text-body"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => { if (window.confirm(t('ledger.vat.confirmDelete', 'Delete this VAT code?') as string)) delVat.mutate(v.id); }} className="p-1 text-neutral-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeaderCell>{t('ledger.vat.code', 'Code')}</TableHeaderCell>
+              <TableHeaderCell>{t('ledger.vat.name', 'Name')}</TableHeaderCell>
+              <TableHeaderCell align="right">{t('ledger.vat.rate', 'Rate %')}</TableHeaderCell>
+              <TableHeaderCell>{t('ledger.vat.direction', 'Direction')}</TableHeaderCell>
+              <TableHeaderCell align="right">{t('common.actions', 'Actions')}</TableHeaderCell>
+            </tr>
+          </TableHead>
+          <TableBody>
+            {(vatCodes ?? []).map((v) => (
+              <TableRow key={v.id} className={v.active ? '' : 'opacity-50'}>
+                <TableCell className="font-medium text-heading">{v.code}</TableCell>
+                <TableCell>{v.name}</TableCell>
+                <TableCell align="right">{Number(v.rate).toFixed(1)}</TableCell>
+                <TableCell className="text-muted">{t(`ledger.vatDirection.${v.direction}`, v.direction)}</TableCell>
+                <TableCell>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon-sm" onClick={() => setVatModal({ vat: v })} aria-label={t('common.edit', 'Edit')}><Pencil className="w-4 h-4" /></Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-faint hover:text-danger-text"
+                      aria-label={t('common.delete', 'Delete')}
+                      onClick={async () => {
+                        if (!(await confirm({
+                          message: t('ledger.vat.confirmDelete', 'Delete VAT code "{{code}}"? It can no longer be picked for new documents. This cannot be undone.', { code: v.code }) as string,
+                          variant: 'danger',
+                          confirmLabel: t('ledger.vat.deleteAction', 'Delete VAT code') as string,
+                        }))) return;
+                        delVat.mutate(v.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent></Card>
 
       {/* Rate→code + treatment→code maps */}

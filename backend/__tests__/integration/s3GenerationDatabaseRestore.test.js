@@ -13,7 +13,7 @@ process.env.TEST_DATABASE_PATH = path.join(root, 'target.sqlite');
 process.env.STORAGE_PATH = path.join(root, 'storage');
 const { db, reinitPool } = require('../../src/database/db');
 const index = require('../../src/services/storage/generationIndex');
-const migration = require('../../migrations/core/281_storage_s3_generation_index');
+const migration = require('../../migrations/core/283_storage_s3_generation_index');
 const { DatabaseBackupService } = require('../../src/services/databaseBackup');
 const { RestoreService } = require('../../src/services/restoreService');
 const native = spawnSync('sqlite3', ['-version']).status === 0;

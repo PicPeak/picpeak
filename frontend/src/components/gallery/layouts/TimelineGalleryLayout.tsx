@@ -113,7 +113,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
             {/* Date marker */}
             {showDates && (
               <div className="flex items-center gap-4 mb-6">
-                <div className="hidden lg:flex items-center justify-center w-16 h-16 bg-white border-4 border-accent-dark rounded-full z-10">
+                <div className="hidden lg:flex items-center justify-center w-16 h-16 bg-surface border-4 border-accent-dark rounded-full z-10">
                   <Calendar className="w-6 h-6 text-accent" />
                 </div>
                 <h3 className="text-xl font-semibold text-theme">
@@ -186,7 +186,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     afterOverlay={((photo.like_count ?? 0) > 0 || likedIds.has(photo.id)) ? (
                       <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
                         <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-                          <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+                          <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
                         </span>
                       </div>
                     ) : undefined}

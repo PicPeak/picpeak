@@ -420,7 +420,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>
+        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
       </div>
     );
   }
@@ -437,7 +437,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
         <div className="story-nav-actions">
           <div className="story-nav-search">
-            <Search size={14} className="text-gray-400" />
+            <Search size={14} className="text-muted-theme" />
             <input
               type="text"
               placeholder={t('gallery.searchMemories', 'Search memories...')}

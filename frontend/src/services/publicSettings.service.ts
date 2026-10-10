@@ -31,6 +31,8 @@ export interface PublicSettings {
    * AdminDarkModeContext + ThemeContext both honor this.
    */
   branding_force_color_mode?: 'dark' | 'light' | null;
+  /** Status hues picked in Branding › Colours; missing keys use tokens.css. */
+  branding_status_colors?: Partial<Record<'success' | 'warning' | 'danger' | 'info' | 'storno', string>>;
   /**
    * Login-page-only branding (#354 follow-up). Applies exclusively to
    * /admin/login and /customer/login. Defaults: frame on, size 'medium'.

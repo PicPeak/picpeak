@@ -52,7 +52,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Input } from '../common';
+import { Badge, Button, Input } from '../common';
 import { InlineCustomerCreate } from './InlineCustomerCreate';
 import { CustomerGroupChipList } from './CustomerGroupChips';
 import { PermissionsContext } from '../../contexts/PermissionsContext';
@@ -148,9 +148,7 @@ export const CustomerPicker: React.FC<CustomerPickerProps> = ({
             <CustomerGroupChipList groups={selectedDetail.groups} max={2} />
           )}
           {isPassive && (
-            <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-inset text-body">
-              {t('customers.passive.badge', 'Passive — admin only')}
-            </span>
+            <Badge>{t('customers.passive.badge', 'Passive — admin only')}</Badge>
           )}
         </div>
         {!readOnly && (
@@ -202,21 +200,17 @@ export const CustomerPicker: React.FC<CustomerPickerProps> = ({
                   <span className="font-medium">
                     {c.companyName || c.displayName || c.email}
                   </span>
-                  <span className="text-neutral-500 ml-2">{c.email}</span>
+                  <span className="text-muted ml-2">{c.email}</span>
                   {c.groups && c.groups.length > 0 && (
                     <span className="ml-2 inline-flex align-middle">
                       <CustomerGroupChipList groups={c.groups} max={2} expandable={false} />
                     </span>
                   )}
                   {c.isPassive && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-inset text-body">
-                      {t('customers.passive.badge', 'Passive — admin only')}
-                    </span>
+                    <Badge className="ml-2">{t('customers.passive.badge', 'Passive — admin only')}</Badge>
                   )}
                   {hourLoggingOff && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
-                      {t('customers.hoursLoggingDisabled.badge', 'Hour logging disabled')}
-                    </span>
+                    <Badge tone="warning" className="ml-2">{t('customers.hoursLoggingDisabled.badge', 'Hour logging disabled')}</Badge>
                   )}
                 </button>
               </li>
@@ -227,7 +221,7 @@ export const CustomerPicker: React.FC<CustomerPickerProps> = ({
       <button
         type="button"
         onClick={() => setCreating(true)}
-        className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+        className="mt-3 inline-flex items-center gap-1 text-sm text-accent hover:underline"
       >
         {t('customers.create.openLink', '+ Create new customer')}
       </button>

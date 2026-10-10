@@ -1,14 +1,16 @@
-/* Gallery Premium Layout - Light, elegant aesthetic */
+/* Gallery Premium Layout - Light, elegant aesthetic.
+ * Chrome reads the gallery theme tokens (the default theme gives the same
+ * near-white zinc look); what sits on a photo keeps fixed white and black. */
 
 .gallery-premium-layout {
   min-height: 100vh;
-  background-color: #ffffff;
-  color: #18181b;
+  background-color: var(--color-surface);
+  color: var(--color-text);
   font-family: Inter, sans-serif;
 }
 
 .gallery-premium-layout ::selection {
-  background-color: #e4e4e7;
+  background-color: var(--color-surface-border);
 }
 
 /* Hero Section */
@@ -90,8 +92,8 @@
   top: 0;
   z-index: 40;
   width: 100%;
-  border-bottom: 1px solid #f4f4f5;
-  background-color: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid var(--color-elevated);
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.2s ease;
@@ -120,7 +122,7 @@
   font-size: 0.875rem;
   font-weight: 500;
   letter-spacing: 0.05em;
-  color: #71717a;
+  color: var(--color-muted-text);
 }
 
 @media (min-width: 768px) {
@@ -139,7 +141,7 @@
 
 .gallery-premium-nav-category:hover,
 .gallery-premium-nav-category.active {
-  color: #18181b;
+  color: var(--color-text);
 }
 
 .gallery-premium-nav-title {
@@ -178,7 +180,7 @@
 }
 
 .gallery-premium-nav-btn:hover {
-  background-color: #f4f4f5;
+  background-color: var(--color-elevated);
 }
 
 /* Selection Mode Controls */
@@ -194,22 +196,22 @@
   font-weight: 400;
   padding: 0.375rem 0.75rem;
   background: none;
-  border: 1px solid #e4e4e7;
+  border: 1px solid var(--color-surface-border);
   border-radius: 0.25rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .gallery-premium-selection-btn:hover {
-  background-color: #f4f4f5;
+  background-color: var(--color-elevated);
 }
 
 .gallery-premium-download-btn {
   font-size: 0.75rem;
   font-weight: 500;
   padding: 0.375rem 1rem;
-  background-color: #18181b;
-  color: white;
+  background-color: var(--color-text);
+  color: var(--color-surface);
   border: none;
   border-radius: 9999px;
   cursor: pointer;
@@ -217,7 +219,7 @@
 }
 
 .gallery-premium-download-btn:hover {
-  background-color: #27272a;
+  background-color: color-mix(in srgb, var(--color-text) 85%, var(--color-surface));
 }
 
 /* Main Gallery */
@@ -238,7 +240,7 @@
   position: relative;
   cursor: pointer;
   overflow: hidden;
-  background-color: #f4f4f5;
+  background-color: var(--color-elevated);
   border-radius: 0.125rem;
 }
 
@@ -365,11 +367,11 @@
 
 .gallery-premium-like-btn:hover {
   transform: scale(1.1);
-  color: #ef4444;
+  color: var(--status-danger);
 }
 
 .gallery-premium-like-btn.liked {
-  color: #ef4444;
+  color: var(--status-danger);
 }
 
 .gallery-premium-like-btn svg {
@@ -411,11 +413,11 @@
 /* Footer */
 .gallery-premium-footer {
   margin-top: 5rem;
-  border-top: 1px solid #f4f4f5;
+  border-top: 1px solid var(--color-elevated);
   padding: 3rem 0;
   text-align: center;
   font-size: 0.875rem;
-  color: #a1a1aa;
+  color: var(--color-muted-text);
 }
 
 .gallery-premium-footer p {

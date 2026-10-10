@@ -9,6 +9,7 @@ import {
   shouldShowUpdateChip,
 } from '../../utils/updateDismissal';
 import { UpdateAvailableModal } from './UpdateAvailableModal';
+import { Badge } from '../common';
 import packageJson from '../../../package.json';
 
 // Frontend version from package.json
@@ -65,9 +66,9 @@ export const VersionInfo: React.FC = () => {
   });
 
   const channelBadge = versionInfo?.channel === 'beta' ? (
-    <span className="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+    <Badge tone="warning" caps className="ml-1">
       {t('admin.updates.beta', 'BETA')}
-    </span>
+    </Badge>
   ) : null;
 
   const latestVersion = updateInfo?.latest?.forChannel;
@@ -88,20 +89,20 @@ export const VersionInfo: React.FC = () => {
 
   return (
     <>
-      <div className="px-4 py-3 border-t border-neutral-200">
-        <div className="flex items-center gap-2 text-xs text-neutral-600">
+      <div className="px-4 py-3 border-t border-line">
+        <div className="flex items-center gap-2 text-xs text-soft">
           <Info className="w-3 h-3" />
           <span className="font-medium">{t('admin.version')}</span>
           {channelBadge}
         </div>
-        <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
+        <div className="mt-1 space-y-0.5 text-xs text-muted">
           <div>
             Frontend:{' '}
             <a
               href={releaseUrl(FRONTEND_VERSION)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-neutral-500 hover:text-neutral-700 hover:underline"
+              className="text-muted hover:text-body hover:underline"
               title={t('admin.viewReleaseNotes', 'View release notes on GitHub')}
             >
               v{FRONTEND_VERSION}
@@ -114,7 +115,7 @@ export const VersionInfo: React.FC = () => {
                 href={releaseUrl(versionInfo.backend)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-neutral-500 hover:text-neutral-700 hover:underline"
+                className="text-muted hover:text-body hover:underline"
                 title={t('admin.viewReleaseNotes', 'View release notes on GitHub')}
               >
                 v{versionInfo.backend}
@@ -126,7 +127,7 @@ export const VersionInfo: React.FC = () => {
           <button
             type="button"
             onClick={() => setModalOpen(true)}
-            className="mt-2 flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+            className="mt-2 flex items-center gap-1 text-xs text-accent hover:underline cursor-pointer"
             title={t('admin.updates.viewDetails', 'View release notes and upgrade instructions')}
           >
             <ArrowUpCircle className="w-3 h-3" />

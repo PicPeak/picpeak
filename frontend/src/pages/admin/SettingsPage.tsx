@@ -54,10 +54,20 @@ import {
   useSettingsNavGroups,
 } from '../../features/settings/settingsNav';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import type { FeatureKey } from '../../services/featureFlags.service';
 
 // Tab keys, permissions and the grouped navigation live in
 // features/settings/settingsNav.tsx — shared with the admin sidebar, which
 // renders the Settings groups in place of the main menu while on this page.
+
+// Settings tabs that are a feature's own page carry its state label.
+const TAB_FEATURE: Partial<Record<string, FeatureKey>> = {
+  slideshow: 'slideshow',
+  transfers: 'transfers',
+  whatsapp: 'whatsapp',
+  analytics: 'analytics',
+  users: 'userManagement',
+};
 
 export const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
@@ -212,7 +222,7 @@ export const SettingsPage: React.FC = () => {
     <div>
       <div className="min-w-0">
           {showSectionHeading && activeItem && (
-            <SectionPageHeader icon={activeItem.icon} title={activeItem.label} description={activeItem.description} />
+            <SectionPageHeader icon={activeItem.icon} title={activeItem.label} description={activeItem.description} feature={TAB_FEATURE[activeTab]} />
           )}
 
           {activeTab === 'features' && <FeaturesTab />}

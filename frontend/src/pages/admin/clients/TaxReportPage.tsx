@@ -19,13 +19,13 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Calculator, Download, FileDown, FileSpreadsheet, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Button, Card, Loading, LocalizedDateInput } from '../../../components/common';
+import { Button, Card, Loading, LocalizedDateInput, Badge } from '../../../components/common';
 
 // Lightweight native select styled to match Input — the common barrel
 // doesn't export a Select component, and the form pieces here are
 // small enough that a plain styled <select> is the right call.
 const selectClassName =
-  'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-primary-500';
+  'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent';
 import { taxReportService, type TaxReportParams } from '../../../services/taxReport.service';
 import { ledgerService, type ExportFormat } from '../../../services/ledger.service';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -207,6 +207,7 @@ export const TaxReportPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <SectionPageHeader
+        feature="taxReport"
         icon={Calculator}
         title={t('taxReport.title', 'Tax report')}
         description={t('taxReport.intro', 'Period-scoped revenue list with net + VAT breakdown grouped by VAT rate. Cancelled invoices stay visible for audit-trail continuity but are excluded from totals.')}
@@ -422,13 +423,13 @@ export const TaxReportPage: React.FC = () => {
                 <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between gap-3">
                     <span className="text-body">{t('taxReport.summary.income', 'Income')}</span>
-                    <span className="tabular-nums text-emerald-700 dark:text-emerald-400">
+                    <span className="tabular-nums text-success-text">
                       {formatMinor(report.summary.incomeGrossMinor, report.currency, intlLocale)}
                     </span>
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-body">{t('taxReport.summary.costs', 'Costs')}</span>
-                    <span className="tabular-nums text-rose-700 dark:text-rose-400">
+                    <span className="tabular-nums text-danger-text">
                       −{formatMinor(report.summary.costGrossMinor, report.currency, intlLocale)}
                     </span>
                   </div>
@@ -447,7 +448,7 @@ export const TaxReportPage: React.FC = () => {
                     </span>
                   </div>
                   {report.summary.vatRegistrationConfigured === false && (
-                    <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400 pt-1">
+                    <p className="flex items-start gap-1.5 text-xs text-warning-text pt-1">
                       <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                       <span>{t('taxReport.summary.vatUnconfigured', 'VAT registration isn’t configured, so VAT payable can’t be computed. Set it under Settings → Accounting.')}</span>
                     </p>
@@ -493,7 +494,7 @@ export const TaxReportPage: React.FC = () => {
       {/* Non-fatal: the revenue report loaded but the cost side errored. */}
       {report?.costsError && (
         <Card padding="md">
-          <div className="flex items-start gap-3 text-amber-700 dark:text-amber-400">
+          <div className="flex items-start gap-3 text-warning-text">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">{t('taxReport.costsErrorTitle', 'Costs could not be loaded')}</p>
@@ -508,7 +509,7 @@ export const TaxReportPage: React.FC = () => {
         <Card padding="lg"><Loading /></Card>
       ) : isError ? (
         <Card padding="lg">
-          <div className="flex items-start gap-3 text-amber-700 dark:text-amber-400">
+          <div className="flex items-start gap-3 text-warning-text">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">{t('taxReport.errorTitle', 'Could not load tax report')}</p>
@@ -549,35 +550,35 @@ export const TaxReportPage: React.FC = () => {
                   <tr>
                     <th className="px-2 py-2 text-right font-medium w-10">#</th>
                     <th className="px-2 py-2 text-left font-medium whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort('type')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('type')} className="font-medium hover:text-accent">
                         {t('taxReport.col.type', 'Type')}{sortIndicator('type')}
                       </button>
                     </th>
                     <th className="px-2 py-2 text-left font-medium whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort('date')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('date')} className="font-medium hover:text-accent">
                         {t('taxReport.col.date', 'Date')}{sortIndicator('date')}
                       </button>
                     </th>
                     <th className="px-2 py-2 text-left font-medium whitespace-nowrap">{t('taxReport.col.reference', 'Reference')}</th>
                     <th className="px-2 py-2 text-left font-medium">
-                      <button type="button" onClick={() => toggleSort('party')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('party')} className="font-medium hover:text-accent">
                         {t('taxReport.col.party', 'Customer / supplier')}{sortIndicator('party')}
                       </button>
                     </th>
                     <th className="px-2 py-2 text-left font-medium">{t('taxReport.col.event', 'Event')}</th>
                     <th className="px-2 py-2 text-left font-medium whitespace-nowrap">{t('taxReport.col.tax', 'Tax')}</th>
                     <th className="px-2 py-2 text-right font-medium whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort('net')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('net')} className="font-medium hover:text-accent">
                         {t('taxReport.col.net', 'Net')}{sortIndicator('net')}
                       </button>
                     </th>
                     <th className="px-2 py-2 text-right font-medium whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort('vat')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('vat')} className="font-medium hover:text-accent">
                         {t('taxReport.col.vat', 'VAT')}{sortIndicator('vat')}
                       </button>
                     </th>
                     <th className="px-2 py-2 text-right font-medium whitespace-nowrap">
-                      <button type="button" onClick={() => toggleSort('gross')} className="font-medium hover:text-primary-600 dark:hover:text-primary-400">
+                      <button type="button" onClick={() => toggleSort('gross')} className="font-medium hover:text-accent">
                         {t('taxReport.col.total', 'Gross')}{sortIndicator('gross')}
                       </button>
                     </th>
@@ -596,10 +597,10 @@ export const TaxReportPage: React.FC = () => {
                       <td className="px-2 py-1.5 whitespace-nowrap">
                         <span className={`inline-block px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded font-semibold not-italic ${
                           row.type === 'outgoing'
-                            ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
+                            ? 'bg-inset text-chart-2'
                             : row.type === 'incoming'
-                              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300'
-                              : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                              ? 'bg-inset text-chart-1'
+                              : 'bg-warning-soft text-warning-text'
                         }`}>
                           {t(`taxReport.type.${row.type}`, row.type)}
                         </span>
@@ -608,23 +609,23 @@ export const TaxReportPage: React.FC = () => {
                       <td className="px-2 py-1.5 whitespace-nowrap">
                         <span className="font-medium">{row.reference}</span>
                         {row.isCancelled && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded bg-fill text-body font-semibold not-italic">
+                          <Badge caps className="ml-2 not-italic">
                             {t('taxReport.statusCancelled', 'Cancelled')}
-                          </span>
+                          </Badge>
                         )}
                         {/* Storno + Reissue lineage markers — parity
                             with the admin invoices list so the same
                             colour scheme distinguishes the row kinds at
                             a glance across both surfaces. */}
                         {row.kind === 'storno' && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-semibold not-italic">
+                          <Badge tone="storno" caps className="ml-2 not-italic">
                             {t('bills.kind.storno', 'Storno')}
-                          </span>
+                          </Badge>
                         )}
                         {row.isReissue && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] uppercase tracking-wider rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-semibold not-italic">
+                          <Badge tone="info" caps className="ml-2 not-italic">
                             {t('bills.kind.reissue', 'Reissue')}
-                          </span>
+                          </Badge>
                         )}
                       </td>
                       <td className="px-2 py-1.5 truncate max-w-[180px]" title={row.party}>{row.party}</td>
@@ -652,7 +653,7 @@ export const TaxReportPage: React.FC = () => {
                           ? t('taxReport.skontoTooltip', 'Paid with Skonto') as string
                           : undefined}>
                         {row.skontoApplied ? (
-                          <span className="text-teal-700 dark:text-teal-300">
+                          <span className="text-chart-2">
                             −{formatMinor(row.skontoAmountMinor, report.currency, intlLocale)}
                           </span>
                         ) : ''}

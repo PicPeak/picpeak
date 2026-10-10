@@ -81,8 +81,8 @@ export function ProductUsageConsentDialog({
       className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-xl p-0 bg-panel text-heading shadow-xl backdrop:bg-black/50 focus:outline-none"
     >
       <header className="flex items-start gap-3 px-6 pt-6 pb-4">
-        <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/30">
-          <Sparkles className="h-5 w-5 text-primary-600 dark:text-primary-300" />
+        <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full bg-accent-soft">
+          <Sparkles className="h-5 w-5 text-on-accent-soft" />
         </span>
         <div className="min-w-0">
           <h2
@@ -105,7 +105,7 @@ export function ProductUsageConsentDialog({
         tabIndex={0}
         role="group"
         aria-label={t('productUsage.consentTitle') as string}
-        className="min-h-0 flex-auto overflow-y-auto border-y border-line px-6 py-4 space-y-4 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary-400"
+        className="min-h-0 flex-auto overflow-y-auto border-y border-line px-6 py-4 space-y-4 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
       >
         {DISCLOSURE.map(({ key, heading, Icon }) => (
           <section key={key}>
@@ -123,7 +123,7 @@ export function ProductUsageConsentDialog({
 
         <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 text-sm">
           <a
-            className="text-primary-600 dark:text-primary-400 hover:underline"
+            className="text-accent hover:underline"
             href={collector}
             target="_blank"
             rel="noreferrer"
@@ -131,7 +131,7 @@ export function ProductUsageConsentDialog({
             {t('productUsage.linkCollector')}
           </a>
           <a
-            className="text-primary-600 dark:text-primary-400 hover:underline"
+            className="text-accent hover:underline"
             href={`${collector}/transparency`}
             target="_blank"
             rel="noreferrer"

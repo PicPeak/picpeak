@@ -77,7 +77,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_require_customer_name}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_require_customer_name: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -96,7 +96,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_require_customer_email}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_require_customer_email: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -106,7 +106,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   {t('settings.events.requireCustomerEmailHelp', 'Customer email must be provided for new events')}
                 </p>
                 {!eventSettings.event_require_customer_email && (
-                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning-text mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {t('settings.events.customerEmailWarning', 'Required for sending gallery invitations')}
                   </p>
@@ -121,7 +121,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_require_admin_email}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_require_admin_email: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -131,7 +131,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   {t('settings.events.requireAdminEmailHelp', 'Admin email must be provided for new events')}
                 </p>
                 {!eventSettings.event_require_admin_email && (
-                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning-text mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {t('settings.events.adminEmailWarning', 'Required for receiving event notifications')}
                   </p>
@@ -146,7 +146,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_require_event_date}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_require_event_date: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -156,7 +156,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   {t('settings.events.requireEventDateHelp', 'Event date must be provided when creating events')}
                 </p>
                 {!eventSettings.event_require_event_date && (
-                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning-text mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {t('settings.events.eventDateWarning', 'Gallery URLs will use random identifiers instead of dates')}
                   </p>
@@ -171,7 +171,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_require_expiration}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_require_expiration: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -181,7 +181,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   {t('settings.events.requireExpirationHelp', 'Galleries must have an expiration date')}
                 </p>
                 {!eventSettings.event_require_expiration && (
-                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning-text mt-1 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
                     {t('settings.events.expirationWarning', 'Galleries without expiration will remain active until manually archived')}
                   </p>
@@ -196,7 +196,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_default_require_password}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_default_require_password: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -215,7 +215,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_default_feedback_enabled}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_default_feedback_enabled: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -252,7 +252,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                   disabled={!eventSettings.event_default_feedback_enabled}
                   checked={eventSettings[key]}
                   onChange={(e) => setEventSettings(prev => ({ ...prev, [key]: e.target.checked }))}
-                  className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                  className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
                 />
                 <span className="text-sm text-body flex items-center gap-2">
                   {t(label, fallback)}
@@ -334,7 +334,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_default_folder_structure}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_default_folder_structure: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -350,7 +350,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.first_look_keyword_detection}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, first_look_keyword_detection: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -422,7 +422,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.gallery_show_filter_bar}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, gallery_show_filter_bar: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -441,7 +441,7 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 type="checkbox"
                 checked={eventSettings.event_phone_field_enabled}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, event_phone_field_enabled: e.target.checked }))}
-                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-body">
@@ -458,8 +458,8 @@ export const EventsTab: React.FC<EventsTabProps> = ({
 
       <Card padding="md">
         <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-          <div className="text-sm text-blue-800 dark:text-blue-200">
+          <AlertCircle className="w-5 h-5 text-info-text flex-shrink-0" />
+          <div className="text-sm text-info-text">
             <p className="font-medium mb-1">{t('settings.events.noteTitle', 'Note')}</p>
             <p>
               {t('settings.events.noteText', 'These settings only affect new event creation. Existing events are not affected. Default behavior requires all fields.')}

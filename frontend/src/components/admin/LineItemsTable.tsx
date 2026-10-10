@@ -519,7 +519,7 @@ export const LineItemsTable: React.FC<Props> = ({
               if (discountRow) {
                 const hasComment = !!li.detailsText && li.detailsText.trim().length > 0;
                 return (
-                  <tr key={li.position} className="border-t border-line bg-emerald-50/50 dark:bg-emerald-900/10">
+                  <tr key={li.position} className="border-t border-line bg-success-soft">
                     <td className="px-2 py-2 align-top text-soft">
                       <div className="flex items-center gap-1">
                         <Tag className="w-3.5 h-3.5 text-muted" aria-hidden />
@@ -572,7 +572,7 @@ export const LineItemsTable: React.FC<Props> = ({
                     <td className="px-2 py-2 align-top">
                       <div className="flex items-center gap-1 justify-end">
                         <button type="button" onClick={() => removeRow(idx)} aria-label={t('crm.lineItems.remove', 'Remove') as string}
-                          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600">
+                          className="p-1 rounded hover:bg-danger-soft text-danger-text">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
@@ -584,11 +584,11 @@ export const LineItemsTable: React.FC<Props> = ({
               return (
                 <React.Fragment key={li.position}>
                   <tr className={`border-t border-line ${
-                    sub ? 'bg-neutral-50/60 dark:bg-neutral-900/40' : ''
+                    sub ? 'bg-subtle' : ''
                   }`}>
                     <td className={`px-2 py-2 text-soft align-top ${dim}`}>
                       <div className="flex items-center gap-1">
-                        {sub && <CornerDownRight className="w-3.5 h-3.5 text-neutral-400" aria-hidden />}
+                        {sub && <CornerDownRight className="w-3.5 h-3.5 text-faint" aria-hidden />}
                         <span>{displayNumbers[idx]}</span>
                       </div>
                     </td>
@@ -792,7 +792,7 @@ export const LineItemsTable: React.FC<Props> = ({
                           </button>
                         )}
                         <button type="button" onClick={() => removeRow(idx)} aria-label="Remove"
-                          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600">
+                          className="p-1 rounded hover:bg-danger-soft text-danger-text">
                           <X className="w-4 h-4" />
                         </button>
                       </div>

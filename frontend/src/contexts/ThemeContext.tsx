@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { ThemeConfig, EventTheme, GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { fontsService, extractFamilyName, type FontDefinition } from '../services/fonts.service';
 import { applyForceColorMode } from '../utils/themeMigration';
-import { getReadableForeground } from '../utils/contrast';
+import { getReadableForeground, readableAccentText } from '../utils/contrast';
+import { applyStatusColors, normalizeStatusColors } from '../utils/statusColors';
 import { usePublicSettings } from '../hooks/usePublicSettings';
 
 // Self-hosted font loader. Resolves the available-fonts list once (cached for
@@ -87,6 +88,9 @@ export const useTheme = () => {
   return context;
 };
 
+/** The theme context, or `undefined` outside a ThemeProvider (tests, isolated renders). */
+export const useOptionalTheme = (): ThemeContextType | undefined => useContext(ThemeContext);
+
 interface ThemeProviderProps {
   children: ReactNode;
   initialTheme?: ThemeConfig;
@@ -115,6 +119,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       ? 'light'
       : null;
 
+  // Status colours are site-wide (Branding › Colours), not part of a theme:
+  // a gallery theme never changes what "overdue" looks like.
+  const statusColors = publicSettings?.branding_status_colors;
+  useEffect(() => {
+    applyStatusColors(normalizeStatusColors(statusColors));
+  }, [statusColors]);
+
   const applyTheme = useCallback((rawThemeConfig: ThemeConfig) => {
     const root = document.documentElement;
 
@@ -142,6 +153,21 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       // this via `var(--color-accent-fg, #ffffff)` so a pale accent doesn't
       // leave the button text unreadable (PR #401 review follow-up).
       root.style.setProperty('--color-accent-fg', getReadableForeground(themeConfig.accentColor));
+      // Accent as TEXT (links, inline actions): the accent itself when it
+      // reads, else nudged until it does — on the studio palette's cards and
+      // page, and on the admin's light and dark panels (tokens.css picks).
+      // Same fallback as --color-surface below: a dark theme without its own
+      // surface colour paints #1a1a1a, not white.
+      const surface = themeConfig.surfaceColor
+        || (resolveColorMode(themeConfig.colorMode) === 'dark' ? '#1a1a1a' : '#ffffff');
+      const page = themeConfig.backgroundColor || surface;
+      root.style.setProperty('--color-accent-text', readableAccentText(readableAccentText(themeConfig.accentColor, surface), page));
+      root.style.setProperty('--ui-accent-text-light', readableAccentText(themeConfig.accentColor, '#ffffff'));
+      root.style.setProperty('--ui-accent-text-dark', readableAccentText(themeConfig.accentColor, '#262626'));
+    } else {
+      // No accent: drop the previous theme's text values, so nothing stale
+      // outlives a palette switch.
+      ['--color-accent-text', '--ui-accent-text-light', '--ui-accent-text-dark'].forEach((v) => root.style.removeProperty(v));
     }
 
     // Accent-dark: filled CTA background. Falls back to primaryColor for

@@ -1519,7 +1519,6 @@
         "clients": "Clientes"
       },
       "status": {
-        "stable": "estável",
         "beta": "beta",
         "new": "novo",
         "experimental": "experimental",
@@ -3592,8 +3591,7 @@
       "calendar": "Calendário",
       "quotes": "Orçamentos",
       "bills": "Faturas",
-      "profile": "Perfil",
-      "soon": "Em breve"
+      "profile": "Perfil"
     },
     "comingSoon": {
       "tag": "Em breve"

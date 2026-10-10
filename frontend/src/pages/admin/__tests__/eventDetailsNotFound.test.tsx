@@ -76,7 +76,7 @@ describe('EventDetailsPage 404 handling (QA 7.02)', () => {
     expect(screen.getByText('events.loadingEventDetails')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Event not found')).toBeInTheDocument();
+      expect(screen.getByText('Gallery not found')).toBeInTheDocument();
     });
     expect(screen.queryByText('events.loadingEventDetails')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'events.backToEvents' })).toBeInTheDocument();

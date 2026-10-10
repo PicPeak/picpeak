@@ -19,7 +19,7 @@ import { vatCodesService, type VatCodeOption } from '../../services/vatCodes.ser
 
 const LEGACY = '__legacy__';
 const selectCls =
-  'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-primary-500';
+  'w-full rounded-md border border-line-strong bg-panel px-3 py-2 text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent';
 
 interface Props {
   rate: number;

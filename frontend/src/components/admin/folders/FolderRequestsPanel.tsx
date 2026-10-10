@@ -110,9 +110,9 @@ export const FolderRequestsPanel: React.FC<FolderRequestsPanelProps> = ({
   const busy = busyId !== null;
 
   return (
-    <div className="mb-4 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/10 px-4 py-3" data-testid="folder-requests">
+    <div className="mb-4 rounded-xl border border-warning-line bg-warning px-4 py-3" data-testid="folder-requests">
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <FolderClock className="w-5 h-5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+        <FolderClock className="w-5 h-5 text-warning-text" aria-hidden="true" />
         <h3 className="text-sm font-semibold text-heading">
           {t('photos.folderRequests.title', '{{count}} folder requests', { count: requests.length })}
         </h3>

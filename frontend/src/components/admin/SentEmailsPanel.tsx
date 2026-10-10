@@ -12,17 +12,17 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, AlertCircle } from 'lucide-react';
-import { Button, Card, Loading } from '../common';
+import { Button, Card, Loading, Badge, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, EmptyState, ErrorState, type BadgeTone } from '../common';
 import { LocalizedDateInput } from '../common/LocalizedDateInput';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { emailService, type EmailQueueStatus } from '../../services/email.service';
 
 const STATUSES: EmailQueueStatus[] = ['pending', 'sent', 'failed'];
 
-const statusClass = (s: EmailQueueStatus): string =>
-  s === 'sent' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-    : s === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-      : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
+const statusTone = (s: EmailQueueStatus): BadgeTone =>
+  s === 'sent' ? 'success'
+    : s === 'failed' ? 'danger'
+      : 'warning';
 
 export const SentEmailsPanel: React.FC = () => {
   const { t } = useTranslation();
@@ -33,7 +33,7 @@ export const SentEmailsPanel: React.FC = () => {
   const [to, setTo] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['email-queue', { search, statusFilter, from, to, page }],
     queryFn: () => emailService.listQueue({
       q: search || undefined,
@@ -58,7 +58,7 @@ export const SentEmailsPanel: React.FC = () => {
 
       <div className="flex flex-wrap items-end gap-3">
         <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
           <input
             type="text"
             placeholder={t('email.sentEmails.searchPlaceholder', 'Search by recipient or type…') as string}
@@ -94,61 +94,64 @@ export const SentEmailsPanel: React.FC = () => {
       </div>
 
       <div className="mt-4">
-        {isLoading ? <Loading /> : !data || data.items.length === 0 ? (
-          <p className="text-center text-muted py-8">
-            {t('email.sentEmails.empty', 'No emails match these filters.')}
-          </p>
+        {isLoading ? <Loading /> : isError && !data ? (
+          <ErrorState
+            title={t('email.sentEmails.loadFailed', 'Could not load sent emails')}
+            onRetry={() => refetch()}
+            retrying={isFetching}
+            size="inline"
+          />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState title={t('email.sentEmails.empty', 'No emails match these filters.')} size="inline" />
         ) : (
-          <div className="rounded-lg border border-line overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-subtle text-body">
-                  <tr>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.recipient', 'Recipient')}</th>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.type', 'Type')}</th>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.status', 'Status')}</th>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.created', 'Queued')}</th>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.sent', 'Sent')}</th>
-                    <th className="px-3 py-2 text-left">{t('email.sentEmails.col.event', 'Event')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((m) => (
-                    <tr key={m.id} className="border-t border-line align-top">
-                      <td className="px-3 py-2 break-all">{m.recipientEmail}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{m.emailType}</td>
-                      <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusClass(m.status)}`}>
-                          {t(`email.sentEmails.status.${m.status}`, m.status)}
-                        </span>
-                        {m.status === 'failed' && m.errorMessage && (
-                          <div className="mt-1 flex items-start gap-1 text-xs text-red-700 dark:text-red-400 max-w-xs">
-                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-                            <span className="break-words">{m.errorMessage}</span>
-                          </div>
-                        )}
-                        {m.status === 'pending' && m.retryCount > 0 && (
-                          <div className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                            {t('email.sentEmails.retries', '{{count}} retries', { count: m.retryCount })}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap">{m.createdAt ? fmtDateTime(m.createdAt) : '—'}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{m.sentAt ? fmtDateTime(m.sentAt) : '—'}</td>
-                      <td className="px-3 py-2">
-                        {m.eventId ? (
-                          <Link to={`/admin/events/${m.eventId}`} className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>
-                            {m.eventName || `#${m.eventId}`}
-                          </Link>
-                        ) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <>
+            <Table>
+              <TableHead>
+                <tr>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.recipient', 'Recipient')}</TableHeaderCell>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.type', 'Type')}</TableHeaderCell>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.status', 'Status')}</TableHeaderCell>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.created', 'Queued')}</TableHeaderCell>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.sent', 'Sent')}</TableHeaderCell>
+                  <TableHeaderCell className="px-3 py-2">{t('email.sentEmails.col.event', 'Event')}</TableHeaderCell>
+                </tr>
+              </TableHead>
+              <TableBody>
+                {data.items.map((m) => (
+                  <TableRow key={m.id} className="align-top">
+                    <TableCell className="px-3 py-2 break-all">{m.recipientEmail}</TableCell>
+                    <TableCell className="px-3 py-2 font-mono text-xs">{m.emailType}</TableCell>
+                    <TableCell className="px-3 py-2">
+                      <Badge tone={statusTone(m.status)}>
+                        {t(`email.sentEmails.status.${m.status}`, m.status)}
+                      </Badge>
+                      {m.status === 'failed' && m.errorMessage && (
+                        <div className="mt-1 flex items-start gap-1 text-xs text-danger-text max-w-xs">
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                          <span className="break-words">{m.errorMessage}</span>
+                        </div>
+                      )}
+                      {m.status === 'pending' && m.retryCount > 0 && (
+                        <div className="mt-1 text-xs text-warning-text">
+                          {t('email.sentEmails.retries', '{{count}} retries', { count: m.retryCount })}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-3 py-2 whitespace-nowrap">{m.createdAt ? fmtDateTime(m.createdAt) : '—'}</TableCell>
+                    <TableCell className="px-3 py-2 whitespace-nowrap">{m.sentAt ? fmtDateTime(m.sentAt) : '—'}</TableCell>
+                    <TableCell className="px-3 py-2">
+                      {m.eventId ? (
+                        <Link to={`/admin/events/${m.eventId}`} className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>
+                          {m.eventName || `#${m.eventId}`}
+                        </Link>
+                      ) : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
             {data.pagination.totalPages > 1 && (
-              <div className="flex justify-between items-center px-3 py-2 border-t border-line text-sm">
+              <div className="flex justify-between items-center px-3 py-2 text-sm">
                 <span className="text-muted">
                   {t('email.sentEmails.pagination', 'Page {{page}} of {{total}} · {{count}} emails', {
                     page: data.pagination.page, total: data.pagination.totalPages, count: data.pagination.total,
@@ -164,7 +167,7 @@ export const SentEmailsPanel: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </Card>

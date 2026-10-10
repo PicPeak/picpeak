@@ -242,7 +242,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                     console.warn('Like submit failed, keeping optimistic UI', err);
                   }
                 }}
-                className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-red-400' : 'text-white'}`}
+                className={`bg-black/30 hover:bg-black/50 rounded-full border border-white/40 ${likedIds.has(currentPhoto.id) ? 'text-danger' : 'text-white'}`}
                 title="Like photo"
                 aria-pressed={likedIds.has(currentPhoto.id)}
               >
@@ -288,7 +288,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 onClick={() => setCurrentIndex(index)}
                 className={`relative flex-shrink-0 w-20 h-20 rounded overflow-hidden transition-all ${
                   index === currentIndex 
-                    ? 'ring-2 ring-primary-600 scale-110' 
+                    ? 'ring-2 ring-accent scale-110' 
                     : 'opacity-70 hover:opacity-100'
                 }`}
               >

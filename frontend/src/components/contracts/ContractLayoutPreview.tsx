@@ -18,8 +18,8 @@ export const ContractLayoutPreview: React.FC<{ content: ContractBodyContent; idP
       type="button"
       aria-pressed={device === value}
       onClick={() => setDevice(value)}
-      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 ${device === value
-        ? 'bg-primary-600 text-white border-primary-600'
+      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs border focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${device === value
+        ? 'bg-accent-strong text-white border-accent'
         : 'border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300'}`}
     >
       {icon}{label}

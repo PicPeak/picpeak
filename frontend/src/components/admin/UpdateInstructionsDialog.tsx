@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  X,
   ExternalLink,
   Copy,
   Check,
@@ -13,6 +12,7 @@ import {
   Circle
 } from 'lucide-react';
 import { api } from '../../config/api';
+import { Button, Modal, Notice } from '../common';
 import { SelfUpdatePanel, ManualUpdateSteps, useSelfUpdateActive } from './SelfUpdatePanel';
 
 interface UpdateStep {
@@ -128,242 +128,204 @@ export const UpdateInstructionsDialog: React.FC<UpdateInstructionsDialogProps> =
   const allRequiredChecked = requiredChecks.every(check => checkedItems.has(check.id));
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75"
-          onClick={onClose}
-        />
-
-        {/* Dialog */}
-        <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white dark:bg-gray-800 rounded-lg shadow-xl">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {t('admin.updates.updateDialog.title', 'Update PicPeak')}
-              {/* The server response is authoritative; the prop covers the
-                  window before the query resolves. */}
-              {(data?.targetVersion || targetVersion) && (
-                <span className="ml-2 text-blue-600 dark:text-blue-400">
-                  v{data?.targetVersion || targetVersion}
-                </span>
-              )}
-            </h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      size="lg"
+      title={
+        <>
+          {t('admin.updates.updateDialog.title', 'Update PicPeak')}
+          {/* The server response is authoritative; the prop covers the
+              window before the query resolves. */}
+          {(data?.targetVersion || targetVersion) && (
+            <span className="ml-2 text-info-text">
+              v{data?.targetVersion || targetVersion}
+            </span>
+          )}
+        </>
+      }
+      footer={
+        <>
+          <div className="mr-auto self-center text-xs text-muted">
+            {!allRequiredChecked && data?.instructions && !selfUpdateActive && (
+              <span className="text-warning-text">
+                {t('admin.updates.updateDialog.completeChecklist', 'Complete the checklist before updating')}
+              </span>
+            )}
+          </div>
+          {data?.instructions && (
+            <Button
+              variant="outline"
+              onClick={copyAllCommands}
+              leftIcon={copiedCommand === 'all'
+                ? <Check className="w-4 h-4 text-success" />
+                : <Copy className="w-4 h-4" />}
             >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
-            {/* Renders nothing unless in-app updates are enabled; the manual
-                steps below stay as the fallback either way. */}
-            <div className="mb-6 empty:hidden">
-              <SelfUpdatePanel />
-            </div>
-            {isLoading && (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-center p-4 bg-red-50 dark:bg-red-900/30 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-red-500 mr-3" />
-                <p className="text-red-700 dark:text-red-300">
-                  {t('admin.updates.updateDialog.error', 'Failed to load update instructions')}
-                </p>
-              </div>
-            )}
-
-            {data && !data.updateAvailable && (
-              <div className="flex items-center p-4 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                <CheckCircle2 className="w-5 h-5 text-green-500 mr-3" />
-                <p className="text-green-700 dark:text-green-300">
-                  {t('admin.updates.upToDate', "You're up to date")} (v{data.currentVersion})
-                </p>
-              </div>
-            )}
-
-            {data?.instructions && (
-              <ManualUpdateSteps active={selfUpdateActive}>
-              <div className="space-y-6">
-                {/* Environment Info */}
-                <div className="flex items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                  <Server className="w-5 h-5 text-gray-500 dark:text-gray-400 mr-3" />
-                  <span className="text-sm text-gray-600 dark:text-gray-300">
-                    {t('admin.updates.updateDialog.detectedEnv', 'Detected Environment')}:{' '}
-                    <strong>{data.instructions.environmentName}</strong>
-                  </span>
-                </div>
-
-                {/* Warnings */}
-                {data.instructions.warnings.length > 0 && (
-                  <div className="space-y-2">
-                    {data.instructions.warnings.map((warning, idx) => (
-                      <div key={idx} className="flex items-start p-3 bg-amber-50 dark:bg-amber-900/30 rounded-lg">
-                        <AlertTriangle className="w-5 h-5 text-amber-500 mr-3 flex-shrink-0 mt-0.5" />
-                        <p className="text-sm text-amber-700 dark:text-amber-300">{warning}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Pre-flight Checklist */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-                    <AlertTriangle className="w-4 h-4 text-amber-500 mr-2" />
-                    {t('admin.updates.updateDialog.beforeUpdating', 'Before updating:')}
-                  </h4>
-                  <div className="space-y-2">
-                    {data.instructions.preChecks.map((check) => (
-                      <label
-                        key={check.id}
-                        className="flex items-center p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checkedItems.has(check.id)}
-                          onChange={() => handleCheckItem(check.id)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                        />
-                        <span className="ml-3 text-sm text-gray-700 dark:text-gray-300">
-                          {check.text}
-                          {check.required && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <hr className="border-gray-200 dark:border-gray-700" />
-
-                {/* Update Commands */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-                    <Terminal className="w-4 h-4 text-blue-500 mr-2" />
-                    {t('admin.updates.updateDialog.updateCommands', 'Update Commands:')}
-                  </h4>
-                  <div className="space-y-4">
-                    {data.instructions.steps.map((step, idx) => (
-                      <div key={idx} className={`${step.optional ? 'opacity-75' : ''}`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">
-                            {idx + 1}. {step.description}
-                            {step.optional && (
-                              <span className="ml-2 text-xs text-gray-400">
-                                ({t('common.optional', 'optional')})
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        <div className="flex items-center bg-gray-900 dark:bg-gray-950 rounded-lg overflow-hidden">
-                          <code className="flex-1 px-4 py-3 text-sm text-green-400 font-mono overflow-x-auto">
-                            {step.command}
-                          </code>
-                          <button
-                            onClick={() => copyToClipboard(step.command, `step-${idx}`)}
-                            className="px-3 py-3 text-gray-400 hover:text-white border-l border-gray-700"
-                            title={t('common.copy', 'Copy')}
-                          >
-                            {copiedCommand === `step-${idx}` ? (
-                              <Check className="w-4 h-4 text-green-500" />
-                            ) : (
-                              <Copy className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                        {step.note && (
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                            {step.note}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Divider */}
-                <hr className="border-gray-200 dark:border-gray-700" />
-
-                {/* Post-update Checks */}
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-                    <CheckCircle2 className="w-4 h-4 text-green-500 mr-2" />
-                    {t('admin.updates.updateDialog.afterUpdating', 'After updating:')}
-                  </h4>
-                  <ul className="space-y-2">
-                    {data.instructions.postChecks.map((check, idx) => (
-                      <li key={idx} className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                        <Circle className="w-2 h-2 mr-3 flex-shrink-0" />
-                        {check}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Release Notes Link */}
-                {data.releaseNotesUrl && (
-                  <a
-                    href={data.releaseNotesUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    {t('admin.updates.viewReleaseNotes', 'View Release Notes')}
-                  </a>
-                )}
-              </div>
-              </ManualUpdateSteps>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {!allRequiredChecked && data?.instructions && !selfUpdateActive && (
-                <span className="text-amber-600 dark:text-amber-400">
-                  {t('admin.updates.updateDialog.completeChecklist', 'Complete the checklist before updating')}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center space-x-3">
-              {data?.instructions && (
-                <button
-                  onClick={copyAllCommands}
-                  className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600"
-                >
-                  {copiedCommand === 'all' ? (
-                    <>
-                      <Check className="w-4 h-4 mr-2 text-green-500" />
-                      {t('common.copied', 'Copied!')}
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 mr-2" />
-                      {t('admin.updates.updateDialog.copyAllCommands', 'Copy All Commands')}
-                    </>
-                  )}
-                </button>
-              )}
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-              >
-                {t('common.close', 'Close')}
-              </button>
-            </div>
-          </div>
-        </div>
+              {copiedCommand === 'all'
+                ? t('common.copied', 'Copied!')
+                : t('admin.updates.updateDialog.copyAllCommands', 'Copy All Commands')}
+            </Button>
+          )}
+          <Button variant="primary" onClick={onClose}>
+            {t('common.close', 'Close')}
+          </Button>
+        </>
+      }
+    >
+      {/* Renders nothing unless in-app updates are enabled; the manual
+          steps below stay as the fallback either way. */}
+      <div className="mb-6 empty:hidden">
+        <SelfUpdatePanel />
       </div>
-    </div>
+      {isLoading && (
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-info"></div>
+        </div>
+      )}
+
+      {error && (
+        <Notice tone="danger">
+          {t('admin.updates.updateDialog.error', 'Failed to load update instructions')}
+        </Notice>
+      )}
+
+      {data && !data.updateAvailable && (
+        <Notice tone="success">
+          {t('admin.updates.upToDate', "You're up to date")} (v{data.currentVersion})
+        </Notice>
+      )}
+
+      {data?.instructions && (
+        <ManualUpdateSteps active={selfUpdateActive}>
+        <div className="space-y-6">
+          {/* Environment Info */}
+          <Notice tone="neutral" icon={<Server className="w-5 h-5" />}>
+            {t('admin.updates.updateDialog.detectedEnv', 'Detected Environment')}:{' '}
+            <strong>{data.instructions.environmentName}</strong>
+          </Notice>
+
+          {/* Warnings */}
+          {data.instructions.warnings.length > 0 && (
+            <div className="space-y-2">
+              {data.instructions.warnings.map((warning, idx) => (
+                <Notice key={idx} tone="warning">{warning}</Notice>
+              ))}
+            </div>
+          )}
+
+          {/* Pre-flight Checklist */}
+          <div>
+            <h4 className="text-sm font-semibold text-heading mb-3 flex items-center">
+              <AlertTriangle className="w-4 h-4 text-warning mr-2" />
+              {t('admin.updates.updateDialog.beforeUpdating', 'Before updating:')}
+            </h4>
+            <div className="space-y-2">
+              {data.instructions.preChecks.map((check) => (
+                <label
+                  key={check.id}
+                  className="flex items-center p-2 rounded-lg hover:bg-hover cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checkedItems.has(check.id)}
+                    onChange={() => handleCheckItem(check.id)}
+                    className="w-4 h-4 text-info-text border-line-strong rounded focus:ring-accent"
+                  />
+                  <span className="ml-3 text-sm text-body">
+                    {check.text}
+                    {check.required && (
+                      <span className="text-danger ml-1">*</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <hr className="border-line" />
+
+          {/* Update Commands */}
+          <div>
+            <h4 className="text-sm font-semibold text-heading mb-3 flex items-center">
+              <Terminal className="w-4 h-4 text-info mr-2" />
+              {t('admin.updates.updateDialog.updateCommands', 'Update Commands:')}
+            </h4>
+            <div className="space-y-4">
+              {data.instructions.steps.map((step, idx) => (
+                <div key={idx} className={`${step.optional ? 'opacity-75' : ''}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-soft">
+                      {idx + 1}. {step.description}
+                      {step.optional && (
+                        <span className="ml-2 text-xs text-faint">
+                          ({t('common.optional', 'optional')})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center bg-inset border border-line rounded-lg overflow-hidden">
+                    <code className="flex-1 px-4 py-3 text-sm text-heading font-mono overflow-x-auto">
+                      {step.command}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(step.command, `step-${idx}`)}
+                      className="px-3 py-3 text-faint hover:text-body border-l border-line"
+                      title={t('common.copy', 'Copy')}
+                      aria-label={t('common.copy', 'Copy')}
+                    >
+                      {copiedCommand === `step-${idx}` ? (
+                        <Check className="w-4 h-4 text-success" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  {step.note && (
+                    <p className="mt-1 text-xs text-muted">
+                      {step.note}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <hr className="border-line" />
+
+          {/* Post-update Checks */}
+          <div>
+            <h4 className="text-sm font-semibold text-heading mb-3 flex items-center">
+              <CheckCircle2 className="w-4 h-4 text-success mr-2" />
+              {t('admin.updates.updateDialog.afterUpdating', 'After updating:')}
+            </h4>
+            <ul className="space-y-2">
+              {data.instructions.postChecks.map((check, idx) => (
+                <li key={idx} className="flex items-center text-sm text-soft">
+                  <Circle className="w-2 h-2 mr-3 flex-shrink-0" />
+                  {check}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Release Notes Link */}
+          {data.releaseNotesUrl && (
+            <a
+              href={data.releaseNotesUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center text-sm text-accent"
+            >
+              <ExternalLink className="w-4 h-4 mr-2" />
+              {t('admin.updates.viewReleaseNotes', 'View Release Notes')}
+            </a>
+          )}
+        </div>
+        </ManualUpdateSteps>
+      )}
+    </Modal>
   );
 };

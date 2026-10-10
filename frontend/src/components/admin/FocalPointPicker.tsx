@@ -60,7 +60,7 @@ export const FocalPointPicker: React.FC<FocalPointPickerProps> = ({
       <div
         ref={containerRef}
         onClick={handleClick}
-        className="relative w-full h-48 rounded-lg overflow-hidden cursor-crosshair border border-neutral-300"
+        className="relative w-full h-48 rounded-lg overflow-hidden cursor-crosshair border border-line-strong"
       >
         <AuthenticatedImage
           src={imageUrl}

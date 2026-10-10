@@ -28,14 +28,16 @@ export const ExpirationBanner: React.FC<ExpirationBannerProps> = ({
     }
   };
 
+  // Three urgency tiers over the last week: a soft warning tint with a week
+  // to go, the solid warning colour from three days, danger on the last day.
   const getBannerColor = () => {
-    if (daysRemaining <= 1) return 'bg-red-600';
-    if (daysRemaining <= 3) return 'bg-amber-600';
-    return 'bg-amber-500';
+    if (daysRemaining <= 1) return 'bg-danger text-white';
+    if (daysRemaining <= 3) return 'bg-warning text-white';
+    return 'bg-warning-soft text-warning-text border-b border-warning-line';
   };
 
   return (
-    <div className={`${getBannerColor()} text-white sticky top-0 z-50`}>
+    <div className={`${getBannerColor()} sticky top-0 z-50`} data-testid="expiration-banner">
       <div className="container py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center">

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Copy, X } from 'lucide-react';
 
-import { Button, Card } from '../common';
+import { Button } from '../common';
 import type { Photo } from '../../types';
 import { joinFilenameStems, type FilenameListSeparator } from '../../utils/photoFilename';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * Copyable filename list for guests (issue 1733, backlog item A3d).
@@ -32,13 +33,8 @@ export const CopyFilenamesDialog: React.FC<CopyFilenamesDialogProps> = ({ photos
 
   const text = useMemo(() => joinFilenameStems(photos, separator), [photos, separator]);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useGalleryDialog({ open: true, onClose, panelRef });
 
   const selectText = () => {
     textareaRef.current?.focus();
@@ -64,32 +60,33 @@ export const CopyFilenamesDialog: React.FC<CopyFilenamesDialogProps> = ({ photos
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4"
       onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
     >
-      <Card
-        className="max-w-md w-full"
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="card-themed text-theme p-6 max-w-md w-full"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 mb-2">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{title}</h2>
+          <h2 className="text-lg font-semibold text-theme">{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('common.close', 'Close')}
-            className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+            className="text-muted-theme hover:text-theme"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-sm text-neutral-700 dark:text-neutral-300 mb-1" data-testid="copy-filenames-count">
+        <p className="text-sm text-theme mb-1" data-testid="copy-filenames-count">
           {source === 'selection'
             ? t('gallery.copyFilenames.selectedCount', 'Selected photos: {{count}}', { count: photos.length })
             : t('gallery.copyFilenames.favoritesCount', 'Favorited photos: {{count}}', { count: photos.length })}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+        <p className="text-xs text-muted-theme mb-4">
           {t('gallery.copyFilenames.hint', 'Paste the list into the filename search of your RAW editor. Extensions are left off so it also matches the RAW files.')}
         </p>
 
@@ -100,7 +97,7 @@ export const CopyFilenamesDialog: React.FC<CopyFilenamesDialogProps> = ({ photos
           onFocus={selectText}
           rows={5}
           aria-label={title}
-          className="w-full p-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-mono text-xs break-all resize-y focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full p-3 rounded-lg border border-border-token bg-elevated text-theme font-mono text-xs break-all resize-y focus:outline-none focus:ring-2 focus:ring-accent"
         />
 
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -134,11 +131,11 @@ export const CopyFilenamesDialog: React.FC<CopyFilenamesDialogProps> = ({ photos
           </Button>
         </div>
         {copyState === 'failed' && (
-          <p className="mt-3 text-xs text-red-600 dark:text-red-400" role="alert">
+          <p className="mt-3 text-xs text-status hue-danger" role="alert">
             {t('gallery.copyFilenames.copyFailed', 'Copying was blocked. The text is selected, press Ctrl+C or Cmd+C to copy it.')}
           </p>
         )}
-      </Card>
+      </div>
     </div>
   );
 };

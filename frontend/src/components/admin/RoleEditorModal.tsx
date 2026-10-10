@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Shield, Lock, Save } from 'lucide-react';
+import { Shield, Lock, Save } from 'lucide-react';
 
-import { Button, Input, Card } from '../common';
+import { Button, Input, Modal, Notice } from '../common';
 import type { PermissionDef, RoleWithPermissions } from '../../services/roles.service';
 
 export interface RoleEditorSave {
@@ -128,34 +128,42 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-3xl max-h-[90vh] flex flex-col">
-        <div className="p-6 flex-1 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-accent" />
-              <h2 className="text-xl font-semibold text-heading">
-                {mode === 'create'
-                  ? t('roleEditor.createTitle', 'Create role')
-                  : t('roleEditor.editTitle', 'Edit role: {{name}}', { name: role?.displayName })}
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-hover rounded-lg transition-colors"
-              disabled={isLoading}
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!isLoading) onClose(); }}
+      closeOnBackdrop={false}
+      size="xl"
+      title={
+        <span className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-accent" aria-hidden="true" />
+          {mode === 'create'
+            ? t('roleEditor.createTitle', 'Create role')
+            : t('roleEditor.editTitle', 'Edit role: {{name}}', { name: role?.displayName })}
+        </span>
+      }
+      footer={
+        <>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
+            {t('common.cancel')}
+          </Button>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleSave}
+              isLoading={isLoading}
+              leftIcon={<Save className="w-4 h-4" />}
             >
-              <X className="w-5 h-5 text-muted" />
-            </button>
-          </div>
-
+              {mode === 'create' ? t('roleEditor.create', 'Create role') : t('common.save', 'Save')}
+            </Button>
+          )}
+        </>
+      }
+    >
           {readOnly && (
-            <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
-              <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-              <p className="text-sm text-amber-700 dark:text-amber-300">
-                {t('roleEditor.superAdminLocked', 'Super Admin always holds every permission and cannot be edited. It automatically gains new permissions as features are added.')}
-              </p>
-            </div>
+            <Notice tone="warning" size="sm" icon={<Lock className="w-4 h-4" />} className="mb-4">
+              {t('roleEditor.superAdminLocked', 'Super Admin always holds every permission and cannot be edited. It automatically gains new permissions as features are added.')}
+            </Notice>
           )}
 
           {/* Identity fields */}
@@ -181,7 +189,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
                 placeholder="photographer"
                 disabled={isLoading || mode === 'edit'}
               />
-              {nameError && <p className="mt-1 text-sm text-red-600">{nameError}</p>}
+              {nameError && <p className="mt-1 text-sm text-danger-text">{nameError}</p>}
               {mode === 'edit' && (
                 <p className="mt-1 text-xs text-faint">
                   {t('roleEditor.keyLocked', 'The key is fixed once a role is created.')}
@@ -237,7 +245,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
                       return (
                         <label
                           key={p.name}
-                          className={`flex items-start gap-2 px-3 py-2 border-t border-neutral-100 dark:border-neutral-700/60 ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-700/40'}`}
+                          className={`flex items-start gap-2 px-3 py-2 border-t border-line-faint ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-hover-soft'}`}
                           title={p.description || undefined}
                         >
                           <input
@@ -259,26 +267,7 @@ export const RoleEditorModal: React.FC<RoleEditorModalProps> = ({
               );
             })}
           </div>
-        </div>
-
-        <div className="flex justify-end gap-3 p-4 border-t border-line">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-            {t('common.cancel')}
-          </Button>
-          {!readOnly && (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleSave}
-              isLoading={isLoading}
-              leftIcon={<Save className="w-4 h-4" />}
-            >
-              {mode === 'create' ? t('roleEditor.create', 'Create role') : t('common.save', 'Save')}
-            </Button>
-          )}
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };
 

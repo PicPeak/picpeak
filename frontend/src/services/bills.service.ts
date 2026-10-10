@@ -339,7 +339,7 @@ export const billsService = {
    *  new invoice's id, the original's id (`replaces`), and the
    *  generated Storno's id (`stornoId`, null when the original was
    *  already cancelled and no Storno needed to be created). Caller
-   *  typically navigates to /admin/clients/bills/:id/edit to adjust
+   *  typically navigates to /admin/clients/bills/:id to adjust
    *  before sending. */
   async reissue(id: number): Promise<{ id: number; replaces: number; stornoId: number | null }> {
     const { data } = await api.post(`/admin/invoices/${id}/reissue`);

@@ -192,7 +192,7 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
-            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
             checked={val.slideshow_watermark_enabled}
             onChange={(e) => setVal({ ...val, slideshow_watermark_enabled: e.target.checked })}
           />
@@ -278,7 +278,7 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
-            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+            className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
             checked={val.slideshow_qr_enabled}
             onChange={(e) => setVal({ ...val, slideshow_qr_enabled: e.target.checked })}
           />

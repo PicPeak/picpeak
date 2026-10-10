@@ -25,25 +25,14 @@ export const CustomerComingSoonPage: React.FC<CustomerComingSoonPageProps> = ({
   const { t } = useTranslation();
   return (
     <div className="container py-8 sm:py-16">
-      <div
-        className="max-w-xl mx-auto rounded-xl border p-8 sm:p-12 text-center"
-        style={{
-          backgroundColor: 'var(--color-surface)',
-          borderColor: 'var(--color-surface-border)',
-        }}
-      >
+      <div className="max-w-xl mx-auto rounded-xl border p-8 sm:p-12 text-center bg-surface border-border-token">
         <div
-          className="mx-auto mb-4 w-14 h-14 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--color-accent) 14%, transparent)' }}
+          className="mx-auto mb-4 w-14 h-14 rounded-full flex items-center justify-center bg-accent-soft text-on-accent-soft"
         >
-          <Icon className="w-7 h-7" style={{ color: 'var(--color-accent)' }} />
+          <Icon className="w-7 h-7" />
         </div>
         <span
-          className="inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-semibold mb-3"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--color-accent) 14%, transparent)',
-            color: 'var(--color-accent)',
-          }}
+          className="inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded font-semibold mb-3 bg-accent-soft text-theme"
         >
           {t('customer.comingSoon.tag', 'Coming soon')}
         </span>

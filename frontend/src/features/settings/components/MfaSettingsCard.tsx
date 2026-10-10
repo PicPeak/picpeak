@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { ShieldCheck, ShieldOff, Copy, Download, Check, KeyRound, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, ShieldOff, Copy, Download, Check, KeyRound } from 'lucide-react';
 
-import { Button, Card, Input, Loading, useConfirm } from '../../../components/common';
+import { Button, Card, Input, Loading, Notice, useConfirm } from '../../../components/common';
 import { mfaService } from '../../../services/mfa.service';
 
 // Per-user admin TOTP MFA management (issue #738). Lives on the admin's own
@@ -47,10 +47,7 @@ const RecoveryCodesPanel: React.FC<RecoveryCodesPanelProps> = ({ codes, onConfir
 
   return (
     <div className="space-y-4">
-      <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-        <p className="text-sm text-amber-800 dark:text-amber-200">{t('settings.mfa.recoveryCodesWarning')}</p>
-      </div>
+      <Notice tone="warning">{t('settings.mfa.recoveryCodesWarning')}</Notice>
 
       <div className="grid grid-cols-2 gap-2 p-4 rounded-lg bg-subtle border border-line font-mono text-sm text-heading">
         {codes.map((code) => (
@@ -72,7 +69,7 @@ const RecoveryCodesPanel: React.FC<RecoveryCodesPanelProps> = ({ codes, onConfir
           type="checkbox"
           checked={acknowledged}
           onChange={(e) => setAcknowledged(e.target.checked)}
-          className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+          className="mt-1 w-4 h-4 text-accent rounded focus:ring-accent"
         />
         <span className="text-sm text-body">{t('settings.mfa.recoveryCodesAck')}</span>
       </label>
@@ -189,10 +186,9 @@ export const MfaSettingsCard: React.FC = () => {
       ) : status?.enabled ? (
         /* ---------------- Enrolled ---------------- */
         <div className="space-y-4">
-          <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
-            <span className="text-sm text-green-800 dark:text-green-200">{t('settings.mfa.enabledBadge')}</span>
-          </div>
+          <Notice tone="success" icon={<ShieldCheck className="w-5 h-5" />}>
+            {t('settings.mfa.enabledBadge')}
+          </Notice>
 
           <p className="text-sm text-soft">
             {t('settings.mfa.recoveryCodesRemaining', { count: status.recoveryCodesRemaining })}
@@ -209,7 +205,7 @@ export const MfaSettingsCard: React.FC = () => {
                   if (regenerateError) setRegenerateError(null);
                 }}
                 placeholder={t('settings.mfa.codePlaceholder')}
-                leftIcon={<KeyRound className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<KeyRound className="w-5 h-5 text-faint" />}
                 error={regenerateError || undefined}
                 autoComplete="one-time-code"
               />
@@ -254,7 +250,7 @@ export const MfaSettingsCard: React.FC = () => {
             <img
               src={setupData.qr}
               alt={t('settings.mfa.qrAlt')}
-              className="w-44 h-44 rounded-lg border border-line bg-white p-2"
+              className="w-44 h-44 rounded-lg border border-line bg-panel p-2"
             />
             <div className="space-y-2">
               <p className="text-sm text-soft">{t('settings.mfa.manualEntry')}</p>
@@ -277,7 +273,7 @@ export const MfaSettingsCard: React.FC = () => {
                 if (enableError) setEnableError(null);
               }}
               placeholder={t('settings.mfa.codePlaceholder')}
-              leftIcon={<KeyRound className="w-5 h-5 text-neutral-400" />}
+              leftIcon={<KeyRound className="w-5 h-5 text-faint" />}
               error={enableError || undefined}
               inputMode="numeric"
               autoComplete="one-time-code"

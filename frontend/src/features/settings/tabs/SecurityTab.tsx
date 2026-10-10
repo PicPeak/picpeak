@@ -1,6 +1,6 @@
 import React from 'react';
-import { Key, AlertCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { Card, Input } from '../../../components/common';
+import { Key, ShieldCheck } from 'lucide-react';
+import { Card, Input, Notice } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import type { SecuritySettings, RateLimitSettings } from '../hooks/useSettingsState';
@@ -73,7 +73,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             <select
               value={securitySettings.password_complexity}
               onChange={(e) => setSecuritySettings(prev => ({ ...prev, password_complexity: e.target.value }))}
-              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             >
               <option value="simple">{t('settings.security.complexitySimple')}</option>
               <option value="moderate">{t('settings.security.complexityModerate')}</option>
@@ -153,7 +153,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
 
           <div className="p-4 bg-neutral-50 dark:bg-neutral-800/60 border border-line rounded-lg">
             <div className="flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
+              <ShieldCheck className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
               <div className="text-sm text-body">
                 <p className="font-medium text-heading">{t('settings.security.twoFactorTitle')}</p>
                 <p className="mt-1">{t('settings.security.twoFactorNote')}</p>
@@ -175,7 +175,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               type="checkbox"
               checked={rateLimitSettings.rate_limit_enabled}
               onChange={(e) => setRateLimit('rate_limit_enabled', e.target.checked)}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">{t('settings.security.rateLimitEnabled')}</span>
           </label>
@@ -191,7 +191,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               type="checkbox"
               checked={rateLimitSettings.rate_limit_skip_authenticated}
               onChange={(e) => setRateLimit('rate_limit_skip_authenticated', e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="mt-0.5 w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">
               {t('settings.security.rateLimitSkipAuthenticated')}
@@ -204,7 +204,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               type="checkbox"
               checked={rateLimitSettings.rate_limit_public_endpoints_only}
               onChange={(e) => setRateLimit('rate_limit_public_endpoints_only', e.target.checked)}
-              className="mt-0.5 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="mt-0.5 w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">
               {t('settings.security.rateLimitPublicOnly')}
@@ -212,10 +212,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             </span>
           </label>
 
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-800 dark:text-amber-200">
-            <AlertCircle className="w-5 h-5 flex-none mt-0.5" />
-            <p>{t('settings.security.rateLimitNatNote')}</p>
-          </div>
+          <Notice tone="warning">{t('settings.security.rateLimitNatNote')}</Notice>
         </div>
       </Card>
 
@@ -228,7 +225,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               type="checkbox"
               checked={securitySettings.gallery_password_recoverable}
               onChange={(e) => setSecuritySettings(prev => ({ ...prev, gallery_password_recoverable: e.target.checked }))}
-              className="w-4 h-4 mt-0.5 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 mt-0.5 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">
               <span className="block font-medium text-heading">{t('settings.security.galleryPasswordRecoverable')}</span>
@@ -238,16 +235,12 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
 
           {/* #1271 — reversible storage is a deliberate trade of security for
               convenience; the warning stays visible whether or not it is on. */}
-          <div className="p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <div className="text-sm text-amber-800 dark:text-amber-200 space-y-1">
-                <p className="font-medium">{t('settings.security.galleryPasswordRecoverableWarningTitle')}</p>
-                <p>{t('settings.security.galleryPasswordRecoverableWarning')}</p>
-                <p>{t('settings.security.galleryPasswordRecoverableOffNote')}</p>
-              </div>
+          <Notice tone="warning" title={t('settings.security.galleryPasswordRecoverableWarningTitle')}>
+            <div className="space-y-1">
+              <p>{t('settings.security.galleryPasswordRecoverableWarning')}</p>
+              <p>{t('settings.security.galleryPasswordRecoverableOffNote')}</p>
             </div>
-          </div>
+          </Notice>
         </div>
       </Card>
 
@@ -260,7 +253,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
               type="checkbox"
               checked={securitySettings.enable_recaptcha}
               onChange={(e) => setSecuritySettings(prev => ({ ...prev, enable_recaptcha: e.target.checked }))}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              className="w-4 h-4 text-accent rounded focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">{t('settings.security.enableRecaptcha')}</span>
           </label>
@@ -276,7 +269,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
                   value={securitySettings.recaptcha_site_key}
                   onChange={(e) => setSecuritySettings(prev => ({ ...prev, recaptcha_site_key: e.target.value }))}
                   placeholder={t('settings.security.siteKey')}
-                  leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Key className="w-5 h-5 text-faint" />}
                 />
               </div>
               <div>
@@ -288,20 +281,15 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
                   value={securitySettings.recaptcha_secret_key}
                   onChange={(e) => setSecuritySettings(prev => ({ ...prev, recaptcha_secret_key: e.target.value }))}
                   placeholder={t('settings.security.secretKey')}
-                  leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Key className="w-5 h-5 text-faint" />}
                 />
               </div>
             </>
           )}
 
-          <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-              <div className="text-sm text-blue-800 dark:text-blue-200">
-                <p>{t('settings.security.recaptchaHelp')} <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener noreferrer" className="underline">Google reCAPTCHA Admin</a></p>
-              </div>
-            </div>
-          </div>
+          <Notice tone="info">
+            {t('settings.security.recaptchaHelp')} <a href="https://www.google.com/recaptcha/admin" target="_blank" rel="noopener noreferrer" className="underline text-accent">Google reCAPTCHA Admin</a>
+          </Notice>
         </div>
       </Card>
 

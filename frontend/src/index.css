@@ -78,16 +78,9 @@
   /*
    * Button styles.
    *
-   * Migration note: .btn-primary now binds to --color-accent-dark instead
-   * of --color-primary. The two tokens are kept in lockstep by the
-   * customizer (handleChange syncs primaryColor → accentDarkColor) and by
-   * the migration helper (legacy themes get accentDarkColor = primaryColor),
-   * so existing instances render identically after upgrade — but new themes
-   * that set only accentDarkColor (the 8-token CI flow) now drive primary
-   * buttons correctly. White text + accent-dark fill matches the rest of
-   * the selected-state visual language (sidebar, tile-selected, segmented
-   * buttons). Hover stays on --color-primary-dark for the auto-darkened
-   * legacy behaviour.
+   * .btn-primary is the studio's filled accent (tokens.css › Accent) with
+   * the label colour applyTheme() picks for it; .btn-danger the danger
+   * status. Hover darkens either a step.
    */
   .btn {
     @apply inline-flex items-center justify-center font-medium whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
@@ -97,13 +90,23 @@
   }
 
   .btn-primary {
-    background-color: var(--color-accent-dark);
-    color: white;
-    @apply hover:opacity-90;
+    background-color: var(--ui-accent-strong);
+    color: var(--ui-accent-fg);
   }
 
   .btn-primary:hover {
-    background-color: var(--color-primary-dark);
+    background-color: color-mix(in srgb, var(--ui-accent-strong) 88%, #000);
+  }
+
+  /* Destructive: delete, revoke, cancel for good. Never the page's only
+     primary action; confirm first (UX.md § 5). */
+  .btn-danger {
+    background-color: var(--ui-danger);
+    color: #ffffff;
+  }
+
+  .btn-danger:hover {
+    background-color: color-mix(in srgb, var(--ui-danger) 85%, #000);
   }
 
   .btn-alt {
@@ -130,6 +133,19 @@
     @apply border hover:opacity-80;
   }
 
+  /* Ghost: no fill, text in the surface's own colour. Outside the admin it
+   * follows the operator's gallery theme (a fixed admin grey would vanish on
+   * a dark gallery); `:where(.admin-ui)` below keeps it on the UI tokens in
+   * the admin without outranking a colour utility passed in className. */
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-text);
+  }
+
+  .btn-ghost:hover {
+    background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+  }
+
   .btn-sm {
     @apply h-9 px-3 text-sm;
   }
@@ -142,15 +158,24 @@
     @apply h-11 px-8 text-lg;
   }
 
+  /* Icon-only: square, same heights as the text sizes. Needs aria-label. */
+  .btn-icon-sm {
+    @apply h-9 w-9 p-0;
+  }
+
+  .btn-icon-md {
+    @apply h-10 w-10 p-0;
+  }
+
   /*
-   * Input styles - Admin inputs keep explicit Tailwind colors so the visual
-   * contract is byte-for-byte identical to pre-migration (border-neutral-300
-   * vs the lighter neutral-200/surface-border). Dark mode is handled by the
-   * .dark .input override below. Gallery inputs use .input-themed which
-   * binds to the 8-token palette via CSS variables.
+   * Input styles. `.input` reads the UI tokens: the admin's greys, and the
+   * operator's palette on the portal and public pages (.public-ui in
+   * tokens.css). `.input-themed` reads the theme tokens directly, wherever it
+   * sits: the gallery, and the raw <input>/<select>/<textarea> of the portal
+   * and public pages (`<Input themed>` uses it too).
    */
   .input {
-    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
         @apply bg-panel border-line-strong text-heading;
   }
 
@@ -158,9 +183,8 @@
     @apply text-muted;
   }
 
-  /* Gallery-specific input that uses theme variables */
   .input-themed {
-    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
     background-color: var(--color-surface);
     border-color: var(--color-surface-border);
     color: var(--color-text);
@@ -243,7 +267,8 @@
   }
 
   .text-accent {
-    color: var(--color-accent);
+    /* The accent, made readable as text where it is not (tokens.css). */
+    color: var(--accent-text, var(--color-accent));
   }
 
   .text-accent-dark {
@@ -270,33 +295,19 @@
    * back to the var(--color-accent-dark) below.
    */
   .bg-accent-soft {
-    background-color: var(--color-accent-dark);
-    background-color: color-mix(in srgb, var(--color-accent-dark) 18%, transparent);
-  }
-  .dark .bg-accent-soft {
-    background-color: var(--color-accent-dark);
-    background-color: color-mix(in srgb, var(--color-accent-dark) 55%, transparent);
+    background-color: var(--ui-accent-soft);
   }
   .border-accent-soft {
-    border-color: var(--color-accent-dark);
-    border-color: color-mix(in srgb, var(--color-accent-dark) 45%, transparent);
-  }
-  .dark .border-accent-soft {
-    border-color: color-mix(in srgb, var(--color-accent-dark) 70%, transparent);
+    border-color: var(--ui-accent-line);
   }
 
   /*
-   * Foreground for content sitting on .bg-accent-soft. Uses the
-   * theme's text token (already high-contrast against both light
-   * backgrounds and dark surfaces) instead of the accent itself —
-   * accent-on-accent-soft was the reason the Sidebar Preview pills
-   * read as "barely visible".
+   * Foreground for content sitting on .bg-accent-soft. Not the accent
+   * itself: accent on accent-soft is what made the Sidebar Preview pills
+   * read as "barely visible". Values in tokens.css › Accent.
    */
   .text-on-accent-soft {
-    color: var(--color-accent-dark);
-  }
-  .dark .text-on-accent-soft {
-    color: #ffffff;
+    color: var(--ui-accent-on-soft);
   }
 
   /*
@@ -308,14 +319,14 @@
    * follows the user's CI palette.
    */
   .tile-selected {
-    background-color: var(--color-accent-dark) !important;
-    border-color: var(--color-accent-dark) !important;
-    color: #ffffff !important;
+    background-color: var(--ui-accent-strong) !important;
+    border-color: var(--ui-accent-strong) !important;
+    color: var(--ui-accent-fg) !important;
   }
 
   .tile-selected *,
   .tile-selected svg {
-    color: #ffffff !important;
+    color: var(--ui-accent-fg) !important;
   }
 
   /*
@@ -434,55 +445,14 @@
     @apply bg-red-100 text-red-800;
   }
 
-    /* Admin dark mode: .card and .input flip through the --ui-* tokens
-     (src/styles/tokens.css); only the themed card keeps an override. */
-  .dark .card-themed {
-    @apply bg-neutral-800 border-neutral-700;
-  }
-
   /*
-   * Customer-surface scope (#354): the default .input and .card classes
-   * hard-code bg-white, and the customer surface uses theme variables
-   * rather than the admin's `.dark` class trigger. Overriding here so
-   * every <Input> and <Card> rendered inside the customer surface picks
-   * up var(--color-surface) / var(--color-text) automatically — no
-   * per-page wrapper needed. Same treatment for native <select>
-   * elements which share the .input mental model on the profile and
-   * accept-invite forms.
+   * Status colours for the customer portal and the public pages.
    *
-   * The .customer-surface marker is set on the root <div> of every
-   * customer page (CustomerLayout, CustomerLoginPage, CustomerAcceptInvitePage,
-   * CustomerResetPasswordPage). Pages outside this scope (admin, public
-   * gallery) keep their original styling.
-   */
-  .customer-surface .card,
-  .customer-surface .card-hover {
-    background-color: var(--color-surface);
-    border-color: var(--color-surface-border);
-  }
-
-  .customer-surface .input,
-  .customer-surface select.input,
-  .customer-surface input.input {
-    background-color: var(--color-surface);
-    border-color: var(--color-surface-border);
-    color: var(--color-text);
-  }
-
-  /*
-   * Status colours for the customer surface.
-   *
-   * Tailwind's `dark:` modifier is INERT here: the portal themes through
-   * CSS tokens (see CustomerLayout), while `dark:` needs the class the
-   * admin shell toggles on <html>. A chip written as `bg-green-100
-   * text-green-800 dark:…` therefore rendered its LIGHT values on a dark
-   * portal — and the chip is usually the one thing the page exists to
-   * communicate.
-   *
-   * Putting `dark` on the portal's own root would make the variants fire but
-   * break what they sit inside: `.dark` re-declares `--color-surface` and the
-   * rest with PicPeak's generic palette, so any operator running custom
-   * branding would lose their colours below that element.
+   * Never a `dark:` variant there: `.dark` follows the operator's palette
+   * (usePublicDarkMode), but the variants carry PicPeak's neutral greys, not
+   * the studio's colours. And never `.dark` on an element below <html>:
+   * `.dark` re-declares `--color-surface` and the rest with PicPeak's generic
+   * palette, so a studio's own colours would be lost below that element.
    *
    * So these derive from the surface instead. A `hue-*` class names the
    * meaning; `.status-chip` washes that hue over whatever surface it lands
@@ -500,11 +470,12 @@
     color: color-mix(in srgb, var(--chip-hue) 72%, var(--color-text, #171717));
   }
 
-  .hue-success { --chip-hue: #16a34a; }
-  .hue-warning { --chip-hue: #d97706; }
-  .hue-danger { --chip-hue: #dc2626; }
-  .hue-info { --chip-hue: #2563eb; }
-  .hue-storno { --chip-hue: #9333ea; }
+  /* Same hues as the admin (tokens.css › Status, Branding › Colours). */
+  .hue-success { --chip-hue: var(--status-success); }
+  .hue-warning { --chip-hue: var(--status-warning); }
+  .hue-danger { --chip-hue: var(--status-danger); }
+  .hue-info { --chip-hue: var(--status-info); }
+  .hue-storno { --chip-hue: var(--status-storno); }
   .hue-neutral { --chip-hue: var(--color-muted-text, #737373); }
 
   /* A row that is cancelled or reversed: dimmed against its own surface. */
@@ -515,25 +486,6 @@
   /* Hover for a list row or icon button, in the surface's own direction. */
   .hover-surface:hover {
     background-color: color-mix(in srgb, var(--color-text, #171717) 6%, transparent);
-  }
-
-  .customer-surface .input::placeholder {
-    color: var(--color-muted-text);
-    opacity: 0.7;
-  }
-
-  .customer-surface .input:disabled {
-    background-color: var(--color-elevated, var(--color-surface));
-    color: var(--color-muted-text);
-    opacity: 0.7;
-  }
-
-  .dark .input-themed {
-    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
-  }
-
-  .dark .input-themed::placeholder {
-    @apply text-neutral-500;
   }
 
   .dark .skeleton {
@@ -552,51 +504,75 @@
     @apply bg-red-900/40 text-red-300;
   }
 
-  /* Secondary and outline buttons for admin dark mode — restore explicit
-   * neutral overrides so existing admin pages render exactly as before. */
-  .dark .btn-secondary {
-    @apply bg-neutral-700 border-neutral-600 text-neutral-100;
+  /* Secondary and outline buttons in the admin read the UI tokens, not the
+   * operator's gallery theme. `.admin-ui` sits on <html> while the admin is
+   * mounted (AdminDarkModeProvider), so dialogs portalled to <body> get it
+   * too. The customer portal, gallery and public pages keep the themed
+   * rules above. */
+  .admin-ui .btn {
+    --tw-ring-offset-color: var(--ui-canvas);
   }
 
-  .dark .btn-outline {
-    @apply border-neutral-600 text-neutral-300;
+  .admin-ui .btn-secondary {
+    background-color: var(--ui-fill);
+    color: var(--ui-text-heading);
   }
 
-  .dark .btn-outline:hover {
-    @apply bg-neutral-800;
+  .admin-ui .btn-outline {
+    border-color: var(--ui-line-strong);
+    color: var(--ui-text-body);
+    opacity: 1;
   }
 
-  /* Table and select defaults for admin dark mode. `:where()` keeps them at
+  :where(.admin-ui) .btn-ghost {
+    color: var(--ui-text-body);
+  }
+
+  :where(.admin-ui) .btn-ghost:hover {
+    background-color: var(--ui-hover);
+  }
+
+  .admin-ui .btn-outline:hover {
+    background-color: var(--ui-hover-soft);
+  }
+
+  /* Table and select defaults in dark mode. `:where()` keeps them at
      single-class specificity so a token utility on the element (bg-subtle,
      text-muted, ...) wins, as the old dark: variants did; a bare element with
-     no colour class still gets these. */
+     no colour class still gets these. They read the UI tokens (the admin's
+     dark greys, exactly as before), so on the portal and public pages, where
+     .public-ui maps those tokens onto the operator's palette, a bare select
+     or table follows the studio's colours instead of PicPeak's greys. */
   .dark :where(table) {
-    @apply bg-neutral-800;
+    background-color: var(--ui-panel);
   }
 
   .dark :where(thead) {
-    @apply bg-neutral-900/50;
+    background-color: color-mix(in srgb, var(--ui-shell) 50%, transparent);
   }
 
   .dark :where(th) {
-    @apply text-neutral-300 border-neutral-700;
+    color: var(--ui-text-body);
+    border-color: var(--ui-line);
   }
 
   .dark :where(td) {
-    @apply text-neutral-200 border-neutral-700;
+    color: color-mix(in srgb, var(--ui-text-heading) 50%, var(--ui-text-body));
+    border-color: var(--ui-line);
   }
 
   .dark :where(tbody tr) {
-    @apply border-neutral-700;
+    border-color: var(--ui-line);
   }
 
   .dark :where(tbody tr):hover {
-    @apply bg-neutral-700/50;
+    background-color: color-mix(in srgb, var(--ui-hover) 50%, transparent);
   }
 
-  /* Select/dropdown for admin dark mode */
   .dark :where(select) {
-    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
+    background-color: var(--ui-panel);
+    border-color: var(--ui-line);
+    color: var(--ui-text-heading);
   }
 
   /* Tag/chip styles for admin dark mode */
@@ -636,11 +612,6 @@
     scrollbar-width: none;
   }
 
-  /* Text gradient */
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-800;
-  }
-
   /* Smooth scroll */
   .smooth-scroll {
     scroll-behavior: smooth;
@@ -653,7 +624,7 @@
     appearance: none;
     width: 100%;
     height: 8px;
-    background: #d4d4d4 !important;
+    background: var(--shared-fill) !important;
     border-radius: 4px;
     outline: none;
     cursor: pointer;
@@ -664,7 +635,7 @@
   input[type="range"].slider::-webkit-slider-track {
     width: 100%;
     height: 8px;
-    background: #d4d4d4 !important;
+    background: var(--shared-fill) !important;
     border-radius: 4px;
     border: none;
   }
@@ -674,7 +645,7 @@
     appearance: none;
     width: 20px;
     height: 20px;
-    background: var(--color-primary);
+    background: var(--ui-accent-strong);
     border-radius: 50%;
     cursor: pointer;
     margin-top: -6px; /* Center the thumb vertically */
@@ -682,7 +653,7 @@
   }
 
   input[type="range"].slider::-webkit-slider-thumb:hover {
-    background: var(--color-primary-dark);
+    background: color-mix(in srgb, var(--ui-accent-strong) 85%, #000);
     transform: scale(1.1);
   }
 
@@ -690,7 +661,7 @@
   input[type="range"].slider::-moz-range-track {
     width: 100%;
     height: 8px;
-    background: #d4d4d4 !important;
+    background: var(--shared-fill) !important;
     border-radius: 4px;
     border: none;
   }
@@ -699,14 +670,14 @@
     border: none;
     width: 20px;
     height: 20px;
-    background: var(--color-primary);
+    background: var(--ui-accent-strong);
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s ease;
   }
 
   input[type="range"].slider::-moz-range-thumb:hover {
-    background: var(--color-primary-dark);
+    background: color-mix(in srgb, var(--ui-accent-strong) 85%, #000);
     transform: scale(1.1);
   }
 
@@ -720,19 +691,19 @@
   }
 
   input[type="range"].slider::-ms-fill-lower {
-    background: #d4d4d4;
+    background: var(--shared-fill);
     border-radius: 4px;
   }
 
   input[type="range"].slider::-ms-fill-upper {
-    background: #d4d4d4;
+    background: var(--shared-fill);
     border-radius: 4px;
   }
 
   input[type="range"].slider::-ms-thumb {
     width: 20px;
     height: 20px;
-    background: var(--color-primary);
+    background: var(--ui-accent-strong);
     border-radius: 50%;
     cursor: pointer;
     margin-top: 0;

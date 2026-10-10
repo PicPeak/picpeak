@@ -143,7 +143,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 border-b border-line">
-          <Search className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+          <Search className="w-4 h-4 text-faint flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"

@@ -116,7 +116,7 @@ export const ContractTemplatesPage: React.FC = () => {
                         </span>
                       )}
                       {tpl.isDefault && (
-                        <span className={`${badgeClass} bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300`}>
+                        <span className={`${badgeClass} bg-success-soft text-success-text`}>
                           {t('contracts.templates.default', 'Default')}
                         </span>
                       )}

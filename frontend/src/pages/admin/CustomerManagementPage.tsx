@@ -19,7 +19,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock, MailCheck,
+  UserPlus, UserCog, Trash2, Search, X, CheckCircle2, Clock, MailCheck,
 } from 'lucide-react';
 import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreate';
 import { CustomerGroupChipList, CustomerGroupFilter } from '../../components/admin/CustomerGroupChips';
@@ -29,7 +29,7 @@ import { useMutationWithToast } from '../../hooks';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-import { Button, Card, Input, Loading } from '../../components/common';
+import { Button, Card, ErrorState, Input, Loading, Notice, useConfirm, Badge } from '../../components/common';
 import {
   customerAdminService,
   BULK_GROUP_MAX_CUSTOMERS,
@@ -40,6 +40,7 @@ import {
   type CustomerStatusFilter,
 } from '../../services/customerAdmin.service';
 import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
+import { useEscapeClose } from '../../components/common/useEscapeClose';
 
 type TabType = 'customers' | 'invitations' | 'groups';
 const TABS: TabType[] = ['customers', 'invitations', 'groups'];
@@ -126,7 +127,8 @@ export const CustomerManagementPage: React.FC = () => {
   // which trigger they clicked but the form fields stay identical.
   // `null` = closed.
   const [createMode, setCreateMode] = useState<'passive' | 'invite' | null>(null);
-  const [confirm, setConfirm] = useState<{ kind: 'deactivate'; id: number; name: string } | { kind: 'cancelInvite'; id: number; email: string } | null>(null);
+  useEscapeClose(createMode !== null, () => setCreateMode(null));
+  const confirm = useConfirm();
 
   const { hasPermission } = usePermissions();
 
@@ -176,7 +178,7 @@ export const CustomerManagementPage: React.FC = () => {
   // `customersStale`: while a new filter loads, the rows on screen are the
   // previous filter's, so they can't be selected for a bulk change.
   const {
-    data: customers, isPending: customersLoading, error: customersError, isPlaceholderData: customersStale,
+    data: customers, isPending: customersLoading, error: customersError, isPlaceholderData: customersStale, refetch: refetchCustomers, isRefetching: refetchingCustomers,
   } = useQuery({
     queryKey: ['admin-customers', listFilter],
     queryFn: () => customerAdminService.list(listFilter),
@@ -196,7 +198,7 @@ export const CustomerManagementPage: React.FC = () => {
   const [bulkMode, setBulkMode] = useState<'add' | 'remove' | null>(null);
   useEffect(() => { setSelectedIds([]); }, [listFilter, debouncedTerm]);
 
-  const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({
+  const { data: invitations, isLoading: invitationsLoading, error: invitationsError, refetch: refetchInvitations, isRefetching: refetchingInvitations } = useQuery({
     queryKey: ['admin-customer-invitations'],
     queryFn: () => customerAdminService.listInvitations(),
   });
@@ -255,6 +257,28 @@ export const CustomerManagementPage: React.FC = () => {
     errorMessage: () => t('customers.cancelInvitation.error', 'Could not cancel invitation'),
   });
 
+  const askDeactivate = async (id: number) => {
+    const ok = await confirm({
+      title: t('customers.deactivate.title', 'Deactivate customer?'),
+      message: t('customers.deactivate.body',
+        'They will no longer be able to log in. You can re-invite them later.'),
+      variant: 'warning',
+      confirmLabel: t('customers.deactivate.button', 'Deactivate'),
+    });
+    if (ok) deactivateMutation.mutate(id);
+  };
+  const askCancelInvite = async (id: number) => {
+    const ok = await confirm({
+      title: t('customers.cancelInvitation.title', 'Cancel invitation?'),
+      message: t('customers.cancelInvitation.body',
+        'The invitation link will stop working immediately.'),
+      variant: 'danger',
+      confirmLabel: t('customers.cancelInvitation.action', 'Cancel invitation'),
+      cancelLabel: t('customers.cancelInvitation.keep', 'Keep invitation'),
+    });
+    if (ok) cancelInviteMutation.mutate(id);
+  };
+
   const renderCustomerName = (c: CustomerAccountSummary) => {
     const display = c.displayName?.trim()
       || [c.firstName, c.lastName].filter(Boolean).join(' ').trim()
@@ -273,7 +297,7 @@ export const CustomerManagementPage: React.FC = () => {
           {t('customers.status.active', 'Active')}
         </span>
       ) : (
-        <span className="inline-flex items-center gap-1 text-xs text-red-600">
+        <span className="inline-flex items-center gap-1 text-xs text-danger-text">
           <X className="w-3.5 h-3.5" />
           {t('customers.status.inactive', 'Deactivated')}
         </span>
@@ -285,8 +309,9 @@ export const CustomerManagementPage: React.FC = () => {
       {c.isPassive && (() => {
         const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
         return invite ? (
-          <span
-            className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+          <Badge
+            tone="info"
+            icon={<MailCheck />}
             // Deliberately describes the invitation ROW, not a
             // delivery. createInvitation inserts the row and then
             // queues the email without a transaction, so an open
@@ -295,13 +320,12 @@ export const CustomerManagementPage: React.FC = () => {
             title={t('customers.invitePending.hint',
               'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
           >
-            <MailCheck className="w-3 h-3" />
             {t('customers.invitePending.badge', 'Invitation pending')}
-          </span>
+          </Badge>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-subtle text-body">
+          <Badge>
             {t('customers.passive.badge', 'Passive — admin only')}
-          </span>
+          </Badge>
         );
       })()}
     </div>
@@ -347,7 +371,6 @@ export const CustomerManagementPage: React.FC = () => {
       <SectionPageHeader
         icon={UserCog}
         title={t('customers.pageTitle', 'Customers')}
-        beta
         description={t('customers.pageSubtitle', 'Recurring customer accounts that can log in at /customer/login.')}
         actions={(
           <>
@@ -382,7 +405,7 @@ export const CustomerManagementPage: React.FC = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
-                  leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Search className="w-5 h-5 text-faint" />}
                 />
               </div>
               {activeTab === 'customers' && (
@@ -425,12 +448,18 @@ export const CustomerManagementPage: React.FC = () => {
           customersLoading ? (
             <div className="flex justify-center py-8"><Loading /></div>
           ) : customersError ? (
-            <div className="text-sm text-red-600 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              {(customersError as { response?: { data?: { code?: string } } })?.response?.data?.code === 'GROUP_FILTER_TOO_MANY'
-                ? t('customers.groups.filterLimit', 'Filter by at most {{max}} groups at once.', { max: MAX_GROUPS_PER_CUSTOMER })
-                : t('customers.loadError', 'Could not load customers')}
-            </div>
+            (customersError as { response?: { data?: { code?: string } } })?.response?.data?.code === 'GROUP_FILTER_TOO_MANY' ? (
+              <Notice tone="warning">
+                {t('customers.groups.filterLimit', 'Filter by at most {{max}} groups at once.', { max: MAX_GROUPS_PER_CUSTOMER })}
+              </Notice>
+            ) : (
+              <ErrorState
+                size="inline"
+                title={t('customers.loadError', 'Could not load customers')}
+                onRetry={() => refetchCustomers()}
+                retrying={refetchingCustomers}
+              />
+            )
           ) : filteredCustomers.length === 0 ? (
             // "Nobody matches" and "there is nobody yet" are different
             // answers: the first comes with a way back to the whole list.
@@ -471,7 +500,7 @@ export const CustomerManagementPage: React.FC = () => {
                     {t('customers.groups.bulk.clearSelection', 'Clear selection')}
                   </Button>
                   {overBulkCap && (
-                    <span className="w-full text-xs text-amber-700 dark:text-amber-400" role="status">
+                    <span className="w-full text-xs text-warning-text" role="status">
                       {t('customers.groups.bulk.overCap',
                         'At most {{max}} customers can be changed at once. Narrow the filter or clear some of the selection.',
                         { max: BULK_GROUP_MAX_CUSTOMERS })}
@@ -508,7 +537,7 @@ export const CustomerManagementPage: React.FC = () => {
                       </th>
                       <th className="hidden 2xl:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
-                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
+                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Galleries')}</th>
                       <th className="hidden 2xl:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
                       <th className="hidden sm:table-cell px-3 py-2"></th>
@@ -572,7 +601,7 @@ export const CustomerManagementPage: React.FC = () => {
                               size="sm"
                               aria-label={t('customers.deactivate.buttonLabel', 'Deactivate {{email}}', { email: c.email })}
                               title={t('customers.deactivate.buttonLabel', 'Deactivate {{email}}', { email: c.email })}
-                              onClick={() => setConfirm({ kind: 'deactivate', id: c.id, name: c.email })}
+                              onClick={() => askDeactivate(c.id)}
                             >
                               <Trash2 className="w-4 h-4" aria-hidden="true" />
                               <span className="ml-2 hidden 2xl:inline">{t('customers.deactivate.button', 'Deactivate')}</span>
@@ -590,10 +619,12 @@ export const CustomerManagementPage: React.FC = () => {
           invitationsLoading ? (
             <div className="flex justify-center py-8"><Loading /></div>
           ) : invitationsError ? (
-            <div className="text-sm text-red-600 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              {t('customers.loadInvitationsError', 'Could not load invitations')}
-            </div>
+            <ErrorState
+              size="inline"
+              title={t('customers.loadInvitationsError', 'Could not load invitations')}
+              onRetry={() => refetchInvitations()}
+              retrying={refetchingInvitations}
+            />
           ) : filteredInvitations.length === 0 ? (
             <div className="text-center text-muted py-12">
               {t('customers.invitations.empty', 'No pending invitations.')}
@@ -628,7 +659,7 @@ export const CustomerManagementPage: React.FC = () => {
                           variant="outline"
                           size="sm"
                           leftIcon={<X className="w-4 h-4" />}
-                          onClick={() => setConfirm({ kind: 'cancelInvite', id: inv.id, email: inv.email })}
+                          onClick={() => askCancelInvite(inv.id)}
                         >
                           {t('customers.invitations.cancel', 'Cancel')}
                         </Button>
@@ -683,50 +714,6 @@ export const CustomerManagementPage: React.FC = () => {
         />
       )}
 
-      {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md rounded-xl shadow-lg bg-shell">
-            <div className="p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <AlertTriangle className="w-5 h-5 mt-0.5 text-amber-500" />
-                <div>
-                  <h2 className="text-lg font-semibold text-heading">
-                    {confirm.kind === 'deactivate'
-                      ? t('customers.deactivate.title', 'Deactivate customer?')
-                      : t('customers.cancelInvitation.title', 'Cancel invitation?')}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted">
-                    {confirm.kind === 'deactivate'
-                      ? t('customers.deactivate.body',
-                        'They will no longer be able to log in. You can re-invite them later.')
-                      : t('customers.cancelInvitation.body',
-                        'The invitation link will stop working immediately.')}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setConfirm(null)}>
-                  {t('common.cancel', 'Cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    if (confirm.kind === 'deactivate') {
-                      deactivateMutation.mutate(confirm.id);
-                    } else {
-                      cancelInviteMutation.mutate(confirm.id);
-                    }
-                    setConfirm(null);
-                  }}
-                  isLoading={deactivateMutation.isPending || cancelInviteMutation.isPending}
-                >
-                  {t('common.confirm', 'Confirm')}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

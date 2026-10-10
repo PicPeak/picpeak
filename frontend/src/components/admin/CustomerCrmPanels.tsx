@@ -17,7 +17,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { FileText, Plus, Receipt, ScrollText, Repeat2, AlertTriangle } from 'lucide-react';
-import { Card, Button, Loading } from '../common';
+import { Card, Button, Loading, Badge, EmptyState, ErrorState } from '../common';
+import type { BadgeTone } from '../common';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { usePermission } from '../../hooks/usePermission';
 import { quotesService } from '../../services/quotes.service';
@@ -32,6 +33,26 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 interface Props {
   customerAccountId: number;
 }
+
+const quoteTone = (status: string): BadgeTone =>
+  status === 'accepted' || status === 'converted' ? 'success'
+    : status === 'declined' ? 'danger'
+    : status === 'sent' ? 'info'
+    : 'neutral';
+
+const contractTone = (status: string): BadgeTone =>
+  status === 'fully_signed' ? 'success'
+    : status === 'signed_by_customer' || status === 'signed_by_admin' ? 'info'
+    : status === 'sent' ? 'warning'
+    : status === 'declined' ? 'danger'
+    : 'neutral';
+
+const invoiceTone = (status: string): BadgeTone =>
+  status === 'paid' ? 'success'
+    : status === 'overdue' ? 'danger'
+    : status === 'sent' ? 'info'
+    : status === 'cancelled' || status === 'skipped' ? 'neutral'
+    : 'warning';
 
 export const CustomerCrmPanels: React.FC<Props> = ({ customerAccountId }) => {
   const { flags } = useFeatureFlags();
@@ -49,7 +70,7 @@ export const CustomerCrmPanels: React.FC<Props> = ({ customerAccountId }) => {
 const QuotesPanel: React.FC<Props> = ({ customerAccountId }) => {
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['customer-quotes', customerAccountId],
     queryFn: () => quotesService.list({ customerAccountId, page: 1, pageSize: 10, sort: 'newest' }),
     // Customer detail page mounts these three panels together. Without
@@ -83,10 +104,10 @@ const QuotesPanel: React.FC<Props> = ({ customerAccountId }) => {
         </div>
       </div>
 
-      {isLoading ? <Loading /> : !data || data.quotes.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.detail.noQuotes', 'No quotes for this customer yet.')}
-        </p>
+      {isLoading ? <Loading /> : isError && !data ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+      ) : !data || data.quotes.length === 0 ? (
+        <EmptyState size="inline" title={t('customers.detail.noQuotes', 'No quotes for this customer yet.')} />
       ) : (
         <ul className="divide-y divide-line">
           {data.quotes.map((q) => (
@@ -98,12 +119,7 @@ const QuotesPanel: React.FC<Props> = ({ customerAccountId }) => {
                 <span className="text-xs text-muted ml-2">{q.eventName || fmtDate(q.issueDate)}</span>
               </div>
               <span className="text-sm tabular-nums">{formatMoney(Number(q.totalAmountMinor) / 100, q.currency)}</span>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                q.status === 'accepted' || q.status === 'converted' ? 'bg-green-100 text-green-800'
-                  : q.status === 'declined' ? 'bg-red-100 text-red-800'
-                  : q.status === 'sent' ? 'bg-blue-100 text-blue-800'
-                  : 'bg-neutral-100 text-neutral-700'
-              }`}>{t(`quotes.status.${q.status}`, q.status)}</span>
+              <Badge tone={quoteTone(q.status)}>{t(`quotes.status.${q.status}`, q.status)}</Badge>
             </li>
           ))}
         </ul>
@@ -115,7 +131,7 @@ const QuotesPanel: React.FC<Props> = ({ customerAccountId }) => {
 const ContractsPanel: React.FC<Props> = ({ customerAccountId }) => {
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['customer-contracts', customerAccountId],
     queryFn: () => contractsService.list({ customerAccountId, page: 1, pageSize: 10, sort: 'newest' }),
     staleTime: 30_000,
@@ -137,10 +153,10 @@ const ContractsPanel: React.FC<Props> = ({ customerAccountId }) => {
         </div>
       </div>
 
-      {isLoading ? <Loading /> : !data || data.contracts.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.detail.noContracts', 'No contracts for this customer yet.')}
-        </p>
+      {isLoading ? <Loading /> : isError && !data ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+      ) : !data || data.contracts.length === 0 ? (
+        <EmptyState size="inline" title={t('customers.detail.noContracts', 'No contracts for this customer yet.')} />
       ) : (
         <ul className="divide-y divide-line">
           {data.contracts.map((c) => (
@@ -151,14 +167,7 @@ const ContractsPanel: React.FC<Props> = ({ customerAccountId }) => {
                 </Link>
                 <span className="text-xs text-muted ml-2 truncate">{c.title || fmtDate(c.issueDate)}</span>
               </div>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                c.status === 'fully_signed' ? 'bg-green-100 text-green-800'
-                  : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
-                  : c.status === 'sent' ? 'bg-amber-100 text-amber-800'
-                  : c.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
-                  : c.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
-                  : 'bg-neutral-100 text-neutral-700'
-              }`}>{t(`contracts.status.${c.status}`, c.status)}</span>
+              <Badge tone={contractTone(c.status)}>{t(`contracts.status.${c.status}`, c.status)}</Badge>
             </li>
           ))}
         </ul>
@@ -170,7 +179,7 @@ const ContractsPanel: React.FC<Props> = ({ customerAccountId }) => {
 const InvoicesPanel: React.FC<Props> = ({ customerAccountId }) => {
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['customer-invoices', customerAccountId],
     queryFn: () => billsService.list({ customerAccountId, page: 1, pageSize: 10, sort: 'newest' }),
     staleTime: 30_000,
@@ -193,10 +202,10 @@ const InvoicesPanel: React.FC<Props> = ({ customerAccountId }) => {
         </div>
       </div>
 
-      {isLoading ? <Loading /> : !data || data.invoices.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.detail.noBills', 'No invoices for this customer yet.')}
-        </p>
+      {isLoading ? <Loading /> : isError && !data ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+      ) : !data || data.invoices.length === 0 ? (
+        <EmptyState size="inline" title={t('customers.detail.noBills', 'No invoices for this customer yet.')} />
       ) : (
         <ul className="divide-y divide-line">
           {data.invoices.map((inv) => (
@@ -212,18 +221,11 @@ const InvoicesPanel: React.FC<Props> = ({ customerAccountId }) => {
               </div>
               <span className="text-sm tabular-nums">{formatMoney(Number(inv.totalAmountMinor) / 100, inv.currency)}</span>
               {isDraftInvoice(inv) ? (
-                <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">
-                  {t('bills.status.draft', 'Draft')}
-                </span>
+                <Badge tone="warning">{t('bills.status.draft', 'Draft')}</Badge>
               ) : (
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  inv.status === 'paid' ? 'bg-green-100 text-green-800'
-                    : inv.status === 'overdue' ? 'bg-red-100 text-red-800'
-                    : inv.status === 'sent' ? 'bg-blue-100 text-blue-800'
-                    : inv.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
-                    : inv.status === 'skipped' ? 'bg-neutral-100 text-neutral-500 italic'
-                    : 'bg-amber-100 text-amber-800'
-                }`}>{t(`bills.status.${inv.status}`, inv.status)}</span>
+                <Badge tone={invoiceTone(inv.status)} className={inv.status === 'skipped' ? 'italic' : undefined}>
+                  {t(`bills.status.${inv.status}`, inv.status)}
+                </Badge>
               )}
             </li>
           ))}
@@ -260,7 +262,7 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
   const [crossAddOpen, setCrossAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const { data: items = [], isLoading } = useQuery({
+  const { data: itemsData, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['customer-rebills', customerAccountId],
     queryFn: () => accountingService.listCustomerRebills(customerAccountId),
     enabled: canView,
@@ -279,6 +281,7 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
     staleTime: 30_000,
   });
 
+  const items = itemsData ?? [];
   const openItems = items.filter((r) => r.status === 'open');
 
   const onSuccess = (invoiceId: number, msg: string) => {
@@ -287,7 +290,7 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
     qc.invalidateQueries({ queryKey: ['customer-invoices', customerAccountId] });
     qc.invalidateQueries({ queryKey: ['admin-customer-hour-entries', customerAccountId] });
     qc.invalidateQueries({ queryKey: ['customer-open-hours-count', customerAccountId] });
-    if (invoiceId) navigate(`/admin/clients/bills/${invoiceId}/edit`);
+    if (invoiceId) navigate(`/admin/clients/bills/${invoiceId}`);
   };
 
   const runBill = async (includeHours: boolean) => {
@@ -332,10 +335,10 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
         )}
       </div>
 
-      {isLoading ? <Loading /> : items.length === 0 ? (
-        <p className="text-sm text-muted">
-          {t('customers.detail.noRebills', 'No re-billed or passed-through supplier invoices for this customer yet.')}
-        </p>
+      {isLoading ? <Loading /> : isError && !itemsData ? (
+        <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+      ) : items.length === 0 ? (
+        <EmptyState size="inline" title={t('customers.detail.noRebills', 'No re-billed or passed-through supplier invoices for this customer yet.')} />
       ) : (
         <div className="space-y-4">
           {REBILL_STATUS_ORDER.map((status) => {
@@ -352,9 +355,9 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm text-heading truncate">
                           {r.supplierName || t('rebills.unknownSupplier', 'Supplier')}
-                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-subtle text-body">
+                          <Badge className="ml-2">
                             {r.mode === 'passthrough' ? t('rebills.mode.passthrough', 'Passthrough') : t('rebills.mode.rebill', 'Re-bill')}
-                          </span>
+                          </Badge>
                         </div>
                         <div className="text-xs text-muted truncate">
                           {r.date ? fmtDate(r.date) : ''}
@@ -367,7 +370,7 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
                           ) : ''}
                         </div>
                         {r.proofAttachError && (
-                          <div className="mt-0.5 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                          <div className="mt-0.5 flex items-center gap-1 text-xs text-warning-text">
                             <AlertTriangle className="w-3 h-3 shrink-0" />
                             {t('rebills.proofError', 'Proof not attached: {{err}}', { err: r.proofAttachError })}
                           </div>

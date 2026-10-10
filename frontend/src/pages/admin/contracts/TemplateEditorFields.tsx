@@ -9,10 +9,10 @@ import { CONTRACT_LOCALES, type ContractLocale, type LocaleText } from '../../..
 import { PlaceholderPicker, placeholderLang, useContractPlaceholders } from './PlaceholderPicker';
 import { applyCondition, readCondition, type ClauseCondition } from './clauseCondition';
 
-export const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+export const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
   + 'bg-panel text-sm text-heading';
 export const labelClass = 'block text-sm font-medium text-body mb-1';
-export const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
+export const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
   + 'disabled:opacity-40 hover:bg-hover';
 
 /** A text per language, with a tab per language. */
@@ -63,7 +63,7 @@ export const LocaleTextField: React.FC<{
               aria-pressed={locale === l}
               onClick={() => setLocale(l)}
               className={`px-2 py-0.5 rounded text-xs border ${locale === l
-                ? 'bg-primary-600 text-white border-primary-600'
+                ? 'bg-accent-strong text-white border-accent'
                 : 'border-line-strong text-body'}`}
             >
               {l.toUpperCase()}{value[l] ? ' •' : ''}
@@ -140,7 +140,7 @@ export const ClauseConditionField: React.FC<{
         </div>
       )}
       {current === 'mixed' && (
-        <p className="text-xs text-amber-800 dark:text-amber-300 basis-full">
+        <p className="text-xs text-warning-text basis-full">
           {t('contracts.templates.condition.mixed', 'This text has conditions of its own. Choosing a rule here replaces the one around the whole clause.')}
         </p>
       )}

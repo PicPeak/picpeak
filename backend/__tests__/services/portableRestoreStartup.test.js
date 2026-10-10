@@ -108,7 +108,7 @@ it('only a fence left by a previous run opens the listener first: progress, the 
       const database = require('./src/database/db');
       let ordinaryStarts = 0;
       database.initializeDatabase = async () => { ordinaryStarts++; throw new Error('ordinary startup escaped fence'); };
-      await require('./migrations/core/280_portable_restore_control').up(database.db);
+      await require('./migrations/core/282_portable_restore_control').up(database.db);
       const attempt = crypto.randomUUID(), token = 'e'.repeat(64);
       await database.db('portable_restore_control').insert({id:1, storage_id:fixture.storage.storageId,
         state:'recovery_required', epoch:crypto.randomUUID(), attempt_id:attempt, owner_instance_id:crypto.randomUUID(),

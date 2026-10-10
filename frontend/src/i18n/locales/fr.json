@@ -1414,7 +1414,6 @@
         "clients": "Clients"
       },
       "status": {
-        "stable": "stable",
         "beta": "bêta",
         "new": "nouveau",
         "experimental": "expérimental",
@@ -3380,8 +3379,7 @@
       "calendar": "Calendrier",
       "quotes": "Devis",
       "bills": "Factures",
-      "profile": "Profil",
-      "soon": "Bientôt"
+      "profile": "Profil"
     },
     "comingSoon": {
       "tag": "Bientôt disponible"

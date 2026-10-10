@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Sparkles, X, ExternalLink, ChevronRight } from 'lucide-react';
 import { adminService } from '../../services/admin.service';
 import { useModal } from '../../hooks';
+import { Button, Modal, Notice } from '../common';
 
 export const WhatsNewBanner: React.FC = () => {
   const { t } = useTranslation();
@@ -44,88 +45,75 @@ export const WhatsNewBanner: React.FC = () => {
 
   return (
     <>
-      <div className="bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500 p-4 mb-4 rounded-r-lg">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start">
-            <Sparkles className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-            <div>
-              <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">
-                {t('admin.whatsnew.title', "What's new in {{version}}", { version: data.toVersion })}
-              </h4>
-              <ul className="text-sm text-green-700 dark:text-green-300 mt-1 list-disc list-inside">
-                {teaser.map((b, i) => <li key={i}>{b}</li>)}
-              </ul>
-              <div className="mt-2">
-                <button
-                  onClick={detailsModal.open}
-                  className="inline-flex items-center text-xs font-medium text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-md transition-colors"
-                >
-                  {t('admin.whatsnew.viewAll', "What's new")}
-                  <ChevronRight className="w-3 h-3 ml-1" />
-                </button>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => seen.mutate()}
-            className="text-green-500 hover:text-green-700 dark:hover:text-green-300 p-1"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <Notice
+        tone="success"
+        className="mb-4"
+        icon={<Sparkles className="w-5 h-5" />}
+        title={t('admin.whatsnew.title', "What's new in {{version}}", { version: data.toVersion })}
+        action={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={detailsModal.open}
+              rightIcon={<ChevronRight className="w-3 h-3" />}
+            >
+              {t('admin.whatsnew.viewAll', "What's new")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => seen.mutate()}
+              aria-label={t('common.close', 'Close')}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </>
+        }
+      >
+        <ul className="list-disc list-inside">
+          {teaser.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      </Notice>
 
-      {detailsModal.isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={detailsModal.close}
-        >
-          <div
-            className="bg-panel rounded-lg shadow-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2 text-heading">
-                <Sparkles className="w-5 h-5 text-green-600" />
-                {t('admin.whatsnew.modalTitle', "What's new")}
-              </h3>
-              <button onClick={detailsModal.close} className="p-1 text-neutral-400 hover:text-body">
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        open={detailsModal.isOpen}
+        onClose={detailsModal.close}
+        size="md"
+        title={
+          <span className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-success-text" />
+            {t('admin.whatsnew.modalTitle', "What's new")}
+          </span>
+        }
+        footer={
+          <Button variant="primary" onClick={() => seen.mutate()}>
+            {t('admin.whatsnew.gotIt', 'Got it')}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {data.versions.map((v) => (
+            <div key={v.version}>
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="font-medium text-sm text-heading">{v.name || `v${v.version}`}</h4>
+                <a
+                  href={v.htmlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-info-text inline-flex items-center whitespace-nowrap"
+                >
+                  {t('admin.whatsnew.fullChangelog', 'Full changelog')}
+                  <ExternalLink className="w-3 h-3 ml-1" />
+                </a>
+              </div>
+              <ul className="mt-1 list-disc list-inside text-sm text-body">
+                {v.bullets.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
             </div>
-            <div className="space-y-4">
-              {data.versions.map((v) => (
-                <div key={v.version}>
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="font-medium text-sm text-heading">{v.name || `v${v.version}`}</h4>
-                    <a
-                      href={v.htmlUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 dark:text-blue-400 inline-flex items-center whitespace-nowrap"
-                    >
-                      {t('admin.whatsnew.fullChangelog', 'Full changelog')}
-                      <ExternalLink className="w-3 h-3 ml-1" />
-                    </a>
-                  </div>
-                  <ul className="mt-1 list-disc list-inside text-sm text-body">
-                    {v.bullets.map((b, i) => <li key={i}>{b}</li>)}
-                  </ul>
-                </div>
-              ))}
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => seen.mutate()}
-                className="text-sm font-medium text-white bg-green-600 hover:bg-green-700 px-4 py-2 rounded-md transition-colors"
-              >
-                {t('admin.whatsnew.gotIt', 'Got it')}
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
-      )}
+      </Modal>
     </>
   );
 };

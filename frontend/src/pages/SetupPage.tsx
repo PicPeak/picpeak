@@ -316,7 +316,7 @@ export const SetupPage: React.FC = () => {
   const stepNumber = step === 'token' ? 1 : step === 'account' ? 2 : 3;
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#fafafa' }}>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-canvas">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           {/* On a fresh instance there are no branding settings yet, so use the
@@ -331,8 +331,8 @@ export const SetupPage: React.FC = () => {
               </div>
             );
           })()}
-          <h1 className="text-3xl font-bold" style={{ color: '#171717' }}>{t('setup.title')}</h1>
-          <p className="mt-2" style={{ color: '#171717', opacity: 0.7 }}>
+          <h1 className="text-3xl font-bold text-heading">{t('setup.title')}</h1>
+          <p className="mt-2 text-heading opacity-70">
             {step === 'token'
               ? t('setup.tokenStepSubtitle')
               : step === 'account'
@@ -350,7 +350,7 @@ export const SetupPage: React.FC = () => {
                           : t('setup.usageSubtitle')}
           </p>
           {(step === 'token' || step === 'account' || step === 'usage') && (
-            <p className="mt-3 text-xs font-medium tracking-wide uppercase" style={{ color: '#171717', opacity: 0.5 }}>
+            <p className="mt-3 text-xs font-medium tracking-wide uppercase text-heading opacity-50">
               {t('setup.stepOf', { current: stepNumber, total: 3 })}
             </p>
           )}
@@ -358,16 +358,16 @@ export const SetupPage: React.FC = () => {
 
         <Card padding="lg">
           {errors.form && (
-            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-800">{errors.form}</p>
+            <div className="mb-6 bg-danger-soft border border-danger-line rounded-lg p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-danger-text flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-danger-text">{errors.form}</p>
             </div>
           )}
 
           {step === 'token' ? (
             <form onSubmit={handleTokenContinue} className="space-y-6">
               <div>
-                <label htmlFor="setup-token" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="setup-token" className="block text-sm font-medium text-body mb-1">
                   {t('setup.tokenLabel')}
                 </label>
                 <Input
@@ -377,14 +377,14 @@ export const SetupPage: React.FC = () => {
                   onChange={setField('token')}
                   error={errors.token}
                   placeholder={t('setup.tokenPlaceholder')}
-                  leftIcon={<Key className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Key className="w-5 h-5" />}
                   autoFocus
                 />
-                <p className="mt-1 text-xs text-neutral-500">{t('setup.tokenHint')}</p>
+                <p className="mt-1 text-xs text-muted">{t('setup.tokenHint')}</p>
 
                 {/* Recovery guidance sits directly under the field it explains. */}
-                <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                  <p className="text-xs font-medium text-neutral-600">{t('setup.tokenCommandLabel')}</p>
+                <div className="mt-4 rounded-lg border border-line bg-subtle p-3">
+                  <p className="text-xs font-medium text-soft">{t('setup.tokenCommandLabel')}</p>
                   <div className="mt-2 flex items-center gap-2">
                     <code className="flex-1 overflow-x-auto whitespace-nowrap rounded bg-neutral-900 px-3 py-2 font-mono text-xs text-neutral-100">
                       {recoveryCommand}
@@ -392,19 +392,18 @@ export const SetupPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={copyRecoveryCommand}
-                      className="flex-shrink-0 rounded-md border border-neutral-200 bg-white p-2 text-neutral-500 hover:text-neutral-700 transition-colors"
+                      className="flex-shrink-0 rounded-md border border-line bg-panel p-2 text-muted hover:text-body transition-colors"
                       aria-label={t('setup.copyCommand')}
                       title={t('setup.copyCommand')}
                     >
-                      {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                      {copied ? <Check className="w-4 h-4 text-success-text" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
                   <a
                     href={SETUP_DOCS_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center gap-1 text-xs hover:underline"
-                    style={{ color: 'var(--color-primary, #5C8762)' }}
+                    className="mt-2 inline-flex items-center gap-1 text-xs hover:underline text-accent-dark"
                   >
                     {t('setup.tokenRotatedLink')}
                     <ExternalLink className="w-3 h-3" />
@@ -419,7 +418,7 @@ export const SetupPage: React.FC = () => {
           ) : step === 'account' ? (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div>
-                <label htmlFor="setup-email" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="setup-email" className="block text-sm font-medium text-body mb-1">
                   {t('setup.emailLabel')}
                 </label>
                 <Input
@@ -429,14 +428,14 @@ export const SetupPage: React.FC = () => {
                   onChange={setField('email')}
                   error={errors.email}
                   placeholder={t('setup.emailPlaceholder')}
-                  leftIcon={<Mail className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Mail className="w-5 h-5" />}
                   autoComplete="email"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label htmlFor="setup-password" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="setup-password" className="block text-sm font-medium text-body mb-1">
                   {t('setup.passwordLabel')}
                 </label>
                 <div className="relative">
@@ -447,13 +446,13 @@ export const SetupPage: React.FC = () => {
                     onChange={setField('password')}
                     error={errors.password}
                     placeholder={t('setup.passwordPlaceholder')}
-                    leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                    leftIcon={<Lock className="w-5 h-5" />}
                     autoComplete="new-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-neutral-400 hover:text-neutral-600 transition-colors"
+                    className="absolute right-3 top-3 text-faint hover:text-soft transition-colors"
                     tabIndex={-1}
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -462,7 +461,7 @@ export const SetupPage: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="setup-confirm" className="block text-sm font-medium text-neutral-700 mb-1">
+                <label htmlFor="setup-confirm" className="block text-sm font-medium text-body mb-1">
                   {t('setup.confirmLabel')}
                 </label>
                 <Input
@@ -472,7 +471,7 @@ export const SetupPage: React.FC = () => {
                   onChange={setField('confirm')}
                   error={errors.confirm}
                   placeholder={t('setup.confirmPlaceholder')}
-                  leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Lock className="w-5 h-5" />}
                   autoComplete="new-password"
                 />
               </div>
@@ -501,39 +500,39 @@ export const SetupPage: React.FC = () => {
             </form>
           ) : step === 'usage' ? (
             <div className="space-y-6">
-              <p className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-600">
+              <p className="rounded-lg bg-subtle border border-line px-3 py-2 text-xs text-soft">
                 {t('setup.usageAlwaysOn')}
               </p>
 
               <button
                 type="button"
                 onClick={() => setStep('restore')}
-                className="w-full rounded-lg border border-dashed border-neutral-300 p-3 text-left hover:bg-neutral-50 transition-colors"
+                className="w-full rounded-lg border border-dashed border-line-strong p-3 text-left hover:bg-hover-soft transition-colors"
               >
-                <span className="block text-sm font-medium text-neutral-800">{t('setup.restoreEntry')}</span>
-                <span className="block text-xs text-neutral-500">{t('setup.restoreEntryHint')}</span>
+                <span className="block text-sm font-medium text-heading">{t('setup.restoreEntry')}</span>
+                <span className="block text-xs text-muted">{t('setup.restoreEntryHint')}</span>
               </button>
 
               {USAGE_GROUPS.map((group) => (
                 <div key={group.id}>
-                  <h3 className="text-sm font-semibold text-neutral-800 mb-2">{t(group.titleKey)}</h3>
+                  <h3 className="text-sm font-semibold text-heading mb-2">{t(group.titleKey)}</h3>
                   <div className="space-y-2">
                     {group.features.map((key) => (
                       <label
                         key={key}
-                        className="flex items-start gap-3 rounded-lg border border-neutral-200 p-3 cursor-pointer hover:bg-neutral-50 transition-colors"
+                        className="flex items-start gap-3 rounded-lg border border-line p-3 cursor-pointer hover:bg-hover-soft transition-colors"
                       >
                         <input
                           type="checkbox"
-                          className="mt-0.5 h-4 w-4 rounded border-neutral-300"
+                          className="mt-0.5 h-4 w-4 rounded border-line-strong"
                           checked={selectedFeatures.has(key)}
                           onChange={() => toggleFeature(key)}
                         />
                         <span className="min-w-0">
-                          <span className="block text-sm font-medium text-neutral-800">
+                          <span className="block text-sm font-medium text-heading">
                             {t(`settings.features.${key}.title`)}
                           </span>
-                          <span className="block text-xs text-neutral-500">
+                          <span className="block text-xs text-muted">
                             {t(`settings.features.${key}.description`)}
                           </span>
                         </span>
@@ -544,7 +543,7 @@ export const SetupPage: React.FC = () => {
               ))}
 
               {selectedFeatures.has('bills') && !selectedFeatures.has('taxReport') && (
-                <p className="text-xs text-neutral-500">{t('setup.usageDepsNote')}</p>
+                <p className="text-xs text-muted">{t('setup.usageDepsNote')}</p>
               )}
 
               <Button
@@ -560,7 +559,7 @@ export const SetupPage: React.FC = () => {
             </div>
           ) : step === 'restore' ? (
             <div className="space-y-6">
-              <p className="text-sm text-neutral-600">{t('setup.restoreIntro')}</p>
+              <p className="text-sm text-soft">{t('setup.restoreIntro')}</p>
               <PicpeakRestoreCard />
               <Button
                 type="button"
@@ -581,12 +580,12 @@ export const SetupPage: React.FC = () => {
             />
           ) : step === 'usageReporting' ? (
             <div className="space-y-6">
-              <p className="text-sm text-neutral-700">{t('setup.usageReporting.intro')}</p>
+              <p className="text-sm text-body">{t('setup.usageReporting.intro')}</p>
 
               <UsageReportingPoints />
 
               {(usageStatusError || usageStatus?.collector_error) && (
-                <p role="alert" className="text-sm text-neutral-700">{t('setup.usageReporting.enableFailed')}</p>
+                <p role="alert" className="text-sm text-body">{t('setup.usageReporting.enableFailed')}</p>
               )}
 
               <div className="space-y-3">
@@ -623,7 +622,7 @@ export const SetupPage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-6">
-              <p className="text-sm text-neutral-700">{t('setup.community.mission')}</p>
+              <p className="text-sm text-body">{t('setup.community.mission')}</p>
 
               <div className="space-y-3">
                 {COMMUNITY_LINKS.map(({ key, href, icon: Icon }) => (
@@ -632,18 +631,18 @@ export const SetupPage: React.FC = () => {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-3 rounded-lg border border-neutral-200 p-3 hover:bg-neutral-50 transition-colors"
+                    className="flex items-start gap-3 rounded-lg border border-line p-3 hover:bg-hover-soft transition-colors"
                   >
-                    <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-primary, #5C8762)' }} />
+                    <Icon className="w-5 h-5 flex-shrink-0 mt-0.5 text-accent-dark" />
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-neutral-800">
+                      <span className="block text-sm font-medium text-heading">
                         {t(`setup.community.${key}Title`)}
                       </span>
-                      <span className="block text-xs text-neutral-500">
+                      <span className="block text-xs text-muted">
                         {t(`setup.community.${key}Desc`)}
                       </span>
                     </span>
-                    <ExternalLink className="w-4 h-4 flex-shrink-0 text-neutral-400 self-center" aria-hidden="true" />
+                    <ExternalLink className="w-4 h-4 flex-shrink-0 text-faint self-center" aria-hidden="true" />
                   </a>
                 ))}
               </div>

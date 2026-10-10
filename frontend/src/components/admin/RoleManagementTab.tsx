@@ -1,24 +1,24 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Shield, Plus, Edit, Copy, Trash2, Lock, Users as UsersIcon, AlertTriangle } from 'lucide-react';
+import { Shield, Plus, Edit, Copy, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
 
-import { Button, Card, Loading } from '../common';
+import { Badge, Button, Card, Loading, Modal, type BadgeTone } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import { rolesService, type RoleWithPermissions } from '../../services/roles.service';
 import { RoleEditorModal, type RoleEditorSave } from './RoleEditorModal';
 
-const getRoleBadgeColor = (roleName: string): string => {
+const getRoleBadgeTone = (roleName: string): BadgeTone => {
   switch (roleName?.toLowerCase()) {
     case 'super_admin':
-      return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800';
+      return 'danger';
     case 'admin':
     case 'solo_photographer':
-      return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      return 'info';
     case 'editor':
-      return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
+      return 'success';
     default:
-      return 'bg-inset text-body border-line';
+      return 'neutral';
   }
 };
 
@@ -113,10 +113,9 @@ export const RoleManagementTab: React.FC = () => {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${getRoleBadgeColor(role.name)}`}>
-                      <Shield className="w-3 h-3" />
+                    <Badge tone={getRoleBadgeTone(role.name)} icon={<Shield />}>
                       {role.displayName}
-                    </span>
+                    </Badge>
                     {role.isSystem && (
                       <span className="inline-flex items-center gap-1 text-[11px] text-faint">
                         <Lock className="w-3 h-3" />
@@ -162,7 +161,7 @@ export const RoleManagementTab: React.FC = () => {
                     size="sm"
                     leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                     onClick={() => setDeleteTarget(role)}
-                    className="text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                    className="text-danger-text hover:bg-danger-soft"
                   >
                     {t('common.delete', 'Delete')}
                   </Button>
@@ -185,43 +184,36 @@ export const RoleManagementTab: React.FC = () => {
         />
       )}
 
-      {deleteTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md">
-            <div className="p-6">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="p-2 rounded-full bg-red-100 dark:bg-red-900/40">
-                  <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-heading">
-                    {t('roleEditor.confirmDelete.title', 'Delete role?')}
-                  </h2>
-                  <p className="text-sm text-soft mt-1">
-                    {deleteTarget.userCount > 0
-                      ? t('roleEditor.confirmDelete.hasUsers', 'Reassign the {{count}} user(s) holding "{{name}}" before deleting it.', { count: deleteTarget.userCount, name: deleteTarget.displayName })
-                      : t('roleEditor.confirmDelete.message', 'Permanently delete the "{{name}}" role? This cannot be undone.', { name: deleteTarget.displayName })}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={() => deleteMutation.mutate(deleteTarget.id)}
-                  isLoading={deleteMutation.isPending}
-                  disabled={deleteTarget.userCount > 0}
-                  className="bg-red-600 hover:bg-red-700 focus:ring-red-500"
-                >
-                  {t('common.delete', 'Delete')}
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title={t('roleEditor.confirmDelete.title', 'Delete role?')}
+        size="sm"
+        closeOnBackdrop={false}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              isLoading={deleteMutation.isPending}
+              disabled={!deleteTarget || deleteTarget.userCount > 0}
+            >
+              {t('common.delete', 'Delete')}
+            </Button>
+          </>
+        }
+      >
+        {deleteTarget && (
+          <p className="text-sm text-soft">
+            {deleteTarget.userCount > 0
+              ? t('roleEditor.confirmDelete.hasUsers', 'Reassign the {{count}} user(s) holding "{{name}}" before deleting it.', { count: deleteTarget.userCount, name: deleteTarget.displayName })
+              : t('roleEditor.confirmDelete.message', 'Permanently delete the "{{name}}" role? This cannot be undone.', { name: deleteTarget.displayName })}
+          </p>
+        )}
+      </Modal>
     </div>
   );
 };

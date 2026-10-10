@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Download } from 'lucide-react';
+import { Copy, Check, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Button, Card } from '../common';
+import { Button, Modal } from '../common';
 
 interface ExportPreviewModalProps {
   format: 'txt' | 'csv';
@@ -74,56 +74,43 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     : 'Paste into Lightroom\'s filename search. The list is comma-separated with no extension so it matches a catalog that holds RAW files.';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-2xl w-full">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold text-heading">
-            {t(titleKey, titleDefault)}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-body"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <p className="text-sm text-soft mb-3">
-          {t(helpKey, helpDefault)}
-        </p>
-
-        <textarea
-          readOnly
-          value={content}
-          onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-          className="w-full h-64 p-3 rounded-md border border-line-strong bg-shell text-sm font-mono text-heading mb-4"
-        />
-
-        <div className="flex gap-2 justify-between items-center">
-          <span className="text-xs text-muted font-mono truncate">
+    <Modal
+      open
+      onClose={onClose}
+      title={t(titleKey, titleDefault)}
+      description={t(helpKey, helpDefault)}
+      size="lg"
+      closeOnBackdrop={false}
+      footer={
+        <>
+          <span className="mr-auto self-center min-w-0 text-xs text-muted font-mono truncate">
             {filename}
           </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleDownload}
-              leftIcon={<Download className="w-4 h-4" />}
-            >
-              {t('export.preview.download', 'Download as file')}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleCopy}
-              leftIcon={copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            >
-              {copied
-                ? t('export.preview.copiedShort', 'Copied')
-                : t('export.preview.copyButton', 'Copy to clipboard')}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
+          <Button
+            variant="outline"
+            onClick={handleDownload}
+            leftIcon={<Download className="w-4 h-4" />}
+          >
+            {t('export.preview.download', 'Download as file')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleCopy}
+            leftIcon={copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          >
+            {copied
+              ? t('export.preview.copiedShort', 'Copied')
+              : t('export.preview.copyButton', 'Copy to clipboard')}
+          </Button>
+        </>
+      }
+    >
+      <textarea
+        readOnly
+        value={content}
+        onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+        className="w-full h-64 p-3 rounded-md border border-line-strong bg-shell text-sm font-mono text-heading"
+      />
+    </Modal>
   );
 };

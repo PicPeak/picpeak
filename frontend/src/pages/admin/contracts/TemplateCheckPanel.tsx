@@ -50,15 +50,15 @@ export const TemplateCheckPanel: React.FC<{
   const row = (f: TemplateFinding, index: number) => (
     <li key={`${f.code}-${index}`} className="flex items-start gap-2 text-sm">
       {f.severity === 'error'
-        ? <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-700 dark:text-red-400" aria-hidden="true" />
-        : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />}
+        ? <XCircle className="w-4 h-4 mt-0.5 shrink-0 text-danger-text" aria-hidden="true" />
+        : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warning-text" aria-hidden="true" />}
       <span className="sr-only">
         {f.severity === 'error' ? t('contracts.templates.check.error', 'Error') : t('contracts.templates.check.warning', 'Warning')}:
       </span>
       <span className="flex-1 text-body">{describe(f)}</span>
       {canGo(f) && (
         <button type="button" onClick={() => onGoTo(f)}
-          className="text-xs underline text-primary-700 dark:text-primary-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded px-1">
+          className="text-xs underline text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded px-1">
           {t('contracts.templates.check.goTo', 'Go to')}
         </button>
       )}
@@ -69,11 +69,11 @@ export const TemplateCheckPanel: React.FC<{
     <section
       aria-labelledby="contract-template-check-heading"
       className={`p-3 rounded-md border text-sm ${errors.length
-        ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30'
-        : 'border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30'}`}
+        ? 'border-danger-line bg-danger-soft'
+        : 'border-success-line bg-success-soft'}`}
     >
       <div className="flex items-center gap-2 flex-wrap mb-2">
-        {errors.length === 0 && <CheckCircle2 className="w-4 h-4 text-green-700 dark:text-green-400" aria-hidden="true" />}
+        {errors.length === 0 && <CheckCircle2 className="w-4 h-4 text-success-text" aria-hidden="true" />}
         <h2 id="contract-template-check-heading" className="font-semibold text-heading">
           {errors.length
             ? t('contracts.templates.check.blocked', 'Fix these before publishing')
@@ -85,7 +85,7 @@ export const TemplateCheckPanel: React.FC<{
           </span>
         )}
         {stale && (
-          <span className="text-amber-800 dark:text-amber-300">
+          <span className="text-warning-text">
             {t('contracts.templates.check.stale', 'Changed since the check — check again')}
           </span>
         )}

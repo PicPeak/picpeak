@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Upload, X } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { contractsService } from '../../../services/contracts.service';
+import { useEscapeClose } from '../../../components/common/useEscapeClose';
 
 /**
  * Uploading a wet-signed contract (#1446).
@@ -36,6 +37,9 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
     queryFn: () => contractsService.paperSignatureCoverage(contractId),
     enabled: isOpen,
   });
+
+  // Escape cancels without uploading; it waits while an upload runs.
+  useEscapeClose(isOpen, () => { setFile(null); setTicked([]); onClose(); }, { enabled: !isUploading });
 
   if (!isOpen) return null;
 
@@ -81,23 +85,23 @@ export const PaperSignatureUploadDialog: React.FC<PaperSignatureUploadDialogProp
           {coverageQuery.isLoading ? (
             <Loading />
           ) : refused ? (
-            <div className="mb-4 p-4 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30">
-              <h3 className="text-sm font-semibold text-red-900 dark:text-red-200 flex items-center gap-2">
+            <div className="mb-4 p-4 rounded-md border border-danger-line bg-danger-soft">
+              <h3 className="text-sm font-semibold text-danger-text flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
                 {t('contracts.paperUpload.refusedTitle', 'Already signed in the browser')}
               </h3>
-              <p className="text-sm text-red-900 dark:text-red-200 mt-1">
+              <p className="text-sm text-danger-text mt-1">
                 {t('contracts.paperUpload.refusedBody',
                   'At least one signer has already signed this contract in the browser. A paper copy can\'t replace a signature given in the browser, so the upload isn\'t available. Let the remaining signers sign in the browser, then counter-sign on this page.')}
               </p>
             </div>
           ) : signers.length > 0 && (
-            <div className="mb-4 p-4 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
-              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+            <div className="mb-4 p-4 rounded-md border border-warning-line bg-warning-soft">
+              <h3 className="text-sm font-semibold text-warning-text flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
                 {t('contracts.paperUpload.confirmTitle', 'Whose signatures does this copy carry?')}
               </h3>
-              <p className="text-sm text-amber-900 dark:text-amber-200 mt-1">
+              <p className="text-sm text-warning-text mt-1">
                 {t('contracts.paperUpload.confirmBody',
                   'This upload completes the contract for everyone below, so confirm that the paper copy is signed by each of them. What you confirm is recorded in the signing log.')}
               </p>

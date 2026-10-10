@@ -15,7 +15,7 @@ import { useMutationWithToast, useModal } from '../../hooks';
 import { mailPolicyError } from '../../utils/mailErrors';
 
 const labelCls = 'block text-sm font-medium text-body mb-1';
-const selectCls = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark';
+const selectCls = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark';
 
 const ACCOUNT_KEY = 'customers';
 
@@ -56,7 +56,7 @@ export const CustomerMailboxCard: React.FC = () => {
   return (
     <Card padding="md" className="mt-6">
       <h2 className="text-lg font-semibold text-heading mb-1 flex items-center gap-2">
-        <Inbox className="w-5 h-5 text-neutral-400" />
+        <Inbox className="w-5 h-5 text-faint" />
         {t('email.customerMailbox.title', 'Customer mailbox (hello@)')}
       </h2>
       <p className="text-sm text-soft mb-4">
@@ -70,13 +70,13 @@ export const CustomerMailboxCard: React.FC = () => {
         </label>
 
         <div>
-          <label className={labelCls}>{t('email.incoming.host', 'IMAP Host')} <span className="text-red-500">*</span></label>
-          <Input type="text" value={cfg.imap_host || ''} onChange={(e) => set('imap_host', e.target.value)} placeholder="imap.example.com" leftIcon={<Server className="w-5 h-5 text-neutral-400" />} />
+          <label className={labelCls}>{t('email.incoming.host', 'IMAP Host')} <span className="text-danger">*</span></label>
+          <Input type="text" value={cfg.imap_host || ''} onChange={(e) => set('imap_host', e.target.value)} placeholder="imap.example.com" leftIcon={<Server className="w-5 h-5 text-faint" />} />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelCls}>{t('email.incoming.port', 'Port')} <span className="text-red-500">*</span></label>
+            <label className={labelCls}>{t('email.incoming.port', 'Port')} <span className="text-danger">*</span></label>
             <Input type="number" value={cfg.imap_port ?? 993} onChange={(e) => set('imap_port', parseInt(e.target.value, 10) || 0)} placeholder="993" />
           </div>
           <div>
@@ -89,15 +89,15 @@ export const CustomerMailboxCard: React.FC = () => {
         </div>
 
         <div>
-          <label className={labelCls}>{t('email.incoming.user', 'Username')} <span className="text-red-500">*</span></label>
-          <Input type="text" value={cfg.imap_user || ''} onChange={(e) => set('imap_user', e.target.value)} autoComplete="off" placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-neutral-400" />} />
+          <label className={labelCls}>{t('email.incoming.user', 'Username')} <span className="text-danger">*</span></label>
+          <Input type="text" value={cfg.imap_user || ''} onChange={(e) => set('imap_user', e.target.value)} autoComplete="off" placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-faint" />} />
         </div>
 
         <div>
           <label className={labelCls}>{t('email.incoming.pass', 'Password')}</label>
           <div className="relative">
-            <Input type={passwordVisibility.isOpen ? 'text' : 'password'} value={cfg.imap_pass || ''} onChange={(e) => set('imap_pass', e.target.value)} autoComplete="new-password" placeholder={t('email.enterPassword', 'Enter password')} leftIcon={<Lock className="w-5 h-5 text-neutral-400" />} />
-            <button type="button" onClick={passwordVisibility.toggle} className="absolute right-3 top-3 text-neutral-400 hover:text-neutral-600">
+            <Input type={passwordVisibility.isOpen ? 'text' : 'password'} value={cfg.imap_pass || ''} onChange={(e) => set('imap_pass', e.target.value)} autoComplete="new-password" placeholder={t('email.enterPassword', 'Enter password')} leftIcon={<Lock className="w-5 h-5 text-faint" />} />
+            <button type="button" onClick={passwordVisibility.toggle} className="absolute right-3 top-3 text-faint hover:text-soft">
               {passwordVisibility.isOpen ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
@@ -118,11 +118,11 @@ export const CustomerMailboxCard: React.FC = () => {
           <div className="space-y-4">
             <div>
               <label className={labelCls}>{t('email.customerMailbox.fromEmail', 'From address')}</label>
-              <Input type="text" value={cfg.from_email || ''} onChange={(e) => set('from_email', e.target.value)} placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-neutral-400" />} />
+              <Input type="text" value={cfg.from_email || ''} onChange={(e) => set('from_email', e.target.value)} placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-faint" />} />
             </div>
             <div>
               <label className={labelCls}>{t('email.customerMailbox.smtpHost', 'SMTP Host')}</label>
-              <Input type="text" value={cfg.smtp_host || ''} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.example.com" leftIcon={<Server className="w-5 h-5 text-neutral-400" />} />
+              <Input type="text" value={cfg.smtp_host || ''} onChange={(e) => set('smtp_host', e.target.value)} placeholder="smtp.example.com" leftIcon={<Server className="w-5 h-5 text-faint" />} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -139,11 +139,11 @@ export const CustomerMailboxCard: React.FC = () => {
             </div>
             <div>
               <label className={labelCls}>{t('email.customerMailbox.smtpUser', 'SMTP Username')}</label>
-              <Input type="text" value={cfg.smtp_user || ''} onChange={(e) => set('smtp_user', e.target.value)} autoComplete="off" placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-neutral-400" />} />
+              <Input type="text" value={cfg.smtp_user || ''} onChange={(e) => set('smtp_user', e.target.value)} autoComplete="off" placeholder="hello@yourdomain.com" leftIcon={<User className="w-5 h-5 text-faint" />} />
             </div>
             <div>
               <label className={labelCls}>{t('email.customerMailbox.smtpPass', 'SMTP Password')}</label>
-              <Input type={passwordVisibility.isOpen ? 'text' : 'password'} value={cfg.smtp_pass || ''} onChange={(e) => set('smtp_pass', e.target.value)} autoComplete="new-password" placeholder={t('email.enterPassword', 'Enter password')} leftIcon={<Lock className="w-5 h-5 text-neutral-400" />} />
+              <Input type={passwordVisibility.isOpen ? 'text' : 'password'} value={cfg.smtp_pass || ''} onChange={(e) => set('smtp_pass', e.target.value)} autoComplete="new-password" placeholder={t('email.enterPassword', 'Enter password')} leftIcon={<Lock className="w-5 h-5 text-faint" />} />
             </div>
           </div>
         </div>

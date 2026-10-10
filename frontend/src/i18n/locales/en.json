@@ -841,7 +841,9 @@
     "searching": "Searching…",
     "language": "Language",
     "hidePassword": "Hide password",
-    "showPassword": "Show password"
+    "showPassword": "Show password",
+    "loadFailed": "Could not load this",
+    "moreActions": "More actions"
   },
   "upload": {
     "capacity": {
@@ -973,11 +975,12 @@
       "nothingToUpload": "None of the selected files can be uploaded: they are all in hidden or skipped folders.",
       "keptForNext": "Files added while the folders were prepared are still selected: {{count}}."
     },
-    "largeFileReplaceSkipped": "Replace-by-name is not supported for files above the batch size; upload it without replace."
+    "largeFileReplaceSkipped": "Replace-by-name is not supported for files above the batch size; upload it without replace.",
+    "removeFile": "Remove {{name}}"
   },
   "navigation": {
     "dashboard": "Dashboard",
-    "events": "Events",
+    "events": "Galleries",
     "archives": "Archives",
     "transfers": "PicTransfer",
     "messages": "Messages",
@@ -992,9 +995,10 @@
     "clients": "CRM",
     "accounting": "Accounting",
     "workflows": "Workflows",
-    "betaTag": "Beta",
     "automation": "Automation",
-    "sharing": "Sharing"
+    "sharing": "Sharing",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "transfers": {
     "title": "PicTransfer",
@@ -1016,7 +1020,7 @@
     "filesAdded": "Files added",
     "deleted": "Transfer deleted",
     "deleteConfirmTitle": "Delete transfer?",
-    "deleteConfirmBody": "This removes the link. Source event photos are not affected.",
+    "deleteConfirmBody": "This removes the link. The photos in their galleries are not affected.",
     "addImages": "Add images",
     "noUploads": "No files uploaded by the client yet.",
     "createAndSend": "Create & send",
@@ -1109,7 +1113,8 @@
       "someRejected": "These files were not accepted: {{names}}",
       "anyType": "Any file type is accepted.",
       "acceptedTypes": "Accepted: {{types}}",
-      "someFailed": "These files could not be stored. Please try them again: {{names}}"
+      "someFailed": "These files could not be stored. Please try them again: {{names}}",
+      "removeFile": "Remove {{name}}"
     },
     "newSend": "Send files",
     "newRequest": "Request files",
@@ -1146,20 +1151,25 @@
       "request": "Request"
     },
     "emptyReadOnly": "Nothing here yet.",
-    "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}"
+    "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}",
+    "deleteRequestAction": "Delete request",
+    "deleteAction": "Delete transfer",
+    "loadFailed": "Could not load the transfers"
   },
   "workflows": {
     "title": "Workflows",
     "subtitle": "Visual automations — triggers, conditions, gates and actions.",
     "new": "New workflow",
-    "empty": "No workflows yet. Create one to automate your invoicing and booking steps.",
+    "empty": "Create one to automate your invoicing and booking steps.",
     "builtin": "built-in",
     "triggerLabel": "Trigger",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "confirmDelete": "Delete this workflow?",
     "toggle": {
-      "confirmDisableBuiltin": "Disabling this built-in reverts to the previous built-in behaviour — it does not turn the automation off. Continue?"
+      "confirmDisableBuiltin": "Disabling this built-in reverts to the previous built-in behaviour — it does not turn the automation off. Continue?",
+      "disableBuiltinTitle": "Disable this built-in workflow?",
+      "disableBuiltin": "Disable workflow"
     },
     "test": {
       "title": "Test run",
@@ -1185,7 +1195,9 @@
       "pendingTitle": "Pending approvals",
       "viewAll": "View all approvals",
       "openEntity": "Open {{type}} #{{id}}",
-      "acted": "Done"
+      "acted": "Done",
+      "loadFailed": "Could not load the approvals",
+      "emptyHint": "A workflow with a confirmation gate lists its paused runs here."
     },
     "editor": {
       "namePlaceholder": "Workflow name",
@@ -1237,7 +1249,11 @@
       "groups": "Customer groups",
       "groupsNoPermission": "Listing customer groups needs the customers.view permission.",
       "groupsHint": "Checked when this step runs. Needs a customer on the run: customer, quote, contract and invoice triggers have one; on gallery and event triggers this is always “no”."
-    }
+    },
+    "confirmDeleteNamed": "Delete \"{{name}}\"? Runs in progress stop and the flow cannot be restored.",
+    "deleteAction": "Delete workflow",
+    "loadFailed": "Could not load the workflows",
+    "emptyTitle": "No workflows yet"
   },
   "archives": {
     "title": "Archives",
@@ -1257,7 +1273,7 @@
     "sortByName": "Sort by Name",
     "sortBySize": "Sort by Size",
     "tableHeaders": {
-      "event": "Event",
+      "event": "Gallery",
       "type": "Type",
       "archivedDate": "Archived Date",
       "size": "Size",
@@ -1277,7 +1293,16 @@
     "confirmRestore": "Are you sure you want to restore this archive? The event will become active again.",
     "confirmDelete": "Are you sure you want to permanently delete this archive? This action cannot be undone.",
     "restoreSuccess": "Archive restored successfully",
-    "deleteSuccess": "Archive deleted permanently"
+    "deleteSuccess": "Archive deleted permanently",
+    "restoreTitle": "Restore archive?",
+    "confirmRestoreNamed": "Restore \"{{name}}\"? The gallery becomes active again.",
+    "restoreAction": "Restore gallery",
+    "deleteTitle": "Delete archive?",
+    "confirmDeleteNamed": "Permanently delete the archive of \"{{name}}\" with all its photos? This cannot be undone.",
+    "deleteAction": "Delete archive",
+    "loadFailed": "Could not load the archives",
+    "noArchivesMatchHint": "Nothing matches this search or filter.",
+    "noArchivesHint": "Archive a gallery from its menu in the gallery list; it shows up here."
   },
   "auth": {
     "password": "Password",
@@ -1420,7 +1445,9 @@
       "forgetMeConfirmUploads": "Your name will be removed from the photos you uploaded to this gallery.",
       "forgetMe": "Forget me ({{name}})",
       "notYou": "Not you?",
-      "socials": "Social media"
+      "socials": "Social media",
+      "forgetMeTitle": "Forget me?",
+      "forgetMeAction": "Forget me"
     },
     "photosCount_one": "{{count}} photo",
     "photosCount_other": "{{count}} photos",
@@ -1535,6 +1562,10 @@
       "withDate": "Your photographer is still working on the remaining images — the complete gallery will be here by {{date}} at the latest.",
       "noDetails": "Your photographer is still working on the remaining images.",
       "progressLabel": "Photos delivered so far"
+    },
+    "preview": {
+      "title": "Theme preview",
+      "description": "This is how your galleries will look with the current theme settings."
     }
   },
   "categories": {
@@ -1550,7 +1581,7 @@
     "failedToDeleteCategory": "Failed to delete category",
     "categoryName": "Category name",
     "noCategoriesYet": "No categories yet. Create your first category to organize photos.",
-    "deleteConfirm": "Are you sure you want to delete \"{{name}}\"?",
+    "deleteConfirm": "Delete the category \"{{name}}\"? A category that still holds photos cannot be deleted; move them first. This cannot be undone.",
     "setCoverPhoto": "Set Cover Photo",
     "removeCoverPhoto": "Remove Cover Photo",
     "coverPhotoSet": "Cover photo set successfully",
@@ -1590,9 +1621,9 @@
     "revealNow": "Reveal now",
     "revealedToast": "Gallery revealed — guests can see the photos now",
     "revealError": "Failed to reveal the gallery",
-    "title": "Events",
-    "create": "Create",
-    "createEvent": "Create Event",
+    "title": "Galleries",
+    "create": "Create Gallery",
+    "createEvent": "Create Gallery",
     "totalViews": "Total Views",
     "totalDownloads": "Total Downloads",
     "uniqueVisitors": "Unique Visitors",
@@ -1606,8 +1637,8 @@
     "enterPassword": "Enter password",
     "passwordPlaceholder": "Enter a secure password",
     "confirmPasswordPlaceholder": "Confirm password",
-    "eventDetails": "Event Details",
-    "eventName": "Event Name",
+    "eventDetails": "Gallery Details",
+    "eventName": "Gallery Name",
     "eventType": "Event Type",
     "eventDate": "Event Date",
     "fullDay": "Full day",
@@ -1631,13 +1662,13 @@
     "viewGallery": "View Gallery",
     "createInvoice": "Create invoice",
     "uploadPhotos": "Upload Photos",
-    "archiveEvent": "Archive Event",
-    "archiveConfirm": "Are you sure you want to archive this event? This action cannot be undone.",
+    "archiveEvent": "Archive Gallery",
+    "archiveConfirm": "Are you sure you want to archive this gallery? This action cannot be undone.",
     "extendExpiration": "Extend {{days}} Days",
-    "backToEvents": "Back to Events",
+    "backToEvents": "All galleries",
     "loadingEventDetails": "Loading event details...",
     "saveChanges": "Save Changes",
-    "eventExpiresIn": "This event expires in {{days}} days",
+    "eventExpiresIn": "This gallery expires in {{days}} days",
     "overview": "Overview",
     "photos": "Photos",
     "media": "Media",
@@ -1680,7 +1711,8 @@
         "invalidSlug": "Short URLs must be lowercase letters, digits, and hyphens (1–64 chars)."
       },
       "hits_one": "{{count}} hits",
-      "hits_other": "{{count}} hits"
+      "hits_other": "{{count}} hits",
+      "deleteAction": "Delete short URL"
     },
     "resetGalleryPassword": "Reset Gallery Password",
     "resendCreationEmail": "Resend Creation Email",
@@ -1854,19 +1886,19 @@
       "successToast": "Gallery duplicated."
     },
     "draftBanner": "This gallery is in draft mode. Upload your photos, then publish when ready.",
-    "subtitle": "Manage your photo galleries and events",
-    "failedToLoadEvents": "Failed to load events",
+    "subtitle": "Manage your photo galleries",
+    "failedToLoadEvents": "Failed to load galleries",
     "tryAgain": "Try Again",
-    "bulkArchivePartial": "Archived {{success}} events, {{failed}} failed",
+    "bulkArchivePartial": "Archived {{success}} galleries, {{failed}} failed",
     "deleteSelected": "Delete Selected",
     "bulkDelete": {
       "warning": "This will permanently delete the selected events, all their photos, archives, and audit logs. This action cannot be undone.",
       "confirmLabel": "Type {{literal}} to confirm",
       "confirmHelp": "A typed confirmation prevents accidental deletions and isn't affected by browser autofill or passkey shortcuts.",
-      "successPartial": "Deleted {{success}} events, {{failed}} failed",
-      "errorGeneric": "Failed to delete events",
-      "successAll_one": "Permanently deleted {{count}} event",
-      "successAll_other": "Permanently deleted {{count}} events",
+      "successPartial": "Deleted {{success}} galleries, {{failed}} failed",
+      "errorGeneric": "Failed to delete galleries",
+      "successAll_one": "Permanently deleted {{count}} gallery",
+      "successAll_other": "Permanently deleted {{count}} galleries",
       "title_one": "Permanently delete {{count}} events?",
       "title_other": "Permanently delete {{count}} events?",
       "processing_one": "Deleting {{count}} events. This may take a few minutes — please don't close this window.",
@@ -1874,7 +1906,7 @@
       "submit_one": "Delete {{count}} events",
       "submit_other": "Delete {{count}} events"
     },
-    "searchEventsPlaceholder": "Search events...",
+    "searchEventsPlaceholder": "Search galleries...",
     "all": "All",
     "expiring": "Expiring",
     "clear": "Clear",
@@ -1882,25 +1914,25 @@
     "publicAccess": "Public access",
     "passwordProtected": "Password protected",
     "newPasswordRequired": "Please set a password before enabling protection.",
-    "event": "Event",
+    "event": "Gallery",
     "type": "Type",
     "date": "Date",
     "status": "Status",
-    "noEventsFound": "No events found",
+    "noEventsFound": "No galleries found",
     "stats": {
-      "totalEvents": "Total Events",
-      "activeEvents": "Active Events",
+      "totalEvents": "Total Galleries",
+      "activeEvents": "Active Galleries",
       "totalPhotos": "Total Photos",
       "expiringEvents": "Expiring Soon"
     },
     "viewDetails": "View Details",
-    "archiveEventAction": "Archive Event",
+    "archiveEventAction": "Archive Gallery",
     "downloadArchiveAction": "Download Archive",
-    "deleteEvent": "Delete Event",
+    "deleteEvent": "Delete Gallery",
     "deleteEventConfirm": "Are you sure you want to delete this event?",
     "downloadArchiveSoon": "Download archive coming soon",
-    "eventExpiredMessage": "This event has expired",
-    "guestsCannotAccessGallery": "Guests can no longer access the gallery. Consider archiving this event.",
+    "eventExpiredMessage": "This gallery has expired",
+    "guestsCannotAccessGallery": "Guests can no longer access the gallery. Consider archiving it.",
     "warningEmailsHaveBeenSent": "Warning emails have been sent to the customer.",
     "extendSevenDays": "Extend 7 Days",
     "welcomeMessageLabel": "Welcome Message",
@@ -1943,16 +1975,16 @@
       "warning2": "Old URLs will automatically redirect to the new URL",
       "warning3": "Photo files may be renamed"
     },
-    "bulkArchiveSuccess_one": "Successfully archived {{count}} event",
-    "bulkArchiveSuccess_other": "Successfully archived {{count}} events",
+    "bulkArchiveSuccess_one": "Successfully archived {{count}} gallery",
+    "bulkArchiveSuccess_other": "Successfully archived {{count}} galleries",
     "daysLeft_one": "({{count}} day left)",
     "daysLeft_other": "({{count}} days left)",
-    "eventsSelected_one": "{{count}} event selected",
-    "eventsSelected_other": "{{count}} events selected",
+    "eventsSelected_one": "{{count}} gallery selected",
+    "eventsSelected_other": "{{count}} galleries selected",
     "paginationLabel": "{{from}}–{{to}} of {{total}}",
     "filtered": "filtered",
     "pageOf": "Page {{page}} of {{totalPages}}",
-    "notFound": "Event not found",
+    "notFound": "Gallery not found",
     "customerPhone": "Customer Phone",
     "customerPhonePlaceholder": "+1 555 555 1234",
     "allowPresignedDownload": "Allow direct S3 download (no watermark, S3 mode only)",
@@ -2287,7 +2319,13 @@
       "reviewUploadsHelp": "Holds uploads from team members whose role lacks the “Review Team Uploads” permission: they stay hidden from guests and clients until you or a reviewer approve them on the Photos tab. The Admin, Editor and Solo Photographer roles hold that permission by default, so their uploads are never held.",
       "reviewUploadsHelpMember": "Your uploads to this gallery stay hidden from guests and clients until the owner or a reviewer approves them.",
       "reviewUploadsHelpReviewer": "Uploads from team members without the “Review Team Uploads” permission wait for approval on the Photos tab. Yours are published right away."
-    }
+    },
+    "deleteEventConfirmLoss": "Delete \"{{name}}\" with all its photos? This cannot be undone.",
+    "noEventsMatchHint": "Nothing matches this search or filter. Clear it to see every gallery.",
+    "noEventsYet": "No galleries yet",
+    "noEventsYetHint": "Create a gallery to share photos with a client.",
+    "downloadLimitResetAction": "Reset downloads",
+    "notFoundHint": "It may have been deleted, or the link is wrong."
   },
   "settings": {
     "title": "System Settings",
@@ -2614,7 +2652,7 @@
       "filterDeleted": "Word filter deleted successfully",
       "deleteError": "Failed to delete word filter",
       "wordRequired": "Please enter a word to filter",
-      "confirmDelete": "Are you sure you want to delete this word filter?",
+      "confirmDelete": "Delete this word filter? Comments are no longer checked against it. This cannot be undone.",
       "loading": "Loading word filters...",
       "noMatchingFilters": "No matching filters found",
       "noFilters": "No word filters configured yet",
@@ -2626,7 +2664,9 @@
       "lowDescription": "Word is flagged for review but not automatically blocked",
       "moderateDescription": "Comment requires manual approval before being visible",
       "highDescription": "Comment is automatically hidden and requires admin review",
-      "blockDescription": "Comment is rejected immediately and cannot be submitted"
+      "blockDescription": "Comment is rejected immediately and cannot be submitted",
+      "deleteAction": "Delete filter",
+      "loadFailed": "Could not load the word filters"
     },
     "styling": {
       "title": "Custom CSS"
@@ -2788,7 +2828,9 @@
       "confirmRevoke": "Revoke \"{{name}}\"? Existing integrations using this token will start getting 401.",
       "revoke": "Revoke",
       "empty": "No tokens yet. Generate one above to get started.",
-      "preview": "Preview"
+      "preview": "Preview",
+      "revokeAction": "Revoke token",
+      "loadFailed": "Could not load the API tokens"
     },
     "webhooks": {
       "title": "Webhooks",
@@ -2844,7 +2886,7 @@
         "eventType": "Event type",
         "total_one": "{{count}} total",
         "total_other": "{{count}} total",
-        "empty": "No deliveries yet. Create an event or send a test event to see something here.",
+        "empty": "Create a gallery or send a test event to see deliveries here.",
         "colTime": "Time",
         "colEvent": "Event",
         "colStatus": "Status",
@@ -2866,8 +2908,14 @@
           "pending": "pending",
           "success": "success",
           "failed": "failed"
-        }
-      }
+        },
+        "emptyTitle": "No deliveries yet",
+        "loadFailed": "Could not load this webhook",
+        "listLoadFailed": "Could not load the deliveries",
+        "notFoundHint": "It may have been deleted. Settings › Webhooks lists the ones that exist."
+      },
+      "deleteAction": "Delete webhook",
+      "loadFailed": "Could not load the webhooks"
     },
     "sectionLabel": "Settings section",
     "navAriaLabel": "Settings navigation",
@@ -2909,7 +2957,6 @@
         "automation": "Automation"
       },
       "status": {
-        "stable": "stable",
         "beta": "beta",
         "new": "new",
         "experimental": "experimental",
@@ -3043,7 +3090,13 @@
         "description": "Share documents with a customer in their portal and receive documents from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF by default; more file types, size and storage limits under Settings → CRM."
       },
       "configure": "Configure",
-      "sidebarInSettings": "No sidebar item — lives in Settings"
+      "sidebarInSettings": "No sidebar item — lives in Settings",
+      "statusHelp": {
+        "new": "Recently released and ready to use.",
+        "beta": "In development: ready for real work, but details may still change.",
+        "experimental": "May break or be removed. Not for a production studio.",
+        "roadmap": "Not built yet."
+      }
     },
     "customerSurface": {
       "brandingTitle": "Customer dashboard header",
@@ -3582,12 +3635,13 @@
     "used": "Used",
     "of": "of",
     "totalPhotos": "Total Photos",
-    "activeEvents": "Active Events",
+    "activeEvents": "Active Galleries",
     "notConfigured": "Umami Analytics Not Configured",
     "configureInstructions": "To see real analytics data, configure Umami in your environment variables and admin panel settings.",
     "catalogedMedia": "Catalogued media",
     "storageUnavailable": "unavailable",
-    "storageNoMeasurement": "no measurement available"
+    "storageNoMeasurement": "no measurement available",
+    "loadFailed": "Could not load the analytics"
   },
   "branding": {
     "title": "Branding & Themes",
@@ -3910,7 +3964,7 @@
     },
     "pdfTheme": {
       "title": "PDF theme",
-      "description": "Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from \"All documents\", then your business profile.",
+      "description": "Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from \"All documents\", then Colours above (the filled accent, for headings) and your business profile.",
       "scopeLabel": "Document type",
       "scope": {
         "default": "All documents",
@@ -3926,7 +3980,6 @@
         "subtle": "Footer and page numbers",
         "rule": "Lines"
       },
-      "inherited": "Inherited",
       "inherit": "Inherit ({{value}})",
       "reset": "Reset",
       "titleSize": "Title size",
@@ -3954,12 +4007,9 @@
       "marginsNote": "The top margin is set by the address window and the letterhead. A contract's signature page keeps its fixed layout whatever the margins are, so signatures always land in their boxes.",
       "preview": "Preview PDF",
       "resetScope": "Reset to inherited",
-      "save": "Save theme",
-      "saved": "PDF theme saved",
-      "saveFailed": "Could not save the PDF theme",
       "previewFailed": "Could not render the preview",
       "presets": "Start from a preset",
-      "presetsHint": "A preset fills in the form; nothing is saved until you save the theme.",
+      "presetsHint": "A preset fills in the form; nothing is saved until you save the page.",
       "preset": {
         "classic": "Classic",
         "modern": "Modern",
@@ -4001,7 +4051,14 @@
       },
       "uploadedFonts": "Your fonts",
       "uploadedFont": "Uploaded font",
-      "fontUnavailable": "{{name}} (no longer available)"
+      "fontUnavailable": "{{name}} (no longer available)",
+      "fromAllDocuments": "From All documents",
+      "fromBranding": "From Colours",
+      "builtIn": "Built-in",
+      "followBranding": "Follow Colours",
+      "readOnly": "You can see the PDF theme but not change it.",
+      "invalid": "The PDF theme for {{scopes}} has a margin or colour that is not valid. Fix it before saving.",
+      "saveFailedScopes": "Could not save the PDF theme for: {{scopes}}"
     },
     "pdfFonts": {
       "title": "Your fonts for PDFs",
@@ -4038,6 +4095,56 @@
         "FONT_BITMAP_ONLY": "This font's licence only allows embedding bitmaps, not the outlines PDFs need."
       },
       "legacyFailed": "The font set before this update could not be moved: {{reason}}"
+    },
+    "colorWarnings": {
+      "textOnBackground": "Text is hard to read on the background ({{ratio}}:1, aim for {{needed}}:1).",
+      "textOnSurface": "Text is hard to read on cards ({{ratio}}:1, aim for {{needed}}:1).",
+      "textOnElevated": "Text on raised panels is hard to read ({{ratio}}:1, aim for {{needed}}:1). On a dark palette, pick a dark colour here.",
+      "mutedOnSurface": "Secondary text is hard to read on cards ({{ratio}}:1, aim for {{needed}}:1).",
+      "borderInvisible": "Borders barely show against cards.",
+      "accentOnBackground": "Links and icons in this colour are hard to see on the background ({{ratio}}:1, aim for {{needed}}:1).",
+      "buttonLabel": "Button labels are hard to read on this colour ({{ratio}}:1, aim for {{needed}}:1).",
+      "statusTooLight": "Too light: labels in this colour wash out on white.",
+      "statusLikeAccent": "Looks like your accent colour, so it may read as a button rather than a status.",
+      "statusLikeStatus": "Hard to tell apart from \"{{other}}\"."
+    },
+    "status": {
+      "success": "Success",
+      "warning": "Warning",
+      "danger": "Danger",
+      "info": "Info",
+      "storno": "Cancelled (Storno)",
+      "successHelp": "Paid, signed, published, done.",
+      "warningHelp": "Due soon, needs attention, not saved yet.",
+      "dangerHelp": "Overdue, failed, delete.",
+      "infoHelp": "Sent, in progress, neutral notices.",
+      "stornoHelp": "Cancelled and credited documents."
+    },
+    "useColorsForDark": "Use these colours for dark",
+    "useColorsForLight": "Use these colours for light",
+    "surfacesReplacedDark": "Dark is forced, but this palette is set up for light, so visitors see the built-in dark surfaces and text instead of the colours below.",
+    "surfacesReplacedLight": "Light is forced, but this palette is set up for dark, so visitors see the built-in light surfaces and text instead of the colours below.",
+    "colorGroupStatus": "Status",
+    "colorGroupStatusHelp": "One colour per meaning, used for badges, notices and status labels in the admin, the customer portal and on public pages. Light and dark shades are worked out from it.",
+    "resetColor": "Default",
+    "colorPreview": {
+      "statusSuccess": "Paid",
+      "statusWarning": "Due soon",
+      "statusDanger": "Overdue",
+      "statusInfo": "Sent",
+      "statusStorno": "Cancelled",
+      "galleryAndPortal": "Gallery and customer portal",
+      "modeForced": "{{mode}}, locked",
+      "galleryTitle": "Anna & Ben, wedding",
+      "galleryMeta": "12 October 2026 · 248 photos",
+      "favourites": "Your favourites (12)",
+      "openGallery": "Open gallery",
+      "share": "Share",
+      "downloadAll": "Download all",
+      "admin": "Admin, light and dark",
+      "save": "Save",
+      "colorsTab": "Colours",
+      "galleryTab": "Gallery"
     }
   },
   "admin": {
@@ -4050,7 +4157,7 @@
     "storageSoftLimitConfigured": "Configured limit: {{limit}}",
     "storageSoftLimitRecommended": "Suggested limit: {{limit}}",
     "version": "Version",
-    "archivedEvents": "Archived Events",
+    "archivedEvents": "Archived Galleries",
     "systemHealth": "System Health",
     "health": {
       "healthy": "Healthy",
@@ -4356,15 +4463,15 @@
     "darkMode": "Switch to dark mode",
     "lightMode": "Switch to light mode",
     "loadingDashboard": "Loading dashboard...",
-    "activeEvents": "Active Events",
+    "activeEvents": "Active Galleries",
     "expiringSoon": "Expiring Soon",
     "next7Days": "Next 7 days",
     "totalViews": "Total Views",
     "downloads": "Downloads",
     "percentFromLastWeek": "{{percent}}% from last week",
     "dashboardSubtitle": "Welcome back! Here's what's happening with your galleries.",
-    "eventsExpiringSoon": "Events Expiring Soon",
-    "noEventsExpiring": "No events expiring in the next 7 days",
+    "eventsExpiringSoon": "Galleries Expiring Soon",
+    "noEventsExpiring": "No galleries expiring in the next 7 days",
     "noRecentActivity": "No recent activity",
     "photos": {
       "hidden": "Hidden",
@@ -4433,7 +4540,13 @@
         "filterNone": "No name"
       },
       "approvedBy": "Approved: {{value}}",
-      "rejectedBy": "Rejected: {{value}}"
+      "rejectedBy": "Rejected: {{value}}",
+      "deleteOneConfirm": "Delete \"{{name}}\"? The photo is removed from the gallery for good. This cannot be undone.",
+      "deleteOneAction": "Delete photo",
+      "deleteManyConfirm_one": "Delete {{count}} photo? It is removed from the gallery. This cannot be undone.",
+      "deleteManyConfirm_other": "Delete {{count}} photos? They are removed from the gallery. This cannot be undone.",
+      "deleteManyAction_one": "Delete {{count}} photo",
+      "deleteManyAction_other": "Delete {{count}} photos"
     },
     "events": {
       "tabs": {
@@ -4444,8 +4557,8 @@
     },
     "daysLeft_one": "{{count}} day left",
     "daysLeft_other": "{{count}} days left",
-    "viewAllExpiringEvents_one": "View all {{count}} expiring events",
-    "viewAllExpiringEvents_other": "View all {{count}} expiring events",
+    "viewAllExpiringEvents_one": "View all {{count}} expiring galleries",
+    "viewAllExpiringEvents_other": "View all {{count}} expiring galleries",
     "guests": {
       "loading": "Loading...",
       "aggregate": {
@@ -4903,12 +5016,12 @@
     "errorDetails": "Error Details",
     "requiredFields": "Please fill in all required fields",
     "enterTestEmail": "Please enter a test email address",
-    "eventCreationFailed": "Failed to create event",
+    "eventCreationFailed": "Failed to create gallery",
     "noShareLink": "No share link available",
     "copyFailed": "Failed to copy link"
   },
   "validation": {
-    "eventNameRequired": "Event name is required",
+    "eventNameRequired": "Gallery name is required",
     "hostEmailRequired": "Customer email is required",
     "hostNameRequired": "Customer name is required",
     "adminEmailRequired": "Admin email is required",
@@ -4924,7 +5037,11 @@
   },
   "legal": {
     "impressum": "Legal Notice",
-    "datenschutz": "Privacy Policy"
+    "datenschutz": "Privacy Policy",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "The page you are looking for does not exist.",
+    "goHome": "Go to the homepage",
+    "copyright": "© {{year}} PicPeak. All rights reserved."
   },
   "toast": {
     "saveSuccess": "Changes saved successfully",
@@ -4934,9 +5051,9 @@
     "uploadSuccess": "Upload completed successfully",
     "uploadError": "Upload failed",
     "linkCopied": "Link copied to clipboard",
-    "eventCreated": "Event created successfully",
+    "eventCreated": "Gallery created successfully",
     "eventUpdated": "Event updated successfully",
-    "eventArchived": "Event archived successfully",
+    "eventArchived": "Gallery archived successfully",
     "settingsSaved": "Settings saved successfully",
     "themeUpdated": "Theme updated successfully",
     "brandingUpdated": "Branding updated successfully",
@@ -5000,7 +5117,6 @@
       "user": "Username",
       "pass": "Password",
       "folder": "Folder",
-      "save": "Save Incoming Mail Settings",
       "detectFolders": "Detect",
       "folderHint": "Enter host, username and password, then Detect to list the mailbox folders.",
       "foldersDetected": "{{count}} folders found.",
@@ -5026,7 +5142,8 @@
         "no_attachment": "No attachment",
         "duplicate": "Duplicate",
         "error": "Error"
-      }
+      },
+      "loadFailed": "Could not load received emails"
     },
     "sentEmails": {
       "tab": "Sent emails",
@@ -5054,7 +5171,8 @@
       "retries_one": "{{count}} retries",
       "retries_other": "{{count}} retries",
       "pagination_one": "Page {{page}} of {{total}} · {{count}} emails",
-      "pagination_other": "Page {{page}} of {{total}} · {{count}} emails"
+      "pagination_other": "Page {{page}} of {{total}} · {{count}} emails",
+      "loadFailed": "Could not load sent emails"
     },
     "commonSmtpSettings": "Common SMTP Settings:",
     "editTemplate": "Edit Template",
@@ -5155,7 +5273,9 @@
     },
     "signatureOn": "Footer signature is on — your business address is appended to automatic emails. Replies you write in Messages are sent as typed.",
     "signatureOff": "Footer signature is off — emails show the logo and company name only.",
-    "signatureEdit": "Edit in Business profile"
+    "signatureEdit": "Edit in Business profile",
+    "followColors": "Follow Colours",
+    "primaryFollowsColors": "Follows Branding › Colours"
   },
   "cms": {
     "title": "CMS Pages",
@@ -5254,7 +5374,9 @@
       }
     },
     "showInFooter": "Show in gallery footer",
-    "showInFooterHelp": "When off, this page is hidden from the public gallery footer. The page itself remains accessible at its direct URL."
+    "showInFooterHelp": "When off, this page is hidden from the public gallery footer. The page itself remains accessible at its direct URL.",
+    "discardOnSwitch": "Discard your unsaved changes to this page?",
+    "discardAndSwitch": "Discard and switch"
   },
   "eventTypes": {
     "title": "Event Types",
@@ -5291,7 +5413,7 @@
       "themePreset": "Default Theme",
       "slideshowPreset": "Slideshow preset",
       "slideshowPresetHint": "Default slideshow style for new events of this type.",
-      "isActive": "Active (visible in event creation)"
+      "isActive": "Active (offered when creating a gallery)"
     },
     "validation": {
       "slugFormat": "Only letters, numbers, and hyphens allowed"
@@ -5303,7 +5425,8 @@
     "deleteConfirm": {
       "title": "Delete Event Type",
       "message": "Are you sure you want to delete",
-      "warning": "This action cannot be undone. Make sure no events are using this type."
+      "warning": "This action cannot be undone. Make sure no galleries use this type.",
+      "action": "Delete event type"
     }
   },
   "backup": {
@@ -5676,7 +5799,8 @@
         "ARTIFACT_OUT_OF_SCOPE": "This backup's files are outside the configured backup destination, so nothing was deleted",
         "ARTIFACT_DELETE_FAILED": "The backup manifest could not be removed, so the record was kept",
         "FORBIDDEN": "You do not have permission to delete backups"
-      }
+      },
+      "deleteAction": "Delete backup"
     },
     "restore": {
       "superAdminOnly": "Restoring a backup replaces all data on this instance, user accounts and roles included, so only a Super Admin can do it.",
@@ -6035,7 +6159,7 @@
     "approve": "Approve",
     "hide": "Hide",
     "unhide": "Unhide",
-    "confirmDelete": "Are you sure you want to delete this feedback?",
+    "confirmDelete": "Delete this feedback? It is removed for good. This cannot be undone.",
     "avgRating": "Average Rating",
     "totalRatings_one": "{{count}} ratings",
     "totalRatings_other": "{{count}} ratings",
@@ -6119,7 +6243,10 @@
     "decisionError": "Failed to save your decision",
     "decisionType": "your decision",
     "youApproved": "You approved this photo",
-    "youRejected": "You rejected this photo"
+    "youRejected": "You rejected this photo",
+    "deleteAction": "Delete feedback",
+    "panelTitle": "Photo feedback",
+    "closePanel": "Close feedback"
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",
@@ -6435,12 +6562,14 @@
     "enableToggle": "Enable Client Access",
     "enableDescription": "Allow clients to review and hide photos before the gallery is shared with guests.",
     "pinHelperText": "The client will use this PIN to access the review page. At least 6 characters.",
-    "linkAfterCreate": "The client access link appears on the event page as soon as the event is created.",
+    "linkAfterCreate": "The client access link appears on the gallery page as soon as the gallery is created.",
     "pinUpdated": "Client PIN updated",
     "setPin": "Set PIN",
     "linkLabel": "Client Access Link",
     "regenerateToken": "Regenerate link",
-    "tokenRegenerated": "Client access link regenerated"
+    "tokenRegenerated": "Client access link regenerated",
+    "hiddenFromGuests": "Hidden from guests",
+    "visibleToGuests": "Visible to guests"
   },
   "export": {
     "button": "Export",
@@ -6693,8 +6822,6 @@
       "quotes": "Quotes",
       "bills": "Invoices",
       "profile": "Profile",
-      "soon": "Soon",
-      "new": "New",
       "contracts": "Contracts",
       "documents": "Documents"
     },
@@ -7025,7 +7152,8 @@
         "createFailed": "Failed to log entry"
       },
       "unbilledCount_one": "{{count}} unbilled entries totaling {{total}}",
-      "unbilledCount_other": "{{count}} unbilled entries totaling {{total}}"
+      "unbilledCount_other": "{{count}} unbilled entries totaling {{total}}",
+      "deleteEntry": "Delete entry"
     },
     "create": {
       "openButton": "Create passive customer",
@@ -7074,7 +7202,7 @@
       "name": "Name",
       "email": "Email",
       "company": "Company",
-      "eventCount": "Events",
+      "eventCount": "Galleries",
       "lastLogin": "Last login",
       "status": "Status",
       "groups": "Groups"
@@ -7117,7 +7245,9 @@
       "title": "Cancel invitation?",
       "body": "The invitation link will stop working immediately.",
       "success": "Invitation cancelled",
-      "error": "Could not cancel invitation"
+      "error": "Could not cancel invitation",
+      "action": "Cancel invitation",
+      "keep": "Keep invitation"
     },
     "detail": {
       "loadError": "Could not load customer",
@@ -7130,8 +7260,8 @@
       "personalSection": "Personal information",
       "billingSection": "Address & billing",
       "notesSection": "Internal notes",
-      "eventsSection": "Assigned events",
-      "noEvents": "Not assigned to any events yet. Add this customer to an event from the event form.",
+      "eventsSection": "Assigned galleries",
+      "noEvents": "Not assigned to any galleries yet. Use \"Manage galleries\" to add some.",
       "email": "Email",
       "preferredLanguage": "Preferred language",
       "preferredLanguageHint": "Drives portal UI, quote/invoice PDFs, and billing emails (reminders/dunning). New customers default to the business-profile language ({{lang}}); override here per customer.",
@@ -7214,7 +7344,7 @@
     "erase": {
       "button": "Erase customer data",
       "title": "Erase customer data?",
-      "body": "Removes the customer's name, email, phone, address, company and credentials. The account row stays so historical event-access records and audit logs still reference it. This is irreversible — you cannot restore the data afterwards.",
+      "body": "Removes the customer's name, email, phone, address, company and credentials. The account row stays so historical gallery-access records and audit logs still reference it. This is irreversible — you cannot restore the data afterwards.",
       "confirm": "Erase permanently",
       "confirmInFlight": "Erasing…",
       "success": "Customer erased",
@@ -7538,11 +7668,12 @@
         "referenceHint": "QR / ESR reference or message",
         "note": "Note",
         "noteHint": "Internal note for this invoice (optional)",
-        "passthroughCustomerHint": "Optional — attach a client to re-bill this passthrough; leave empty to only book it to the event.",
+        "passthroughCustomerHint": "Optional — attach a client to re-bill this passthrough; leave empty to only book it to the gallery.",
         "supplierCountry": "Supplier country",
         "supplierCountryNone": "— unknown —",
         "supplierCountryHint": "Sets the tax treatment automatically: outside your VAT-reclaim countries → foreign VAT (not reclaimable)."
-      }
+      },
+      "loadFailed": "Could not load the incoming invoices"
     },
     "expenseStatus": {
       "open": "Open",
@@ -7561,9 +7692,9 @@
     "booking": {
       "label": "Book to",
       "company": "Company",
-      "event": "Event",
+      "event": "Gallery",
       "eventId": "Event ID",
-      "inboundHint": "Which event carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to."
+      "inboundHint": "Which gallery carries this cost in your reports & tax export (Company = general overhead). This is separate from who you re-bill it to."
     },
     "incoming": {
       "triageTitle": "Categorize incoming invoice",
@@ -7620,7 +7751,7 @@
       "other": "Other"
     },
     "ledger": {
-      "subtitle": "Internal expenses such as mileage, per diems and cash receipts, booked to an event or the company.",
+      "subtitle": "Internal expenses such as mileage, per diems and cash receipts, booked to a gallery or the company.",
       "allStatuses": "All statuses",
       "allDispositions": "All dispositions",
       "allKinds": "All types",
@@ -7650,19 +7781,20 @@
       "lockedHint": "Locked — this expense is on a client invoice.",
       "description": "Description",
       "descriptionHint": "e.g. mileage, per-diem, cash receipt",
-      "createdToast": "Expense added."
+      "createdToast": "Expense added.",
+      "loadFailed": "Could not load the expenses"
     }
   },
   "projects": {
     "title": "Project Overview",
-    "subtitle": "Group events into projects and see every email, document, gallery and hour in one cockpit.",
+    "subtitle": "Group galleries into projects and see every email, document and hour in one cockpit.",
     "search": "Search by name or customer…",
-    "empty": "No projects yet. Create one above, or events you already have were grouped automatically.",
+    "empty": "Create one above, or galleries you already have were grouped automatically.",
     "notFound": "Project not found",
     "noCustomer": "No single customer",
     "rename": "Rename",
     "timeline": "Milestones",
-    "eventCount": "{{count}} events",
+    "eventCount": "{{count}} galleries",
     "totalHours": "{{hours}} logged",
     "create": {
       "label": "New project name",
@@ -7672,7 +7804,7 @@
     "col": {
       "name": "Project",
       "customer": "Customer",
-      "events": "Events",
+      "events": "Galleries",
       "value": "Value",
       "status": "Status",
       "updated": "Updated"
@@ -7686,11 +7818,11 @@
       "paid": "paid"
     },
     "events": {
-      "title": "Events",
-      "none": "No events grouped under this project yet.",
-      "searchPlaceholder": "Attach an event — search by name…",
-      "attached": "Event attached",
-      "attachFailed": "Could not attach event"
+      "title": "Galleries",
+      "none": "No galleries grouped under this project yet.",
+      "searchPlaceholder": "Attach a gallery — search by name…",
+      "attached": "Gallery attached",
+      "attachFailed": "Could not attach gallery"
     },
     "feed": {
       "title": "Activity",
@@ -7730,7 +7862,10 @@
       "archived": "Archived"
     },
     "eventCount_one": "{{count}} events",
-    "eventCount_other": "{{count}} events"
+    "eventCount_other": "{{count}} events",
+    "loadFailed": "Could not load the projects",
+    "noMatches": "No projects match this search",
+    "emptyTitle": "No projects yet"
   },
   "calendar": {
     "pageTitle": "Calendar",
@@ -7774,7 +7909,8 @@
       "lockedTooltip": "Already billed — Storno the invoice to edit.",
       "noDescription": "No description.",
       "untitledCustomer": "Hours",
-      "customerLoggingDisabled": "This customer has hour logging disabled. Enable it on the customer's detail page to log hours."
+      "customerLoggingDisabled": "This customer has hour logging disabled. Enable it on the customer's detail page to log hours.",
+      "deleteAction": "Delete hours"
     }
   },
   "hoursLogging": {
@@ -7942,7 +8078,8 @@
       "number": "Account number",
       "name": "Name",
       "type": "Type",
-      "confirmDelete": "Delete this account?"
+      "confirmDelete": "Delete account {{number}} \"{{name}}\"? It can no longer be used for bookings or the export. This cannot be undone.",
+      "deleteAction": "Delete account"
     },
     "vat": {
       "addTitle": "Add VAT code",
@@ -7953,8 +8090,9 @@
       "direction": "Direction",
       "account": "VAT account",
       "noAccount": "— none —",
-      "confirmDelete": "Delete this VAT code?",
-      "legacyRate": "{{rate}}% (not configured)"
+      "confirmDelete": "Delete VAT code \"{{code}}\"? It can no longer be picked for new documents. This cannot be undone.",
+      "legacyRate": "{{rate}}% (not configured)",
+      "deleteAction": "Delete VAT code"
     },
     "export": {
       "title": "Treuhänder export",
@@ -8120,7 +8258,6 @@
       "customerMessage": "Message from the customer"
     },
     "savedToast": "Quote saved as draft.",
-    "edit": "Edit quote",
     "new": "New quote",
     "preview": "Preview PDF",
     "saveAndSend": "Save & send",
@@ -8182,7 +8319,10 @@
       "accepted": "This quote was already accepted and can't be edited. To change it, reissue it: the quote is declined and copied as a new draft. If it no longer applies, decline it.",
       "acceptedConverted": "This quote was already accepted, and a contract, event or invoice exists for it. It can't be changed any more.",
       "declined": "This quote was declined and can't be edited. Duplicate it to start a new quote.",
-      "converted": "This quote was already converted into an event or invoice and can't be changed any more."
+      "converted": "This quote was already converted into an event or invoice and can't be changed any more.",
+      "replacedTitle": "Replaced by {{number}}",
+      "replaced": "This quote was reissued; the customer works with the new one.",
+      "acceptedTitle": "Accepted{{at}}"
     },
     "catalog": {
       "addItem": "Add item",
@@ -8351,7 +8491,18 @@
     "contractTemplate": "Contract template",
     "convertToContractConfirm": "Draft the contract",
     "contractTemplateFromQuote": "Preselected by the quote's template: {{name}}",
-    "contractTemplateAuto": "As the quote's template says (else the default)"
+    "contractTemplateAuto": "As the quote's template says (else the default)",
+    "saveAndSendTitle": "Send with your unsaved changes?",
+    "saveAndSendMessage": "Your changes are saved first, then the quote goes to {{to}}.",
+    "reissueReason": "Reason",
+    "openReplacement": "Open {{number}}",
+    "sentNoticeTitle": "Sent {{at}}",
+    "sentNotice": "You can still change it. The customer sees changes after you send it again.",
+    "forCustomer": "for {{name}}",
+    "createdToast": "Draft created.",
+    "createDraft": "Create draft",
+    "unsavedSavedFirst": "Your unsaved changes are saved first.",
+    "savedToastSent": "Quote saved."
   },
   "crm": {
     "lineItems": {
@@ -8558,7 +8709,6 @@
     "savedToast": "Invoice saved.",
     "savedToastMulti": "Created {{n}} invoices.",
     "saveAndSpawn": "Create {{n}} invoices",
-    "edit": "Edit invoice",
     "customerSearch": "Search by email or company…",
     "qrFormat": {
       "none": "None",
@@ -8589,7 +8739,16 @@
       "sendWithCount": "Send with {{count}} proof(s)",
       "sendWithCount_one": "Send with {{count}} proof(s)",
       "sendWithCount_other": "Send with {{count}} proof(s)"
-    }
+    },
+    "saveAndSendTitle": "Send with your unsaved changes?",
+    "saveAndSendMessage": "Your changes are saved first, then the invoice goes to the customer.",
+    "saveAndSend": "Save & send",
+    "cancelDraft": "Cancel draft",
+    "cancelWithStorno": "Cancel with Storno",
+    "forCustomer": "for {{name}}",
+    "issuedLockedTitle": "Issued invoices can't be changed.",
+    "issuedLocked": "To correct it, cancel it with a Storno invoice and issue a new one.",
+    "createDraft": "Create invoice"
   },
   "businessProfile": {
     "savedToast": "Business profile saved.",
@@ -8969,11 +9128,11 @@
     "title": "Pre-event reminder emails",
     "scheduleMoved": {
       "title": "The reminder schedule is now in Workflows",
-      "body": "Whether pre-event reminders are sent, and how many days before the event, is configured in the “Pre-event reminder” workflow. This page edits the email templates; per-event overrides stay on each event’s detail page.",
+      "body": "Whether pre-event reminders are sent, and how many days before the event, is configured in the “Pre-event reminder” workflow. This page edits the email templates; per-gallery overrides stay on each gallery’s detail page.",
       "link": "Open Workflows"
     },
     "globalSection": "Global behaviour",
-    "globalHelp": "Off by default — turn on to start sending pre-event reminders. The offset below is the default; each event can override on its detail page.",
+    "globalHelp": "Off by default — turn on to start sending pre-event reminders. The offset below is the default; each gallery can override it on its detail page.",
     "enableLabel": "Send pre-event reminder emails",
     "daysBeforeLabel": "Days before the event",
     "saveSettings": "Save global settings",
@@ -9126,7 +9285,6 @@
       "auditTrail": "Audit trail",
       "auditTrailHelp": "Every event recorded on this contract. The list is append-only and is the source of truth if the contract is challenged.",
       "blocks": "Included blocks",
-      "cancel": "Cancel",
       "cancelConfirm": "Cancel this contract? Customer signing link will be invalidated.",
       "cancelError": "Cancel failed",
       "cancelledToast": "Contract cancelled.",
@@ -9151,7 +9309,6 @@
       "dates": "Dates",
       "downloadPdf": "Download PDF",
       "downloadSignedPdf": "Download signed PDF",
-      "edit": "Edit",
       "fromQuote": "From quote",
       "issued": "Issued",
       "linkedInvoice": "Invoice",
@@ -9254,16 +9411,18 @@
         "collectHint": "Only the first signer gets a link now, to complete their details. The contract, its PDF and the price are prepared once they have, and then go to the other signers.",
         "requestDetails": "Ask for the details",
         "afterDetails": "Set once the customer has completed their details."
-      }
+      },
+      "saveAndSendTitle": "Send with your unsaved changes?",
+      "saveAndSendMessage": "Your changes are saved first, then you review the contract before it goes out.",
+      "saveAndReview": "Save & review",
+      "cancelContract": "Cancel contract"
     },
     "editor": {
-      "backToDetail": "Back to contract",
       "create": "Create draft",
       "createdToast": "Contract created.",
       "customer": "Customer",
       "disclaimerBody": "The seeded block texts are examples written by the maintainer, not by a lawyer. Before you send a contract, have the blocks you include reviewed for your jurisdiction and use case — you remain responsible for its content. This does not stop you saving a draft.",
       "disclaimerTitle": "Legal review recommended",
-      "saving": "Saving…",
       "disclaimerLink": "Read the CRM disclaimer",
       "errors": {
         "createNotSaved": "The draft was not saved.",
@@ -9304,20 +9463,13 @@
       "intro": "Intro text (optional)",
       "issueDate": "Issue date",
       "language": "Language",
-      "locked": "Sent contracts cannot be edited. Cancel and create a fresh one for amendments.",
       "noBlocksInSection": "No blocks for this section yet.",
       "outro": "Closing text (optional)",
-      "popupBlocked": "Allow pop-ups for this site to preview the PDF.",
-      "preview": "Preview PDF",
-      "previewAfterSave": "Save the draft first, then preview.",
-      "previewError": "Preview failed",
-      "save": "Save",
       "saveError": "Save failed",
       "savedToast": "Contract saved.",
       "schriftformWarning": "Signature type: simple electronic signature (SES). Sufficient for routine photography contracts in CH / DE / AT / FL. NOT sufficient for documents that legally require Schriftform / form qualifiée: Bürgschaft (DE § 766 BGB), Verbraucherdarlehensvertrag (DE § 492 BGB), befristete Arbeitsverträge (DE § 14 Abs. 4 TzBfG), and similar. For those, a qualified electronic signature (QES) from a Trust Service Provider is required — picpeak does not provide QES.",
       "searchCustomer": "Search by email…",
       "systemBadge": "System",
-      "titleEdit": "Edit contract",
       "titleField": "Contract title",
       "titleNew": "New contract",
       "titlePlaceholder": "e.g. Wedding contract Doe / Müller",
@@ -9569,7 +9721,8 @@
         "compareTitle": "What changed in “{{name}}”",
         "adopted_one": "{{count}} new clause added at the end",
         "adopted_other": "{{count}} new clauses added at the end",
-        "nothingNew": "Nothing new to add — marked as reviewed"
+        "nothingNew": "Nothing new to add — marked as reviewed",
+        "adopted": "{{count}} new clauses added at the end"
       }
     },
     "attachments": {
@@ -9761,7 +9914,8 @@
       "desktop": "Desktop",
       "phone": "Phone",
       "note": "Layout preview of the signing page. The PDF is the document that is signed."
-    }
+    },
+    "forCustomer": "for {{name}}"
   },
   "messages": {
     "remoteContentBlocked": "External images are blocked to protect your privacy.",
@@ -9841,7 +9995,7 @@
     "createNewDoc": "Create new {{label}}",
     "existingDocs": "Or reference an existing one",
     "noExistingDocs": "No existing documents for this customer yet.",
-    "galleryCreateOnly": "Galleries are event-based — this opens the event editor, where you can assign the customer.",
+    "galleryCreateOnly": "This opens the gallery editor, where you can assign the customer.",
     "syncOk": "Checked mailboxes — {{count}} new.",
     "syncDisabled": "Incoming mail is off — enable it under Settings → Features.",
     "syncUnconfigured": "Configure a mailbox under Settings → Email first.",
@@ -9849,7 +10003,10 @@
     "syncFailed": "Sync failed.",
     "actionFailed": "Action failed.",
     "syncOk_one": "Checked mailboxes — {{count}} new.",
-    "syncOk_other": "Checked mailboxes — {{count}} new."
+    "syncOk_other": "Checked mailboxes — {{count}} new.",
+    "body": "Message",
+    "deleteForeverTitle": "Delete this message permanently?",
+    "deleteForeverConfirm": "The message and its attachments are removed for good. This cannot be undone."
   },
   "rebills": {
     "createInvoice": "Create invoice from re-bills",
@@ -10067,10 +10224,7 @@
     "empty": "No campaigns yet.",
     "allStatuses": "All statuses",
     "filterByStatus": "Filter by status",
-    "backToList": "All campaigns",
     "recipientsTitle": "Recipients",
-    "notEditable": "This campaign has already been queued and can no longer be edited.",
-    "viewCampaign": "View campaign",
     "status": {
       "draft": "Draft",
       "queued": "Queued",
@@ -10121,7 +10275,6 @@
     "refreshPreview": "Refresh preview",
     "previewTitle": "Newsletter preview",
     "sendTest": "Test",
-    "queueButton": "Queue campaign",
     "queueBlocked": "A subject, a body and at least one recipient are needed before sending.",
     "queueTitle": "Send this campaign?",
     "queueBody": "This will email {{count}} customers at {{rate}} per minute (roughly {{minutes}} min). It cannot be undone once messages start going out.",
@@ -10152,7 +10305,8 @@
       "advice": "Confirm SPF, DKIM and DMARC are set up for your sending domain, send yourself a test first, and consider splitting a first campaign across several smaller sends.",
       "duration": "At {{rate}}/minute this takes about {{minutes}} minutes. The send queue is shared, so while it runs other email — gallery invitations, password resets — can be delayed behind it."
     },
-    "groupsHint": "Who is in the groups is read when the campaign is sent, not now. Deactivated and unsubscribed customers are left out."
+    "groupsHint": "Who is in the groups is read when the campaign is sent, not now. Deactivated and unsubscribed customers are left out.",
+    "queueShort": "Send campaign"
   },
   "documentVerification": {
     "title": "Confirm it's you",

@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
-const migration = require('../../../migrations/core/281_storage_s3_generation_index');
+const migration = require('../../../migrations/core/283_storage_s3_generation_index');
 const TABLE = 'storage_s3_generation_index';
 const INTERNAL_ROOT = '.picpeak-generations';
 // The index holds one entry per object a restore put under a generation key.

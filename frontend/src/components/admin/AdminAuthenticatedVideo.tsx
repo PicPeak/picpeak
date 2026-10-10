@@ -53,14 +53,14 @@ export const AdminAuthenticatedVideo: React.FC<AdminAuthenticatedVideoProps> = (
   }, [src]);
 
   if (loading) {
-    return <div className="w-full h-full bg-neutral-200 animate-pulse" />;
+    return <div className="w-full h-full bg-fill animate-pulse" />;
   }
 
   if (error || !videoSrc) {
     return fallback ? (
       <>{fallback}</>
     ) : (
-      <div className="w-full h-full bg-neutral-100 flex items-center justify-center text-neutral-400">
+      <div className="w-full h-full bg-inset flex items-center justify-center text-faint">
         <span className="text-xs">Failed to load</span>
       </div>
     );

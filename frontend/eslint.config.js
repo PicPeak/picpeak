@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { globalIgnores } from 'eslint/config'
 import { findTokenPairs } from './scripts/ui-tokens-map.mjs'
+import { rewritePalette, PALETTE_RE } from './scripts/ui-palette-map.mjs'
 
 // Admin code styles through the UI tokens (src/styles/tokens.css, STYLING.md):
 // bg-panel, text-body, border-line, ... flip with .dark on their own. A raw
@@ -38,6 +39,36 @@ const uiTokensPlugin = {
           }
           for (const h of hits) {
             context.report({ node, fix, message: `"${h.light} ${h.dark}" has a UI token: use "${h.replacement}" (frontend/STYLING.md, or npm run codemod:ui-tokens)` })
+          }
+        }
+        return {
+          Literal(node) { if (typeof node.value === 'string') check(node, node.value) },
+          TemplateElement(node) { check(node, node.value.raw) },
+        }
+      },
+    },
+    // Every colour comes from tokens.css (STYLING.md › Colour classes): a raw
+    // `text-red-600` or `bg-primary-600` is a colour nobody can change in one
+    // place. Classes whose meaning is clear are rewritten by the fix (status
+    // hues → success/warning/danger/info, primary → accent, focus rings →
+    // accent); the rest is reported for a person to pick a token.
+    'no-raw-palette': {
+      meta: { type: 'suggestion', fixable: 'code', docs: { description: 'use the colour tokens instead of raw Tailwind palette classes' } },
+      create(context) {
+        const check = (node, text) => {
+          if (!/-(red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|primary|sand)-\d/.test(text)) return
+          if (!text.split(/\s+/).some((t) => PALETTE_RE.test(t))) return
+          const { next, changed, unmapped } = rewritePalette(text)
+          const fix = changed
+            ? (fixer) => {
+              const raw = context.sourceCode.getText(node)
+              const i = raw.indexOf(text)
+              return i < 0 ? null : fixer.replaceText(node, raw.slice(0, i) + next + raw.slice(i + text.length))
+            }
+            : null
+          if (changed) context.report({ node, fix, message: 'Raw palette colour has a token (npm run codemod:ui-tokens, STYLING.md › Colour classes)' })
+          for (const cls of unmapped) {
+            context.report({ node, message: `"${cls}" is not a token colour: use a status (success/warning/danger/info/storno), a data colour (chart-1…8), the accent or a neutral token (STYLING.md › Colour classes)` })
           }
         }
         return {
@@ -89,6 +120,15 @@ export default tseslint.config([
     ],
     plugins: { 'ui-tokens': uiTokensPlugin },
     rules: { 'ui-tokens/no-raw-dark-palette': 'error' },
+  },
+  {
+    // Colours, everywhere in the app: one source (src/styles/tokens.css).
+    files: ['src/**/*.{ts,tsx,jsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    // The .jsx files have no other config block, so JSX parsing is set here.
+    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    plugins: { 'ui-tokens': uiTokensPlugin },
+    rules: { 'ui-tokens/no-raw-palette': 'error' },
   },
   {
     files: ['**/*.d.ts'],
