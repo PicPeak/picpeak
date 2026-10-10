@@ -1166,6 +1166,7 @@
       "recoveryRequired": "Die Wiederherstellung wurde unterbrochen und wird zurückgesetzt. Die Anwendung bleibt bis dahin im Wartungsmodus. Falls sich das nicht ändert, hilft das Serverprotokoll weiter.",
       "progressDenied": "Diese Fortschrittsberechtigung ist nicht mehr gültig. Sie gewährt keinen Anwendungszugriff.",
       "returnToLogin": "Zur Anmeldung zurückkehren",
+      "restoreNotApplied": "Wiederherstellung nicht übernommen",
       "restoreState": {
         "open": "Wiederherstellung beendet",
         "draining": "Warten, bis laufende Vorgänge beendet sind",

@@ -42,11 +42,14 @@ export function PortableRestoreProgress({ handle }: { handle: RestoreHandle }) {
   const failure = progress?.error
     ? t(`backup.picpeak.restoreError.${progress.error.code}`, { defaultValue: progress.error.message })
     : null;
-  return <main className="mx-auto max-w-2xl p-6" aria-live="polite">
-    <Card padding="lg">
+  // Rendered outside every layout, so it paints the page itself.
+  return <main className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6" aria-live="polite">
+    <Card padding="lg" className="mx-auto max-w-2xl">
       <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('backup.picpeak.coordinatedTitle')}</h1>
       <p className="mt-2 text-sm text-neutral-700 dark:text-neutral-300">{t('backup.picpeak.coordinatedIntro')}</p>
-      {progress && <p className="mt-4 font-medium text-neutral-900 dark:text-neutral-100">{t(`backup.picpeak.restoreState.${progress.state}`)}</p>}
+      {progress && <p className="mt-4 font-medium text-neutral-900 dark:text-neutral-100">{failed && progress.state === 'open'
+        ? t('backup.picpeak.restoreNotApplied')
+        : t(`backup.picpeak.restoreState.${progress.state}`)}</p>}
       {!progress && !denied && <p className="mt-4 text-neutral-700 dark:text-neutral-300">{t('backup.picpeak.awaitingProgress')}</p>}
       {unavailable && <p className="mt-4 text-neutral-600 dark:text-neutral-400">{t('backup.picpeak.progressUnavailable')}</p>}
       {progress?.restartRequired && <p className="mt-4 text-neutral-700 dark:text-neutral-300">{t('backup.picpeak.restartAllInstances')}</p>}
