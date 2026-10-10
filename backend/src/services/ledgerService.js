@@ -244,6 +244,8 @@ async function updateSettings(patch) {
  * `netMinor`/`vatMinor` are included for tooling that imports net amounts.
  */
 async function buildPostings({ from, to, currency } = {}) {
+  // An export of the books is every invoice or nothing, never one admin's share.
+  require('../database/crmAccess').assertCompleteCrmView();
   if (!from || !to) throw httpError(400, '`from` and `to` are required (YYYY-MM-DD)', 'VALIDATION');
   if (!currency) throw httpError(400, '`currency` is required', 'VALIDATION');
   const cur = String(currency).toUpperCase();

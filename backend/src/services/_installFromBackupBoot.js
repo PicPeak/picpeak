@@ -24,7 +24,8 @@
  * the root of the `/backup` mount. Two payload variants:
  *
  *   1. EMPTY file (or pure whitespace) — auto-pick the newest
- *      `backup-manifest-*.json` from `/backup/manifests/`. Useful when
+ *      `backup-manifest-*` from `/backup/manifests/` or a standalone
+ *      `/backup/backup-UUID/manifests/` point. Useful when
  *      the admin doesn't know or care which one is most recent.
  *
  *   2. NON-EMPTY file containing a relative or absolute path to a
@@ -74,21 +75,25 @@ async function findTrigger(backupRoot, logger) {
       }
 
       if (!payload) {
-        // Auto-pick the newest manifest
+        // Auto-pick across legacy shared manifests and the standalone points
+        // written by backupService. Only inspect real UUID directories one
+        // level deep, not arbitrary storage trees or symlinked snapshots.
         const manifestsDir = path.join(backupRoot, 'manifests');
-        if (!fs.existsSync(manifestsDir)) {
-          logger.warn(`Install-from-backup: trigger file found but ${manifestsDir} doesn't exist`);
-          return null;
+        const manifestDirs = fs.existsSync(manifestsDir) ? [manifestsDir] : [];
+        for (const entry of fs.readdirSync(backupRoot, { withFileTypes: true })) {
+          if (!entry.isDirectory() || !/^backup-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(entry.name)) continue;
+          const nestedDir = path.join(backupRoot, entry.name, 'manifests');
+          if (fs.existsSync(nestedDir) && fs.lstatSync(nestedDir).isDirectory()) manifestDirs.push(nestedDir);
         }
-        const entries = fs.readdirSync(manifestsDir)
+        const entries = manifestDirs.flatMap((dir) => fs.readdirSync(dir)
           .filter((f) => /^backup-manifest-.+\.(json|ya?ml)$/i.test(f))
           .map((f) => {
-            const full = path.join(manifestsDir, f);
+            const full = path.join(dir, f);
             return { full, mtime: fs.statSync(full).mtimeMs };
-          })
+          }))
           .sort((a, b) => b.mtime - a.mtime);
         if (entries.length === 0) {
-          logger.warn(`Install-from-backup: no manifests found in ${manifestsDir}`);
+          logger.warn(`Install-from-backup: no manifests found in ${manifestsDir} or standalone points`);
           return null;
         }
         return { triggerPath, manifestPath: entries[0].full };
@@ -200,6 +205,9 @@ async function tryInstallFromBackup(db, logger) {
     const result = await restoreService.restore({
       source: 'local',
       manifestPath: trigger.manifestPath,
+      // The points found above live under BACKUP_ROOT, which the settings
+      // of a fresh install do not name as a backup location.
+      allowedRoots: [backupRoot],
       restoreType: 'full',
       // Force=true because the fresh-install admin auto-created by
       // migration 001 trips the "1 active admin" warning — we WANT to

@@ -95,4 +95,40 @@ describe('email template self-heal at boot', () => {
     expect(unrelatedRow.retry_count).toBe(3);
     expect(unrelatedRow.error_message).toBe('SMTP timeout');
   });
+
+  it('also recovers a protected account-recovery row once its template is seeded', async () => {
+    // Recovery mail waits in its own protected pending status; the processor
+    // counts its retries the same way, so the self-heal has to reach it too.
+    const { encryptEmailData, PROTECTED_PENDING_STATUS } = require('../../src/utils/emailQueueEncryption');
+    const recipient = 'invited-customer@example.com';
+    const ids = await db('email_queue').insert({
+      recipient_email: recipient,
+      email_type: 'customer_invitation',
+      email_data: JSON.stringify(encryptEmailData(
+        'customer_invitation', { invite_link: 'https://photos.example/customer/invite/x' }, recipient,
+      )),
+      status: PROTECTED_PENDING_STATUS,
+      retry_count: 3,
+      error_message: 'Email template customer_invitation not found',
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const id = typeof ids[0] === 'object' ? ids[0].id : ids[0];
+
+    jest.resetModules();
+    jest.doMock('../../src/services/crmEmailTemplates', () => ({
+      ensureCrmEmailTemplatesSeeded: async () => ['customer_invitation'],
+    }));
+    try {
+      const { seedEmailTemplatesAndRecoverQueue } = require('../../src/services/_emailTemplateBoot');
+      const result = await seedEmailTemplatesAndRecoverQueue(db, null);
+      expect(result.recovered).toBe(1);
+    } finally {
+      jest.dontMock('../../src/services/crmEmailTemplates');
+    }
+
+    const row = await db('email_queue').where({ id }).first();
+    expect(row.retry_count).toBe(0);
+    expect(row.error_message).toBeNull();
+    expect(row.status).toBe(PROTECTED_PENDING_STATUS);
+  });
 });

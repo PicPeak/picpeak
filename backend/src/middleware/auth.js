@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const sessionAccess = require('../services/sessionAccessService');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest } = require('../utils/tokenUtils');
+const { loadCrmActor, withCrmActor } = require('../database/crmAccess');
 
 // GHSA-h4w8-57xq-53fx: must_change_password was written on reset (and on
 // invitation/OIDC-bypass paths) but nothing server-side ever checked it — a
@@ -73,7 +74,7 @@ async function adminAuth(req, res, next) {
     };
     req.token = token; // Store token for potential revocation
 
-    next();
+    withCrmActor({ ...(await loadCrmActor(req.admin)), originAdminId: Number(req.admin.id) }, next);
   } catch (error) {
     logger.error('Auth middleware error:', error);
     res.status(error.statusCode || 401).json({

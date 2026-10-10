@@ -47,6 +47,7 @@ const KIND = 'contract';
 const TABLE = 'contract_action_tokens';
 
 const router = express.Router();
+router.use(require('../database/crmAccess').crmCapabilityRouter('public contract action-token capability'));
 
 const previewLimiter = rateLimit({
   windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,

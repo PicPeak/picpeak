@@ -50,6 +50,9 @@ async function runCoreMigrations(db) {
  * and the temp directory.
  */
 async function bootCrmDb() {
+  // Re-establish after suites deliberately reset the module registry. Real
+  // authentication replaces fixture authority with the live scoped actor.
+  require('../../../src/database/crmAccess').enterTrustedCrmFixtureContext();
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-crm-'));
   process.env.NODE_ENV = 'test';
   process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'crm.db');

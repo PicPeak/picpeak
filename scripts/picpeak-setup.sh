@@ -16,6 +16,14 @@ readonly APP_NAME="PicPeak"
 readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="22"
 readonly NODE_MIN_VERSION="22.12.0"  # backend engines: >=22.12.0 (sanitize-html 2.17.7)
+# Reviewed upstream bootstrap bytes, not digests fetched from the same server.
+# Update each immutable commit URL and its SHA-256 together after review.
+readonly DOCKER_BOOTSTRAP_URL="https://raw.githubusercontent.com/docker/docker-install/2b32480025b223ebfddae9a3a8bef09027680f53/install.sh"
+readonly DOCKER_BOOTSTRAP_SHA256="fefa50ccd50efb42f438b506fc3a88574118f314aaf2a7cd5b6e1ffb1bffcf26"
+readonly NODE_DEB_BOOTSTRAP_URL="https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/deb/setup_22.x"
+readonly NODE_DEB_BOOTSTRAP_SHA256="575583bbac2fccc0b5edd0dbc03e222d9f9dc8d724da996d22754d6411104fd1"
+readonly NODE_RPM_BOOTSTRAP_URL="https://raw.githubusercontent.com/nodesource/distributions/9b431d8ae0f10df272598585855c6eca6c0e1bd2/scripts/rpm/setup_22.x"
+readonly NODE_RPM_BOOTSTRAP_SHA256="b0ed2b9b66002e7ee802e8777cf3a92b25f1ecc0129812dc6f59a43a536810cc"
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
 readonly MIN_DISK_GB=2
@@ -61,6 +69,7 @@ SMTP_PORT=""
 SMTP_USER=""
 SMTP_PASS=""
 ENABLE_SSL=false
+ALLOW_INSECURE_HTTP=false  # explicit escape hatch for non-loopback plaintext installs
 CUSTOM_PORT=""
 UNATTENDED=false
 UPDATE_MODE=false
@@ -163,6 +172,13 @@ review_and_confirm() {
     echo "  Email/SMTP     : ${SMTP_HOST:-not configured}"
     echo "  Access URL     : $(base_url)"
     echo
+    if [[ "$HTTPS_MODE" == "none" ]]; then
+        log_warn "Plain HTTP exposes login and gallery sessions without transport encryption."
+        log_warn "Use this only on a trusted network while you prepare a TLS reverse proxy."
+        if ! confirm "Accept the risk and expose PicPeak over plaintext HTTP?" "n"; then
+            die "Installation cancelled. Configure a domain/TLS proxy and run the installer again."
+        fi
+    fi
     if ! confirm "Proceed with installation?" "y"; then
         die "Installation cancelled by user."
     fi
@@ -244,6 +260,9 @@ validate_unattended() {
     else
         HTTPS_MODE="none"
     fi
+    if [[ "$HTTPS_MODE" == "none" && "$ALLOW_INSECURE_HTTP" != "true" ]]; then
+        die "Unattended plaintext installation requires the explicit --allow-insecure-http override. Prefer --domain with a TLS reverse proxy."
+    fi
 }
 
 print_banner() {
@@ -285,6 +304,49 @@ die() {
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
+
+# Never execute a partial, mutable, or unverified download. The subshell owns
+# its private directory/traps, leaving the installer's logging traps untouched.
+run_verified_bootstrap() (
+    local url="$1" expected_sha256="$2" interpreter="$3"
+    local bootstrap_dir checksum original_umask
+    [[ "$url" =~ ^https://raw\.githubusercontent\.com/[^/]+/[^/]+/[0-9a-f]{40}/ ]] \
+        && [[ "$expected_sha256" =~ ^[0-9a-f]{64}$ ]] \
+        || { log_error "Invalid pinned bootstrap artifact"; return 1; }
+    case "$interpreter" in
+        sh|bash) ;;
+        *) log_error "Unsupported bootstrap interpreter"; return 1 ;;
+    esac
+    if ! command_exists curl || ! command_exists sha256sum || ! command_exists "$interpreter"; then
+        log_error "Verified bootstrap requires curl, sha256sum (coreutils), and $interpreter; install these first"
+        return 1
+    fi
+
+    original_umask=$(umask)
+    umask 077
+    bootstrap_dir=$(mktemp -d /tmp/picpeak-bootstrap.XXXXXXXX) \
+        || { log_error "Cannot create a private bootstrap directory"; return 1; }
+    trap 'rm -rf -- "$bootstrap_dir"' EXIT
+    trap 'exit 1' HUP INT TERM
+    if ! curl --disable --fail --silent --show-error --location \
+        --proto '=https' --proto-redir '=https' --max-redirs 3 \
+        --connect-timeout 10 --max-time 60 --max-filesize 1048576 \
+        --output "$bootstrap_dir/bootstrap.sh" "$url"; then
+        log_error "Pinned bootstrap download failed; nothing executed"
+        return 1
+    fi
+    checksum=$(sha256sum "$bootstrap_dir/bootstrap.sh") \
+        || { log_error "Cannot verify bootstrap checksum"; return 1; }
+    if [[ "${checksum%% *}" != "$expected_sha256" ]]; then
+        log_error "Bootstrap SHA-256 mismatch; nothing executed"
+        return 1
+    fi
+    # Private staging must not make upstream package/repository files root-only.
+    umask "$original_umask" || return 1
+    # Under `curl ... | sudo bash` stdin IS the rest of this installer; a child
+    # that reads it would swallow the lines bash has not parsed yet.
+    "$interpreter" "$bootstrap_dir/bootstrap.sh" </dev/null
+)
 
 # Write stdin to a secret-bearing file (.env) as mode 0600. The file is created
 # under a private umask so it is never observable as 0644; the chmod afterwards
@@ -414,6 +476,15 @@ read_env_value() {
 
 generate_jwt_secret() {
     openssl rand -base64 64 | tr -d "\n"
+}
+
+# Preserve trusted signing configuration verbatim across a wholesale .env
+# rewrite (quotes and Compose interpolation included). One-artifact recovery
+# approvals are deliberately NOT retained by installation/reconfiguration.
+preserve_backup_manifest_env() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    sed -n -E '/^[[:space:]]*(export[[:space:]]+)?BACKUP_MANIFEST_(KEY|KEY_FILE|KEYS_OLD|LEGACY_KEY)[[:space:]]*=/p' "$file"
 }
 
 get_available_ram_mb() {
@@ -595,7 +666,8 @@ install_docker() {
     
     case "$PACKAGE_MANAGER" in
         apt)
-            curl -fsSL https://get.docker.com | sh
+            run_verified_bootstrap "$DOCKER_BOOTSTRAP_URL" "$DOCKER_BOOTSTRAP_SHA256" sh \
+                || die "Docker bootstrap failed; refusing to continue"
             ;;
         dnf|yum)
             $PACKAGE_MANAGER config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -705,6 +777,8 @@ setup_docker_installation() {
     jwt_secret=$(read_env_value "$app_dir/.env" JWT_SECRET)
     db_password=$(read_env_value "$app_dir/.env" DB_PASSWORD)
     redis_password=$(read_env_value "$app_dir/.env" REDIS_PASSWORD)
+    local manifest_env
+    manifest_env=$(preserve_backup_manifest_env "$app_dir/.env")
 
     # Reading nothing back does NOT mean "no secrets exist". The documented
     # install leaves all three commented out (.env.example) and lets the
@@ -736,6 +810,20 @@ setup_docker_installation() {
 
     local frontend_port="${CUSTOM_PORT:-3000}"
     local site_url; site_url="$(base_url)"
+    local public_bind_address="0.0.0.0"
+    local trust_proxy="1"
+    local cookie_secure="false"
+    local enable_hsts="false"
+    if [[ "$HTTPS_MODE" == "proxy" ]]; then
+        # The external TLS proxy reaches the host-local frontend. Keeping this
+        # loopback-only prevents a second plaintext path around that proxy.
+        public_bind_address="127.0.0.1"
+        # The host-local TLS proxy is followed by the frontend nginx. The
+        # loopback publication prevents remote clients taking a shorter path.
+        trust_proxy="2"
+        cookie_secure="true"
+        enable_hsts="true"
+    fi
 
     # Create .env for docker-compose.production.yml (prebuilt GHCR images).
     # The write is wholesale, so anything else the operator hand-edited (extra
@@ -772,6 +860,9 @@ $(env_secret_line JWT_SECRET "$jwt_secret")
 $(env_secret_line DB_PASSWORD "$db_password")
 $(env_secret_line REDIS_PASSWORD "$redis_password")
 
+# External backup authentication configuration retained from the old file.
+$manifest_env
+
 # Database
 DB_HOST=postgres
 DB_USER=picpeak
@@ -780,6 +871,8 @@ DB_NAME=picpeak
 # Host-published ports (frontend is the user-facing one)
 FRONTEND_PORT=$frontend_port
 BACKEND_PORT=3001
+PICPEAK_BIND_ADDRESS=$public_bind_address
+TRUST_PROXY=$trust_proxy
 
 # Host bind-mount paths (required by the production compose)
 APP_STORAGE=./storage
@@ -793,9 +886,10 @@ $(if [[ -n "$ADMIN_PASSWORD" ]]; then printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSW
 FRONTEND_URL=$site_url
 ADMIN_URL=$site_url
 
-# Auth cookie behavior — 'auto' emits Secure on HTTPS, omits it on HTTP so a
-# first HTTP install (before a reverse proxy) does not silently fail login (#427).
-COOKIE_SECURE=auto
+# The no-TLS installer choice is an explicit plaintext opt-in. Proxy mode
+# binds to loopback, requires Secure cookies, and enables HSTS.
+COOKIE_SECURE=$cookie_secure
+ENABLE_HSTS=$enable_hsts
 
 # Email (optional; can also be configured later in the admin panel)
 SMTP_HOST=$SMTP_HOST
@@ -905,11 +999,13 @@ install_nodejs() {
     
     case "$PACKAGE_MANAGER" in
         apt)
-            curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
+            run_verified_bootstrap "$NODE_DEB_BOOTSTRAP_URL" "$NODE_DEB_BOOTSTRAP_SHA256" bash \
+                || die "Node.js bootstrap failed; refusing to continue"
             apt-get install -y nodejs
             ;;
         dnf|yum)
-            curl -fsSL https://rpm.nodesource.com/setup_${NODE_VERSION}.x | bash -
+            run_verified_bootstrap "$NODE_RPM_BOOTSTRAP_URL" "$NODE_RPM_BOOTSTRAP_SHA256" bash \
+                || die "Node.js bootstrap failed; refusing to continue"
             $PACKAGE_MANAGER install -y nodejs
             ;;
     esac
@@ -1012,7 +1108,22 @@ setup_native_installation() {
     # admin session and gallery link on a live install.
     local jwt_secret
     jwt_secret=$(read_env_value "$NATIVE_APP_DIR/app/backend/.env" JWT_SECRET)
+    local manifest_env
+    manifest_env=$(preserve_backup_manifest_env "$NATIVE_APP_DIR/app/backend/.env")
     [[ -n "$jwt_secret" ]] || jwt_secret=$(generate_jwt_secret)
+
+    local listen_host="0.0.0.0"
+    local trust_proxy="false"
+    local cookie_secure="false"
+    local enable_hsts="false"
+    if [[ "$HTTPS_MODE" == "caddy" || "$HTTPS_MODE" == "proxy" ]]; then
+        # Caddy and the supported external-proxy layout terminate TLS on this
+        # host. Do not leave a remotely reachable plaintext origin beside it.
+        listen_host="127.0.0.1"
+        trust_proxy="loopback"
+        cookie_secure="true"
+        enable_hsts="true"
+    fi
 
     # Create .env file
     log_step "Creating configuration..."
@@ -1032,7 +1143,12 @@ setup_native_installation() {
 # Application
 NODE_ENV=production
 PORT=${CUSTOM_PORT:-$DEFAULT_PORT}
+LISTEN_HOST=$listen_host
+TRUST_PROXY=$trust_proxy
 JWT_SECRET=$jwt_secret
+
+# External backup authentication configuration retained from the old file.
+$manifest_env
 
 # Admin — created in the browser via a one-time /setup token unless a password
 # is seeded here (--admin-password).
@@ -1059,8 +1175,10 @@ SMTP_FROM=${SMTP_USER:-noreply@localhost}
 FRONTEND_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
 ADMIN_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
 
-# Auth cookie behavior — see Docker .env block above for rationale (#427).
-COOKIE_SECURE=auto
+# The no-TLS installer choice is an explicit plaintext opt-in. TLS modes bind
+# the origin to loopback and fail closed on cookies and transport policy.
+COOKIE_SECURE=$cookie_secure
+ENABLE_HSTS=$enable_hsts
 
 # Features
 ENABLE_FILE_WATCHER=true
@@ -1174,7 +1292,7 @@ setup_caddy() {
     # Configure Caddy
     cat > /etc/caddy/Caddyfile <<EOF
 $DOMAIN_NAME {
-    reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+    reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     
     header {
         X-Content-Type-Options nosniff
@@ -1191,12 +1309,12 @@ $DOMAIN_NAME {
     
     @api path /api/*
     handle @api {
-        reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+        reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     }
     
     @admin path /admin/*
     handle @admin {
-        reverse_proxy localhost:${CUSTOM_PORT:-$DEFAULT_PORT}
+        reverse_proxy 127.0.0.1:${CUSTOM_PORT:-$DEFAULT_PORT}
     }
 }
 EOF
@@ -1659,6 +1777,10 @@ parse_arguments() {
                 ENABLE_SSL=true
                 shift
                 ;;
+            --allow-insecure-http)
+                ALLOW_INSECURE_HTTP=true
+                shift
+                ;;
             --port)
                 CUSTOM_PORT="$2"
                 shift 2
@@ -1717,6 +1839,10 @@ Options:
   --smtp-pass PASS    Deprecated: SMTP password on the command line
   --force-admin-password-reset  Regenerate admin credentials after setup
   --enable-ssl        Native only: provision HTTPS via Caddy (needs --domain)
+  --allow-insecure-http
+                      Required for unattended installs without TLS. Publishes
+                      the frontend on all host interfaces and disables Secure
+                      cookies; use only as a temporary trusted-LAN override.
   --port PORT         Custom user-facing port
   --update            Update existing installation
   --uninstall         Remove PicPeak installation
@@ -1727,7 +1853,7 @@ Examples:
   sudo $0
 
   # Unattended Docker install, admin created in the browser afterwards
-  sudo $0 --docker --unattended --email admin@example.com
+  sudo $0 --docker --unattended --email admin@example.com --allow-insecure-http
 
   # Unattended Docker install behind your own reverse proxy, seeded admin.
   # The password comes from a private file, never from the command line:

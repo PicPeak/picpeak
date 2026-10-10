@@ -30,11 +30,14 @@ jobs:
     # passing and jest still running. A cancelled job reads as a red X on a
     # green branch, which costs a re-run and a diagnosis every time it happens.
     #
-    # The cap is a runaway guard, not a performance budget; 20 leaves real
-    # headroom over the worst observed run while still killing a hung suite
-    # well inside the hour GitHub would otherwise allow. frontend and ml keep
-    # 10 — they take seconds and have never come close.
-    timeout-minutes: 20
+    # The cap is a runaway guard, not a performance budget. It was 20 until
+    # the October 2026 security backports: stable still migrates a fresh
+    # database per suite (main copies a migrated template), so the added
+    # suites and migrations pushed a normal run to about 14 minutes and one
+    # past 20. 40 keeps real headroom while still killing a hung suite well
+    # inside the hour GitHub would otherwise allow. frontend and ml keep 10 —
+    # they take seconds and have never come close.
+    timeout-minutes: 40
 
     # The .picpeak restore suites gate their real-Postgres cases behind
     # PICPEAK_PG_TEST_URL and `describe.skip` themselves out when it is

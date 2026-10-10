@@ -32,7 +32,11 @@ const logger = require('../utils/logger');
 
 
 
-async function runTick() {
+function runTick() {
+  return require('../database/crmAccess').withTrustedCrmAccess('shipped CRM scheduler', runTickInternal);
+}
+
+async function runTickInternal() {
   try {
     await invoiceService.runScheduledTasks();
   } catch (err) {

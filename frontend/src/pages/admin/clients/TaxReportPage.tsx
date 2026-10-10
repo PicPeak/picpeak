@@ -521,7 +521,9 @@ export const TaxReportPage: React.FC = () => {
             <div>
               <p className="font-medium">{t('taxReport.errorTitle', 'Could not load tax report')}</p>
               <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-                {(error as Error)?.message || String(error)}
+                {(error as any)?.response?.data?.code === 'CRM_COMPLETE_VIEW_REQUIRED'
+                  ? t('taxReport.completeViewRequired', 'This report covers every invoice of the studio. Your account only sees its own documents, so the report is not available to you. Ask a super admin to produce it.')
+                  : (error as Error)?.message || String(error)}
               </p>
               <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-3">
                 {t('common.retry', 'Retry')}

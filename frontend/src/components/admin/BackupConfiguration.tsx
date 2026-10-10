@@ -24,6 +24,7 @@ interface BackupFormData {
   backup_destination_type: 'local' | 'rsync' | 's3';
   backup_destination_path: string;
   backup_rsync_host: string;
+  backup_rsync_port: number;
   backup_rsync_user: string;
   backup_rsync_path: string;
   backup_rsync_ssh_key: string;
@@ -35,6 +36,7 @@ interface BackupFormData {
   backup_schedule: string;
   backup_schedule_cron: string;
   backup_retention_days: number;
+  backup_retention_count: number;
   backup_include_database: boolean;
   backup_include_photos: boolean;
   backup_include_archives: boolean;
@@ -153,6 +155,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     backup_destination_type: 'local',
     backup_destination_path: '',
     backup_rsync_host: '',
+    backup_rsync_port: 22,
     backup_rsync_user: '',
     backup_rsync_path: '',
     backup_rsync_ssh_key: '',
@@ -164,6 +167,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
     backup_schedule: 'daily',
     backup_schedule_cron: '0 3 * * *',
     backup_retention_days: 30,
+    backup_retention_count: 7,
     backup_include_database: true,
     backup_include_photos: true,
     backup_include_archives: true,
@@ -276,6 +280,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
       return {
         destination_type: 'rsync',
         host: formData.backup_rsync_host,
+        port: formData.backup_rsync_port,
         user: formData.backup_rsync_user,
         path: formData.backup_rsync_path,
         ...(formData.backup_rsync_ssh_key !== SECRET_MASK
@@ -427,17 +432,32 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                  {t('backup.configuration.fields.rsyncPath')}
-                </label>
-                <Input
-                  type="text"
-                  value={formData.backup_rsync_path}
-                  onChange={(e) => handleChange('backup_rsync_path', e.target.value)}
-                  placeholder={t('backup.configuration.fields.rsyncPathPlaceholder')}
-                  required
-                />
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t('backup.configuration.fields.rsyncPath')}
+                  </label>
+                  <Input
+                    type="text"
+                    value={formData.backup_rsync_path}
+                    onChange={(e) => handleChange('backup_rsync_path', e.target.value)}
+                    placeholder={t('backup.configuration.fields.rsyncPathPlaceholder')}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t('backup.configuration.fields.rsyncPort')}
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    value={Number.isNaN(formData.backup_rsync_port) ? '' : formData.backup_rsync_port}
+                    onChange={(e) => handleChange('backup_rsync_port', parseInt(e.target.value))}
+                    required
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
@@ -662,6 +682,23 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
             />
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
               {t('backup.configuration.schedule.retentionHelp')}
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="backup-retention-count" className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              {t('backup.configuration.schedule.retentionCount')}
+            </label>
+            <Input
+              id="backup-retention-count"
+              type="number"
+              value={formData.backup_retention_count}
+              onChange={(e) => handleChange('backup_retention_count', parseInt(e.target.value))}
+              min="0"
+              max="1000"
+            />
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              {t('backup.configuration.schedule.retentionCountHelp')}
             </p>
           </div>
         </div>
