@@ -122,6 +122,9 @@ export interface Event {
   // The owner's admin id; null for a legacy ownerless gallery.
   created_by?: number | null;
   can_manage_assignments?: boolean;
+  // Whether invoices may be linked to this gallery: its creator or a super
+  // admin (the CRM owner rule the server applies).
+  can_link_crm?: boolean;
   can_review_uploads?: boolean;
   review_contributor_uploads?: boolean | number;
   // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk

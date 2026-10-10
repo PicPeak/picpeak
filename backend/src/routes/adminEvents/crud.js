@@ -26,7 +26,7 @@ const externalAccess = require('../../services/externalMediaAccess');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent } = require('../../middleware/ownership');
+const { requireEventOwnership, requireEventOwner, scopeEventsListQuery, withoutForeignEventSecrets, scopeEventsQuery, ownsEvent, canLinkCrmToEvent } = require('../../middleware/ownership');
 const eventAdminAssignments = require('../../services/eventAdminAssignmentsService');
 const { mayReviewUploads, holdsForReview } = require('../../services/uploadReviewService');
 const { applyEventListSort } = require('./listSort');
@@ -511,6 +511,8 @@ module.exports = (router) => {
         ...event,
         assigned_admins: assignedAdmins,
         can_manage_assignments: ownsEvent(req.admin, event),
+        // Whether invoices may be linked to this gallery (the CRM owner rule).
+        can_link_crm: canLinkCrmToEvent(req.admin, event),
         can_review_uploads: await mayReviewUploads(req.admin, event),
         gallery_notice: galleryNotice,
         photo_count: parseInt(photoCount) || 0,

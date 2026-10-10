@@ -518,6 +518,9 @@ export const BillEditorPage: React.FC = () => {
           value={customerId}
           label={customerLabel}
           isPassive={customerIsPassive}
+          // Fixed once the invoice exists (the server refuses a change):
+          // drafts, quote lineage and installments hang off the customer.
+          readOnly={!!isEdit}
           onSelect={(c) => {
             setCustomerId(c.id);
             setCustomerLabel(c.companyName || c.displayName || c.email);

@@ -71,6 +71,20 @@ function seesAllEvents(admin) {
 }
 
 /**
+ * Whether CRM documents (an invoice, today) may be linked to this event: the
+ * rule the database layer applies to CRM rows (database/crmAccess.js — an
+ * event anchors a CRM document only for its creator, or for a super admin).
+ * Stricter than ownsEvent on purpose: an ownerless gallery or a role that
+ * manages every gallery would link a document its own creator could then no
+ * longer read.
+ */
+function canLinkCrmToEvent(admin, event) {
+  if (!admin || !event) return false;
+  if (admin.roleName === 'super_admin') return true;
+  return event.created_by != null && Number(event.created_by) === Number(admin.id);
+}
+
+/**
  * Middleware to enforce event ownership for non-super_admin users.
  * Super admins and roles holding events.manage_all bypass the check. Other
  * admins can only access events they created or are assigned to, plus
@@ -301,6 +315,7 @@ module.exports = {
   requireEventOwnership,
   requireEventOwner,
   filterOwnedEventIds,
+  canLinkCrmToEvent,
   scopeEventsQuery,
   scopeEventsListQuery,
   withoutForeignEventSecrets,
