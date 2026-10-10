@@ -87,6 +87,9 @@ it('boot does not depend on the restore machinery: the database is initialized f
 it('only a fence left by a previous run opens the listener first: progress, the bundled shell and health stay served', () => {
   execFileSync(process.execPath, ['-e', `
     const fs = require('fs').promises, os = require('os'), path = require('path'), crypto = require('crypto');
+    let stage = 'setup';
+    // Names the step and the open handles if this ever hangs on a runner.
+    setTimeout(() => { console.error('stuck at ' + stage, process._getActiveHandles().map(handle => handle.constructor.name)); process.exit(1); }, 15000).unref();
     (async () => {
       const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-cold-listener-')));
       process.env.TEST_DATABASE_PATH = path.join(directory, 'control.db');
@@ -121,6 +124,7 @@ it('only a fence left by a previous run opens the listener first: progress, the 
       const server = require('./server');
       let listener; const listen = server.listen;
       server.listen = (...args) => { listener = listen.apply(server, args); return listener; };
+      stage = 'start';
       const starting = server.startServer();
       for (let i=0; i<100 && !listener?.listening; i++) await new Promise(done=>setTimeout(done,10));
       if (!listener?.listening || ordinaryStarts) throw new Error('Cold maintenance listener did not precede ordinary startup');
@@ -129,6 +133,7 @@ it('only a fence left by a previous run opens the listener first: progress, the 
         const response = await fetch(origin+route,{...options,signal:AbortSignal.timeout(2000)});
         return {status:response.status,text:await response.text()};
       };
+      stage = 'requests';
       const progress = await get('/api/admin/backup/picpeak/restore/'+attempt, {headers:{'x-picpeak-restore-progress':token}});
       const body = JSON.parse(progress.text);
       if (progress.status!==200 || body.state!=='recovery_required') throw new Error('Cold progress unavailable');
@@ -145,8 +150,10 @@ it('only a fence left by a previous run opens the listener first: progress, the 
         if ((await get(route)).status!==503) throw new Error('Cold ordinary route escaped: '+route);
       }
       if ((await get('/api/admin/backup/picpeak/import',{method:'POST'})).status!==401) throw new Error('Cold POST auth escaped');
+      stage = 'stop';
       await server.stopServer(); await starting;
       if (ordinaryStarts) throw new Error('Ordinary initializer ran while fenced');
+      stage = 'cleanup';
       await fs.rm(directory,{recursive:true,force:true});
       process.exitCode=0; // Explicit shutdown makes the pending startup reject safely.
     })().catch(error=>{console.error(error.stack);process.exit(1);});
