@@ -38,7 +38,8 @@ const PURGE_AFTER_MS = 30 * DAY_MS;
 // customer's details first.
 const RUNNING = ['sent', 'awaiting_data'];
 
-const task = scheduledTask(() => runContractSigningSweep(), { schedule: '35 * * * *' });
+const task = scheduledTask(() => require('../../database/crmAccess')
+  .withTrustedCrmAccess('shipped contract expiry scheduler', () => runContractSigningSweep()), { schedule: '35 * * * *' });
 const startContractSigningSweep = () => task.start();
 const stopContractSigningSweep = () => task.stop();
 

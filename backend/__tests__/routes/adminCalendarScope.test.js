@@ -73,10 +73,12 @@ describe('admin calendar — scoped to what the role may see', () => {
     await db('quotes').insert({
       quote_number: 'Q-CAL-1', customer_account_id: customerId, status: 'sent',
       issue_date: '2026-07-01', event_date: '2026-08-12', event_name: 'Quoted shoot',
+      created_by_admin_id: ownerId,
     });
     await db('contracts').insert({
       contract_number: 'C-CAL-1', customer_account_id: customerId, status: 'signed_by_customer',
       issue_date: '2026-07-01', event_date: '2026-08-14', event_name: 'Contracted shoot',
+      created_by_admin_id: ownerId,
     });
     await setFlag('calendar', true);
     await setFlag('quotes', true);

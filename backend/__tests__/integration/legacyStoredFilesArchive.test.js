@@ -206,6 +206,7 @@ describe('legacy-root documents in archives', () => {
       status: 'completed',
       backup_type: 'pg',
       file_path: fakeDump,
+      checksum: crypto.createHash('sha256').update(fs.readFileSync(fakeDump)).digest('hex'),
       file_size_bytes: fs.statSync(fakeDump).size,
       destination_path: fakeDump,
     });
@@ -239,7 +240,7 @@ describe('legacy-root documents in archives', () => {
     const rel = 'business-docs/inbound/2026/race.pdf';
     const recordedSha256 = manifest.metadata.stored_path_sha256[rel];
 
-    const archivedBytes = fs.readFileSync(path.join(destPath, ...rel.split('/')));
+    const archivedBytes = fs.readFileSync(path.join(manifest.backup.path, ...rel.split('/')));
     expect(archivedBytes.toString()).toBe('AFTER-RACE-BYTES');
     expect(recordedSha256).toBe(crypto.createHash('sha256').update(archivedBytes).digest('hex'));
   });

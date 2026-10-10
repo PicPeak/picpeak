@@ -22,6 +22,19 @@ function validateEnvironment() {
 
   const warnings = [];
   const errors = [];
+  const backupKey = require('../utils/backupManifestKey').keyStatus();
+  // A warning, not a boot error: before manifests were authenticated any
+  // BACKUP_MANIFEST_KEY string was accepted, so exiting here would put an
+  // upgraded install into a restart loop. Signing and verification still fail
+  // closed, and System Health shows the key as not ready.
+  if (backupKey.source === 'invalid') {
+    warnings.push('BACKUP SIGNING IS DISABLED: the backup manifest signing key configuration is invalid, so new backups cannot be authenticated. '
+      + 'BACKUP_MANIFEST_KEY must be 64 hex digits (openssl rand -hex 32); a key file must be a private regular file outside backed-up storage. '
+      + 'An earlier passphrase-style BACKUP_MANIFEST_KEY still verifies the backups it signed.');
+  } else if (!backupKey.ready) warnings.push('Backup manifest key not provisioned yet. A new key is created only when signing a backup; retain that external key separately for recovery.');
+  if (process.env.BACKUP_MANIFEST_RECOVERY_SHA256 || process.env.BACKUP_MANIFEST_RECOVERY_REASON) {
+    warnings.push('UNAUTHENTICATED backup recovery approval is configured. Use only on an isolated recovery host and remove it immediately after that one-artifact recovery.');
+  }
 
   // Check each required variable
   requiredVars.forEach(({ name, description, critical }) => {
@@ -49,6 +62,11 @@ function validateEnvironment() {
       }
     }
   });
+
+  const emailQueueKey = process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
+  if (emailQueueKey && emailQueueKey.trim().length < 32) {
+    errors.push('EMAIL_QUEUE_ENCRYPTION_KEY must contain at least 32 characters. Generate a unique secret with openssl rand -hex 32.');
+  }
 
   // The evidence key (#1446) is read here rather than at the first contract
   // send: a value that is a character short of a key would otherwise fail in

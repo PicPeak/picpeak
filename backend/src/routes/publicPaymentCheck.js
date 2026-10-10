@@ -23,6 +23,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const invoiceService = require('../services/invoiceService');
 
 const router = express.Router();
+router.use(require('../database/crmAccess').crmCapabilityRouter('public payment-check capability'));
 
 // 30 reads / minute / IP; 10 records / minute / IP.
 const previewLimiter = rateLimit({

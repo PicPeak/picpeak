@@ -6,11 +6,9 @@
  * bound, so a small crafted .gz could fill the volume.
  *
  * hgp8: the manifest checksum is a plain SHA-256 — it proves the manifest was
- * not corrupted, not that it is authentic. BACKUP_MANIFEST_KEY upgrades new
- * manifests to a keyed HMAC. It is deliberately OPT-IN and verify-if-present:
- * the key cannot live in the database (the database is inside the backup), so
- * a mandatory HMAC would lock an operator out of the exact disaster-recovery
- * case this system exists for.
+ * not corrupted, not that it is authentic. Standard manifests now require
+ * keyed authentication by default. Legacy recovery requires a separate,
+ * audited host approval rather than silently accepting missing keys.
  */
 
 const path = require('path');
@@ -26,6 +24,13 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'bkharden-test-secret';
 
 const { restoreService } = require('../../src/services/restoreService');
 const backupManifest = require('../../src/services/backupManifest');
+const SIGNING_KEY = '7c'.repeat(32);
+const originalSigningKey = process.env.BACKUP_MANIFEST_KEY;
+beforeEach(() => { process.env.BACKUP_MANIFEST_KEY = SIGNING_KEY; });
+afterAll(() => {
+  if (originalSigningKey === undefined) delete process.env.BACKUP_MANIFEST_KEY;
+  else process.env.BACKUP_MANIFEST_KEY = originalSigningKey;
+});
 
 describe('decompressFile expanded-size bound (GHSA-h652)', () => {
   let dir;
@@ -63,7 +68,7 @@ describe('manifest checksum keying (GHSA-hgp8)', () => {
     backup: { type: 'full' },
     system: { platform: 'linux' },
     application: { version: '1.0.0' },
-    files: { count: 1, manifest: [{ path: 'a.jpg', size: 1 }] },
+    files: { count: 1, manifest: [{ path: 'a.jpg', size: 1, checksum: '21'.repeat(32) }] },
     database: { type: 'sqlite' },
     verification: { total_checksum: null, checksum_algorithm: null },
   });
@@ -77,44 +82,38 @@ describe('manifest checksum keying (GHSA-hgp8)', () => {
     expect(keyed).not.toBe(unkeyed);
   });
 
-  it('validates a legacy unkeyed manifest even when a key IS configured', () => {
-    // Disaster recovery: manifests written before keying must not become
-    // un-restorable the moment the operator sets a key.
+  it('refuses an unkeyed legacy manifest even with a configured key', () => {
     const m = baseManifest();
     m.verification.checksum_algorithm = 'sha256';
     m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
 
     process.env.BACKUP_MANIFEST_KEY = 'secret-key';
-    expect(() => backupManifest.validateManifest(m)).not.toThrow();
+    expect(() => backupManifest.validateManifest(m)).toThrow(/downgrade/);
   });
 
   it('accepts a keyed manifest when the matching key is configured', () => {
-    process.env.BACKUP_MANIFEST_KEY = 'secret-key';
+    process.env.BACKUP_MANIFEST_KEY = SIGNING_KEY;
     const m = baseManifest();
-    m.verification.checksum_algorithm = 'hmac-sha256';
-    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: 'secret-key' });
+    backupManifest.signManifest(m);
 
     expect(() => backupManifest.validateManifest(m)).not.toThrow();
   });
 
   it('rejects a keyed manifest whose body was tampered with', () => {
-    process.env.BACKUP_MANIFEST_KEY = 'secret-key';
+    process.env.BACKUP_MANIFEST_KEY = SIGNING_KEY;
     const m = baseManifest();
-    m.verification.checksum_algorithm = 'hmac-sha256';
-    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: 'secret-key' });
+    backupManifest.signManifest(m);
 
     m.files.manifest[0].path = '../../etc/passwd';
     expect(() => backupManifest.validateManifest(m)).toThrow(/checksum verification failed/i);
   });
 
-  it('does NOT brick restore when a keyed manifest meets a missing key', () => {
-    // Key lost with the host — the precise moment a restore is needed.
+  it('fails closed when a keyed manifest meets a missing retained key', () => {
     const m = baseManifest();
-    m.verification.checksum_algorithm = 'hmac-sha256';
-    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: 'secret-key' });
+    backupManifest.signManifest(m);
 
     delete process.env.BACKUP_MANIFEST_KEY;
-    expect(() => backupManifest.validateManifest(m)).not.toThrow();
+    expect(() => backupManifest.validateManifest(m)).toThrow(/signing key is missing/);
   });
 });
 
@@ -124,7 +123,7 @@ describe('manifest checksum coverage (canonicalization)', () => {
     backup: { type: 'full' },
     system: { platform: 'linux' },
     application: { version: '1.0.0' },
-    files: { count: 1, manifest: [{ path: 'a.jpg', size: 1 }] },
+    files: { count: 1, manifest: [{ path: 'a.jpg', size: 1, checksum: '21'.repeat(32) }] },
     database: { type: 'sqlite' },
     verification: { total_checksum: null, checksum_algorithm: 'sha256' },
   });
@@ -133,18 +132,18 @@ describe('manifest checksum coverage (canonicalization)', () => {
 
   it('covers nested file entries (the old replacer dropped them)', () => {
     const m = fullManifest();
-    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
+    backupManifest.signManifest(m);
     // Tampering a file path must now change the digest.
     m.files.manifest[0].path = '../../etc/passwd';
     expect(() => backupManifest.validateManifest(m)).toThrow(/checksum verification failed/i);
   });
 
-  it('still accepts a manifest written with the legacy serialization', () => {
+  it('refuses a manifest written with the unsafe legacy serialization', () => {
     const m = fullManifest();
     m.verification.total_checksum = backupManifest.calculateManifestChecksum(
       m, { keyed: false, legacy: true }
     );
-    expect(() => backupManifest.validateManifest(m)).not.toThrow();
+    expect(() => backupManifest.validateManifest(m)).toThrow(/downgrade/);
   });
 });
 
@@ -164,26 +163,24 @@ describe('checksum verification is shared and downgrade-aware (codex round 2)', 
     delete process.env.BACKUP_MANIFEST_REQUIRE_KEYED;
   });
 
-  it('accepts a legacy-serialized manifest through the SHARED verifier', () => {
-    // restoreService recomputed the digest itself with the canonical
-    // serializer, which rejected every pre-existing backup.
+  it('refuses legacy under-covering serialization through the shared verifier', () => {
     const m = fullManifest();
     m.verification.total_checksum = backupManifest.calculateManifestChecksum(
       m, { keyed: false, legacy: true },
     );
     const res = backupManifest.verifyManifestChecksum(m);
-    expect(res.valid).toBe(true);
-    expect(res.warnings.join(' ')).toMatch(/legacy checksum serialization/i);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/downgrade/);
   });
 
-  it('warns but accepts an unkeyed manifest when a key is configured', () => {
+  it('refuses an unkeyed manifest when a key is configured', () => {
     const m = fullManifest();
     m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
     process.env.BACKUP_MANIFEST_KEY = 'secret-key';
 
     const res = backupManifest.verifyManifestChecksum(m);
-    expect(res.valid).toBe(true);
-    expect(res.warnings.join(' ')).toMatch(/authenticity NOT established/i);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/downgrade/);
   });
 
   it('REJECTS the algorithm downgrade once REQUIRE_KEYED is on', () => {

@@ -32,6 +32,11 @@ const {
   createExternalRelpathIndex,
   dropExternalRelpathIndex,
 } = require('./externalPhotoDedupe');
+const {
+  hardenAccountRecoveryStorage,
+  installAccountRecoveryWriteGuards,
+  removeAccountRecoveryWriteGuards,
+} = require('./accountRecoveryStorageHardening');
 
 const isPostgres = () => knexConfig.client === 'pg';
 
@@ -512,6 +517,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await trx.raw('PRAGMA defer_foreign_keys = ON');
     }
 
+    // A portable archive can predate the recovery-token storage migration.
+    // Temporarily remove the write boundary so those legacy rows can be
+    // loaded, then harden them and restore the boundary before commit.
+    await removeAccountRecoveryWriteGuards(trx);
+
     // Suspending FK enforcement does not suspend UNIQUE indexes on either
     // engine (#1162). A backup taken before migration 186 carries the
     // duplicate photo rows that migration exists to remove, so batchInsert
@@ -552,6 +562,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // existed would leave local grants on restored photos whose ids happen
     // to match, using up those galleries' quotas.
     if (await trx.schema.hasTable('event_download_grants')) tablesToClear.add('event_download_grants');
+    // Mail ledgers contain installation-specific runtime state, not lookup
+    // seeds. Clear local copies even when a pre-275 archive cannot list them.
+    for (const table of ['mail_intake_state', 'mail_intake_files']) {
+      if (await trx.schema.hasTable(table)) tablesToClear.add(table);
+    }
     for (const table of tablesToClear) {
       if (SEED_ONLY_TABLES.has(table) && !manifestTableSet.has(table)) continue;
       await trx(table).del();
@@ -591,6 +606,10 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       if (table === 'events') await canonicaliseSqliteExpiresAt(trx);
     }
 
+    // Rebuild only missing legacy accounting from the RESTORED rows in this
+    // same transaction. Modern archives keep their rate/audit reservations.
+    await require('../utils/mailIntakeLedger').backfillMailIntake(trx);
+
     // Restore the constraint the load ran without. Deduping first because the
     // incoming rows may be exactly the duplicates migration 186 removes; the
     // index creation then also proves the repair worked, inside the same
@@ -607,6 +626,9 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     if (operatorId && roleSnapshot) {
       await preserveOperatorRole(trx, operatorId, roleSnapshot);
     }
+
+    await hardenAccountRecoveryStorage(trx);
+    await installAccountRecoveryWriteGuards(trx);
 
     // Reset the pg session flag BEFORE the connection returns to the pool.
     if (isPostgres()) await trx.raw('SET session_replication_role = \'origin\'');

@@ -5,6 +5,34 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.167.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.2-beta.0...v3.167.3-beta.0) (2026-10-08)
+
+
+### Bug Fixes
+
+* **backup:** create complete standalone restore points ([#1859](https://github.com/PicPeak/picpeak/issues/1859)) ([a0cfe03](https://github.com/PicPeak/picpeak/commit/a0cfe031277e4526cd9957fb05740b66d3bb50b0))
+* bound public upload ingress and lifetime capacity ([#1875](https://github.com/PicPeak/picpeak/issues/1875)) ([a4231bb](https://github.com/PicPeak/picpeak/commit/a4231bb21f796b05e24eccff57df7458472c3f2d))
+* **security:** enforce CRM document ownership ([#1884](https://github.com/PicPeak/picpeak/issues/1884)) ([f47accd](https://github.com/PicPeak/picpeak/commit/f47accd6fff07c7310d4d9b78c09cc6d66770a21))
+* **upload:** bound authenticated upload admission ([#1876](https://github.com/PicPeak/picpeak/issues/1876)) ([697e4b7](https://github.com/PicPeak/picpeak/commit/697e4b745e4e3bcde59624c5113a874580336524))
+
+## [3.167.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.1-beta.0...v3.167.2-beta.0) (2026-10-08)
+
+
+### Bug Fixes
+
+* **analytics:** isolate telemetry from application credentials ([#1856](https://github.com/PicPeak/picpeak/issues/1856)) ([98019bf](https://github.com/PicPeak/picpeak/commit/98019bf39aaa2c0b2f9375b2a7478c25849736c9))
+* **auth:** harden client links and transfer upload codes ([#1845](https://github.com/PicPeak/picpeak/issues/1845)) ([bfef9e7](https://github.com/PicPeak/picpeak/commit/bfef9e70a3f7fa533a013717d508c3cf66068e6f))
+* **auth:** protect account recovery secrets at rest ([#1848](https://github.com/PicPeak/picpeak/issues/1848)) ([42f4ad1](https://github.com/PicPeak/picpeak/commit/42f4ad11bcbed1504772a2d1c3a2a45df45e6227))
+* **backup:** authenticate standard recovery manifests ([#1865](https://github.com/PicPeak/picpeak/issues/1865)) ([d458c3c](https://github.com/PicPeak/picpeak/commit/d458c3c5ff134a767087c966fd83b3b898620d3c))
+* **backup:** pin rsync SSH destinations and require approved host keys ([#1868](https://github.com/PicPeak/picpeak/issues/1868)) ([ccaf88c](https://github.com/PicPeak/picpeak/commit/ccaf88c085f488dab4dd2e0c5da6849587881f01))
+* **db:** verify PostgreSQL TLS across pools and native clients ([#1852](https://github.com/PicPeak/picpeak/issues/1852)) ([706711d](https://github.com/PicPeak/picpeak/commit/706711d0a8e48aa9f7306c17dba3a78bc791a0d8))
+* enforce gallery original-asset authorization ([#1878](https://github.com/PicPeak/picpeak/issues/1878)) ([13171bb](https://github.com/PicPeak/picpeak/commit/13171bbc0369c2010927245f31d98a5ed7b132a2))
+* **mail:** bind SMTP and IMAP connections to vetted DNS answers ([#1872](https://github.com/PicPeak/picpeak/issues/1872)) ([1137d21](https://github.com/PicPeak/picpeak/commit/1137d21d23d3326b288fe2c67036b91edf6b18c7))
+* **mail:** bound retained intake bytes and lifecycle ([#1888](https://github.com/PicPeak/picpeak/issues/1888)) ([7979157](https://github.com/PicPeak/picpeak/commit/7979157dea54312bffcf6e8c9d08ee97d611b174))
+* scope external media sources to their owners ([#1880](https://github.com/PicPeak/picpeak/issues/1880)) ([7d88c98](https://github.com/PicPeak/picpeak/commit/7d88c98626b02ae2d3024eb04b5b85f7aeecee1e))
+* **security:** tighten production network and cookie defaults ([#1850](https://github.com/PicPeak/picpeak/issues/1850)) ([6fe8c94](https://github.com/PicPeak/picpeak/commit/6fe8c94f7b1a6b230e63f037eb12d5a23b6839e5))
+* **workflows:** enforce owner scope on execution data ([#1843](https://github.com/PicPeak/picpeak/issues/1843)) ([b10e817](https://github.com/PicPeak/picpeak/commit/b10e81786b161446974af54b16c2b20efa242c44))
+
 ## [3.167.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.0-beta.0...v3.167.1-beta.0) (2026-10-08)
 
 

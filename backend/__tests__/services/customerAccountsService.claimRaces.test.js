@@ -26,6 +26,7 @@ jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn(asyn
 jest.mock('../../src/services/workflows', () => ({ emitWorkflowEvent: jest.fn(async () => {}) }));
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
+const { capabilityTokenColumns, digestCapabilityToken } = require('../../src/utils/capabilityToken');
 
 let db; let cleanup; let adminId; let service;
 // Epoch milliseconds, the shape the service itself stores on SQLite.
@@ -67,7 +68,10 @@ describe('applyPasswordReset', () => {
     }).returning('id');
     const customerId = cid?.id ?? cid;
     const token = hex();
-    await db('customer_password_resets').insert({ token, customer_account_id: customerId, expires_at: future(), created_at: new Date().toISOString() });
+    await db('customer_password_resets').insert({
+      ...capabilityTokenColumns(token), customer_account_id: customerId,
+      expires_at: future(), created_at: new Date().toISOString(),
+    });
     return { customerId, token };
   }
 
@@ -85,7 +89,8 @@ describe('applyPasswordReset', () => {
     const row = await db('customer_accounts').where({ id: customerId }).first();
     const winner = settled[0].status === 'fulfilled' ? 'First-Password-1' : 'Second-Password-2';
     expect(await bcrypt.compare(winner, row.password_hash)).toBe(true);
-    const reset = await db('customer_password_resets').where({ token }).first();
+    const reset = await db('customer_password_resets')
+      .where({ token_digest: digestCapabilityToken(token) }).first();
     expect(reset.used_at).not.toBeNull();
   });
 
@@ -105,7 +110,8 @@ describe('acceptInvitation', () => {
     const customerId = cid?.id ?? cid;
     const token = hex();
     const [iid] = await db('customer_invitations').insert({
-      email, token, invited_by: adminId, expires_at: future(), created_at: new Date().toISOString(),
+      email, ...capabilityTokenColumns(token), invited_by: adminId,
+      expires_at: future(), created_at: new Date().toISOString(),
     }).returning('id');
     return { customerId, token, invitationId: iid?.id ?? iid };
   }
