@@ -9,11 +9,12 @@ const state = vi.hoisted(() => ({ language: 'en' }));
 vi.mock('../../../services/portableBackup.service', () => ({
   portableBackupService: { progress: vi.fn() }, clearRestoreHandle: vi.fn(),
 }));
-vi.mock('react-i18next', async () => ({ ...await vi.importActual<typeof import('react-i18next')>('react-i18next'), useTranslation: () => ({ t: (key: string) => {
+vi.mock('react-i18next', async () => ({ ...await vi.importActual<typeof import('react-i18next')>('react-i18next'), useTranslation: () => ({ t: (key: string, options?: Record<string, unknown>) => {
   const locale = state.language === 'de' ? de : en;
   const value = key.split('.').reduce<unknown>((acc, name) => acc && typeof acc === 'object'
     ? (acc as Record<string, unknown>)[name] : undefined, locale);
-  return typeof value === 'string' ? value : key;
+  const text = typeof value === 'string' ? value : (typeof options?.defaultValue === 'string' ? options.defaultValue : key);
+  return text.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => String(options?.[name] ?? ''));
 } }) }));
 const handle = { attemptId: '01234567-89ab-4cde-8123-456789abcdef', progressToken: 'a'.repeat(64) };
 const progress: RestoreProgress = { attemptId: handle.attemptId, state: 'restart_required', outcome: 'committed',
@@ -43,14 +44,37 @@ describe('session-independent coordinated restore progress', () => {
     expect(screen.queryByText(en.backup.picpeak.progressUnavailable)).not.toBeInTheDocument();
     expect(screen.getByText(en.backup.picpeak.restartAllInstances)).toBeInTheDocument();
   });
-  it('reports recovery/verified rollback generically and never displays a raw server error', async () => {
-    vi.mocked(portableBackupService.progress).mockResolvedValue({ ...progress, state: 'recovery_required', outcome: 'rolled_back',
-      error: { message: 'SELECT secrets FROM /private/storage/archive' } } as RestoreProgress);
+  it.each(['en', 'de'])('after a verified rollback says in %s that the instance runs again, why it failed, and needs no login', async language => {
+    state.language = language;
+    const locale = language === 'de' ? de : en;
+    vi.mocked(portableBackupService.progress).mockResolvedValue({ ...progress, state: 'open', outcome: 'rolled_back',
+      restartRequired: false, complete: true, summary: {},
+      error: { code: 'RESTORE_TABLE_CHECKSUM', statusCode: 400, message: 'The backup\'s "photos" table does not match its recorded checksum' } });
     render(<PortableRestoreProgress handle={handle} />);
     await act(async () => {});
-    expect(screen.getByText(en.backup.picpeak.rollbackVerified)).toBeInTheDocument();
+    expect(screen.getByText(locale.backup.picpeak.rollbackVerified)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(locale.backup.picpeak.restoreError.RESTORE_TABLE_CHECKSUM);
+    expect(screen.queryByText(locale.backup.picpeak.restartAllInstances)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: locale.backup.picpeak.backToBackup })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: locale.backup.picpeak.returnToLogin })).not.toBeInTheDocument();
+  });
+  it('shows the server\'s own reason for a failure code it has no translation for, and an aborted drain as such', async () => {
+    vi.mocked(portableBackupService.progress).mockResolvedValue({ ...progress, state: 'open', outcome: 'aborted',
+      restartRequired: false, complete: true, summary: {},
+      error: { code: 'SOME_NEW_CODE', statusCode: 500, message: 'The worker ran out of disk space' } });
+    render(<PortableRestoreProgress handle={handle} />);
+    await act(async () => {});
+    expect(screen.getByText(en.backup.picpeak.restoreAborted)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('The worker ran out of disk space');
+  });
+  it('keeps showing an interrupted restore as being recovered, with its reason', async () => {
+    vi.mocked(portableBackupService.progress).mockResolvedValue({ ...progress, state: 'recovery_required', outcome: 'recovery_required',
+      restartRequired: false, error: { code: 'RESTORE_DRAIN_TIMEOUT', statusCode: 503, message: 'raw' } });
+    render(<PortableRestoreProgress handle={handle} />);
+    await act(async () => {});
     expect(screen.getByText(en.backup.picpeak.recoveryRequired)).toBeInTheDocument();
-    expect(screen.queryByText(/SELECT secrets/)).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(en.backup.picpeak.restoreError.RESTORE_DRAIN_TIMEOUT);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
   it('ends polling only on exact denied capability or coordinated completion', async () => {
     vi.mocked(portableBackupService.progress).mockRejectedValue({ response: { status: 404 } });

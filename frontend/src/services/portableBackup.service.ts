@@ -1,13 +1,25 @@
 import { api } from '../config/api';
 
 export interface RestoreHandle { attemptId: string; progressToken: string }
+export interface RestoreFailure { code: string; message: string; statusCode?: number }
 export interface RestoreProgress {
   attemptId: string;
   state: 'open' | 'draining' | 'restoring' | 'recovery_required' | 'restart_required';
-  outcome: 'committed' | 'rolled_back' | 'recovery_required' | null;
+  outcome: 'committed' | 'rolled_back' | 'aborted' | 'recovery_required' | null;
   restartRequired: boolean;
   complete: boolean;
+  // Why a restore did not go through; null while it runs and after a commit.
+  error?: RestoreFailure | null;
   summary: { tables?: number; filesRestored?: number; usesExternalMedia?: boolean; crossEngine?: boolean };
+}
+// Whether this host can run a portable restore at all (Linux, native build,
+// local storage); `reason` is a stable code, `message` its English fallback.
+export interface RestoreCapability {
+  available: boolean;
+  reason: string | null;
+  message: string | null;
+  maintenance: boolean;
+  restartRequired: boolean;
 }
 const STORAGE_KEY = 'picpeak_restore_progress';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -27,6 +39,9 @@ export function clearRestoreHandle() {
   window.dispatchEvent(new Event(RESTORE_HANDLE_EVENT));
 }
 export const portableBackupService = {
+  async capability(): Promise<RestoreCapability> {
+    return (await api.get<RestoreCapability>('/admin/backup/picpeak/restore-capability')).data;
+  },
   export(includePhotos: boolean) {
     return api.get('/admin/backup/picpeak/export', { params: { includePhotos }, responseType: 'blob' });
   },
