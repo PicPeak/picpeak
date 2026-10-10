@@ -29,10 +29,8 @@ class S3StorageBackend {
     this.adapter = new S3StorageAdapter(config);
     this.prefix = (config.prefix || '').replace(/^\/+|\/+$/g, '');
     if (this.prefix) generationIndex.logicalKey(this.prefix);
-    this.namespace = crypto.createHash('sha256').update(JSON.stringify([
-      config.endpoint ? new URL(config.endpoint.includes('://') ? config.endpoint : `${config.sslEnabled === false ? 'http' : 'https'}://${config.endpoint}`).href : null,
-      config.region || 'us-east-1', config.bucket, this.prefix,
-    ])).digest('hex');
+    this.namespace = crypto.createHash('sha256').update(JSON.stringify(S3StorageBackend.storeIdentity(config, this.prefix))).digest('hex');
+    this.readOnly = false;
     this.indexDatabase = config.indexDatabase; // Explicit isolated test DBs.
     this.mapping = new Map();
     this.revision = null;
@@ -43,10 +41,48 @@ class S3StorageBackend {
     return 's3';
   }
 
+  // What identifies the object store, not how its endpoint happens to be
+  // spelled: scheme, letter case, a default port, a trailing slash or dot and
+  // AWS's own endpoint (the SDK default) all name the same store.
+  static storeIdentity(config, prefix) {
+    let endpoint = null;
+    if (config.endpoint) {
+      const url = new URL(config.endpoint.includes('://') ? config.endpoint : `https://${config.endpoint}`);
+      const host = url.hostname.toLowerCase().replace(/\.$/, '');
+      if (!/^s3([.-][a-z0-9-]+)?\.amazonaws\.com$/.test(host)) {
+        endpoint = `${host}${url.port ? `:${url.port}` : ''}${url.pathname.replace(/\/+$/, '')}`;
+      }
+    }
+    return [endpoint, String(config.region || 'us-east-1').trim().toLowerCase(), config.bucket, prefix];
+  }
+
+  // Keys are normalised exactly as before the generation index existed
+  // (backslashes become slashes, a leading "./" or "/" is dropped) and only
+  // then checked, so callers that always passed such keys keep working.
+  _logical(relPath) {
+    if (!relPath || typeof relPath !== 'string') {
+      throw new Error(`S3StorageBackend: invalid relative path: ${relPath}`);
+    }
+    const normalized = relPath.replace(/\\/g, '/').replace(/^\.?\/+/, '');
+    if (normalized.startsWith('..') || normalized.includes('/../')) {
+      throw new Error(`S3StorageBackend: path traversal rejected: ${relPath}`);
+    }
+    if (normalized === generationIndex.INTERNAL_ROOT || normalized.startsWith(`${generationIndex.INTERNAL_ROOT}/`)) {
+      throw new Error('Reserved S3 generation namespace');
+    }
+    return normalized;
+  }
+
   _key(relPath) {
     this._assertIndexLoaded();
-    generationIndex.logicalKey(relPath, { prefix: this.prefix });
-    return this._physicalKey(this.mapping.get(relPath) || relPath);
+    const logical = this._logical(relPath);
+    return this._physicalKey(this.mapping.get(logical) || logical);
+  }
+
+  _assertWritable() {
+    if (!this.readOnly) return;
+    throw Object.assign(new Error('S3 storage is read-only: its restore generation index was written for a different endpoint, region, bucket or prefix. '
+      + 'Set the previous STORAGE_S3_* values again, or see docs/PORTABLE_RESTORE.md'), { code: 'STORAGE_INDEX_MISMATCH', statusCode: 503 });
   }
 
   _physicalKey(key) { return this.prefix ? `${this.prefix}/${key}` : key; }
@@ -58,7 +94,19 @@ class S3StorageBackend {
   async init() {
     this.indexLoaded = false;
     const database = this.indexDatabase || require('../../database/db').db;
-    const loaded = generationIndex.validateRows(await generationIndex.readRows(database), this.namespace, this.prefix);
+    const rows = await generationIndex.readRows(database);
+    let loaded;
+    this.readOnly = false;
+    if (rows.length && rows[0].namespace !== this.namespace) {
+      // The index of an earlier restore names another store. Whether the
+      // configuration was re-spelled or really moved, refusing to start would
+      // take the whole application down: keep reading through the index, and
+      // refuse writes that could diverge from it, until the operator decides.
+      loaded = generationIndex.validateRows(rows, undefined, this.prefix);
+      this.readOnly = true;
+      logger.error('[storage] The S3 restore generation index belongs to a different endpoint, region, bucket or prefix than the configured one. '
+        + 'Storage continues READ-ONLY. Set the previous STORAGE_S3_* values again, or see docs/PORTABLE_RESTORE.md.');
+    } else loaded = generationIndex.validateRows(rows, this.namespace, this.prefix);
     await this.adapter.testConnection();
     this.mapping = loaded.mapping;
     this.revision = loaded.revision;
@@ -67,6 +115,7 @@ class S3StorageBackend {
   }
 
   async put(relPath, body, options = {}) {
+    this._assertWritable();
     const key = this._key(relPath);
     if (Buffer.isBuffer(body)) {
       const { Readable } = require('stream');
@@ -92,6 +141,7 @@ class S3StorageBackend {
   }
 
   async putFromFile(relPath, localPath, options = {}) {
+    this._assertWritable();
     await this.adapter.upload(localPath, this._key(relPath), {
       contentType: options.contentType,
       contentDisposition: options.contentDisposition,
@@ -139,6 +189,7 @@ class S3StorageBackend {
   }
 
   async delete(relPath) {
+    this._assertWritable();
     try {
       await this.adapter.delete(this._key(relPath));
     } catch (err) {
@@ -150,21 +201,33 @@ class S3StorageBackend {
   async list(prefix) {
     this._assertIndexLoaded();
     const rootList = !prefix || prefix === '.';
-    if (!rootList) generationIndex.logicalKey(prefix, { prefix: this.prefix, listing: true });
-    const fullPrefix = rootList ? (this.prefix ? `${this.prefix}/` : '') : this._physicalKey(prefix);
+    const logicalPrefix = rootList ? '' : this._logical(prefix);
+    const fullPrefix = rootList ? (this.prefix ? `${this.prefix}/` : '') : this._physicalKey(logicalPrefix);
     const entries = await this._listPhysical(fullPrefix);
-    const selected = key => rootList || key.startsWith(prefix);
-    const visible = entries.filter(entry => !entry.key.startsWith(`${generationIndex.INTERNAL_ROOT}/`)
-      && entry.key !== generationIndex.INTERNAL_ROOT && !this.mapping.has(entry.key) && selected(entry.key));
-    if (this.mapping.size) {
-      const reverse = new Map([...this.mapping].filter(([logical]) => selected(logical)).map(([logical, physical]) => [physical, logical]));
-      if (reverse.size) {
-        const staged = await this._listPhysical(this._physicalKey(`${generationIndex.INTERNAL_ROOT}/`));
-        for (const entry of staged) {
-          const logical = reverse.get(entry.key);
-          if (logical) visible.push({ ...entry, key: logical });
-        }
+    const selected = key => rootList || key.startsWith(logicalPrefix);
+    const internal = key => key === generationIndex.INTERNAL_ROOT || key.startsWith(`${generationIndex.INTERNAL_ROOT}/`);
+    const visible = entries.filter(entry => !internal(entry.key) && !this.mapping.has(entry.key) && selected(entry.key));
+    if (!this.mapping.size) return visible;
+    const wanted = [...this.mapping].filter(([logical]) => selected(logical));
+    if (!wanted.length) return visible;
+    const reverse = new Map(wanted.map(([logical, physical]) => [physical, logical]));
+    // Only the restored objects under this prefix are looked up, never the
+    // whole generation store on every call: a root listing already has them,
+    // a handful is one HEAD each, more is one listing per generation.
+    let staged = [];
+    if (rootList) staged = entries.filter(entry => internal(entry.key));
+    else if (wanted.length <= 32) {
+      for (const [logical] of wanted) {
+        const stat = await this.stat(logical);
+        if (stat) visible.push({ key: logical, size: stat.size, mtime: stat.mtime });
       }
+    } else {
+      const generations = new Set(wanted.map(([, physical]) => physical.split('/').slice(0, 2).join('/')));
+      for (const generation of generations) staged.push(...await this._listPhysical(this._physicalKey(`${generation}/`)));
+    }
+    for (const entry of staged) {
+      const logical = reverse.get(entry.key);
+      if (logical) visible.push({ ...entry, key: logical });
     }
     return visible;
   }
@@ -201,8 +264,9 @@ class S3StorageBackend {
    */
   createRestoreGeneration(attemptId, expectedKeys) {
     this._assertIndexLoaded();
+    this._assertWritable();
     if (!generationIndex.ATTEMPT.test(attemptId) || !Array.isArray(expectedKeys)
-        || expectedKeys.length > generationIndex.MAX_ENTRIES) throw new Error('Invalid S3 restore generation plan');
+        || expectedKeys.length > generationIndex.maxEntries()) throw new Error('Invalid S3 restore generation plan');
     const expected = new Set();
     let planBytes = 64;
     for (const key of expectedKeys) {
@@ -234,7 +298,7 @@ class S3StorageBackend {
       generationIndex.logicalKey(key, { prefix: this.prefix });
       if (publishing || !expected.has(key)) throw new Error('S3 restore write is outside the frozen plan');
       if (pendingKeys.has(key)) throw new Error('Concurrent S3 stage writes to one logical key are forbidden');
-      if (writes.length >= generationIndex.MAX_ENTRIES * 2) throw new Error('S3 restore generation exceeds its write limit');
+      if (writes.length >= generationIndex.maxEntries() * 2) throw new Error('S3 restore generation exceeds its write limit');
       const physical = `${generationIndex.INTERNAL_ROOT}/${attemptId}/${crypto.randomUUID()}`;
       if (Buffer.byteLength(this._physicalKey(physical)) > 1024) throw new Error('S3 staging key exceeds 1024 bytes');
       pending += 1;
@@ -314,6 +378,7 @@ class S3StorageBackend {
   }
 
   async copy(srcRelPath, dstRelPath) {
+    this._assertWritable();
     await this.adapter.copy(this._key(srcRelPath), this._key(dstRelPath));
   }
 

@@ -5,10 +5,12 @@ const fs = require('fs');
 const migration = require('../../../migrations/core/250_storage_s3_generation_index');
 const TABLE = 'storage_s3_generation_index';
 const INTERNAL_ROOT = '.picpeak-generations';
-// Hard limits, not operator-overridable: bound parsing, maps and copies in the
-// restore parent. A deployment over these limits must split its recovery plan.
-const MAX_ENTRIES = 100000;
-const MAX_ENCODED_BYTES = 32 * 1024 * 1024;
+// The index holds one entry per object a restore put under a generation key.
+// A later restore of the same object replaces its entry, so the index is as
+// large as the set of distinct restored objects: it has to admit what the
+// import limits admit, or an earlier restore would make a later one impossible.
+const maxEntries = () => require('../portableImportArchive').limits().entries;
+const MAX_ENCODED_BYTES = 256 * 1024 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const ATTEMPT = /^[a-zA-Z0-9_-]{8,128}$/;
 const PHYSICAL = /^\.picpeak-generations\/[a-zA-Z0-9_-]{8,128}\/[a-f0-9-]{36}$/;
@@ -37,7 +39,7 @@ function validateRows(rows, namespace, prefix = '') {
   }
   let parsed;
   try { parsed = JSON.parse(row.mapping); } catch (_) { throw new Error('Corrupt S3 generation index'); }
-  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries) || parsed.entries.length > MAX_ENTRIES) {
+  if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.entries) || parsed.entries.length > maxEntries()) {
     throw new Error('Invalid S3 generation index format or cardinality');
   }
   const mapping = new Map();
@@ -56,7 +58,7 @@ function validateRows(rows, namespace, prefix = '') {
 }
 
 function encodeRows(namespace, mapping, revision = crypto.randomUUID()) {
-  if (mapping.size > MAX_ENTRIES) throw new Error('S3 generation index exceeds its entry limit');
+  if (mapping.size > maxEntries()) throw new Error('S3 generation index exceeds its entry limit');
   let bytes = 64;
   for (const entry of mapping) {
     bytes += Buffer.byteLength(JSON.stringify(entry)) + 1;
@@ -121,6 +123,6 @@ async function readMigrationIndex(file, namespace) {
   } finally { await handle.close(); }
 }
 
-module.exports = { TABLE, INTERNAL_ROOT, MAX_ENTRIES, MAX_ENCODED_BYTES, ATTEMPT,
+module.exports = { TABLE, INTERNAL_ROOT, maxEntries, MAX_ENCODED_BYTES, ATTEMPT,
   logicalKey, validateRows, encodeRows, readRows, snapshotDatabaseIndex, restoreDatabaseIndex,
   writeMigrationIndex, readMigrationIndex };
