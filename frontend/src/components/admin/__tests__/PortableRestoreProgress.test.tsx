@@ -53,6 +53,9 @@ describe('session-independent coordinated restore progress', () => {
     render(<PortableRestoreProgress handle={handle} />);
     await act(async () => {});
     expect(screen.getByText(locale.backup.picpeak.rollbackVerified)).toBeInTheDocument();
+    // The state line must not read "finished" above a failure.
+    expect(screen.getByText(locale.backup.picpeak.restoreNotApplied)).toBeInTheDocument();
+    expect(screen.queryByText(locale.backup.picpeak.restoreState.open)).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(locale.backup.picpeak.restoreError.RESTORE_TABLE_CHECKSUM);
     expect(screen.queryByText(locale.backup.picpeak.restartAllInstances)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: locale.backup.picpeak.backToBackup })).toBeInTheDocument();

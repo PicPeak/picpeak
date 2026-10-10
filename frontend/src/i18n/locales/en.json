@@ -5332,6 +5332,7 @@
       "recoveryRequired": "The restore was interrupted and is being recovered. The application stays in maintenance until that is done. If this does not change, see the server log.",
       "progressDenied": "This progress capability is no longer valid. It does not grant application access.",
       "returnToLogin": "Return to sign in",
+      "restoreNotApplied": "Restore not applied",
       "restoreState": {
         "open": "Restore finished",
         "draining": "Waiting for running work to finish",
