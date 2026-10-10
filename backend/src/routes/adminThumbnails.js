@@ -7,6 +7,7 @@ const { canAccessEvent } = require('../middleware/ownership');
 const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
+const applicationWork = require('../services/activeApplicationWork');
 
 /**
  * Do these two stored paths address the same object?
@@ -217,7 +218,7 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
     });
     
     // Process thumbnails in background
-    setImmediate(async () => {
+    applicationWork.defer('thumbnail regeneration', async () => {
       let successCount = 0;
       let errorCount = 0;
       
@@ -354,7 +355,7 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
       count: photos.length,
     });
 
-    setImmediate(async () => {
+    applicationWork.defer('preview regeneration', async () => {
       let successCount = 0;
       let errorCount = 0;
       for (const photo of photos) {

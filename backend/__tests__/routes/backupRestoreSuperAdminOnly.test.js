@@ -9,6 +9,12 @@
  * bring in a Super Admin account of its own.
  */
 
+// The import is refused with 503 on a host that cannot run a coordinated
+// restore (this suite also runs on macOS); the permission gate is the subject.
+jest.mock('../../src/services/portableRestoreCapability', () => ({
+  ...jest.requireActual('../../src/services/portableRestoreCapability'),
+  probe: async () => ({ available: true, reason: null, message: null }),
+}));
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -92,6 +98,7 @@ describe('backup destinations, restores and portable import are Super Admin only
     operatorToken = await tokenFor('restore-operator', 'restore-operator');
 
     app = express();
+    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter());
     app.use(express.json());
     app.use('/api/admin/backup', require('../../src/routes/adminBackup'));
     app.use('/api/admin/restore', require('../../src/routes/adminRestore'));

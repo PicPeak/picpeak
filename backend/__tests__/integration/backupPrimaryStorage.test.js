@@ -7,9 +7,10 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const { Readable } = require('stream');
+const StreamZip = require('node-stream-zip');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-let db; let cleanup; let tmpDir; let customerId; let storageModule; let files; let backup; let exporter; let importer; let RestoreService;
+let db; let cleanup; let tmpDir; let customerId; let storageModule; let files; let backup; let exporter; let RestoreService;
 let objects; let adapter; let listed; let readFault; let putFault;
 const original = 'events/active/managed/individual/original.jpg';
 const archived = 'events/archived/old.zip';
@@ -81,7 +82,6 @@ beforeAll(async () => {
   files = require('../../src/services/recoveryFiles');
   backup = require('../../src/services/backupService');
   exporter = require('../../src/services/picpeakExportService');
-  importer = require('../../src/services/picpeakImportService');
   ({ RestoreService } = require('../../src/services/restoreService'));
 }, 120000);
 beforeEach(async () => {
@@ -152,19 +152,39 @@ it('captures bounded immutable bytes plus metadata; refuses read errors and conc
   await expect(files.captureAdapter(original)).rejects.toThrow(/changed during capture/);
 });
 
-it('exports and imports primary-only objects and metadata, while CRM documents and logos stay local', async () => {
+it('exports exact primary objects/metadata and local CRM/logo bytes in the genuine portable ZIP', async () => {
   await seedEstate();
   const expected = new Map(objects);
+  const localKeys = ['business-docs/invoice/2026/invoice.pdf', 'uploads/logos/logo.svg'];
   const exported = await exporter.createPicpeak({ includePhotos: true, outDir: path.join(tmpDir, 'portable') });
   expect(exported.manifest.file_count).toBe(expected.size + 2);
   expect(exported.manifest.files.find(file => file.path === original).object_metadata).toEqual(metadata);
-  objects.clear();
-  await fs.rm(process.env.STORAGE_PATH, { recursive: true, force: true }); await fs.mkdir(process.env.STORAGE_PATH);
-  const result = await importer.importFromPicpeak({ picpeakPath: exported.filePath });
-  expect(result.filesRestored).toBe(expected.size + 2);
-  for (const [key, value] of expected) expect(objects.get(key)).toMatchObject(value);
-  await expect(fs.access(path.join(process.env.STORAGE_PATH, original))).rejects.toMatchObject({ code: 'ENOENT' });
-  expect(await fs.readFile(path.join(process.env.STORAGE_PATH, 'business-docs/invoice/2026/invoice.pdf'))).toEqual(Buffer.from('business-docs/invoice/2026/invoice.pdf'));
+  // A real worker cannot inherit this in-memory adapter. Its destination
+  // contract is covered by portableRestoreWorkerS3 against actual MinIO.
+  const zip = new StreamZip.async({ file: exported.filePath });
+  try {
+    const manifest = JSON.parse((await zip.entryData('manifest.json')).toString('utf8'));
+    expect(manifest).toEqual(JSON.parse(JSON.stringify(exported.manifest)));
+    const names = Object.values(await zip.entries()).filter(entry => !entry.isDirectory && entry.name.startsWith('files/'))
+      .map(entry => entry.name.slice('files/'.length)).sort();
+    expect(names).toEqual([...expected.keys(), ...localKeys].sort());
+    expect(names).toHaveLength(expected.size + 2);
+    for (const [key, value] of expected) {
+      expect(await zip.entryData(`files/${key}`)).toEqual(value.bytes);
+      expect(manifest.files.find(file => file.path === key)).toMatchObject({
+        size: value.bytes.length, checksum: sha(value.bytes), object_metadata: value.options,
+      });
+    }
+    for (const key of localKeys) {
+      const bytes = await fs.readFile(path.join(process.env.STORAGE_PATH, key));
+      expect(await zip.entryData(`files/${key}`)).toEqual(bytes);
+      const entry = manifest.files.find(file => file.path === key);
+      expect(entry).toMatchObject({ size: bytes.length, checksum: sha(bytes) });
+      expect(entry.object_metadata).toBeUndefined();
+    }
+    expect(await zip.entryData(`files/${original}`)).not.toEqual(Buffer.from('unused local decoy'));
+    expect(objects).toEqual(expected);
+  } finally { await zip.close(); }
 });
 
 it('keeps document-only and row-only exports intentional; row-only never lists or reads primary storage', async () => {
@@ -576,10 +596,14 @@ it('exports local storage in place with a checksummed catalogue, and S3 storage 
     expect(materialize).not.toHaveBeenCalled();
     expect(exported.manifest.files.find(file => file.path === original)).toMatchObject({
       size: 'unused local decoy'.length, checksum: sha(Buffer.from('unused local decoy')) });
-    await fs.rm(process.env.STORAGE_PATH, { recursive: true, force: true }); await fs.mkdir(process.env.STORAGE_PATH);
-    const result = await importer.importFromPicpeak({ picpeakPath: exported.filePath });
-    expect(result.filesRestored).toBe(exported.manifest.file_count);
-    expect(await fs.readFile(path.join(process.env.STORAGE_PATH, original), 'utf8')).toBe('unused local decoy');
+    // The import runs in the supervised worker (portableRestoreWorkerRoundtrip);
+    // here the archive itself must carry the bytes the catalogue describes.
+    const zip = new StreamZip.async({ file: exported.filePath });
+    try { expect((await zip.entryData(`files/${original}`)).toString('utf8')).toBe('unused local decoy'); }
+    finally { await zip.close(); }
+    // The importer takes a catalogued file at its recorded size, however large.
+    const { catalogue } = require('../../src/services/portableImportPreflight');
+    expect(catalogue({ files: [{ path: original, size: 50 * 1024 ** 3, checksum: sha(Buffer.from('x')) }] }).get(original).size).toBe(50 * 1024 ** 3);
   } finally { materialize.mockRestore(); }
 });
 

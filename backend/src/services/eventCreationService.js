@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseExpiresAtText } = require('../utils/expiresAtText');
@@ -792,8 +793,8 @@ async function resolveCreationSource({ source_mode, external_path, external_watc
  * endpoint; a failure is logged and the admin can press Rescan.
  */
 function startInitialImport(eventId, externalPath, actor) {
-  setImmediate(() => {
-    importExternalFolder({
+  applicationWork.defer('initial external import', () => {
+    return importExternalFolder({
       eventId,
       externalPath,
       recursive: true,

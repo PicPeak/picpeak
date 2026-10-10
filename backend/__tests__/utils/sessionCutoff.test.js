@@ -54,3 +54,28 @@ test('a token without iat is never treated as before the cutoff', async () => {
   expect(await cutoff.isTokenBeforeCutoff({})).toBe(false);
   expect(await cutoff.isTokenBeforeCutoff(null)).toBe(false);
 });
+
+test('a maintenance transaction rollback neither persists nor publishes its cutoff', async () => {
+  await cutoff.setSessionsValidAfter(1000);
+  await expect(db.transaction(async trx => {
+    await cutoff.setSessionsValidAfter(3000, { executor: trx, refreshCache: false });
+    expect((await trx('app_settings').first()).setting_value).toBe('3000');
+    throw new Error('restore failed before commit');
+  })).rejects.toThrow('restore failed before commit');
+  expect(await cutoff.getSessionsValidAfter()).toBe(1000);
+  expect((await db('app_settings').first()).setting_value).toBe('1000');
+});
+
+test('a committed maintenance cutoff becomes authoritative after replica cache restart', async () => {
+  await cutoff.setSessionsValidAfter(1000);
+  await db.transaction(trx => cutoff.setSessionsValidAfter(3000, { executor: trx, refreshCache: false }));
+  expect(await cutoff.getSessionsValidAfter()).toBe(1000);
+  cutoff._resetCache();
+  expect(await cutoff.getSessionsValidAfter()).toBe(3000);
+  expect(await cutoff.isTokenBeforeCutoff({ iat: 2999 })).toBe(true);
+});
+
+test.each([-1, NaN, Infinity, 1.5])('invalid cutoff %p never writes', async value => {
+  await expect(cutoff.setSessionsValidAfter(value)).rejects.toThrow('Invalid session cutoff');
+  expect(await db('app_settings')).toEqual([]);
+});

@@ -8,6 +8,7 @@ const { createReadStream, createWriteStream, realpathSync, constants: fsConstant
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const packageJson = require('../../package.json');
@@ -30,6 +31,7 @@ const { withTrustedCrmAccess } = require('../database/crmAccess');
 // — so the rows are deleted from the temp copy before it is finalised. See
 // createSQLiteBackup below.
 const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissals'];
+const RESTORE_RUNTIME_TABLES = require('../utils/restoreRuntimeTables');
 
 // sqlite3's `.backup` is a dot-command parsed by sqlite3's OWN tokenizer, not
 // the shell: spawn()'s argv separation does not stop a quote or a line break
@@ -345,7 +347,7 @@ class DatabaseBackupService {
         AND name != 'knex_migrations_lock'
         ORDER BY name
       `);
-      return result.map(row => row.name).filter((t) => !FACE_TABLES.includes(t));
+      return result.map(row => row.name).filter((t) => !FACE_TABLES.includes(t) && !RESTORE_RUNTIME_TABLES.includes(t));
     } else {
       // PostgreSQL
       const result = await db.raw(`
@@ -358,7 +360,7 @@ class DatabaseBackupService {
       `);
       return result.rows
         .map(row => row.table_name)
-        .filter((t) => !FACE_TABLES.includes(t));
+        .filter((t) => !FACE_TABLES.includes(t) && !RESTORE_RUNTIME_TABLES.includes(t));
     }
   }
 
@@ -408,6 +410,15 @@ class DatabaseBackupService {
         ]).catch(() => {
           // Table absent on installs that predate migration 177 — fine.
         });
+      }
+      // Runtime S3 indirection is target-local. Unlike optional historical
+      // face tables, scrub failures MUST abort rather than export live keys.
+      for (const table of RESTORE_RUNTIME_TABLES) {
+        const present = await spawnAsync('sqlite3', [tempPath,
+          `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='${table}';`]);
+        if (present.stdout.trim() === '1') {
+          await spawnAsync('sqlite3', [tempPath, `DELETE FROM ${table};`]);
+        }
       }
 
       // Reset the DERIVED state on photos as well. Without this the restored
@@ -508,6 +519,7 @@ class DatabaseBackupService {
     for (const table of FACE_TABLES) {
       pgDumpOptions.push(`--exclude-table-data=public.${table}`);
     }
+    for (const table of RESTORE_RUNTIME_TABLES) pgDumpOptions.push(`--exclude-table-data=public.${table}`);
     // NOTE: the Postgres path cannot rewrite rows inside pg_dump the way the
     // SQLite path can, so photos.face_status is restored as-is here. The
     // restore path compensates — see resetDerivedFaceState in restoreService.
@@ -582,7 +594,8 @@ class DatabaseBackupService {
    * the caller's CRM document scope.
    */
   backup(options = {}) {
-    return withTrustedCrmAccess('database backup', () => this.backupInternal(options));
+    return applicationWork.track('database backup',
+      () => withTrustedCrmAccess('database backup', () => this.backupInternal(options)));
   }
 
   async backupInternal(options = {}) {

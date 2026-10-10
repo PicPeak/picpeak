@@ -24,6 +24,7 @@ const archiver = require('archiver');
 
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const applicationWork = require('./activeApplicationWork');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
@@ -1154,7 +1155,11 @@ async function sendTransferRequestEmails(transferId, emails) {
  * Best-effort throughout — a client's upload has already succeeded by the time
  * this runs and must not be failed by a mail problem.
  */
-async function notifyFilesReceived(transferId, receivedCount) {
+function notifyFilesReceived(transferId, receivedCount) {
+  return applicationWork.track('transfer upload notification', () => notifyFilesReceivedInternal(transferId, receivedCount));
+}
+
+async function notifyFilesReceivedInternal(transferId, receivedCount) {
   try {
     const transfer = await db('transfers').where({ id: transferId }).first();
     if (!transfer || !isRequestRow(transfer)) return;

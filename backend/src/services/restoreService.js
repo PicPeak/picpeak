@@ -17,6 +17,8 @@ const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
 const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../utils/backupRestorePoint');
+const applicationWork = require('./activeApplicationWork');
+const portableRuntime = require('./portableRestoreRuntimeState');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -343,6 +345,8 @@ class RestoreService {
     // the replay doesn't inflate the row-count check. Reset per run
     // via beforeRestore() to keep state from leaking across calls.
     this.preservedMetaSnapshot = [];
+    this.generationIndexSnapshot = null;
+    this.portableRuntimeSnapshot = null;
     this.dbType = knexConfig.client === 'pg' ? 'postgresql' : 'sqlite';
     this.tempDir = path.join(os.tmpdir(), 'picpeak-restore');
   }
@@ -362,6 +366,32 @@ class RestoreService {
    * @returns {Promise<Object>} - Restore result
    */
   async restore(options) {
+    return applicationWork.track('native-restore', () => this.coordinated(options));
+  }
+
+  // Only the trusted install-from-backup boot hook uses this entry point.
+  // It runs before readiness and before ordinary writers/background jobs.
+  async restoreDuringStartup(options) {
+    return applicationWork.track('native-startup-restore', () => this.coordinated(options));
+  }
+
+  // A native restore replaces the database, including the control rows of a
+  // portable restore. Where this runtime takes part in one (it registered),
+  // the restore holds the shared ingress slot so no registration is lost
+  // between its snapshot and replay. Everywhere else, including every host
+  // that cannot run a portable restore, it runs exactly as it always did.
+  async coordinated(options) {
+    const coordinator = require('./portableRestoreCoordinator');
+    await coordinator.admitUpload();
+    if (!coordinator.isRegistered()) return this.performRestore(options);
+    return require('./portableRestoreIngress').withIngress(async () => {
+      const result = await this.performRestore(options);
+      await coordinator.admitUpload();
+      return result;
+    });
+  }
+
+  async performRestore(options) {
     if (this.isRunning) {
       throw new Error('Restore operation already in progress');
     }
@@ -370,6 +400,8 @@ class RestoreService {
     this.restoreLog = [];
     this.preservedMetaSnapshot = [];  // reset per run
     this.preRestoreBackupPath = null;
+    this.generationIndexSnapshot = null;
+    this.portableRuntimeSnapshot = null;
     const startTime = new Date();
     let restoreRun = null;
 
@@ -1402,7 +1434,18 @@ class RestoreService {
 
     // Decompress if needed
     let restoreFile = dbBackupPath;
+    // Native dumps may contain a foreign runtime map, or predate its schema.
+    // Preserve the target representation across success AND rollback. Never
+    // initialize storage from the archive's physical object names.
+    const s3Index = require('./storage/generationIndex');
+    let targetIndex;
+    let targetRuntime;
+    let indexReplayed = false;
     try {
+      targetIndex = await s3Index.snapshotDatabaseIndex(db);
+      this.generationIndexSnapshot = targetIndex;
+      targetRuntime = await portableRuntime.snapshot(db);
+      this.portableRuntimeSnapshot = targetRuntime;
       if (dbBackupPath.endsWith('.gz')) {
         this.log('info', 'Decompressing database backup...');
         const decompressedPath = dbBackupPath.slice(0, -3);
@@ -1647,6 +1690,9 @@ END $$;`
       const { reinitPool } = require('../database/db');
       this.log('info', 'Re-initializing knex pool against the restored database...');
       await reinitPool();
+      await s3Index.restoreDatabaseIndex(db, targetIndex);
+      await portableRuntime.restore(db, targetRuntime);
+      indexReplayed = true;
       this.log('info', 'Knex pool re-initialized');
 
 
@@ -1684,6 +1730,15 @@ END $$;`
       return { success: true };
 
     } catch (error) {
+      if (!indexReplayed && targetIndex && targetRuntime) {
+        try {
+          await require('../database/db').reinitPool();
+          await s3Index.restoreDatabaseIndex(db, targetIndex);
+          await portableRuntime.restore(db, targetRuntime);
+        } catch (preserveError) {
+          throw new Error(`${error.message}; target S3 generation index preservation failed: ${preserveError.message}`);
+        }
+      }
       this.log('error', 'Database restore failed', { error: error.message });
       throw error;
     } finally {
@@ -1997,6 +2052,9 @@ END $$;`
     this.log('warn', 'Attempting rollback to pre-restore state...');
 
     try {
+      const s3Index = require('./storage/generationIndex');
+      const targetIndex = this.generationIndexSnapshot || await s3Index.snapshotDatabaseIndex(db);
+      const targetRuntime = this.portableRuntimeSnapshot || await portableRuntime.snapshot(db);
       // Read backup manifest
       const manifestPath = path.join(preRestoreBackupPath, 'backup-manifest.json');
       // Parsed for its side effect: throws if the manifest is missing/corrupt.
@@ -2020,6 +2078,10 @@ END $$;`
           const env = { ...process.env, PGPASSWORD: password };
           await spawnFromFile('psql', ['-h', host, '-p', String(port), '-U', user, '-d', database], decompressedPath, { env });
         }
+
+        await require('../database/db').reinitPool();
+        await s3Index.restoreDatabaseIndex(db, targetIndex);
+        await portableRuntime.restore(db, targetRuntime);
 
         await fs.unlink(decompressedPath);
         // The identity tables changed again; see step 6b in restore().
