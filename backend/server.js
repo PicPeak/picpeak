@@ -261,11 +261,26 @@ const corsOptions = {
 
 // Only attach CORS to API endpoints, not static assets
 // This is a dedicated exact-path capability surface, never an admin-prefix or
-// caller-header exemption to ordinary admission. It also precedes health,
+// caller-header exemption to ordinary admission. It also precedes
 // analytics, body parsing, static rendering and every application API.
 app.use(require('./src/routes/portableRestoreControl').createRestoreControlRouter({ cors: cors(corsOptions) }));
-app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter({ shouldServe: () => !restoreCoordinator.isReady() }));
-app.use(createApplicationWorkMiddleware({ admitRequest: () => restoreCoordinator.admitRequest() }));
+app.use(require('./src/routes/portableRestoreShell').createRestoreShellRouter({ shouldServe: () => restoreCoordinator.isFenced() }));
+// A restore keeps this process alive and busy on purpose. While one runs the
+// health probes answer 200 from memory, outside the request fence and without
+// touching the database, so a health-based restarter does not kill it halfway.
+app.get(['/health', '/api/health'], (req, res, next) => {
+  if (!restoreCoordinator.isFenced()) return next();
+  return res.json({
+    status: 'ok',
+    maintenance: restoreCoordinator.status().restartRequired ? 'restart_required' : 'restoring',
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+    uptime: process.uptime()
+  });
+});
+// The fence is a flag in memory, refreshed by the coordinator's own watch;
+// an ordinary request never reads the control row.
+app.use(createApplicationWorkMiddleware({ enabled: () => restoreCoordinator.tracking() }));
 app.use('/api', cors(corsOptions));
 // Handle preflight explicitly for API paths
 app.options('/api/*', cors(corsOptions));
@@ -1150,253 +1165,275 @@ async function stopServer() {
 }
 
 // Initialize services
+// Request and query tracking exists so a coordinated restore can wait for
+// accepted work. It is installed only where such a restore can run.
+let restoreWorkTracked = false;
+function trackRestoreWork() {
+  if (restoreWorkTracked) return;
+  restoreWorkTracked = true;
+  enableApplicationWorkOwnership();
+  ownRouteHandlers(app);
+}
+
+// Only reached when a previous run left a restore fence behind.
+async function recoverPendingRestore() {
+  trackRestoreWork();
+  await applicationWork.runUncontrolled(() => new Promise((resolve, reject) => {
+    const listener = app.listen(PORT, () => { listener.removeListener('error', reject); resolve(); });
+    httpServer = listener;
+    listener.once('error', reject);
+  }));
+  logger.warn(`A portable restore was interrupted; serving the maintenance page on port ${PORT} until it is recovered`);
+  await restoreCoordinator.initialize();
+  await restoreCoordinator.waitForStartupAdmission();
+}
+
 async function startServer() {
   try {
-    // Durable recovery and actual Node-lifetime registration come before any
-    // ordinary initialization or jobs. Control tables are excluded
-    // from portable replacement; cached maintenance settings are not a fence.
-    await restoreCoordinator.initialize();
-    enableApplicationWorkOwnership();
-    ownRouteHandlers(app);
-    // Cold recovery must retain the exact progress route and bundled shell.
-    // Ordinary APIs, health, storage and dynamic rendering remain default-deny
-    // until the durable startup barrier and normal initialization complete.
-    await applicationWork.runUncontrolled(() => new Promise((resolve, reject) => {
-      const listener = app.listen(PORT, () => { listener.removeListener('error', reject); resolve(); });
-      httpServer = listener;
-      listener.once('error', reject);
-    }));
-    logger.info(`Maintenance control listener running on port ${PORT}`);
-    await restoreCoordinator.waitForStartupAdmission();
-    await applicationWork.track('runtime startup', async () => {
-      // Initialize database
-      await initializeDatabase();
-      await require('./src/utils/authSecurity').assertAuthSecuritySchema();
+    // A portable restore interrupted by a crash or reboot leaves the instance
+    // fenced. Only then does the listener open before the database is ready:
+    // it serves the maintenance page and the restore progress while the
+    // restore is recovered. For every other boot this is one file lookup.
+    if (await restoreCoordinator.pendingAtBoot()) await recoverPendingRestore();
 
-      // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers,
-      // secureImageMiddleware) can see the general_site_url setting. Best-effort:
-      // the async resolver reads through on its own, and a cold cache only means
-      // falling back to the environment.
-      await primeSiteUrlCache().catch(() => {});
+    // Initialize database
+    await initializeDatabase();
+    await require('./src/utils/authSecurity').assertAuthSecuritySchema();
 
-      // Initialize storage backend (local fs or S3) — fail fast on misconfig
-      const { initStorage } = require('./src/services/storage');
-      await initStorage();
+    // Warm the public-origin cache so the SYNCHRONOUS resolver (CORS headers,
+    // secureImageMiddleware) can see the general_site_url setting. Best-effort:
+    // the async resolver reads through on its own, and a cold cache only means
+    // falling back to the environment.
+    await primeSiteUrlCache().catch(() => {});
 
-      // Initialize rate limiters after database is ready
-      await initializeRateLimiters();
-      logger.info('Rate limiters initialized with database configuration');
+    // Initialize storage backend (local fs or S3) — fail fast on misconfig
+    const { initStorage } = require('./src/services/storage');
+    await initStorage();
 
-      // Initialize auth security cleanup job
-      const { initializeCleanupJob } = require('./src/utils/authSecurity');
-      initializeCleanupJob();
-      require('./src/middleware/sessionTimeout').startSessionCleanup();
-      require('./src/services/chunkedUploadService').start();
+    // Initialize rate limiters after database is ready
+    await initializeRateLimiters();
+    logger.info('Rate limiters initialized with database configuration');
 
-      require('./src/utils/cleanupTempUploads').startTempUploadCleanup();
+    // Initialize auth security cleanup job
+    const { initializeCleanupJob } = require('./src/utils/authSecurity');
+    initializeCleanupJob();
+    require('./src/middleware/sessionTimeout').startSessionCleanup();
+    require('./src/services/chunkedUploadService').start();
+    
+    require('./src/utils/cleanupTempUploads').startTempUploadCleanup();
 
-      // Start file watcher
-      startFileWatcher();
-      // External-media folder watcher (issue 1187): imports new files into
-      // reference events that opted in. Not gated on STORAGE_BACKEND like the
-      // managed watcher — EXTERNAL_MEDIA_ROOT is always a local path.
-      try {
-        const { startExternalMediaWatcher } = require('./src/services/externalMediaWatcher');
-        startExternalMediaWatcher();
-      } catch (err) {
-        logger.warn('External-media watcher failed to start:', err.message);
+    // Start file watcher
+    startFileWatcher();
+    // External-media folder watcher (issue 1187): imports new files into
+    // reference events that opted in. Not gated on STORAGE_BACKEND like the
+    // managed watcher — EXTERNAL_MEDIA_ROOT is always a local path.
+    try {
+      const { startExternalMediaWatcher } = require('./src/services/externalMediaWatcher');
+      startExternalMediaWatcher();
+    } catch (err) {
+      logger.warn('External-media watcher failed to start:', err.message);
+    }
+    
+    // Start expiration checker
+    startExpirationChecker();
+    // PicTransfer retention sweep (#997): expire links, notify admins, and
+    // hard-delete client uploads once the grace window elapses.
+    startTransferCleanup();
+    // Custom-resolution download archives (#858) are disposable renditions —
+    // sweep them once their TTL passes so .download-cache doesn't grow forever.
+    // Best-effort, as before the scheduler refactor: a transient DB error on
+    // this one UPDATE must not abort the whole server start.
+    await require('./src/services/downloadJobService').recoverOrphanedJobs()
+      .catch((err) => logger.error('Download job recovery failed', { error: err.message }));
+    startDownloadJobCleanup();
+    // Stale feedback_rate_limits rows (#1585): the per-request delete in
+    // consumeFeedbackLimit() only ever clears the event/action-type pair it
+    // just handled, so a gallery that goes quiet leaves its rows behind —
+    // sweep them on a schedule as a backstop.
+    startFeedbackRateLimitCleanup();
+    // Reveal-mode scheduler (#838): minutely stamp for scheduled reveals.
+    startRevealScheduler();
+    // CRM invoice scheduler: hourly tick to flush scheduled-send invoices
+    // + run the overdue reminder ladder. No-op when the `bills` feature
+    // flag is OFF (the service short-circuits on empty result sets).
+    startInvoiceScheduler();
+    
+    // Initialize email transporter and start queue processor.
+    // Skipped under the webhook transport (#1225): an install that switched to
+    // it may still carry an old, now-unreachable SMTP row, and nodemailer's
+    // verify() would sit on a connection timeout here — delaying boot for a
+    // transport that will never send anything.
+    if (!emailWebhookTransport.isEnabled()) {
+      await initializeTransporter();
+    }
+    // Seed CRM / contract / event-reminder email templates and recover
+    // any queue rows that exhausted retries because their template
+    // didn't exist yet. Runs once per boot via module-level caches in
+    // each seeder. See _emailTemplateBoot.js for the full rationale.
+    try {
+      const { seedEmailTemplatesAndRecoverQueue } = require('./src/services/_emailTemplateBoot');
+      await seedEmailTemplatesAndRecoverQueue(db, logger);
+    } catch (err) {
+      logger.warn('Email template self-heal failed at boot:', err.message);
+    }
+    startEmailQueueProcessor();
+
+    // Start WhatsApp queue processor — no-ops each cycle unless the
+    // `whatsapp` flag is on and a config exists (migration 136, #640D).
+    try {
+      const { startWhatsAppQueueProcessor } = require('./src/services/whatsappProcessor');
+      startWhatsAppQueueProcessor();
+    } catch (err) {
+      logger.warn('WhatsApp queue processor start failed:', err.message);
+    }
+
+    // Start incoming-mail (IMAP) poller — no-ops each minute unless the
+    // `incomingMail` flag is on and a mailbox is configured (migration 128).
+    try {
+      const { startIncomingMailPoller } = require('./src/services/emailIntakeService');
+      startIncomingMailPoller();
+    } catch (err) {
+      logger.warn('Incoming-mail poller failed to start:', err.message);
+    }
+
+    // Start webhook delivery worker (#327)
+    const { startWebhookDeliveryWorker } = require('./src/services/webhookDeliveryWorker');
+    startWebhookDeliveryWorker();
+
+    // Start S3 auto-importer (#328 follow-up). No-op when STORAGE_AUTO_IMPORT
+    // is unset OR STORAGE_BACKEND=local — replaces the chokidar watcher
+    // for S3-mode deployments that drop files into the bucket directly.
+    const { startS3AutoImporter } = require('./src/services/s3AutoImporter');
+    startS3AutoImporter();
+
+    // Self-heal the `backup_paths` table before the backup service
+    // starts — the file-backup walker reads from it, so missing
+    // canonical rows (a new subdirectory shipped by a future feature)
+    // get re-seeded here on every boot. See _backupPathsBoot.js for
+    // the full rationale; pattern mirrors _emailTemplateBoot.js.
+    try {
+      const { seedBackupPathsAtBoot } = require('./src/services/_backupPathsBoot');
+      await seedBackupPathsAtBoot(db, logger);
+    } catch (err) {
+      logger.warn('backup_paths self-heal failed at boot:', err.message);
+    }
+
+    // Self-heal restore-meta settings — currently just
+    // `restore_allow_force` defaulting to ON so fresh installs can
+    // recover from disaster without a SQL incantation. Only seeds on
+    // FRESH installs (existing rows, true or false, are preserved).
+    // See _restoreSettingsBoot.js for the full rationale.
+    try {
+      const { seedRestoreSettingsAtBoot } = require('./src/services/_restoreSettingsBoot');
+      await seedRestoreSettingsAtBoot(db, logger);
+    } catch (err) {
+      logger.warn('restore-settings self-heal failed at boot:', err.message);
+    }
+
+    // Seed built-in workflows (the editable invoice-dunning flow). Disabled by
+    // default — live reminder behaviour is unchanged. See _workflowSeedBoot.js.
+    try {
+      const { seedBuiltinWorkflowsAtBoot } = require('./src/services/_workflowSeedBoot');
+      await seedBuiltinWorkflowsAtBoot(db, logger);
+    } catch (err) {
+      logger.warn('built-in workflow seed failed at boot:', err.message);
+    }
+
+    // Self-heal the RBAC catalog: ensure super_admin holds every permission
+    // (the "Admin tracks all" guarantee) and the solo_photographer preset
+    // exists. New perms never need a compensation migration. See
+    // _permissionsBoot.js + project_permission_gating.
+    try {
+      const { seedPermissionsAtBoot } = require('./src/services/_permissionsBoot');
+      await seedPermissionsAtBoot(db, logger);
+    } catch (err) {
+      logger.warn('permissions self-heal failed at boot:', err.message);
+    }
+
+    // Install-from-backup trigger. If `RESTORE_ON_INSTALL` (or
+    // `.txt`) exists in the /backup mount AND the DB is empty, run
+    // the restore HERE before any admin UI surfaces. Lets admins
+    // recover a picpeak install with: (a) place backup files in the
+    // bind mount, (b) drop the trigger file, (c) `docker compose up`.
+    // No onboarding wizard, no throwaway admin, no compose-file
+    // changes. See _installFromBackupBoot.js for the full rationale
+    // + the safety gates.
+    try {
+      const { tryInstallFromBackup } = require('./src/services/_installFromBackupBoot');
+      const result = await tryInstallFromBackup(db, logger);
+      if (result.ran) {
+        logger.info(`Install-from-backup: completed from ${result.manifestPath}. Server will start with restored state.`);
       }
+    } catch (err) {
+      logger.warn('Install-from-backup hook threw:', err.message);
+    }
 
-      // Start expiration checker
-      startExpirationChecker();
-      // PicTransfer retention sweep (#997): expire links, notify admins, and
-      // hard-delete client uploads once the grace window elapses.
-      startTransferCleanup();
-      // Custom-resolution download archives (#858) are disposable renditions —
-      // sweep them once their TTL passes so .download-cache doesn't grow forever.
-      // Best-effort, as before the scheduler refactor: a transient DB error on
-      // this one UPDATE must not abort the whole server start.
-      await require('./src/services/downloadJobService').recoverOrphanedJobs()
-        .catch((err) => logger.error('Download job recovery failed', { error: err.message }));
-      startDownloadJobCleanup();
-      // Stale feedback_rate_limits rows (#1585): the per-request delete in
-      // consumeFeedbackLimit() only ever clears the event/action-type pair it
-      // just handled, so a gallery that goes quiet leaves its rows behind —
-      // sweep them on a schedule as a backstop.
-      startFeedbackRateLimitCleanup();
-      // Reveal-mode scheduler (#838): minutely stamp for scheduled reveals.
-      startRevealScheduler();
-      // CRM invoice scheduler: hourly tick to flush scheduled-send invoices
-      // + run the overdue reminder ladder. No-op when the `bills` feature
-      // flag is OFF (the service short-circuits on empty result sets).
-      startInvoiceScheduler();
+    // First-run: surface a one-time setup token while no admin account exists.
+    // Runs AFTER install-from-backup so a restored instance (which repopulates
+    // admin_users) never prints a throwaway token. Best-effort — never blocks boot.
+    let setupToken = null;
+    let setupTokenFile = null;
+    try {
+      const setupSvc = require('./src/services/setupService');
+      setupToken = await setupSvc.ensureSetupToken();
+      // The path the write ACTUALLY produced (null when it failed). existsSync
+      // on the candidate answered a different question and reported success
+      // for a stale, read-only or directory-shaped SETUP_TOKEN — suppressing
+      // the token here while pointing the operator at content that is not it.
+      setupTokenFile = setupSvc.writtenSetupTokenFile();
+    } catch (err) {
+      logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
+    }
 
-      // Initialize email transporter and start queue processor.
-      // Skipped under the webhook transport (#1225): an install that switched to
-      // it may still carry an old, now-unreachable SMTP row, and nodemailer's
-      // verify() would sit on a connection timeout here — delaying boot for a
-      // transport that will never send anything.
-      if (!emailWebhookTransport.isEnabled()) {
-        await initializeTransporter();
-      }
-      // Seed CRM / contract / event-reminder email templates and recover
-      // any queue rows that exhausted retries because their template
-      // didn't exist yet. Runs once per boot via module-level caches in
-      // each seeder. See _emailTemplateBoot.js for the full rationale.
-      try {
-        const { seedEmailTemplatesAndRecoverQueue } = require('./src/services/_emailTemplateBoot');
-        await seedEmailTemplatesAndRecoverQueue(db, logger);
-      } catch (err) {
-        logger.warn('Email template self-heal failed at boot:', err.message);
-      }
-      startEmailQueueProcessor();
+    // Start backup service
+    await startBackupService();
 
-      // Start WhatsApp queue processor — no-ops each cycle unless the
-      // `whatsapp` flag is on and a config exists (migration 136, #640D).
-      try {
-        const { startWhatsAppQueueProcessor } = require('./src/services/whatsappProcessor');
-        startWhatsAppQueueProcessor();
-      } catch (err) {
-        logger.warn('WhatsApp queue processor start failed:', err.message);
-      }
+    // Start database backup service
+    await startScheduledBackups();
 
-      // Start incoming-mail (IMAP) poller — no-ops each minute unless the
-      // `incomingMail` flag is on and a mailbox is configured (migration 128).
-      try {
-        const { startIncomingMailPoller } = require('./src/services/emailIntakeService');
-        startIncomingMailPoller();
-      } catch (err) {
-        logger.warn('Incoming-mail poller failed to start:', err.message);
-      }
+    // Start the async photo-processing worker pool. Picks up
+    // photos in 'pending' state (from POST /upload) and runs the
+    // sharp/ffmpeg/EXIF pipeline off the request thread.
+    backgroundProcessor.start();
 
-      // Start webhook delivery worker (#327)
-      const { startWebhookDeliveryWorker } = require('./src/services/webhookDeliveryWorker');
-      startWebhookDeliveryWorker();
+    // Decide now how image work is isolated, so a host that cannot run the
+    // memory-limited image worker says so in the startup log, once.
+    require('./src/services/isolatedSharp').prepare()
+      .catch((err) => logger.warn('Image worker check failed at boot', { error: err.message }));
 
-      // Start S3 auto-importer (#328 follow-up). No-op when STORAGE_AUTO_IMPORT
-      // is unset OR STORAGE_BACKEND=local — replaces the chokidar watcher
-      // for S3-mode deployments that drop files into the bucket directly.
-      const { startS3AutoImporter } = require('./src/services/s3AutoImporter');
-      startS3AutoImporter();
+    // The same for ffmpeg/ffprobe/exiftool: one startup line says which of
+    // the optional protections (process guard, kernel leases) this host runs
+    // and what to do about the ones it does not. Never a reason not to start.
+    require('./src/services/mediaCapabilities').probe();
 
-      // Self-heal the `backup_paths` table before the backup service
-      // starts — the file-backup walker reads from it, so missing
-      // canonical rows (a new subdirectory shipped by a future feature)
-      // get re-seeded here on every boot. See _backupPathsBoot.js for
-      // the full rationale; pattern mirrors _emailTemplateBoot.js.
-      try {
-        const { seedBackupPathsAtBoot } = require('./src/services/_backupPathsBoot');
-        await seedBackupPathsAtBoot(db, logger);
-      } catch (err) {
-        logger.warn('backup_paths self-heal failed at boot:', err.message);
-      }
+    // Public upload leases: heartbeat this process's live requests and reap
+    // the ones a dead process left behind, now and every 30 s.
+    const publicUploadQuota = require('./src/services/publicUploadQuota');
+    publicUploadQuota.startMaintenance();
+    publicUploadQuota.cleanupAbandoned().catch((err) => logger.warn('Public upload reaper failed at boot', { error: err.message }));
 
-      // Self-heal restore-meta settings — currently just
-      // `restore_allow_force` defaulting to ON so fresh installs can
-      // recover from disaster without a SQL incantation. Only seeds on
-      // FRESH installs (existing rows, true or false, are preserved).
-      // See _restoreSettingsBoot.js for the full rationale.
-      try {
-        const { seedRestoreSettingsAtBoot } = require('./src/services/_restoreSettingsBoot');
-        await seedRestoreSettingsAtBoot(db, logger);
-      } catch (err) {
-        logger.warn('restore-settings self-heal failed at boot:', err.message);
-      }
+    // Face detection (#1074). Starts alongside the photo processor but stays
+    // idle — every worker tick re-checks the `faces` feature flag, which is
+    // off by default. It is safe to start unconditionally precisely because
+    // it never touches FACE_ML_URL until that flag is on.
+    //
+    // Required HERE rather than at module scope: the face stack pulls in
+    // axios and (via imageProcessor) sharp, and server.js is imported by a
+    // large number of supertest suites that never start a worker. Keeping it
+    // lazy means they don't pay for a module graph they never use.
+    require('./src/services/faceQueue').start();
 
-      // Seed built-in workflows (the editable invoice-dunning flow). Disabled by
-      // default — live reminder behaviour is unchanged. See _workflowSeedBoot.js.
-      try {
-        const { seedBuiltinWorkflowsAtBoot } = require('./src/services/_workflowSeedBoot');
-        await seedBuiltinWorkflowsAtBoot(db, logger);
-      } catch (err) {
-        logger.warn('built-in workflow seed failed at boot:', err.message);
-      }
+    // Coordinated portable restore is optional. Where this host cannot run it
+    // one startup line says why, the import answers 503 and nothing else
+    // changes; where it can, requests are tracked so a restore can drain them.
+    // Never a reason not to start, and never awaited.
+    restoreCoordinator.activate({
+      resumeServices: () => require('./src/services/serviceShutdown').resumeServices(),
+      forceClose: () => httpServer?.closeAllConnections(),
+    }).then((capability) => { if (capability.available) trackRestoreWork(); })
+      .catch((err) => logger.warn('Portable restore check failed at boot', { error: err.message }));
 
-      // Self-heal the RBAC catalog: ensure super_admin holds every permission
-      // (the "Admin tracks all" guarantee) and the solo_photographer preset
-      // exists. New perms never need a compensation migration. See
-      // _permissionsBoot.js + project_permission_gating.
-      try {
-        const { seedPermissionsAtBoot } = require('./src/services/_permissionsBoot');
-        await seedPermissionsAtBoot(db, logger);
-      } catch (err) {
-        logger.warn('permissions self-heal failed at boot:', err.message);
-      }
-
-      // Install-from-backup trigger. If `RESTORE_ON_INSTALL` (or
-      // `.txt`) exists in the /backup mount AND the DB is empty, run
-      // the restore HERE before any admin UI surfaces. Lets admins
-      // recover a picpeak install with: (a) place backup files in the
-      // bind mount, (b) drop the trigger file, (c) `docker compose up`.
-      // No onboarding wizard, no throwaway admin, no compose-file
-      // changes. See _installFromBackupBoot.js for the full rationale
-      // + the safety gates.
-      try {
-        const { tryInstallFromBackup } = require('./src/services/_installFromBackupBoot');
-        const result = await tryInstallFromBackup(db, logger);
-        if (result.ran) {
-          logger.info(`Install-from-backup: completed from ${result.manifestPath}. Server will start with restored state.`);
-        }
-      } catch (err) {
-        logger.warn('Install-from-backup hook threw:', err.message);
-      }
-
-      // First-run: surface a one-time setup token while no admin account exists.
-      // Runs AFTER install-from-backup so a restored instance (which repopulates
-      // admin_users) never prints a throwaway token. Best-effort — never blocks boot.
-      let setupToken = null;
-      let setupTokenFile = null;
-      try {
-        const setupSvc = require('./src/services/setupService');
-        setupToken = await setupSvc.ensureSetupToken();
-        // The path the write ACTUALLY produced (null when it failed). existsSync
-        // on the candidate answered a different question and reported success
-        // for a stale, read-only or directory-shaped SETUP_TOKEN — suppressing
-        // the token here while pointing the operator at content that is not it.
-        setupTokenFile = setupSvc.writtenSetupTokenFile();
-      } catch (err) {
-        logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
-      }
-
-      // Start backup service
-      await startBackupService();
-
-      // Start database backup service
-      await startScheduledBackups();
-
-      // Start the async photo-processing worker pool. Picks up
-      // photos in 'pending' state (from POST /upload) and runs the
-      // sharp/ffmpeg/EXIF pipeline off the request thread.
-      backgroundProcessor.start();
-
-      // Decide now how image work is isolated, so a host that cannot run the
-      // memory-limited image worker says so in the startup log, once.
-      require('./src/services/isolatedSharp').prepare()
-        .catch((err) => logger.warn('Image worker check failed at boot', { error: err.message }));
-
-      // The same for ffmpeg/ffprobe/exiftool: one startup line says which of
-      // the optional protections (process guard, kernel leases) this host runs
-      // and what to do about the ones it does not. Never a reason not to start.
-      require('./src/services/mediaCapabilities').probe();
-
-      // Public upload leases: heartbeat this process's live requests and reap
-      // the ones a dead process left behind, now and every 30 s.
-      const publicUploadQuota = require('./src/services/publicUploadQuota');
-      publicUploadQuota.startMaintenance();
-      publicUploadQuota.cleanupAbandoned().catch((err) => logger.warn('Public upload reaper failed at boot', { error: err.message }));
-
-      // Face detection (#1074). Starts alongside the photo processor but stays
-      // idle — every worker tick re-checks the `faces` feature flag, which is
-      // off by default. It is safe to start unconditionally precisely because
-      // it never touches FACE_ML_URL until that flag is on.
-      //
-      // Required HERE rather than at module scope: the face stack pulls in
-      // axios and (via imageProcessor) sharp, and server.js is imported by a
-      // large number of supertest suites that never start a worker. Keeping it
-      // lazy means they don't pay for a module graph they never use.
-      require('./src/services/faceQueue').start();
-
-      restoreCoordinator.markReady();
+    const listening = () => {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
@@ -1412,7 +1449,10 @@ async function startServer() {
           : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
         console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
       }
-    });
+    };
+    // Already listening when an interrupted restore had to be recovered first.
+    if (httpServer) listening();
+    else httpServer = app.listen(PORT, listening);
   } catch (error) {
     if (shutdownPromise) { await shutdownPromise; return; }
     logger.error('Failed to start server:', error);

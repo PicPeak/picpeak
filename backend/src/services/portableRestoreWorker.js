@@ -11,7 +11,7 @@ const applicationWork = require('./activeApplicationWork');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_REQUEST = 32768;
-const MAX_METADATA = 32 * 1024 * 1024;
+const MAX_METADATA = 256 * 1024 * 1024;
 const MAX_RESULT = 16384;
 const MiB = 1024 * 1024;
 const context = new AsyncLocalStorage();
@@ -110,24 +110,48 @@ async function persistedRequest(args) {
   return { directory, requestPath, descriptor };
 }
 
-function workerConfiguration() {
-  const bounded = (name, fallback, maximum) => {
-    const value = process.env[name] === undefined ? fallback : Number(process.env[name]);
-    if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) throw unsafe(`Invalid ${name}`);
+// Budgets follow the archive: a restore of a large library must not run into
+// a limit sized for a small one and fall back into a rollback. `census` is
+// { entries, expandedBytes, largestBytes } of the staged archive. Environment
+// values, where set, win. There is no CPU-time limit unless one is configured;
+// the wall-clock deadline bounds the worker.
+function workerConfiguration(census = {}) {
+  const entries = Number.isSafeInteger(census.entries) ? census.entries : 0;
+  const expanded = Number.isSafeInteger(census.expandedBytes) ? census.expandedBytes : 0;
+  const largest = Number.isSafeInteger(census.largestBytes) ? census.largestBytes : 0;
+  const bounded = (name, fallback, maximum, minimum = 1) => {
+    const value = process.env[name] === undefined || process.env[name] === '' ? fallback : Number(process.env[name]);
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw unsafe(`Invalid ${name}`);
     return value;
   };
-  const memory = bounded('PICPEAK_IMPORT_WORKER_MEMORY_MIB', 768, 4096);
+  // The archive directory and the file catalogue live in memory: about 2 KiB
+  // per entry on top of the base.
+  const memory = bounded('PICPEAK_IMPORT_WORKER_MEMORY_MIB', Math.min(8192, 768 + Math.ceil(entries / 500)), 65536);
   if (memory < 256) throw unsafe('Restore worker memory is below its supported minimum');
-  return { memoryBytes: memory * MiB, heap: Math.min(1024, Math.floor(memory / 2)),
-    wallMs: bounded('PICPEAK_IMPORT_WORKER_TIMEOUT_MS', 30 * 60 * 1000, 2 * 60 * 60 * 1000),
-    cpuSeconds: bounded('PICPEAK_IMPORT_WORKER_CPU_SECONDS', 600, 7200) };
+  // Extract, hash and stage at a conservative 4 MiB/s, plus 20 ms per entry.
+  const wall = 30 * 60 * 1000 + Math.ceil(expanded / (4 * MiB)) * 1000 + entries * 20;
+  return { memoryBytes: memory * MiB, heap: Math.floor(memory * 0.6),
+    wallMs: bounded('PICPEAK_IMPORT_WORKER_TIMEOUT_MS', Math.min(wall, 7 * 24 * 60 * 60 * 1000), 7 * 24 * 60 * 60 * 1000),
+    cpuSeconds: bounded('PICPEAK_IMPORT_WORKER_CPU_SECONDS', 0, 2592000, 0),
+    fileBytes: Math.min(1024 * 1024 * MiB, Math.max(10 * 1024 * MiB, largest + 1024 * MiB)) };
+}
+
+async function archiveCensus(archivePath) {
+  // Central directory only. A staged archive that cannot be read keeps the
+  // base budget; the worker itself reports why it is unreadable.
+  try {
+    const archive = require('./portableImportArchive');
+    const zip = await archive.openBoundedArchive(archivePath, { validateFileKey: () => null });
+    try { return archive.archiveCensus(Object.values(await zip.entries()), { validateFileKey: () => null }); }
+    finally { await zip.close(); }
+  } catch (_) { return {}; }
 }
 
 async function launch(args, mode) {
   if (process.platform !== 'linux') throw unsafe('Coordinated portable restore requires Linux');
   if (await probeWorkerLease(args.workerLeaseDescriptor) !== 'free') throw unsafe('Previous restore worker is not proven terminal');
-  const { requestPath, descriptor } = await persistedRequest(args);
-  const policy = workerConfiguration();
+  const { directory, requestPath, descriptor } = await persistedRequest(args);
+  const policy = workerConfiguration(await archiveCensus(path.join(directory, 'request.picpeak')));
   const runner = require('./nativeProcessRunner');
   // Ordinary native queues have been stopped and drained by every runtime.
   // Reopen only this hard-limited runner while ordinary application admission
@@ -135,7 +159,8 @@ async function launch(args, mode) {
   runner.start();
   const result = await runner.run(process.execPath, ['--jitless', `--max-old-space-size=${policy.heap}`,
     path.join(__dirname, '../workers/portableRestoreWorker.js'), mode, requestPath], {
-    prefix: 'PICPEAK_IMPORT', ...policy, fileBytes: 10 * 1024 * MiB,
+    prefix: 'PICPEAK_IMPORT', lane: 'long', memoryBytes: policy.memoryBytes, wallMs: policy.wallMs,
+    cpuSeconds: policy.cpuSeconds, fileBytes: policy.fileBytes,
     outputBytes: MiB, leasePath: descriptor.path,
     env: { NODE_OPTIONS: '', TMPDIR: path.join(path.dirname(requestPath), 'workspace') },
     onStart: async actual => {

@@ -7,7 +7,8 @@ const crypto = require('crypto');
 const { db } = require('../database/db');
 const { getStoragePath } = require('../config/storage');
 const { getStorage, initStorage } = require('./storage');
-const { PortableRestoreJournal, MAX_FILES } = require('./portableRestoreJournal');
+const { PortableRestoreJournal, maxFiles } = require('./portableRestoreJournal');
+const { catalogue, fileCeiling } = require('./portableImportPreflight');
 const { rowBatches } = require('./portableImportRows');
 const worker = require('./portableRestoreWorker');
 const { acquireRestoreTableLocks } = require('./portableRestoreDatabaseLock');
@@ -19,6 +20,7 @@ const logger = require('../utils/logger');
 
 const RUNTIME_TABLES = new Set(require('../utils/restoreRuntimeTables'));
 const SHA256 = /^[a-f0-9]{64}$/;
+const EMPTY_SHA256 = crypto.createHash('sha256').digest('hex');
 const helpers = () => require('./picpeakImportService');
 const archive = () => require('./portableImportArchive');
 const journalPaths = () => require('./portableRestorePaths');
@@ -35,12 +37,12 @@ async function withMaintenanceDatabaseAuthority(run) {
   return withTrustedCrmAccess('supervised coordinated maintenance restore', run);
 }
 
-async function hashFile(file, expectedSize, expectedChecksum) {
+async function hashFile(file, expectedSize, expectedChecksum, maximum = Number.MAX_SAFE_INTEGER) {
   const handle = await fsp.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
     const stat = await handle.stat();
     if (!stat.isFile() || stat.nlink !== 1 || !Number.isSafeInteger(stat.size)
-        || stat.size < 0 || stat.size > 5 * 1024 ** 3 || (expectedSize !== undefined && stat.size !== expectedSize)) throw new Error('Invalid portable source file size');
+        || stat.size < 0 || stat.size > maximum || (expectedSize !== undefined && stat.size !== expectedSize)) throw new Error('Invalid portable source file size');
     let size = 0;
     const hash = crypto.createHash('sha256');
     // This handle is the sole FD owner, including pipeline/iterator cancellation.
@@ -85,33 +87,31 @@ async function verifyRemoteFile(storage, file) {
   } finally { input.destroy(); }
 }
 
-function catalogue(manifest) {
-  const result = new Map();
-  if (manifest.files === undefined || manifest.files === null) return result;
-  if (!Array.isArray(manifest.files) || manifest.files.length > MAX_FILES) throw new Error('Invalid portable file catalogue');
-  for (const file of manifest.files) {
-    if (!file || typeof file !== 'object') throw new Error('Invalid portable file catalogue entry');
-    const key = recoveryFiles.validKey(file.path);
-    if (result.has(key) || helpers().importFilePathProblem(key) || !Number.isSafeInteger(file.size)
-        || file.size < 0 || file.size > 5 * 1024 ** 3 || typeof file.checksum !== 'string'
-        || !SHA256.test(file.checksum)) throw new Error('Invalid portable file size/checksum');
-    recoveryFiles.objectOptions(file.object_metadata);
-    result.set(key, file);
-  }
-  return result;
-}
-
-async function preflightRows(tables, dataDir, crossEngine) {
+async function preflightRows(tables, dataDir, crossEngine, manifest) {
   for (const table of tables) {
+    const file = path.join(dataDir, table + '.ndjson');
+    // The exporter hashes exactly the bytes of each table file. Compare
+    // before a single row is trusted: a truncated or edited dump stops here.
+    const recorded = manifest.tables[table];
+    if (recorded && typeof recorded.checksum === 'string' && SHA256.test(recorded.checksum)) {
+      let actual = EMPTY_SHA256;
+      try { actual = (await hashFile(file)).checksum; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (actual !== recorded.checksum) throw Object.assign(new Error(`The backup's "${table}" table does not match its recorded checksum`), { code: 'RESTORE_TABLE_CHECKSUM', statusCode: 400 });
+    }
     const known = new Set(Object.keys(await db(table).columnInfo()));
     const json = await helpers().jsonColumnsFor(db, table);
     const types = crossEngine ? await helpers().typedColumnsFor(db, table) : null;
-    for await (const batch of rowBatches(path.join(dataDir, table + '.ndjson'), { allowMissing: true })) {
+    let rows = 0;
+    for await (const batch of rowBatches(file, { allowMissing: true })) {
+      rows += batch.length;
       if (batch.some(row => Object.keys(row).some(column => !known.has(column)))) throw new Error('Portable table contains an unknown target column');
       let prepared = crossEngine ? helpers().coerceForTargetEngine(batch, types) : batch;
       prepared = helpers().serialiseJsonColumns(prepared, crossEngine ? new Set() : json);
       prepared = helpers().relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
       helpers().assertContainedPaths(table, prepared);
+    }
+    if (recorded && Number.isSafeInteger(recorded.rowCount) && recorded.rowCount !== rows) {
+      throw Object.assign(new Error(`The backup's "${table}" table has ${rows} rows where its manifest records ${recorded.rowCount}`), { code: 'RESTORE_TABLE_CHECKSUM', statusCode: 400 });
     }
   }
 }
@@ -163,15 +163,18 @@ async function importInMaintenanceWorker() {
     } finally { await zip.close(); }
     const recorded = catalogue(manifest);
     const files = entries.filter(entry => !entry.isDirectory && entry.name.startsWith('files/')).map(entry => entry.name.slice(6));
-    if (files.length > MAX_FILES) throw new Error('Portable restore exceeds its file budget');
+    if (files.length > maxFiles()) throw new Error('Portable restore exceeds its file budget');
+    const ceiling = await fileCeiling();
     const present = new Set(files);
     for (const key of recorded.keys()) if (!present.has(key)) throw new Error('Portable file catalogue references a missing file');
     for (const key of files) {
       const known = recorded.get(key);
-      const evidence = await hashFile(path.join(staging, 'files', ...key.split('/')), known?.size, known?.checksum);
+      // A catalogued file is bound by its recorded size; one the manifest
+      // does not describe by the largest upload this instance accepts.
+      const evidence = await hashFile(path.join(staging, 'files', ...key.split('/')), known?.size, known?.checksum, known ? known.size : ceiling);
       if (!known) recorded.set(key, { path: key, ...evidence });
     }
-    await preflightRows(tables, path.join(staging, 'data'), crossEngine);
+    await preflightRows(tables, path.join(staging, 'data'), crossEngine, manifest);
     await initStorage();
     const storage = getStorage();
     const remote = files.filter(key => recoveryFiles.remoteDestination(key));
@@ -204,8 +207,9 @@ async function importInMaintenanceWorker() {
     }
     const s3Checksum = s3Manifest ? await worker.writeOwnedJson(path.join(directory, 's3.json'), s3Manifest, generationIndex.MAX_ENCODED_BYTES) : null;
     const cutoff = nextSessionCutoff();
-    const summary = { tables: tables.length, filesRestored: files.length, crossEngine,
-      usesExternalMedia: await helpers().detectExternalMedia(), sessionInvalidated: true };
+    // usesExternalMedia describes the RESTORED data, so it is read after the
+    // commit (recoverInMaintenanceWorker), never from the rows being replaced.
+    const summary = { tables: tables.length, filesRestored: files.length, crossEngine, sessionInvalidated: true };
     await worker.writeOwnedJson(path.join(directory, 'summary.json'), summary);
     await db.transaction(async trx => {
       await worker.acquireRestoreDatabaseLock(trx, request);
@@ -226,8 +230,10 @@ async function importInMaintenanceWorker() {
         await trx(generationIndex.TABLE).del();
         if (migrationRows.length) await trx(generationIndex.TABLE).insert(migrationRows);
       }
+      // Every staged and undo copy was hashed by prepare(), before any lock.
+      // Under the lock the files are only renamed into place and counted.
       await journal.promote(path.join(staging, 'files'));
-      await journal.verifyCommitted();
+      await journal.verifyPromoted();
       await trx('portable_restore_commits').insert({ attempt_id: request.attemptId, format_version: 1,
         local_plan_checksum: journal.state.planChecksum, s3_namespace: s3Manifest?.namespace || null,
         s3_revision: s3Manifest?.revision || null, s3_manifest_checksum: s3Checksum,
@@ -265,15 +271,17 @@ async function recoverInMaintenanceWorker() {
       if (!marker) { if (journal) await journal.rollback(); return; }
       if (!journal || marker.format_version !== 1 || marker.options_digest !== request.optionsDigest
           || marker.local_plan_checksum !== journal.state.planChecksum) throw new Error('Matching restore commit marker is invalid');
-      await journal.verifyCommitted();
     }, pg ? { isolationLevel: 'read committed' } : undefined);
     if (!marker) return { outcome: 'rolled_back', summary: {} };
+    // The commit is durable and every runtime is still fenced: the checksum
+    // pass over the promoted files needs no table lock.
+    await journal.verifyCommitted();
     const hasS3 = marker.s3_manifest_checksum !== null || marker.s3_namespace !== null || marker.s3_revision !== null;
     if (hasS3) {
       const manifest = await worker.readOwnedJson(path.join(directory, 's3.json'), generationIndex.MAX_ENCODED_BYTES);
       if (worker.digest(JSON.stringify(manifest)) !== marker.s3_manifest_checksum || manifest.version !== 1
           || manifest.id !== request.attemptId || manifest.namespace !== marker.s3_namespace
-          || manifest.revision !== marker.s3_revision || !Array.isArray(manifest.files) || manifest.files.length > MAX_FILES) throw new Error('Committed S3 restore manifest does not match');
+          || manifest.revision !== marker.s3_revision || !Array.isArray(manifest.files) || manifest.files.length > maxFiles()) throw new Error('Committed S3 restore manifest does not match');
       const storage = await initStorage();
       if (storage.kind() !== 's3' || storage.namespace !== manifest.namespace || storage.revision !== manifest.revision) throw new Error('Committed primary representation is not active');
       const seen = new Set();
@@ -289,4 +297,4 @@ async function recoverInMaintenanceWorker() {
   });
 }
 
-module.exports = { importInMaintenanceWorker, recoverInMaintenanceWorker };
+module.exports = { importInMaintenanceWorker, recoverInMaintenanceWorker, preflightRows };

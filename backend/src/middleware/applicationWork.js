@@ -2,8 +2,11 @@
 
 const applicationWork = require('../services/activeApplicationWork');
 
-function createApplicationWorkMiddleware({ work = applicationWork, admitRequest = () => {}, isControlRequest = () => false } = {}) {
+function createApplicationWorkMiddleware({ work = applicationWork, admitRequest = () => {}, isControlRequest = () => false, enabled = () => true } = {}) {
   return function applicationWorkMiddleware(req, res, next) {
+    // Where coordinated restore cannot run there is nothing to drain for: the
+    // request passes straight through, as it did before this middleware.
+    if (!enabled()) return next();
     if (isControlRequest(req)) return work.runControl(next);
     if (work.isClosed()) {
       return res.status(503).json({ error: 'Application work is paused for coordinated restore', code: 'RESTORE_MAINTENANCE' });

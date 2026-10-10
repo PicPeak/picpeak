@@ -9,16 +9,17 @@ const { TextDecoder } = require('util');
 const VERSION = 1;
 const MAX_LINE = 8192;
 const MAX_STATE = 32768;
-const MAX_FILES = 100000;
-const MAX_BYTES = 64 * 1024 ** 3;
+// The journal holds what the archive limits admit: every file once staged and,
+// where it replaces one, the previous copy.
+const maxFiles = () => require('./portableImportArchive').limits().entries;
+const maxBytes = () => 2 * require('./portableImportArchive').limits().expandedBytes;
 const RESERVE_BYTES = 256 * 1024 ** 2;
 const RESERVE_INODES = 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 // Network filesystems do not provide the local-process termination guarantee
 // used by recovery. S3 objects instead use their separately committed index.
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n,
-  0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
+const { isLocalFilesystem } = require('./portableRestoreCapability');
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
 function fail(message) {
@@ -103,7 +104,7 @@ async function copyVerified(source, destination, size, checksum, mode = 0o600) {
 // allocated an arbitrarily large line. A journal is streamed during recovery.
 async function* readRecords(file) {
   const { handle, stat } = await regularFile(file);
-  if (stat.size > MAX_FILES * MAX_LINE) { await handle.close(); throw fail('Restore journal exceeds its record bound'); }
+  if (stat.size > maxFiles() * MAX_LINE) { await handle.close(); throw fail('Restore journal exceeds its record bound'); }
   let tail = Buffer.alloc(0);
   try {
     for await (const chunk of handle.createReadStream({ autoClose: false, highWaterMark: 65536 })) {
@@ -201,10 +202,10 @@ class PortableRestoreJournal {
     const state = await readState(path.join(directory, 'state.json'));
     if (state.version !== VERSION || state.id !== id || state.root !== root
         || !['preparing', 'prepared', 'promoting', 'promoted', 'rolled_back'].includes(state.phase)
-        || !Number.isSafeInteger(state.files) || state.files < 0 || state.files > MAX_FILES
-        || !Number.isSafeInteger(state.bytes) || state.bytes < 0 || state.bytes > MAX_BYTES
+        || !Number.isSafeInteger(state.files) || state.files < 0 || state.files > maxFiles()
+        || !Number.isSafeInteger(state.bytes) || state.bytes < 0 || state.bytes > maxBytes()
         || (state.phase !== 'preparing' && !state.abortedPreparation
-          && (!Number.isSafeInteger(state.planSize) || state.planSize < 0 || state.planSize > MAX_FILES * MAX_LINE
+          && (!Number.isSafeInteger(state.planSize) || state.planSize < 0 || state.planSize > maxFiles() * MAX_LINE
             || typeof state.planChecksum !== 'string' || !SHA256.test(state.planChecksum)))
         || (state.abortedPreparation && (state.phase !== 'rolled_back' || state.files !== 0 || state.bytes !== 0))) throw fail('Invalid restore journal state');
     const journal = new PortableRestoreJournal({ root, directory, id, validateKey, state });
@@ -257,7 +258,7 @@ class PortableRestoreJournal {
 
   async assertCapacity(bytes = 0, files = 0) {
     const stat = await fsp.statfs(this.root, { bigint: true });
-    if (!LOCAL_FILESYSTEMS.has(BigInt.asUintN(32, stat.type))) throw fail('Coordinated local restore requires a supported local filesystem');
+    if (!isLocalFilesystem(stat.type)) throw fail('Coordinated local restore requires a supported local filesystem');
     if (stat.bavail * stat.bsize < BigInt(bytes + RESERVE_BYTES)
         || stat.ffree < BigInt(files + RESERVE_INODES)) throw fail('Insufficient measured restore disk/inode reserve');
   }
@@ -265,7 +266,7 @@ class PortableRestoreJournal {
   validateRecord(record, index) {
     if (!record || typeof record !== 'object' || Array.isArray(record)) throw fail('Invalid restore journal record');
     this.key(record.key);
-    if (record.index !== index || !Number.isSafeInteger(record.size) || record.size < 0 || record.size > MAX_BYTES
+    if (record.index !== index || !Number.isSafeInteger(record.size) || record.size < 0 || record.size > maxBytes()
         || typeof record.checksum !== 'string' || !SHA256.test(record.checksum) || typeof record.old !== 'boolean'
         || !Array.isArray(record.parents) || record.parents.length > 512) throw fail('Invalid restore journal record');
     const ancestors = record.key.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'));
@@ -275,7 +276,7 @@ class PortableRestoreJournal {
       seenParents.add(parent);
     }
     if (record.old && record.parents.length) throw fail('Existing restore file has missing parents');
-    if (record.old && (!Number.isSafeInteger(record.oldSize) || record.oldSize < 0 || record.oldSize > MAX_BYTES
+    if (record.old && (!Number.isSafeInteger(record.oldSize) || record.oldSize < 0 || record.oldSize > maxBytes()
         || !SHA256.test(record.oldChecksum || '') || !Number.isSafeInteger(record.mode) || record.mode < 0 || record.mode > 0o777
         || !Number.isFinite(record.atime) || !Number.isFinite(record.mtime))) throw fail('Invalid restore journal undo record');
   }
@@ -284,10 +285,10 @@ class PortableRestoreJournal {
     let index = 0;
     let bytes = 0;
     for await (const record of readRecords(this.plan)) {
-      if (index >= MAX_FILES) throw fail('Restore journal has too many records');
+      if (index >= maxFiles()) throw fail('Restore journal has too many records');
       this.validateRecord(record, index++);
       bytes += record.size + (record.old ? record.oldSize : 0);
-      if (bytes > MAX_BYTES) throw fail('Restore journal exceeds its byte budget');
+      if (bytes > maxBytes()) throw fail('Restore journal exceeds its byte budget');
       yield record;
     }
     if (index !== this.state.files || bytes !== this.state.bytes) throw fail('Restore journal plan does not match its durable state');
@@ -348,7 +349,7 @@ class PortableRestoreJournal {
     try {
       for await (const entry of keys) {
         const key = this.key(entry);
-        if (seen.has(key) || files >= MAX_FILES) throw fail('Duplicate or excessive restore journal file');
+        if (seen.has(key) || files >= maxFiles()) throw fail('Duplicate or excessive restore journal file');
         seen.add(key);
         const staged = path.join(source, ...key.split('/'));
         if (await fsp.realpath(staged) !== staged) throw fail('Restore source path is redirected');
@@ -360,7 +361,7 @@ class PortableRestoreJournal {
         const oldSize = oldStat?.size || 0;
         bytes += stagedStat.size + oldSize;
         largestOld = Math.max(largestOld, oldSize);
-        if (!Number.isSafeInteger(bytes) || bytes > MAX_BYTES) throw fail('Restore journal exceeds its byte budget');
+        if (!Number.isSafeInteger(bytes) || bytes > maxBytes()) throw fail('Restore journal exceeds its byte budget');
         await this.assertCapacity(oldSize + stagedStat.size + largestOld, 4);
         const record = { index: files++, key, size: stagedStat.size,
           checksum: await boundedHash(staged, stagedStat.size), old: Boolean(oldStat),
@@ -389,7 +390,22 @@ class PortableRestoreJournal {
     this.state = { ...this.state, phase: 'prepared', files, bytes, planSize,
       planChecksum: await boundedHash(this.plan, planSize) };
     await this.writeState();
+    // Every staged and undo copy was hashed while it was written. A promotion
+    // by this same process need not hash them again under the database lock.
+    this.verified = true;
     return { id: this.id, files, bytes };
+  }
+
+  // Cheap stand-in for current() once the copies are verified: the live file
+  // must still be the one prepare() recorded (or still absent).
+  async unchangedSincePrepare(record) {
+    const destination = await this.destination(record.key);
+    let stat;
+    try { stat = await fsp.lstat(destination); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (record.old ? (!stat || stat.size !== record.oldSize || Math.abs(stat.mtimeMs / 1000 - record.mtime) > 0.001) : Boolean(stat)) {
+      throw fail('Restore destination changed outside the fenced journal');
+    }
+    return destination;
   }
 
   async promote(sourceRoot, { onStep = () => {} } = {}) {
@@ -397,13 +413,23 @@ class PortableRestoreJournal {
     // Staging is complete in the private same-volume journal. No untrusted
     // source path or application-visible temporary file is needed at cutover.
     await fsp.realpath(sourceRoot);
-    await this.validatePlan({ undo: true, staged: true });
-    for await (const record of this.records()) await this.current(record, { beforePromotion: true });
+    // The caller holds the database cutover lock here. A journal this process
+    // prepared is promoted with renames alone; one loaded from disk is hashed
+    // in full first, as before.
+    const quick = this.verified === true;
+    if (quick) {
+      if (await boundedHash(this.plan, this.state.planSize) !== this.state.planChecksum) throw fail('Restore journal plan checksum changed');
+      for await (const record of this.records()) await this.unchangedSincePrepare(record);
+    } else {
+      await this.validatePlan({ undo: true, staged: true });
+      for await (const record of this.records()) await this.current(record, { beforePromotion: true });
+    }
     this.state.phase = 'promoting';
     await this.writeState();
     for await (const record of this.records()) {
       const destination = await this.destination(record.key, { createParents: true });
-      await this.current(record, { beforePromotion: true });
+      if (quick) await this.unchangedSincePrepare(record);
+      else await this.current(record, { beforePromotion: true });
       await fsp.rename(path.join(this.directory, 'new', String(record.index)), destination);
       await syncDirectory(path.dirname(destination));
       await syncDirectory(path.join(this.directory, 'new'));
@@ -411,6 +437,16 @@ class PortableRestoreJournal {
     }
     this.state.phase = 'promoted';
     await this.writeState();
+  }
+
+  // Under the lock: every promoted file is in place with its recorded size.
+  // The full checksum pass is verifyCommitted(), run after the lock is gone.
+  async verifyPromoted() {
+    if (this.state.phase !== 'promoted') throw fail('Restore file promotion was not recorded');
+    for await (const record of this.records()) {
+      const stat = await fsp.lstat(await this.destination(record.key));
+      if (!stat.isFile() || stat.size !== record.size) throw fail('Promoted restore file is missing or has the wrong size');
+    }
   }
 
   async rollback({ onStep = () => {} } = {}) {
@@ -484,4 +520,4 @@ class PortableRestoreJournal {
   }
 }
 
-module.exports = { PortableRestoreJournal, MAX_FILES, MAX_BYTES, readRecords };
+module.exports = { PortableRestoreJournal, maxFiles, maxBytes, readRecords };

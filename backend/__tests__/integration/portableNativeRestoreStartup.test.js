@@ -3,9 +3,11 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-// A genuine fresh Node process does not inherit jest.setup's unstarted-server
-// fixture authority. The server, coordinator, ingress, native lease and restore
-// body below are real. Linux is the supported lifetime-proof production target.
+// A genuine fresh Node process: the server, the coordinator, the capability
+// probe and the native restore below are real. It shows that a boot which
+// restores from a backup, and an ordinary native restore afterwards, run as
+// they did before coordinated portable restore existed: nothing registers,
+// nothing is fenced, no restore workspace appears.
 const linux = process.platform === 'linux' ? describe : describe.skip;
 
 async function actualNativeStartupSmoke() {
@@ -28,60 +30,19 @@ async function actualNativeStartupSmoke() {
   const { db } = database;
   const work = require('./src/services/activeApplicationWork');
   const coordinator = require('./src/services/portableRestoreCoordinator');
-  const leaseService = require('./src/services/linuxKernelLease');
   let server;
   let listener;
-  let phase = 'startup';
-  let startupTuple;
-  let faultCount = 0;
-  let lateStartupChecks = 0;
-  const startupReadiness = [];
-  const replacementErrors = [];
-  const originalReinit = database.reinitPool;
-  const tuple = () => work.runControl(async () => ({
-    control: await db('portable_restore_control').where({ id: 1 }).first(),
-    instances: await db('portable_restore_instances').orderBy('instance_id'),
-    commits: await db('portable_restore_commits').orderBy('attempt_id'),
-  }));
-  function observeRestoredPool(client) {
-    client.on('query-response', (_result, query) => {
-      if (phase === 'startup' && /^update .*restore_runs/i.test(query.sql)
-        && query.bindings.includes('completed')) {
-        // This real late native write is after target metadata replay but
-        // before boot returns and startServer performs its explicit markReady.
-        lateStartupChecks++;
-        startupReadiness.push(assert.rejects(coordinator.admitUpload(), { code: 'RESTORE_MAINTENANCE' }));
-      }
-    });
-  }
-  function observeActualPoolDestruction(client) {
-    const destroy = client.destroy;
-    let armed = true;
-    client.destroy = async function (...args) {
-      if (armed && phase === 'startup') startupTuple = await tuple();
-      const result = await destroy.apply(this, args);
-      if (armed) {
-        armed = false;
-        // Forward the actual destroy first: no fabricated SQL rejection and
-        // no replacement of restore/coordinator/ingress. Its real dead pool
-        // forces the polling path's connection-acquisition error deterministically.
-        await assert.rejects(db.raw('SELECT 1'), error => {
-          replacementErrors.push(error.message);
-          return /Unable to acquire a connection|destroyed/i.test(error.message);
-        });
-        await coordinator.tick();
-        await coordinator.tick();
-        assert.equal(work.isClosed(), true);
-        await assert.rejects(coordinator.admitUpload(), { code: 'RESTORE_MAINTENANCE' });
-        faultCount++;
-      }
-      return result;
-    };
-  }
-  database.reinitPool = async function (...args) {
-    const result = await originalReinit.apply(this, args);
-    observeRestoredPool(db.client);
-    return result;
+  const tuple = async () => ({
+    control: await db('portable_restore_control').first(),
+    instances: await db('portable_restore_instances'),
+    commits: await db('portable_restore_commits'),
+  });
+  const untouched = async () => {
+    assert.deepEqual(await tuple(), { control: undefined, instances: [], commits: [] });
+    assert.equal(coordinator.isRegistered(), false);
+    assert.equal(coordinator.isFenced(), false);
+    assert.equal(work.isClosed(), false);
+    await assert.rejects(fs.access(path.join(process.env.STORAGE_PATH, '.picpeak-maintenance')), { code: 'ENOENT' });
   };
   try {
     const backupRoot = path.join(fixture.tmpDir, 'backup');
@@ -123,58 +84,47 @@ async function actualNativeStartupSmoke() {
     await fs.writeFile(liveFile, 'FRESH TARGET FILE');
     const trigger = path.join(backupRoot, 'RESTORE_ON_INSTALL');
     await fs.writeFile(trigger, manifestPath, { mode: 0o600 });
-    assert.equal(await db('portable_restore_control').first(), undefined);
-    await assert.rejects(coordinator.admitUpload(), { code: 'RESTORE_MAINTENANCE' });
-    observeActualPoolDestruction(db.client);
+    await untouched();
+    await coordinator.admitUpload();
     server = require('./server');
     const listen = server.listen;
     server.listen = function (...args) { listener = listen.apply(this, args); return listener; };
     // Exact constructed production startup, including the trusted boot hook.
     await server.startServer();
-    await Promise.all(startupReadiness);
-    assert.equal(faultCount, 1);
-    assert.equal(lateStartupChecks, 1);
     assert.equal(listener?.listening, true);
     await assert.rejects(fs.access(trigger), { code: 'ENOENT' });
-    assert.deepEqual(await tuple(), startupTuple);
     assert.equal(JSON.parse((await db('app_settings').where({ setting_key: 'owned_native_restore_marker' }).first()).setting_value), 'backup');
     assert.equal(await fs.readFile(liveFile, 'utf8'), bytes.toString());
-    const own = (await tuple()).instances.find(row => row.instance_id === coordinator.instanceId());
-    const lease = JSON.parse(own.lease_json);
-    assert.equal(await leaseService.probe(lease.path, lease), 'busy');
-    assert.equal(work.isClosed(), false);
+    // The boot restored a backup and registered nothing for portable restore.
+    await untouched();
     await coordinator.admitUpload();
+    // This Linux host can run a coordinated restore; that alone costs nothing.
+    assert.deepEqual(await coordinator.capability(), { available: true, reason: null, message: null, maintenance: false, restartRequired: false });
+    await untouched();
     const origin = `http://127.0.0.1:${listener.address().port}`;
     const health = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(3000) });
     assert.equal(health.status, 200);
+    assert.equal('maintenance' in await health.json(), false);
     const login = await fetch(`${origin}/api/auth/admin/login`, { method: 'POST',
       headers: { 'content-type': 'application/json', origin }, signal: AbortSignal.timeout(5000),
       body: JSON.stringify({ username: 'owned-native-admin', password: 'owned-native-password' }) });
     assert.equal(login.status, 200);
     assert.equal((await login.json()).user.id, adminId);
-    // Repeat through ordinary ready native admission, not a boot capability.
-    phase = 'ordinary';
-    const before = await tuple();
+    // An ordinary native restore on the running server, through tracked work.
     await work.track('owned native smoke current marker', async () => {
       await setting('owned_native_restore_marker', 'ordinary-current');
       await fs.writeFile(liveFile, 'ORDINARY CURRENT FILE');
     });
-    observeActualPoolDestruction(db.client);
     const result = await require('./src/services/restoreService').restoreService.restore({ source: 'local',
       manifestPath, restoreType: 'full', force: true, skipPreBackup: true });
     assert.equal(result.success, true);
-    assert.equal(faultCount, 2);
-    assert.equal(replacementErrors.length, 2);
-    assert.deepEqual(await tuple(), before);
     assert.equal(JSON.parse((await db('app_settings').where({ setting_key: 'owned_native_restore_marker' }).first()).setting_value), 'backup');
     assert.equal(await fs.readFile(liveFile, 'utf8'), bytes.toString());
-    assert.equal(await leaseService.probe(lease.path, lease), 'busy');
-    assert.equal(work.isClosed(), false);
+    await untouched();
     await coordinator.admitUpload();
     assert.equal((await fetch(`${origin}/health`, { signal: AbortSignal.timeout(3000) })).status, 200);
     process.stdout.write('OWNED_NATIVE_STARTUP_SMOKE_PASS\n');
   } finally {
-    database.reinitPool = originalReinit;
     if (server) await server.stopServer();
     else await coordinator.stop();
     await fixture.cleanup();
@@ -183,7 +133,7 @@ async function actualNativeStartupSmoke() {
 }
 
 linux('actual coordinated native install-from-backup startup', () => {
-  it('preserves target runtime identity and recovers real pool-read pauses without granting early boot readiness', () => {
+  it('boots from a backup and restores natively exactly as before: nothing registered, fenced or created', () => {
     const env = { ...process.env, NODE_ENV: 'test', DATABASE_CLIENT: 'sqlite3', SKIP_S3_TESTS: 'true',
       JWT_SECRET: 'owned-native-startup-secret-with-sufficient-length', PICPEAK_EVIDENCE_KEY: 'c'.repeat(64) };
     for (const key of Object.keys(env)) if (/^(SMTP_|EMAIL_|IMAP_|CLAMAV_|EXTERNAL_MEDIA_|STORAGE_AUTO_IMPORT|ADMIN_PASSWORD)/.test(key)) delete env[key];

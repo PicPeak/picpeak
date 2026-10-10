@@ -6,20 +6,23 @@ const path = require('path');
 const crypto = require('crypto');
 const { getStoragePath } = require('../config/storage');
 const { AppError } = require('../utils/errors');
+const { isLocalFilesystem } = require('./portableRestoreCapability');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
+const MAINTENANCE = '.picpeak-maintenance';
+// How long the undo copies of a COMMITTED restore are kept before the next
+// boot or restore removes them (docs/PORTABLE_RESTORE.md).
+const UNDO_RETENTION_MS = 24 * 60 * 60 * 1000;
 function unsafe(message) { return Object.assign(new Error(message), { code: 'RESTORE_STORAGE_UNSAFE', statusCode: 503 }); }
+// Only reached where portableRestoreCapability says the host qualifies. The
+// host id is the one the media layer persists under the data directory, so it
+// survives a reboot and a recreated container.
 async function hostIdentity() {
   if (process.platform !== 'linux') throw unsafe('Coordinated restore requires Linux and a shared supported local storage mount');
-  let machine = process.env.MEDIA_PROCESS_HOST_ID;
-  if (!machine) for (const filename of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
-    try { machine = (await fsp.readFile(filename, 'utf8')).trim(); if (machine) break; } catch (_) { /* No fabricated hostname fallback. */ }
-  }
-  if (machine && (typeof machine !== 'string' || !/^[a-zA-Z0-9_-]{16,256}$/.test(machine))) throw unsafe('Configured local host identity is invalid');
+  const { host } = await require('./linuxProcessLease').hostIdentity();
   const bootId = (await fsp.readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim();
   if (!UUID.test(bootId)) throw unsafe('Kernel boot identity is unavailable');
-  return { host: machine ? crypto.createHash('sha256').update(machine).digest('hex') : null, bootId };
+  return { host: typeof host === 'string' && /^[a-f0-9]{16,64}$/.test(host) ? host : null, bootId };
 }
 async function privateDirectory(directory, { create = false, device } = {}) {
   let created = false;
@@ -49,9 +52,9 @@ async function storageIdentity({ create = false } = {}) {
   catch (_) { throw new AppError('Restore capacity measurement is unavailable', 507, 'RESTORE_CAPACITY_UNKNOWN'); }
   if (typeof measurement?.type !== 'bigint') throw new AppError('Restore capacity measurement is unavailable', 507, 'RESTORE_CAPACITY_UNKNOWN');
   const filesystem = measurement.type;
-  if (!stat.isDirectory() || !LOCAL_FILESYSTEMS.has(filesystem)) throw unsafe('Restore requires a supported local persistent filesystem');
+  if (!stat.isDirectory() || !isLocalFilesystem(filesystem)) throw unsafe('Restore requires a supported local persistent filesystem');
   const device = String(stat.dev);
-  const privateRoot = path.join(root, '.picpeak-maintenance');
+  const privateRoot = path.join(root, MAINTENANCE);
   await privateDirectory(privateRoot, { create, device });
   const marker = path.join(privateRoot, 'storage-id');
   if (create) {
@@ -111,11 +114,76 @@ async function attemptDirectory(attemptId, { create = false } = {}) {
   }
   return directory;
 }
-function sameRuntimeVolume(storage, registration) {
+// A registration's kernel lease can be probed only by a process that could
+// share it: the same boot, or the same host after a reboot (where every flock
+// of the earlier boot is gone). Anything else is decided by its heartbeat.
+function leaseProvable(storage, registration) {
   const current = storage.identity;
-  if (registration.storage_id !== storage.storageId || !UUID.test(registration.boot_id)
-    || (registration.host_id && current.host && registration.host_id !== current.host)) return false;
+  if (registration.storage_id !== storage.storageId || !UUID.test(registration.boot_id || '')) return false;
   return registration.boot_id === current.bootId || !!(registration.host_id && current.host && registration.host_id === current.host);
 }
 
-module.exports = { storageIdentity, attemptDirectory, hostIdentity, sameRuntimeVolume, syncDirectory };
+// The fence marker lets a runtime notice a restore without a database query:
+// one small file, absent on an install that never ran a portable restore.
+const fencePath = () => path.join(getStoragePath(), MAINTENANCE, 'fence.json');
+async function readFence() {
+  try {
+    const text = await fsp.readFile(fencePath(), 'utf8');
+    if (text.length > 512) return null;
+    const value = JSON.parse(text);
+    if (!value || typeof value.fenced !== 'boolean' || !Number.isSafeInteger(value.generation) || value.generation < 0) return null;
+    return { fenced: value.fenced, generation: value.generation, since: Number.isFinite(value.since) ? value.since : 0 };
+  } catch (_) { return null; }
+}
+async function writeFence({ fenced, generation }) {
+  const file = fencePath();
+  const temporary = `${file}.${crypto.randomUUID()}.next`;
+  const handle = await fsp.open(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+  try { await handle.writeFile(JSON.stringify({ version: 1, fenced, generation, since: Date.now() })); await handle.sync(); }
+  finally { await handle.close(); }
+  await fsp.rename(temporary, file);
+  await syncDirectory(path.dirname(file));
+}
+
+async function removeTree(target) {
+  await fsp.rm(target, { recursive: true, force: true });
+}
+// After a verified rollback nothing of the attempt is needed. After a commit
+// the extracted workspace, the archive copy and the staged files go at once;
+// only the undo copies stay, for UNDO_RETENTION_MS.
+async function cleanAttempt(attemptId, { committed }) {
+  if (!UUID.test(attemptId || '')) return;
+  const directory = path.join(await fsp.realpath(getStoragePath()), MAINTENANCE, attemptId);
+  if (!committed) { await removeTree(directory); return; }
+  for (const name of ['workspace', 'request.picpeak', 'new']) await removeTree(path.join(directory, name));
+}
+// Leftovers of earlier attempts and interrupted uploads. `current` is the
+// attempt the control row still names; it is only touched once it is terminal.
+async function reapLeftovers({ current = null, currentTerminal = true, now = Date.now() } = {}) {
+  let root;
+  try { root = path.join(await fsp.realpath(getStoragePath()), MAINTENANCE); await fsp.lstat(root); } catch (_) { return 0; }
+  let removed = 0;
+  for (const entry of await fsp.readdir(root, { withFileTypes: true })) {
+    const target = path.join(root, entry.name);
+    try {
+      if (entry.name === 'uploads' && currentTerminal) {
+        for (const name of await fsp.readdir(target)) { await removeTree(path.join(target, name)); removed += 1; }
+      } else if (entry.isFile() && /\.next$/.test(entry.name)) {
+        if (now - (await fsp.lstat(target)).mtimeMs > 60 * 1000) { await fsp.unlink(target); removed += 1; }
+      } else if (entry.isDirectory() && UUID.test(entry.name)) {
+        if (entry.name === current && !currentTerminal) continue;
+        const age = now - (await fsp.lstat(target)).mtimeMs;
+        const undo = await fsp.lstat(path.join(target, 'undo')).catch(() => null);
+        if (entry.name === current && undo && age <= UNDO_RETENTION_MS) {
+          for (const name of ['workspace', 'request.picpeak', 'new']) await removeTree(path.join(target, name));
+          continue;
+        }
+        await removeTree(target); removed += 1;
+      }
+    } catch (_) { /* Best effort: a leftover is disk use, never a reason to stay closed. */ }
+  }
+  return removed;
+}
+
+module.exports = { storageIdentity, attemptDirectory, hostIdentity, leaseProvable, syncDirectory,
+  readFence, writeFence, fencePath, cleanAttempt, reapLeftovers, MAINTENANCE, UNDO_RETENTION_MS };

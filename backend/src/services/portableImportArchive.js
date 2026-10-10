@@ -11,19 +11,21 @@ const { pipeline } = require('stream');
 const zlib = require('zlib');
 const StreamZip = require('node-stream-zip');
 
+// Defaults are what earlier releases accepted (2,000,000 entries, 1 TiB
+// expanded), so an instance can import what it exports. Every value can be
+// raised or lowered by its environment variable; the expanded-size, capacity
+// and per-entry checks below still stop an archive that lies about itself.
 const HARD_LIMITS = Object.freeze({
-  entries: 100000,
+  entries: 2000000,
   nameBytes: 1024,
-  centralBytes: 16 * 1024 * 1024,
-  expandedBytes: 32 * 1024 * 1024 * 1024,
-  manifestBytes: 16 * 1024 * 1024,
+  expandedBytes: 1024 * 1024 * 1024 * 1024,
+  manifestBytes: 256 * 1024 * 1024,
   reserveBytes: 256 * 1024 * 1024,
   reserveInodes: 1024,
   measureInterval: 1024 * 1024,
 });
 // Network filesystems cannot establish the local durability/capacity contract.
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n,
-  0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
+const { isLocalFilesystem } = require('./portableRestoreCapability');
 const openFd = promisify(fs.open);
 const closeFd = promisify(fs.close);
 const statFd = promisify(fs.fstat);
@@ -36,22 +38,23 @@ function refusal(message, statusCode = 400, code = 'PORTABLE_ARCHIVE_REFUSED') {
   return error;
 }
 
-function tightened(name, ceiling) {
+function configured(name, fallback) {
   const raw = process.env[name];
-  if (raw === undefined || raw === '') return ceiling;
+  if (raw === undefined || raw === '') return fallback;
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 1) {
     throw refusal(`${name} must be a positive integer.`, 400);
   }
-  return Math.min(value, ceiling);
+  return value;
 }
 
 function limits() {
+  const entries = configured('PICPEAK_IMPORT_MAX_ENTRIES', HARD_LIMITS.entries);
   return {
     ...HARD_LIMITS,
-    entries: tightened('PICPEAK_IMPORT_MAX_ENTRIES', HARD_LIMITS.entries),
-    expandedBytes: tightened('PICPEAK_IMPORT_MAX_EXPANDED_BYTES', HARD_LIMITS.expandedBytes),
-    manifestBytes: tightened('PICPEAK_IMPORT_MAX_MANIFEST_BYTES', HARD_LIMITS.manifestBytes),
+    entries,
+    expandedBytes: configured('PICPEAK_IMPORT_MAX_EXPANDED_BYTES', HARD_LIMITS.expandedBytes),
+    manifestBytes: configured('PICPEAK_IMPORT_MAX_MANIFEST_BYTES', HARD_LIMITS.manifestBytes),
   };
 }
 
@@ -83,6 +86,7 @@ function createCensus(options = {}, bound = limits()) {
   let count = 0;
   let centralBytes = 0;
   let expandedBytes = 0;
+  let largestBytes = 0;
   function add(entry) {
     if (!entry || typeof entry !== 'object') throw refusal('Invalid archive entry.');
     if (++count > bound.entries) {
@@ -96,7 +100,11 @@ function createCensus(options = {}, bound = limits()) {
     centralBytes += 46 + safeSize(entry.fnameLen === undefined ? Buffer.byteLength(entry.name) : entry.fnameLen, 'name length') +
       safeSize(entry.extraLen === undefined ? 0 : entry.extraLen, 'extra length') +
       safeSize(entry.comLen === undefined ? 0 : entry.comLen, 'comment length');
-    if (centralBytes > bound.centralBytes) throw refusal('The backup central directory exceeds its hard metadata limit.', 413);
+    // The central directory is held in memory. It may grow with the entry
+    // count, but not be padded with extra fields and comments beyond it.
+    if (centralBytes > 8 * 1024 * 1024 + count * (46 + bound.nameBytes + 256)) {
+      throw refusal('The backup central directory exceeds its metadata limit.', 413);
+    }
     const size = safeSize(entry.size, 'expanded size');
     if (entry.encrypted || (entry.method !== undefined && entry.method !== 0 && entry.method !== 8)) {
       throw refusal('Encrypted or unsupported-compression archive entries are not supported.');
@@ -125,14 +133,15 @@ function createCensus(options = {}, bound = limits()) {
       if (nodes.get(ancestor) === 'file') throw refusal('Archive file/directory path collision.');
       nodes.set(ancestor, 'directory');
       if (!directory) fileAncestors.add(ancestor);
-      if (nodes.size > HARD_LIMITS.entries) throw refusal('The backup exceeds its hard ancestor/inode limit.', 413);
+      if (nodes.size > 2 * bound.entries) throw refusal('The backup exceeds its ancestor/inode limit.', 413);
     }
     const prior = nodes.get(key);
     if ((directory && prior === 'file') || (!directory && prior)) throw refusal('Archive file/directory path collision.');
     nodes.set(key, directory ? 'directory' : 'file');
-    if (nodes.size > HARD_LIMITS.entries) throw refusal('The backup exceeds its hard ancestor/inode limit.', 413);
+    if (nodes.size > 2 * bound.entries) throw refusal('The backup exceeds its ancestor/inode limit.', 413);
     if (!directory) {
       expandedBytes += size;
+      largestBytes = Math.max(largestBytes, size);
       if (expandedBytes > bound.expandedBytes) {
         throw refusal(`The backup exceeds PICPEAK_IMPORT_MAX_EXPANDED_BYTES (${bound.expandedBytes}).`, 413);
       }
@@ -147,7 +156,7 @@ function createCensus(options = {}, bound = limits()) {
         throw refusal('Unsupported archive directory layout.');
       }
     }
-    return { entries: count, expandedBytes, centralBytes, inodes: nodes.size };
+    return { entries: count, expandedBytes, centralBytes, inodes: nodes.size, largestBytes };
   }
   return { add, finish };
 }
@@ -231,11 +240,14 @@ async function openBoundedArchive(file, options = {}) {
           const verify = new Transform({
             transform(chunk, _encoding, callback) {
               bytes += chunk.length;
-              if ((entry.flags & 8) === 0) crc = zlib.crc32(chunk, crc);
+              crc = zlib.crc32(chunk, crc);
               callback(null, chunk);
             },
             flush(callback) {
-              if ((entry.flags & 8) === 0 && (bytes !== entry.size || crc !== entry.crc)) {
+              // A data-descriptor entry (flag bit 3, what the exporter's
+              // streaming zip writes) carries zeros in its local header; the
+              // central directory always holds the real size and CRC.
+              if (bytes !== entry.size || crc !== (entry.crc >>> 0)) {
                 return callback(refusal('Archive entry checksum or size mismatch.'));
               }
               statFd(fd).then(after => callback(sameSource(source, after) ? undefined : refusal('Archive source changed while streaming.')), callback);
@@ -291,7 +303,7 @@ async function capacity(directory, bytes = 0, inodes = 0) {
   try {
     if (typeof fsp.statfs !== 'function') throw refusal('Filesystem capacity is unavailable.', 507);
     const stats = await fsp.statfs(directory, { bigint: true });
-    if (!LOCAL_FILESYSTEMS.has(measuredInteger(stats.type))) throw refusal('Restore workspace must use a supported local filesystem.', 507);
+    if (!isLocalFilesystem(measuredInteger(stats.type))) throw refusal('Restore workspace must use a supported local filesystem.', 507);
     const bsize = measuredInteger(stats.bsize);
     const bavail = measuredInteger(stats.bavail);
     const ffree = measuredInteger(stats.ffree);
@@ -349,10 +361,15 @@ async function targetPath(root, entry, create) {
   return target;
 }
 
-async function assertArchiveWithinLimits(entries, workspace, options = {}) {
+// Counts and sizes from the central directory alone; nothing is extracted.
+function archiveCensus(entries, options = {}) {
   const census = createCensus(options);
   for (const entry of entries || []) census.add(entry);
-  const result = census.finish();
+  return census.finish();
+}
+
+async function assertArchiveWithinLimits(entries, workspace, options = {}) {
+  const result = archiveCensus(entries, options);
   const root = await workspaceRoot(workspace, options);
   await capacity(root, result.expandedBytes, result.inodes);
   for (const entry of entries || []) await targetPath(root, entry, false);
@@ -435,4 +452,4 @@ async function readEntryWithin(zip, name, maxBytes, onExceed) {
   }
 }
 
-module.exports = { HARD_LIMITS, openBoundedArchive, assertArchiveWithinLimits, extractWithinLimits, readEntryWithin };
+module.exports = { HARD_LIMITS, limits, openBoundedArchive, archiveCensus, assertArchiveWithinLimits, extractWithinLimits, readEntryWithin };

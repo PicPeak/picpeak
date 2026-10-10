@@ -6,9 +6,7 @@ jest.mock('../../src/services/portableRestoreIngress', () => ({
   withIngress: jest.fn(run => run()),
 }), { virtual: true });
 jest.mock('../../src/services/portableRestoreCoordinator', () => ({
-  admitUpload: jest.fn(async () => {}), admitStartupRestore: jest.fn(async () => {}),
-  revalidateAfterNativeRestore: jest.fn(async () => {}),
-  enterUnstartedServerFixtureContext: jest.fn(),
+  admitUpload: jest.fn(async () => {}), isRegistered: jest.fn(() => false),
 }));
 jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn() }));
 
@@ -30,7 +28,6 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     const restore = service.restore({ restoreType: 'full' });
     await tick();
     expect(service.performRestore).toHaveBeenCalledTimes(1);
-    expect(ingress.withIngress).toHaveBeenCalledTimes(1);
     expect(coordinator.admitUpload).toHaveBeenCalledTimes(1);
     applicationWork.closeAdmission();
     let drained = false;
@@ -38,21 +35,38 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     await tick();
     await tick();
     expect(drained).toBe(false);
-    expect(coordinator.revalidateAfterNativeRestore).not.toHaveBeenCalled();
     finish();
     await expect(restore).resolves.toEqual({ success: true });
     await drain;
     expect(drained).toBe(true);
-    expect(coordinator.revalidateAfterNativeRestore).toHaveBeenCalledTimes(1);
   });
 
-  test('fresh durable admission failure never reaches any native mutation', async () => {
+  test('runs exactly as before on a runtime that takes no part in a portable restore: no ingress slot, no lease', async () => {
+    const service = new RestoreService();
+    service.performRestore = jest.fn(async () => ({ success: true }));
+    await expect(service.restore({ restoreType: 'full' })).resolves.toEqual({ success: true });
+    await expect(service.restoreDuringStartup({ restoreType: 'full' })).resolves.toEqual({ success: true });
+    expect(ingress.withIngress).not.toHaveBeenCalled();
+    expect(service.performRestore).toHaveBeenCalledTimes(2);
+  });
+
+  test('holds the shared ingress slot and re-checks the fence once this runtime is registered', async () => {
+    coordinator.isRegistered.mockReturnValue(true);
+    try {
+      const service = new RestoreService();
+      service.performRestore = jest.fn(async () => ({ success: true }));
+      await expect(service.restore({ restoreType: 'full' })).resolves.toEqual({ success: true });
+      expect(ingress.withIngress).toHaveBeenCalledTimes(1);
+      expect(coordinator.admitUpload).toHaveBeenCalledTimes(2);
+    } finally { coordinator.isRegistered.mockReturnValue(false); }
+  });
+
+  test('a closed fence never reaches any native mutation', async () => {
     coordinator.admitUpload.mockRejectedValueOnce(new Error('durable fence is closed'));
     const service = new RestoreService();
     service.performRestore = jest.fn();
     await expect(service.restore({})).rejects.toThrow('durable fence is closed');
     expect(service.performRestore).not.toHaveBeenCalled();
-    expect(coordinator.revalidateAfterNativeRestore).not.toHaveBeenCalled();
     await applicationWork.drain();
     expect(applicationWork.pendingCount()).toBe(0);
   });
@@ -64,18 +78,5 @@ describe('detached native restore has a whole-operation maintenance owner', () =
     await expect(service.restore({})).rejects.toMatchObject({ code: 'RESTORE_MAINTENANCE' });
     expect(ingress.withIngress).not.toHaveBeenCalled();
     expect(service.performRestore).not.toHaveBeenCalled();
-  });
-
-  test('trusted boot restore uses its separate durable admission, never actor options', async () => {
-    const service = new RestoreService();
-    service.performRestore = jest.fn(async () => ({ success: true }));
-    await expect(service.restoreDuringStartup({ actor: { type: 'arbitrary' } })).resolves.toEqual({ success: true });
-    expect(coordinator.admitStartupRestore).toHaveBeenCalledTimes(1);
-    expect(coordinator.revalidateAfterNativeRestore).toHaveBeenCalledTimes(1);
-    expect(coordinator.admitUpload).not.toHaveBeenCalled();
-    jest.clearAllMocks();
-    await service.restore({ actor: { type: 'install-from-backup' } });
-    expect(coordinator.admitUpload).toHaveBeenCalledTimes(1);
-    expect(coordinator.admitStartupRestore).not.toHaveBeenCalled();
   });
 });

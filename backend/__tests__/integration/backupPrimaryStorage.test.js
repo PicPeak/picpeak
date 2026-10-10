@@ -563,10 +563,14 @@ it('exports local storage in place with a checksummed catalogue, and S3 storage 
     expect(materialize).not.toHaveBeenCalled();
     expect(exported.manifest.files.find(file => file.path === original)).toMatchObject({
       size: 'unused local decoy'.length, checksum: sha(Buffer.from('unused local decoy')) });
-    await fs.rm(process.env.STORAGE_PATH, { recursive: true, force: true }); await fs.mkdir(process.env.STORAGE_PATH);
-    const result = await importer.importFromPicpeak({ picpeakPath: exported.filePath });
-    expect(result.filesRestored).toBe(exported.manifest.file_count);
-    expect(await fs.readFile(path.join(process.env.STORAGE_PATH, original), 'utf8')).toBe('unused local decoy');
+    // The import runs in the supervised worker (portableRestoreWorkerRoundtrip);
+    // here the archive itself must carry the bytes the catalogue describes.
+    const zip = new StreamZip.async({ file: exported.filePath });
+    try { expect((await zip.entryData(`files/${original}`)).toString('utf8')).toBe('unused local decoy'); }
+    finally { await zip.close(); }
+    // The importer takes a catalogued file at its recorded size, however large.
+    const { catalogue } = require('../../src/services/portableImportPreflight');
+    expect(catalogue({ files: [{ path: original, size: 50 * 1024 ** 3, checksum: sha(Buffer.from('x')) }] }).get(original).size).toBe(50 * 1024 ** 3);
   } finally { materialize.mockRestore(); }
 });
 
