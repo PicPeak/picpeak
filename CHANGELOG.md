@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.168.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.6-beta.0...v3.168.0-beta.0) (2026-10-10)
+
+
+### Features
+
+* **styling:** UI overhaul — one colour source, building blocks across the admin, themed portal and gallery ([#1896](https://github.com/PicPeak/picpeak/issues/1896)) ([7400395](https://github.com/PicPeak/picpeak/commit/7400395e0fae0fd8b26ed4f6fd1a55c48370bda1))
+
+
+### Documentation
+
+* **readme:** quick start uses prebuilt images, all-in-one example on :stable ([#1904](https://github.com/PicPeak/picpeak/issues/1904)) ([25a8d75](https://github.com/PicPeak/picpeak/commit/25a8d7518710b077289be9896861ae25628bd452))
+
 ## [3.167.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.5-beta.0...v3.167.6-beta.0) (2026-10-10)
 
 
