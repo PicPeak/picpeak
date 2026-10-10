@@ -100,6 +100,20 @@ const DEFAULT_PATHS = [
     display_order: 70,
     description: 'CRM PDFs, signature artefacts, admin-imported historical invoices',
   },
+  {
+    path: 'transfers',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 90,
+    description: 'Admin deliverable transfer attachments',
+  },
+  {
+    path: 'watermarks',
+    include_in_default: true,
+    feature_flag: null,
+    display_order: 100,
+    description: 'Managed watermarked gallery renditions',
+  },
 ];
 
 exports.up = async function(knex) {

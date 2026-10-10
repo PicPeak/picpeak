@@ -18,6 +18,8 @@ const backupManifest = require('./backupManifest');
 const backupManifestKey = require('../utils/backupManifestKey');
 const { collectLegacyStoredFiles, storedPathMap, storedPathChecksums } = require('../utils/legacyStoredFiles');
 const S3StorageAdapter = require('./storage/s3Storage');
+const recoveryFiles = require('./recoveryFiles');
+const { getStorage } = require('./storage');
 const { backupS3Access } = require('../utils/s3EndpointPolicy');
 const { standaloneSnapshotOfRun, removeLocalSnapshot, removeS3Snapshot } = require('../utils/backupRestorePoint');
 const packageJson = require('../../package.json');
@@ -303,6 +305,9 @@ async function ensureDatabaseDumpForBackup(config) {
   }
 
   const databaseInfo = await service.getDatabaseBackupInfo();
+  if (getStorage().kind() === 's3' && !Array.isArray(databaseInfo.storageReferences)) {
+    throw new Error('S3-primary backup requires a database dump with recorded storage references; run a database backup or enable inline dumps');
+  }
   if (!databaseInfo.backupFile) {
     throw new Error(
       'No database backup available to include in this file backup. ' +
@@ -347,6 +352,20 @@ async function ensureDatabaseDumpForBackup(config) {
   return databaseInfo;
 }
 
+// The dump's required-key list is a file beside it, pinned by the checksum
+// in the run row. Anything else reads as "no recorded references".
+async function readStorageReferences(dumpFile, pinned) {
+  if (!pinned || typeof pinned.checksum !== 'string') return undefined;
+  try {
+    const body = await fs.readFile(`${dumpFile}${recoveryFiles.REFERENCES_SUFFIX}`);
+    if (crypto.createHash('sha256').update(body).digest('hex') !== pinned.checksum) return undefined;
+    const keys = JSON.parse(body);
+    return Array.isArray(keys) ? keys : undefined;
+  } catch (error) {
+    return undefined;
+  }
+}
+
 async function getDatabaseBackupInfoInternal() {
   try {
     const recent = await db('database_backup_runs')
@@ -376,7 +395,8 @@ async function getDatabaseBackupInfoInternal() {
         hasChanged,
         backupTime: recent.completed_at,
         tables: (stats && stats.tables) || {},
-        rowCounts: checksums || {}
+        rowCounts: checksums || {},
+        storageReferences: await readStorageReferences(recent.file_path, stats?.storageReferences)
       };
     }
 
@@ -580,6 +600,8 @@ const LEGACY_BACKUP_PATHS = [
   { path: 'heroes',           feature_flag: null },
   { path: 'uploads',          feature_flag: null },
   { path: 'business-docs',    feature_flag: null },
+  { path: 'transfers',        feature_flag: null },
+  { path: 'watermarks',       feature_flag: null },
 ];
 
 // "What to Backup" opt-OUT toggles written by BackupConfiguration.tsx.
@@ -855,7 +877,16 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     });
   }
 
-  return files;
+  if (getStorage().kind() !== 's3') return files;
+  const selected = key => {
+    const target = targets.find(t => key === t.path || key.startsWith(`${t.path}/`));
+    return !!target && !key.slice(target.path.length).split('/').filter(Boolean)
+      .some(name => isExcludedName(name, excludePatterns));
+  };
+  const remote = await recoveryFiles.adapterInventory(db, targets.map(t => t.path), selected, config.recovery_reference_keys);
+  // Managed rows are served by S3, so a leftover local file is not a backup
+  // substitute. The remaining local estate includes CRM PDFs/static assets.
+  return [...files.filter(file => !recoveryFiles.managedKey(file.relativePath.split(path.sep).join('/'))), ...remote];
 }
 
 async function updateFileState(filePath, checksum, size, modified) {
@@ -921,6 +952,7 @@ async function performLocalBackup(config, files, verifiedDatabaseInfo) {
       try {
         const maxSizeMb = config.backup_max_file_size_mb || 5000;
         if (file.size > maxSizeMb * 1024 * 1024) {
+          if (file.recoveryCaptured) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
           logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
           continue;
         }
@@ -987,8 +1019,8 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-async function buildRsyncArgs(config, extraExcludes = []) {
-  const storagePath = getStoragePath();
+async function buildRsyncArgs(config, extraExcludes = [], sourceRoot = getStoragePath(), dumpRoot) {
+  const storagePath = sourceRoot;
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
 
   if (!config.backup_rsync_host || !remotePath) {
@@ -1015,7 +1047,9 @@ async function buildRsyncArgs(config, extraExcludes = []) {
   const connection = await resolveRsyncConnection({ host: config.backup_rsync_host,
     user: config.backup_rsync_user, sshKey: config.backup_rsync_ssh_key, port: config.backup_rsync_port });
   args.push('-e', connection.rsyncShell);
-  args.push(source, `${connection.rsyncTarget}:${remotePath}`);
+  // `dumpRoot` holds only database/<dump>; rsync merges it into the same
+  // destination tree as the storage root.
+  args.push(source, ...(dumpRoot ? [`${dumpRoot}/`] : []), `${connection.rsyncTarget}:${remotePath}`);
   return args;
 }
 
@@ -1035,7 +1069,7 @@ function parseRsyncStats(output) {
   return stats;
 }
 
-async function performRsyncBackup(config, files) {
+async function performRsyncBackup(config, files, sourceRoot, dumpRoot) {
   const { spawnAsync } = require('../utils/safeExec');
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
@@ -1043,13 +1077,13 @@ async function performRsyncBackup(config, files) {
   // rsync transfers the storage root itself, so a legacy-root document (see
   // getFilesToBackupInternal) is not in it: leave it out of the manifest
   // rather than record a file the destination never received.
-  const legacyCount = files.filter((file) => file.legacyValues).length;
+  const legacyCount = sourceRoot ? 0 : files.filter((file) => file.legacyValues).length;
   if (legacyCount) {
     logger.warn(`rsync backup: ${legacyCount} document(s) stored outside the storage root are not transferred; use a local or S3 destination, or a .picpeak export, to include them`);
     files = files.filter((file) => !file.legacyValues);
   }
   const excludedPaths = await resolveExcludedBackupPaths(config);
-  const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
+  const rsyncArgs = await buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`), sourceRoot, dumpRoot);
   const { stdout } = await spawnAsync('rsync', rsyncArgs).catch((error) => {
     // The run's error_message, failure email and System Health then name
     // the refused host key instead of a bare "rsync exited with code 255".
@@ -1148,6 +1182,7 @@ async function performS3Backup(config, files, verifiedDatabaseInfo) {
       try {
         const maxSizeMb = config.backup_max_file_size_mb || 5000;
         if (file.size > maxSizeMb * 1024 * 1024) {
+          if (file.recoveryCaptured) throw new Error(`Required recovery file exceeds the backup size limit: ${file.relativePath}`);
           logger.warn(`Skipping large file: ${file.relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
           continue;
         }
@@ -1270,7 +1305,8 @@ function buildManifestFiles(backedUpFiles, allFiles, databaseInfo) {
     return {
       path: relativePath,
       size: source.size ?? null,
-      checksum: source.checksum || null
+      checksum: source.checksum || null,
+      object_metadata: source.objectMetadata
     };
   });
 }
@@ -1390,6 +1426,7 @@ async function runBackupInternal(isManual = false) {
   isRunning = true;
   const startTime = new Date();
   let runId = null;
+  let recoveryStage = null;
 
   try {
     const config = await resolveConfigWithFallback();
@@ -1437,16 +1474,47 @@ async function runBackupInternal(isManual = false) {
     // gates declared in the backup_paths table (e.g. `events/archived`
     // gated by `backup_include_archived`). Boolean signature is still
     // supported for legacy callers and tests — see getFilesToBackupInternal.
-    const files = await service.getFilesToBackup(config);
+    let files = await service.getFilesToBackup(getStorage().kind() === 's3'
+      ? { ...config, recovery_reference_keys: verifiedDatabaseInfo.storageReferences } : config);
     logger.info(`Found ${files.length} files to check for backup`);
 
     let result;
     const destinationType = (config.backup_destination_type || 'local').toLowerCase();
+    // Only an S3-primary estate has to be staged as a tree. With local
+    // storage rsync keeps reading the storage root in place (no second copy
+    // of the library, mtimes intact); the stage then holds the dump alone.
+    const stagedFiles = getStorage().kind() === 's3';
+    if (stagedFiles || destinationType === 'rsync') {
+      recoveryStage = await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-backup-files-'));
+      await fs.chmod(recoveryStage, 0o700);
+      if (stagedFiles) {
+        files = await recoveryFiles.materialize(files, recoveryStage,
+          (Number(config.backup_max_file_size_mb) || 5000) * 1024 * 1024);
+      }
+      if (destinationType === 'rsync') {
+        // The walker excludes backup output directories. Explicitly capture
+        // the verified dump under the same relative root restore downloads.
+        const handle = await fs.open(verifiedDatabaseInfo.backupFile, require('fs').constants.O_RDONLY | (require('fs').constants.O_NOFOLLOW || 0));
+        let captured;
+        try {
+          if (!(await handle.stat()).isFile()) throw new Error('Database backup is not a regular file');
+          captured = await recoveryFiles.captureStream(handle.createReadStream(), {
+            expectedSize: verifiedDatabaseInfo.size, checksum: verifiedDatabaseInfo.checksum, label: 'Database backup',
+          });
+          const dumpKey = path.join('database', path.basename(verifiedDatabaseInfo.backupFile));
+          const target = path.join(recoveryStage, dumpKey);
+          await fs.mkdir(path.dirname(target), { recursive: true });
+          await fs.copyFile(captured.path, target);
+        } finally { await handle.close().catch(() => {}); if (captured) await captured.cleanup(); }
+      }
+    }
 
     if (destinationType === 'local') {
       result = await performLocalBackup(config, files, verifiedDatabaseInfo);
     } else if (destinationType === 'rsync') {
-      result = await performRsyncBackup(config, files);
+      result = stagedFiles
+        ? await performRsyncBackup(config, files, recoveryStage)
+        : await performRsyncBackup(config, files, undefined, recoveryStage);
     } else if (destinationType === 's3') {
       result = await performS3Backup(config, files, verifiedDatabaseInfo);
     } else {
@@ -1474,13 +1542,14 @@ async function runBackupInternal(isManual = false) {
       const manifestFiles = buildManifestFiles(result.backedUpFiles, files, databaseInfo);
 
       // Rows naming a legacy-root document are pointed at its backed-up path
-      // on restore (restoreService). rsync leaves those documents out.
+      // on restore (restoreService), including the staged rsync tree. An
+      // rsync of the storage root itself leaves those documents out.
       // `file.checksum` (set by performLocalBackup/performS3Backup right
       // before the copy/upload) reflects the bytes actually archived; prefer
       // it over `legacySha256`, which collectLegacyStoredFiles computed
       // earlier during the collection walk and can go stale if the source
       // file changes between collection and the archive write.
-      const legacyBacked = (destinationType === 'rsync' ? [] : files.filter((file) => file.legacyValues))
+      const legacyBacked = (destinationType === 'rsync' && !stagedFiles ? [] : files.filter((file) => file.legacyValues))
         .map((file) => ({
           rel: file.relativePath.split(path.sep).join('/'),
           values: file.legacyValues,
@@ -1632,6 +1701,7 @@ async function runBackupInternal(isManual = false) {
       }
     }
   } finally {
+    if (recoveryStage) await fs.rm(recoveryStage, { recursive: true, force: true }).catch(error => logger.warn(`Could not remove recovery staging: ${error.message}`));
     isRunning = false;
   }
 }

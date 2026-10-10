@@ -239,6 +239,14 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 
 **Project meta:** [Support](SUPPORT.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE) · [Security](SECURITY.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 
+### S3-primary backup and recovery
+
+`STORAGE_BACKEND=s3` selects the live media store (`STORAGE_S3_*`); the backup destination (`backup_s3_*`, local, or rsync) is independent. Standard backups and photo-inclusive `.picpeak` exports capture managed originals, archives, derived media, customer documents and both transfer attachment roots from the live adapter, preserving object headers and custom metadata. CRM PDFs/signatures and static uploads remain local and are included alongside those objects. Administrator path toggles/exclusions and document-only or row-only portable exports remain intentional selection policies.
+
+Capturing S3-primary backups uses a private temporary tree: provide temporary disk capacity for the entire selected file estate, not just one object. Missing required objects, interrupted capture or publication, and reference changes during a database dump fail the run rather than produce a completed incomplete backup. Scheduled database dumps record their storage references; after upgrading, create a new database dump before reusing a pre-upgrade dump with inline dumping disabled.
+
+Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers. Portable import database/files atomicity is a separate limitation.
+
 ### Mail network policy
 
 Every SMTP/IMAP connection validates and consumes only its current vetted DNS
