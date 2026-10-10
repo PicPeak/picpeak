@@ -58,13 +58,13 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
             placeholder={t('gallery.searchByFilename', 'Search by filename...')}
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
-            leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+            leftIcon={<Search className="w-5 h-5 text-faint" />}
           />
         </div>
 
         {/* Category Filter */}
         <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-neutral-400" />
+          <Filter className="w-5 h-5 text-faint" />
           <select
             value={selectedCategory === null ? '' : selectedCategory || ''}
             onChange={(e) => {
@@ -73,7 +73,7 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
               const numeric = Number(raw);
               onCategoryChange(Number.isNaN(numeric) ? raw : numeric);
             }}
-            className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
           >
             <option value="">{t('gallery.allCategories', 'All Categories')}</option>
             {/* The literal the backend understands, not 0 (#1211). It skips
@@ -94,12 +94,12 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
             empties the list, and the filter would stay on with no way out. */}
         {onCreditChange && (credits.length > 0 || !!selectedCredit) && (
           <div className="flex items-center gap-2">
-            <UserRound className="w-5 h-5 text-neutral-400" aria-hidden="true" />
+            <UserRound className="w-5 h-5 text-faint" aria-hidden="true" />
             <select
               value={selectedCredit ?? ''}
               onChange={(e) => onCreditChange(e.target.value === '' ? undefined : e.target.value)}
               aria-label={t('admin.photos.credit.filterLabel')}
-              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark max-w-[16rem]"
+              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark max-w-[16rem]"
             >
               <option value="">{t('admin.photos.credit.filterAll')}</option>
               {credits.map((credit) => (
@@ -122,11 +122,11 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
 
         {showMediaFilter && onMediaTypeChange && (
           <div className="flex items-center gap-2">
-            <Filter className="w-5 h-5 text-neutral-400" />
+            <Filter className="w-5 h-5 text-faint" />
             <select
               value={mediaType}
               onChange={(e) => onMediaTypeChange(e.target.value as 'all' | 'photo' | 'video')}
-              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
             >
               <option value="all">{t('gallery.allMedia', 'All media')}</option>
               <option value="photo">{t('gallery.photosOnly', 'Photos only')}</option>
@@ -140,7 +140,7 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
           <select
             value={sortBy}
             onChange={(e) => onSortChange(e.target.value as PhotoSortKey, sortOrder)}
-            className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+            className="px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent focus:border-accent-dark"
           >
             <option value="date">{t('gallery.sortByDate', 'Sort by Date')}</option>
             <option value="capture_date">{t('gallery.sortByCaptureDate', 'Sort by Capture Date')}</option>

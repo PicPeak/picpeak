@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, AlertTriangle, X } from 'lucide-react';
 import { Button } from './Button';
 import { Card } from './Card';
+import { pushDialogLayer } from './Modal';
 
 /**
  * Promise-based confirm dialog (#640 part C, ported from 8digit/picpeak@88bfde1).
@@ -53,12 +54,15 @@ interface ConfirmContextValue {
 
 const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 
+// Outside the provider — only a component rendered on its own, as in a unit
+// test — the question falls back to the browser's confirm. The app wraps
+// everything in ConfirmDialogProvider, so users always get the dialog.
+const browserConfirm = (options: ConfirmOptions): Promise<boolean> =>
+  Promise.resolve(window.confirm(options.message));
+
 export const useConfirm = (): ((options: ConfirmOptions) => Promise<boolean>) => {
   const ctx = useContext(ConfirmContext);
-  if (!ctx) {
-    throw new Error('useConfirm must be used within a ConfirmDialogProvider');
-  }
-  return ctx.confirm;
+  return ctx ? ctx.confirm : browserConfirm;
 };
 
 export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -87,41 +91,44 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
     setOptions(null);
   }, []);
 
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   useEffect(() => {
     if (!options) return;
     cancelButtonRef.current?.focus();
+    const layer = pushDialogLayer();
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!layer.isTop()) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         settle(false);
       } else if (e.key === 'Enter') {
-        // Don't hijack Enter when the focus is in an editable element — covers
-        // the (unusual) case where a confirm is open over an open input.
+        // Enter on a focused button presses that button (Cancel has the focus
+        // when the dialog opens), and never confirms from an editable field.
+        // A destructive confirm only confirms from its own button: Enter
+        // elsewhere does nothing, so a stray keypress can't delete.
         const tag = (document.activeElement as HTMLElement | null)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (optionsRef.current?.variant === 'danger') return;
         e.preventDefault();
         settle(true);
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      layer.release();
+    };
   }, [options, settle]);
 
   const variant = options?.variant ?? 'primary';
   const Icon = variant === 'danger' ? AlertCircle : variant === 'warning' ? AlertTriangle : null;
   const iconClass =
     variant === 'danger'
-      ? 'text-red-600 dark:text-red-400'
+      ? 'text-danger-text'
       : variant === 'warning'
-        ? 'text-amber-600 dark:text-amber-400'
+        ? 'text-warning-text'
         : '';
-
-  // Danger uses the outline button + an inline red override so the visual
-  // weight matches the action without redefining a Button variant for one case.
-  const confirmButtonVariant: 'primary' | 'outline' = variant === 'danger' ? 'outline' : 'primary';
-  const confirmButtonClass = variant === 'danger'
-    ? 'bg-red-600 hover:bg-red-700 text-white border-red-600'
-    : '';
 
   return (
     <ConfirmContext.Provider value={{ confirm }}>
@@ -151,7 +158,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
               </div>
               <button
                 onClick={() => settle(false)}
-                className="text-neutral-400 hover:text-body"
+                className="text-faint hover:text-body"
                 aria-label={t('common.close', 'Close')}
               >
                 <X className="w-5 h-5" />
@@ -167,9 +174,8 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                 {options.cancelLabel ?? t('common.cancel', 'Cancel')}
               </Button>
               <Button
-                variant={confirmButtonVariant}
+                variant={variant === 'danger' ? 'danger' : 'primary'}
                 onClick={() => settle(true)}
-                className={confirmButtonClass}
               >
                 {options.confirmLabel ?? t('common.confirm', 'Confirm')}
               </Button>

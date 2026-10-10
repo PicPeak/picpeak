@@ -33,15 +33,15 @@ export const UploadProgressBar: React.FC = () => {
       className={clsx(
         'sticky top-16 z-20 border-b px-4 sm:px-6 lg:px-8 py-2.5 text-sm',
         phase.kind === 'done' && hasFailures
-          ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/60'
+          ? 'bg-warning-soft border-warning-line'
           : 'bg-shell border-line'
       )}
     >
       <div className="flex items-center gap-3">
         {phase.kind === 'transferring' && <Upload className="w-4 h-4 text-accent-dark flex-shrink-0" />}
-        {phase.kind === 'processing' && <Cog className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-spin flex-shrink-0" />}
-        {phase.kind === 'done' && !hasFailures && <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />}
-        {phase.kind === 'done' && hasFailures && <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 flex-shrink-0" />}
+        {phase.kind === 'processing' && <Cog className="w-4 h-4 text-warning-text animate-spin flex-shrink-0" />}
+        {phase.kind === 'done' && !hasFailures && <CheckCircle2 className="w-4 h-4 text-success-text flex-shrink-0" />}
+        {phase.kind === 'done' && hasFailures && <AlertTriangle className="w-4 h-4 text-warning-text flex-shrink-0" />}
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3">
@@ -103,7 +103,7 @@ export const UploadProgressBar: React.FC = () => {
                   type="button"
                   onClick={dismiss}
                   aria-label={t('common.dismiss', 'Dismiss')}
-                  className="p-1 -m-1 rounded text-neutral-500 hover:text-body hover:bg-hover-soft"
+                  className="p-1 -m-1 rounded text-muted hover:text-body hover:bg-hover-soft"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -116,7 +116,7 @@ export const UploadProgressBar: React.FC = () => {
               <div
                 className={clsx(
                   'h-full rounded-full transition-all duration-300',
-                  phase.kind === 'processing' ? 'bg-amber-500' : 'bg-accent-dark'
+                  phase.kind === 'processing' ? 'bg-warning' : 'bg-accent-dark'
                 )}
                 style={{ width: `${phase.kind === 'processing' ? processingPct : session.progress}%` }}
               />
@@ -136,9 +136,9 @@ export const UploadProgressBar: React.FC = () => {
               <span
                 className={clsx(
                   'flex-shrink-0 mt-0.5 px-1.5 py-0.5 rounded font-medium whitespace-nowrap',
-                  f.kind === 'rejected' && 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-                  f.kind === 'transfer' && 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-                  f.kind === 'processing' && 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                  f.kind === 'rejected' && 'bg-danger-soft text-danger-text',
+                  f.kind === 'transfer' && 'bg-inset text-chart-8',
+                  f.kind === 'processing' && 'bg-inset text-chart-4'
                 )}
               >
                 {f.kind === 'rejected' && t('upload.failures.kindRejected', 'Rejected')}

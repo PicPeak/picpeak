@@ -11,7 +11,8 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Workflow as WorkflowIcon } from 'lucide-react';
-import { Card, Loading, Input } from '../../../components/common';
+import { Card, Loading, Input, Notice } from '../../../components/common';
+import { DecimalInput } from '../../../components/common/DecimalInput';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { settingsService } from '../../../services/settings.service';
 import { quotesService } from '../../../services/quotes.service';
@@ -278,7 +279,7 @@ export const CrmSettingsPage: React.FC = () => {
             </label>
             <textarea
               rows={6}
-              className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              className="w-full rounded-md border border-line-strong bg-panel text-heading px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
               value={values.crm_quotes_tos_text ?? ''}
               onChange={(e) => setVal('crm_quotes_tos_text', e.target.value)}
               placeholder={t('crmSettings.crm_quotes_tos_text.placeholder',
@@ -341,25 +342,23 @@ export const CrmSettingsPage: React.FC = () => {
             late-fee math below is configured here in both cases — it's the fee
             the dunning path applies, not part of the schedule. */}
         {workflowsLive ? (
-          <div className="mt-2 rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-3 text-sm text-blue-800 dark:text-blue-200 flex items-start gap-2">
-            <WorkflowIcon className="w-4 h-4 mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">{t('crmSettings.dunningMoved.title', 'Reminder schedule is now in Workflows')}</p>
-              <p className="mt-1">
-                {t('crmSettings.dunningMoved.body', 'When and how often overdue reminders go out is configured in the “Invoice dunning” workflow. Late-fee amounts below still apply.')}{' '}
-                <Link to="/admin/automation/workflows" className="underline font-medium">{t('crmSettings.dunningMoved.link', 'Open Workflows')}</Link>
-              </p>
-            </div>
-          </div>
+          <Notice
+            tone="info"
+            className="mt-2"
+            icon={<WorkflowIcon className="w-5 h-5" />}
+            title={t('crmSettings.dunningMoved.title', 'Reminder schedule is now in Workflows')}
+          >
+            {t('crmSettings.dunningMoved.body', 'When and how often overdue reminders go out is configured in the “Invoice dunning” workflow. The late-fee amounts below still apply.')}{' '}
+            <Link to="/admin/automation/workflows" className="underline font-medium text-accent">{t('crmSettings.dunningMoved.link', 'Open Workflows')}</Link>
+          </Notice>
         ) : (
           checkbox('crm_invoices_reminders_enabled', 'Send automatic reminders for overdue invoices')
         )}
 
         {checkbox('crm_invoices_late_fee_enabled', 'Add a late fee (Mahngebühr) on every reminder after the first')}
-        <div className="mt-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-800 dark:text-amber-200">
-          <p className="font-medium">{t('crmSettings.lateFeeAgb.title', 'Late fees must be itemised in your terms (AGB)')}</p>
-          <p className="mt-1">{t('crmSettings.lateFeeAgb.body', 'Vertragliche Pflicht: Sätze wie „Es werden Mahnspesen erhoben“ reichen nicht aus. In den AGB muss die konkrete Gebühr klar beziffert sein (z.B. „CHF 20 ab der 2. Mahnung“). Mit dem Treuhänder prüfen.')}</p>
-        </div>
+        <Notice tone="warning" className="mt-2" title={t('crmSettings.lateFeeAgb.title', 'Late fees must be itemised in your terms (AGB)')}>
+          {t('crmSettings.lateFeeAgb.body', 'A contractual duty: phrases like “late fees apply” aren\'t enough. Your terms must state the concrete fee (e.g. “CHF 20 from the 2nd reminder”). Verify with your Treuhänder.')}
+        </Notice>
         {checkbox('crm_invoices_late_fee_vat_enabled', 'Charge VAT on late fees (Switzerland — leave off for DE/AT; no effect if your organisation has no VAT rate)')}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           {!workflowsLive && (
@@ -388,10 +387,21 @@ export const CrmSettingsPage: React.FC = () => {
             </select>
           </div>
           {(values.crm_invoices_late_fee_type ?? 'flat') === 'percent' ? (
-            <Input type="number" min={0} step="0.01" max={100}
-              label={t('crmSettings.crm_invoices_late_fee_percent.label', 'Late fee (% of invoice)') as string}
-              value={values.crm_invoices_late_fee_percent ?? 0}
-              onChange={(e) => setVal('crm_invoices_late_fee_percent', Number(e.target.value))} />
+            // A percentage takes decimals: DecimalInput accepts "1,5" as well
+            // as "1.5", where type="number" drops the comma (UX.md § 6).
+            <div className="w-full">
+              <label htmlFor="crm-late-fee-percent" className="block text-sm font-medium mb-1.5 text-body">
+                {t('crmSettings.crm_invoices_late_fee_percent.label', 'Late fee (% of invoice)')}
+              </label>
+              <DecimalInput
+                id="crm-late-fee-percent"
+                className="input"
+                min={0}
+                max={100}
+                value={Number(values.crm_invoices_late_fee_percent ?? 0)}
+                onChange={(n) => setVal('crm_invoices_late_fee_percent', Number.isFinite(n) ? n : 0)}
+              />
+            </div>
           ) : (
             <Input type="number" min={0}
               label={t('crmSettings.crm_invoices_late_fee_minor.label', 'Late fee (minor units / Rappen)') as string}
@@ -402,10 +412,19 @@ export const CrmSettingsPage: React.FC = () => {
             label={t('crmSettings.crm_invoices_late_fee_label.label', 'Late fee label') as string}
             value={values.crm_invoices_late_fee_label ?? 'Mahngebühr'}
             onChange={(e) => setVal('crm_invoices_late_fee_label', e.target.value)} />
-          <Input type="number" min={0} step="0.01" max="100"
-            label={t('crmSettings.crm_invoices_skonto_percent_default.label', 'Skonto rate (default %)') as string}
-            value={values.crm_invoices_skonto_percent_default ?? 2}
-            onChange={(e) => setVal('crm_invoices_skonto_percent_default', Number(e.target.value))} />
+          <div className="w-full">
+            <label htmlFor="crm-skonto-percent" className="block text-sm font-medium mb-1.5 text-body">
+              {t('crmSettings.crm_invoices_skonto_percent_default.label', 'Skonto rate (default %)')}
+            </label>
+            <DecimalInput
+              id="crm-skonto-percent"
+              className="input"
+              min={0}
+              max={100}
+              value={Number(values.crm_invoices_skonto_percent_default ?? 2)}
+              onChange={(n) => setVal('crm_invoices_skonto_percent_default', Number.isFinite(n) ? n : 0)}
+            />
+          </div>
           <Input type="number" min={0}
             label={t('crmSettings.crm_invoices_skonto_business_days.label', 'Skonto window (business days)') as string}
             value={values.crm_invoices_skonto_business_days ?? 5}
@@ -425,7 +444,7 @@ export const CrmSettingsPage: React.FC = () => {
           <h4 className="font-semibold text-heading mb-2 text-sm">
             {t('crmSettings.section.installmentDefaults', 'Default installment triggers')}
           </h4>
-          <p className="text-xs text-neutral-500 mb-3">
+          <p className="text-xs text-muted mb-3">
             {t('crmSettings.installmentDefaults.help',
               'Pre-fill the trigger for fresh rows in the Installments panel. Per-document edits override; existing documents keep their snapshotted plan.')}
           </p>
@@ -470,7 +489,7 @@ export const CrmSettingsPage: React.FC = () => {
           <h4 className="font-semibold text-heading mb-2 text-sm">
             {t('crmSettings.section.paymentDefaults', 'Default payment conditions')}
           </h4>
-          <p className="text-xs text-neutral-500 mb-3">
+          <p className="text-xs text-muted mb-3">
             {t('crmSettings.paymentDefaults.help',
               'Pre-filled on every new quote and invoice. The editor still lets you pick a different combination per document.')}
           </p>
@@ -527,7 +546,7 @@ export const CrmSettingsPage: React.FC = () => {
         {checkbox('crm_contracts_require_drawn_signature', 'Require drawn signature (typed name alone is not enough)')}
         {checkboxDefaultOn('crm_contracts_allow_pdf_upload', 'Allow customer to upload a wet-signed PDF')}
         {checkboxDefaultOn('crm_contracts_store_ip', "Store signer's IP address (recommended — corroborating evidence in civil disputes)")}
-        <p className="text-xs text-neutral-500 mt-1 ml-6">
+        <p className="text-xs text-muted mt-1 ml-6">
           {t('crmSettings.crm_contracts_store_ip.help',
             "When off, the customer's and admin's IP at signing time is NOT recorded into the contract row or the public sign-page audit confirmation. Per GDPR data-minimisation principle some operators prefer this — but IP is corroborating identity evidence if the contract is challenged, so we recommend keeping it on.")}
         </p>
@@ -544,7 +563,7 @@ export const CrmSettingsPage: React.FC = () => {
               onChange={(e) => setVal('crm_contracts_reminder_days', e.target.value)}
               placeholder="3,7"
             />
-            <p className="text-xs text-neutral-500 mt-1">
+            <p className="text-xs text-muted mt-1">
               {t('crmSettings.crm_contracts_reminder_days.help', 'Comma-separated, e.g. 3,7: a reminder with a new link 3 days after the last one, then 7 days after that. Leave empty for no reminders.')}
             </p>
           </div>
@@ -587,10 +606,10 @@ export const CrmSettingsPage: React.FC = () => {
             </div>
           ))}
         </div>
-        <p className="text-xs text-neutral-500 mt-1">
+        <p className="text-xs text-muted mt-1">
           {t('crmSettings.crm_contracts_legal_notice.help', 'Frozen into each contract when it is sent, shown on the signing page and printed on the signing certificate. Changing it affects only contracts sent afterwards.')}
         </p>
-        <p className="text-xs text-neutral-500 mt-2">
+        <p className="text-xs text-muted mt-2">
           {t('crmSettings.crm_contracts_number_format.help',
             'Supported tokens: {YEAR}, {MONTH}, {SEQ:04d}. Example: LBM-C-{YEAR}-{SEQ:04d} → LBM-C-2026-0001.')}
         </p>
@@ -605,7 +624,7 @@ export const CrmSettingsPage: React.FC = () => {
         <h3 className="font-semibold text-heading mb-1">
           {t('crmSettings.section.documents', 'Customer documents')}
         </h3>
-        <p className="text-xs text-neutral-500 mb-3">
+        <p className="text-xs text-muted mb-3">
           {t('crmSettings.section.documentsHint',
             'Documents exchanged with customers in their portal. Customer uploads stay unavailable to them until reviewed.')}
         </p>
@@ -635,7 +654,7 @@ export const CrmSettingsPage: React.FC = () => {
           <legend className="text-sm font-medium text-body mb-1">
             {t('crmSettings.customer_documents_allowed_formats.label', 'File types customers can upload')}
           </legend>
-          <p className="text-xs text-neutral-500 mb-2">
+          <p className="text-xs text-muted mb-2">
             {t('crmSettings.customer_documents_allowed_formats.help',
               'Every file is checked by its content. PDF is the only type on by default. The check of Word, Excel and OpenDocument files is best-effort: it refuses macros, embedded objects and the known ways of linking to outside content (including web links), but it does not detect every active-content mechanism these formats have. Turn them on only for customers you trust, and open such files with care. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet.')}
           </p>
@@ -677,7 +696,7 @@ export const CrmSettingsPage: React.FC = () => {
         <h3 className="font-semibold text-heading mb-1">
           {t('crmSettings.section.dashboardOverview', 'Dashboard CRM overview')}
         </h3>
-        <p className="text-xs text-neutral-500 mb-3">
+        <p className="text-xs text-muted mb-3">
           {t('crmSettings.section.dashboardOverviewHint',
             'Hide CRM overview tiles on the admin dashboard. All tiles render by default; uncheck to hide.')}
         </p>

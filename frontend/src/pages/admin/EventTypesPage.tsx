@@ -10,11 +10,10 @@ import {
   GripVertical,
   Eye,
   EyeOff,
-  X,
   AlertTriangle
 } from 'lucide-react';
 
-import { Button, Input, Card, Loading } from '../../components/common';
+import { Badge, Button, Input, Card, EmptyState, ErrorState, Loading, Modal, Notice, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell } from '../../components/common';
 import { useModal, useMutationWithToast } from '../../hooks';
 import { eventTypesService, EventType, CreateEventTypeData, UpdateEventTypeData } from '../../services/eventTypes.service';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
@@ -96,14 +95,12 @@ export const EventTypesPage: React.FC = () => {
   }
 
   // Error state
-  if (error) {
+  if (error && !eventTypes) {
     return (
-      <div className="text-center py-12">
-        <p className="text-red-600">{t('eventTypes.loadError', 'Failed to load event types')}</p>
-        <Button onClick={() => refetch()} className="mt-4">
-          {t('common.tryAgain', 'Try Again')}
-        </Button>
-      </div>
+      <ErrorState
+        title={t('eventTypes.loadError', 'Failed to load event types')}
+        onRetry={() => refetch()}
+      />
     );
   }
 
@@ -142,7 +139,7 @@ export const EventTypesPage: React.FC = () => {
               type="checkbox"
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-line-strong text-accent focus:ring-primary-500"
+              className="rounded border-line-strong text-accent focus:ring-accent"
             />
             <span className="text-sm text-body">
               {t('eventTypes.showInactive', 'Show inactive')}
@@ -152,115 +149,113 @@ export const EventTypesPage: React.FC = () => {
       </Card>
 
       {/* Event Types List */}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-subtle border-b border-line">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase w-10">
-                  {/* Drag handle column */}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  {t('eventTypes.table.type', 'Type')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  {t('eventTypes.table.slugPrefix', 'URL Prefix')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  {t('eventTypes.table.theme', 'Default Theme')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
-                  {t('eventTypes.table.status', 'Status')}
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
-                  {t('eventTypes.table.actions', 'Actions')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-panel divide-y divide-line">
-              {filteredTypes.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
-                    {searchTerm
-                      ? t('eventTypes.noResults', 'No event types found')
-                      : t('eventTypes.empty', 'No event types yet')}
-                  </td>
-                </tr>
-              ) : (
-                filteredTypes.map((type) => (
-                  <tr key={type.id} className={`hover:bg-neutral-50 dark:hover:bg-neutral-700/50 ${!type.is_active ? 'opacity-60' : ''}`}>
-                    <td className="px-4 py-4">
-                      <GripVertical className="w-4 h-4 text-neutral-400 cursor-grab" />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{type.emoji}</span>
-                        <div>
-                          <div className="font-medium text-heading">{type.name}</div>
-                          {type.is_system && (
-                            <span className="text-xs text-muted">
-                              {t('eventTypes.system', 'System')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <code className="px-2 py-1 bg-inset text-heading rounded text-sm">
-                        {type.slug_prefix}
-                      </code>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-body">
-                      {GALLERY_THEME_PRESETS[type.theme_preset]?.name || type.theme_preset || '-'}
-                    </td>
-                    <td className="px-4 py-4">
-                      {type.is_active ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-full text-xs">
-                          <Eye className="w-3 h-3" />
-                          {t('common.active', 'Active')}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-inset text-soft rounded-full text-xs">
-                          <EyeOff className="w-3 h-3" />
-                          {t('common.inactive', 'Inactive')}
+      <Table>
+        <TableHead>
+          <tr>
+            <TableHeaderCell className="w-10">
+              {/* Drag handle column */}
+            </TableHeaderCell>
+            <TableHeaderCell>
+              {t('eventTypes.table.type', 'Type')}
+            </TableHeaderCell>
+            <TableHeaderCell>
+              {t('eventTypes.table.slugPrefix', 'URL Prefix')}
+            </TableHeaderCell>
+            <TableHeaderCell>
+              {t('eventTypes.table.theme', 'Default Theme')}
+            </TableHeaderCell>
+            <TableHeaderCell>
+              {t('eventTypes.table.status', 'Status')}
+            </TableHeaderCell>
+            <TableHeaderCell align="right">
+              {t('eventTypes.table.actions', 'Actions')}
+            </TableHeaderCell>
+          </tr>
+        </TableHead>
+        <TableBody>
+          {filteredTypes.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6}>
+                <EmptyState
+                  size="inline"
+                  icon={<Tag />}
+                  title={searchTerm
+                    ? t('eventTypes.noResults', 'No event types found')
+                    : t('eventTypes.empty', 'No event types yet')}
+                />
+              </TableCell>
+            </TableRow>
+          ) : (
+            filteredTypes.map((type) => (
+              <TableRow key={type.id} className={`hover:bg-hover-soft ${!type.is_active ? 'opacity-60' : ''}`}>
+                <TableCell>
+                  <GripVertical className="w-4 h-4 text-faint cursor-grab" />
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{type.emoji}</span>
+                    <div>
+                      <div className="font-medium text-heading">{type.name}</div>
+                      {type.is_system && (
+                        <span className="text-xs text-muted">
+                          {t('eventTypes.system', 'System')}
                         </span>
                       )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setEditingType(type)}
-                          className="p-2 hover:bg-hover rounded-lg text-soft hover:text-accent"
-                          title={t('common.edit', 'Edit')}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        {!type.is_system && (
-                          <button
-                            onClick={() => setDeleteConfirm(type)}
-                            className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg text-soft hover:text-red-600"
-                            title={t('common.delete', 'Delete')}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <code className="px-2 py-1 bg-inset text-heading rounded text-sm">
+                    {type.slug_prefix}
+                  </code>
+                </TableCell>
+                <TableCell>
+                  {GALLERY_THEME_PRESETS[type.theme_preset]?.name || type.theme_preset || '-'}
+                </TableCell>
+                <TableCell>
+                  {type.is_active ? (
+                    <Badge tone="success" icon={<Eye />}>
+                      {t('common.active', 'Active')}
+                    </Badge>
+                  ) : (
+                    <Badge icon={<EyeOff />}>
+                      {t('common.inactive', 'Inactive')}
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setEditingType(type)}
+                      className="p-2 hover:bg-hover rounded-lg text-soft hover:text-accent"
+                      title={t('common.edit', 'Edit')}
+                      aria-label={t('common.edit', 'Edit')}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    {!type.is_system && (
+                      <button
+                        onClick={() => setDeleteConfirm(type)}
+                        className="p-2 hover:bg-danger-soft rounded-lg text-soft hover:text-danger-text"
+                        title={t('common.delete', 'Delete')}
+                        aria-label={t('common.delete', 'Delete')}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
 
       {/* Slug Preview Info */}
-      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
-        <p className="text-sm text-blue-800 dark:text-blue-200">
-          <strong>{t('eventTypes.slugInfo.title', 'URL Prefix Info:')}</strong>{' '}
-          {t('eventTypes.slugInfo.description', 'The URL prefix is used to generate gallery URLs. For example, an event type with prefix "family" will create URLs like: family-smith-family-2025-01-22')}
-        </p>
-      </div>
+      <Notice tone="info" className="mt-4">
+        <strong>{t('eventTypes.slugInfo.title', 'URL Prefix Info:')}</strong>{' '}
+        {t('eventTypes.slugInfo.description', 'The URL prefix is used to generate gallery URLs. For example, an event type with prefix "family" will create URLs like: family-smith-family-2025-01-22')}
+      </Notice>
 
       {/* Create Modal */}
       {createModal.isOpen && (
@@ -353,25 +348,25 @@ const EventTypeModal: React.FC<EventTypeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-heading">
-              {isEditing
-                ? t('eventTypes.edit', 'Edit Event Type')
-                : t('eventTypes.createNew', 'New Event Type')}
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-hover rounded-lg"
-              disabled={isLoading}
-            >
-              <X className="w-5 h-5 text-muted" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit}>
+    <Modal
+      open
+      onClose={() => { if (!isLoading) onClose(); }}
+      size="md"
+      title={isEditing
+        ? t('eventTypes.edit', 'Edit Event Type')
+        : t('eventTypes.createNew', 'New Event Type')}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button variant="primary" type="submit" form="event-type-form" isLoading={isLoading}>
+            {isEditing ? t('common.save', 'Save') : t('common.create', 'Create')}
+          </Button>
+        </>
+      )}
+    >
+          <form id="event-type-form" onSubmit={handleSubmit}>
             <div className="space-y-4">
               {/* Name */}
               <Input
@@ -439,7 +434,7 @@ const EventTypeModal: React.FC<EventTypeModalProps> = ({
                 <select
                   value={form.theme_preset}
                   onChange={(e) => setForm({ ...form, theme_preset: e.target.value })}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
                 >
                   {Object.entries(GALLERY_THEME_PRESETS).map(([key, preset]) => (
                     <option key={key} value={key}>
@@ -456,27 +451,16 @@ const EventTypeModal: React.FC<EventTypeModalProps> = ({
                     type="checkbox"
                     checked={eventType?.is_active}
                     onChange={(e) => onSubmit({ is_active: e.target.checked })}
-                    className="rounded border-line-strong text-accent focus:ring-primary-500"
+                    className="rounded border-line-strong text-accent focus:ring-accent"
                   />
                   <span className="text-sm text-body">
-                    {t('eventTypes.form.isActive', 'Active (visible in event creation)')}
+                    {t('eventTypes.form.isActive', 'Active (offered when creating a gallery)')}
                   </span>
                 </label>
               )}
             </div>
-
-            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-line">
-              <Button variant="outline" onClick={onClose} disabled={isLoading}>
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button variant="primary" type="submit" isLoading={isLoading}>
-                {isEditing ? t('common.save', 'Save') : t('common.create', 'Create')}
-              </Button>
-            </div>
           </form>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };
 
@@ -496,43 +480,41 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  // Stays open while the delete runs and on a failure; the page closes it
+  // on success.
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-red-100 dark:bg-red-900/40 rounded-full">
-              <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
-            </div>
-            <h2 className="text-xl font-semibold text-heading">
-              {t('eventTypes.deleteConfirm.title', 'Delete Event Type')}
-            </h2>
-          </div>
-
-          <p className="text-soft mb-4">
+    <Modal
+      open
+      onClose={() => { if (!isLoading) onClose(); }}
+      size="sm"
+      title={t('eventTypes.deleteConfirm.title', 'Delete Event Type')}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            variant="danger"
+            onClick={onConfirm}
+            isLoading={isLoading}
+          >
+            {t('eventTypes.deleteConfirm.action', 'Delete event type')}
+          </Button>
+        </>
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 flex-shrink-0 text-danger-text" aria-hidden="true" />
+        <div className="space-y-3">
+          <p className="text-soft">
             {t('eventTypes.deleteConfirm.message', 'Are you sure you want to delete')} "{eventType.name}"?
           </p>
-
-          <p className="text-sm text-muted bg-inset p-3 rounded-lg mb-6">
-            {t('eventTypes.deleteConfirm.warning', 'This action cannot be undone. Make sure no events are using this type.')}
+          <p className="text-sm text-muted">
+            {t('eventTypes.deleteConfirm.warning', 'This action cannot be undone. Make sure no galleries use this type.')}
           </p>
-
-          <div className="flex justify-end gap-3">
-            <Button variant="outline" onClick={onClose} disabled={isLoading}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={onConfirm}
-              isLoading={isLoading}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {t('common.delete', 'Delete')}
-            </Button>
-          </div>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Modal>
   );
 };
 

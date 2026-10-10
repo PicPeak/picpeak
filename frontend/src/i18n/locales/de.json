@@ -841,7 +841,9 @@
     "searching": "Wird gesucht…",
     "language": "Sprache",
     "hidePassword": "Passwort verbergen",
-    "showPassword": "Passwort anzeigen"
+    "showPassword": "Passwort anzeigen",
+    "loadFailed": "Konnte nicht geladen werden",
+    "moreActions": "Weitere Aktionen"
   },
   "upload": {
     "capacity": {
@@ -973,11 +975,12 @@
       "nothingToUpload": "Keine der ausgewählten Dateien kann hochgeladen werden: Alle liegen in versteckten oder übersprungenen Ordnern.",
       "keptForNext": "Dateien, die während der Vorbereitung der Ordner hinzukamen, sind noch ausgewählt: {{count}}."
     },
-    "largeFileReplaceSkipped": "Ersetzen nach Dateiname ist für Dateien über der Stapelgröße nicht möglich; laden Sie die Datei ohne Ersetzen hoch."
+    "largeFileReplaceSkipped": "Ersetzen nach Dateiname ist für Dateien über der Stapelgröße nicht möglich; laden Sie die Datei ohne Ersetzen hoch.",
+    "removeFile": "{{name}} entfernen"
   },
   "navigation": {
     "dashboard": "Dashboard",
-    "events": "Veranstaltungen",
+    "events": "Galerien",
     "messages": "Nachrichten",
     "settings": "Einstellungen",
     "archives": "Archive",
@@ -992,9 +995,10 @@
     "clients": "CRM",
     "accounting": "Buchhaltung",
     "workflows": "Workflows",
-    "betaTag": "Beta",
     "automation": "Automatisierung",
-    "sharing": "Teilen"
+    "sharing": "Teilen",
+    "openMenu": "Menü öffnen",
+    "closeMenu": "Menü schliessen"
   },
   "transfers": {
     "title": "PicTransfer",
@@ -1016,7 +1020,7 @@
     "filesAdded": "Dateien hinzugefügt",
     "deleted": "Transfer gelöscht",
     "deleteConfirmTitle": "Transfer löschen?",
-    "deleteConfirmBody": "Damit wird der Link entfernt. Die Fotos im Event bleiben unberührt.",
+    "deleteConfirmBody": "Damit wird der Link entfernt. Die Fotos in ihren Galerien bleiben unberührt.",
     "addImages": "Bilder hinzufügen",
     "noUploads": "Der Kunde hat noch keine Dateien hochgeladen.",
     "createAndSend": "Erstellen & senden",
@@ -1109,7 +1113,8 @@
       "someRejected": "Diese Dateien wurden nicht akzeptiert: {{names}}",
       "anyType": "Jeder Dateityp wird akzeptiert.",
       "acceptedTypes": "Akzeptiert: {{types}}",
-      "someFailed": "Diese Dateien konnten nicht gespeichert werden. Bitte erneut versuchen: {{names}}"
+      "someFailed": "Diese Dateien konnten nicht gespeichert werden. Bitte erneut versuchen: {{names}}",
+      "removeFile": "{{name}} entfernen"
     },
     "newSend": "Dateien senden",
     "newRequest": "Dateien anfordern",
@@ -1146,20 +1151,25 @@
       "request": "Anfrage"
     },
     "emptyReadOnly": "Noch nichts vorhanden.",
-    "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}"
+    "someDropped": "{{count}} angehängte Datei(en) wurden nicht übernommen – eine Dateianfrage sammelt nur Dateien: {{names}}",
+    "deleteRequestAction": "Anfrage löschen",
+    "deleteAction": "Transfer löschen",
+    "loadFailed": "Die Transfers konnten nicht geladen werden"
   },
   "workflows": {
     "title": "Workflows",
     "subtitle": "Visuelle Automatisierungen – Auslöser, Bedingungen, Freigaben und Aktionen.",
     "new": "Neuer Workflow",
-    "empty": "Noch keine Workflows. Erstellen Sie einen, um Rechnungsstellung und Buchungsschritte zu automatisieren.",
+    "empty": "Erstellen Sie einen, um Rechnungsstellung und Buchungsschritte zu automatisieren.",
     "builtin": "integriert",
     "triggerLabel": "Auslöser",
     "enabled": "Aktiv",
     "disabled": "Inaktiv",
     "confirmDelete": "Diesen Workflow löschen?",
     "toggle": {
-      "confirmDisableBuiltin": "Das Deaktivieren dieses eingebauten Ablaufs stellt das vorherige Standardverhalten wieder her – die Automatisierung wird dadurch nicht abgeschaltet. Fortfahren?"
+      "confirmDisableBuiltin": "Das Deaktivieren dieses eingebauten Ablaufs stellt das vorherige Standardverhalten wieder her – die Automatisierung wird dadurch nicht abgeschaltet. Fortfahren?",
+      "disableBuiltinTitle": "Diesen eingebauten Workflow deaktivieren?",
+      "disableBuiltin": "Workflow deaktivieren"
     },
     "test": {
       "title": "Testlauf",
@@ -1185,7 +1195,9 @@
       "pendingTitle": "Offene Freigaben",
       "viewAll": "Alle Freigaben ansehen",
       "openEntity": "{{type}} #{{id}} öffnen",
-      "acted": "Erledigt"
+      "acted": "Erledigt",
+      "loadFailed": "Die Freigaben konnten nicht geladen werden",
+      "emptyHint": "Ein Workflow mit einer Bestätigungsstufe listet seine angehaltenen Durchläufe hier auf."
     },
     "editor": {
       "namePlaceholder": "Workflow-Name",
@@ -1237,7 +1249,11 @@
       "groups": "Kundengruppen",
       "groupsNoPermission": "Zum Auflisten der Kundengruppen ist die Berechtigung customers.view nötig.",
       "groupsHint": "Wird geprüft, wenn dieser Schritt läuft. Braucht einen Kunden im Ablauf: Kunden-, Angebots-, Vertrags- und Rechnungs-Auslöser haben einen; bei Galerie- und Event-Auslösern ist das Ergebnis immer „nein“."
-    }
+    },
+    "confirmDeleteNamed": "„{{name}}“ löschen? Laufende Durchläufe werden beendet und der Ablauf kann nicht wiederhergestellt werden.",
+    "deleteAction": "Workflow löschen",
+    "loadFailed": "Die Workflows konnten nicht geladen werden",
+    "emptyTitle": "Noch keine Workflows"
   },
   "eventTypes": {
     "title": "Veranstaltungsarten",
@@ -1274,7 +1290,7 @@
       "themePreset": "Standard-Theme",
       "slideshowPreset": "Diashow-Voreinstellung",
       "slideshowPresetHint": "Standard-Diashow-Stil für neue Events dieses Typs.",
-      "isActive": "Aktiv (sichtbar bei Veranstaltungserstellung)"
+      "isActive": "Aktiv (beim Erstellen einer Galerie wählbar)"
     },
     "validation": {
       "slugFormat": "Nur Buchstaben, Zahlen und Bindestriche erlaubt"
@@ -1286,7 +1302,8 @@
     "deleteConfirm": {
       "title": "Veranstaltungsart löschen",
       "message": "Sind Sie sicher, dass Sie löschen möchten",
-      "warning": "Diese Aktion kann nicht rückgängig gemacht werden. Stellen Sie sicher, dass keine Veranstaltungen diesen Typ verwenden."
+      "warning": "Diese Aktion kann nicht rückgängig gemacht werden. Stellen Sie sicher, dass keine Galerien diesen Typ verwenden.",
+      "action": "Veranstaltungsart löschen"
     }
   },
   "backup": {
@@ -1616,7 +1633,8 @@
         "ARTIFACT_OUT_OF_SCOPE": "Die Dateien dieses Backups liegen außerhalb des konfigurierten Backup-Ziels, daher wurde nichts gelöscht",
         "ARTIFACT_DELETE_FAILED": "Das Backup-Manifest konnte nicht entfernt werden, der Eintrag wurde behalten",
         "FORBIDDEN": "Du hast keine Berechtigung, Backups zu löschen"
-      }
+      },
+      "deleteAction": "Backup löschen"
     },
     "restore": {
       "superAdminOnly": "Das Wiederherstellen eines Backups ersetzt alle Daten dieser Instanz, einschließlich Benutzerkonten und Rollen, und ist daher nur einem Super Admin möglich.",
@@ -1805,7 +1823,7 @@
     "sortByName": "Nach Name sortieren",
     "sortBySize": "Nach Größe sortieren",
     "tableHeaders": {
-      "event": "Veranstaltung",
+      "event": "Galerie",
       "type": "Typ",
       "archivedDate": "Archivierungsdatum",
       "size": "Größe",
@@ -1825,7 +1843,16 @@
     "confirmRestore": "Sind Sie sicher, dass Sie dieses Archiv wiederherstellen möchten? Die Veranstaltung wird wieder aktiv.",
     "confirmDelete": "Sind Sie sicher, dass Sie dieses Archiv dauerhaft löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
     "restoreSuccess": "Archiv erfolgreich wiederhergestellt",
-    "deleteSuccess": "Archiv dauerhaft gelöscht"
+    "deleteSuccess": "Archiv dauerhaft gelöscht",
+    "restoreTitle": "Archiv wiederherstellen?",
+    "confirmRestoreNamed": "„{{name}}“ wiederherstellen? Die Galerie wird wieder aktiv.",
+    "restoreAction": "Galerie wiederherstellen",
+    "deleteTitle": "Archiv löschen?",
+    "confirmDeleteNamed": "Das Archiv von „{{name}}“ mit allen Fotos endgültig löschen? Das kann nicht rückgängig gemacht werden.",
+    "deleteAction": "Archiv löschen",
+    "loadFailed": "Die Archive konnten nicht geladen werden",
+    "noArchivesMatchHint": "Nichts passt zu dieser Suche oder diesem Filter.",
+    "noArchivesHint": "Archivieren Sie eine Galerie über ihr Menü in der Galerieliste; sie erscheint dann hier."
   },
   "auth": {
     "password": "Passwort",
@@ -1981,7 +2008,9 @@
       "forgetMeConfirmUploads": "Ihr Name wird von den Fotos entfernt, die Sie in diese Galerie hochgeladen haben.",
       "forgetMe": "Mich vergessen ({{name}})",
       "notYou": "Nicht Sie?",
-      "socials": "Soziale Netzwerke"
+      "socials": "Soziale Netzwerke",
+      "forgetMeTitle": "Mich vergessen?",
+      "forgetMeAction": "Mich vergessen"
     },
     "photosCount_one": "{{count}} Foto",
     "photosCount_other": "{{count}} Fotos",
@@ -2083,6 +2112,10 @@
       "withDate": "Die restlichen Bilder sind noch in Bearbeitung – die vollständige Galerie folgt spätestens am {{date}}.",
       "noDetails": "Die restlichen Bilder sind noch in Bearbeitung.",
       "progressLabel": "Bisher gelieferte Fotos"
+    },
+    "preview": {
+      "title": "Theme-Vorschau",
+      "description": "So sehen Ihre Galerien mit den aktuellen Theme-Einstellungen aus."
     }
   },
   "categories": {
@@ -2098,7 +2131,7 @@
     "addCategory": "Kategorie hinzufügen",
     "categoryName": "Kategoriename",
     "noCategoriesYet": "Noch keine Kategorien. Erstellen Sie Ihre erste Kategorie, um Fotos zu organisieren.",
-    "deleteConfirm": "Sind Sie sicher, dass Sie \"{{name}}\" löschen möchten?",
+    "deleteConfirm": "Kategorie „{{name}}“ löschen? Eine Kategorie, die noch Fotos enthält, kann nicht gelöscht werden; verschieben Sie die Fotos zuerst. Das kann nicht rückgängig gemacht werden.",
     "setCoverPhoto": "Titelbild festlegen",
     "removeCoverPhoto": "Titelbild entfernen",
     "coverPhotoSet": "Titelbild erfolgreich festgelegt",
@@ -2157,11 +2190,11 @@
     "useThemeOnly": "Nur Design-Vorlage verwenden",
     "customTemplate": "Benutzerdefinierte Vorlage",
     "createInvoice": "Rechnung erstellen",
-    "title": "Veranstaltungen",
-    "create": "Veranstaltung erstellen",
-    "createEvent": "Veranstaltung erstellen",
-    "eventDetails": "Veranstaltungsdetails",
-    "eventName": "Veranstaltungsname",
+    "title": "Galerien",
+    "create": "Galerie erstellen",
+    "createEvent": "Galerie erstellen",
+    "eventDetails": "Galeriedetails",
+    "eventName": "Galeriename",
     "eventType": "Veranstaltungstyp",
     "eventDate": "Veranstaltungsdatum",
     "fullDay": "Ganztägig",
@@ -2184,13 +2217,13 @@
     "linkCopied": "Link kopiert!",
     "viewGallery": "Galerie ansehen",
     "uploadPhotos": "Fotos hochladen",
-    "archiveEvent": "Veranstaltung archivieren",
-    "archiveConfirm": "Sind Sie sicher, dass Sie diese Veranstaltung archivieren möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
+    "archiveEvent": "Galerie archivieren",
+    "archiveConfirm": "Sind Sie sicher, dass Sie diese Galerie archivieren möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
     "extendExpiration": "Um {{days}} Tage verlängern",
-    "backToEvents": "Zurück zu Veranstaltungen",
+    "backToEvents": "Alle Galerien",
     "loadingEventDetails": "Veranstaltungsdetails werden geladen...",
     "saveChanges": "Änderungen speichern",
-    "eventExpiresIn": "Diese Veranstaltung läuft in {{days}} Tagen ab",
+    "eventExpiresIn": "Diese Galerie läuft in {{days}} Tagen ab",
     "warningEmailsHaveBeenSent": "Warn-E-Mails wurden an den Kunden gesendet.",
     "extendSevenDays": "Um 7 Tage verlängern",
     "overview": "Übersicht",
@@ -2236,7 +2269,8 @@
         "invalidSlug": "Kurz-URLs müssen aus Kleinbuchstaben, Ziffern und Bindestrichen bestehen (1–64 Zeichen)."
       },
       "hits_one": "{{count}} Aufruf",
-      "hits_other": "{{count}} Aufrufe"
+      "hits_other": "{{count}} Aufrufe",
+      "deleteAction": "Kurz-URL löschen"
     },
     "resetGalleryPassword": "Galerie-Passwort zurücksetzen",
     "resendCreationEmail": "Erstellungs-E-Mail erneut senden",
@@ -2413,21 +2447,21 @@
       "successToast": "Galerie dupliziert."
     },
     "draftBanner": "Diese Galerie befindet sich im Entwurfsmodus. Laden Sie Ihre Fotos hoch und veröffentlichen Sie, wenn Sie bereit sind.",
-    "subtitle": "Verwalten Sie Ihre Fotogalerien und Veranstaltungen",
-    "failedToLoadEvents": "Veranstaltungen konnten nicht geladen werden",
+    "subtitle": "Verwalten Sie Ihre Fotogalerien",
+    "failedToLoadEvents": "Galerien konnten nicht geladen werden",
     "tryAgain": "Erneut versuchen",
-    "eventExpiredMessage": "Diese Veranstaltung ist abgelaufen",
-    "guestsCannotAccessGallery": "Gäste können nicht mehr auf die Galerie zugreifen. Erwägen Sie, diese Veranstaltung zu archivieren.",
-    "bulkArchivePartial": "{{success}} Veranstaltungen archiviert, {{failed}} fehlgeschlagen",
+    "eventExpiredMessage": "Diese Galerie ist abgelaufen",
+    "guestsCannotAccessGallery": "Gäste können nicht mehr auf die Galerie zugreifen. Erwägen Sie, sie zu archivieren.",
+    "bulkArchivePartial": "{{success}} Galerien archiviert, {{failed}} fehlgeschlagen",
     "deleteSelected": "Ausgewählte löschen",
     "bulkDelete": {
       "warning": "Die ausgewählten Veranstaltungen, alle ihre Fotos, Archive und Audit-Logs werden endgültig gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
       "confirmLabel": "Geben Sie {{literal}} ein, um zu bestätigen",
       "confirmHelp": "Eine getippte Bestätigung verhindert versehentliche Löschungen und ist nicht von Browser-Autofill oder Passkey-Verknüpfungen betroffen.",
-      "successPartial": "{{success}} Veranstaltungen gelöscht, {{failed}} fehlgeschlagen",
-      "errorGeneric": "Veranstaltungen konnten nicht gelöscht werden",
-      "successAll_one": "{{count}} Veranstaltung dauerhaft gelöscht",
-      "successAll_other": "{{count}} Veranstaltungen dauerhaft gelöscht",
+      "successPartial": "{{success}} Galerien gelöscht, {{failed}} fehlgeschlagen",
+      "errorGeneric": "Galerien konnten nicht gelöscht werden",
+      "successAll_one": "{{count}} Galerie dauerhaft gelöscht",
+      "successAll_other": "{{count}} Galerien dauerhaft gelöscht",
       "title_one": "{{count}} Veranstaltung dauerhaft löschen?",
       "title_other": "{{count}} Veranstaltungen dauerhaft löschen?",
       "processing_one": "{{count}} Veranstaltung wird gelöscht. Dies kann einige Minuten dauern — bitte schließen Sie dieses Fenster nicht.",
@@ -2435,10 +2469,10 @@
       "submit_one": "{{count}} Veranstaltung löschen",
       "submit_other": "{{count}} Veranstaltungen löschen"
     },
-    "searchEventsPlaceholder": "Veranstaltungen suchen...",
+    "searchEventsPlaceholder": "Galerien suchen...",
     "all": "Alle",
     "expiring": "Läuft ab",
-    "event": "Veranstaltung",
+    "event": "Galerie",
     "type": "Typ",
     "date": "Datum",
     "status": "Status",
@@ -2446,9 +2480,9 @@
     "passwordProtected": "Passwortgeschützt",
     "newPasswordRequired": "Bitte legen Sie vor dem Aktivieren des Passwortschutzes ein Passwort fest.",
     "viewDetails": "Details anzeigen",
-    "archiveEventAction": "Veranstaltung archivieren",
+    "archiveEventAction": "Galerie archivieren",
     "downloadArchiveAction": "Archiv herunterladen",
-    "deleteEvent": "Veranstaltung löschen",
+    "deleteEvent": "Galerie löschen",
     "deleteEventConfirm": "Sind Sie sicher, dass Sie diese Veranstaltung löschen möchten?",
     "copy": "Kopieren",
     "copied": "Kopiert!",
@@ -2477,30 +2511,30 @@
       "warning3": "Fotodateien können umbenannt werden"
     },
     "stats": {
-      "totalEvents": "Gesamtveranstaltungen",
-      "activeEvents": "Aktive Veranstaltungen",
+      "totalEvents": "Galerien gesamt",
+      "activeEvents": "Aktive Galerien",
       "totalPhotos": "Gesamtfotos",
       "expiringEvents": "Bald ablaufend"
     },
     "clear": "Zurücksetzen",
     "archiveSelected": "Auswahl archivieren",
-    "noEventsFound": "Keine Veranstaltungen gefunden",
+    "noEventsFound": "Keine Galerien gefunden",
     "downloadArchiveSoon": "Archiv-Download bald verfügbar",
     "welcomeMessageLabel": "Willkommensnachricht",
     "archiveStatusTitle": "Archivstatus",
     "downloadingArchive": "{{name}}-Archiv wird heruntergeladen...",
     "downloadStarted": "Download gestartet",
     "failedToDownloadArchive": "Archiv-Download fehlgeschlagen",
-    "bulkArchiveSuccess_one": "{{count}} Veranstaltung erfolgreich archiviert",
-    "bulkArchiveSuccess_other": "{{count}} Veranstaltungen erfolgreich archiviert",
+    "bulkArchiveSuccess_one": "{{count}} Galerie erfolgreich archiviert",
+    "bulkArchiveSuccess_other": "{{count}} Galerien erfolgreich archiviert",
     "daysLeft_one": "({{count}} Tag verbleibend)",
     "daysLeft_other": "({{count}} Tage verbleibend)",
-    "eventsSelected_one": "{{count}} Veranstaltung ausgewählt",
-    "eventsSelected_other": "{{count}} Veranstaltungen ausgewählt",
+    "eventsSelected_one": "{{count}} Galerie ausgewählt",
+    "eventsSelected_other": "{{count}} Galerien ausgewählt",
     "paginationLabel": "{{from}}–{{to}} von {{total}}",
     "filtered": "gefiltert",
     "pageOf": "Seite {{page}} von {{totalPages}}",
-    "notFound": "Veranstaltung nicht gefunden",
+    "notFound": "Galerie nicht gefunden",
     "customerPhone": "Kundentelefon",
     "customerPhonePlaceholder": "+49 555 555 1234",
     "allowPresignedDownload": "Direkten S3-Download erlauben (kein Wasserzeichen, nur S3-Modus)",
@@ -2835,7 +2869,13 @@
       "reviewUploadsHelp": "Betrifft Uploads von Teammitgliedern, deren Rolle die Berechtigung „Review Team Uploads“ nicht hat: Sie bleiben für Gäste und Kunden verborgen, bis Sie oder eine prüfende Person sie im Tab Fotos freigeben. Die Rollen Admin, Editor und Solo Photographer haben diese Berechtigung standardmäßig, ihre Uploads werden nie zurückgehalten.",
       "reviewUploadsHelpMember": "Ihre Uploads in diese Galerie bleiben für Gäste und Kunden verborgen, bis der Galerie-Inhaber oder eine prüfende Person sie freigibt.",
       "reviewUploadsHelpReviewer": "Uploads von Teammitgliedern ohne die Berechtigung „Review Team Uploads“ warten im Tab Fotos auf Freigabe. Ihre eigenen werden sofort veröffentlicht."
-    }
+    },
+    "deleteEventConfirmLoss": "„{{name}}“ mit allen Fotos löschen? Das kann nicht rückgängig gemacht werden.",
+    "noEventsMatchHint": "Nichts passt zu dieser Suche oder diesem Filter. Setzen Sie ihn zurück, um alle Galerien zu sehen.",
+    "noEventsYet": "Noch keine Galerien",
+    "noEventsYetHint": "Erstellen Sie eine Galerie, um Fotos mit einem Kunden zu teilen.",
+    "downloadLimitResetAction": "Downloads zurücksetzen",
+    "notFoundHint": "Sie wurde vielleicht gelöscht, oder der Link ist falsch."
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -3229,7 +3269,7 @@
       "filterDeleted": "Wortfilter erfolgreich gelöscht",
       "deleteError": "Wortfilter konnte nicht gelöscht werden",
       "wordRequired": "Bitte geben Sie ein Wort zum Filtern ein",
-      "confirmDelete": "Möchten Sie diesen Wortfilter wirklich löschen?",
+      "confirmDelete": "Diesen Wortfilter löschen? Kommentare werden nicht mehr damit geprüft. Das kann nicht rückgängig gemacht werden.",
       "loading": "Wortfilter werden geladen...",
       "noMatchingFilters": "Keine passenden Filter gefunden",
       "noFilters": "Noch keine Wortfilter konfiguriert",
@@ -3241,7 +3281,9 @@
       "lowDescription": "Wort wird zur Überprüfung markiert, aber nicht automatisch blockiert",
       "moderateDescription": "Kommentar erfordert manuelle Freigabe, bevor er sichtbar wird",
       "highDescription": "Kommentar wird automatisch ausgeblendet und erfordert Admin-Überprüfung",
-      "blockDescription": "Kommentar wird sofort abgelehnt und kann nicht eingereicht werden"
+      "blockDescription": "Kommentar wird sofort abgelehnt und kann nicht eingereicht werden",
+      "deleteAction": "Filter löschen",
+      "loadFailed": "Die Wortfilter konnten nicht geladen werden"
     },
     "styling": {
       "title": "Benutzerdefiniertes CSS"
@@ -3336,7 +3378,9 @@
       "confirmRevoke": "\"{{name}}\" widerrufen? Bestehende Integrationen, die dieses Token nutzen, erhalten ab sofort 401.",
       "revoke": "Widerrufen",
       "empty": "Noch keine Tokens. Generieren Sie oben einen, um zu beginnen.",
-      "preview": "Vorschau"
+      "preview": "Vorschau",
+      "revokeAction": "Token widerrufen",
+      "loadFailed": "Die API-Tokens konnten nicht geladen werden"
     },
     "webhooks": {
       "title": "Webhooks",
@@ -3392,7 +3436,7 @@
         "eventType": "Ereignistyp",
         "total_one": "{{count}} gesamt",
         "total_other": "{{count}} gesamt",
-        "empty": "Noch keine Zustellungen. Erstellen Sie eine Veranstaltung oder senden Sie ein Testereignis, um hier etwas zu sehen.",
+        "empty": "Erstellen Sie eine Galerie oder senden Sie ein Testereignis, um hier Zustellungen zu sehen.",
         "colTime": "Zeit",
         "colEvent": "Ereignis",
         "colStatus": "Status",
@@ -3414,8 +3458,14 @@
           "pending": "ausstehend",
           "success": "erfolgreich",
           "failed": "fehlgeschlagen"
-        }
-      }
+        },
+        "emptyTitle": "Noch keine Zustellungen",
+        "loadFailed": "Dieser Webhook konnte nicht geladen werden",
+        "listLoadFailed": "Die Zustellungen konnten nicht geladen werden",
+        "notFoundHint": "Er wurde vielleicht gelöscht. Einstellungen › Webhooks listet die vorhandenen auf."
+      },
+      "deleteAction": "Webhook löschen",
+      "loadFailed": "Die Webhooks konnten nicht geladen werden"
     },
     "sectionLabel": "Einstellungsbereich",
     "navAriaLabel": "Einstellungsnavigation",
@@ -3457,7 +3507,6 @@
         "automation": "Automatisierung"
       },
       "status": {
-        "stable": "stabil",
         "beta": "beta",
         "new": "neu",
         "experimental": "experimentell",
@@ -3591,7 +3640,13 @@
         "description": "Teilen Sie Dokumente im Portal mit einem Kunden und erhalten Sie Dokumente von ihm. Kunden-Uploads bleiben gesperrt, bis Sie sie im Kundendatensatz als sauber markieren. Standardmäßig PDF; weitere Dateitypen, Größen- und Speichergrenzen unter Einstellungen → CRM."
       },
       "configure": "Konfigurieren",
-      "sidebarInSettings": "Kein Eintrag in der Seitenleiste — liegt in den Einstellungen"
+      "sidebarInSettings": "Kein Eintrag in der Seitenleiste — liegt in den Einstellungen",
+      "statusHelp": {
+        "new": "Neu veröffentlicht und einsatzbereit.",
+        "beta": "In Entwicklung: für echte Arbeit nutzbar, Details können sich noch ändern.",
+        "experimental": "Kann ausfallen oder wieder entfernt werden. Nicht für den produktiven Studiobetrieb.",
+        "roadmap": "Noch nicht gebaut."
+      }
     },
     "customerSurface": {
       "brandingTitle": "Kundendashboard-Kopfzeile",
@@ -4386,7 +4441,7 @@
     },
     "pdfTheme": {
       "title": "PDF-Design",
-      "description": "Farben, Schrift, Fußzeile und Seitenzahlen für Angebote, Rechnungen und Verträge. Leere Felder übernehmen die Werte von „Alle Dokumente“, danach aus Ihrem Unternehmensprofil.",
+      "description": "Farben, Schrift, Fusszeile und Seitenzahlen für Angebote, Rechnungen und Verträge. Leere Felder übernehmen die Werte aus „Alle Dokumente“, dann aus den Farben oben (die gefüllte Akzentfarbe für Überschriften) und aus Ihrem Unternehmensprofil.",
       "scopeLabel": "Dokumentart",
       "scope": {
         "default": "Alle Dokumente",
@@ -4402,7 +4457,6 @@
         "subtle": "Fußzeile und Seitenzahlen",
         "rule": "Linien"
       },
-      "inherited": "Übernommen",
       "inherit": "Übernehmen ({{value}})",
       "reset": "Zurücksetzen",
       "titleSize": "Titelgröße",
@@ -4430,12 +4484,9 @@
       "marginsNote": "Den oberen Rand bestimmen Adressfenster und Briefkopf. Die Unterschriftenseite eines Vertrags behält ihr festes Layout unabhängig von den Rändern, damit Unterschriften immer in ihren Feldern landen.",
       "preview": "PDF-Vorschau",
       "resetScope": "Auf übernommene Werte zurücksetzen",
-      "save": "Design speichern",
-      "saved": "PDF-Design gespeichert",
-      "saveFailed": "Das PDF-Design konnte nicht gespeichert werden",
       "previewFailed": "Die Vorschau konnte nicht erstellt werden",
       "presets": "Mit einer Vorlage beginnen",
-      "presetsHint": "Eine Vorlage füllt das Formular aus; gespeichert wird erst, wenn Sie das Design speichern.",
+      "presetsHint": "Eine Vorlage füllt das Formular aus; gespeichert wird erst, wenn Sie die Seite speichern.",
       "preset": {
         "classic": "Klassisch",
         "modern": "Modern",
@@ -4477,7 +4528,14 @@
       },
       "uploadedFonts": "Ihre Schriften",
       "uploadedFont": "Hochgeladene Schrift",
-      "fontUnavailable": "{{name}} (nicht mehr verfügbar)"
+      "fontUnavailable": "{{name}} (nicht mehr verfügbar)",
+      "fromAllDocuments": "Aus „Alle Dokumente“",
+      "fromBranding": "Aus Farben",
+      "builtIn": "Standard",
+      "followBranding": "Farben folgen",
+      "readOnly": "Sie können das PDF-Design sehen, aber nicht ändern.",
+      "invalid": "Das PDF-Design für {{scopes}} enthält einen ungültigen Rand oder eine ungültige Farbe. Bitte vor dem Speichern korrigieren.",
+      "saveFailedScopes": "PDF-Design konnte nicht gespeichert werden für: {{scopes}}"
     },
     "pdfFonts": {
       "title": "Ihre Schriften für PDFs",
@@ -4514,6 +4572,56 @@
         "FONT_BITMAP_ONLY": "Die Lizenz dieser Schrift erlaubt nur das Einbetten von Bitmaps, nicht der Umrisse, die PDFs benötigen."
       },
       "legacyFailed": "Die vor diesem Update eingestellte Schrift konnte nicht übernommen werden: {{reason}}"
+    },
+    "colorWarnings": {
+      "textOnBackground": "Text ist auf dem Hintergrund schwer lesbar ({{ratio}}:1, Ziel {{needed}}:1).",
+      "textOnSurface": "Text ist auf Karten schwer lesbar ({{ratio}}:1, Ziel {{needed}}:1).",
+      "textOnElevated": "Text auf erhöhten Flächen ist schwer lesbar ({{ratio}}:1, Ziel {{needed}}:1). Bei einer dunklen Palette hier eine dunkle Farbe wählen.",
+      "mutedOnSurface": "Gedämpfter Text ist auf Karten schwer lesbar ({{ratio}}:1, Ziel {{needed}}:1).",
+      "borderInvisible": "Rahmen sind auf Karten kaum zu sehen.",
+      "accentOnBackground": "Links und Symbole in dieser Farbe sind auf dem Hintergrund schwer zu erkennen ({{ratio}}:1, Ziel {{needed}}:1).",
+      "buttonLabel": "Beschriftungen auf Schaltflächen in dieser Farbe sind schwer lesbar ({{ratio}}:1, Ziel {{needed}}:1).",
+      "statusTooLight": "Zu hell: Beschriftungen in dieser Farbe verblassen auf Weiss.",
+      "statusLikeAccent": "Ähnelt Ihrer Akzentfarbe und wirkt deshalb eher wie eine Schaltfläche als wie ein Status.",
+      "statusLikeStatus": "Schwer von „{{other}}“ zu unterscheiden."
+    },
+    "status": {
+      "success": "Erfolg",
+      "warning": "Warnung",
+      "danger": "Fehler",
+      "info": "Info",
+      "storno": "Storniert (Storno)",
+      "successHelp": "Bezahlt, unterschrieben, veröffentlicht, erledigt.",
+      "warningHelp": "Bald fällig, braucht Aufmerksamkeit, noch nicht gespeichert.",
+      "dangerHelp": "Überfällig, fehlgeschlagen, löschen.",
+      "infoHelp": "Gesendet, in Bearbeitung, neutrale Hinweise.",
+      "stornoHelp": "Stornierte und gutgeschriebene Dokumente."
+    },
+    "useColorsForDark": "Diese Farben für Dunkel verwenden",
+    "useColorsForLight": "Diese Farben für Hell verwenden",
+    "surfacesReplacedDark": "Dunkel ist erzwungen, diese Palette ist aber für Hell eingerichtet. Besucher sehen deshalb die eingebauten dunklen Flächen und Textfarben statt der Farben unten.",
+    "surfacesReplacedLight": "Hell ist erzwungen, diese Palette ist aber für Dunkel eingerichtet. Besucher sehen deshalb die eingebauten hellen Flächen und Textfarben statt der Farben unten.",
+    "colorGroupStatus": "Status",
+    "colorGroupStatusHelp": "Eine Farbe pro Bedeutung, für Badges, Hinweise und Statusanzeigen im Admin, im Kundenportal und auf öffentlichen Seiten. Helle und dunkle Abstufungen werden daraus berechnet.",
+    "resetColor": "Standard",
+    "colorPreview": {
+      "statusSuccess": "Bezahlt",
+      "statusWarning": "Bald fällig",
+      "statusDanger": "Überfällig",
+      "statusInfo": "Gesendet",
+      "statusStorno": "Storniert",
+      "galleryAndPortal": "Galerie und Kundenportal",
+      "modeForced": "{{mode}}, erzwungen",
+      "galleryTitle": "Hochzeit Anna & Ben",
+      "galleryMeta": "12. Oktober 2026 · 248 Fotos",
+      "favourites": "Ihre Favoriten (12)",
+      "openGallery": "Galerie öffnen",
+      "share": "Teilen",
+      "downloadAll": "Alle herunterladen",
+      "admin": "Admin, hell und dunkel",
+      "save": "Speichern",
+      "colorsTab": "Farben",
+      "galleryTab": "Galerie"
     }
   },
   "admin": {
@@ -4528,7 +4636,7 @@
     "storageSoftLimitConfigured": "Konfiguriertes Limit: {{limit}}",
     "storageSoftLimitRecommended": "Empfohlenes Limit: {{limit}}",
     "version": "Version",
-    "archivedEvents": "Archivierte Veranstaltungen",
+    "archivedEvents": "Archivierte Galerien",
     "systemHealth": "Systemstatus",
     "health": {
       "checking": "Prüfe...",
@@ -4832,15 +4940,15 @@
     },
     "changePassword": "Passwort ändern",
     "loadingDashboard": "Dashboard wird geladen...",
-    "activeEvents": "Aktive Veranstaltungen",
+    "activeEvents": "Aktive Galerien",
     "expiringSoon": "Demnächst ablaufend",
     "next7Days": "Nächste 7 Tage",
     "totalViews": "Gesamtaufrufe",
     "downloads": "Downloads",
     "percentFromLastWeek": "{{percent}}% gegenüber letzter Woche",
     "dashboardSubtitle": "Willkommen zurück! Hier ist, was mit Ihren Galerien passiert.",
-    "eventsExpiringSoon": "Demnächst ablaufende Veranstaltungen",
-    "noEventsExpiring": "Keine Veranstaltungen laufen in den nächsten 7 Tagen ab",
+    "eventsExpiringSoon": "Demnächst ablaufende Galerien",
+    "noEventsExpiring": "Keine Galerien laufen in den nächsten 7 Tagen ab",
     "noRecentActivity": "Keine aktuellen Aktivitäten",
     "photos": {
       "hidden": "Versteckt",
@@ -4909,7 +5017,13 @@
         "filterNone": "Kein Name"
       },
       "approvedBy": "Freigegeben: {{value}}",
-      "rejectedBy": "Abgelehnt: {{value}}"
+      "rejectedBy": "Abgelehnt: {{value}}",
+      "deleteOneConfirm": "„{{name}}“ löschen? Das Foto wird endgültig aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
+      "deleteOneAction": "Foto löschen",
+      "deleteManyConfirm_one": "{{count}} Foto löschen? Es wird aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
+      "deleteManyConfirm_other": "{{count}} Fotos löschen? Sie werden aus der Galerie entfernt. Das kann nicht rückgängig gemacht werden.",
+      "deleteManyAction_one": "{{count}} Foto löschen",
+      "deleteManyAction_other": "{{count}} Fotos löschen"
     },
     "events": {
       "tabs": {
@@ -4920,8 +5034,8 @@
     },
     "daysLeft_one": "{{count}} Tag verbleibend",
     "daysLeft_other": "{{count}} Tage verbleibend",
-    "viewAllExpiringEvents_one": "Alle {{count}} ablaufenden Veranstaltungen anzeigen",
-    "viewAllExpiringEvents_other": "Alle {{count}} ablaufenden Veranstaltungen anzeigen",
+    "viewAllExpiringEvents_one": "Alle {{count}} ablaufenden Galerien anzeigen",
+    "viewAllExpiringEvents_other": "Alle {{count}} ablaufenden Galerien anzeigen",
     "guests": {
       "loading": "Wird geladen...",
       "aggregate": {
@@ -5379,13 +5493,17 @@
     "errorDetails": "Fehlerdetails",
     "requiredFields": "Bitte füllen Sie alle Pflichtfelder aus",
     "enterTestEmail": "Bitte geben Sie eine Test-E-Mail-Adresse ein",
-    "eventCreationFailed": "Veranstaltung konnte nicht erstellt werden",
+    "eventCreationFailed": "Galerie konnte nicht erstellt werden",
     "noShareLink": "Kein Freigabe-Link verfügbar",
     "copyFailed": "Link konnte nicht kopiert werden"
   },
   "legal": {
     "impressum": "Impressum",
-    "datenschutz": "Datenschutzerklärung"
+    "datenschutz": "Datenschutzerklärung",
+    "notFoundTitle": "Seite nicht gefunden",
+    "notFoundBody": "Die gesuchte Seite gibt es nicht.",
+    "goHome": "Zur Startseite",
+    "copyright": "© {{year}} PicPeak. Alle Rechte vorbehalten."
   },
   "toast": {
     "saveSuccess": "Änderungen erfolgreich gespeichert",
@@ -5395,9 +5513,9 @@
     "uploadSuccess": "Upload erfolgreich abgeschlossen",
     "uploadError": "Upload fehlgeschlagen",
     "linkCopied": "Link in Zwischenablage kopiert",
-    "eventCreated": "Veranstaltung erfolgreich erstellt",
+    "eventCreated": "Galerie erfolgreich erstellt",
     "eventUpdated": "Veranstaltung erfolgreich aktualisiert",
-    "eventArchived": "Veranstaltung erfolgreich archiviert",
+    "eventArchived": "Galerie erfolgreich archiviert",
     "settingsSaved": "Einstellungen erfolgreich gespeichert",
     "themeUpdated": "Theme erfolgreich aktualisiert",
     "brandingUpdated": "Branding erfolgreich aktualisiert",
@@ -5436,12 +5554,13 @@
     "used": "Verwendet",
     "of": "von",
     "totalPhotos": "Gesamte Fotos",
-    "activeEvents": "Aktive Veranstaltungen",
+    "activeEvents": "Aktive Galerien",
     "notConfigured": "Umami Analytics nicht konfiguriert",
     "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen.",
     "catalogedMedia": "Katalogisierte Medien",
     "storageUnavailable": "nicht verfügbar",
-    "storageNoMeasurement": "keine Messung verfügbar"
+    "storageNoMeasurement": "keine Messung verfügbar",
+    "loadFailed": "Die Analysedaten konnten nicht geladen werden"
   },
   "email": {
     "title": "E-Mail-Konfiguration",
@@ -5498,7 +5617,6 @@
       "user": "Benutzername",
       "pass": "Passwort",
       "folder": "Ordner",
-      "save": "Eingangs-E-Mail-Einstellungen speichern",
       "detectFolders": "Erkennen",
       "folderHint": "Host, Benutzername und Passwort eingeben, dann „Erkennen“, um die Postfach-Ordner aufzulisten.",
       "foldersDetected": "{{count}} Ordner gefunden.",
@@ -5524,7 +5642,8 @@
         "no_attachment": "Kein Anhang",
         "duplicate": "Duplikat",
         "error": "Fehler"
-      }
+      },
+      "loadFailed": "Empfangene E-Mails konnten nicht geladen werden"
     },
     "sentEmails": {
       "tab": "Gesendete E-Mails",
@@ -5552,7 +5671,8 @@
       "retries_one": "{{count}} Versuch",
       "retries_other": "{{count}} Versuche",
       "pagination_one": "Seite {{page}} von {{total}} · {{count}} E-Mail",
-      "pagination_other": "Seite {{page}} von {{total}} · {{count}} E-Mails"
+      "pagination_other": "Seite {{page}} von {{total}} · {{count}} E-Mails",
+      "loadFailed": "Gesendete E-Mails konnten nicht geladen werden"
     },
     "commonSmtpSettings": "Häufige SMTP-Einstellungen:",
     "editTemplate": "Vorlage bearbeiten",
@@ -5653,7 +5773,9 @@
     },
     "signatureOn": "Fusszeilen-Signatur ist an — Ihre Geschäftsadresse wird an automatische E-Mails angehängt. Antworten, die Sie unter Nachrichten schreiben, werden unverändert gesendet.",
     "signatureOff": "Fusszeilen-Signatur ist aus — E-Mails zeigen nur Logo und Firmenname.",
-    "signatureEdit": "Im Geschäftsprofil bearbeiten"
+    "signatureEdit": "Im Geschäftsprofil bearbeiten",
+    "followColors": "Farben folgen",
+    "primaryFollowsColors": "Folgt Branding › Farben"
   },
   "cms": {
     "title": "CMS-Seiten",
@@ -5752,10 +5874,12 @@
       }
     },
     "showInFooter": "In der Galerie-Fußzeile anzeigen",
-    "showInFooterHelp": "Wenn deaktiviert, wird diese Seite in der öffentlichen Galerie-Fußzeile ausgeblendet. Die Seite selbst bleibt über ihre direkte URL erreichbar."
+    "showInFooterHelp": "Wenn deaktiviert, wird diese Seite in der öffentlichen Galerie-Fußzeile ausgeblendet. Die Seite selbst bleibt über ihre direkte URL erreichbar.",
+    "discardOnSwitch": "Ungespeicherte Änderungen an dieser Seite verwerfen?",
+    "discardAndSwitch": "Verwerfen und wechseln"
   },
   "validation": {
-    "eventNameRequired": "Veranstaltungsname ist erforderlich",
+    "eventNameRequired": "Galeriename ist erforderlich",
     "hostEmailRequired": "Die E-Mail des Kunden ist erforderlich",
     "hostNameRequired": "Der Name des Kunden ist erforderlich",
     "adminEmailRequired": "Admin-E-Mail ist erforderlich",
@@ -5937,7 +6061,7 @@
     "approve": "Genehmigen",
     "hide": "Ausblenden",
     "unhide": "Einblenden",
-    "confirmDelete": "Dieses Feedback wirklich löschen?",
+    "confirmDelete": "Dieses Feedback löschen? Es wird endgültig entfernt. Das kann nicht rückgängig gemacht werden.",
     "avgRating": "Durchschnittsbewertung",
     "totalRatings_one": "{{count}} Bewertungen",
     "totalRatings_other": "{{count}} Bewertungen",
@@ -6021,7 +6145,10 @@
     "decisionError": "Deine Entscheidung konnte nicht gespeichert werden",
     "decisionType": "deine Entscheidung",
     "youApproved": "Du hast dieses Foto freigegeben",
-    "youRejected": "Du hast dieses Foto abgelehnt"
+    "youRejected": "Du hast dieses Foto abgelehnt",
+    "deleteAction": "Feedback löschen",
+    "panelTitle": "Feedback zum Foto",
+    "closePanel": "Feedback schließen"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",
@@ -6183,12 +6310,14 @@
     "enableToggle": "Kundenzugang aktivieren",
     "enableDescription": "Ermöglichen Sie Kunden, Fotos zu überprüfen und auszublenden, bevor die Galerie mit den Gästen geteilt wird.",
     "pinHelperText": "Der Kunde verwendet diese PIN, um die Überprüfungsseite aufzurufen. Mindestens 6 Zeichen.",
-    "linkAfterCreate": "Der Link für den Kundenzugang erscheint auf der Event-Seite, sobald das Event angelegt ist.",
+    "linkAfterCreate": "Der Link für den Kundenzugang erscheint auf der Galerie-Seite, sobald die Galerie angelegt ist.",
     "pinUpdated": "Kunden-PIN aktualisiert",
     "setPin": "PIN festlegen",
     "linkLabel": "Kundenzugangs-Link",
     "regenerateToken": "Link neu generieren",
-    "tokenRegenerated": "Kundenzugangs-Link neu generiert"
+    "tokenRegenerated": "Kundenzugangs-Link neu generiert",
+    "hiddenFromGuests": "Für Gäste ausgeblendet",
+    "visibleToGuests": "Für Gäste sichtbar"
   },
   "setup": {
     "title": "Willkommen bei PicPeak",
@@ -6615,8 +6744,6 @@
       "quotes": "Angebote",
       "bills": "Rechnungen",
       "profile": "Profil",
-      "soon": "Bald",
-      "new": "Neu",
       "contracts": "Verträge",
       "documents": "Dokumente"
     },
@@ -6947,7 +7074,8 @@
         "createFailed": "Eintrag konnte nicht erfasst werden"
       },
       "unbilledCount_one": "{{count}} offener Eintrag, total {{total}}",
-      "unbilledCount_other": "{{count}} offene Einträge, total {{total}}"
+      "unbilledCount_other": "{{count}} offene Einträge, total {{total}}",
+      "deleteEntry": "Eintrag löschen"
     },
     "create": {
       "openButton": "Passiven Kunden erstellen",
@@ -6996,7 +7124,7 @@
       "name": "Name",
       "email": "E-Mail",
       "company": "Firma",
-      "eventCount": "Events",
+      "eventCount": "Galerien",
       "lastLogin": "Letzte Anmeldung",
       "status": "Status",
       "groups": "Gruppen"
@@ -7039,7 +7167,9 @@
       "title": "Einladung stornieren?",
       "body": "Der Einladungslink funktioniert sofort nicht mehr.",
       "success": "Einladung storniert",
-      "error": "Einladung konnte nicht storniert werden"
+      "error": "Einladung konnte nicht storniert werden",
+      "action": "Einladung stornieren",
+      "keep": "Einladung behalten"
     },
     "detail": {
       "loadError": "Kunde konnte nicht geladen werden",
@@ -7052,8 +7182,8 @@
       "personalSection": "Persönliche Daten",
       "billingSection": "Adresse & Rechnung",
       "notesSection": "Interne Notizen",
-      "eventsSection": "Zugewiesene Events",
-      "noEvents": "Noch keinem Event zugewiesen. Fügen Sie diesen Kunden über das Event-Formular hinzu.",
+      "eventsSection": "Zugewiesene Galerien",
+      "noEvents": "Noch keiner Galerie zugewiesen. Fügen Sie über „Galerien verwalten“ welche hinzu.",
       "email": "E-Mail",
       "preferredLanguage": "Bevorzugte Sprache",
       "preferredLanguageHint": "Steuert die Portal-Sprache, Angebots-/Rechnungs-PDFs sowie Rechnungs-E-Mails (Erinnerungen/Mahnungen). Neue Kunden erben standardmässig die Sprache aus dem Geschäftsprofil ({{lang}}); hier kann pro Kunde überschrieben werden.",
@@ -7460,11 +7590,12 @@
         "referenceHint": "QR-/ESR-Referenz oder Mitteilung",
         "note": "Notiz",
         "noteHint": "Interne Notiz zu dieser Rechnung (optional)",
-        "passthroughCustomerHint": "Optional — einen Kunden zuordnen, um diese durchlaufende Position weiterzuverrechnen; leer lassen, um sie nur auf das Event zu buchen.",
+        "passthroughCustomerHint": "Optional — einen Kunden zuordnen, um diese durchlaufende Position weiterzuverrechnen; leer lassen, um sie nur auf die Galerie zu buchen.",
         "supplierCountry": "Lieferantenland",
         "supplierCountryNone": "— unbekannt —",
         "supplierCountryHint": "Setzt die Steuerbehandlung automatisch: ausserhalb Ihrer Vorsteuer-Länder → ausländische MwSt (nicht abziehbar)."
-      }
+      },
+      "loadFailed": "Die eingehenden Rechnungen konnten nicht geladen werden"
     },
     "expenseStatus": {
       "open": "Offen",
@@ -7483,9 +7614,9 @@
     "booking": {
       "label": "Buchen auf",
       "company": "Firma",
-      "event": "Event",
+      "event": "Galerie",
       "eventId": "Event-ID",
-      "inboundHint": "Auf welches Event diese Kosten in Auswertungen & Steuerexport entfallen (Firma = allgemeiner Aufwand). Unabhängig davon, an wen Sie weiterverrechnen."
+      "inboundHint": "Auf welche Galerie diese Kosten in Auswertungen & Steuerexport entfallen (Firma = allgemeiner Aufwand). Unabhängig davon, an wen Sie weiterverrechnen."
     },
     "incoming": {
       "triageTitle": "Eingangsrechnung kategorisieren",
@@ -7542,7 +7673,7 @@
       "other": "Sonstiges"
     },
     "ledger": {
-      "subtitle": "Interne Aufwände wie Kilometer, Spesenpauschalen und Barbelege, gebucht auf ein Event oder die Firma.",
+      "subtitle": "Interne Aufwände wie Kilometer, Spesenpauschalen und Barbelege, gebucht auf eine Galerie oder die Firma.",
       "allStatuses": "Alle Status",
       "allDispositions": "Alle Zuordnungen",
       "allKinds": "Alle Arten",
@@ -7572,19 +7703,20 @@
       "lockedHint": "Gesperrt — dieser Aufwand ist auf einer Kundenrechnung.",
       "description": "Beschreibung",
       "descriptionHint": "z. B. Kilometer, Spesenpauschale, Barbeleg",
-      "createdToast": "Aufwand hinzugefügt."
+      "createdToast": "Aufwand hinzugefügt.",
+      "loadFailed": "Die Ausgaben konnten nicht geladen werden"
     }
   },
   "projects": {
     "title": "Projektübersicht",
-    "subtitle": "Fasse Events zu Projekten zusammen und sieh jede E-Mail, jedes Dokument, jede Galerie und jede Stunde in einem Cockpit.",
+    "subtitle": "Fasse Galerien zu Projekten zusammen und sieh jede E-Mail, jedes Dokument und jede Stunde in einem Cockpit.",
     "search": "Nach Name oder Kunde suchen…",
-    "empty": "Noch keine Projekte. Erstellen Sie oben eines, oder vorhandene Events wurden automatisch gruppiert.",
+    "empty": "Erstellen Sie oben eines, oder vorhandene Galerien wurden automatisch gruppiert.",
     "notFound": "Projekt nicht gefunden",
     "noCustomer": "Kein einzelner Kunde",
     "rename": "Umbenennen",
     "timeline": "Meilensteine",
-    "eventCount": "{{count}} Events",
+    "eventCount": "{{count}} Galerien",
     "totalHours": "{{hours}} erfasst",
     "create": {
       "label": "Name des neuen Projekts",
@@ -7594,7 +7726,7 @@
     "col": {
       "name": "Projekt",
       "customer": "Kunde",
-      "events": "Events",
+      "events": "Galerien",
       "value": "Wert",
       "status": "Status",
       "updated": "Aktualisiert"
@@ -7608,11 +7740,11 @@
       "paid": "bezahlt"
     },
     "events": {
-      "title": "Events",
-      "none": "Diesem Projekt sind noch keine Events zugeordnet.",
-      "searchPlaceholder": "Event zuordnen — nach Name suchen…",
-      "attached": "Event zugeordnet",
-      "attachFailed": "Event konnte nicht zugeordnet werden"
+      "title": "Galerien",
+      "none": "Diesem Projekt sind noch keine Galerien zugeordnet.",
+      "searchPlaceholder": "Galerie zuordnen — nach Name suchen…",
+      "attached": "Galerie zugeordnet",
+      "attachFailed": "Galerie konnte nicht zugeordnet werden"
     },
     "feed": {
       "title": "Aktivität",
@@ -7652,7 +7784,10 @@
       "archived": "Archiviert"
     },
     "eventCount_one": "{{count}} Event",
-    "eventCount_other": "{{count}} Events"
+    "eventCount_other": "{{count}} Events",
+    "loadFailed": "Die Projekte konnten nicht geladen werden",
+    "noMatches": "Keine Projekte passen zu dieser Suche",
+    "emptyTitle": "Noch keine Projekte"
   },
   "calendar": {
     "pageTitle": "Kalender",
@@ -7696,7 +7831,8 @@
       "lockedTooltip": "Bereits abgerechnet — Rechnung stornieren, um zu bearbeiten.",
       "noDescription": "Keine Beschreibung.",
       "untitledCustomer": "Stunden",
-      "customerLoggingDisabled": "Bei diesem Kunden ist die Stundenerfassung deaktiviert. Aktivieren Sie sie auf der Detailseite des Kunden, um Stunden zu erfassen."
+      "customerLoggingDisabled": "Bei diesem Kunden ist die Stundenerfassung deaktiviert. Aktivieren Sie sie auf der Detailseite des Kunden, um Stunden zu erfassen.",
+      "deleteAction": "Stunden löschen"
     }
   },
   "hoursLogging": {
@@ -7864,7 +8000,8 @@
       "number": "Kontonummer",
       "name": "Name",
       "type": "Art",
-      "confirmDelete": "Dieses Konto löschen?"
+      "confirmDelete": "Konto {{number}} „{{name}}“ löschen? Es kann danach nicht mehr für Buchungen oder den Export verwendet werden. Das kann nicht rückgängig gemacht werden.",
+      "deleteAction": "Konto löschen"
     },
     "vat": {
       "addTitle": "MWST-Code hinzufügen",
@@ -7875,8 +8012,9 @@
       "direction": "Richtung",
       "account": "MWST-Konto",
       "noAccount": "— keines —",
-      "confirmDelete": "Diesen MWST-Code löschen?",
-      "legacyRate": "{{rate}}% (nicht konfiguriert)"
+      "confirmDelete": "MWST-Code „{{code}}“ löschen? Er kann für neue Dokumente nicht mehr gewählt werden. Das kann nicht rückgängig gemacht werden.",
+      "legacyRate": "{{rate}}% (nicht konfiguriert)",
+      "deleteAction": "MWST-Code löschen"
     },
     "export": {
       "title": "Treuhänder-Export",
@@ -8050,7 +8188,6 @@
       "customerMessage": "Nachricht des Kunden"
     },
     "savedToast": "Angebot als Entwurf gespeichert.",
-    "edit": "Angebot bearbeiten",
     "new": "Neues Angebot",
     "preview": "PDF-Vorschau",
     "saveAndSend": "Speichern & senden",
@@ -8104,7 +8241,10 @@
       "accepted": "Dieses Angebot wurde bereits angenommen und kann nicht mehr bearbeitet werden. Um es zu ändern, stellen Sie es neu aus: Das Angebot wird abgelehnt und als neuer Entwurf kopiert. Gilt es nicht mehr, lehnen Sie es im Namen des Kunden ab.",
       "acceptedConverted": "Dieses Angebot wurde bereits angenommen, und es gibt dazu schon einen Vertrag, einen Anlass oder eine Rechnung. Es kann nicht mehr geändert werden.",
       "declined": "Dieses Angebot wurde abgelehnt und kann nicht mehr bearbeitet werden. Duplizieren Sie es, um ein neues Angebot zu erstellen.",
-      "converted": "Dieses Angebot wurde bereits in einen Anlass oder eine Rechnung umgewandelt und kann nicht mehr geändert werden."
+      "converted": "Dieses Angebot wurde bereits in einen Anlass oder eine Rechnung umgewandelt und kann nicht mehr geändert werden.",
+      "replacedTitle": "Ersetzt durch {{number}}",
+      "replaced": "Dieses Angebot wurde neu ausgestellt; der Kunde arbeitet mit dem neuen.",
+      "acceptedTitle": "Angenommen{{at}}"
     },
     "catalog": {
       "addItem": "Leistung hinzufügen",
@@ -8273,7 +8413,18 @@
     "contractTemplate": "Vertragsvorlage",
     "convertToContractConfirm": "Vertrag entwerfen",
     "contractTemplateFromQuote": "Vorausgewählt durch die Offertvorlage: {{name}}",
-    "contractTemplateAuto": "Wie in der Offertvorlage festgelegt (sonst die Standardvorlage)"
+    "contractTemplateAuto": "Wie in der Offertvorlage festgelegt (sonst die Standardvorlage)",
+    "saveAndSendTitle": "Mit ungespeicherten Änderungen senden?",
+    "saveAndSendMessage": "Ihre Änderungen werden zuerst gespeichert, dann geht das Angebot an {{to}}.",
+    "reissueReason": "Grund",
+    "openReplacement": "{{number}} öffnen",
+    "sentNoticeTitle": "Gesendet {{at}}",
+    "sentNotice": "Sie können es noch ändern. Der Kunde sieht die Änderungen, nachdem Sie es erneut gesendet haben.",
+    "forCustomer": "für {{name}}",
+    "createdToast": "Entwurf erstellt.",
+    "createDraft": "Entwurf erstellen",
+    "unsavedSavedFirst": "Ihre ungespeicherten Änderungen werden zuerst gespeichert.",
+    "savedToastSent": "Angebot gespeichert."
   },
   "crm": {
     "lineItems": {
@@ -8491,7 +8642,6 @@
     "savedToast": "Rechnung gespeichert.",
     "savedToastMulti": "{{n}} Rechnungen erstellt.",
     "saveAndSpawn": "{{n}} Rechnungen erstellen",
-    "edit": "Rechnung bearbeiten",
     "customerSearch": "Kunde nach E-Mail oder Firma suchen…",
     "qrFormat": {
       "none": "Keiner (Override)",
@@ -8512,7 +8662,16 @@
       "sendWithCount": "Mit {{count}} Beleg(en) senden",
       "sendWithCount_one": "Mit {{count}} Beleg senden",
       "sendWithCount_other": "Mit {{count}} Belegen senden"
-    }
+    },
+    "saveAndSendTitle": "Mit ungespeicherten Änderungen senden?",
+    "saveAndSendMessage": "Ihre Änderungen werden zuerst gespeichert, dann geht die Rechnung an den Kunden.",
+    "saveAndSend": "Speichern & senden",
+    "cancelDraft": "Entwurf verwerfen",
+    "cancelWithStorno": "Mit Storno stornieren",
+    "forCustomer": "für {{name}}",
+    "issuedLockedTitle": "Ausgestellte Rechnungen können nicht geändert werden.",
+    "issuedLocked": "Zur Korrektur stornieren Sie sie mit einer Stornorechnung und stellen eine neue aus.",
+    "createDraft": "Rechnung erstellen"
   },
   "businessProfile": {
     "savedToast": "Geschäftsprofil gespeichert.",
@@ -8892,11 +9051,11 @@
     "title": "Erinnerungs-E-Mails vor dem Anlass",
     "scheduleMoved": {
       "title": "Der Versandzeitpunkt liegt jetzt in den Workflows",
-      "body": "Ob Erinnerungen vor dem Anlass verschickt werden und wie viele Tage vorher, wird im Workflow „Erinnerung vor dem Anlass“ festgelegt. Auf dieser Seite werden die E-Mail-Vorlagen bearbeitet; anlassspezifische Überschreibungen bleiben auf der jeweiligen Anlass-Detailseite.",
+      "body": "Ob Erinnerungen vor dem Anlass verschickt werden und wie viele Tage vorher, wird im Workflow „Erinnerung vor dem Anlass“ festgelegt. Auf dieser Seite werden die E-Mail-Vorlagen bearbeitet; galeriespezifische Überschreibungen bleiben auf der jeweiligen Galerie-Detailseite.",
       "link": "Workflows öffnen"
     },
     "globalSection": "Globales Verhalten",
-    "globalHelp": "Standardmässig aus — aktiviere, um Erinnerungen zu senden. Der unten gesetzte Offset ist der Standard; jeder Anlass kann ihn auf der Detailseite überschreiben.",
+    "globalHelp": "Standardmässig aus — aktiviere, um Erinnerungen zu senden. Der unten gesetzte Offset ist der Standard; jede Galerie kann ihn auf ihrer Detailseite überschreiben.",
     "enableLabel": "Erinnerungs-E-Mails vor dem Anlass senden",
     "daysBeforeLabel": "Tage vor dem Anlass",
     "saveSettings": "Globale Einstellungen speichern",
@@ -9049,7 +9208,6 @@
       "auditTrail": "Audit-Verlauf",
       "auditTrailHelp": "Jedes auf diesem Vertrag erfasste Ereignis. Die Liste ist anhängend (append-only) und ist die Quelle der Wahrheit, falls der Vertrag angefochten wird.",
       "blocks": "Enthaltene Bausteine",
-      "cancel": "Stornieren",
       "cancelConfirm": "Diesen Vertrag stornieren? Der Signatur-Link des Kunden wird ungültig.",
       "cancelError": "Stornierung fehlgeschlagen",
       "cancelledToast": "Vertrag storniert.",
@@ -9074,7 +9232,6 @@
       "dates": "Daten",
       "downloadPdf": "PDF herunterladen",
       "downloadSignedPdf": "Signiertes PDF herunterladen",
-      "edit": "Bearbeiten",
       "fromQuote": "Aus Angebot",
       "issued": "Ausgestellt",
       "linkedInvoice": "Rechnung",
@@ -9177,16 +9334,18 @@
         "collectHint": "Nur die erste unterzeichnende Person erhält jetzt einen Link, um ihre Angaben zu ergänzen. Vertrag, PDF und Preis werden erst danach erstellt und gehen dann an die übrigen Unterzeichnenden.",
         "requestDetails": "Angaben anfordern",
         "afterDetails": "Wird festgelegt, sobald die Kundschaft ihre Angaben ergänzt hat."
-      }
+      },
+      "saveAndSendTitle": "Mit ungespeicherten Änderungen senden?",
+      "saveAndSendMessage": "Ihre Änderungen werden zuerst gespeichert, dann prüfen Sie den Vertrag, bevor er verschickt wird.",
+      "saveAndReview": "Speichern & prüfen",
+      "cancelContract": "Vertrag stornieren"
     },
     "editor": {
-      "backToDetail": "Zurück zum Vertrag",
       "create": "Entwurf erstellen",
       "createdToast": "Vertrag erstellt.",
       "customer": "Kunde",
       "disclaimerBody": "Die vorausgefüllten Baustein-Texte sind Beispiele des Maintainers, nicht von einem Anwalt verfasst. Lassen Sie die verwendeten Bausteine vor dem Versand für Ihre Rechtsordnung und Ihren Einsatzzweck prüfen — für den Inhalt des Vertrags bleiben Sie verantwortlich. Einen Entwurf können Sie trotzdem jederzeit speichern.",
       "disclaimerTitle": "Anwaltliche Prüfung empfohlen",
-      "saving": "Wird gespeichert…",
       "disclaimerLink": "CRM-Haftungshinweis lesen",
       "errors": {
         "createNotSaved": "Der Entwurf wurde nicht gespeichert.",
@@ -9227,20 +9386,13 @@
       "intro": "Einleitungstext (optional)",
       "issueDate": "Ausstellungsdatum",
       "language": "Sprache",
-      "locked": "Gesendete Verträge können nicht bearbeitet werden. Für Änderungen stornieren und einen neuen erstellen.",
       "noBlocksInSection": "Noch keine Bausteine für diesen Abschnitt.",
       "outro": "Schlusstext (optional)",
-      "popupBlocked": "Erlauben Sie Pop-ups für diese Seite, um die PDF-Vorschau anzuzeigen.",
-      "preview": "PDF-Vorschau",
-      "previewAfterSave": "Zuerst den Entwurf speichern, dann Vorschau anzeigen.",
-      "previewError": "Vorschau fehlgeschlagen",
-      "save": "Speichern",
       "saveError": "Speichern fehlgeschlagen",
       "savedToast": "Vertrag gespeichert.",
       "schriftformWarning": "Signaturtyp: einfache elektronische Signatur (EES). Ausreichend für routinemäßige Fotografieverträge in CH / DE / AT / FL. NICHT ausreichend für Dokumente, die gesetzlich Schriftform / forme qualifiée verlangen: Bürgschaft (DE § 766 BGB), Verbraucherdarlehensvertrag (DE § 492 BGB), befristete Arbeitsverträge (DE § 14 Abs. 4 TzBfG) und Ähnliches. Dafür ist eine qualifizierte elektronische Signatur (QES) eines Vertrauensdiensteanbieters erforderlich — picpeak bietet keine QES.",
       "searchCustomer": "Nach E-Mail suchen…",
       "systemBadge": "System",
-      "titleEdit": "Vertrag bearbeiten",
       "titleField": "Vertragstitel",
       "titleNew": "Neuer Vertrag",
       "titlePlaceholder": "z. B. Hochzeitsvertrag Doe / Müller",
@@ -9492,7 +9644,8 @@
         "compareTitle": "Was sich in „{{name}}“ geändert hat",
         "adopted_one": "{{count}} neue Klausel am Ende hinzugefügt",
         "adopted_other": "{{count}} neue Klauseln am Ende hinzugefügt",
-        "nothingNew": "Nichts Neues zu übernehmen — als geprüft markiert"
+        "nothingNew": "Nichts Neues zu übernehmen — als geprüft markiert",
+        "adopted": "{{count}} neue Klauseln am Ende hinzugefügt"
       }
     },
     "attachments": {
@@ -9684,7 +9837,8 @@
       "desktop": "Desktop",
       "phone": "Smartphone",
       "note": "Layout-Vorschau der Signierseite. Unterschrieben wird das PDF."
-    }
+    },
+    "forCustomer": "für {{name}}"
   },
   "messages": {
     "remoteContentBlocked": "Externe Bilder sind zum Schutz deiner Privatsphäre blockiert.",
@@ -9764,7 +9918,7 @@
     "createNewDoc": "Neues {{label}} erstellen",
     "existingDocs": "Oder ein bestehendes referenzieren",
     "noExistingDocs": "Für diesen Kunden gibt es noch keine Dokumente.",
-    "galleryCreateOnly": "Galerien sind event-basiert — dies öffnet den Event-Editor, wo Sie den Kunden zuweisen können.",
+    "galleryCreateOnly": "Damit öffnet sich der Galerie-Editor, in dem Sie den Kunden zuordnen können.",
     "syncOk": "Postfächer geprüft — {{count}} neu.",
     "syncDisabled": "Eingehende E-Mails sind deaktiviert — unter Einstellungen → Funktionen aktivieren.",
     "syncUnconfigured": "Zuerst ein Postfach unter Einstellungen → E-Mail konfigurieren.",
@@ -9772,7 +9926,10 @@
     "syncFailed": "Synchronisierung fehlgeschlagen.",
     "actionFailed": "Aktion fehlgeschlagen.",
     "syncOk_one": "Postfächer geprüft — {{count}} neu.",
-    "syncOk_other": "Postfächer geprüft — {{count}} neu."
+    "syncOk_other": "Postfächer geprüft — {{count}} neu.",
+    "body": "Nachricht",
+    "deleteForeverTitle": "Diese Nachricht endgültig löschen?",
+    "deleteForeverConfirm": "Die Nachricht und ihre Anhänge werden endgültig entfernt. Das kann nicht rückgängig gemacht werden."
   },
   "rebills": {
     "createInvoice": "Rechnung aus Weiterverrechnungen erstellen",
@@ -9990,10 +10147,7 @@
     "empty": "Noch keine Kampagnen.",
     "allStatuses": "Alle Status",
     "filterByStatus": "Nach Status filtern",
-    "backToList": "Alle Kampagnen",
     "recipientsTitle": "Empfänger",
-    "notEditable": "Diese Kampagne wurde bereits eingereiht und kann nicht mehr bearbeitet werden.",
-    "viewCampaign": "Kampagne ansehen",
     "status": {
       "draft": "Entwurf",
       "queued": "Eingereiht",
@@ -10044,7 +10198,6 @@
     "refreshPreview": "Vorschau aktualisieren",
     "previewTitle": "Newsletter-Vorschau",
     "sendTest": "Test",
-    "queueButton": "Kampagne einreihen",
     "queueBlocked": "Betreff, Inhalt und mindestens ein Empfänger werden zum Senden benötigt.",
     "queueTitle": "Diese Kampagne senden?",
     "queueBody": "Damit werden {{count}} Kunden mit {{rate}} pro Minute angeschrieben (rund {{minutes}} Min.). Sobald der Versand läuft, lässt sich das nicht rückgängig machen.",
@@ -10075,7 +10228,8 @@
       "advice": "Stellen Sie sicher, dass SPF, DKIM und DMARC für Ihre Versanddomain eingerichtet sind, senden Sie sich zuerst einen Test, und teilen Sie eine erste Kampagne nach Möglichkeit in mehrere kleinere Sendungen auf.",
       "duration": "Bei {{rate}}/Minute dauert dies etwa {{minutes}} Minuten. Die Versand-Warteschlange wird geteilt: Während der Kampagne können andere E-Mails — Galerie-Einladungen, Passwort-Zurücksetzungen — dahinter verzögert werden."
     },
-    "groupsHint": "Wer in den Gruppen ist, wird beim Versand ermittelt, nicht jetzt. Deaktivierte und abgemeldete Kunden werden ausgelassen."
+    "groupsHint": "Wer in den Gruppen ist, wird beim Versand ermittelt, nicht jetzt. Deaktivierte und abgemeldete Kunden werden ausgelassen.",
+    "queueShort": "Kampagne senden"
   },
   "documentVerification": {
     "title": "Bestätigen Sie, dass Sie es sind",

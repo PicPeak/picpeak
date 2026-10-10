@@ -19,8 +19,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { X, AlertTriangle } from 'lucide-react';
-import { Button, Card } from '../common';
+import { Button, Modal, Notice } from '../common';
 import { InstallmentsPanel } from './InstallmentsPanel';
 import type { PaymentTermInstallment } from '../../services/quotes.service';
 import { dealsService } from '../../services/deals.service';
@@ -146,45 +145,16 @@ export const EditInstallmentPlanModal: React.FC<EditInstallmentPlanModalProps> =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
-          <div>
-            <h2 className="text-xl font-semibold">
-              {t('dealLineage.editPlanModalTitle', 'Edit installment plan')}
-            </h2>
-            <p className="text-xs text-muted mt-1">
-              {t('dealLineage.editPlanHelp',
-                'Atomically reshape this plan: change percents, labels, triggers, add or remove rows. The plan total stays fixed; existing invoice numbers are kept where possible. Refused once any invoice has shipped.')}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={save.isPending}
-            className="text-neutral-400 hover:text-neutral-600 disabled:opacity-50"
-            aria-label={t('common.close', 'Close') as string}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-3 mb-3 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            {t('dealLineage.editPlanWarning',
-              'Trimming rows deletes their invoice numbers (the sequence cannot release them — a §14 UStG continuity rule). Adding rows claims fresh numbers.')}
-          </p>
-        </div>
-
-        <InstallmentsPanel
-          value={plan}
-          onChange={(next) => setPlan(next || [])}
-          onValidityChange={setValid}
-          eventDate={eventDate || null}
-        />
-
-        <div className="flex justify-end gap-2 mt-4">
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!save.isPending) onClose(); }}
+      closeOnBackdrop={false}
+      size="xl"
+      title={t('dealLineage.editPlanModalTitle', 'Edit installment plan')}
+      description={t('dealLineage.editPlanHelp',
+        'Atomically reshape this plan: change percents, labels, triggers, add or remove rows. The plan total stays fixed; existing invoice numbers are kept where possible. Refused once any invoice has shipped.')}
+      footer={
+        <>
           <Button
             variant="outline"
             onClick={onClose}
@@ -200,9 +170,21 @@ export const EditInstallmentPlanModal: React.FC<EditInstallmentPlanModalProps> =
           >
             {t('dealLineage.editPlanSave', 'Save plan')}
           </Button>
-        </div>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      <Notice tone="warning" size="sm" className="mb-3">
+        {t('dealLineage.editPlanWarning',
+          'Trimming rows deletes their invoice numbers (the sequence cannot release them — a §14 UStG continuity rule). Adding rows claims fresh numbers.')}
+      </Notice>
+
+      <InstallmentsPanel
+        value={plan}
+        onChange={(next) => setPlan(next || [])}
+        onValidityChange={setValid}
+        eventDate={eventDate || null}
+      />
+    </Modal>
   );
 };
 

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, ShieldAlert, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 
-import { Button, Card, Input, Loading } from '../../../components/common';
+import { Button, Card, Input, Loading, Notice } from '../../../components/common';
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { api } from '../../../config/api';
 import { usePermission } from '../../../hooks/usePermission';
@@ -111,12 +111,9 @@ export const TransfersTab: React.FC = () => {
   return (
     <div className="space-y-6">
       {!canEdit && (
-        <Card padding="md" className="bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800">
-          <div className="flex items-start gap-3 text-sm text-amber-800 dark:text-amber-200">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p>{t('settings.transfers.readOnly', 'Only admins who can edit settings can change what clients may send.')}</p>
-          </div>
-        </Card>
+        <Notice tone="warning">
+          {t('settings.transfers.readOnly', 'Only admins who can edit settings can change what clients may send.')}
+        </Notice>
       )}
       <fieldset disabled={!canEdit} className="space-y-6 min-w-0">
       <Card className="p-6">
@@ -148,13 +145,10 @@ export const TransfersTab: React.FC = () => {
         </label>
 
         {form.accept_all && (
-          <p className="mt-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700/60 dark:bg-amber-900/20 dark:text-amber-200">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {t('settings.transfers.acceptAllWarning',
-                'Uploaded files are stored and delivered as opaque downloads. PicPeak never opens, renders or scans them, and they are never served as web content — but it also cannot tell you whether one is safe. Check anything you open or pass on.')}
-            </span>
-          </p>
+          <Notice tone="warning" size="sm" icon={<ShieldAlert className="h-4 w-4" />} className="mt-3">
+            {t('settings.transfers.acceptAllWarning',
+              'Uploaded files are stored and delivered as opaque downloads. PicPeak never opens, renders or scans them, and they are never served as web content — but it also cannot tell you whether one is safe. Check anything you open or pass on.')}
+          </Notice>
         )}
 
         <div className={`mt-6 ${form.accept_all ? 'opacity-50' : ''}`}>
@@ -205,7 +199,7 @@ export const TransfersTab: React.FC = () => {
                     type="button"
                     disabled={form.accept_all}
                     onClick={() => update({ allowed_types: form.allowed_types.filter((_, i) => i !== index) })}
-                    className="rounded p-2 text-muted hover:bg-hover hover:text-red-600 disabled:opacity-40"
+                    className="rounded p-2 text-muted hover:bg-hover hover:text-danger-text disabled:opacity-40"
                     title={t('common.remove', 'Remove')}
                   >
                     <Trash2 className="h-4 w-4" />

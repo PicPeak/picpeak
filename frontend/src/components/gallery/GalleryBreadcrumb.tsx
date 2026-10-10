@@ -42,7 +42,7 @@ export const GalleryBreadcrumb: React.FC<GalleryBreadcrumbProps> = ({ trail, onN
           type="button"
           onClick={() => onNavigate(parent ? folderKey(parent) : null)}
           aria-label={t('gallery.folderUp', 'Back to {{name}}', { name: parent ? parent.name : rootLabel })}
-          className="sm:hidden shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border border-surface bg-surface focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="sm:hidden shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border-token bg-surface focus:outline-none focus:ring-2 focus:ring-accent"
           style={{ color: 'var(--color-text)' }}
         >
           <ChevronLeft className="w-4 h-4" />
@@ -66,7 +66,7 @@ export const GalleryBreadcrumb: React.FC<GalleryBreadcrumbProps> = ({ trail, onN
             <button
               type="button"
               onClick={() => onNavigate(null)}
-              className="inline-flex items-center gap-1.5 text-muted-theme hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
+              className="inline-flex items-center gap-1.5 text-muted-theme hover:underline focus:outline-none focus:ring-2 focus:ring-accent rounded"
               aria-label={rootLabel}
             >
               <Home className="w-4 h-4" aria-hidden="true" />
@@ -89,7 +89,7 @@ export const GalleryBreadcrumb: React.FC<GalleryBreadcrumbProps> = ({ trail, onN
                 <button
                   type="button"
                   onClick={() => onNavigate(folderKey(folder))}
-                  className="text-muted-theme hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
+                  className="text-muted-theme hover:underline focus:outline-none focus:ring-2 focus:ring-accent rounded"
                 >
                   {folder.name}
                 </button>

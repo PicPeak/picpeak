@@ -159,7 +159,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
               onChange('');
             }
           }}
-          className={clsx('input pr-10', error && 'border-red-500 focus-visible:ring-red-500')}
+          className={clsx('input pr-10', error && 'border-danger focus-visible:ring-accent')}
           aria-invalid={error ? 'true' : 'false'}
           aria-describedby={
             error ? `${inputId}-error` : helperText ? `${inputId}-helper` : undefined
@@ -199,7 +199,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
         />
       </div>
       {error && (
-        <p id={`${inputId}-error`} className="mt-1.5 text-sm text-red-600 dark:text-red-400">
+        <p id={`${inputId}-error`} className="mt-1.5 text-sm text-danger-text">
           {error}
         </p>
       )}

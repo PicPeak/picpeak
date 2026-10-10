@@ -73,8 +73,8 @@ export const ControlsStyleCard: React.FC<ControlsStyleCardProps> = ({ localTheme
       </div>
       {/* Info about hero header */}
       {localTheme.headerStyle === 'hero' && localTheme.controlsStyle !== 'sidebar' && (
-        <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-          <p className="text-sm text-amber-800 dark:text-amber-200 flex items-center gap-2">
+        <div className="mt-4 p-3 bg-warning-soft border border-warning-line rounded-lg">
+          <p className="text-sm text-warning-text flex items-center gap-2">
             <Info className="w-4 h-4 flex-shrink-0" />
             {t('branding.controlsStyleHeroWarning', 'Sidebar is recommended for hero headers to prevent controls appearing above the hero image.')}
           </p>

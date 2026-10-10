@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { X, Plus, FileText } from 'lucide-react';
-import { Button, Loading } from '../../../components/common';
+import { Plus, FileText } from 'lucide-react';
+import { Button, Loading, Modal } from '../../../components/common';
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { customerAdminService } from '../../../services/customerAdmin.service';
 import { quotesService } from '../../../services/quotes.service';
@@ -63,12 +63,6 @@ export const DocumentActionModal: React.FC<{
     return () => { cancelled = true; };
   }, [senderEmail]);
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
-
   const existing = useQuery({
     queryKey: ['messages', 'docs', docType, customer?.id],
     enabled: !!customer && cfg.hasExisting,
@@ -100,18 +94,8 @@ export const DocumentActionModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4" onClick={onClose}>
-      <div className="bg-shell rounded-xl w-[min(560px,96vw)] max-h-[88vh] flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-line-faint">
-          <span className="text-sm font-semibold text-heading">
-            {t(`messages.doc.${docType}`, cfg.label)}
-          </span>
-          <button onClick={onClose} className="ml-auto w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft" aria-label={t('messages.close', 'Close')}>
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-4 flex flex-col gap-4 overflow-y-auto">
+    <Modal open onClose={onClose} title={t(`messages.doc.${docType}`, cfg.label)} size="md">
+        <div className="flex flex-col gap-4">
           <div>
             <div className="text-sm font-medium text-body mb-1">{t('messages.customer', 'Customer')}</div>
             <CustomerPicker
@@ -122,7 +106,7 @@ export const DocumentActionModal: React.FC<{
               onCreate={pick}
               onClear={() => setCustomer(null)}
             />
-            {resolving && <p className="mt-1 text-xs text-neutral-400">{t('messages.resolvingCustomer', 'Matching the sender to a customer…')}</p>}
+            {resolving && <p className="mt-1 text-xs text-faint">{t('messages.resolvingCustomer', 'Matching the sender to a customer…')}</p>}
             {!resolving && !customer && (
               <p className="mt-1 text-xs text-muted">
                 {t('messages.noCustomerMatch', 'No customer matched this sender — search for one or create a new customer above.')}
@@ -138,7 +122,7 @@ export const DocumentActionModal: React.FC<{
 
               {cfg.hasExisting && (
                 <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-400 mb-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-2">
                     {t('messages.existingDocs', 'Or reference an existing one')}
                   </div>
                   {existing.isLoading ? (
@@ -149,11 +133,11 @@ export const DocumentActionModal: React.FC<{
                         <button
                           key={d.id}
                           onClick={() => pickExisting(d)}
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint hover:bg-neutral-50 dark:hover:bg-neutral-800/50 text-left"
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint hover:bg-hover-soft text-left"
                         >
-                          <FileText className="w-4 h-4 text-neutral-400 flex-none" />
+                          <FileText className="w-4 h-4 text-faint flex-none" />
                           <span className="font-mono text-[13px] text-heading">{d.number}</span>
-                          <span className="ml-auto text-[11px] text-neutral-400">{d.status}</span>
+                          <span className="ml-auto text-[11px] text-faint">{d.status}</span>
                         </button>
                       ))}
                     </div>
@@ -164,14 +148,13 @@ export const DocumentActionModal: React.FC<{
               )}
               {!cfg.hasExisting && (
                 <p className="text-xs text-muted">
-                  {t('messages.galleryCreateOnly', 'Galleries are event-based — this opens the event editor, where you can assign the customer.')}
+                  {t('messages.galleryCreateOnly', 'This opens the gallery editor, where you can assign the customer.')}
                 </p>
               )}
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

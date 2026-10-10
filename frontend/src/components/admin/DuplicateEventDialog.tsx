@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Copy } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input, LocalizedDateInput } from '../common';
+import { Button, Input, LocalizedDateInput, Modal } from '../common';
 
 interface DuplicateEventDialogProps {
   sourceEventName: string;
@@ -52,75 +52,18 @@ export const DuplicateEventDialog: React.FC<DuplicateEventDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-md w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-heading">
-            {t('events.duplicateDialog.title', 'Duplicate gallery')}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-body"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <p className="text-soft mb-4">
-          {t('events.duplicateDialog.description', {
-            sourceEventName,
-            defaultValue:
-              'Creates a new draft gallery that inherits the branding, behaviour, feedback, and category configuration from "{{sourceEventName}}". Photos, password, and share tokens are NOT carried over.',
-          })}
-        </p>
-
-        <div className="space-y-3 mb-4">
-          <Input
-            type="text"
-            label={t('events.duplicateDialog.eventNameLabel', 'New event name *')}
-            placeholder={t('events.duplicateDialog.eventNamePlaceholder', 'e.g. Müller Wedding 2026')}
-            value={eventName}
-            onChange={(e) => {
-              setEventName(e.target.value);
-              if (error) setError(undefined);
-            }}
-            error={error}
-          />
-
-          <LocalizedDateInput
-            label={t('events.duplicateDialog.eventDateLabel', 'Event date')}
-            value={eventDate}
-            onChange={setEventDate}
-            helperText={t(
-              'events.duplicateDialog.eventDateHelp',
-              'Leave blank to use a random suffix in the gallery URL. Expiration is recomputed from this date plus the source gallery’s expiration window.',
-            )}
-          />
-
-          <Input
-            type="text"
-            label={t('events.duplicateDialog.customerNameLabel', 'Customer name')}
-            placeholder={t('events.duplicateDialog.customerNamePlaceholder', 'Optional — fill in later if unknown')}
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-          />
-
-          <Input
-            type="email"
-            label={t('events.duplicateDialog.customerEmailLabel', 'Customer email')}
-            placeholder={t('events.duplicateDialog.customerEmailPlaceholder', 'Optional')}
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-          />
-        </div>
-
-        <div className="flex gap-3">
+    <Modal
+      open
+      onClose={onClose}
+      title={t('events.duplicateDialog.title', 'Duplicate gallery')}
+      size="sm"
+      closeOnBackdrop={false}
+      footer={
+        <>
           <Button
             variant="outline"
             onClick={onClose}
             disabled={isDuplicating}
-            className="flex-1"
           >
             {t('common.cancel', 'Cancel')}
           </Button>
@@ -130,12 +73,60 @@ export const DuplicateEventDialog: React.FC<DuplicateEventDialogProps> = ({
             disabled={isDuplicating}
             isLoading={isDuplicating}
             leftIcon={<Copy className="w-4 h-4" />}
-            className="flex-1"
           >
             {t('events.duplicateDialog.confirm', 'Create duplicate')}
           </Button>
-        </div>
-      </Card>
-    </div>
+        </>
+      }
+    >
+      <p className="text-soft mb-4">
+        {t('events.duplicateDialog.description', {
+          sourceEventName,
+          defaultValue:
+            'Creates a new draft gallery that inherits the branding, behaviour, feedback, and category configuration from "{{sourceEventName}}". Photos, password, and share tokens are NOT carried over.',
+        })}
+      </p>
+
+      <div className="space-y-3">
+        <Input
+          type="text"
+          label={t('events.duplicateDialog.eventNameLabel', 'New event name *')}
+          placeholder={t('events.duplicateDialog.eventNamePlaceholder', 'e.g. Müller Wedding 2026')}
+          value={eventName}
+          onChange={(e) => {
+            setEventName(e.target.value);
+            if (error) setError(undefined);
+          }}
+          error={error}
+        />
+
+        <LocalizedDateInput
+          label={t('events.duplicateDialog.eventDateLabel', 'Event date')}
+          value={eventDate}
+          onChange={setEventDate}
+          helperText={t(
+            'events.duplicateDialog.eventDateHelp',
+            'Leave blank to use a random suffix in the gallery URL. Expiration is recomputed from this date plus the source gallery\'s expiration window.',
+          )}
+        />
+
+        <Input
+          type="text"
+          label={t('events.duplicateDialog.customerNameLabel', 'Customer name')}
+          placeholder={t('events.duplicateDialog.customerNamePlaceholder', 'Optional — fill in later if unknown')}
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+        />
+
+        <Input
+          type="email"
+          label={t('events.duplicateDialog.customerEmailLabel', 'Customer email')}
+          placeholder={t('events.duplicateDialog.customerEmailPlaceholder', 'Optional')}
+          value={customerEmail}
+          onChange={(e) => setCustomerEmail(e.target.value)}
+        />
+      </div>
+
+    </Modal>
   );
 };

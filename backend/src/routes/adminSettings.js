@@ -47,6 +47,7 @@ const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 
 const { getStoragePath } = require('../config/storage');
+const { normalizeStatusColors, STATUS_KEYS } = require('../utils/statusColors');
 
 // Reserved first-run bootstrap keys — never writable through the generic
 // settings upserts in this file: setup_wizard_completed is a one-way marker
@@ -1232,6 +1233,9 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       logo_display_mode,
       hide_powered_by,
       force_color_mode,
+      // Status colours (Branding › Colours): one hue per meaning, applied
+      // admin-wide and on public pages. Partial object; missing = default.
+      status_colors,
       // Login-page-only branding (#354 follow-up). Both toggles apply
       // exclusively to /admin/login and /customer/login — the gallery
       // and admin chrome use their own logo_size / logo_max_height.
@@ -1256,6 +1260,15 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       // Info banner (#932). Markdown only, same sanitiser path as promo.
       info_markdown
     } = req.body;
+
+    // Status colours: refuse a malformed set rather than store a cleaned one,
+    // which would wipe the saved hues and still report success.
+    if (status_colors !== undefined) {
+      const bad = !status_colors || typeof status_colors !== 'object' || Array.isArray(status_colors)
+        || Object.entries(status_colors).some(([key, value]) => !STATUS_KEYS.includes(key)
+          || (value != null && value !== '' && !normalizeStatusColors({ [key]: value })[key]));
+      if (bad) return res.status(400).json({ error: 'Status colours must be #rrggbb values for success, warning, danger, info or storno' });
+    }
 
     // Normalize force_color_mode: only 'dark' | 'light' | null are valid.
     const normalizedForceColorMode = force_color_mode === 'dark'
@@ -1308,6 +1321,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       logo_display_mode,
       hide_powered_by,
       force_color_mode: normalizedForceColorMode,
+      ...(status_colors !== undefined && { status_colors: normalizeStatusColors(status_colors) }),
       // Login-only knobs (only persist when the request actually
       // included the key, so a partial PUT from another tab doesn't
       // accidentally clear them).

@@ -48,6 +48,7 @@ export function DecimalInput({
   onChange,
   fractionDigits,
   formatValue,
+  onBlur,
   ...rest
 }: DecimalInputProps) {
   const fmt = (v: number) => (formatValue ? formatValue(v) : defaultFormat(v, fractionDigits));
@@ -71,6 +72,7 @@ export function DecimalInput({
 
   return (
     <input
+      {...rest}
       type="text"
       inputMode="decimal"
       value={text}
@@ -100,9 +102,8 @@ export function DecimalInput({
         if (Number.isFinite(parsed)) {
           setText(fmt(parsed));
         }
-        rest.onBlur?.(e);
+        onBlur?.(e);
       }}
-      {...rest}
     />
   );
 }

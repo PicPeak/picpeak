@@ -17,8 +17,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Wrench, MailCheck, AlertTriangle, Mail } from 'lucide-react';
-import { Button, Card, Loading } from '../../../components/common';
+import { Wrench, MailCheck, Mail } from 'lucide-react';
+import { Button, Card, Loading, Badge, Notice } from '../../../components/common';
 import { billsService, type InvoiceStatus } from '../../../services/bills.service';
 import { devToolsService, type CrmEmailTemplateKey } from '../../../services/devTools.service';
 import { toast } from 'react-toastify';
@@ -196,18 +196,16 @@ export const CrmDevelopmentPage: React.FC = () => {
   return (
     <div>
       <SectionPageHeader
+        feature="crmDevelopment"
         icon={Wrench}
         title={t('crmDev.title', 'CRM Development')}
         description={t('crmDev.subtitle', 'Internal tools for verifying CRM flows. Hidden by default — enabled via Settings → Features → Development.')}
       />
 
-      <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 p-3 mb-5 flex items-start gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 mt-0.5 shrink-0" />
-        <p className="text-sm text-amber-800 dark:text-amber-200">
-          {t('crmDev.warning',
-            'These tools fire real side effects (emails, status changes). Use against test data.')}
-        </p>
-      </div>
+      <Notice tone="warning" className="mb-5">
+        {t('crmDev.warning',
+          'These tools fire real side effects (emails, status changes). Use against test data.')}
+      </Notice>
 
       {/* Env-gate banner. The /admin/dev routes are hard-gated by
           PICPEAK_ENABLE_DEV_TOOLS=1 (security fix abd50e4) — a
@@ -215,18 +213,10 @@ export const CrmDevelopmentPage: React.FC = () => {
           templates list silently shows up empty and admins assume the
           tools are broken. */}
       {isEnvDisabled(templatesError) && (
-        <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-700 p-3 mb-5 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-red-700 dark:text-red-300 mt-0.5 shrink-0" />
-          <div className="text-sm text-red-800 dark:text-red-200">
-            <p className="font-semibold mb-1">
-              {t('crmDev.envDisabled.title', 'Dev tools blocked by env gate')}
-            </p>
-            <p>
-              {t('crmDev.envDisabled.body',
-                'Set PICPEAK_ENABLE_DEV_TOOLS=1 in your backend env file and restart the server. The feature flag alone is not enough — this is a deliberate production-safety guard.')}
-            </p>
-          </div>
-        </div>
+        <Notice tone="danger" className="mb-5" title={t('crmDev.envDisabled.title', 'Dev tools blocked by env gate')}>
+          {t('crmDev.envDisabled.body',
+            'Set PICPEAK_ENABLE_DEV_TOOLS=1 in your backend env file and restart the server. The feature flag alone is not enough — this is a deliberate production-safety guard.')}
+        </Notice>
       )}
 
       {/* Tool: payment-check email against a real invoice. */}
@@ -310,11 +300,11 @@ export const CrmDevelopmentPage: React.FC = () => {
                 <li key={tpl.key} className="py-3 flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-neutral-500">{tpl.key}</span>
+                      <span className="font-mono text-xs text-muted">{tpl.key}</span>
                       {!tpl.present && (
-                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                        <Badge tone="warning" caps>
                           {t('crmDev.templates.notSeeded', 'Not seeded')}
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     <div className="text-sm font-medium mt-0.5">{title}</div>

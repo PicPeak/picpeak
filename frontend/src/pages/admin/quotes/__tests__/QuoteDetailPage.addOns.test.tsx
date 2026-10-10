@@ -8,7 +8,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { ConfirmDialogProvider } from '../../../../components/common/ConfirmDialog';
 import { formatMoneyMinor } from '../../../../utils/money';
 
 // Resolve against the real en.json so a missing key shows up as a failure.
@@ -49,6 +50,9 @@ vi.mock('../../../../components/admin/PermissionGate', () => ({
   PermissionGate: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock('../../../../components/admin/DocumentLineageCard', () => ({ DocumentLineageCard: () => null }));
+vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => true }));
+// A draft's page is its editor; the form itself has its own tests.
+vi.mock('../QuoteEditorPage', () => ({ QuoteForm: () => <div>Quote form</div> }));
 vi.mock('../../../../contexts/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: {}, isLoading: false }),
 }));
@@ -110,14 +114,19 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/admin/clients/quotes/7']}>
-        <Routes>
-          <Route path="/admin/clients/quotes/:id" element={<QuoteDetailPage />} />
-          <Route path="/admin/clients/quotes/:id/edit" element={<div>Quote editor</div>} />
-        </Routes>
-      </MemoryRouter>
+      <ConfirmDialogProvider>
+        <MemoryRouter initialEntries={['/admin/clients/quotes/7']}>
+          <Routes>
+            <Route path="/admin/clients/quotes/:id" element={<><QuoteDetailPage /><Where /></>} />
+          </Routes>
+        </MemoryRouter>
+      </ConfirmDialogProvider>
     </QueryClientProvider>,
   );
+}
+
+function Where() {
+  return <div data-testid="where">{useLocation().pathname}</div>;
 }
 
 async function findAddOnsCard() {
@@ -136,44 +145,45 @@ beforeEach(() => {
   changeAddOns.mockResolvedValue({ changed: true, totalAmountMinor: 150000, quote, lineItems });
 });
 
-it('says why an accepted quote can\'t be edited and how to change it, instead of opening the editor', async () => {
+it('says why an accepted quote can\'t be edited and how to change it', async () => {
   const user = userEvent.setup();
   renderPage();
   await findAddOnsCard();
-  await user.click(screen.getByRole('button', { name: 'Edit' }));
-  expect(toastInfo).toHaveBeenCalledWith(expect.stringContaining('reissue it'));
-  expect(screen.queryByText('Quote editor')).toBeNull();
+  // No editor on an accepted quote: the page is read-only and says why.
+  expect(screen.queryByText('Quote form')).toBeNull();
+  expect(screen.getByText(/reissue it/)).toBeInTheDocument();
   // Both ways out are on the page: reissuing it, or declining it.
   expect(screen.getByRole('button', { name: 'Reissue' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Decline on behalf' })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'More actions' }));
+  expect(screen.getByRole('menuitem', { name: 'Decline on behalf' })).toBeInTheDocument();
 });
 
-it('opens the editor for a draft', async () => {
-  const user = userEvent.setup();
+it('is the editor while the quote is a draft', async () => {
   get.mockResolvedValue({
     quote: { ...quote, status: 'draft', acceptedAt: null, optionalSelection: null, addOnsEditable: false },
     lineItems,
   });
   renderPage();
-  await user.click(await screen.findByRole('button', { name: 'Edit' }));
-  expect(await screen.findByText('Quote editor')).toBeInTheDocument();
+  expect(await screen.findByText('Quote form')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reissue' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
 });
 
-it('reissues an accepted quote and opens the new draft in the editor', async () => {
+it('reissues an accepted quote and opens the new draft', async () => {
   const user = userEvent.setup();
-  vi.spyOn(window, 'prompt').mockReturnValue('Kunde möchte ein grösseres Album');
   reissue.mockResolvedValue({ quoteId: 8 });
   renderPage();
   await findAddOnsCard();
   await user.click(screen.getByRole('button', { name: 'Reissue' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Reissue' });
+  await user.type(within(dialog).getByRole('textbox'), 'Kunde möchte ein grösseres Album');
+  await user.click(within(dialog).getByRole('button', { name: 'Reissue' }));
   expect(reissue).toHaveBeenCalledWith(7, 'Kunde möchte ein grösseres Album');
-  expect(await screen.findByText('Quote editor')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/admin/clients/quotes/8'));
 });
 
 it('books an add-on and saves it after the confirm', async () => {
   const user = userEvent.setup();
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
   renderPage();
 
   const card = await findAddOnsCard();
@@ -188,17 +198,18 @@ it('books an add-on and saves it after the confirm', async () => {
 
   // Cancelled confirm: nothing is sent.
   await user.click(save);
-  expect(confirm).toHaveBeenCalledWith('The customer will be emailed the updated quote.');
+  expect(await screen.findByText('The customer will be emailed the updated quote.')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(changeAddOns).not.toHaveBeenCalled();
 
   await user.click(save);
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Save add-on changes' }));
   await waitFor(() => expect(changeAddOns).toHaveBeenCalledWith(7, [2, 3]));
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(
     'Add-ons updated. The customer has been emailed the updated quote.',
   ));
   // The quote is refreshed from the server.
   await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-  confirm.mockRestore();
 });
 
 it('shows the customer message and the change history, newest first', async () => {

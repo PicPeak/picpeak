@@ -10,7 +10,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { Plus, Workflow as WorkflowIcon, Inbox, Trash2, Pencil, FlaskConical } from 'lucide-react';
-import { Button, Card, Loading } from '../../../components/common';
+import { Badge, Button, Card, EmptyState, ErrorState, Loading, Modal, useConfirm } from '../../../components/common';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 import { useMutationWithToast } from '../../../hooks';
 import { usePermissions } from '../../../contexts/PermissionsContext';
 import { workflowsService, type WorkflowSummary, type WorkflowSavePayload, type WorkflowTestResult } from '../../../services/workflows.service';
@@ -30,11 +31,12 @@ export const WorkflowsListPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const confirm = useConfirm();
   // The server only lets a super admin delete a workflow (it takes every
   // owner's run history with it), so nobody else is offered the button.
   const { isSuperAdmin } = usePermissions();
 
-  const { data: workflows, isLoading } = useQuery({
+  const { data: workflows, isLoading, isError, isRefetching, refetch } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => workflowsService.list(),
   });
@@ -79,43 +81,73 @@ export const WorkflowsListPage: React.FC = () => {
   // Disabling a built-in reverts to the legacy hardcoded behaviour (it does NOT
   // stop the automation) — warn so the admin isn't surprised. Enabling is guarded
   // server-side (a flow using unimplemented actions is refused with a clear error).
-  const toggle = (w: WorkflowSummary) => {
+  const toggle = async (w: WorkflowSummary) => {
     const next = !isEnabled(w);
     if (!next && isBuiltin(w)) {
-      const msg = t('workflows.toggle.confirmDisableBuiltin',
-        'Disabling this built-in reverts to the previous built-in behaviour — it does not turn the automation off. Continue?') as string;
-      if (!window.confirm(msg)) return;
+      const ok = await confirm({
+        title: t('workflows.toggle.disableBuiltinTitle', 'Disable this built-in workflow?'),
+        message: t('workflows.toggle.confirmDisableBuiltin',
+          'Disabling this built-in reverts to the previous built-in behaviour — it does not turn the automation off. Continue?') as string,
+        variant: 'warning',
+        confirmLabel: t('workflows.toggle.disableBuiltin', 'Disable workflow'),
+      });
+      if (!ok) return;
     }
     toggleMutation.mutate({ id: w.id, enabled: next });
   };
 
+  const remove = async (w: WorkflowSummary) => {
+    const ok = await confirm({
+      title: t('workflows.confirmDelete', 'Delete this workflow?') as string,
+      message: t('workflows.confirmDeleteNamed', 'Delete "{{name}}"? Runs in progress stop and the flow cannot be restored.', { name: w.name }),
+      variant: 'danger',
+      confirmLabel: t('workflows.deleteAction', 'Delete workflow'),
+    });
+    if (ok) deleteMutation.mutate(w.id);
+  };
+
+  const createButton = (
+    <Button variant="primary" isLoading={createMutation.isPending} onClick={() => createMutation.mutate()} leftIcon={<Plus className="w-4 h-4" />}>
+      {t('workflows.new', 'New workflow')}
+    </Button>
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-accent-soft text-on-accent-soft flex items-center justify-center">
-            <WorkflowIcon className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-heading">{t('workflows.title', 'Workflows')}</h1>
-            <p className="text-sm text-soft">{t('workflows.subtitle', 'Visual automations — triggers, conditions, gates and actions.')}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => navigate('/admin/automation/approvals')} leftIcon={<Inbox className="w-4 h-4" />}>
-            {t('workflows.approvals.title', 'Approvals')}
-          </Button>
-          <Button variant="primary" isLoading={createMutation.isPending} onClick={() => createMutation.mutate()} leftIcon={<Plus className="w-4 h-4" />}>
-            {t('workflows.new', 'New workflow')}
-          </Button>
-        </div>
-      </div>
+      <SectionPageHeader
+        icon={WorkflowIcon}
+        title={t('workflows.title', 'Workflows')}
+        description={t('workflows.subtitle', 'Visual automations — triggers, conditions, gates and actions.')}
+        feature="workflows"
+        className=""
+        actions={(
+          <>
+            <Button variant="outline" onClick={() => navigate('/admin/automation/approvals')} leftIcon={<Inbox className="w-4 h-4" />}>
+              {t('workflows.approvals.title', 'Approvals')}
+            </Button>
+            {createButton}
+          </>
+        )}
+      />
 
       <Card padding="none">
         {isLoading ? (
           <div className="p-10"><Loading /></div>
+        ) : isError && !workflows ? (
+          <ErrorState
+            size="inline"
+            title={t('workflows.loadFailed', 'Could not load the workflows')}
+            onRetry={() => refetch()}
+            retrying={isRefetching}
+          />
         ) : !workflows || workflows.length === 0 ? (
-          <div className="p-10 text-center text-muted">{t('workflows.empty', 'No workflows yet. Create one to automate your invoicing and booking steps.')}</div>
+          <EmptyState
+            size="inline"
+            icon={<WorkflowIcon />}
+            title={t('workflows.emptyTitle', 'No workflows yet')}
+            description={t('workflows.empty', 'Create one to automate your invoicing and booking steps.')}
+            action={createButton}
+          />
         ) : (
           <ul className="divide-y divide-line">
             {workflows.map((w) => (
@@ -124,7 +156,7 @@ export const WorkflowsListPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <Link to={`/admin/automation/workflows/${w.id}`} className="font-medium text-heading truncate hover:underline">{w.name}</Link>
                     {isBuiltin(w) && (
-                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-subtle text-body">{t('workflows.builtin', 'built-in')}</span>
+                      <Badge>{t('workflows.builtin', 'built-in')}</Badge>
                     )}
                   </div>
                   <div className="text-xs text-muted mt-0.5">
@@ -134,8 +166,9 @@ export const WorkflowsListPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggle(w)}
+                  aria-pressed={isEnabled(w)}
                   className={`text-xs px-2 py-1 rounded-full border ${isEnabled(w)
-                    ? 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700'
+                    ? 'bg-success-soft text-success-text border-success-line'
                     : 'bg-subtle text-muted border-line-strong'}`}
                 >
                   {isEnabled(w) ? t('workflows.enabled', 'Enabled') : t('workflows.disabled', 'Disabled')}
@@ -150,10 +183,10 @@ export const WorkflowsListPage: React.FC = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => { if (window.confirm(t('workflows.confirmDelete', 'Delete this workflow?') as string)) deleteMutation.mutate(w.id); }}
+                    onClick={() => remove(w)}
                     aria-label={t('common.delete', 'Delete') as string}
                   >
-                    <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                    <Trash2 className="w-4 h-4 text-danger-text" />
                   </Button>
                 )}
               </li>
@@ -162,45 +195,45 @@ export const WorkflowsListPage: React.FC = () => {
         )}
       </Card>
 
-      {testTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTestTarget(null)}>
-          <div className="w-full max-w-lg rounded-lg bg-shell border border-line p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-heading">{t('workflows.test.title', 'Test run')} — {testTarget.name}</h2>
-              <button type="button" onClick={() => setTestTarget(null)} aria-label={t('common.close', 'Close') as string} className="text-muted">✕</button>
-            </div>
-            <p className="text-xs text-muted">
-              {t('workflows.test.hint', 'Dry run: walks the whole flow now (waits skipped, gates auto-confirmed) with side effects mocked — no real emails. Optionally give an entity id (e.g. an invoice) so conditions can read it.')}
-            </p>
-            <input
-              value={testEntityId} onChange={(e) => setTestEntityId(e.target.value)}
-              placeholder={t('workflows.test.entityId', 'Entity id (optional, e.g. invoice id)') as string}
-              className="w-full px-2 py-1.5 rounded border border-line-strong bg-shell text-heading text-sm"
-            />
-            <Button variant="primary" isLoading={testMutation.isPending} onClick={() => testMutation.mutate()}>
-              {t('workflows.test.run', 'Run dry test')}
-            </Button>
-            {testResult && (
-              <div className="mt-2">
-                <div className="text-sm mb-1 text-body">
-                  {t('workflows.test.result', 'Result')}: <span className="font-medium">{testResult.status}</span>
-                </div>
-                <ol className="text-xs space-y-1 max-h-72 overflow-y-auto">
-                  {testResult.steps.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2 border-b border-line-faint pb-1">
-                      <span className="text-neutral-400 w-6 shrink-0">{i + 1}.</span>
-                      <span className="font-mono text-body">{s.node_type}:{s.node_key}</span>
-                      <span className="text-muted">{s.status}</span>
-                      {s.result && (s.result as any).would ? <span className="text-purple-600 dark:text-purple-400">→ would {String((s.result as any).would)}</span> : null}
-                      {s.error ? <span className="text-red-600 dark:text-red-400">{s.error}</span> : null}
-                    </li>
-                  ))}
-                </ol>
+      <Modal
+        open={!!testTarget}
+        onClose={() => setTestTarget(null)}
+        title={testTarget ? `${t('workflows.test.title', 'Test run')} — ${testTarget.name}` : ''}
+        description={t('workflows.test.hint', 'Dry run: walks the whole flow now (waits skipped, gates auto-confirmed) with side effects mocked — no real emails. Optionally give an entity id (e.g. an invoice) so conditions can read it.')}
+        size="lg"
+        footer={(
+          <Button variant="primary" isLoading={testMutation.isPending} onClick={() => testMutation.mutate()}>
+            {t('workflows.test.run', 'Run dry test')}
+          </Button>
+        )}
+      >
+        <div className="space-y-3">
+          <input
+            value={testEntityId} onChange={(e) => setTestEntityId(e.target.value)}
+            placeholder={t('workflows.test.entityId', 'Entity id (optional, e.g. invoice id)') as string}
+            aria-label={t('workflows.test.entityId', 'Entity id (optional, e.g. invoice id)') as string}
+            className="w-full px-3 py-2 rounded-lg border border-line-strong bg-panel text-heading text-sm"
+          />
+          {testResult && (
+            <div className="mt-2">
+              <div className="text-sm mb-1 text-body">
+                {t('workflows.test.result', 'Result')}: <span className="font-medium">{testResult.status}</span>
               </div>
-            )}
-          </div>
+              <ol className="text-xs space-y-1">
+                {testResult.steps.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 border-b border-line-faint pb-1">
+                    <span className="text-faint w-6 shrink-0">{i + 1}.</span>
+                    <span className="font-mono text-body">{s.node_type}:{s.node_key}</span>
+                    <span className="text-muted">{s.status}</span>
+                    {s.result && (s.result as any).would ? <span className="text-info-text">→ would {String((s.result as any).would)}</span> : null}
+                    {s.error ? <span className="text-danger-text">{s.error}</span> : null}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

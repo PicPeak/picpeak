@@ -13,12 +13,11 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { CheckCircle2, X } from 'lucide-react';
-import { Button } from '../../../components/common';
+import { CheckCircle2 } from 'lucide-react';
+import { Button, Modal } from '../../../components/common';
 import { eventsService, type DeliveryState } from '../../../services/events.service';
 import { photosService } from '../../../services/photos.service';
 import { usePermission } from '../../../hooks/usePermission';
-import { useModalFocus } from '../../../hooks/useModalFocus';
 import { GalleryRecipientsList } from '../../../components/admin/GalleryRecipientsList';
 import type { Event } from '../../../types';
 import { accountsAnnounceable, eventNotice, useAccountReach } from './OverviewTab';
@@ -82,37 +81,32 @@ export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ 
     },
   });
 
-  const panelRef = useModalFocus<HTMLDivElement>(isOpen, onClose, complete.isPending);
-
   if (!isOpen) return null;
   const guestsSee = Math.max(0, state.delivered_count - (removeDuplicates && canDelete ? state.duplicate_count : 0));
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="complete-delivery-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !complete.isPending) onClose(); }}
+    <Modal
+      open
+      onClose={() => { if (!complete.isPending) onClose(); }}
+      size="md"
+      title={(
+        <span className="flex items-center gap-2">
+          <CheckCircle2 className="w-5 h-5 text-accent" />
+          {t('events.delivery.completeTitle', 'Mark the full gallery as ready?')}
+        </span>
+      )}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose} disabled={complete.isPending}>{t('common.cancel', 'Cancel')}</Button>
+          <Button variant="primary" isLoading={complete.isPending} onClick={() => complete.mutate()}>
+            {sendEmail
+              ? t('events.delivery.completeAndNotify', 'Mark as ready & notify')
+              : t('events.delivery.completeOnly', 'Mark as ready')}
+          </Button>
+        </>
+      )}
     >
-      <div ref={panelRef} className="bg-shell rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-line flex items-center justify-between gap-4">
-          <h2 id="complete-delivery-title" className="text-lg font-semibold text-heading flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-accent" />
-            {t('events.delivery.completeTitle', 'Mark the full gallery as ready?')}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={complete.isPending}
-            className="p-1 rounded hover:bg-hover-soft"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-5 h-5 text-muted" />
-          </button>
-        </div>
-        <div className="px-6 py-4 space-y-3 text-sm text-body">
+        <div className="space-y-3 text-sm text-body">
           <p>
             {t('events.delivery.completeBody', 'The banner and the placeholder tiles disappear. The first-look badges stay. Guests then see {{count}} photos.', { count: guestsSee })}
           </p>
@@ -155,15 +149,6 @@ export const CompleteDeliveryDialog: React.FC<CompleteDeliveryDialogProps> = ({ 
             </label>
           )}
         </div>
-        <div className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={complete.isPending}>{t('common.cancel', 'Cancel')}</Button>
-          <Button variant="primary" isLoading={complete.isPending} onClick={() => complete.mutate()}>
-            {sendEmail
-              ? t('events.delivery.completeAndNotify', 'Mark as ready & notify')
-              : t('events.delivery.completeOnly', 'Mark as ready')}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

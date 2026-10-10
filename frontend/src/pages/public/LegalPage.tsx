@@ -7,6 +7,7 @@ import DOMPurify from 'dompurify';
 import { Loading, Card } from '../../components/common';
 import { cmsService } from '../../services/cms.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import '../../styles/prose-overrides.css';
 
 // Force rel="noopener noreferrer" on target="_blank" anchors in CMS-authored
@@ -35,7 +36,9 @@ const sanitizeExternalUrl = (url: string): string | null => {
 
 export const LegalPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
+  // Branding's palette in charge: Card and Loading follow it.
+  usePublicDarkMode();
   const navigate = useNavigate();
   
   // Extract page slug from pathname if not in params (for static routes like /impressum)
@@ -83,27 +86,27 @@ export const LegalPage: React.FC = () => {
 
   if (isLoading || willRedirect) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
-        <Loading size="lg" text="Loading..." />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loading size="lg" text={t('common.loading', 'Loading...')} />
       </div>
     );
   }
 
   if (error || !page) {
     return (
-      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Card className="max-w-md w-full mx-4">
           <div className="text-center py-12 px-6">
-            <h2 className="text-xl font-semibold text-neutral-900 mb-2">Page Not Found</h2>
-            <p className="text-neutral-600 mb-6">
-              The page you're looking for doesn't exist.
+            <h2 className="text-xl font-semibold text-theme mb-2">{t('legal.notFoundTitle', 'Page not found')}</h2>
+            <p className="text-muted-theme mb-6">
+              {t('legal.notFoundBody', 'The page you are looking for does not exist.')}
             </p>
             <Link
               to="/"
-              className="inline-flex items-center gap-2 text-primary-600 hover:text-primary-700"
+              className="inline-flex items-center gap-2 text-accent"
             >
               <Home className="w-4 h-4" />
-              Go to Homepage
+              {t('legal.goHome', 'Go to the homepage')}
             </Link>
           </div>
         </Card>
@@ -112,16 +115,16 @@ export const LegalPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-white border-b border-neutral-200">
+      <header className="bg-surface border-b border-border-token">
         <div className="container py-4">
           <button
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 text-neutral-600 hover:text-neutral-900 transition-colors"
+            className="inline-flex items-center gap-2 text-muted-theme hover:text-theme transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            {i18n.language === 'de' ? 'Zurück' : 'Back'}
+            {t('common.back', 'Back')}
           </button>
         </div>
       </header>
@@ -130,15 +133,13 @@ export const LegalPage: React.FC = () => {
       <main className="container py-12">
         <div className="max-w-4xl mx-auto">
           <Card padding="lg">
-            <h1 className="text-3xl font-bold text-neutral-900 mb-8">{page.title}</h1>
+            <h1 className="text-3xl font-bold text-theme mb-8">{page.title}</h1>
             
-            {/* This page's chrome is hardcoded light (bg-neutral-50 wrapper,
-                white card). Without an explicit text color the CMS body
-                inherits `body { color: var(--color-text) }`, which a
-                dark-toned branding theme sets to near-white — leaving the
-                Impressum / Datenschutz text invisible (QA S3). */}
+            {/* `prose text-theme`: the CMS body takes the theme's text colour
+                (styles/prose-overrides.css), so it reads on a light and a
+                dark branding palette alike (QA S3). */}
             <div
-              className="prose prose-neutral max-w-none text-neutral-800"
+              className="prose prose-neutral max-w-none text-theme"
               dangerouslySetInnerHTML={{ 
                 __html: DOMPurify.sanitize(page.content, {
                   ALLOWED_TAGS: [
@@ -160,25 +161,25 @@ export const LegalPage: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto py-8 border-t border-neutral-200">
+      <footer className="mt-auto py-8 border-t border-border-token">
         <div className="container text-center">
           <div className="flex justify-center gap-4 text-sm">
             <Link
               to="/impressum"
-              className="text-neutral-600 hover:text-neutral-900"
+              className="text-muted-theme hover:text-theme"
             >
-              {lang === 'de' ? 'Impressum' : 'Legal Notice'}
+              {t('legal.impressum', 'Legal Notice')}
             </Link>
-            <span className="text-neutral-400">•</span>
+            <span className="text-muted-theme">•</span>
             <Link
               to="/datenschutz"
-              className="text-neutral-600 hover:text-neutral-900"
+              className="text-muted-theme hover:text-theme"
             >
-              {lang === 'de' ? 'Datenschutz' : 'Privacy Policy'}
+              {t('legal.datenschutz', 'Privacy Policy')}
             </Link>
           </div>
-          <p className="text-sm text-neutral-500 mt-4">
-            © {new Date().getFullYear()} PicPeak. All rights reserved.
+          <p className="text-sm text-muted-theme mt-4">
+            {t('legal.copyright', '© {{year}} PicPeak. All rights reserved.', { year: new Date().getFullYear() })}
           </p>
         </div>
       </footer>

@@ -8,14 +8,16 @@ import { Skeleton, SkeletonGalleryGrid, SkeletonCard } from '../Skeleton';
  * `bg-neutral-200`, which rendered as bright light grey on dark
  * gallery themes (Rekoo-PS's "most annoying" frame). They must instead
  * use the active theme's surface-border colour so the placeholders
- * track whatever the theme defines for both light and dark modes.
+ * track whatever the theme defines for both light and dark modes. They read
+ * it through --shared-fill / --shared-surface (tokens.css › Shared components), which are the
+ * theme colours on gallery pages and the UI tokens inside the admin.
  */
 describe('Skeleton — theme-aware colour', () => {
-  it('uses var(--color-surface-border) for the placeholder background', () => {
+  it('uses the shared fill token for the placeholder background', () => {
     const { container } = render(<Skeleton />);
     const div = container.querySelector('div');
     expect(div).not.toBeNull();
-    expect(div!.style.backgroundColor).toBe('var(--color-surface-border, #e5e5e5)');
+    expect(div!.style.backgroundColor).toBe('var(--shared-fill)');
   });
 
   it('does NOT add the legacy hard-coded bg-neutral-200 class', () => {
@@ -33,16 +35,16 @@ describe('Skeleton — theme-aware colour', () => {
     expect(tiles.length).toBe(3);
     tiles.forEach((tile) => {
       expect((tile as HTMLElement).style.backgroundColor).toBe(
-        'var(--color-surface-border, #e5e5e5)'
+        'var(--shared-fill)'
       );
     });
   });
 
-  it('SkeletonCard surface uses var(--color-surface)', () => {
+  it('SkeletonCard surface uses the shared surface token', () => {
     const { container } = render(<SkeletonCard />);
     const card = container.firstElementChild as HTMLElement;
     expect(card).not.toBeNull();
-    expect(card.style.backgroundColor).toBe('var(--color-surface, #ffffff)');
+    expect(card.style.backgroundColor).toBe('var(--shared-surface)');
     // Sanity: should not retain the old bg-white class either
     expect(card.className).not.toMatch(/bg-white/);
   });

@@ -172,7 +172,7 @@ export const TileRating: React.FC<TileRatingProps> = ({
             aria-pressed={star <= current}
           >
             <Star
-              className={`w-3.5 h-3.5 ${star <= current ? 'text-yellow-500 fill-yellow-500' : emptyStarClass}`}
+              className={`w-3.5 h-3.5 ${star <= current ? 'text-rating fill-rating' : emptyStarClass}`}
             />
           </button>
         ))}

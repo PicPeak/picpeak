@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { Plus, X } from 'lucide-react';
 
-import { Button, Input, Loading } from '../common';
+import { Button, Input, Loading, Notice } from '../common';
 import { eventTypesService, EventType } from '../../services/eventTypes.service';
 
 interface Props {
@@ -163,7 +163,7 @@ export const SetupEventTypesStep: React.FC<Props> = ({ onDone }) => {
       // Catalog unreadable — don't trap the user; the defaults stay seeded and
       // remain editable later in Settings → Event Types.
       <div className="space-y-6">
-        <p className="text-sm text-neutral-600">{t('setup.eventTypes.loadFailed')}</p>
+        <Notice tone="warning">{t('setup.eventTypes.loadFailed')}</Notice>
         <Button type="button" variant="primary" size="lg" className="w-full" onClick={onDone}>
           {t('setup.continue')}
         </Button>
@@ -175,7 +175,7 @@ export const SetupEventTypesStep: React.FC<Props> = ({ onDone }) => {
 
   return (
     <div className="space-y-6">
-      <p className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-600">
+      <p className="rounded-lg bg-subtle border border-line px-3 py-2 text-xs text-soft">
         {t('setup.eventTypes.intro')}
       </p>
 
@@ -202,7 +202,7 @@ export const SetupEventTypesStep: React.FC<Props> = ({ onDone }) => {
             <button
               type="button"
               onClick={() => removeRow(index)}
-              className="flex-shrink-0 p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              className="flex-shrink-0 p-2 rounded-lg text-faint hover:text-danger-text hover:bg-danger-soft transition-colors"
               aria-label={t('common.delete', 'Delete')}
               title={t('common.delete', 'Delete')}
             >
@@ -215,13 +215,13 @@ export const SetupEventTypesStep: React.FC<Props> = ({ onDone }) => {
       <button
         type="button"
         onClick={addRow}
-        className="w-full rounded-lg border border-dashed border-neutral-300 p-3 text-left hover:bg-neutral-50 transition-colors flex items-center gap-2"
+        className="w-full rounded-lg border border-dashed border-line-strong p-3 text-left hover:bg-hover-soft transition-colors flex items-center gap-2"
       >
-        <Plus className="w-4 h-4 text-neutral-500" />
-        <span className="text-sm font-medium text-neutral-800">{t('setup.eventTypes.add')}</span>
+        <Plus className="w-4 h-4 text-muted" />
+        <span className="text-sm font-medium text-heading">{t('setup.eventTypes.add')}</span>
       </button>
 
-      <p className="text-xs text-neutral-500">{t('setup.eventTypes.hint')}</p>
+      <p className="text-xs text-muted">{t('setup.eventTypes.hint')}</p>
 
       <Button
         type="button"

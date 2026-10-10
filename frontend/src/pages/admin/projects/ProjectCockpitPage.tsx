@@ -15,7 +15,7 @@ import {
   Mail, FileText, ScrollText, Receipt, Image as ImageIcon, Clock,
   X, Send, RotateCw, Ban, Eye, Save, Plus, Search,
 } from 'lucide-react';
-import { Button, Card, Input, Loading } from '../../../components/common';
+import { Badge, Button, Card, EmptyState, Input, Loading, Modal, Notice } from '../../../components/common';
 import {
   projectsService,
   type ProjectOverview,
@@ -176,14 +176,14 @@ export const ProjectCockpitPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['project-overview', projectId] });
       qc.invalidateQueries({ queryKey: ['projects'] });
       setEventSearch('');
-      toast.success(t('projects.events.attached', 'Event attached') as string);
+      toast.success(t('projects.events.attached', 'Gallery attached') as string);
     },
     onError: (err: any) => {
       if (err?.response?.data?.code === 'PROJECT_CUSTOMER_MISMATCH') {
         toast.error(t('projects.error.customerMismatch', 'That belongs to a different customer than this project.') as string);
         return;
       }
-      toast.error(err?.response?.data?.error || (t('projects.events.attachFailed', 'Could not attach event') as string));
+      toast.error(err?.response?.data?.error || (t('projects.events.attachFailed', 'Could not attach gallery') as string));
     },
   });
 
@@ -257,7 +257,7 @@ export const ProjectCockpitPage: React.FC = () => {
   }, [data, t, flags]);
 
   if (isLoading) return <Loading />;
-  if (!data) return <div className="p-6 text-neutral-500">{t('projects.notFound', 'Project not found')}</div>;
+  if (!data) return <div className="p-6 text-muted">{t('projects.notFound', 'Project not found')}</div>;
 
   const { project, milestones, hours, valuation } = data;
   const valueBuckets = valuation?.byCurrency?.filter((b) => b.totalMinor !== 0 || b.paidMinor !== 0) || [];
@@ -287,7 +287,7 @@ export const ProjectCockpitPage: React.FC = () => {
                 </span>
               )}
               {' · '}
-              {t('projects.eventCount', '{{count}} events', { count: data.events.length })}
+              {t('projects.eventCount', '{{count}} galleries', { count: data.events.length })}
               {' · '}
               {t('projects.totalHours', '{{hours}} logged', { hours: minutesToHours(hours.totalMinutes) })}
             </p>
@@ -317,25 +317,25 @@ export const ProjectCockpitPage: React.FC = () => {
 
       {/* Events in this project + attach control */}
       <Card className="mb-4">
-        <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.events.title', 'Events')}</h2>
+        <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.events.title', 'Galleries')}</h2>
         {data.events.length === 0 ? (
-          <p className="text-sm text-neutral-500 mb-3">{t('projects.events.none', 'No events grouped under this project yet.')}</p>
+          <p className="text-sm text-muted mb-3">{t('projects.events.none', 'No galleries grouped under this project yet.')}</p>
         ) : (
           <ul className="space-y-1 mb-3">
             {data.events.map((ev) => (
               <li key={ev.id} className="flex items-center justify-between text-sm rounded-md border border-line-faint px-3 py-1.5">
                 <span className="font-medium text-heading">{ev.event_name}</span>
-                <span className="text-xs text-neutral-500">{ev.event_date ? format(ev.event_date) : '—'}</span>
+                <span className="text-xs text-muted">{ev.event_date ? format(ev.event_date) : '—'}</span>
               </li>
             ))}
           </ul>
         )}
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint" />
           <Input
             value={eventSearch}
             onChange={(e) => setEventSearch(e.target.value)}
-            placeholder={t('projects.events.searchPlaceholder', 'Attach an event — search by name…') as string}
+            placeholder={t('projects.events.searchPlaceholder', 'Attach a gallery — search by name…') as string}
             className="pl-9"
           />
           {eventSearch.trim().length >= 2 && eventResults?.events && eventResults.events.length > 0 && (
@@ -348,9 +348,9 @@ export const ProjectCockpitPage: React.FC = () => {
                     onClick={() => attachEventMutation.mutate(ev.id)}
                     className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-hover"
                   >
-                    <Plus className="w-3 h-3 text-neutral-400" />
+                    <Plus className="w-3 h-3 text-faint" />
                     <span className="flex-1 truncate text-heading">{ev.event_name}</span>
-                    <span className="text-xs text-neutral-500">{ev.event_date ? format(ev.event_date) : ''}</span>
+                    <span className="text-xs text-muted">{ev.event_date ? format(ev.event_date) : ''}</span>
                   </button>
                 ))}
             </div>
@@ -370,12 +370,12 @@ export const ProjectCockpitPage: React.FC = () => {
                 <div
                   key={`${m.kind}-${i}`}
                   onClick={href ? () => navigate(href) : undefined}
-                  className={`flex items-center gap-2 rounded-lg border border-line px-3 py-2 ${href ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
+                  className={`flex items-center gap-2 rounded-lg border border-line px-3 py-2 ${href ? 'cursor-pointer hover:bg-hover-soft' : ''}`}
                 >
-                  <Icon className="w-4 h-4 text-neutral-500" />
+                  <Icon className="w-4 h-4 text-muted" />
                   <div>
                     <div className="text-xs font-medium text-heading">{m.label}</div>
-                    <div className="text-xs text-neutral-500">{m.date ? format(m.date) : '—'}</div>
+                    <div className="text-xs text-muted">{m.date ? format(m.date) : '—'}</div>
                   </div>
                 </div>
               );
@@ -388,7 +388,7 @@ export const ProjectCockpitPage: React.FC = () => {
       <Card>
         <h2 className="text-sm font-semibold mb-3 text-body">{t('projects.feed.title', 'Activity')}</h2>
         {feed.length === 0 ? (
-          <div className="text-center py-8 text-neutral-500">{t('projects.feed.empty', 'Nothing rolled up to this project yet.')}</div>
+          <div className="text-center py-8 text-muted">{t('projects.feed.empty', 'Nothing rolled up to this project yet.')}</div>
         ) : (
           <ul className="space-y-2">
             {feed.map((item) => {
@@ -405,34 +405,34 @@ export const ProjectCockpitPage: React.FC = () => {
                 <li
                   key={item.key}
                   onClick={onRowClick}
-                  className={`flex items-start gap-3 rounded-lg border border-line-faint px-3 py-2 ${onRowClick ? 'cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/60' : ''}`}
+                  className={`flex items-start gap-3 rounded-lg border border-line-faint px-3 py-2 ${onRowClick ? 'cursor-pointer hover:bg-hover-soft' : ''}`}
                 >
-                  <Icon className="w-4 h-4 mt-0.5 text-neutral-500 flex-shrink-0" />
+                  <Icon className="w-4 h-4 mt-0.5 text-muted flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-heading truncate">{item.title}</span>
-                      <span className="text-xs text-neutral-500 flex-shrink-0">
+                      <span className="text-xs text-muted flex-shrink-0">
                         {item.date ? `${format(item.date)} ${item.kind === 'email' ? formatTime(item.date) : ''}` : '—'}
                       </span>
                     </div>
                     {item.subtitle && <div className="text-xs text-muted truncate">{item.subtitle}</div>}
                     <div className="flex items-center gap-2 mt-1">
                       {item.status && (
-                        <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-inset text-body">{item.status}</span>
+                        <Badge>{item.status}</Badge>
                       )}
                       {item.amount && <span className="text-xs font-medium text-body">{item.amount}</span>}
                       {item.kind === 'email' && item.emailId != null && canActOnEmail(item) && (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => openPreview(item.emailId as number)} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline">
+                          <button onClick={() => openPreview(item.emailId as number)} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
                             <Eye className="w-3 h-3" />{t('projects.email.preview', 'Preview')}
                           </button>
                           {item.reRendered && (
-                            <span
+                            <Badge
+                              tone="warning"
                               title={t('projects.email.reRendered', 'Re-rendered from the current template — may differ slightly from what was sent.') as string}
-                              className="inline-block rounded-full px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
                             >
                               {t('projects.email.reRenderedTag', '≈ re-rendered')}
-                            </span>
+                            </Badge>
                           )}
                           {canSendEmail && item.emailStatus === 'sent' && (
                             <button onClick={() => emailActionMutation.mutate({ action: 'resend', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-body hover:underline">
@@ -444,13 +444,13 @@ export const ProjectCockpitPage: React.FC = () => {
                               <button onClick={() => emailActionMutation.mutate({ action: 'sendNow', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-body hover:underline">
                                 <Send className="w-3 h-3" />{t('projects.email.sendNow', 'Send now')}
                               </button>
-                              <button onClick={() => emailActionMutation.mutate({ action: 'cancel', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-red-600 hover:underline">
+                              <button onClick={() => emailActionMutation.mutate({ action: 'cancel', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-danger-text hover:underline">
                                 <Ban className="w-3 h-3" />{t('projects.email.cancel', 'Cancel')}
                               </button>
                             </>
                           )}
                           {canSendEmail && item.emailStatus === 'failed' && (
-                            <button onClick={() => emailActionMutation.mutate({ action: 'retry', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline">
+                            <button onClick={() => emailActionMutation.mutate({ action: 'retry', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-warning-text hover:underline">
                               <RotateCw className="w-3 h-3" />{t('projects.email.retry', 'Retry')}
                             </button>
                           )}
@@ -466,46 +466,42 @@ export const ProjectCockpitPage: React.FC = () => {
       </Card>
 
       {/* Email preview modal */}
-      {(preview || previewLoading) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setPreview(null)}>
-          <div className="bg-shell rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-line px-4 py-3">
-              <h3 className="font-semibold text-heading">{t('projects.email.previewTitle', 'Email preview')}</h3>
-              <button onClick={() => setPreview(null)} className="text-neutral-500 hover:text-neutral-700"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              {previewLoading ? (
-                <Loading />
-              ) : preview && preview.available && preview.html ? (
-                <>
-                  {!preview.exact && (
-                    <div className="mb-3 rounded-md bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-                      {t('projects.email.reRendered', 'Re-rendered from the current template — this email was sent before previews were captured, so it may differ slightly from what the recipient received.')}
-                    </div>
-                  )}
-                  {/* Read-only preview: renders the email with its own brand
-                      colors (color-scheme:normal stops the dark app theme from
-                      tinting it), but `sandbox` (no allow-popups/scripts/forms)
-                      + neutralizeLinks make every link inert — so the admin
-                      can't accidentally trigger the live Accept/Decline URLs by
-                      clicking inside the preview. Scrolling still works. */}
-                  <iframe
-                    title="email-preview"
-                    srcDoc={preparePreviewHtml(preview.html)}
-                    sandbox=""
-                    style={{ colorScheme: 'normal' }}
-                    className="w-full h-[60vh] border border-line rounded"
-                  />
-                </>
-              ) : (
-                <div className="text-center py-10 text-neutral-500">
-                  {t('projects.email.noPreview', 'No stored preview for this email — it was sent before previews were captured.')}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={!!(preview || previewLoading)}
+        onClose={() => setPreview(null)}
+        title={t('projects.email.previewTitle', 'Email preview')}
+        size="lg"
+      >
+        {previewLoading ? (
+          <Loading />
+        ) : preview && preview.available && preview.html ? (
+          <>
+            {!preview.exact && (
+              <Notice tone="warning" size="sm" className="mb-3">
+                {t('projects.email.reRendered', 'Re-rendered from the current template — this email was sent before previews were captured, so it may differ slightly from what the recipient received.')}
+              </Notice>
+            )}
+            {/* Read-only preview: renders the email with its own brand
+                colors (color-scheme:normal stops the dark app theme from
+                tinting it), but `sandbox` (no allow-popups/scripts/forms)
+                + neutralizeLinks make every link inert — so the admin
+                can't accidentally trigger the live Accept/Decline URLs by
+                clicking inside the preview. Scrolling still works. */}
+            <iframe
+              title="email-preview"
+              srcDoc={preparePreviewHtml(preview.html)}
+              sandbox=""
+              style={{ colorScheme: 'normal' }}
+              className="w-full h-[60vh] border border-line rounded"
+            />
+          </>
+        ) : (
+          <EmptyState
+            size="inline"
+            title={t('projects.email.noPreview', 'No stored preview for this email — it was sent before previews were captured.')}
+          />
+        )}
+      </Modal>
     </div>
   );
 };

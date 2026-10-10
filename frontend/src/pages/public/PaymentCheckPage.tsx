@@ -25,7 +25,8 @@ import {
   type PaymentCheckIssuer,
 } from '../../services/paymentCheck.service';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
-import { Loading } from '../../components/common';
+import { Loading, Notice } from '../../components/common';
+import { DecimalInput } from '../../components/common/DecimalInput';
 import { formatMoneyMinor } from '../../utils/money';
 // All call-sites in this file pass minor units — alias to the
 // minor-aware helper so the rest of the file is untouched.
@@ -49,7 +50,8 @@ export const PaymentCheckPage: React.FC = () => {
   });
 
   const [action, setAction] = useState<PaymentCheckAction | null>(null);
-  const [partialAmount, setPartialAmount] = useState<string>('');
+  // NaN while the field is empty (DecimalInput accepts 12,50 and 12.50).
+  const [partialAmount, setPartialAmount] = useState<number>(NaN);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ applied: PaymentCheckAction; reminderLevel?: number; reminderSkipped?: string } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -62,8 +64,8 @@ export const PaymentCheckPage: React.FC = () => {
   }, [initialAction, action]);
 
   useEffect(() => {
-    if (action === 'partial' && data && !partialAmount) {
-      setPartialAmount((data.invoice.outstandingMinor / 100).toFixed(2));
+    if (action === 'partial' && data && Number.isNaN(partialAmount)) {
+      setPartialAmount(data.invoice.outstandingMinor / 100);
     }
   }, [action, data, partialAmount]);
 
@@ -98,7 +100,7 @@ export const PaymentCheckPage: React.FC = () => {
     try {
       let amountMinor: number | undefined;
       if (action === 'partial') {
-        const v = Number(partialAmount);
+        const v = partialAmount;
         if (!Number.isFinite(v) || v <= 0) {
           setSubmitError(t('paymentCheck.partialInvalid', 'Enter a positive amount.'));
           setSubmitting(false);
@@ -123,17 +125,11 @@ export const PaymentCheckPage: React.FC = () => {
   };
 
   return (
-    <div
-      className="min-h-screen py-10 px-4"
-      style={{
-        backgroundColor: 'var(--color-background, #fafafa)',
-        color: 'var(--color-text, #171717)',
-      }}
-    >
+    <div className="min-h-screen py-10 px-4 bg-background text-theme">
       <div className="max-w-2xl mx-auto">
         <BrandingHeader issuer={issuer} />
         <h1 className="text-2xl font-bold mb-1">{t('paymentCheck.title', 'Confirm payment')}</h1>
-        <p className="text-sm mb-6" style={{ color: 'var(--color-muted-text, #737373)' }}>
+        <p className="text-sm mb-6 text-muted-theme">
           {t('paymentCheck.subtitle',
             'Select what was received for this invoice. The choice is logged and the appropriate reminder is queued automatically.')}
         </p>
@@ -152,7 +148,7 @@ export const PaymentCheckPage: React.FC = () => {
             {inv.lateFeeMinor > 0 && (
               <Field
                 label={t('paymentCheck.field.lateFee', 'Late fee')}
-                value={<span className="tabular-nums" style={{ color: 'var(--color-warning, #b45309)' }}>{formatMoney(inv.lateFeeMinor, inv.currency)}</span>}
+                value={<span className="tabular-nums text-warning-text">{formatMoney(inv.lateFeeMinor, inv.currency)}</span>}
               />
             )}
           </div>
@@ -164,7 +160,7 @@ export const PaymentCheckPage: React.FC = () => {
             description={t('paymentCheck.action.paidFullHelp',
               'Mark the entire outstanding amount ({{amount}}) as received. No reminder is sent.',
               { amount: formatMoney(inv.outstandingMinor, inv.currency) })}
-            icon={<CheckCircle2 className="w-5 h-5" style={{ color: '#16a34a' }} />}
+            icon={<CheckCircle2 className="w-5 h-5 text-success-text" />}
             selected={action === 'paid_full'}
             onSelect={() => setAction('paid_full')}
           />
@@ -182,7 +178,7 @@ export const PaymentCheckPage: React.FC = () => {
                   amount: formatMoney(inv.skontoDiscountedTotalMinor, inv.currency),
                   percent: inv.skontoPercent,
                 })}
-              icon={<CheckCircle2 className="w-5 h-5" style={{ color: '#0d9488' }} />}
+              icon={<CheckCircle2 className="w-5 h-5 text-success-text" />}
               selected={action === 'paid_with_skonto'}
               onSelect={() => setAction('paid_with_skonto')}
             />
@@ -191,33 +187,26 @@ export const PaymentCheckPage: React.FC = () => {
             label={t('paymentCheck.action.partial', 'Partially paid')}
             description={t('paymentCheck.action.partialHelp',
               'Log the amount received, then queue the customer reminder for the remainder.')}
-            icon={<Wallet className="w-5 h-5" style={{ color: 'var(--color-accent, #2563eb)' }} />}
+            icon={<Wallet className="w-5 h-5 text-accent" />}
             selected={action === 'partial'}
             onSelect={() => setAction('partial')}
           >
             {action === 'partial' && (
               <div className="mt-3">
-                <label className="block text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--color-muted-text)' }}>
+                <label htmlFor="payment-check-partial" className="block text-xs uppercase tracking-wider mb-1 text-muted-theme">
                   {t('paymentCheck.action.partialAmount', 'Amount received')}
                 </label>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{inv.currency}</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    max={inv.outstandingMinor / 100}
+                  <DecimalInput
+                    id="payment-check-partial"
                     value={partialAmount}
-                    onChange={(e) => setPartialAmount(e.target.value)}
-                    className="flex-1 px-3 py-2 rounded-md border text-sm"
-                    style={{
-                      backgroundColor: 'var(--color-elevated, #ffffff)',
-                      borderColor: 'var(--color-surface-border, #e5e5e5)',
-                      color: 'var(--color-text)',
-                    }}
+                    onChange={setPartialAmount}
+                    fractionDigits={2}
+                    className="input-themed flex-1 min-w-0"
                   />
                 </div>
-                <p className="text-xs mt-1" style={{ color: 'var(--color-muted-text)' }}>
+                <p className="text-xs mt-1 text-muted-theme">
                   {t('paymentCheck.action.partialMax', 'Max: {{max}}', {
                     max: formatMoney(inv.outstandingMinor, inv.currency),
                   })}
@@ -230,14 +219,14 @@ export const PaymentCheckPage: React.FC = () => {
             description={t('paymentCheck.action.unpaidHelp',
               'Nothing received. The customer reminder will be queued{{fee}}.',
               { fee: inv.reminderLevel >= 1 ? t('paymentCheck.action.unpaidWithFee', ' (with late fee at second reminder)') : '' })}
-            icon={<AlertTriangle className="w-5 h-5" style={{ color: '#dc2626' }} />}
+            icon={<AlertTriangle className="w-5 h-5 text-danger-text" />}
             selected={action === 'unpaid'}
             onSelect={() => setAction('unpaid')}
           />
         </div>
 
         {submitError && (
-          <p className="mt-4 text-sm" style={{ color: '#dc2626' }}>{submitError}</p>
+          <p role="alert" className="mt-4 text-sm text-danger-text">{submitError}</p>
         )}
 
         <div className="mt-6 flex justify-end">
@@ -245,11 +234,7 @@ export const PaymentCheckPage: React.FC = () => {
             type="button"
             onClick={submit}
             disabled={!action || submitting}
-            className="px-6 py-3 rounded-md font-medium disabled:opacity-50 transition-colors"
-            style={{
-              backgroundColor: 'var(--color-accent-dark, #2563eb)',
-              color: 'var(--color-accent-fg, #ffffff)',
-            }}
+            className="px-6 py-3 rounded-md font-medium disabled:opacity-50 transition-colors bg-accent-strong text-accent-fg hover:opacity-90"
           >
             {submitting ? t('paymentCheck.submitting', 'Recording…') : t('paymentCheck.submit', 'Confirm')}
           </button>
@@ -278,27 +263,21 @@ const BrandingHeader: React.FC<{ issuer: PaymentCheckIssuer | null }> = ({ issue
         <h2 className="text-xl font-bold">{issuer.companyName}</h2>
       )}
       {issuer.website && (
-        <p className="text-sm" style={{ color: 'var(--color-muted-text, #737373)' }}>{issuer.website}</p>
+        <p className="text-sm text-muted-theme">{issuer.website}</p>
       )}
     </header>
   );
 };
 
 const ThemedSurface: React.FC<{ className?: string; children: React.ReactNode }> = ({ className, children }) => (
-  <div
-    className={`rounded-lg border ${className || ''}`}
-    style={{
-      backgroundColor: 'var(--color-surface, #ffffff)',
-      borderColor: 'var(--color-surface-border, #e5e5e5)',
-    }}
-  >
+  <div className={`rounded-lg border bg-surface border-border-token ${className || ''}`}>
     {children}
   </div>
 );
 
 const Field: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
   <div>
-    <div className="text-xs uppercase" style={{ color: 'var(--color-muted-text, #737373)' }}>{label}</div>
+    <div className="text-xs uppercase text-muted-theme">{label}</div>
     <div>{value}</div>
   </div>
 );
@@ -315,19 +294,16 @@ const ActionCard: React.FC<ActionCardProps> = ({ label, description, icon, selec
   <button
     type="button"
     onClick={onSelect}
-    className="w-full text-left rounded-lg border p-4 transition-colors"
-    style={{
-      borderColor: selected ? 'var(--color-accent, #2563eb)' : 'var(--color-surface-border, #e5e5e5)',
-      backgroundColor: selected
-        ? 'color-mix(in srgb, var(--color-accent) 8%, var(--color-surface))'
-        : 'var(--color-surface, #ffffff)',
-    }}
+    aria-pressed={selected}
+    className={`w-full text-left rounded-lg border p-4 transition-colors ${
+      selected ? 'border-accent bg-accent-soft' : 'border-border-token bg-surface'
+    }`}
   >
     <div className="flex items-start gap-3">
       <div className="shrink-0 mt-0.5">{icon}</div>
       <div className="flex-1">
         <div className="font-medium">{label}</div>
-        <div className="text-sm mt-1" style={{ color: 'var(--color-muted-text, #737373)' }}>{description}</div>
+        <div className="text-sm mt-1 text-muted-theme">{description}</div>
         {children}
       </div>
     </div>
@@ -335,22 +311,10 @@ const ActionCard: React.FC<ActionCardProps> = ({ label, description, icon, selec
 );
 
 const ErrorBox: React.FC<{ message: string }> = ({ message }) => (
-  <div
-    className="min-h-screen flex items-center justify-center p-6"
-    style={{
-      backgroundColor: 'var(--color-background, #fafafa)',
-      color: 'var(--color-text)',
-    }}
-  >
-    <div
-      className="max-w-md w-full rounded-lg border p-6"
-      style={{
-        borderColor: '#fecaca',
-        backgroundColor: 'color-mix(in srgb, #fee2e2 50%, var(--color-surface))',
-      }}
-    >
-      <h1 className="text-lg font-bold mb-2" style={{ color: '#991b1b' }}>{message}</h1>
-    </div>
+  <div className="min-h-screen flex items-center justify-center p-6 bg-background text-theme">
+    <Notice tone="danger" className="max-w-md w-full">
+      <h1 className="text-base font-semibold">{message}</h1>
+    </Notice>
   </div>
 );
 
@@ -361,30 +325,17 @@ const ResultBox: React.FC<{
 }> = ({ result, inv, issuer }) => {
   const { t } = useTranslation();
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-6"
-      style={{
-        backgroundColor: 'var(--color-background, #fafafa)',
-        color: 'var(--color-text)',
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center p-6 bg-background text-theme">
       <div className="max-w-md w-full">
         <BrandingHeader issuer={issuer} />
-        <div
-          className="rounded-lg border p-6"
-          style={{
-            // Theme-adaptive success card — a light-green tint on light surfaces,
-            // a dark-green tint on dark ones (was a hardcoded light-green mix +
-            // dark-green title that went unreadable in dark mode, #759).
-            borderColor: 'color-mix(in srgb, #16a34a 35%, var(--color-surface))',
-            backgroundColor: 'color-mix(in srgb, #16a34a 12%, var(--color-surface))',
-          }}
-        >
-          <CheckCircle2 className="w-10 h-10 mb-3" style={{ color: '#16a34a' }} />
-          <h1 className="text-lg font-bold mb-1" style={{ color: 'var(--color-text)' }}>
+        {/* The success tint over the operator's surface, readable on a light
+            and a dark palette (#759); text stays the theme's own colour. */}
+        <div className="rounded-lg border p-6 bg-success-soft border-success-line">
+          <CheckCircle2 className="w-10 h-10 mb-3 text-success-text" />
+          <h1 className="text-lg font-bold mb-1 text-theme">
             {t('paymentCheck.result.title', 'Action recorded')}
           </h1>
-          <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+          <p className="text-sm text-theme">
             {result.applied === 'paid_full' && t('paymentCheck.result.paid',
               'Invoice {{n}} marked as paid in full.', { n: inv.invoiceNumber })}
             {result.applied === 'paid_with_skonto' && t('paymentCheck.result.paidSkonto',
@@ -400,7 +351,7 @@ const ResultBox: React.FC<{
                 'Recorded as unpaid. Customer reminder queued (level {{lvl}}).',
                 { lvl: result.reminderLevel || 1 })}
           </p>
-          <p className="text-xs mt-4" style={{ color: 'var(--color-muted-text, #737373)' }}>
+          <p className="text-xs mt-4 text-muted-theme">
             {t('paymentCheck.result.close', 'You can close this tab.')}
           </p>
         </div>

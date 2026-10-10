@@ -19,6 +19,7 @@ import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
 import { notifyDownloadQuotaChanged, showDownloadLimitReached, videoUnavailableMessage } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
+import { lockBodyScroll } from '../../utils/scrollLock';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -347,7 +348,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockBodyScroll();
     
     // Add protection class to body for maximum security
     if (protectionLevel === 'maximum') {
@@ -358,7 +359,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
+      unlockScroll();
       
       // Remove protection classes from body
       document.body.classList.remove('protection-maximum', 'protection-enhanced');
@@ -1120,7 +1121,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <div className="flex items-center gap-1">
                 <button
                   onClick={submitLike}
-                  className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-red-500/80 hover:bg-red-500' : 'bg-white/10 hover:bg-white/20'}`}
+                  className={`p-2 rounded-full transition-colors ${myLiked ? 'bg-danger hover:opacity-90' : 'bg-white/10 hover:bg-white/20'}`}
                   aria-label={myLiked ? 'Unlike photo' : 'Like photo'}
                   title={myLiked ? 'Unlike' : 'Like'}
                 >
@@ -1153,7 +1154,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     aria-label={i === myRating ? 'Remove rating' : `Rate ${i} star${i>1?'s':''}`}
                     title={i === myRating ? 'Remove rating' : `Rate ${i}`}
                   >
-                    <Star className={`w-5 h-5 ${myRating >= i ? 'text-yellow-400 fill-yellow-400' : 'text-white/70'}`} />
+                    <Star className={`w-5 h-5 ${myRating >= i ? 'text-rating fill-rating' : 'text-white/70'}`} />
                   </button>
                 ))}
                 {/* The average is other guests' ratings: shown only when the
@@ -1219,7 +1220,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               >
                 <MessageSquare className="w-5 h-5 text-white" />
                 {((currentPhoto.comment_count ?? 0) > 0 || (currentPhoto.average_rating ?? 0) > 0) && (
-                  <span className="absolute -top-1 -right-1 bg-accent-dark/150 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-accent-dark text-accent-fg text-xs rounded-full w-5 h-5 flex items-center justify-center">
                     {(currentPhoto.comment_count ?? 0) > 0 ? currentPhoto.comment_count ?? 0 : '★'}
                   </span>
                 )}
@@ -1423,13 +1424,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
       {/* Feedback Panel */}
       {showFeedback && (
-        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[26rem] bg-surface shadow-xl z-20 overflow-y-auto flex flex-col border-l border-surface">
-          <div className="sticky top-0 bg-surface border-b border-surface px-4 py-3 flex items-center justify-between">
-            <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Photo Feedback</h3>
+        <div className="absolute right-0 top-0 bottom-0 w-full sm:w-[26rem] bg-surface text-theme shadow-xl z-20 overflow-y-auto flex flex-col border-l border-border-token">
+          <div className="sticky top-0 bg-surface border-b border-border-token px-4 py-3 flex items-center justify-between">
+            <h3 className="font-semibold text-theme">{t('feedback.panelTitle', 'Photo feedback')}</h3>
             <button
+              type="button"
               onClick={() => setShowFeedback(false)}
-              className="p-1 hover:bg-black/10 rounded transition-colors"
-              aria-label="Close feedback"
+              className="p-1 hover-surface rounded transition-colors"
+              aria-label={t('feedback.closePanel', 'Close feedback')}
             >
               <X className="w-5 h-5" />
             </button>

@@ -8,7 +8,7 @@ import {
   CheckCircle,
   User
 } from 'lucide-react';
-import { Card, Loading, Button } from '../common';
+import { Badge, Card, ErrorState, Loading, Button, useConfirm } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { feedbackService, type FeedbackResponse, type PhotoFeedback } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
@@ -29,12 +29,13 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
   maxItems = 5
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { formatDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
   const showAllModal = useModal();
 
   // Fetch pending feedback
-  const { data: feedbackData, isLoading } = useQuery<FeedbackResponse>({
+  const { data: feedbackData, isLoading, isError, isFetching, refetch } = useQuery<FeedbackResponse>({
     queryKey: ['event-feedback-moderation', eventId],
     queryFn: () => feedbackService.getEventFeedback(eventId.toString(), {
       type: 'comment',
@@ -80,19 +81,21 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
     <Card className={className}>
       <div className={compact ? 'p-4' : 'p-6'}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-neutral-900">
+          <h2 className="text-lg font-semibold text-heading">
             {t('feedback.pendingModeration', 'Pending Moderation')}
           </h2>
           {hasPending && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            <Badge tone="warning">
               {pendingComments.length} {t('feedback.pending', 'pending')}
-            </span>
+            </Badge>
           )}
         </div>
 
-        {!hasPending ? (
+        {isError && !feedbackData ? (
+          <ErrorState size="inline" onRetry={() => refetch()} retrying={isFetching} />
+        ) : !hasPending ? (
           <div className="text-center py-8">
-            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+            <CheckCircle className="w-12 h-12 text-success mx-auto mb-3" />
             <p className="text-body">{t('feedback.noPendingComments', 'No comments pending moderation')}</p>
           </div>
         ) : (
@@ -118,7 +121,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                             {formatDateTime(item.created_at)}
                           </span>
                         </div>
-                        <p className="mt-1 text-sm text-neutral-700">{item.comment_text || item.comment}</p>
+                        <p className="mt-1 text-sm text-body">{item.comment_text || item.comment}</p>
                         {item.photo_id && (
                           <div className="mt-2 flex items-center gap-2">
                             <div className="w-16 h-16 overflow-hidden rounded">
@@ -128,7 +131,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                                 className="w-16 h-16 object-cover rounded"
                               />
                             </div>
-                            <p className="text-xs text-neutral-500">
+                            <p className="text-xs text-muted">
                               {t('feedback.onPhoto', 'On photo')}: {item.filename || item.photo_filename || `#${item.photo_id}`}
                             </p>
                           </div>
@@ -166,13 +169,16 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                         size="sm"
                         variant="ghost"
                         leftIcon={<Trash2 className="w-4 h-4" />}
-                        onClick={() => {
-                          if (confirm(t('feedback.confirmDelete', 'Are you sure you want to delete this comment?'))) {
-                            deleteMutation.mutate(item.id.toString());
-                          }
+                        onClick={async () => {
+                          if (!(await confirm({
+                            message: t('feedback.confirmDelete', 'Delete this feedback? It is removed for good. This cannot be undone.'),
+                            variant: 'danger',
+                            confirmLabel: t('feedback.deleteAction', 'Delete feedback'),
+                          }))) return;
+                          deleteMutation.mutate(item.id.toString());
                         }}
                         isLoading={deleteMutation.isPending}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="text-danger-text hover:bg-danger-soft"
                       >
                         {t('common.delete', 'Delete')}
                       </Button>
@@ -194,7 +200,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
         )}
 
         {/* Quick link to full feedback page */}
-        <div className="mt-4 pt-4 border-t border-neutral-200">
+        <div className="mt-4 pt-4 border-t border-line">
           <a
             href={`/admin/events/${eventId}/feedback`}
             className="text-sm text-accent hover:opacity-80 font-medium flex items-center gap-1"

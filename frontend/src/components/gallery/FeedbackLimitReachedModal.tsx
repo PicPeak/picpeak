@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Heart, Bookmark, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * Per-guest cap modal (#655). Shown when the guest clicks the heart or
@@ -32,20 +33,10 @@ export const FeedbackLimitReachedModal: React.FC<FeedbackLimitReachedModalProps>
   const { t } = useTranslation();
   const okButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    // Focus the OK button so keyboard / screen-reader users can dismiss
-    // straight away with Enter or Space.
-    okButtonRef.current?.focus();
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Focus the OK button so keyboard / screen-reader users can dismiss
+  // straight away with Enter or Space; Escape dismisses too.
+  useGalleryDialog({ open, onClose, panelRef, initialFocusRef: okButtonRef });
 
   if (!open) return null;
 
@@ -78,12 +69,13 @@ export const FeedbackLimitReachedModal: React.FC<FeedbackLimitReachedModalProps>
       }}
     >
       <div
+        ref={panelRef}
         className="
           w-full sm:max-w-md
-          bg-white dark:bg-neutral-900
+          bg-surface text-theme
           rounded-2xl sm:rounded-xl
           shadow-2xl
-          border border-neutral-200 dark:border-neutral-700
+          border border-border-token
           overflow-hidden
           animate-[slide-up_0.2s_ease-out]
           pb-[env(safe-area-inset-bottom)]
@@ -95,25 +87,25 @@ export const FeedbackLimitReachedModal: React.FC<FeedbackLimitReachedModalProps>
             className={`
               flex-shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full
               flex items-center justify-center
-              ${isFavorite ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-rose-100 dark:bg-rose-900/40'}
+              status-chip ${isFavorite ? 'hue-warning' : 'hue-danger'}
             `}
           >
             <Icon
-              className={`w-6 h-6 ${isFavorite ? 'text-amber-600 dark:text-amber-300' : 'text-rose-600 dark:text-rose-300'}`}
+              className="w-6 h-6"
               aria-hidden="true"
             />
           </div>
           <div className="flex-1 min-w-0">
             <h2
               id="feedback-limit-title"
-              className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-neutral-100"
+              className="text-base sm:text-lg font-semibold text-theme"
             >
               {title}
             </h2>
-            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed">
+            <p className="mt-1 text-sm text-muted-theme leading-relaxed">
               {body}
             </p>
-            <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-800 rounded-full px-3 py-1">
+            <p className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-theme bg-elevated rounded-full px-3 py-1">
               {t('feedback.limit.counter', '{{current}} of {{limit}} used', {
                 current: currentCount,
                 limit,
@@ -123,7 +115,7 @@ export const FeedbackLimitReachedModal: React.FC<FeedbackLimitReachedModalProps>
           <button
             type="button"
             onClick={onClose}
-            className="flex-shrink-0 p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded transition-colors"
+            className="flex-shrink-0 p-1 text-muted-theme hover:text-theme rounded transition-colors"
             aria-label={t('common.close', 'Close')}
           >
             <X className="w-5 h-5" />
@@ -138,7 +130,7 @@ export const FeedbackLimitReachedModal: React.FC<FeedbackLimitReachedModalProps>
             onClick={onClose}
             className="
               w-full sm:w-auto px-5 py-2.5 rounded-lg text-sm font-medium
-              bg-accent-dark text-white hover:opacity-90
+              btn-primary
               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-dark focus-visible:ring-offset-2
               transition-opacity
             "

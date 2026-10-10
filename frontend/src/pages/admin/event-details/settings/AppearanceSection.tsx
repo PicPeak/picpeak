@@ -15,7 +15,7 @@ import type { AdminPhoto } from '../../../../services/photos.service';
 import { GALLERY_THEME_PRESETS, type ThemeConfig } from '../../../../types/theme.types';
 import { SectionCard, checkboxClass, inputClass, labelClass, type FieldsProps } from './sections';
 
-const selectClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md shadow-sm focus:ring-primary-500 focus:border-accent-dark text-sm disabled:bg-inset';
+const selectClass = 'w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-md shadow-sm focus:ring-accent focus:border-accent-dark text-sm disabled:bg-inset';
 
 const BannerOverride: React.FC<FieldsProps & { kind: 'promo' | 'info' }> = ({ f, set, kind }) => {
   const { t } = useTranslation();
@@ -42,7 +42,7 @@ const BannerOverride: React.FC<FieldsProps & { kind: 'promo' | 'info' }> = ({ f,
               value={option}
               checked={mode === option}
               onChange={() => set({ [modeKey]: option })}
-              className="w-4 h-4 text-accent border-line-strong focus:ring-primary-500"
+              className="w-4 h-4 text-accent border-line-strong focus:ring-accent"
             />
             <span className="ml-2 text-sm text-body">
               {kind === 'promo'
@@ -66,7 +66,7 @@ const BannerOverride: React.FC<FieldsProps & { kind: 'promo' | 'info' }> = ({ f,
           {text.trim() && (
             <div className="border border-line rounded-lg p-3 bg-shell">
               <p className="text-xs uppercase tracking-wide text-muted mb-2">{t('events.promoBanner.preview', 'Preview')}</p>
-              <MarkdownContent source={text} className="prose prose-sm dark:prose-invert max-w-none text-sm text-body prose-a:text-primary-600 dark:prose-a:text-primary-400" />
+              <MarkdownContent source={text} className="prose prose-sm dark:prose-invert max-w-none text-sm text-body prose-a:text-accent" />
             </div>
           )}
         </div>
@@ -148,7 +148,7 @@ const EventLogoUpload: React.FC<{ event: Event; disabled: boolean }> = ({ event,
                   t('events.eventLogoRemoveFailed', 'Failed to remove event logo'),
                 )}
                 disabled={busy}
-                className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400 hover:text-red-700"
+                className="inline-flex items-center gap-1 text-xs text-danger-text"
               >
                 <Trash2 className="w-3 h-3" />
                 {t('events.removeLogo', 'Remove')}
@@ -211,7 +211,7 @@ export const AppearanceSection: React.FC<FieldsProps & {
         <label className={`flex items-start gap-2 ${f.hero_photo_id ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
           <input
             type="checkbox"
-            className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
+            className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
             checked={f.og_image_share_enabled === true}
             disabled={!f.hero_photo_id}
             onChange={(e) => set({ og_image_share_enabled: e.target.checked })}

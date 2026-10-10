@@ -45,7 +45,7 @@ export function useSharingNavItems(): SharingNavItem[] {
     {
       key: 'events',
       to: '/admin/events',
-      label: t('navigation.events', 'Events'),
+      label: t('navigation.events', 'Galleries'),
       icon: Calendar,
       permission: 'events.view',
     },

@@ -96,7 +96,7 @@ export const SystemHealthPage: React.FC = () => {
                 <td className="px-3 py-2 font-mono text-xs">{m.emailType}</td>
                 <td className="px-3 py-2 max-w-xs">
                   {showError ? (
-                    <span className="text-xs text-red-700 dark:text-red-400 break-words">
+                    <span className="text-xs text-danger-text break-words">
                       {m.errorMessage || t('systemHealth.stuckEmails.noError', 'retries exhausted')}
                     </span>
                   ) : (
@@ -123,7 +123,7 @@ export const SystemHealthPage: React.FC = () => {
                       <button type="button"
                         aria-label={t('systemHealth.dismiss', 'Dismiss') as string}
                         onClick={() => dismissMutation.mutate(m.id)}
-                        className="p-1.5 text-neutral-400 hover:text-red-600">
+                        className="p-1.5 text-faint hover:text-danger-text">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -151,8 +151,8 @@ export const SystemHealthPage: React.FC = () => {
         <Card padding="lg" className="mb-4">
           <div className="flex items-start gap-3">
             {processorState === 'ok'
-              ? <Mail className="w-5 h-5 mt-0.5 text-green-600 dark:text-green-400 shrink-0" />
-              : <MailX className="w-5 h-5 mt-0.5 text-red-600 dark:text-red-400 shrink-0" />}
+              ? <Mail className="w-5 h-5 mt-0.5 text-success-text shrink-0" />
+              : <MailX className="w-5 h-5 mt-0.5 text-danger-text shrink-0" />}
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-heading">
                 {t('systemHealth.processor.title', 'Email queue processor')}
@@ -160,7 +160,7 @@ export const SystemHealthPage: React.FC = () => {
               <p className={`text-sm mt-0.5 ${
                 processorState === 'ok'
                   ? 'text-soft'
-                  : 'text-red-700 dark:text-red-400'
+                  : 'text-danger-text'
               }`}>
                 {processorState === 'stopped'
                   ? t('systemHealth.processor.stopped',
@@ -213,7 +213,7 @@ export const SystemHealthPage: React.FC = () => {
               {data.customerDocuments.scanner && (
                 <p
                   className={`text-sm mt-2 ${data.customerDocuments.scanner.configured && !data.customerDocuments.scanner.reachable
-                    ? 'text-red-700 dark:text-red-400' : 'text-soft'}`}
+                    ? 'text-danger-text' : 'text-soft'}`}
                 >
                   {!data.customerDocuments.scanner.configured
                     ? t('systemHealth.customerDocuments.scannerOff', 'Malware scanner: not configured. Customer uploads wait for a manual review.')
@@ -236,7 +236,7 @@ export const SystemHealthPage: React.FC = () => {
               {data.customerDocuments.abuse && (
                 <p
                   className={`text-sm mt-2 ${data.customerDocuments.abuse.customersOverThreshold > 0
-                    ? 'text-red-700 dark:text-red-400' : 'text-soft'}`}
+                    ? 'text-danger-text' : 'text-soft'}`}
                 >
                   {t('systemHealth.customerDocuments.abuse',
                     'Last 24 hours: {{forbidden}} attempts on other customers\' documents, {{quota}} uploads refused for quota, {{rate}} rate-limit hits.', {
@@ -286,13 +286,13 @@ export const SystemHealthPage: React.FC = () => {
         <Card padding="lg" className="mb-4">
           <div className="flex items-start gap-3">
             <KeyRound className={`w-5 h-5 mt-0.5 shrink-0 ${data.evidenceKey.source === 'unreadable'
-              ? 'text-red-600 dark:text-red-400' : 'text-muted'}`} />
+              ? 'text-danger-text' : 'text-muted'}`} />
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-heading">
                 {t('systemHealth.evidenceKey.title', 'Signing evidence key')}
               </h2>
               <p className={`text-sm mt-0.5 ${data.evidenceKey.source === 'unreadable'
-                ? 'text-red-700 dark:text-red-300' : 'text-soft'}`}>
+                ? 'text-danger-text' : 'text-soft'}`}>
                 {{
                   env: t('systemHealth.evidenceKey.env', 'Set with PICPEAK_EVIDENCE_KEY.'),
                   file: t('systemHealth.evidenceKey.file', 'Stored in business-docs/keys/evidence.key, which is part of every backup.'),
@@ -305,7 +305,7 @@ export const SystemHealthPage: React.FC = () => {
                 )}
               </p>
               {data.evidenceKey.matchesStored === false && (data.evidenceKey.unreadableValues ?? 1) > 0 && (
-                <p role="alert" className="text-sm mt-1 text-red-700 dark:text-red-300">
+                <p role="alert" className="text-sm mt-1 text-danger-text">
                   {t('systemHealth.evidenceKey.mismatch',
                     'Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before.',
                     {
@@ -317,7 +317,7 @@ export const SystemHealthPage: React.FC = () => {
                 </p>
               )}
               {(data.evidenceKey.valuesUnderOlderKeys ?? 0) > 0 && (
-                <p className="text-sm mt-1 text-amber-700 dark:text-amber-300">
+                <p className="text-sm mt-1 text-warning-text">
                   {t('systemHealth.evidenceKey.olderKeys',
                     '{{count}} of {{total}} stored values are still under an older key that can be read. Run scripts/rotate-evidence-key.js to move them to the current key, and keep the older key until it reports none left.',
                     { count: data.evidenceKey.valuesUnderOlderKeys, total: data.evidenceKey.storedValues ?? 0 })}
@@ -339,7 +339,7 @@ export const SystemHealthPage: React.FC = () => {
         <Card padding="lg" className="mb-4">
           <div className="flex items-start gap-3">
             <ShieldAlert className={`w-5 h-5 mt-0.5 shrink-0 ${data.signingSignals.alerts.length
-              ? 'text-red-600 dark:text-red-400' : 'text-muted'}`} />
+              ? 'text-danger-text' : 'text-muted'}`} />
             <div className="min-w-0 flex-1">
               <h2 className="text-lg font-semibold text-heading">
                 {t('systemHealth.signingSignals.title', 'Signing links: unusual activity (24 h)')}
@@ -353,7 +353,7 @@ export const SystemHealthPage: React.FC = () => {
                 ))}
               </ul>
               {data.signingSignals.alerts.length > 0 && (
-                <p role="alert" className="text-sm mt-2 text-red-700 dark:text-red-300">
+                <p role="alert" className="text-sm mt-2 text-danger-text">
                   {t('systemHealth.signingSignals.alerts', '{{count}} alert(s) sent to the business email in the last 24 hours.', { count: data.signingSignals.alerts.length })}
                 </p>
               )}
@@ -376,7 +376,7 @@ export const SystemHealthPage: React.FC = () => {
           they were simply never picked up. */}
       <Card padding="lg" className="mb-4">
         <div className="flex items-center gap-2 mb-3">
-          <Clock className="w-5 h-5 text-amber-500" />
+          <Clock className="w-5 h-5 text-warning" />
           <h2 className="text-lg font-semibold text-heading">
             {t('systemHealth.waitingEmails.title', 'Waiting to send')}
           </h2>
@@ -391,12 +391,12 @@ export const SystemHealthPage: React.FC = () => {
           // yet either — the grace window has not elapsed — and a green check
           // there is the same false all-clear this page exists to remove.
           processorState === 'ok' && !scanTruncated ? (
-            <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
+            <div className="flex items-center gap-2 text-sm text-success-text py-6">
               <CheckCircle className="w-5 h-5" />
               {t('systemHealth.waitingEmails.empty', 'Nothing waiting — the queue is being worked.')}
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 py-6">
+            <div className="flex items-center gap-2 text-sm text-warning-text py-6">
               <AlertCircle className="w-5 h-5" />
               {scanTruncated
                 ? t('systemHealth.waitingEmails.truncated',
@@ -418,7 +418,7 @@ export const SystemHealthPage: React.FC = () => {
 
       <Card padding="lg">
         <div className="flex items-center gap-2 mb-3">
-          <AlertCircle className="w-5 h-5 text-amber-500" />
+          <AlertCircle className="w-5 h-5 text-warning" />
           <h2 className="text-lg font-semibold text-heading">
             {t('systemHealth.stuckEmails.title', 'Stuck / failed emails')}
           </h2>
@@ -428,7 +428,7 @@ export const SystemHealthPage: React.FC = () => {
         </div>
 
         {isLoading ? <Loading /> : stuckEmails.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
+          <div className="flex items-center gap-2 text-sm text-success-text py-6">
             <CheckCircle className="w-5 h-5" />
             {/* "all clear" is a claim about the whole queue, so it is only
                 allowed when the whole queue is clear. With mail waiting or a

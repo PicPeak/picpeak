@@ -209,7 +209,7 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
       <>
       {/* Search input */}
       <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint pointer-events-none" />
         <input
           type="text"
           value={query}
@@ -225,7 +225,7 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
         <button
           type="button"
           onClick={() => { setIsOpen(false); setIsCreating(true); }}
-          className="mt-2 inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+          className="mt-2 inline-flex items-center gap-1 text-sm text-accent hover:underline"
         >
           {t('customers.create.openLink', '+ Create new customer')}
         </button>

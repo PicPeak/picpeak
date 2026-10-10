@@ -64,7 +64,7 @@ export const WatermarkSourcePicker: React.FC<WatermarkSourcePickerProps> = ({ va
               {resolved ? (
                 <img src={resolved} alt="" className="max-h-12 max-w-[80%] object-contain" draggable={false} />
               ) : (
-                <span className="text-[10px] text-neutral-500">{t('slideshow.watermarkSource.notSet', 'Not set')}</span>
+                <span className="text-[10px] text-muted">{t('slideshow.watermarkSource.notSet', 'Not set')}</span>
               )}
             </div>
             <div className="text-xs text-body py-1 px-1 truncate">{opt.label}</div>

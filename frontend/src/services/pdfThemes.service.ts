@@ -63,6 +63,10 @@ export interface PdfThemeRow {
 
 export interface PdfThemeList {
   themes: PdfThemeRow[];
+  /** The brand accent a document inherits when nothing sets one (only when it reads on paper). */
+  brandColors?: Partial<Record<PdfColorKey, string>>;
+  /** The built-in look, the last fallback. */
+  builtInColors?: Record<PdfColorKey, string>;
   /** Bundled font directory names, e.g. "Jost", "Playfair-Display". */
   fontFamilies: string[];
   /** Active uploaded fonts a theme may use. */

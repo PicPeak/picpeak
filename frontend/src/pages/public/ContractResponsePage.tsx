@@ -63,9 +63,9 @@ import {
   type SigningSessionContract,
 } from '../../services/publicContractSigning.service';
 
-const PRIMARY_BUTTON = 'px-4 py-2 rounded-md bg-accent-dark text-white text-sm hover:opacity-90 disabled:opacity-50';
-const SECONDARY_BUTTON = 'px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-600 text-sm inline-flex items-center gap-1 disabled:opacity-50 text-neutral-700 dark:text-neutral-300';
-const INPUT = 'w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-100';
+const PRIMARY_BUTTON = 'px-4 py-2 rounded-md bg-accent-strong text-accent-fg text-sm hover:opacity-90 disabled:opacity-50';
+const SECONDARY_BUTTON = 'px-3 py-1.5 rounded-md border border-border-token text-sm inline-flex items-center gap-1 disabled:opacity-50 text-theme';
+const INPUT = 'input-themed';
 
 /** Switch the UI to the contract's language, as QuoteResponsePage does. */
 function useContractLanguage(language: string | null | undefined) {
@@ -95,7 +95,7 @@ const PageShell: React.FC<{ issuer?: IssuerHeader | null; children: React.ReactN
     ? (issuer?.logoUrlDark || issuer?.logoUrl)
     : (issuer?.logoUrl || issuer?.logoUrlDark);
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
+    <div className="min-h-screen bg-background text-theme">
       <div className="max-w-3xl mx-auto py-8 px-4">
         {issuer && (
           <div className="text-center mb-6">
@@ -104,7 +104,7 @@ const PageShell: React.FC<{ issuer?: IssuerHeader | null; children: React.ReactN
             )}
             {issuer.companyName && <h2 className="text-xl font-bold">{issuer.companyName}</h2>}
             {issuer.website && (
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">{issuer.website}</p>
+              <p className="text-sm text-muted-theme">{issuer.website}</p>
             )}
           </div>
         )}
@@ -115,7 +115,7 @@ const PageShell: React.FC<{ issuer?: IssuerHeader | null; children: React.ReactN
 };
 
 const FullPageLoading: React.FC = () => (
-  <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900">
+  <div className="min-h-screen flex items-center justify-center bg-background">
     <Loading />
   </div>
 );
@@ -128,8 +128,8 @@ const MessagePage: React.FC<{
 }> = ({ title, body, issuer, action }) => (
   <PageShell issuer={issuer}>
     <div className={`${CARD} text-center`}>
-      <h1 className="text-2xl font-bold mb-2 text-neutral-900 dark:text-neutral-100">{title}</h1>
-      <p className="text-neutral-600 dark:text-neutral-400">{body}</p>
+      <h1 className="text-2xl font-bold mb-2 text-theme">{title}</h1>
+      <p className="text-muted-theme">{body}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   </PageShell>
@@ -424,7 +424,7 @@ const DetailsForm: React.FC<{
         <h1 ref={heading} tabIndex={-1} className="text-2xl font-bold mb-1 focus:outline-none">
           {t('contractSigning.details.title', 'Your details for contract {{number}}', { number: c.contractNumber })}
         </h1>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+        <p className="text-sm text-muted-theme mb-4">
           {t('contractSigning.details.intro', 'The contract is prepared with these details once you send them; then you can read and sign it right here.')}
         </p>
         <form
@@ -440,11 +440,11 @@ const DetailsForm: React.FC<{
               <div key={field} className={field === 'address_line1' || field === 'address_line2' ? 'sm:col-span-2' : ''}>
                 <label htmlFor={`contract-details-${field}`} className="block text-sm font-medium mb-1">
                   {t(label.key, label.fallback)}
-                  {required && <span className="text-neutral-500 dark:text-neutral-400"> {t('contractSigning.consents.required', '(required)')}</span>}
+                  {required && <span className="text-muted-theme"> {t('contractSigning.consents.required', '(required)')}</span>}
                 </label>
                 <input
                   id={`contract-details-${field}`}
-                  className={`${INPUT} ${bad ? 'border-red-500 dark:border-red-400' : ''}`}
+                  className={`${INPUT} ${bad ? 'border-danger' : ''}`}
                   value={values[field] || ''}
                   autoComplete={label.autoComplete}
                   required={required}
@@ -454,7 +454,7 @@ const DetailsForm: React.FC<{
               </div>
             );
           })}
-          {error && <p role="alert" className="sm:col-span-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+          {error && <p role="alert" className="sm:col-span-2 text-sm text-danger-text">{error}</p>}
           <div className="sm:col-span-2 flex justify-end">
             <button type="submit" disabled={submit.isPending} className={PRIMARY_BUTTON}>
               {submit.isPending
@@ -544,7 +544,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
           <h1 ref={stepHeading} tabIndex={-1} className="text-2xl font-bold mb-1 focus:outline-none">
             {t('contractSigning.sign.stepTitle', 'Sign contract no. {{number}}', { number: c.contractNumber })}
           </h1>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          <p className="text-sm text-muted-theme mb-4">
             {t('contractSigning.sign.stepIntro', 'You are signing exactly the contract you just read. Check the summary, confirm the declarations and sign.')}
           </p>
           <SigningSummary contract={c} />
@@ -557,7 +557,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
             onSessionInvalid={onSessionInvalid}
             onRefresh={onRefresh}
           />
-          <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-6 pt-4 border-t border-border-token flex flex-wrap items-center justify-between gap-2">
             <button type="button" onClick={() => goTo('review')} className={SECONDARY_BUTTON}>
               {t('contractSigning.sign.back', 'Back to the contract')}
             </button>
@@ -567,7 +567,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
                 aria-expanded={otherOptions}
                 aria-controls="contract-signing-other-options"
                 onClick={() => setOtherOptions((open) => !open)}
-                className="text-sm underline text-neutral-700 dark:text-neutral-300"
+                className="text-sm underline text-theme"
               >
                 {t('contractSigning.sign.otherOptions', 'Other options')}
               </button>
@@ -602,9 +602,9 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
   if (outcome?.kind === 'uploaded') {
     action = (
       <div className="text-center py-2">
-        <CheckCircle className="w-12 h-12 mx-auto text-green-600 dark:text-green-400 mb-3" />
+        <CheckCircle className="w-12 h-12 mx-auto text-success-text mb-3" />
         <h2 className="text-lg font-semibold">{t('contractSigning.upload.doneTitle', 'Thank you — your signed PDF was uploaded.')}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-muted-theme mt-1">
           {t('contractSigning.upload.doneBody', 'You can close this page.')}
         </p>
       </div>
@@ -612,9 +612,9 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
   } else if (declined) {
     action = (
       <div className="text-center py-2">
-        <XCircle className="w-12 h-12 mx-auto text-neutral-500 dark:text-neutral-400 mb-3" />
+        <XCircle className="w-12 h-12 mx-auto text-muted-theme mb-3" />
         <h2 className="text-lg font-semibold">{t('contractSigning.declined.title', 'You declined this contract')}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-muted-theme mt-1">
           {t('contractSigning.declined.body', 'The sender has been told. If this was a mistake, contact them — they can send you a new contract.')}
         </p>
       </div>
@@ -622,9 +622,9 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
   } else if (declinedByOther) {
     action = (
       <div className="text-center py-2">
-        <XCircle className="w-12 h-12 mx-auto text-neutral-500 dark:text-neutral-400 mb-3" />
+        <XCircle className="w-12 h-12 mx-auto text-muted-theme mb-3" />
         <h2 className="text-lg font-semibold">{t('contractSigning.declined.otherTitle', 'This contract was declined')}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-muted-theme mt-1">
           {t('contractSigning.declined.otherBody', 'Another signer declined it, so it can no longer be signed.')}
         </p>
       </div>
@@ -641,10 +641,10 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
   } else if (signing.waitingForOthers) {
     action = (
       <div className="flex items-start gap-3">
-        <Clock className="w-6 h-6 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+        <Clock className="w-6 h-6 text-warning-text shrink-0 mt-0.5" />
         <div>
           <h2 className="text-lg font-semibold">{t('contractSigning.waiting.title', 'It isn\'t your turn yet')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted-theme mt-1">
             {t('contractSigning.waiting.body', 'The signers before you sign first. We\'ll email you when it\'s your turn.')}
           </p>
         </div>
@@ -655,7 +655,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{t('contractSigning.review.readyTitle', 'Read everything?')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+          <p className="text-sm text-muted-theme mt-1">
             {t('contractSigning.review.readyBody', 'Next you confirm the declarations and sign. Nothing is signed until you press the final button.')}
           </p>
         </div>
@@ -668,7 +668,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
     action = (
       <div>
         <h2 className="text-lg font-semibold">{t('contractSigning.notSignable.title', 'This contract isn\'t waiting for your signature')}</h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-muted-theme mt-1">
           {t('contractSigning.notSignable.body', 'There is nothing for you to sign right now. Contact the sender if you expected to sign.')}
         </p>
       </div>
@@ -680,7 +680,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
   return (
     <PageShell issuer={c.issuer}>
       {signable && (
-        <p ref={stepHeading} tabIndex={-1} className="text-sm font-medium text-neutral-600 dark:text-neutral-400 mb-3 focus:outline-none">
+        <p ref={stepHeading} tabIndex={-1} className="text-sm font-medium text-muted-theme mb-3 focus:outline-none">
           {t('contractSigning.review.step', 'Step 1 of 2 — read the contract')}
         </p>
       )}
@@ -708,7 +708,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
                   <span className="font-medium flex-1 min-w-[160px]">
                     {a.name}
                     {manifestHash(a.id) && (
-                      <span className="block text-xs font-normal font-mono text-neutral-500 dark:text-neutral-400" title={manifestHash(a.id)}>
+                      <span className="block text-xs font-normal font-mono text-muted-theme" title={manifestHash(a.id)}>
                         SHA-256 {manifestHash(a.id)?.slice(0, 16)}…
                       </span>
                     )}
@@ -722,13 +722,13 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
                         `${a.name}.pdf`,
                       )}
                       disabled={downloading === `attachment-${a.id}`}
-                      className="inline-flex items-center gap-1 text-sm underline text-neutral-700 dark:text-neutral-300 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 text-sm underline text-theme disabled:opacity-50"
                     >
                       <Download className="w-4 h-4" />
                       {t('publicContract.attachments.download', 'Download')}
                     </button>
                   ) : (
-                    <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                    <span className="text-xs text-muted-theme">
                       {t('publicContract.attachments.inPdf', 'Part of the contract PDF')}
                     </span>
                   )}
@@ -737,7 +737,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
             </ul>
           </div>
         )}
-        {downloadError && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{downloadError}</p>}
+        {downloadError && <p role="alert" className="mt-3 text-sm text-danger-text">{downloadError}</p>}
       </div>
 
       <SignerProgress contract={c} />
@@ -753,7 +753,7 @@ const LegalFooter: React.FC<{ notice?: string | null }> = ({ notice }) => {
   const { t } = useTranslation();
   if (!notice) return null;
   return (
-    <footer className="mt-6 text-xs text-neutral-500 dark:text-neutral-400">
+    <footer className="mt-6 text-xs text-muted-theme">
       <p className="font-medium">{t('contractSigning.legalNotice.title', 'Legal notice')}</p>
       <p className="whitespace-pre-line">{notice}</p>
     </footer>
@@ -767,12 +767,12 @@ const SigningSummary: React.FC<{ contract: SigningSessionContract }> = ({ contra
   const total = c.commercial ? formatMoneyMinor(c.commercial.totals.grossMinor, c.commercial.currency) : null;
   const row = (label: string, value: React.ReactNode) => (
     <>
-      <dt className="text-neutral-500 dark:text-neutral-400">{label}</dt>
-      <dd className="text-neutral-900 dark:text-neutral-100 break-words">{value}</dd>
+      <dt className="text-muted-theme">{label}</dt>
+      <dd className="text-theme break-words">{value}</dd>
     </>
   );
   return (
-    <dl className="grid grid-cols-1 sm:grid-cols-[11rem_1fr] gap-x-3 gap-y-1 text-sm mb-6 p-4 rounded-md bg-neutral-50 dark:bg-neutral-900/40 border border-neutral-200 dark:border-neutral-700">
+    <dl className="grid grid-cols-1 sm:grid-cols-[11rem_1fr] gap-x-3 gap-y-1 text-sm mb-6 p-4 rounded-md bg-elevated border border-border-token">
       {row(t('contractSigning.summary.number', 'Contract'), <span className="font-mono">{c.contractNumber}</span>)}
       {c.title && row(t('contractSigning.summary.title', 'Title'), c.title)}
       {row(t('contractSigning.summary.parties', 'Parties'), [c.issuer?.companyName, ...customers].filter(Boolean).join(' · '))}
@@ -787,9 +787,9 @@ const SigningSummary: React.FC<{ contract: SigningSessionContract }> = ({ contra
 };
 
 const PROGRESS_CHIP: Record<string, string> = {
-  signed: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
-  declined: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
-  pending: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200',
+  signed: 'status-chip hue-success',
+  declined: 'status-chip hue-danger',
+  pending: 'status-chip hue-neutral',
 };
 
 const SignerProgress: React.FC<{ contract: SigningSessionContract }> = ({ contract: c }) => {
@@ -800,7 +800,7 @@ const SignerProgress: React.FC<{ contract: SigningSessionContract }> = ({ contra
   return (
     <div className={`mt-6 ${CARD}`}>
       <h2 className="text-lg font-semibold">{t('contractSigning.signers.title', 'Who signs')}</h2>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+      <p className="text-sm text-muted-theme mb-3">
         {order === 'sequential'
           ? t('contractSigning.signers.sequential', 'Signers sign one after the other, in this order.')
           : t('contractSigning.signers.parallel', 'Everyone can sign at the same time.')}
@@ -808,11 +808,11 @@ const SignerProgress: React.FC<{ contract: SigningSessionContract }> = ({ contra
       <ol className="space-y-2 text-sm">
         {sorted.map((s) => (
           <li key={s.position} className="flex flex-wrap items-center gap-2">
-            <span className="w-5 text-neutral-500 dark:text-neutral-400">{s.position}.</span>
+            <span className="w-5 text-muted-theme">{s.position}.</span>
             <span className="font-medium flex-1 min-w-[140px]">
               {s.name}
               {s.role === 'issuer' && (
-                <span className="ml-2 text-xs font-normal text-neutral-500 dark:text-neutral-400">
+                <span className="ml-2 text-xs font-normal text-muted-theme">
                   {t('contractSigning.signers.issuer', 'Counter-signs last')}
                 </span>
               )}
@@ -850,17 +850,17 @@ const SignedResult: React.FC<{
   const viaPortal = c.signing.verifiedVia === 'portal';
   return (
     <div className="text-center py-2">
-      <CheckCircle className="w-12 h-12 mx-auto text-green-600 dark:text-green-400 mb-3" />
+      <CheckCircle className="w-12 h-12 mx-auto text-success-text mb-3" />
       <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold focus:outline-none">
         {t('contractSigning.result.title', 'Thank you — you have signed the contract.')}
       </h2>
       {signedAt && (
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-sm text-muted-theme mt-1">
           {t('contractSigning.result.signedAt', 'Signed on {{date}}', { date: formatDateTime(signedAt) })}
         </p>
       )}
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">{next}</p>
-      <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+      <p className="text-sm text-muted-theme mt-1">{next}</p>
+      <p className="text-sm text-muted-theme mt-1">
         {t('contractSigning.result.confirmationSent', 'We have sent you a confirmation by email.')}
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -1048,8 +1048,8 @@ const SignForm: React.FC<SignFormProps> = ({
       aria-checked={mode === value}
       onClick={() => { setMode(value); setError(null); }}
       className={`px-3 py-1.5 text-sm rounded-md border ${mode === value
-        ? 'border-accent-dark bg-neutral-100 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-medium'
-        : 'border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300'}`}
+        ? 'border-accent-dark bg-elevated text-theme font-medium'
+        : 'border-border-token text-theme'}`}
     >
       {label}
     </button>
@@ -1093,10 +1093,11 @@ const SignForm: React.FC<SignFormProps> = ({
           </div>
         ) : (
           <div>
-            <div className="h-20 flex items-center px-4 rounded border border-neutral-300 dark:border-neutral-600 bg-white text-neutral-900 font-serif italic text-2xl overflow-hidden">
+            {/* Paper, like the drawn pad: the signature reads dark on white in every theme. */}
+            <div className="h-20 flex items-center px-4 rounded border border-border-token bg-white text-neutral-900 font-serif italic text-2xl overflow-hidden">
               {name.trim()}
             </div>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+            <p className="text-xs text-muted-theme mt-1">
               {t('contractSigning.sign.typedHint', 'Your name, as typed above, is placed in your signature field.')}
             </p>
           </div>
@@ -1108,7 +1109,7 @@ const SignForm: React.FC<SignFormProps> = ({
               {t('contractSigning.consents.legend', 'Your declarations')}
             </legend>
             {declarations.map((d) => (
-              <label key={d.key} className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+              <label key={d.key} className="flex items-start gap-2 text-sm text-theme">
                 <input
                   type="checkbox"
                   checked={answers[d.key] === true}
@@ -1119,7 +1120,7 @@ const SignForm: React.FC<SignFormProps> = ({
                 <span>
                   {d.text}
                   {' '}
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="text-xs text-muted-theme">
                     {d.required
                       ? t('contractSigning.consents.required', '(required)')
                       : t('contractSigning.consents.optional', '(optional)')}
@@ -1129,7 +1130,7 @@ const SignForm: React.FC<SignFormProps> = ({
             ))}
           </fieldset>
         ) : (
-          <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+          <label className="flex items-start gap-2 text-sm text-theme">
             <input
               type="checkbox"
               checked={accepted}
@@ -1140,24 +1141,24 @@ const SignForm: React.FC<SignFormProps> = ({
           </label>
         )}
         {declarations && missingRequired.length > 0 && (
-          <p id="contract-signing-consents-missing" className="text-xs text-neutral-600 dark:text-neutral-400">
+          <p id="contract-signing-consents-missing" className="text-xs text-muted-theme">
             {t('contractSigning.consents.missing', 'Tick every required declaration to sign.')}
           </p>
         )}
 
-        {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p role="alert" className="text-sm text-danger-text">{error}</p>}
 
         {uncertain ? (
           <div
             role="status"
             aria-live="polite"
-            className="p-4 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30"
+            className="p-4 rounded-md border border-warning-line bg-warning-soft"
           >
-            <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-warning-text flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               {t('contractSigning.sign.uncertain.title', 'We couldn\'t confirm whether your signature arrived')}
             </h3>
-            <p className="text-sm text-amber-900 dark:text-amber-200 mt-1">
+            <p className="text-sm text-warning-text mt-1">
               {t('contractSigning.sign.uncertain.body',
                 'The connection dropped while it was being sent, so it may or may not have been recorded. Check again first. Sending it a second time cannot sign the contract twice — we recognise the repeat.')}
             </p>
@@ -1223,9 +1224,9 @@ const WetUpload: React.FC<{
     },
   });
   return (
-    <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+    <div className="mt-6 pt-4 border-t border-border-token">
       <h3 className="text-sm font-semibold mb-2">{t('publicContract.uploadAlternative', 'Or upload a wet-signed PDF')}</h3>
-      <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-2">
+      <p className="text-xs text-muted-theme mb-2">
         {t('publicContract.uploadHint', 'Sign the printed contract by hand, scan it, and upload the PDF here.')}
       </p>
       <div className="flex items-center gap-2 flex-wrap">
@@ -1233,7 +1234,7 @@ const WetUpload: React.FC<{
           type="file"
           accept="application/pdf"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="text-sm text-neutral-700 dark:text-neutral-300"
+          className="text-sm text-theme"
         />
         <button
           type="button"
@@ -1245,7 +1246,7 @@ const WetUpload: React.FC<{
           {t('publicContract.uploadButton', 'Upload signed PDF')}
         </button>
       </div>
-      {error && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-danger-text">{error}</p>}
     </div>
   );
 };
@@ -1287,8 +1288,8 @@ const DeclinePanel: React.FC<{
 
   if (!open) {
     return (
-      <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-        <button type="button" onClick={() => setOpen(true)} className="text-sm underline text-neutral-700 dark:text-neutral-300">
+      <div className="mt-6 pt-4 border-t border-border-token">
+        <button type="button" onClick={() => setOpen(true)} className="text-sm underline text-theme">
           {t('contractSigning.decline.open', 'Decline the contract')}
         </button>
       </div>
@@ -1296,16 +1297,16 @@ const DeclinePanel: React.FC<{
   }
 
   return (
-    <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-      <div className="p-4 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30">
-        <h3 className="text-sm font-semibold text-red-900 dark:text-red-200 flex items-center gap-2">
+    <div className="mt-6 pt-4 border-t border-border-token">
+      <div className="p-4 rounded-md border border-danger-line bg-danger-soft">
+        <h3 className="text-sm font-semibold text-danger-text flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
           {t('contractSigning.decline.confirmTitle', 'Decline this contract?')}
         </h3>
-        <p className="text-sm text-red-900 dark:text-red-200 mt-1">
+        <p className="text-sm text-danger-text mt-1">
           {t('contractSigning.decline.confirmBody', 'The sender is told that you declined, and nobody can sign this contract any more. This can\'t be undone.')}
         </p>
-        <label htmlFor="contract-decline-reason" className="block text-sm font-medium mt-3 mb-1 text-neutral-900 dark:text-neutral-100">
+        <label htmlFor="contract-decline-reason" className="block text-sm font-medium mt-3 mb-1 text-theme">
           {t('contractSigning.decline.reasonLabel', 'Reason (optional)')}
         </label>
         <textarea
@@ -1313,12 +1314,12 @@ const DeclinePanel: React.FC<{
           value={reason}
           onChange={(e) => setReason(e.target.value.slice(0, 1000))}
           rows={3}
-          className={INPUT}
+          className={`${INPUT} h-auto`}
         />
-        <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+        <p className="text-xs text-muted-theme mt-1">
           {t('contractSigning.decline.reasonHint', 'Shared with the sender.')}
         </p>
-        {error && <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-300">{error}</p>}
+        {error && <p role="alert" className="mt-2 text-sm text-danger-text">{error}</p>}
         <div className="mt-3 flex flex-wrap gap-2 justify-end">
           <button type="button" onClick={() => { setOpen(false); setError(null); }} className={SECONDARY_BUTTON}>
             {t('contractSigning.decline.keep', 'Keep the contract')}
@@ -1327,7 +1328,7 @@ const DeclinePanel: React.FC<{
             type="button"
             onClick={() => declineMutation.mutate()}
             disabled={declineMutation.isPending}
-            className="px-3 py-1.5 rounded-md text-sm bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            className="px-3 py-1.5 rounded-md text-sm bg-danger hover:opacity-90 text-white disabled:opacity-50"
           >
             {declineMutation.isPending
               ? t('contractSigning.decline.declining', 'Declining…')
@@ -1412,9 +1413,9 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
   const queryClient = useQueryClient();
   // Honour branding dark/light mode the same way QuoteResponsePage
   // does — without this the page renders in light regardless of admin
-  // settings. The wrapper styling below still has `dark:` variants
-  // so the page reads cleanly in either mode. `isDark` drives the
-  // theme-aware logo pick in the header.
+  // settings. The wrapper reads the theme tokens, so it follows the
+  // palette in either mode. `isDark` drives the theme-aware logo pick in
+  // the header.
   const { isDark } = usePublicDarkMode();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1572,19 +1573,19 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-900">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loading />
       </div>
     );
   }
 
   const notAvailable = (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="max-w-md text-center">
-        <h1 className="text-2xl font-bold mb-2 text-neutral-900 dark:text-neutral-100">
+        <h1 className="text-2xl font-bold mb-2 text-theme">
           {t('publicContract.notFoundTitle', 'Contract not available')}
         </h1>
-        <p className="text-neutral-600 dark:text-neutral-400">
+        <p className="text-muted-theme">
           {t('publicContract.notFoundBody', 'This signing link is invalid or expired. Please contact the sender.')}
         </p>
       </div>
@@ -1620,7 +1621,7 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
     || c.status === 'fully_signed';
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
+    <div className="min-h-screen bg-background text-theme">
       <div className="max-w-3xl mx-auto py-8 px-4">
         {/* Issuer header — same shape as QuoteResponsePage. */}
         <div className="text-center mb-6">
@@ -1640,30 +1641,30 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
             <h2 className="text-xl font-bold">{c.issuer.companyName}</h2>
           )}
           {c.issuer?.website && (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">{c.issuer.website}</p>
+            <p className="text-sm text-muted-theme">{c.issuer.website}</p>
           )}
         </div>
 
         {/* Main card */}
-        <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-6 md:p-8">
+        <div className="bg-surface rounded-xl shadow-sm border border-border-token p-6 md:p-8">
           <div className="flex items-baseline justify-between mb-4 gap-3 flex-wrap">
             <h1 className="text-2xl font-bold">
               {c.title || t('publicContract.fallbackTitle', 'Contract')}
             </h1>
-            <span className="text-xs font-mono px-2 py-1 rounded bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">
+            <span className="text-xs font-mono px-2 py-1 rounded bg-elevated text-muted-theme">
               {c.contractNumber}
             </span>
           </div>
 
           {c.recipient && (
-            <div className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
+            <div className="mb-4 text-sm text-theme">
               <p className="font-medium">{c.recipient.companyName || c.recipient.displayName}</p>
-              <p className="text-neutral-500 dark:text-neutral-400">{c.recipient.email}</p>
+              <p className="text-muted-theme">{c.recipient.email}</p>
             </div>
           )}
 
           {c.introText && (
-            <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300 my-4">
+            <p className="whitespace-pre-line text-theme my-4">
               {c.introText}
             </p>
           )}
@@ -1671,13 +1672,13 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
           {/* Sections + blocks */}
           {c.sections.map((sec) => (
             <section key={sec.section} className="mt-6">
-              <h2 className="text-lg font-semibold border-b border-neutral-200 dark:border-neutral-700 pb-1 mb-3">
+              <h2 className="text-lg font-semibold border-b border-border-token pb-1 mb-3">
                 {SECTION_LABELS[sec.section]?.[locale] || sec.section}
               </h2>
               {sec.blocks.map((blk) => (
                 <article key={blk.blockId} className="mb-4">
                   <h3 className="font-semibold text-sm mb-1">{blk.name}</h3>
-                  <p className="text-sm whitespace-pre-line leading-6 text-neutral-700 dark:text-neutral-300">
+                  <p className="text-sm whitespace-pre-line leading-6 text-theme">
                     {blk.body}
                   </p>
                 </article>
@@ -1686,28 +1687,28 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
           ))}
 
           {c.outroText && (
-            <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300 mt-6">
+            <p className="whitespace-pre-line text-theme mt-6">
               {c.outroText}
             </p>
           )}
         </div>
 
         {/* Signing card */}
-        <div className="mt-6 bg-white dark:bg-neutral-800 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-700 p-6 md:p-8">
+        <div className="mt-6 bg-surface rounded-xl shadow-sm border border-border-token p-6 md:p-8">
           {alreadySigned ? (
             <div className="py-2">
               <div className="text-center mb-5">
-                <CheckCircle className="w-12 h-12 mx-auto text-green-600 mb-3" />
+                <CheckCircle className="w-12 h-12 mx-auto text-success-text mb-3" />
                 <h2 className="text-lg font-semibold">
                   {t('publicContract.signed.title', 'Thank you — the contract is signed.')}
                 </h2>
                 {c.signedCustomerName && (
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
+                  <p className="text-sm text-muted-theme mt-1">
                     {t('publicContract.signed.by', 'Signed by')}: {c.signedCustomerName}
                   </p>
                 )}
                 {c.signedByAdminAt && c.signedAdminName && (
-                  <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  <p className="text-sm text-muted-theme">
                     {t('publicContract.signed.counterBy', 'Counter-signed by')}: {c.signedAdminName}
                   </p>
                 )}
@@ -1720,14 +1721,14 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-accent-dark text-white text-sm hover:opacity-90"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-accent-strong text-accent-fg text-sm hover:opacity-90"
                 >
                   <Download className="w-4 h-4" />
                   {c.hasSignedPdf
                     ? t('publicContract.downloadSigned', 'Download signed PDF')
                     : t('publicContract.download', 'Download PDF')}
                 </button>
-                {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
+                {error && <p className="text-sm text-danger-text mt-2">{error}</p>}
               </div>
 
               {/* Audit confirmation — issue #4. Surfaces every piece
@@ -1736,33 +1737,33 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                   downloaded PDF and comparing against pdfSha256 is
                   the cryptographic proof the file wasn't tampered
                   with after we issued it. */}
-              <details className="border-t border-neutral-200 dark:border-neutral-700 pt-4">
+              <details className="border-t border-border-token pt-4">
                 <summary className="text-sm font-semibold cursor-pointer inline-flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4" />
                   {t('publicContract.signed.auditTitle', 'Signing audit trail')}
                 </summary>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2 mb-3">
+                <p className="text-xs text-muted-theme mt-2 mb-3">
                   {t('publicContract.signed.auditBody',
                     'For your records. Save or screenshot this — the SHA-256 hash lets you prove later that the PDF you downloaded is exactly what we issued (re-hash the file you have and compare).')}
                 </p>
                 <dl className="text-xs grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-x-3 gap-y-1.5 font-mono">
-                  <dt className="text-neutral-500">{t('publicContract.signed.contractNumber', 'Contract')}</dt>
+                  <dt className="text-muted-theme">{t('publicContract.signed.contractNumber', 'Contract')}</dt>
                   <dd>{c.contractNumber}</dd>
                   {c.signedByCustomerAt && (
                     <>
-                      <dt className="text-neutral-500">{t('publicContract.signed.signedAt', 'Signed at')}</dt>
+                      <dt className="text-muted-theme">{t('publicContract.signed.signedAt', 'Signed at')}</dt>
                       <dd>{new Date(c.signedByCustomerAt).toISOString()}</dd>
                     </>
                   )}
                   {c.signedCustomerIp && (
                     <>
-                      <dt className="text-neutral-500">{t('publicContract.signed.ipAddress', 'IP at signing')}</dt>
+                      <dt className="text-muted-theme">{t('publicContract.signed.ipAddress', 'IP at signing')}</dt>
                       <dd>{c.signedCustomerIp}</dd>
                     </>
                   )}
                   {c.signedByAdminAt && (
                     <>
-                      <dt className="text-neutral-500">{t('publicContract.signed.counterSignedAt', 'Counter-signed at')}</dt>
+                      <dt className="text-muted-theme">{t('publicContract.signed.counterSignedAt', 'Counter-signed at')}</dt>
                       <dd>{new Date(c.signedByAdminAt).toISOString()}</dd>
                     </>
                   )}
@@ -1773,13 +1774,13 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                       public payload as of A.6 security hardening. */}
                   {c.signedPdfSha256 && (
                     <>
-                      <dt className="text-neutral-500">{t('publicContract.signed.signedSha', 'Signed PDF SHA-256')}</dt>
+                      <dt className="text-muted-theme">{t('publicContract.signed.signedSha', 'Signed PDF SHA-256')}</dt>
                       <dd className="break-all">{c.signedPdfSha256}</dd>
                     </>
                   )}
                   {c.pdfSha256 && (
                     <>
-                      <dt className="text-neutral-500">{t('publicContract.signed.unsignedSha', 'Original PDF SHA-256')}</dt>
+                      <dt className="text-muted-theme">{t('publicContract.signed.unsignedSha', 'Original PDF SHA-256')}</dt>
                       <dd className="break-all">{c.pdfSha256}</dd>
                     </>
                   )}
@@ -1787,7 +1788,7 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
               </details>
             </div>
           ) : !c.canSign ? (
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+            <p className="text-sm text-muted-theme">
               {t('publicContract.notSignable', 'This contract can no longer be signed online. Please contact the sender.')}
             </p>
           ) : (
@@ -1806,7 +1807,7 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-sm text-neutral-900 dark:text-neutral-100"
+                    className={INPUT}
                     autoComplete="name"
                   />
                 </div>
@@ -1819,13 +1820,14 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                   </label>
                   <canvas
                     ref={canvasRef}
-                    className="w-full h-32 bg-white rounded border border-neutral-300 dark:border-neutral-600 touch-none"
+                    // Paper: the ink is dark, so the pad stays white in every theme.
+                    className="w-full h-32 bg-white rounded border border-border-token touch-none"
                   />
                   <div className="mt-1 flex justify-end">
                     <button
                       type="button"
                       onClick={() => padRef.current?.clear()}
-                      className="text-xs text-neutral-600 dark:text-neutral-400 hover:underline inline-flex items-center gap-1"
+                      className="text-xs text-muted-theme hover:underline inline-flex items-center gap-1"
                     >
                       <RotateCcw className="w-3 h-3" />
                       {t('publicContract.clearSignature', 'Clear')}
@@ -1833,7 +1835,7 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                   </div>
                 </div>
 
-                <label className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                <label className="flex items-start gap-2 text-sm text-theme">
                   <input
                     type="checkbox"
                     checked={accepted}
@@ -1848,13 +1850,13 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                   </span>
                 </label>
 
-                {error && <p className="text-sm text-red-600">{error}</p>}
+                {error && <p className="text-sm text-danger-text">{error}</p>}
 
                 <div className="flex justify-end">
                   <button
                     type="submit"
                     disabled={signMutation.isPending}
-                    className="px-4 py-2 rounded-md bg-accent-dark text-white text-sm hover:opacity-90 disabled:opacity-50"
+                    className={PRIMARY_BUTTON}
                   >
                     {t('publicContract.submit', 'Sign contract')}
                   </button>
@@ -1865,11 +1867,11 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                   admin has turned off the upload path in Settings →
                   CRM behaviour → Contracts. */}
               {c.allowPdfUpload !== false && (
-              <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <div className="mt-6 pt-4 border-t border-border-token">
                 <h3 className="text-sm font-semibold mb-2">
                   {t('publicContract.uploadAlternative', 'Or upload a wet-signed PDF')}
                 </h3>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-2">
+                <p className="text-xs text-muted-theme mb-2">
                   {t(
                     'publicContract.uploadHint',
                     'Sign the printed contract by hand, scan it, and upload the PDF here.',
@@ -1880,13 +1882,13 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                     type="file"
                     accept="application/pdf"
                     onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                    className="text-sm text-neutral-700 dark:text-neutral-300"
+                    className="text-sm text-theme"
                   />
                   <button
                     type="button"
                     disabled={!uploadFile || uploadMutation.isPending}
                     onClick={() => uploadFile && uploadMutation.mutate(uploadFile)}
-                    className="px-3 py-1.5 rounded-md border border-neutral-300 dark:border-neutral-600 text-sm inline-flex items-center gap-1 disabled:opacity-50 text-neutral-700 dark:text-neutral-300"
+                    className="px-3 py-1.5 rounded-md border border-border-token text-sm inline-flex items-center gap-1 disabled:opacity-50 text-theme"
                   >
                     <Upload className="w-4 h-4" />
                     {t('publicContract.uploadButton', 'Upload signed PDF')}

@@ -60,6 +60,10 @@ vi.mock('../../../components/admin/CustomerDashboardBrandingCard', () => ({
 vi.mock('../../../components/admin/PdfTypographyCard', () => ({
   PdfTypographyCard: () => null,
 }));
+vi.mock('../../../components/admin/PdfThemeCard', () => ({
+  PdfThemeCard: () => null,
+  usePdfThemeDrafts: () => ({ isDirty: false, invalidScopes: [], save: async () => [], discard: () => {} }),
+}));
 vi.mock('../../../components/admin', async () => {
   const actual = await vi.importActual<any>('../../../components/admin');
   return { ...actual, GalleryPreview: () => null };

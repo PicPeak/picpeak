@@ -292,7 +292,7 @@ export const WhatsAppTab: React.FC = () => {
                       type="checkbox"
                       checked={included}
                       onChange={() => toggleParam(slot)}
-                      className="rounded border-neutral-300"
+                      className="rounded border-line-strong"
                       aria-label={t(`settings.whatsapp.params.${slot}`, slot) as string}
                     />
                     <span className="flex-1 text-sm text-body">
@@ -344,7 +344,7 @@ export const WhatsAppTab: React.FC = () => {
               type="checkbox"
               checked={enabled}
               onChange={(e) => setEnabled(e.target.checked)}
-              className="rounded border-neutral-300"
+              className="rounded border-line-strong"
             />
             {t('settings.whatsapp.enabled', 'Send WhatsApp notifications')}
           </label>

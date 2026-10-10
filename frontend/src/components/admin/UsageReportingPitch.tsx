@@ -16,7 +16,7 @@ export const UsageReportingPoints: React.FC = () => {
     <div className="space-y-2">
       {USAGE_REPORTING_POINTS.map(({ key, icon: Icon }) => (
         <div key={key} className="flex items-start gap-3 rounded-lg border border-line p-3">
-          <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-primary, #5C8762)' }} />
+          <Icon className="w-5 h-5 flex-shrink-0 mt-0.5 text-accent" />
           <span className="min-w-0">
             <span className="block text-sm font-medium text-body">
               {t(`setup.usageReporting.${key}Title`)}

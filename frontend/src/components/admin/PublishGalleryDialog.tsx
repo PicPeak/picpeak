@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Send, Lock, Eye, EyeOff } from 'lucide-react';
+import { Send, Lock, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, Input } from '../common';
+import { Button, Input, Modal } from '../common';
 import { GalleryRecipientsList } from './GalleryRecipientsList';
 
 interface PublishGalleryDialogProps {
@@ -80,21 +80,45 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="max-w-md w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-heading">
-            {t('events.publishDialog.title', 'Publish gallery')}
-          </h2>
-          <button
+    <Modal
+      open
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="sm"
+      title={t('events.publishDialog.title', 'Publish gallery')}
+      footer={
+      // Stack both buttons vertically (always). The German primary label
+      // "Veröffentlichen & Kunden benachrichtigen" is ~40 chars including
+      // the icon — at max-w-md, no side-by-side row layout fits it on one
+      // line, and the base .btn class has @apply whitespace-nowrap (see
+      // index.css:149) which overrides a whitespace-normal className via
+      // CSS cascade order, so the text won't wrap either. Side-by-side
+      // would silently push the button past the modal frame (#670).
+      // col-reverse keeps the DOM order semantically secondary-then-primary
+      // while putting the primary action visually on top — standard
+      // confirmation-dialog pattern.
+        <div className="w-full flex flex-col-reverse gap-3">
+          <Button
+            variant="outline"
             onClick={onClose}
-            className="text-neutral-400 hover:text-body"
-            aria-label={t('common.close', 'Close')}
+            disabled={isPublishing}
           >
-            <X className="w-5 h-5" />
-          </button>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={isPublishing}
+            isLoading={isPublishing}
+            leftIcon={willNotify && notifyCustomer ? <Send className="w-4 h-4" /> : undefined}
+          >
+            {willNotify && notifyCustomer
+              ? t('events.publishAndNotify')
+              : t('events.publishDialog.justPublish', 'Publish')}
+          </Button>
         </div>
-
+      }
+    >
         <p className="text-soft mb-4">
           {/* Follows the checkbox. Left static it contradicted itself — the
               text promised an email to the customer while the box beneath it
@@ -189,38 +213,6 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
             />
           </div>
         )}
-
-        {/* Stack both buttons vertically (always). The German primary label
-            "Veröffentlichen & Kunden benachrichtigen" is ~40 chars including
-            the icon — at max-w-md, no side-by-side row layout fits it on one
-            line, and the base .btn class has @apply whitespace-nowrap (see
-            index.css:149) which overrides a whitespace-normal className via
-            CSS cascade order, so the text won't wrap either. Side-by-side
-            would silently push the button past the modal frame (#670).
-            col-reverse keeps the DOM order semantically secondary-then-primary
-            while putting the primary action visually on top — standard
-            confirmation-dialog pattern. */}
-        <div className="flex flex-col-reverse gap-3">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={isPublishing}
-          >
-            {t('common.cancel', 'Cancel')}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSubmit}
-            disabled={isPublishing}
-            isLoading={isPublishing}
-            leftIcon={willNotify && notifyCustomer ? <Send className="w-4 h-4" /> : undefined}
-          >
-            {willNotify && notifyCustomer
-              ? t('events.publishAndNotify')
-              : t('events.publishDialog.justPublish', 'Publish')}
-          </Button>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };

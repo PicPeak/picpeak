@@ -8,6 +8,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('react-i18next', async () => {
@@ -45,7 +46,18 @@ vi.mock('../../../../hooks/useLocalizedDate', () => ({
   }),
 }));
 
-import { ContractEditorPage } from '../ContractEditorPage';
+import { ContractForm, type ContractFormHandle } from '../ContractEditorPage';
+
+// A draft's page in miniature: the form and the save bar's Save.
+function DraftPage() {
+  const ref = useRef<ContractFormHandle>(null);
+  return (
+    <>
+      <ContractForm ref={ref} contractId={9} />
+      <button type="button" onClick={() => { void ref.current?.save(); }}>Save</button>
+    </>
+  );
+}
 
 const contract = (lockVersion: number, title: string) => ({
   contract: {
@@ -63,10 +75,9 @@ function renderEditor(cached?: unknown) {
   if (cached) client.setQueryData(['contract', 9], cached);
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/admin/clients/contracts/9/edit']}>
+      <MemoryRouter initialEntries={['/admin/clients/contracts/9']}>
         <Routes>
-          <Route path="/admin/clients/contracts/:id/edit" element={<ContractEditorPage />} />
-          <Route path="/admin/clients/contracts/:id" element={<p>detail</p>} />
+          <Route path="/admin/clients/contracts/:id" element={<DraftPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -94,7 +105,8 @@ describe('ContractEditorPage conflict', () => {
     get.mockResolvedValue(contract(5, 'Ihr Titel'));
     fireEvent.click(screen.getByRole('button', { name: 'Keep mine' }));
     await waitFor(() => expect(update).toHaveBeenLastCalledWith(9, expect.objectContaining({ lockVersion: 5, title: 'Mein Titel' })));
-    expect(await screen.findByText('detail')).toBeInTheDocument();
+    // Saved: the page stays on the draft, the conflict is gone.
+    await waitFor(() => expect(screen.queryByText('Changed by someone else.')).not.toBeInTheDocument());
   });
 
   it('"Take theirs" loads the other version', async () => {

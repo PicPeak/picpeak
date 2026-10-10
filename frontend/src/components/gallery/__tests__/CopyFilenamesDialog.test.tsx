@@ -73,9 +73,12 @@ describe('CopyFilenamesDialog (issue 1733, A3d)', () => {
   it('closes on Escape and on the backdrop', () => {
     const onClose = vi.fn();
     render(<CopyFilenamesDialog photos={photos} source="selection" onClose={onClose} />);
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+    // A click inside the box keeps it open; the backdrop around it closes.
     fireEvent.click(screen.getByRole('dialog'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('dialog').parentElement!);
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

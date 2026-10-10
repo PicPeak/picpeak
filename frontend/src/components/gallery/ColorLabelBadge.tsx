@@ -105,7 +105,7 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
         {myDecision && (
           <span
             className={`flex items-center justify-center ${size === 'sm' ? 'w-3.5 h-3.5' : 'w-5 h-5'} rounded-full border border-white/90 shadow text-white ${
-              myDecision === 'approved' ? 'bg-green-600' : 'bg-red-600'
+              myDecision === 'approved' ? 'bg-success' : 'bg-danger'
             }`}
             role="img"
             aria-label={myDecision === 'approved'

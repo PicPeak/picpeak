@@ -135,7 +135,7 @@ export const ContractAttachmentsPage: React.FC = () => {
               </div>
             </div>
             {problem && (
-              <p role="alert" className="text-sm text-red-700 dark:text-red-300">{problem}</p>
+              <p role="alert" className="text-sm text-danger-text">{problem}</p>
             )}
             <div className="flex justify-end">
               <Button type="submit" disabled={busy || !file}>

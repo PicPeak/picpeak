@@ -24,7 +24,7 @@ import { Search, X, Calendar as CalendarIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button } from '../common';
+import { Button, Modal } from '../common';
 import { customerAdminService } from '../../services/customerAdmin.service';
 import { eventsService } from '../../services/events.service';
 import type { Event as AdminEvent } from '../../types';
@@ -158,160 +158,18 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => {
-        // Click-outside to close — only when the click was actually on
-        // the backdrop, not on a child element that bubbled up.
-        if (e.target === e.currentTarget && !saveMutation.isPending) onClose();
-      }}
-    >
-      <div className="bg-shell rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-line flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-heading">
-              {t('customers.assignedEvents.title', 'Manage assigned galleries')}
-            </h2>
-            <p className="text-xs text-muted mt-0.5">
-              {t(
-                'customers.assignedEvents.subtitle',
-                'Pick every gallery this customer should be able to access from their dashboard. Removing a gallery here revokes access immediately on the customer\'s next request.',
-              )}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saveMutation.isPending}
-            className="p-1 rounded hover:bg-hover-soft flex-shrink-0"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X className="w-5 h-5 text-neutral-500" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {/* Selected chips */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
-              {t('customers.assignedEvents.currentLabel', 'Assigned galleries')}
-              <span className="ml-1.5 normal-case text-neutral-400">({selected.length})</span>
-            </label>
-            {selected.length === 0 ? (
-              <p className="text-sm text-muted italic">
-                {t('customers.assignedEvents.empty', 'No galleries assigned yet. Search below to add one.')}
-              </p>
-            ) : (
-              <ul className="flex flex-wrap gap-2">
-                {selected.map((s) => (
-                  <li
-                    key={s.id}
-                    className="inline-flex items-center gap-2 pl-2 pr-1 py-1 rounded-full text-sm bg-subtle text-heading border border-line"
-                  >
-                    <CalendarIcon className="w-3.5 h-3.5 text-neutral-500" />
-                    <span className="truncate max-w-[220px]">{s.eventName}</span>
-                    <button
-                      type="button"
-                      onClick={() => remove(s.id)}
-                      disabled={saveMutation.isPending}
-                      aria-label={t('customers.assignedEvents.removeAria', 'Remove {{name}}', { name: s.eventName })}
-                      className="p-0.5 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700"
-                    >
-                      <X className="w-3.5 h-3.5 text-neutral-500" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {/* Search */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
-              {t('customers.assignedEvents.searchLabel', 'Add a gallery')}
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('customers.assignedEvents.searchPlaceholder', 'Search by event name')}
-                disabled={saveMutation.isPending}
-                className="w-full pl-9 pr-9 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-              {/* Inline clear button — visible only while the query has
-                  content. We keep the query through add() now so the
-                  admin needs an explicit way to wipe it before starting
-                  a new search. Esc would be lovely too but adding a
-                  global key handler inside a modal is more risk than
-                  this control is worth. */}
-              {query && (
-                <button
-                  type="button"
-                  onClick={clearQuery}
-                  disabled={saveMutation.isPending}
-                  aria-label={t('customers.assignedEvents.clearSearchAria', 'Clear search')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-hover disabled:opacity-50"
-                >
-                  <X className="w-3.5 h-3.5 text-neutral-500" />
-                </button>
-              )}
-            </div>
-
-            {/* Results dropdown — inline (not a popover) since this is
-                already inside a modal, no nested-popover headaches. */}
-            <div className="mt-2 border border-line rounded-lg overflow-hidden bg-panel">
-              {!query.trim() ? (
-                <p className="px-3 py-3 text-sm text-muted">
-                  {t('customers.assignedEvents.searchHint', 'Start typing to find galleries.')}
-                </p>
-              ) : isSearching ? (
-                <p className="px-3 py-3 text-sm text-muted">
-                  {t('common.searching', 'Searching…')}
-                </p>
-              ) : results.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-muted">
-                  {t('customers.assignedEvents.noResults', 'No matching galleries.')}
-                </p>
-              ) : (
-                <ul role="listbox">
-                  {results.map((ev) => (
-                    <li key={ev.id}>
-                      <button
-                        type="button"
-                        onClick={() => add(ev)}
-                        disabled={saveMutation.isPending}
-                        className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-hover"
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <CalendarIcon className="w-4 h-4 flex-shrink-0 text-neutral-400" />
-                          <span className="truncate text-sm font-medium text-heading">
-                            {ev.event_name}
-                          </span>
-                        </span>
-                        {ev.event_date && (
-                          <span className="text-xs text-muted flex-shrink-0">
-                            {ev.event_date}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-line flex items-center justify-end gap-2">
+    <Modal
+      open
+      onClose={() => { if (!saveMutation.isPending) onClose(); }}
+      size="lg"
+      initialFocusRef={searchInputRef}
+      title={t('customers.assignedEvents.title', 'Manage assigned galleries')}
+      description={t(
+        'customers.assignedEvents.subtitle',
+        'Pick every gallery this customer should be able to access from their dashboard. Removing a gallery here revokes access immediately on the customer\'s next request.',
+      )}
+      footer={
+        <>
           <Button
             variant="outline"
             onClick={onClose}
@@ -327,8 +185,123 @@ export const AssignedEventsDialog: React.FC<Props> = ({ customerId, isOpen, init
           >
             {t('customers.assignedEvents.save', 'Save assignments')}
           </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {/* Selected chips */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+            {t('customers.assignedEvents.currentLabel', 'Assigned galleries')}
+            <span className="ml-1.5 normal-case text-faint">({selected.length})</span>
+          </label>
+          {selected.length === 0 ? (
+            <p className="text-sm text-muted italic">
+              {t('customers.assignedEvents.empty', 'No galleries assigned yet. Search below to add one.')}
+            </p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {selected.map((s) => (
+                <li
+                  key={s.id}
+                  className="inline-flex items-center gap-2 pl-2 pr-1 py-1 rounded-full text-sm bg-subtle text-heading border border-line"
+                >
+                  <CalendarIcon className="w-3.5 h-3.5 text-muted" />
+                  <span className="truncate max-w-[220px]">{s.eventName}</span>
+                  <button
+                    type="button"
+                    onClick={() => remove(s.id)}
+                    disabled={saveMutation.isPending}
+                    aria-label={t('customers.assignedEvents.removeAria', 'Remove {{name}}', { name: s.eventName })}
+                    className="p-0.5 rounded-full hover:bg-fill"
+                  >
+                    <X className="w-3.5 h-3.5 text-muted" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Search */}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+            {t('customers.assignedEvents.searchLabel', 'Add a gallery')}
+          </label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('customers.assignedEvents.searchPlaceholder', 'Search by event name')}
+              disabled={saveMutation.isPending}
+              className="w-full pl-9 pr-9 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+            {/* Inline clear button — visible only while the query has
+                content. We keep the query through add() now so the
+                admin needs an explicit way to wipe it before starting
+                a new search. Esc would be lovely too but adding a
+                global key handler inside a modal is more risk than
+                this control is worth. */}
+            {query && (
+              <button
+                type="button"
+                onClick={clearQuery}
+                disabled={saveMutation.isPending}
+                aria-label={t('customers.assignedEvents.clearSearchAria', 'Clear search')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-hover disabled:opacity-50"
+              >
+                <X className="w-3.5 h-3.5 text-muted" />
+              </button>
+            )}
+          </div>
+
+          {/* Results dropdown — inline (not a popover) since this is
+              already inside a modal, no nested-popover headaches. */}
+          <div className="mt-2 border border-line rounded-lg overflow-hidden bg-panel">
+            {!query.trim() ? (
+              <p className="px-3 py-3 text-sm text-muted">
+                {t('customers.assignedEvents.searchHint', 'Start typing to find galleries.')}
+              </p>
+            ) : isSearching ? (
+              <p className="px-3 py-3 text-sm text-muted">
+                {t('common.searching', 'Searching…')}
+              </p>
+            ) : results.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted">
+                {t('customers.assignedEvents.noResults', 'No matching galleries.')}
+              </p>
+            ) : (
+              <ul role="listbox">
+                {results.map((ev) => (
+                  <li key={ev.id}>
+                    <button
+                      type="button"
+                      onClick={() => add(ev)}
+                      disabled={saveMutation.isPending}
+                      className="w-full text-left px-3 py-2 flex items-center justify-between gap-3 hover:bg-hover"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <CalendarIcon className="w-4 h-4 flex-shrink-0 text-faint" />
+                        <span className="truncate text-sm font-medium text-heading">
+                          {ev.event_name}
+                        </span>
+                      </span>
+                      {ev.event_date && (
+                        <span className="text-xs text-muted flex-shrink-0">
+                          {ev.event_date}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

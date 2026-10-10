@@ -1,17 +1,19 @@
 import React from 'react';
 import clsx from 'clsx';
 import { Link } from 'react-router-dom';
-import { CornerDownRight, Lock, AlertTriangle, ArrowRight } from 'lucide-react';
+import { CornerDownRight, Lock, ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Switch } from './Switch';
-import { StatusBadge, type FeatureStatus } from './StatusBadge';
+import { FeatureStatusBadge } from '../../featureStatus';
+import { Notice } from '../../../components/common';
+import type { FeatureKey } from '../../../services/featureFlags.service';
 
 interface FeatureCardProps {
   icon: LucideIcon;
   title: string;
   description: string;
-  status: FeatureStatus;
-  statusLabel: string;
+  /** Its state label comes from features/featureStatus/registry.ts. */
+  feature: FeatureKey;
   sidebarLabel?: string;
   sidebarHidden?: boolean;
   sidebarHiddenLabel?: string;
@@ -37,8 +39,7 @@ export const FeatureCard: React.FC<FeatureCardProps> = ({
   icon: Icon,
   title,
   description,
-  status,
-  statusLabel,
+  feature,
   sidebarLabel,
   sidebarHidden,
   sidebarHiddenLabel,
@@ -78,7 +79,7 @@ export const FeatureCard: React.FC<FeatureCardProps> = ({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <h4 className="text-sm font-semibold text-heading">{title}</h4>
-          <StatusBadge status={status} label={statusLabel} />
+          <FeatureStatusBadge feature={feature} />
         </div>
         <p className="mt-1 text-sm text-soft">{description}</p>
 
@@ -97,19 +98,17 @@ export const FeatureCard: React.FC<FeatureCardProps> = ({
 
         {/* Locked-reason hint */}
         {lockedReason && (
-          <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-            <Lock className="w-3.5 h-3.5 mt-0.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
-            <span className="text-xs text-amber-800 dark:text-amber-300">{lockedReason}</span>
-          </div>
+          <Notice tone="warning" size="sm" className="mt-3" icon={<Lock className="w-3.5 h-3.5" />}>
+            {lockedReason}
+          </Notice>
         )}
 
         {/* Warning shown only when the user is about to disable (i.e. enabled=true).
             Wording assumes "you're disabling X — here's the consequence". */}
         {warning && enabled && (
-          <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-700 dark:text-amber-400 flex-shrink-0" />
-            <span className="text-xs text-amber-800 dark:text-amber-300">{warning}</span>
-          </div>
+          <Notice tone="warning" size="sm" className="mt-3">
+            {warning}
+          </Notice>
         )}
 
         {/* Only once the feature is on: before that the link would lead to a

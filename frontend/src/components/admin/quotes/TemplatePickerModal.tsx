@@ -7,9 +7,8 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { X } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Input, LocalizedDateInput } from '../../common';
+import { Button, Input, LocalizedDateInput, Modal } from '../../common';
 import { DecimalInput } from '../../common/DecimalInput';
 import { CustomerPicker } from '../CustomerPicker';
 import { PermissionGate } from '../PermissionGate';
@@ -57,7 +56,7 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
         }));
       }
       onClose();
-      navigate(`/admin/clients/quotes/${result.quoteId}/edit`);
+      navigate(`/admin/clients/quotes/${result.quoteId}`);
     } catch (err: any) {
       toast.error(quoteErrorText(err, t, 'Failed'));
     } finally {
@@ -66,19 +65,32 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"
-      aria-labelledby="template-picker-title">
-      <div className="w-full max-w-lg rounded-lg bg-shell text-heading shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 id="template-picker-title" className="text-lg font-semibold">{t('quotes.new', 'New quote')}</h2>
-          <button type="button" onClick={onClose} aria-label={t('common.close', 'Close') as string}
-            className="p-1 rounded hover:bg-hover-soft">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="space-y-4 px-5 py-4">
+    <Modal
+      open={open}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="md"
+      title={t('quotes.new', 'New quote')}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
+          {selected ? (
+            <PermissionGate permission="quotes.manage">
+              <Button onClick={create} disabled={busy || !customer.id}>
+                {t('quotes.templates.createFromTemplate', 'Create quote')}
+              </Button>
+            </PermissionGate>
+          ) : (
+            <Button onClick={() => { onClose(); navigate('/admin/clients/quotes/new'); }}>
+              {t('quotes.templates.startBlank', 'Start blank')}
+            </Button>
+          )}
+        </>
+      }
+    >
+        <div className="space-y-4">
           <div>
-            <label htmlFor="template-picker-template" className="block text-sm font-medium mb-1">
+            <label htmlFor="template-picker-template" className="block text-sm font-medium text-body mb-1">
               {t('quotes.templates.pickLabel', 'Start from')}
             </label>
             <select
@@ -118,7 +130,7 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
               <LocalizedDateInput label={t('quotes.field.eventDate', 'Event date') as string} value={eventDate}
                 onChange={(iso) => setEventDate(iso)} />
               <div>
-                <label htmlFor="template-picker-hours" className="block text-sm font-medium mb-1">{t('quotes.field.hours', 'Hours')}</label>
+                <label htmlFor="template-picker-hours" className="block text-sm font-medium text-body mb-1">{t('quotes.field.hours', 'Hours')}</label>
                 <DecimalInput id="template-picker-hours" value={hours} onChange={setHours} fractionDigits={2}
                   placeholder={selected.draft.hours != null ? String(selected.draft.hours) : ''}
                   className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm" />
@@ -129,21 +141,6 @@ export const TemplatePickerModal: React.FC<Props> = ({ open, onClose }) => {
             </>
           )}
         </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-          {selected ? (
-            <PermissionGate permission="quotes.manage">
-              <Button onClick={create} disabled={busy || !customer.id}>
-                {t('quotes.templates.createFromTemplate', 'Create quote')}
-              </Button>
-            </PermissionGate>
-          ) : (
-            <Button onClick={() => { onClose(); navigate('/admin/clients/quotes/new'); }}>
-              {t('quotes.templates.startBlank', 'Start blank')}
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

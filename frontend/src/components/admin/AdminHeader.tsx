@@ -153,7 +153,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
           />
         )}
         {showText && (
-          <span className={`${wordmarkVisibilityClass} text-xl sm:text-2xl truncate`} style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, color: '#145346' }}>{companyName}</span>
+          <span className={`${wordmarkVisibilityClass} text-xl sm:text-2xl truncate`} style={{ fontFamily: 'Poppins, sans-serif', fontWeight: 600, color: 'var(--picpeak-wordmark)' }}>{companyName}</span>
         )}
       </DashboardHomeLink>
     );
@@ -232,8 +232,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
               cluster just before the action widgets. */}
           <div className="flex items-center gap-3 min-w-0">
             <button
+              type="button"
               onClick={onMenuClick}
-              className="lg:hidden text-neutral-500 hover:text-neutral-700"
+              aria-label={t('navigation.openMenu', 'Open menu')}
+              className="lg:hidden text-muted hover:text-body"
             >
               <Menu className="w-6 h-6" />
             </button>
@@ -344,7 +346,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick, onOpenSea
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-danger rounded-full" />
                 )}
               </button>
 

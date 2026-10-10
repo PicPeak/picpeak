@@ -120,8 +120,8 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
         // — particularly on dark themes and coloured gallery backgrounds
         // — so the user couldn't tell the like had registered.
         isLiked
-          ? 'bg-red-500/80 text-white hover:bg-red-500'
-          : 'bg-surface text-muted-theme hover:bg-black/10'
+          ? 'bg-danger text-white hover:opacity-90'
+          : 'bg-elevated text-muted-theme hover-surface'
       } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
       aria-label={isLiked ? t('feedback.unlike', 'Unlike') : t('feedback.like', 'Like')}
     >

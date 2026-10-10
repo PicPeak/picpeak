@@ -125,8 +125,8 @@ export const PhotoReactions: React.FC<PhotoReactionsProps> = ({
               disabled={isSubmitting}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-sm transition-all ${
                 isMine
-                  ? 'bg-primary-100 dark:bg-primary-900/40 ring-1 ring-primary-500 scale-105'
-                  : 'bg-surface text-muted-theme hover:bg-black/10 hover:scale-105'
+                  ? 'bg-accent-soft ring-1 ring-accent scale-105'
+                  : 'bg-elevated text-muted-theme hover-surface hover:scale-105'
               } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
               aria-pressed={isMine}
               aria-label={isMine

@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, Mail, FileText } from 'lucide-react';
-import { Button, Card } from '../common';
+import { Mail, FileText } from 'lucide-react';
+import { Button, Modal } from '../common';
 
 interface EmailPreviewModalProps {
   isOpen: boolean;
@@ -22,83 +22,72 @@ export const EmailPreviewModal: React.FC<EmailPreviewModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-4xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-line">
-          <div className="flex items-center gap-3">
-            <Mail className="w-6 h-6 text-accent" />
-            <h2 className="text-xl font-semibold text-heading">Email Preview</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-400 hover:text-body transition-colors"
+    <Modal
+      open={isOpen}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      size="xl"
+      title={
+        <span className="flex items-center gap-3">
+          <Mail className="w-6 h-6 text-accent" aria-hidden="true" />
+          Email Preview
+        </span>
+      }
+      footer={
+        <Button variant="outline" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      {/* Subject */}
+      <div className="-mx-6 -mt-4 mb-4 px-6 py-4 border-b border-line bg-subtle">
+        <p className="text-sm font-medium text-soft">Subject:</p>
+        <p className="text-lg font-semibold text-heading mt-1">{subject}</p>
+      </div>
+
+      {/* View mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <Button
+          variant={viewMode === 'html' ? 'primary' : 'outline'}
+          size="sm"
+          onClick={() => setViewMode('html')}
+          leftIcon={<Mail className="w-4 h-4" />}
+        >
+          HTML View
+        </Button>
+        {textContent && (
+          <Button
+            variant={viewMode === 'text' ? 'primary' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('text')}
+            leftIcon={<FileText className="w-4 h-4" />}
           >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        {/* Subject */}
-        <div className="px-6 py-4 border-b border-line bg-subtle">
-          <p className="text-sm font-medium text-soft">Subject:</p>
-          <p className="text-lg font-semibold text-heading mt-1">{subject}</p>
-        </div>
-
-        {/* View mode toggle */}
-        <div className="px-6 py-3 border-b border-line">
-          <div className="flex gap-2">
-            <Button
-              variant={viewMode === 'html' ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('html')}
-              leftIcon={<Mail className="w-4 h-4" />}
-            >
-              HTML View
-            </Button>
-            {textContent && (
-              <Button
-                variant={viewMode === 'text' ? 'primary' : 'outline'}
-                size="sm"
-                onClick={() => setViewMode('text')}
-                leftIcon={<FileText className="w-4 h-4" />}
-              >
-                Text View
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6">
-          {viewMode === 'html' ? (
-            <div className="bg-white border border-line rounded-lg shadow-sm">
-              <iframe
-                srcDoc={htmlContent}
-                className="w-full h-[600px] border-0"
-                title="Email Preview"
-                // Same posture as the inbound-mail pane: no scripts, no
-                // same-origin. The preview needs neither; images and styles
-                // still render, and nothing reaches contentDocument.
-                sandbox=""
-                referrerPolicy="no-referrer"
-              />
-            </div>
-          ) : (
-            <div className="bg-subtle border border-line rounded-lg p-6">
-              <pre className="whitespace-pre-wrap font-mono text-sm text-body">
-                {textContent}
-              </pre>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 p-6 border-t border-line">
-          <Button variant="outline" onClick={onClose}>
-            Close
+            Text View
           </Button>
+        )}
+      </div>
+
+      {/* Content */}
+      {viewMode === 'html' ? (
+        <div className="bg-panel border border-line rounded-lg shadow-sm">
+          <iframe
+            srcDoc={htmlContent}
+            className="w-full h-[600px] border-0"
+            title="Email Preview"
+            // Same posture as the inbound-mail pane: no scripts, no
+            // same-origin. The preview needs neither; images and styles
+            // still render, and nothing reaches contentDocument.
+            sandbox=""
+            referrerPolicy="no-referrer"
+          />
         </div>
-      </Card>
-    </div>
+      ) : (
+        <div className="bg-subtle border border-line rounded-lg p-6">
+          <pre className="whitespace-pre-wrap font-mono text-sm text-body">
+            {textContent}
+          </pre>
+        </div>
+      )}
+    </Modal>
   );
 };

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 interface FeedbackIdentityModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ export const FeedbackIdentityModal: React.FC<FeedbackIdentityModalProps> = ({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const panelRef = useRef<HTMLDivElement>(null);
+  useGalleryDialog({ open: isOpen, onClose, panelRef });
 
   if (!isOpen) return null;
 
@@ -46,16 +49,24 @@ export const FeedbackIdentityModal: React.FC<FeedbackIdentityModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
-      <div className="relative bg-surface rounded-lg shadow-xl max-w-md w-full p-6">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-identity-title"
+        className="relative bg-surface border border-border-token text-theme rounded-lg shadow-xl max-w-md w-full p-6"
+      >
         <button
+          type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 p-1 hover:bg-black/10 rounded-lg transition-colors"
+          aria-label={t('common.close', 'Close')}
+          className="absolute top-4 right-4 p-1 hover-surface rounded-lg transition-colors"
         >
           <X className="w-5 h-5 text-muted-theme" />
         </button>
 
-        <h2 className="text-lg font-semibold text-theme mb-2">
+        <h2 id="feedback-identity-title" className="text-lg font-semibold text-theme mb-2">
           {t('feedback.identityRequired', 'Your Information Required')}
         </h2>
         <p className="text-sm text-muted-theme mb-4">

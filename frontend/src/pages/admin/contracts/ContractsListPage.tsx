@@ -69,7 +69,7 @@ export const ContractsListPage: React.FC = () => {
       <SectionPageHeader
         icon={ScrollText}
         title={t('contracts.title', 'Contracts')}
-        beta
+        feature="contracts"
         description={t('contracts.subtitle', 'Compose contracts from reusable blocks and have customers sign in-browser or upload a wet-signed PDF.')}
         actions={(
           <>
@@ -98,7 +98,7 @@ export const ContractsListPage: React.FC = () => {
       <Card padding="lg">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
             <input
               type="text"
               placeholder={t('contracts.list.searchPlaceholder', 'Search by number, title or customer…') as string}
@@ -164,12 +164,12 @@ export const ContractsListPage: React.FC = () => {
                               signed, amber for sent (awaiting customer),
                               grey for cancelled, neutral for draft. */}
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            c.status === 'fully_signed' ? 'bg-green-100 text-green-800'
-                              : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
-                              : c.status === 'sent' || c.status === 'awaiting_data' ? 'bg-amber-100 text-amber-800'
-                              : c.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
-                              : c.status === 'cancelled' || c.status === 'expired' ? 'bg-neutral-200 text-neutral-600'
-                              : 'bg-neutral-100 text-neutral-700'
+                            c.status === 'fully_signed' ? 'bg-success-soft text-success-text'
+                              : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-info-soft text-info-text'
+                              : c.status === 'sent' || c.status === 'awaiting_data' ? 'bg-warning-soft text-warning-text'
+                              : c.status === 'declined' ? 'bg-danger-soft text-danger-text'
+                              : c.status === 'cancelled' || c.status === 'expired' ? 'bg-fill text-soft'
+                              : 'bg-inset text-body'
                           }`}>{contractStatusLabel(t, c.status, c.signerProgress)}</span>
                         </td>
                       </tr>

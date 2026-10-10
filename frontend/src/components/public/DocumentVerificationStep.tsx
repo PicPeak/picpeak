@@ -213,7 +213,7 @@ export function DocumentVerificationStep<Result = DocumentAccessGrant>({
             <h1 className="text-lg font-semibold">{t('documentVerification.title', "Confirm it's you")}</h1>
           </div>
 
-          {notice && <p className="text-sm text-amber-700 dark:text-amber-300 mb-3">{notice}</p>}
+          {notice && <p className="text-sm text-warning-text mb-3">{notice}</p>}
 
           <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
             {hint
@@ -225,7 +225,7 @@ export function DocumentVerificationStep<Result = DocumentAccessGrant>({
           </p>
 
           {error && (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p>
+            <p role="alert" className="text-sm text-danger-text mb-3">{error}</p>
           )}
 
           {!sent ? (

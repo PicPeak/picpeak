@@ -39,7 +39,7 @@ export const CreditFilterChips: React.FC<CreditFilterChipsProps> = ({
 
   if (variant === 'list') {
     const itemClass = (active: boolean) => `w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-      active ? 'bg-accent-dark text-white' : 'text-muted-theme hover:bg-black/10'
+      active ? 'bg-accent-dark text-accent-fg' : 'text-muted-theme hover-surface'
     }`;
     return (
       <div className={className}>

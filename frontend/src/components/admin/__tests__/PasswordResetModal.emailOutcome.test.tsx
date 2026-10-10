@@ -33,6 +33,7 @@ describe('PasswordResetModal — email outcome', () => {
   it('says that no mail went out when emailSent is false despite the ticked option', async () => {
     await reset(false);
     expect(screen.queryByText('events.passwordReset.emailSentNote')).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('events.passwordReset.emailNotSentNote');
+    // The note sits in its own warning Notice (role=status) next to the success one.
+    expect(screen.getByText('events.passwordReset.emailNotSentNote').closest('[role="status"]')).not.toBeNull();
   });
 });

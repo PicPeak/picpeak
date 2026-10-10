@@ -40,7 +40,6 @@ import {
   settingsTabHref,
   type SettingsTab,
 } from '../settingsNav';
-import type { FeatureStatus } from '../components/StatusBadge';
 import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 interface SectionProps {
@@ -94,18 +93,6 @@ export const FeaturesTab: React.FC = () => {
   const sectionPageLink = (flag: FeatureKey, permission: string, href: string) =>
     (configurable(flag) && hasPermission(permission) ? href : undefined);
 
-  // The localized label shown in StatusBadge — short, uppercased internally.
-  const statusLabel = (status: FeatureStatus): string => {
-    const map: Record<FeatureStatus, string> = {
-      stable: t('settings.features.status.stable', 'stable'),
-      beta: t('settings.features.status.beta', 'beta'),
-      new: t('settings.features.status.new', 'new'),
-      experimental: t('settings.features.status.experimental', 'experimental'),
-      roadmap: t('settings.features.status.roadmap', 'roadmap'),
-    };
-    return map[status];
-  };
-
   // One label for every "where do I set this up?" link on the cards below.
   const configureLabel = t('settings.features.configure', 'Configure');
 
@@ -148,8 +135,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.galleries.description',
               'The core PicPeak surface. Always available.',
             )}
-            status="stable"
-            statusLabel={statusLabel('stable')}
+            feature="galleries"
             sidebarLabel={t('navigation.events')}
             enabled={staged.galleries}
             onToggle={() => { /* locked */ }}
@@ -167,8 +153,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.slideshow.description',
               'A separate fullscreen "Diashow" link per event for projectors at live events — auto-picks-up new uploads, with per-event-type presets and global watermark defaults under Settings → Slideshow.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="slideshow"
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.slideshow}
@@ -184,8 +169,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.transfers.description',
               'Send original files from any event(s) as a secure, token-protected download link, with an optional client-upload code so clients can send you logos and files back. Strictly opt-in.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="transfers"
             sidebarLabel={t('settings.features.transfers.sidebar', 'PicTransfer')}
             enabled={staged.transfers}
             onToggle={(next) => setFlag('transfers', next)}
@@ -203,8 +187,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.faces.description',
               'Group each gallery\u2019s photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container \u2014 nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="faces"
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.faces && !isSingleContainer}
@@ -229,8 +212,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.workflows.description',
               'Build visual automations on a canvas — triggers, conditions, branches, loops and admin approval gates. Your reminder ladder and booking steps become editable flows. Strictly opt-in.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="workflows"
             sidebarLabel={t('settings.features.workflows.sidebar', 'Workflows')}
             enabled={staged.workflows}
             onToggle={(next) => setFlag('workflows', next)}
@@ -253,8 +235,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.customerPortal.description',
               'Persistent customer logins. Recurring clients see all their assigned galleries from one place — no per-event passwords. Customers log in at /customer/login and you manage them under Clients → Accounts.',
             )}
-            status="beta"
-            statusLabel={statusLabel('beta')}
+            feature="customerPortal"
             // Sidebar hint mirrors the top-level "Clients" entry the
             // admin clicks first, not the deeper "Accounts" sub-nav.
             // Keeps the wording consistent with what's actually visible
@@ -272,8 +253,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.documents.description',
               'Share documents with a customer in their portal and receive documents from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF by default; more file types, size and storage limits under Settings → CRM.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="documents"
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.documents}
@@ -296,8 +276,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.reminderEmails.description',
               'Automatic pre-event nudge to customers N days before their event date. Per-category templates (concert, corporate, wedding, …) editable under Automation → Reminder emails; per-event override on the event detail page.',
             )}
-            status="beta"
-            statusLabel={statusLabel('beta')}
+            feature="reminderEmails"
             sidebarLabel={t('settings.reminderTemplates.title', 'Reminder emails')}
             enabled={staged.reminderEmails}
             onToggle={(next) => setFlag('reminderEmails', next)}
@@ -312,8 +291,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.incomingMail.description',
               'Poll a dedicated mailbox (IMAP) every minute and drop invoice attachments into Accounting → Incoming invoices. Configure the mailbox under Settings → Email.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="incomingMail"
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.incomingMail}
@@ -327,8 +305,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.whatsapp.description',
               'Deliver the gallery-ready notification via WhatsApp Business API in addition to email. Requires a Meta Business Account, an approved message template, and a customer phone number on the event. Configure credentials under Settings → WhatsApp.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="whatsapp"
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
             enabled={staged.whatsapp}
@@ -344,8 +321,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.messaging.description',
               'A unified Messages area: your sent + automated mail, the accounting inbox, and a customer mailbox (hello@) in one place — with reply and create-from-template composing. Configure the customer mailbox under Settings → Email; incoming mailboxes need the Incoming mail toggle too.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="messaging"
             sidebarLabel={t('settings.features.messaging.sidebar', 'Messages')}
             enabled={staged.messaging}
             onToggle={(next) => setFlag('messaging', next)}
@@ -361,8 +337,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.calendar.description',
               'Admin-only calendar showing events, logged hours, and pending quotes/contracts in one view. Drag-create hours directly on the calendar.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="calendar"
             sidebarLabel={t('settings.features.calendar.sidebar', 'Calendar')}
             enabled={staged.calendar}
             onToggle={(next) => setFlag('calendar', next)}
@@ -377,8 +352,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.calendarBooking.description',
               'Let customers see free slots on a public calendar and book directly. Coming soon.',
             )}
-            status="roadmap"
-            statusLabel={statusLabel('roadmap')}
+            feature="calendarBooking"
             sidebarLabel={t('settings.features.calendarBooking.sidebar', 'Booking')}
             enabled={staged.calendarBooking}
             onToggle={() => { /* locked */ }}
@@ -400,8 +374,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.quotes.description',
               'Send line-itemed quotes to clients. They can accept or decline from a public link; payment is tracked manually.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="quotes"
             sidebarLabel={t('settings.features.quotes.sidebar', 'Quotes')}
             enabled={staged.quotes}
             onToggle={(next) => setFlag('quotes', next)}
@@ -416,8 +389,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.contracts.description',
               'Compose contracts from a library of reusable blocks (image rights, NDA, model release, cancellation, jurisdiction…) and have customers sign in-browser or upload a wet-signed PDF. Seeded block bodies are EXAMPLES ONLY — review with your lawyer before sending.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="contracts"
             sidebarLabel={t('settings.features.contracts.sidebar', 'Contracts')}
             enabled={staged.contracts}
             onToggle={(next) => setFlag('contracts', next)}
@@ -432,8 +404,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.bills.description',
               'Generate an invoice from any accepted quote. Mark paid manually — no payment processor integration.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="bills"
             sidebarLabel={t('settings.features.bills.sidebar', 'Invoices')}
             enabled={staged.bills}
             onToggle={(next) => setFlag('bills', next)}
@@ -450,8 +421,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.newsletters.description',
               'Send a marketing campaign to your customer accounts. Compose the body with the rich-text editor, preview it, send yourself a test, then queue it — sends are spread over time so your mail provider does not rate-limit you. Every customer can be opted out individually, opted-out customers are skipped automatically, and every campaign carries an unsubscribe link. Emails about galleries, quotes and invoices are never affected.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="newsletters"
             sidebarLabel={t('settings.features.newsletters.sidebar', 'Newsletters')}
             enabled={staged.newsletters}
             onToggle={(next) => setFlag('newsletters', next)}
@@ -464,8 +434,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.hoursLogging.description',
               'Per-customer time tracking. Admin logs date + start/end times + optional rate override + note. Monthly-mode customers auto-accumulate hours into the running monthly draft; per-event customers see a "Create draft invoice" button that mints a standalone draft invoice with one line per entry. Independent of Bills — log hours even before turning the full billing surface on.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="hoursLogging"
             sidebarLabel={t('settings.features.hoursLogging.sidebar', 'Hours')}
             enabled={staged.hoursLogging}
             onToggle={(next) => setFlag('hoursLogging', next)}
@@ -478,8 +447,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.projects.description',
               'Admin-only grouping layer above events. Bundle several events under one project and open a 360° Project Overview cockpit — milestone timeline plus a dated feed of every email (with the actual sent preview + resend/cancel/retry actions), quote, contract, invoice, gallery and logged hour. Adds a "book to project" control when logging hours. Customers never see projects.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="projects"
             sidebarLabel={t('settings.features.projects.sidebar', 'Overview')}
             enabled={staged.projects}
             onToggle={(next) => setFlag('projects', next)}
@@ -497,8 +465,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.accounting.description',
               'A dedicated Accounting area, separate from CRM. Turn this on, then enable the sub-features below (Tax export, Incoming invoices). VAT / tax treatment is guidance only — verify with your Treuhänder before relying on it.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="accounting"
             sidebarLabel={t('settings.features.accounting.sidebar', 'Accounting')}
             enabled={staged.accounting}
             onToggle={(next) => setFlag('accounting', next)}
@@ -520,8 +487,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.taxReport.description',
               'Period-scoped revenue list with net + VAT breakdown grouped by VAT rate. Export as PDF (landscape, company letterhead) or CSV for your accountant. Cancelled invoices stay visible for a gap-free audit trail but are excluded from totals.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="taxReport"
             sidebarLabel={t('settings.features.taxReport.sidebar', 'Tax')}
             enabled={staged.taxReport}
             onToggle={(next) => setFlag('taxReport', next)}
@@ -539,8 +505,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.incomingInvoices.description',
               'Capture received supplier invoices (upload or phone/tablet camera), categorize expenses, and re-bill costs to clients on the relevant event with a contract-driven markup.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="incomingInvoices"
             sidebarLabel={t('settings.features.incomingInvoices.sidebar', 'Incoming')}
             enabled={staged.incomingInvoices}
             onToggle={(next) => setFlag('incomingInvoices', next)}
@@ -558,8 +523,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.expenses.description',
               'Internal expenses (mileage, per-diem, cash) booked to an event or the company, with optional proof. Separate from incoming supplier invoices. Configure km / per-diem rates and the proof requirement in the Accounting settings tab.',
             )}
-            status="new"
-            statusLabel={statusLabel('new')}
+            feature="expenses"
             sidebarLabel={t('settings.features.expenses.sidebar', 'Expenses')}
             enabled={staged.expenses}
             onToggle={(next) => setFlag('expenses', next)}
@@ -580,8 +544,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.analytics.description',
               'Storage usage, gallery views, download counts, and per-event stats.',
             )}
-            status="stable"
-            statusLabel={statusLabel('stable')}
+            feature="analytics"
             sidebarLabel={t('admin.analytics', 'Analytics')}
             enabled={staged.analytics}
             onToggle={(next) => setFlag('analytics', next)}
@@ -596,8 +559,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.userManagement.description',
               "Multi-admin support with role-based permissions. Turn off if you're a single-operator studio.",
             )}
-            status="stable"
-            statusLabel={statusLabel('stable')}
+            feature="userManagement"
             sidebarHidden
             sidebarHiddenLabel={settingsOnlyLabel}
             enabled={staged.userManagement}
@@ -617,8 +579,7 @@ export const FeaturesTab: React.FC = () => {
               'settings.features.crmDevelopment.description',
               'Internal helpers for verifying CRM flows (e.g. fire the admin payment-check email instantly, bypass throttles). Surfaces as a "Development" sub-tab under Clients. Strictly opt-in — fires real side effects, use against test data only.',
             )}
-            status="experimental"
-            statusLabel={statusLabel('experimental')}
+            feature="crmDevelopment"
             sidebarLabel={t('settings.features.crmDevelopment.sidebar', 'Development')}
             enabled={staged.crmDevelopment}
             onToggle={(next) => setFlag('crmDevelopment', next)}

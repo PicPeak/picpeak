@@ -119,6 +119,8 @@ export interface QuoteDetail extends QuoteSummary {
    *  quotes authored before the split. */
   paymentNetDaysTemplateId: number | null;
   paymentTimingTemplateId: number | null;
+  /** Per-quote installment plan (migration 142); null = the timing template's. */
+  installmentsOverride?: PaymentTermInstallment[] | null;
   netAmountMinor: number;
   vatRate: number | null;
   vatAmountMinor: number;

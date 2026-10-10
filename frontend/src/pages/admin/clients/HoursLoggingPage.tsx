@@ -92,7 +92,7 @@ export const HoursLoggingPage: React.FC = () => {
       <SectionPageHeader
         icon={Clock}
         title={t('hoursLogging.title', 'Hours logging')}
-        beta
+        feature="hoursLogging"
         description={t('hoursLogging.subtitle', 'Pick a customer and log billable time blocks. Entries flow into the next monthly bill or are billed on demand for per-event customers.')}
         className=""
       />
@@ -134,7 +134,7 @@ export const HoursLoggingPage: React.FC = () => {
             'Search by email or company…') as string}
         />
         {selectedId && !customerHoursAllowed && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+          <p className="mt-2 text-xs text-warning-text">
             {t('hoursLogging.customerLoggingDisabled',
               "This customer has hour logging disabled. Enable it on the customer's detail page to log hours.")}
           </p>
@@ -170,7 +170,7 @@ export const HoursLoggingPage: React.FC = () => {
                   key={r.customerAccountId}
                   type="button"
                   onClick={() => selectFromSummary(r)}
-                  className="w-full flex items-center justify-between gap-4 py-3 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/60 rounded-md px-2 -mx-2 transition-colors"
+                  className="w-full flex items-center justify-between gap-4 py-3 text-left hover:bg-hover-soft rounded-md px-2 -mx-2 transition-colors"
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -196,7 +196,7 @@ export const HoursLoggingPage: React.FC = () => {
                           {formatMoneyMinor(r.openAmountMinor, currency)}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1 text-amber-700 dark:text-amber-300 text-xs">
+                        <div className="flex items-center gap-1 text-warning-text text-xs">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           {t('hoursLogging.openHours.needsRate', 'Rate not set')}
                         </div>

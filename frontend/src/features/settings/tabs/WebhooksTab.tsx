@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Trash2, Copy, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
-import { Button, Card, Input, Loading } from '../../../components/common';
+import { Trash2, Copy, Activity, CheckCircle2, XCircle } from 'lucide-react';
+import {
+  Button, Card, Input, Loading, useConfirm, Notice,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, EmptyState, ErrorState,
+} from '../../../components/common';
 import { api } from '../../../config/api';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
@@ -40,6 +43,7 @@ interface WebhookRow {
  */
 export const WebhooksTab: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -51,7 +55,7 @@ export const WebhooksTab: React.FC = () => {
   const [justCreatedSecret, setJustCreatedSecret] = useState<string | null>(null);
   const [filterError, setFilterError] = useState<string | null>(null);
 
-  const { data: webhooks, isLoading } = useQuery({
+  const { data: webhooks, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['admin-webhooks'],
     queryFn: async () => {
       const res = await api.get<WebhookRow[]>('/admin/webhooks');
@@ -136,50 +140,43 @@ export const WebhooksTab: React.FC = () => {
            fields (name / email / phone) plus the share token. Make sure
            admins know what flows to a webhook receiver before they wire
            one up to a third-party automation tool. */}
-        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-900/20 p-3 mb-4 flex items-start gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-            {t(
-              'settings.webhooks.piiNotice',
-              'event.* payloads include customer contact info (name, email, phone) and the gallery share token if you have stored them. Only point webhooks at receivers you trust — they have everything needed to message the customer or open the gallery.'
-            )}
-          </p>
-        </div>
+        <Notice tone="warning" size="sm" className="mb-4">
+          {t(
+            'settings.webhooks.piiNotice',
+            'event.* payloads include customer contact info (name, email, phone) and the gallery share token if you have stored them. Only point webhooks at receivers you trust — they have everything needed to message the customer or open the gallery.'
+          )}
+        </Notice>
 
         {justCreatedSecret && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 p-4 mb-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-200 mb-1">
-                  {t('settings.webhooks.copyNow', 'Copy this signing secret now — it will not be shown again.')}
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="block flex-1 min-w-0 px-3 py-2 bg-shell border border-amber-300 dark:border-amber-700 rounded text-xs font-mono break-all">
-                    {justCreatedSecret}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={<Copy className="w-4 h-4" />}
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(justCreatedSecret);
-                        toast.success(t('settings.webhooks.copied', 'Copied'));
-                      } catch {
-                        toast.error(t('settings.webhooks.copyFailed', 'Copy failed'));
-                      }
-                    }}
-                  >
-                    {t('settings.webhooks.copyButton', 'Copy')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setJustCreatedSecret(null)}>
-                    {t('settings.webhooks.dismiss', 'Dismiss')}
-                  </Button>
-                </div>
-              </div>
+          <Notice
+            tone="warning"
+            className="mb-4"
+            title={t('settings.webhooks.copyNow', 'Copy this signing secret now — it will not be shown again.')}
+          >
+            <div className="mt-1 flex items-center gap-2">
+              <code className="block flex-1 min-w-0 px-3 py-2 bg-shell border border-warning-line rounded text-xs font-mono break-all">
+                {justCreatedSecret}
+              </code>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Copy className="w-4 h-4" />}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(justCreatedSecret);
+                    toast.success(t('settings.webhooks.copied', 'Copied'));
+                  } catch {
+                    toast.error(t('settings.webhooks.copyFailed', 'Copy failed'));
+                  }
+                }}
+              >
+                {t('settings.webhooks.copyButton', 'Copy')}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setJustCreatedSecret(null)}>
+                {t('settings.webhooks.dismiss', 'Dismiss')}
+              </Button>
             </div>
-          </div>
+          </Notice>
         )}
 
         <div className="space-y-3">
@@ -209,7 +206,7 @@ export const WebhooksTab: React.FC = () => {
                     type="checkbox"
                     checked={events.includes(e)}
                     onChange={() => toggleEvent(e)}
-                    className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                    className="w-4 h-4 text-accent rounded focus:ring-accent"
                   />
                   <code className="text-xs">{e}</code>
                 </label>
@@ -220,7 +217,7 @@ export const WebhooksTab: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowAdvanced((prev) => !prev)}
-            className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-start"
+            className="text-sm text-accent hover:underline self-start"
           >
             {showAdvanced ? t('settings.webhooks.hideAdvanced', '− Hide advanced (filter, template)') : t('settings.webhooks.showAdvanced', '+ Advanced (filter, template)')}
           </button>
@@ -236,12 +233,12 @@ export const WebhooksTab: React.FC = () => {
                   onChange={(e) => { setFilterText(e.target.value); setFilterError(null); }}
                   placeholder='{"data.event.event_type": "wedding"}'
                   rows={3}
-                  className="w-full px-3 py-2 border border-line-strong dark:bg-neutral-800 rounded text-sm font-mono"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel rounded text-sm font-mono"
                 />
-                <p className="text-xs text-neutral-500 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.webhooks.filterHelp', 'Dot-path → expected value. All keys must match (AND). Use an array for "any of".')} <code>{'{"type": ["event.published", "event.archived"]}'}</code>
                 </p>
-                {filterError && <p className="text-xs text-red-600 mt-1">{filterError}</p>}
+                {filterError && <p className="text-xs text-danger-text mt-1">{filterError}</p>}
               </div>
 
               <div>
@@ -253,9 +250,9 @@ export const WebhooksTab: React.FC = () => {
                   onChange={(e) => setTemplate(e.target.value)}
                   placeholder={t('settings.webhooks.templatePlaceholder', 'New gallery: ${data.event.event_name} → ${data.event.share_url}')}
                   rows={3}
-                  className="w-full px-3 py-2 border border-line-strong dark:bg-neutral-800 rounded text-sm font-mono"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel rounded text-sm font-mono"
                 />
-                <p className="text-xs text-neutral-500 mt-1">
+                <p className="text-xs text-muted mt-1">
                   {t('settings.webhooks.templateHelp', 'Replaces the default JSON envelope as the request body. ${dot.path} substitution from the payload only — no logic, no expressions.')}
                 </p>
               </div>
@@ -277,92 +274,101 @@ export const WebhooksTab: React.FC = () => {
         <h3 className="text-base font-semibold text-heading mb-3">
           {t('settings.webhooks.existing', 'Existing webhooks')}
         </h3>
-        {webhooks && webhooks.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted border-b border-line">
-                  <th className="py-2 pr-3">{t('settings.webhooks.colName', 'Name')}</th>
-                  <th className="py-2 pr-3">{t('settings.webhooks.colUrl', 'URL')}</th>
-                  <th className="py-2 pr-3">{t('settings.webhooks.colEvents', 'Events')}</th>
-                  <th className="py-2 pr-3">{t('settings.webhooks.colLastDelivery', 'Last delivery')}</th>
-                  <th className="py-2 pr-3">{t('settings.webhooks.colStatus', 'Status')}</th>
-                  <th className="py-2 text-right">{t('settings.webhooks.colActions', 'Actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {webhooks.map((wh) => {
-                  const lastSuccess = wh.last_success_at ? new Date(wh.last_success_at) : null;
-                  const lastFailure = wh.last_failure_at ? new Date(wh.last_failure_at) : null;
-                  const lastEither = lastFailure && (!lastSuccess || lastFailure > lastSuccess) ? 'failure' : (lastSuccess ? 'success' : 'none');
-                  return (
-                    <tr key={wh.id} className="border-b border-line-faint last:border-0 align-top">
-                      <td className="py-3 pr-3 font-medium">{wh.name}</td>
-                      <td className="py-3 pr-3 text-xs font-mono text-soft max-w-xs truncate" title={wh.url}>{wh.url}</td>
-                      <td className="py-3 pr-3 text-xs text-neutral-500">
-                        {t('settings.webhooks.eventsSubscribed', { count: Array.isArray(wh.events) ? wh.events.length : 0 })}
-                      </td>
-                      <td className="py-3 pr-3 text-xs text-neutral-500">
-                        {lastEither === 'success' && lastSuccess && (
-                          <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            {fmtDateTime(lastSuccess)}
-                          </span>
-                        )}
-                        {lastEither === 'failure' && lastFailure && (
-                          <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                            <XCircle className="w-3.5 h-3.5" />
-                            {fmtDateTime(lastFailure)}
-                          </span>
-                        )}
-                        {lastEither === 'none' && <span className="text-neutral-400">—</span>}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <button
-                          onClick={() => toggleActiveMutation.mutate({ id: wh.id, active: !wh.active })}
-                          className={`text-xs px-2 py-0.5 rounded ${
-                            wh.active
-                              ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                              : 'bg-fill text-soft'
-                          }`}
-                          title={wh.active ? t('settings.webhooks.toggleToDisable', 'Click to disable') : t('settings.webhooks.toggleToEnable', 'Click to enable')}
+        {isError && !webhooks ? (
+          <ErrorState
+            title={t('settings.webhooks.loadFailed', 'Could not load the webhooks')}
+            onRetry={() => refetch()}
+            retrying={isFetching}
+            size="inline"
+          />
+        ) : webhooks && webhooks.length > 0 ? (
+          <Table>
+            <TableHead>
+              <tr>
+                <TableHeaderCell>{t('settings.webhooks.colName', 'Name')}</TableHeaderCell>
+                <TableHeaderCell>{t('settings.webhooks.colUrl', 'URL')}</TableHeaderCell>
+                <TableHeaderCell>{t('settings.webhooks.colEvents', 'Events')}</TableHeaderCell>
+                <TableHeaderCell>{t('settings.webhooks.colLastDelivery', 'Last delivery')}</TableHeaderCell>
+                <TableHeaderCell>{t('settings.webhooks.colStatus', 'Status')}</TableHeaderCell>
+                <TableHeaderCell align="right">{t('settings.webhooks.colActions', 'Actions')}</TableHeaderCell>
+              </tr>
+            </TableHead>
+            <TableBody>
+              {webhooks.map((wh) => {
+                const lastSuccess = wh.last_success_at ? new Date(wh.last_success_at) : null;
+                const lastFailure = wh.last_failure_at ? new Date(wh.last_failure_at) : null;
+                const lastEither = lastFailure && (!lastSuccess || lastFailure > lastSuccess) ? 'failure' : (lastSuccess ? 'success' : 'none');
+                return (
+                  <TableRow key={wh.id} className="align-top">
+                    <TableCell className="font-medium text-heading">{wh.name}</TableCell>
+                    <TableCell className="text-xs font-mono text-soft max-w-xs truncate" title={wh.url}>{wh.url}</TableCell>
+                    <TableCell className="text-xs text-muted">
+                      {t('settings.webhooks.eventsSubscribed', { count: Array.isArray(wh.events) ? wh.events.length : 0 })}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted">
+                      {lastEither === 'success' && lastSuccess && (
+                        <span className="flex items-center gap-1 text-success-text">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {fmtDateTime(lastSuccess)}
+                        </span>
+                      )}
+                      {lastEither === 'failure' && lastFailure && (
+                        <span className="flex items-center gap-1 text-danger-text">
+                          <XCircle className="w-3.5 h-3.5" />
+                          {fmtDateTime(lastFailure)}
+                        </span>
+                      )}
+                      {lastEither === 'none' && <span className="text-faint">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => toggleActiveMutation.mutate({ id: wh.id, active: !wh.active })}
+                        className={`text-xs px-2 py-0.5 rounded ${
+                          wh.active
+                            ? 'bg-success-soft text-success-text'
+                            : 'bg-fill text-soft'
+                        }`}
+                        title={wh.active ? t('settings.webhooks.toggleToDisable', 'Click to disable') : t('settings.webhooks.toggleToEnable', 'Click to enable')}
+                      >
+                        {wh.active ? t('settings.webhooks.statusActive', 'Active') : t('settings.webhooks.statusDisabled', 'Disabled')}
+                      </button>
+                    </TableCell>
+                    <TableCell align="right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          to={`/admin/webhooks/${wh.id}/deliveries`}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-soft hover:text-heading"
                         >
-                          {wh.active ? t('settings.webhooks.statusActive', 'Active') : t('settings.webhooks.statusDisabled', 'Disabled')}
-                        </button>
-                      </td>
-                      <td className="py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Link
-                            to={`/admin/webhooks/${wh.id}/deliveries`}
-                            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-soft hover:text-heading"
-                          >
-                            <Activity className="w-3.5 h-3.5" />
-                            {t('settings.webhooks.deliveriesLink', 'Deliveries')}
-                          </Link>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            leftIcon={<Trash2 className="w-4 h-4" />}
-                            onClick={() => {
-                              if (confirm(t('settings.webhooks.confirmDelete', { name: wh.name, defaultValue: `Delete "${wh.name}"? Pending deliveries are also removed.` }))) {
-                                deleteMutation.mutate(wh.id);
-                              }
-                            }}
-                          >
-                            {t('settings.webhooks.delete', 'Delete')}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          <Activity className="w-3.5 h-3.5" />
+                          {t('settings.webhooks.deliveriesLink', 'Deliveries')}
+                        </Link>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          leftIcon={<Trash2 className="w-4 h-4" />}
+                          onClick={async () => {
+                            if (!(await confirm({
+                              message: t('settings.webhooks.confirmDelete', { name: wh.name, defaultValue: `Delete "${wh.name}"? Pending deliveries are also removed.` }),
+                              variant: 'danger',
+                              confirmLabel: t('settings.webhooks.deleteAction', 'Delete webhook'),
+                            }))) return;
+                            deleteMutation.mutate(wh.id);
+                          }}
+                        >
+                          {t('settings.webhooks.delete', 'Delete')}
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         ) : (
-          <p className="text-sm text-muted">
-            {t('settings.webhooks.empty', 'No webhooks yet. Create one above to start receiving event notifications.')}
-          </p>
+          <EmptyState
+            title={t('settings.webhooks.empty', 'No webhooks yet. Create one above to start receiving event notifications.')}
+            size="inline"
+          />
         )}
       </Card>
     </div>

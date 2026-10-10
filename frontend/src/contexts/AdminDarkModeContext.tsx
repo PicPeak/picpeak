@@ -104,10 +104,14 @@ export const AdminDarkModeProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => mql.removeEventListener('change', handler);
   }, [preference, applyDarkClass, forcedMode]);
 
-  // Strip dark class when unmounting (navigating away from admin)
+  // Mark <html> as the admin while mounted, so shared classes (.btn-outline,
+  // ...) pick the UI tokens over the operator's gallery theme, dialogs
+  // portalled to <body> included. Strip both classes when leaving the admin.
   useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('admin-ui');
     return () => {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark', 'admin-ui');
     };
   }, []);
 

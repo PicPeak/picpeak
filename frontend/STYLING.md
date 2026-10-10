@@ -1,22 +1,30 @@
 # Styling guide
 
-One place decides how PicPeak looks: **`src/styles/tokens.css`**. Change a
-value there and every card, border, heading and hover in the admin follows.
-This document explains what is in that file, how components consume it, and
-the rules that keep it the single source.
+One place decides how PicPeak looks: **`src/styles/tokens.css`**. Every
+colour in the app is a token there — greys, the accent, the status colours,
+the data colours. Change a value and every card, badge, banner, chart and
+heading follows, admin and public pages alike. The studio changes the
+accent, the gallery palette and the status colours in **Branding › Colours**;
+those override the `tokens.css` defaults at runtime. This document explains
+what is in that file, how components consume it, and the rules that keep it
+the single source.
 
 This file is about **how things look**. How pages behave — page structure,
 saving, permissions, states, confirmations, copy — is in [`UX.md`](UX.md).
 Read both before building or reworking an admin surface.
 
-## The two token families
+## The token families
 
-PicPeak has two audiences with different owners, so it has two token families.
+PicPeak has two audiences with different owners, so its greys come in two
+families. The colours that carry meaning are shared.
 
 | Family | Prefix | Who sets the values | Where it is used |
 |---|---|---|---|
 | **UI tokens** | `--ui-*` | developers, in `tokens.css` | admin panel and every other developer-owned surface |
-| **Theme tokens** | `--color-*` | the operator, through Branding | public gallery, customer portal, public quote/contract pages |
+| **Theme tokens** | `--color-*` | the operator, through Branding › Colours | public gallery, customer portal, public quote/contract pages |
+| **Status** | `--status-*` → `--ui-<status>-*` | `tokens.css` defaults, the operator overrides them in Branding › Colours | badges, notices and status chips everywhere |
+| **Accent** | `--ui-accent*` | the operator's accent from Branding | primary buttons, active tabs, selections, links, focus rings |
+| **Data colours** | `--chart-1` … `--chart-8`, `--color-rating` | developers, in `tokens.css` | charts, calendar entries, categories, rating stars |
 
 The theme tokens are overwritten at runtime: `ThemeContext.applyTheme()`
 writes the operator's palette as inline `--color-*` styles on `<html>`, on
@@ -27,7 +35,16 @@ the gallery's shadow (which is exactly what happened before PR 1691).
 
 Dark mode is a class: `AdminDarkModeContext` toggles `.dark` on `<html>`, and
 `tokens.css` redefines every UI token under `.dark`. A component written with
-the token utilities therefore needs **no `dark:` variants at all**.
+the token utilities therefore needs **no `dark:` variants at all**. Two
+helpers ride on the same blocks:
+
+- `.ui-light` / `.ui-dark` pin a subtree to the light or dark admin palette
+  whatever the page mode (Branding's colour preview shows both side by side).
+- `.admin-ui` sits on `<html>` while the admin is mounted
+  (`AdminDarkModeProvider`). Shared classes read it to pick the UI tokens over
+  the operator's gallery theme: `.btn-secondary`, `.btn-outline` and the
+  `--shared-fill` / `--shared-surface` that `Skeleton` uses. Dialogs
+  portalled to `<body>` get it too.
 
 ## UI tokens
 
@@ -79,56 +96,134 @@ radii and `soft`/`medium`/`large` shadows.
 ### Accent: the one brand colour the admin follows
 
 The admin is neutral except for one colour: the operator's accent from
-Branding. `text-accent`, `border-accent`, `bg-accent-dark`, `.btn-primary` and
-`.tile-selected` read `--color-accent` / `--color-accent-dark`, so the active
-tab, the primary button and a selected tile carry the studio's brand colour.
-That is the deliberate exception to rule 2 below — use those five forms and
-nothing else from the theme family.
+Branding. It reaches the admin as these tokens:
 
-| Use | Class |
-|---|---|
-| Primary action (one per view) | `<Button variant="primary">` (`.btn-primary`) |
-| Active tab, active nav item, links | `text-accent` / `border-accent` |
-| Selected option in a picker grid (layout, source, preset) | `.tile-selected` — full fill, white content |
-| Soft highlight (a selected list row, an info note) | `bg-accent-dark/10` with `text-body` / `text-heading` |
+| Utility / class | Token | Use for |
+|---|---|---|
+| `<Button variant="primary">` (`.btn-primary`) | `--ui-accent-strong` + `--ui-accent-fg` | the primary action (one per view) |
+| `text-accent` | `--accent-text` (the accent made readable as text on its surface: `--color-accent-text` on themed pages, `--ui-accent-text-light/-dark` in the admin; written by `applyTheme`) | links, active tab and nav item text |
+| `border-accent` / `ring-accent` | `--color-accent` | active tab underline, focus rings |
+| `.tile-selected` | `--ui-accent-strong` + `--ui-accent-fg` | the chosen option in a picker grid (layout, source, preset) |
+| `bg-accent-soft` + `text-on-accent-soft`, `border-accent-soft` | `--ui-accent-soft`, `--ui-accent-on-soft`, `--ui-accent-line` | soft highlight: a selected list row, an enabled feature icon |
+| `bg-accent-strong`, `text-accent-fg` | `--ui-accent-strong`, `--ui-accent-fg` | a filled accent area that is not a button (a switch that is on) |
 
-Never put accent text on an accent tint (`text-accent` on `bg-accent-dark/10`):
-it disappears on dark themes. That is why `.tile-selected` fills and turns its
-content white.
+Never put accent text on an accent tint (`text-accent` on `bg-accent-soft`):
+it disappears on dark themes. Content on the tint takes `text-on-accent-soft`.
 
-Following the brand colour is a feature; the risk is contrast. A pastel
-accent makes the white text on `.btn-primary` unreadable. **Follow-up for the
-token layer:** a `--ui-accent` token that defaults to the brand accent and is
-contrast-clamped against white text, so the admin keeps the studio's colour
-without inheriting an unreadable one. There is no separate neutral admin
-accent.
+Contrast is handled where the colour is set: `applyTheme()` writes
+`--color-accent-dark-fg`, white or near-black, whichever reads on the filled
+accent, so a pastel brand colour keeps a readable button label. Branding ›
+Colours warns when the accent itself is hard to see.
 
 ### Status colours
 
-Success, warning, danger and info keep Tailwind's `green`, `amber`, `red` and
-`blue` scales. They are the same family in both modes by design.
+One hue per meaning, in `tokens.css` › Status, overridable in Branding ›
+Colours. Every other shade is derived from the hue with `color-mix`, for
+light and dark, so a studio picks five colours and never twenty.
 
-**Interim rule.** There is no `Badge` / `Notice` primitive in `common/` yet,
-so for now copy exactly these pairs, so every badge and banner reads the same.
-The first overhaul PR adds `Badge` (`tone: success | warning | danger |
-info`) and `Notice`; from then on this table is those components' internals,
-rule 3 applies (use the component, don't copy classes), and the status token
-layer becomes a one-file change:
+| Status | Default | Means |
+|---|---|---|
+| `success` | `#16a34a` | paid, signed, published, done |
+| `warning` | `#d97706` | due soon, draft, pending, not saved yet |
+| `danger` | `#dc2626` | overdue, failed, delete |
+| `info` | `#2563eb` | sent, in progress, neutral notices |
+| `storno` | `#9333ea` | cancelled and credited documents |
 
-| Meaning | Badge | Banner (box) | Text only |
-|---|---|---|---|
-| success | `bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300` | `border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20` | `text-green-700 dark:text-green-400` |
-| warning | `bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300` | `border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20` | `text-amber-700 dark:text-amber-400` |
-| danger | `bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300` | `border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20` | `text-red-600 dark:text-red-400` |
-| info | `bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300` | `border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20` | `text-blue-700 dark:text-blue-400` |
+Use the components: `<Badge tone="…">` for a pill, `<Notice tone="…">` for a
+box. Where a component does not fit, the utilities are:
+
+| Utility | Token | Use for |
+|---|---|---|
+| `bg-<status>` | `--ui-<status>` | a dot, a filled area, an icon on its own |
+| `text-<status>-text` | `--ui-<status>-text` | text in the status colour on a panel |
+| `bg-<status>-soft` | `--ui-<status>-soft` | the tint behind a badge or a notice |
+| `border-<status>-line` | `--ui-<status>-line` | a notice's border |
 
 A status colour always comes with a word ("Draft", "Failed", "Watching") — never
-colour alone. Unsaved changes are amber (`bg-amber-500` dot, as in the Settings
-section list).
+colour alone. Unsaved changes are the warning colour (`bg-warning` dot, as in
+the Settings section list and the tab row).
 
-The `.status-chip` / `.hue-*` classes in `index.css` are for the **customer
-portal and public pages**: they mix the hue into the operator's theme surface.
-Do not use them in the admin.
+The customer portal and public pages use `.status-chip` with a `.hue-*`
+class: it mixes the same `--status-*` hue into the operator's themed surface.
+
+### Data colours
+
+For things that only need to look different from each other — chart series,
+calendar entries, categories, notification and activity icons, workflow
+nodes — use `chart-1` … `chart-8` in order (`bg-chart-3`, `text-chart-3`,
+`var(--chart-3)` where a library wants a CSS value). They are lighter in
+dark mode. Never use a status colour for a series: green would read as
+"good". Rating stars are `text-rating` / `fill-rating`, not the warning
+colour.
+
+### Colour classes
+
+Raw Tailwind palette classes (`text-red-600`, `bg-primary-50`, `border-blue-200`)
+are not used anywhere in `src`: the lint rule `ui-tokens/no-raw-palette`
+rejects them. The old fixed green `primary-*` scale and the `sand` scale are
+gone from `tailwind.config.js`. `npm run codemod:ui-tokens` rewrites the
+classes whose meaning is clear:
+
+| Raw | Token |
+|---|---|
+| green / emerald | `success` |
+| amber | `warning` |
+| red / rose | `danger` |
+| blue / sky | `info`; blue text with its own hover colour is a link: `text-accent` |
+| primary | the accent (`bg-accent-strong`, `text-accent`, `bg-accent-soft`, `border-accent`) |
+| any hue in `focus:` / `focus-visible:` rings and borders | `ring-accent` / `border-accent` |
+
+By shade: 50–200 backgrounds become `-soft`, 500–700 backgrounds the solid
+colour (a hover on them `hover:opacity-90`), 600+ text `-text`, 100–300
+borders `-line`. The `dark:` partner is dropped. Other hues (purple,
+orange, yellow, indigo, teal, pink …) have no fixed meaning; the rule
+reports them and a person picks a status, a data colour, the rating colour
+or a neutral.
+
+Hex values in components are for data only: theme presets, the colour
+labels that match Lightroom, a user-pickable palette, signature ink. Styling
+reads a token, in a `style` too (`var(--chart-1)`).
+
+## Theme tokens: customer portal and public pages
+
+The customer portal, the quote, contract and payment-check pages, the
+invite, legal, transfer and maintenance pages follow the operator's palette.
+They use the theme utilities, never a neutral class or a `dark:` variant:
+
+| Utility | Token | Use for |
+|---|---|---|
+| `bg-background` | `--color-background` | the page floor |
+| `bg-surface` | `--color-surface` | cards, sidebar, header |
+| `bg-elevated` | `--color-elevated` | wells and quiet boxes on a card, hover on a row |
+| `border-border-token`, `divide-border-token` | `--color-surface-border` | card borders, dividers |
+| `text-theme` | `--color-text` | running text, headings |
+| `text-muted-theme` | `--color-muted-text` | secondary text, icons at rest |
+| `text-accent`, `bg-accent-strong text-accent-fg` | accent | links; a filled action that is not a `Button` |
+| `.input-themed`, `<Input themed>` | surface, border, text | every field: input, select, textarea, DecimalInput |
+| `.status-chip` + `.hue-<status>` | status hue over the surface | status pills |
+
+`border-surface` is **not** the border: Tailwind's `surface` colour turns it
+into `--color-surface`, which wins over the class in `index.css`. Use
+`border-border-token`.
+
+Every such page calls **`usePublicDarkMode()`** (the portal through
+`CustomerLayout`). While one is mounted, `<html>` carries `.public-ui`, and
+`tokens.css` maps the UI tokens onto the theme tokens there. That is what lets
+the shared primitives — `Notice`, `EmptyState`, `ErrorState`, `Modal`,
+`useConfirm`, `Card`, `Input`, `Loading` — and the status utilities
+(`bg-danger-soft`, `text-success-text`) sit on the studio's surface, dialogs
+portalled to `<body>` included. The hook also sets `.dark` when the palette
+itself is dark (read from its background colour, after Branding's force-colour
+mode), so the status shades flip with it; both classes come off when the last
+such page unmounts. Never put `.dark` on an element below `<html>`: there the
+`.dark` defaults in `tokens.css` would replace the operator's colours for
+everything inside it.
+
+Paper stays paper: the signature pad and the typed-signature preview are
+white with dark ink in every theme.
+
+The setup wizard is PicPeak's own screen, shown before any branding exists:
+it uses the UI tokens.
 
 ## Rules for admin code
 
@@ -140,14 +235,16 @@ Do not use them in the admin.
    `text-muted-theme`, `var(--color-*)` and `var(--shadow-default)` belong to
    the gallery, portal and public pages only. The `brandingThemeTextLeak`
    test guards the headings that were bitten by this.
-3. **Prefer the primitives.** `Button`, `Card`, `Input`, `Loading`,
+3. **Prefer the primitives.** `Button`, `Badge`, `Notice`, `Modal`, `Tabs`,
+   `Table`, `Switch`, `EmptyState`, `ErrorState`, `Card`, `Input`, `Loading`,
    `Skeleton`, `ConfirmDialog` in `src/components/common` already carry the
    tokens. A hand-rolled `<button className="px-3 py-2 rounded-lg bg-panel …">`
    is a sign that a variant is missing from `Button`; add the variant instead.
 4. **New colour, new token.** If a design needs a shade that is not in the
    tables above, add a token to `tokens.css` (light and dark), expose it in
    `tailwind.config.js`, and document it here. Do not reach for
-   `neutral-350` in a component.
+   `neutral-350` or a hex value in a component. Raw palette classes fail
+   `ui-tokens/no-raw-palette`.
 5. **No lone neutrals in new code.** `text-neutral-400` without a pair renders
    the same in both modes and goes invisible on a dark panel. Use the token
    (`text-faint` for an icon at rest). Adding `dark:` to a lone neutral is not
@@ -160,20 +257,49 @@ component, not re-created next to it.
 
 | Need | Use | Notes |
 |---|---|---|
-| Button | `Button` (`common`) — `primary` / `secondary` / `outline` / `ghost`, `sm` / `md` / `lg`, `leftIcon`, `isLoading` | one `primary` per view; `ghost` for tertiary actions in toolbars and menus |
+| Button | `Button` (`common`) — `primary` / `secondary` / `outline` / `ghost` / `danger`, `sm` / `md` / `lg` / `icon-sm` / `icon-md`, `leftIcon`, `isLoading` | one `primary` per view; `ghost` for tertiary actions in toolbars and menus; `danger` for destructive actions (confirm first); icon sizes need `aria-label` |
+| Status pill | `Badge` (`common`) — `tone`, `appearance="outline"`, `caps`, `dot` | "Paid", "Draft", "Default"; always a word. Portal and public pages: `.status-chip .hue-<status>` |
+| Notice / banner | `Notice` (`common`) — `tone`, `title`, `action`, `size="sm"` | explains a state; its action shares a wrapping row with the text |
+| Dialog window | `Modal` (`common`) — `title`, `description`, `footer`, `size` | Escape closes without saving (UX.md › Popups and dialogs), focus stays inside and returns to the opener; a sheet on a phone. A yes/no question is `useConfirm()` |
+| Tab row | `Tabs` (`common`) — `items` with `icon`, `count`, `dirty` | arrow keys move; the divider is an inset shadow |
+| List table | `Table`, `TableHead`, `TableBody`, `TableRow`, `TableHeaderCell`, `TableCell` (`common`) | the table scrolls sideways inside its card, never the page; `SortableHeader` goes inside a header cell |
+| On / off | `Switch` (`common`) — `label`, `description` | changes the draft, saves with the save bar |
+| Nothing here yet | `EmptyState` (`common`) | say what is missing, offer the next step |
+| Loading failed | `ErrorState` (`common`) — `onRetry` | never the empty state |
+| Feature state | `FeatureStatusBadge` (`features/featureStatus`), or `feature=` on `SectionPageHeader` | see Feature state below |
 | Card / section box | `Card` (`common`), or `bg-panel border border-line rounded-xl p-5` for a settings section | |
-| Text field | `Input` (`common`) — `label`, `error`, `leftIcon` | |
+| Text field | `Input` (`common`) — `label`, `error`, `leftIcon`, `themed` | `themed` on portal, public and gallery pages: field, label and icons read the theme tokens (`.input-themed`); a raw `<select>` / `<textarea>` there takes `.input-themed` |
 | Date | `LocalizedDateInput` | follows the general date format setting |
 | Time | `TimeField` | |
 | Money / decimals | `DecimalInput` | accepts `1,50` and `1.50`; `type="number"` does not |
 | Loading | `Loading`, `Skeleton*` (`common`) | skeletons for lists and grids, `Loading` for a whole page |
 | Confirm | `useConfirm()` (`ConfirmDialog`) — `variant: 'danger'` for destructive | never `window.confirm()` |
-| Page header (section pages) | `SectionPageHeader` (`admin`) | icon, title, one-line description, actions |
+| Page header (section pages) | `SectionPageHeader` (`admin`) | icon, title, one-line description, actions; `feature="quotes"` adds the feature's state label |
 | Settings save | `SettingsSaveBar` (`admin`) | see UX.md › Saving |
 | Panes that scroll on their own | `useFillViewport()` (`admin/fillViewport`) | the page fills the window from `lg`; see Layout › Split views |
 | Permission gate | `PermissionGate`, `usePermission`, `useAnyPermission`; route level `RequirePermission` | see UX.md › Permissions |
 | Picker tile | `.tile-selected` on the chosen tile, `border-2 border-line` on the rest | |
 | Hover help | `<span class="info-tooltip" data-tooltip="…">` for a hint on an icon | longer help goes under the field. A tooltip people should click (a status pill) follows `DraftPill` (`event-details/EventDetailsHeader.tsx`): a `<button>` with an `Info` icon (`w-3.5 h-3.5`), `info-tooltip info-tooltip-start`, its own open state for click/tap (Safari does not focus a clicked button), Escape and an outside click to close, and an `aria-label` with the same text. `info-tooltip-start` takes the bubble out of layout while closed and, on a phone, anchors it to the nearest `relative` row |
+
+## Feature state
+
+How far along a feature is, from one list:
+`src/features/featureStatus/registry.ts`. Change a feature's state there and
+nowhere else.
+
+| State | Label | Means |
+|---|---|---|
+| `stable` | none | done |
+| `stable` with `newSince` | **New** (green) | released; the label shows for 30 days after the date, then disappears on its own |
+| `beta` | **Beta** (amber) | in development: ready for real work, details may still change |
+| `experimental` | **Experimental** (red) | may break or be removed; not for a production studio |
+| `roadmap` | **Roadmap** (grey outline) | not built yet; its toggle stays locked |
+
+The label shows on the Settings › Features card and on the feature's own page
+header (`SectionPageHeader feature=…`, or `FeatureStatusBadge` next to a
+hand-written title), and on the customer record's portal tabs. **Never in the
+sidebar.** A customer-portal tab that is not a feature of its own gets a
+registry entry of its own (`portalCalendar`).
 
 ## Layout and spacing
 
@@ -234,9 +360,19 @@ component, not re-created next to it.
 
 - Cooler or warmer greys, more contrast, a different dark palette: edit the
   `--ui-*` values in `tokens.css`. Nothing else needs to change.
+- Status colours: edit the five `--status-*` hues; text, tints and borders
+  follow in both modes. Keep `src/utils/statusColors.ts`
+  (`DEFAULT_STATUS_COLORS`) and `backend/src/utils/statusColors.js` in step.
+  A studio overrides them in Branding › Colours.
+- Data colours: edit `--chart-*` (light on `:root`, dark under `.dark`).
 - Corner radius or shadow depth: edit `--radius-*` / `--shadow-*`.
 - The default gallery theme: edit the `--color-*` defaults, and keep
   `src/types/theme.types.ts` (the preset the operator sees) in step.
+
+Documents and emails follow Branding › Colours too, for the accent only:
+a PDF's title and headings and an email's buttons, links and info-box rule
+take the brand's filled accent unless the PDF theme or Settings → Email sets
+their own. Their greys stay tuned for paper and mail clients.
 
 Check both modes after a change: the admin dark-mode toggle is in the header,
 and `localStorage['admin-dark-mode'] = 'dark'` forces it.
@@ -254,8 +390,8 @@ The codemod rewrote every neutral pair in `src/components/admin`,
   and cannot take `/60`. Either drop the alpha or use `bg-panel` and accept
   the solid fill.
 - **Mixed pairs** (`bg-primary-50 dark:bg-neutral-800`): a coloured light
-  side with a neutral dark side. Those are status boxes and need the status
-  token layer first.
+  side with a neutral dark side. The status and accent codemod has since
+  mapped their coloured side.
 - **Inverse pairs** (`bg-neutral-900 dark:bg-neutral-100`): a handful of
   inverted buttons and tooltips.
 
@@ -274,12 +410,17 @@ visible ones are:
 `text-neutral-300` pairs (light text on a dark surface) have no token and stay raw.
 `hover:bg-neutral-200 dark:hover:bg-neutral-600` stays raw too: `hover` is the same value as `inset` in both modes, so rewriting it would take the hover feedback off every button that sits on an inset background.
 
+The colour sweep (status, accent, data colours) rewrote 1,342 class lists by
+codemod and about 200 classes by hand. Lone neutral classes are still the
+per-component decision described above.
+
 ## Tooling
 
 | Command | What it does |
 |---|---|
-| `npm run lint` | includes `ui-tokens/no-raw-dark-palette` over the admin scope |
-| `npm run codemod:ui-tokens` | applies that rule's autofix and nothing else |
-| `npm run codemod:ui-tokens -- --check` | reports remaining pairs, exit 1 if any (use after a rebase) |
+| `npm run lint` | includes `ui-tokens/no-raw-dark-palette` (admin scope) and `ui-tokens/no-raw-palette` (all of `src`) |
+| `npm run codemod:ui-tokens` | applies both rules' autofixes and nothing else; reports the classes a person has to decide |
+| `npm run codemod:ui-tokens -- --check` | reports what is left, exit 1 if anything (use after a rebase) |
 
-The pair table both tools read is `scripts/ui-tokens-map.mjs`.
+The tables the tools read are `scripts/ui-tokens-map.mjs` (neutral pairs) and
+`scripts/ui-palette-map.mjs` (palette colours).

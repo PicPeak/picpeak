@@ -7,7 +7,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AdminPhoto } from '../../services/photos.service';
 import { photosService } from '../../services/photos.service';
 import { feedbackService, type PhotoFeedback, type FeedbackSummary } from '../../services/feedback.service';
-import { Button } from '../common';
+import { Badge, Button, useConfirm } from '../common';
+import { pushDialogLayer } from '../common/Modal';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -48,6 +49,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const { t } = useTranslation();
+  const confirm = useConfirm();
   // The photographer's own triage mark (#1044 follow-up). Held locally and
   // seeded from the row so the star/colour UI responds instantly; the grid
   // picks it up when its query is invalidated.
@@ -90,7 +92,11 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete "${currentPhoto.filename}"?`)) {
+    if (!(await confirm({
+      message: t('admin.photos.deleteOneConfirm', 'Delete "{{name}}"? The photo is removed from the gallery for good. This cannot be undone.', { name: currentPhoto.filename }),
+      variant: 'danger',
+      confirmLabel: t('admin.photos.deleteOneAction', 'Delete photo'),
+    }))) {
       return;
     }
 
@@ -231,8 +237,20 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
   const markRef = React.useRef({ currentMark, toggleMarkRating, toggleMarkColor, saveMark });
   markRef.current = { currentMark, toggleMarkRating, toggleMarkColor, saveMark };
 
+  // The viewer is a layer of the shared dialog stack: while a confirm (Delete
+  // photo?) or another dialog is open on top, its keys belong to that dialog —
+  // Escape must not close the viewer, the arrows must not page behind it, and
+  // 1-9 must not mark a photo the dialog does not name.
+  const layerRef = React.useRef<ReturnType<typeof pushDialogLayer> | null>(null);
+  React.useEffect(() => {
+    const layer = pushDialogLayer();
+    layerRef.current = layer;
+    return () => { layer.release(); layerRef.current = null; };
+  }, []);
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (layerRef.current && !layerRef.current.isTop()) return;
       switch (e.key) {
         case 'Escape':
           onClose();
@@ -351,7 +369,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
             <button
               onClick={handleDelete}
               disabled={isDeleting}
-              className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-lg flex items-center justify-center gap-2"
+              className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-danger hover:opacity-90 disabled:bg-danger rounded-lg flex items-center justify-center gap-2"
             >
               <Trash2 className="w-4 h-4" />
               Delete
@@ -437,7 +455,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   maxLength={100}
                   autoFocus
                   aria-label={t('admin.photos.credit.label')}
-                  className="w-full px-3 py-2 text-sm rounded-lg bg-neutral-800 border border-neutral-700 text-white focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-neutral-800 border border-neutral-700 text-white focus:ring-2 focus:ring-accent"
                 />
                 <div className="flex justify-end gap-2">
                   <Button variant="ghost" size="sm" type="button" onClick={() => setEditingCredit(false)} disabled={savingCredit}>
@@ -529,7 +547,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   title={`${value}`}
                 >
                   <Star
-                    className={`w-5 h-5 ${(currentMark.rating || 0) >= value ? 'text-yellow-400' : 'text-neutral-600'}`}
+                    className={`w-5 h-5 ${(currentMark.rating || 0) >= value ? 'text-rating' : 'text-neutral-600'}`}
                     fill={(currentMark.rating || 0) >= value ? 'currentColor' : 'none'}
                   />
                 </button>
@@ -582,7 +600,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {averageRating > 0 && (
                   <div className="bg-neutral-800 rounded-lg p-3">
-                    <div className="flex items-center gap-1 text-yellow-400 mb-1">
+                    <div className="flex items-center gap-1 text-rating mb-1">
                       <Star className="w-4 h-4" fill="currentColor" />
                       <span className="text-white font-medium">{Number(averageRating).toFixed(1)}</span>
                     </div>
@@ -592,7 +610,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 
                 {likeCount > 0 && (
                   <div className="bg-neutral-800 rounded-lg p-3">
-                    <div className="flex items-center gap-1 text-red-400 mb-1">
+                    <div className="flex items-center gap-1 text-danger mb-1">
                       <Heart className="w-4 h-4" fill="currentColor" />
                       <span className="text-white font-medium">{likeCount}</span>
                     </div>
@@ -602,7 +620,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 
                 {favoriteCount > 0 && (
                   <div className="bg-neutral-800 rounded-lg p-3">
-                    <div className="flex items-center gap-1 text-blue-400 mb-1">
+                    <div className="flex items-center gap-1 text-info mb-1">
                       <Star className="w-4 h-4" />
                       <span className="text-white font-medium">{favoriteCount}</span>
                     </div>
@@ -612,7 +630,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                 
                 {comments.length > 0 && (
                   <div className="bg-neutral-800 rounded-lg p-3">
-                    <div className="flex items-center gap-1 text-green-400 mb-1">
+                    <div className="flex items-center gap-1 text-success mb-1">
                       <MessageSquare className="w-4 h-4" />
                       <span className="text-white font-medium">{comments.length}</span>
                     </div>
@@ -645,25 +663,23 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                                 </p>
                               </div>
                               
-                              {/* Comment Status Badge */}
-                              <div className="flex items-center gap-1">
+                              {/* Comment Status Badge — the viewer is always dark, so
+                                  the status tints come from the dark palette. */}
+                              <div className="ui-dark flex items-center gap-1">
                                 {!comment.is_approved && !comment.is_hidden && (
-                                  <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded flex items-center gap-1">
-                                    <AlertCircle className="w-3 h-3" />
+                                  <Badge tone="warning" icon={<AlertCircle />}>
                                     Pending
-                                  </span>
+                                  </Badge>
                                 )}
                                 {comment.is_approved && !comment.is_hidden && (
-                                  <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3" />
+                                  <Badge tone="success" icon={<CheckCircle />}>
                                     Approved
-                                  </span>
+                                  </Badge>
                                 )}
                                 {comment.is_hidden && (
-                                  <span className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded flex items-center gap-1">
-                                    <XCircle className="w-3 h-3" />
+                                  <Badge tone="danger" icon={<XCircle />}>
                                     Hidden
-                                  </span>
+                                  </Badge>
                                 )}
                               </div>
                             </div>
@@ -681,7 +697,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                                     action: 'approve' 
                                   })}
                                   disabled={moderateFeedbackMutation.isPending}
-                                  className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+                                  className="text-xs px-2 py-1 bg-success hover:opacity-90 text-white rounded"
                                 >
                                   Approve
                                 </button>
@@ -694,7 +710,7 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                                     action: 'hide' 
                                   })}
                                   disabled={moderateFeedbackMutation.isPending}
-                                  className="text-xs px-2 py-1 bg-yellow-600 hover:bg-yellow-700 text-white rounded"
+                                  className="text-xs px-2 py-1 bg-warning hover:opacity-90 text-white rounded"
                                 >
                                   Hide
                                 </button>
@@ -707,20 +723,23 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                                     action: 'approve' 
                                   })}
                                   disabled={moderateFeedbackMutation.isPending}
-                                  className="text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+                                  className="text-xs px-2 py-1 bg-success hover:opacity-90 text-white rounded"
                                 >
                                   Unhide
                                 </button>
                               )}
                               
                               <button
-                                onClick={() => {
-                                  if (confirm('Are you sure you want to delete this comment?')) {
-                                    deleteFeedbackMutation.mutate(comment.id.toString());
-                                  }
+                                onClick={async () => {
+                                  if (!(await confirm({
+                                    message: t('feedback.confirmDelete', 'Delete this feedback? It is removed for good. This cannot be undone.'),
+                                    variant: 'danger',
+                                    confirmLabel: t('feedback.deleteAction', 'Delete feedback'),
+                                  }))) return;
+                                  deleteFeedbackMutation.mutate(comment.id.toString());
                                 }}
                                 disabled={deleteFeedbackMutation.isPending}
-                                className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded"
+                                className="text-xs px-2 py-1 bg-danger hover:opacity-90 text-white rounded"
                               >
                                 Delete
                               </button>
@@ -742,9 +761,9 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                     <div key={item.id} className="bg-neutral-800 rounded-lg p-3">
                       <div className="flex items-center gap-2">
                         {item.decision === 'approved' ? (
-                          <ThumbsUp className="w-4 h-4 text-green-400" aria-label={t('feedback.decisions.approved', 'Approved')} />
+                          <ThumbsUp className="w-4 h-4 text-success" aria-label={t('feedback.decisions.approved', 'Approved')} />
                         ) : (
-                          <ThumbsDown className="w-4 h-4 text-red-400" aria-label={t('feedback.decisions.rejected', 'Rejected')} />
+                          <ThumbsDown className="w-4 h-4 text-danger" aria-label={t('feedback.decisions.rejected', 'Rejected')} />
                         )}
                         <span className="text-sm font-medium text-white">
                           {item.guest_name || t('feedback.anonymous', 'Anonymous')}

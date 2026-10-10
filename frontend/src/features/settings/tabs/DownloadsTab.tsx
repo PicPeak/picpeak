@@ -143,7 +143,7 @@ export const DownloadsTab: React.FC = () => {
         <label className="flex items-start gap-3 mb-3 cursor-pointer">
           <input
             type="checkbox"
-            className="mt-1 accent-primary-600"
+            className="mt-1 accent-accent"
             checked={form.picker_enabled}
             onChange={(e) => setForm({ ...form, picker_enabled: e.target.checked })}
           />
@@ -161,7 +161,7 @@ export const DownloadsTab: React.FC = () => {
         <label className="flex items-start gap-3 mb-5 cursor-pointer">
           <input
             type="checkbox"
-            className="mt-1 accent-primary-600"
+            className="mt-1 accent-accent"
             checked={form.allow_original}
             disabled={!form.picker_enabled}
             onChange={(e) => setForm({ ...form, allow_original: e.target.checked })}
@@ -207,7 +207,7 @@ export const DownloadsTab: React.FC = () => {
                   className="w-28"
                   aria-label={t('settings.downloads.width', 'Width')}
                 />
-                <span className="text-neutral-400">×</span>
+                <span className="text-faint">×</span>
                 <Input
                   type="number"
                   value={String(r.height)}
@@ -220,7 +220,7 @@ export const DownloadsTab: React.FC = () => {
                   onClick={() => removePreset(i)}
                   disabled={form.resolutions.length <= 1}
                   aria-label={t('common.remove', 'Remove')}
-                  className="p-2 text-neutral-500 hover:text-red-600 disabled:opacity-40"
+                  className="p-2 text-muted hover:text-danger-text disabled:opacity-40"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

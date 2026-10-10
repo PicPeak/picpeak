@@ -44,7 +44,7 @@ interface Part { text: string; tone?: Tone }
 const TONE_CLASS: Record<Tone, string> = {
   plain: '',
   strong: 'text-body font-medium',
-  ok: 'text-green-700 dark:text-green-400',
+  ok: 'text-success-text',
   off: 'text-muted',
 };
 
@@ -189,17 +189,17 @@ export const SettingsOverview: React.FC<SettingsOverviewProps> = ({ sections, ac
           aria-current={selected ? 'page' : undefined}
           className={`w-full flex items-center gap-3 px-3.5 py-2.5 2xl:px-4 2xl:py-3 rounded-xl border text-left transition-colors ${
             danger
-              ? 'border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20'
+              ? 'border-danger-line hover:bg-danger-soft'
               : selected
                 // Only beside the open section; on a phone the list is shown
                 // on its own, so nothing in it is "open".
                 ? 'border-line bg-panel hover:bg-hover lg:border-accent lg:bg-accent-dark/10'
                 : 'border-line bg-panel hover:bg-hover'
-          } ${selected && danger ? 'lg:bg-red-50 lg:dark:bg-red-900/20' : ''}`}
+          } ${selected && danger ? 'lg:bg-danger-soft' : ''}`}
         >
-          <Icon className={`w-5 h-5 shrink-0 ${danger ? 'text-red-600 dark:text-red-400' : selected ? 'text-soft lg:text-heading' : 'text-soft'}`} aria-hidden="true" />
+          <Icon className={`w-5 h-5 shrink-0 ${danger ? 'text-danger-text' : selected ? 'text-soft lg:text-heading' : 'text-soft'}`} aria-hidden="true" />
           <span className="min-w-0 flex-1">
-            <span className={`flex flex-wrap items-center gap-2 text-sm font-semibold ${danger ? 'text-red-600 dark:text-red-400' : 'text-heading'}`}>
+            <span className={`flex flex-wrap items-center gap-2 text-sm font-semibold ${danger ? 'text-danger-text' : 'text-heading'}`}>
               {section.label}
               {isDefault && !isDirty && (
                 <span className="px-1.5 py-px rounded-full border border-line text-[11px] font-medium text-soft">
@@ -207,7 +207,7 @@ export const SettingsOverview: React.FC<SettingsOverviewProps> = ({ sections, ac
                 </span>
               )}
               {isDirty && (
-                <span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" />
+                <span className="w-2 h-2 rounded-full bg-warning" aria-hidden="true" />
               )}
             </span>
             <span className="block mt-0.5 text-xs text-soft">
@@ -220,7 +220,7 @@ export const SettingsOverview: React.FC<SettingsOverviewProps> = ({ sections, ac
               {isDirty && (
                 <>
                   <span className="mx-1.5 text-faint">·</span>
-                  <span className="text-amber-700 dark:text-amber-400">{t('events.settingsTab.notSaved', 'not saved yet')}</span>
+                  <span className="text-warning-text">{t('events.settingsTab.notSaved', 'not saved yet')}</span>
                 </>
               )}
             </span>

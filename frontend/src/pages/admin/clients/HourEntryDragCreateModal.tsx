@@ -24,11 +24,11 @@
  * from the backend and the toast surfaces the error.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Button, Card, Input } from '../../../components/common';
+import { Button, Input, Modal } from '../../../components/common';
 import {
   CustomerPicker,
   type CustomerSummary,
@@ -204,51 +204,47 @@ export const HourEntryDragCreateModal: React.FC<HourEntryDragCreateModalProps> =
     createMutation.mutate();
   };
 
-  // I.6 — close on Escape via a document-level listener. A React
-  // onKeyDown on the modal's outer div ONLY fires when focus is
-  // already inside the modal subtree — but after the modal opens
-  // (from FullCalendar's `select` callback), focus stays on FC's
-  // canvas / body, so the bubbled-up handler never sees the keydown.
-  // Listening on document catches Escape regardless of where focus
-  // sits. Guarded against the mutation being in-flight so the admin
-  // can't cancel mid-save and end up with a saved-but-modal-closed
-  // race.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !createMutation.isPending) {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [createMutation.isPending, onClose]);
+  // Escape and a backdrop click close (Modal listens on the document, so
+  // it works while focus is still on FullCalendar's canvas), except while
+  // the save is in flight: no saved-but-closed race.
+  const close = () => { if (!createMutation.isPending) onClose(); };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
-      onClick={(e) => {
-        // Click on the backdrop closes; clicks inside the card stop
-        // here. (Esc handled via document-level listener above.)
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      open
+      onClose={close}
+      size="sm"
+      title={t('calendar.hourEntry.createTitle', 'Log hours')}
+      // The pre-filled range is part of the page state, not editable from
+      // this modal; the inline-edit popover changes it after creating.
+      description={`${entryDate} · ${startTime}–${endTime}`}
+      footer={(
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={createMutation.isPending}
+          >
+            {t('calendar.hourEntry.cancel', 'Cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form="hour-entry-create-form"
+            disabled={!canSubmit}
+          >
+            {createMutation.isPending
+              ? t('calendar.hourEntry.saving', 'Saving…')
+              : t('calendar.hourEntry.submit', 'Save hours')}
+          </Button>
+        </>
+      )}
     >
-      <Card padding="lg" className="w-full max-w-md">
-        <h2 className="font-semibold text-lg mb-1">
-          {t('calendar.hourEntry.createTitle', 'Log hours')}
-        </h2>
-        <p className="text-xs text-muted mb-4">
-          {/* The pre-filled range is part of the page state, not editable
-              from this modal. Admin can edit start/end after creating
-              via the inline-edit popover (also in this commit). */}
-          {entryDate} · {startTime}–{endTime}
-        </p>
         {/* Wrap fields in a form so pressing Enter inside the
             description input fires the submit handler — matches the
             keyboard expectation on every other admin modal. The Save
             button keeps its onClick for users who navigate via mouse. */}
-        <form onSubmit={submit}>
+        <form id="hour-entry-create-form" onSubmit={submit}>
 
         <div className="space-y-3">
           <div>
@@ -301,7 +297,7 @@ export const HourEntryDragCreateModal: React.FC<HourEntryDragCreateModalProps> =
                 With this, the Save button is disabled and the reason
                 is visible. */}
             {customerId && !customerHoursAllowed && (
-              <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              <p className="mt-2 text-xs text-warning-text" role="alert">
                 {t('calendar.hourEntry.customerLoggingDisabled',
                   "This customer has hour logging disabled. Enable it on the customer's detail page to log hours.")}
               </p>
@@ -321,26 +317,7 @@ export const HourEntryDragCreateModal: React.FC<HourEntryDragCreateModalProps> =
           </div>
         </div>
 
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={createMutation.isPending}
-          >
-            {t('calendar.hourEntry.cancel', 'Cancel')}
-          </Button>
-          <Button
-            type="submit"
-            disabled={!canSubmit}
-          >
-            {createMutation.isPending
-              ? t('calendar.hourEntry.saving', 'Saving…')
-              : t('calendar.hourEntry.submit', 'Save hours')}
-          </Button>
-        </div>
         </form>
-      </Card>
-    </div>
+    </Modal>
   );
 };

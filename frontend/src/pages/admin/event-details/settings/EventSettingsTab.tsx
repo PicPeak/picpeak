@@ -269,7 +269,7 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-red-600 dark:text-red-400 border-red-300 dark:border-red-800"
+                  className="text-danger-text border-danger-line"
                   leftIcon={<Trash2 className="w-4 h-4" />}
                   isLoading={isDeleting}
                   onClick={async () => {
@@ -332,16 +332,16 @@ export const EventSettingsTab: React.FC<EventSettingsTabProps> = ({
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <ActiveIcon className={`w-5 h-5 mt-0.5 shrink-0 ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-soft'}`} aria-hidden="true" />
+              <ActiveIcon className={`w-5 h-5 mt-0.5 shrink-0 ${active === 'danger' ? 'text-danger-text' : 'text-soft'}`} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <h2 className={`text-lg font-semibold ${active === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-heading'}`}>{activeLabel}</h2>
+                <h2 className={`text-lg font-semibold ${active === 'danger' ? 'text-danger-text' : 'text-heading'}`}>{activeLabel}</h2>
                 <p className="text-sm text-soft mt-0.5">{about[active]}</p>
               </div>
               {canEdit && dirty.has(active) && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-amber-700 dark:text-amber-400"
+                  className="text-warning-text"
                   leftIcon={<Undo2 className="w-4 h-4" />}
                   onClick={() => discardSection(active)}
                 >

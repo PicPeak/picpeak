@@ -40,6 +40,9 @@ vi.mock('../../../../components/admin/PermissionGate', () => ({
 }));
 vi.mock('../../../../components/admin/DocumentLineageCard', () => ({ DocumentLineageCard: () => null }));
 vi.mock('../SigningOverviewCard', () => ({ SigningOverviewCard: () => null }));
+vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => true }));
+// A draft's page is its editor; the form has its own tests.
+vi.mock('../ContractEditorPage', () => ({ ContractForm: () => <div>Contract form</div> }));
 vi.mock('../../../../contexts/FeatureFlagsContext', () => ({
   useFeatureFlags: () => ({ flags: {}, isLoading: false }),
 }));

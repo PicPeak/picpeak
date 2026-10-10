@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Button, Card } from '../../../components/common';
+import { Button, Card, useConfirm } from '../../../components/common';
 import { AddOnBookButton, AddOnBookingState } from '../../../components/common/AddOnBookButton';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { quotesService, type QuoteDetail, type QuoteLineItem } from '../../../services/quotes.service';
@@ -50,6 +50,7 @@ const sorted = (positions: Iterable<number>) => [...positions].sort((a, b) => a 
 
 export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLineItem[] }> = ({ quote, lineItems }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const qc = useQueryClient();
   const rows = addOnRows(quote, lineItems);
@@ -76,7 +77,10 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
   };
 
   const handleSave = async () => {
-    if (!window.confirm(t('quotes.addOns.confirmSave', 'The customer will be emailed the updated quote.'))) return;
+    if (!(await confirm({
+      message: t('quotes.addOns.confirmSave', 'The customer will be emailed the updated quote.'),
+      confirmLabel: t('quotes.addOns.save', 'Save add-on changes'),
+    }))) return;
     setSaving(true);
     try {
       const result = await quotesService.changeAddOns(quote.id, sorted(chosen));
@@ -162,7 +166,7 @@ export const QuoteAddOnsCard: React.FC<{ quote: QuoteDetail; lineItems: QuoteLin
                     </PermissionGate>
                   </>
                 ) : (
-                  <span className={booked ? 'text-green-700 dark:text-green-400' : 'text-muted'}>
+                  <span className={booked ? 'text-success-text' : 'text-muted'}>
                     {booked ? t('quotes.selection.chosen', 'Booked') : t('quotes.selection.notChosen', 'Not booked')}
                   </span>
                 )}

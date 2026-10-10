@@ -22,12 +22,12 @@
  * modal. Reusing the pattern keeps the visual language consistent.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Lock, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, TimeField } from '../../../components/common';
+import { Badge, Button, Input, Modal, TimeField, useConfirm } from '../../../components/common';
 import { customerAdminService } from '../../../services/customerAdmin.service';
 import type { CalendarHoursItem } from '../../../services/calendar.service';
 
@@ -44,6 +44,7 @@ export const HourEntryInlinePopover: React.FC<HourEntryInlinePopoverProps> = ({
   onMutated,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
 
   // Pre-fill from the item. The form stays uncontrolled-ish — local
@@ -117,50 +118,60 @@ export const HourEntryInlinePopover: React.FC<HourEntryInlinePopoverProps> = ({
     updateMutation.mutate();
   };
 
-  // I.6 — document-level Escape listener (same reasoning as the
-  // drag-create modal: focus is usually on FC's canvas when this
-  // popover opens, so the onKeyDown handler on the outer div never
-  // sees the keydown).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !busy) onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [busy, onClose]);
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60 p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <Card padding="lg" className="w-full max-w-md">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <h2 className="font-semibold text-lg">
-              {item.customerName || t('calendar.hourEntry.untitledCustomer', 'Hours')}
-            </h2>
-            <p className="text-xs text-muted">
-              {item.entryDate} · {item.startTime}–{item.endTime}
-            </p>
-          </div>
-          {item.locked && (
-            <span
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded
-                         bg-fill text-body"
-              title={t('calendar.hourEntry.lockedTooltip',
-                'Already billed — Storno the invoice to edit.') as string}
+    <Modal
+      open
+      // Escape (Modal listens on the document, so it works while focus is
+      // still on FullCalendar's canvas) and a backdrop click close, except
+      // while a save or delete is in flight.
+      onClose={() => { if (!busy) onClose(); }}
+      size="sm"
+      title={item.customerName || t('calendar.hourEntry.untitledCustomer', 'Hours')}
+      description={`${item.entryDate} · ${item.startTime}–${item.endTime}`}
+      footer={(
+        <>
+          {!item.locked && (
+            <Button
+              variant="outline"
+              className="mr-auto"
+              onClick={async () => {
+                const ok = await confirm({
+                  message: t('calendar.hourEntry.confirmDelete',
+                    'Delete these logged hours? This cannot be undone.') as string,
+                  variant: 'danger',
+                  confirmLabel: t('calendar.hourEntry.deleteAction', 'Delete hours'),
+                });
+                if (ok) deleteMutation.mutate();
+              }}
+              disabled={busy}
+              leftIcon={<Trash2 className="w-4 h-4" aria-hidden />}
             >
-              <Lock className="w-3 h-3" aria-hidden />
-              {t('calendar.hourEntry.lockedBadge', 'Locked')}
-            </span>
+              {t('calendar.hourEntry.delete', 'Delete')}
+            </Button>
           )}
-        </div>
-
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            {t('calendar.hourEntry.close', 'Close')}
+          </Button>
+          {!item.locked && (
+            <Button type="submit" form="hour-entry-edit-form" disabled={busy}>
+              {updateMutation.isPending
+                ? t('calendar.hourEntry.saving', 'Saving…')
+                : t('calendar.hourEntry.submit', 'Save hours')}
+            </Button>
+          )}
+        </>
+      )}
+    >
+        {item.locked && (
+          <Badge
+            icon={<Lock />}
+            className="mb-3"
+            title={t('calendar.hourEntry.lockedTooltip',
+              'Already billed — Storno the invoice to edit.') as string}
+          >
+            {t('calendar.hourEntry.lockedBadge', 'Locked')}
+          </Badge>
+        )}
         {item.locked ? (
           // Read-only summary. We deliberately don't render any inputs
           // here so the admin can't accidentally type into a locked
@@ -198,36 +209,6 @@ export const HourEntryInlinePopover: React.FC<HourEntryInlinePopoverProps> = ({
           </form>
         )}
 
-        <div className="mt-5 flex items-center justify-between gap-2">
-          {item.locked ? <span /> : (
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (window.confirm(t('calendar.hourEntry.confirmDelete',
-                  'Delete these logged hours? This cannot be undone.') as string)) {
-                  deleteMutation.mutate();
-                }
-              }}
-              disabled={busy}
-            >
-              <Trash2 className="w-4 h-4 mr-1" aria-hidden />
-              {t('calendar.hourEntry.delete', 'Delete')}
-            </Button>
-          )}
-          <div className="flex items-center gap-2 ml-auto">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('calendar.hourEntry.close', 'Close')}
-            </Button>
-            {!item.locked && (
-              <Button type="submit" form="hour-entry-edit-form" disabled={busy}>
-                {updateMutation.isPending
-                  ? t('calendar.hourEntry.saving', 'Saving…')
-                  : t('calendar.hourEntry.submit', 'Save')}
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };

@@ -7,11 +7,14 @@ import { toast } from 'react-toastify';
 import {
   Inbox, Send, Reply, ReplyAll, Forward, Archive, Trash2, Paperclip,
   FileText, Quote, FileSignature, Image as ImageIcon, ReceiptText,
-  Link2, X, ChevronLeft, ChevronRight, Mail, RefreshCw, PenSquare, Search, RotateCcw, type LucideIcon,
+  Link2, ChevronLeft, ChevronRight, Mail, RefreshCw, PenSquare, Search, RotateCcw, type LucideIcon,
 } from 'lucide-react';
 import { emailService, type ReceivedEmail, type MailIdentities } from '../../../services/email.service';
 import { accountingService } from '../../../services/accounting.service';
-import { Loading } from '../../../components/common';
+import { Badge, Button, Loading, Modal, useConfirm } from '../../../components/common';
+import type { BadgeTone } from '../../../components/common';
+import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
+import { useFillViewport } from '../../../components/admin/fillViewport';
 import { MessageComposer, type ComposerInit } from './MessageComposer';
 import { DocumentActionModal, type DocType } from './DocumentActionModal';
 import { EmailBodyFrame } from './EmailBodyFrame';
@@ -72,18 +75,21 @@ const extractEmail = (addr?: string | null) => {
   return (m ? m[1] : addr).trim();
 };
 
-const STATUS_STYLES: Record<string, string> = {
-  sent: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  ingested: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  received: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
-  failed: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
-  error: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+const STATUS_TONES: Record<string, BadgeTone> = {
+  sent: 'success',
+  ingested: 'success',
+  received: 'info',
+  pending: 'warning',
+  failed: 'danger',
+  error: 'danger',
 };
 
 export const MessagesPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const confirm = useConfirm();
+  // The three panes scroll on their own from lg up (STYLING.md › Split views).
+  useFillViewport();
   // Archive / Restore / Delete write the shared folders, which the backend
   // guards with email.edit; email.view alone reads the page.
   const canEditMailbox = usePermission('email.edit');
@@ -176,13 +182,23 @@ export const MessagesPage: React.FC = () => {
   });
   // Archive / Delete (soft) / Restore, acting on the current selection. Delete
   // from the Deleted folder is permanent.
-  const doItemAction = (action: 'archive' | 'delete' | 'restore') => {
+  const doItemAction = async (action: 'archive' | 'delete' | 'restore') => {
     if (!selection) return;
     const kind = selection.kind;
     const id = selection.kind === 'queue' ? selection.id : selection.item.id;
     if (action === 'restore') stateMut.mutate({ kind, id, state: 'active' });
     else if (action === 'archive') stateMut.mutate({ kind, id, state: 'archived' });
-    else if (folderState === 'deleted') purgeMut.mutate({ kind, id });
+    else if (folderState === 'deleted') {
+      // The one step here that cannot be undone: everything else moves the
+      // message between folders.
+      const ok = await confirm({
+        title: t('messages.deleteForeverTitle', 'Delete this message permanently?'),
+        message: t('messages.deleteForeverConfirm', 'The message and its attachments are removed for good. This cannot be undone.'),
+        variant: 'danger',
+        confirmLabel: t('messages.deleteForever', 'Delete permanently'),
+      });
+      if (ok) purgeMut.mutate({ kind, id });
+    }
     else stateMut.mutate({ kind, id, state: 'deleted' });
   };
 
@@ -191,18 +207,18 @@ export const MessagesPage: React.FC = () => {
   const custTotal = custQuery.data?.pagination.total;
 
   const accounts: Account[] = useMemo(() => [
-    { id: 'all', name: t('messages.account.all', 'All mail'), color: '#64748b', folders: [
+    { id: 'all', name: t('messages.account.all', 'All mail'), color: 'var(--ui-text-faint)', folders: [
       { id: 'all-in', name: t('messages.folder.inbox', 'Inbox'), icon: Inbox, src: 'received' },
       { id: 'all-sent', name: t('messages.folder.sent', 'Sent'), icon: Send, src: 'queue' },
     ] },
-    { id: 'cust', name: t('messages.account.customers', 'Customers'), addr: identities?.customers || undefined, color: '#2563c9', folders: [
+    { id: 'cust', name: t('messages.account.customers', 'Customers'), addr: identities?.customers || undefined, color: 'var(--chart-1)', folders: [
       { id: 'cust-in', name: t('messages.folder.inbox', 'Inbox'), icon: Inbox, src: 'received', account: 'customers' },
       { id: 'cust-sent', name: t('messages.folder.sent', 'Sent'), icon: Send, src: 'queue', origin: 'manual' },
     ] },
-    { id: 'acct', name: t('messages.account.accounting', 'Accounting'), addr: identities?.accounting || undefined, color: '#12876a', folders: [
+    { id: 'acct', name: t('messages.account.accounting', 'Accounting'), addr: identities?.accounting || undefined, color: 'var(--chart-2)', folders: [
       { id: 'acct-in', name: t('messages.folder.inbox', 'Inbox'), icon: Inbox, src: 'received', account: 'accounting' },
     ] },
-    { id: 'auto', name: t('messages.account.automated', 'Automated'), addr: identities?.automated || undefined, color: '#7a52d6', folders: [
+    { id: 'auto', name: t('messages.account.automated', 'Automated'), addr: identities?.automated || undefined, color: 'var(--chart-4)', folders: [
       { id: 'auto-sent', name: t('messages.folder.sent', 'Sent'), icon: Send, src: 'queue', origin: 'system' },
     ] },
   ], [t, identities]);
@@ -224,7 +240,7 @@ export const MessagesPage: React.FC = () => {
   const folder = useMemo(() => {
     for (const a of accounts) for (const f of a.folders) if (f.id === activeFolder) return { a, f };
     const sf = systemFolders.find((f) => f.id === activeFolder);
-    if (sf) return { a: { id: 'system', name: sf.name, color: '#94a3b8', folders: [] } as Account, f: sf };
+    if (sf) return { a: { id: 'system', name: sf.name, color: 'var(--ui-text-faint)', folders: [] } as Account, f: sf };
     return { a: accounts[0], f: accounts[0].folders[0] };
   }, [accounts, systemFolders, activeFolder]);
 
@@ -255,48 +271,49 @@ export const MessagesPage: React.FC = () => {
       : acctQuery.isLoading || custQuery.isLoading;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8.5rem)] min-h-[540px]">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="flex-none">
-          <h1 className="text-2xl font-bold text-heading flex items-center gap-2">
-            <Mail className="w-6 h-6 text-muted" />
-            {t('messages.title', 'Messages')}
-          </h1>
-          <p className="text-sm text-soft mt-0.5">
-            {t('messages.subtitle', 'Sent, automated and incoming mail — one place.')}
-          </p>
-        </div>
-        <div className="relative flex-1 max-w-md ml-auto">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('messages.searchPlaceholder', 'Search this folder…')}
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-subtle text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-        </div>
-        <div className="flex items-center gap-2 flex-none">
-          <button
-            onClick={() => sync.mutate()}
-            disabled={sync.isPending}
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-line-strong text-sm font-medium text-body hover:bg-hover-soft disabled:opacity-60"
-          >
-            <RefreshCw className={`w-4 h-4 ${sync.isPending ? 'animate-spin' : ''}`} />
-            {t('messages.sync', 'Sync')}
-          </button>
-          <button
-            onClick={openNewMessage}
-            className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg bg-accent-dark text-white text-sm font-medium hover:opacity-90"
-          >
-            <PenSquare className="w-4 h-4" />
-            {t('messages.newMessage', 'New message')}
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col lg:flex-1 lg:min-h-0">
+      <SectionPageHeader
+        icon={Mail}
+        title={t('messages.title', 'Messages')}
+        description={t('messages.subtitle', 'Sent, automated and incoming mail — one place.')}
+        feature="messaging"
+        className="mb-3 flex-none"
+        actions={(
+          <>
+            <div className="relative w-full sm:w-64 min-w-0">
+              <Search className="w-4 h-4 text-faint absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('messages.searchPlaceholder', 'Search this folder…')}
+                aria-label={t('messages.searchPlaceholder', 'Search this folder…')}
+                className="w-full h-9 pl-9 pr-3 rounded-lg border border-line-strong bg-subtle text-sm text-heading focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sync.mutate()}
+              disabled={sync.isPending}
+              leftIcon={<RefreshCw className={`w-4 h-4 ${sync.isPending ? 'animate-spin' : ''}`} />}
+            >
+              {t('messages.sync', 'Sync')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={openNewMessage}
+              leftIcon={<PenSquare className="w-4 h-4" />}
+            >
+              {t('messages.newMessage', 'New message')}
+            </Button>
+          </>
+        )}
+      />
 
-      <div className="flex flex-1 min-h-0 rounded-xl border border-line-faint overflow-hidden bg-shell">
+      <div className="flex flex-1 min-h-[540px] lg:min-h-0 rounded-xl border border-line-faint overflow-hidden bg-shell">
         {/* ── account tree ── */}
-        <nav className="w-56 flex-none border-r border-line-faint overflow-y-auto p-2 bg-neutral-50 dark:bg-neutral-950/40">
+        <nav className="w-56 flex-none border-r border-line-faint overflow-y-auto p-2 bg-canvas">
           {accounts.map((a) => (
             <div key={a.id} className="mb-1.5">
               <div className="flex items-center gap-2 px-2 py-1.5 text-sm font-semibold text-body">
@@ -315,13 +332,13 @@ export const MessagesPage: React.FC = () => {
                       className={`flex items-center gap-2 pl-7 pr-2 py-1.5 rounded-lg text-[13.5px] text-left transition-colors ${
                         active
                           ? 'bg-accent-soft text-on-accent-soft font-semibold'
-                          : 'text-soft hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
+                          : 'text-soft hover:bg-hover'
                       }`}
                     >
                       <f.icon className="w-4 h-4 opacity-80" />
                       <span>{f.name}</span>
                       {typeof c === 'number' && c > 0 && (
-                        <span className={`ml-auto tabular-nums text-xs ${active ? 'text-on-accent-soft' : 'text-neutral-400'}`}>{c}</span>
+                        <span className={`ml-auto tabular-nums text-xs ${active ? 'text-on-accent-soft' : 'text-faint'}`}>{c}</span>
                       )}
                     </button>
                   );
@@ -340,7 +357,7 @@ export const MessagesPage: React.FC = () => {
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13.5px] text-left transition-colors ${
                     active
                       ? 'bg-accent-soft text-on-accent-soft font-semibold'
-                      : 'text-soft hover:bg-neutral-100 dark:hover:bg-neutral-800/60'
+                      : 'text-soft hover:bg-hover'
                   }`}
                 >
                   <f.icon className="w-4 h-4 opacity-80" />
@@ -434,7 +451,7 @@ const MessageList: React.FC<{
   if (folder.src === 'empty') {
     return (
       <div className="p-8 text-center text-sm text-muted">
-        <Inbox className="w-8 h-8 mx-auto mb-3 text-neutral-300 dark:text-neutral-600" />
+        <Inbox className="w-8 h-8 mx-auto mb-3 text-faint" />
         {folder.note}
       </div>
     );
@@ -482,23 +499,23 @@ const MessageList: React.FC<{
         <li key={r.key}>
           <button
             onClick={r.onClick}
-            className={`w-full text-left px-4 py-3 border-b border-neutral-100 dark:border-neutral-800/70 border-l-[3px] transition-colors ${
+            className={`w-full text-left px-4 py-3 border-b border-line-faint border-l-[3px] transition-colors ${
               r.active
-                ? 'border-l-accent-dark bg-accent-soft'
-                : 'border-l-transparent hover:bg-neutral-50 dark:hover:bg-neutral-800/40'
+                ? 'border-l-accent bg-accent-soft'
+                : 'border-l-transparent hover:bg-hover-soft'
             }`}
           >
             <div className="flex items-center gap-2">
               <span className="font-semibold text-[13.5px] text-heading truncate">{r.who}</span>
-              <span className="ml-auto text-[11px] text-neutral-400 tabular-nums whitespace-nowrap">{r.when}</span>
+              <span className="ml-auto text-[11px] text-faint tabular-nums whitespace-nowrap">{r.when}</span>
             </div>
             <div className="text-[13px] text-body truncate mt-0.5">{r.subject}</div>
             <div className="flex items-center gap-2 mt-1.5">
-              <span className={`text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_STYLES[r.status] || 'bg-subtle text-body'}`}>
+              <Badge tone={STATUS_TONES[r.status] || 'neutral'}>
                 {r.status}
-              </span>
+              </Badge>
               {r.attach > 0 && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400">
+                <span className="inline-flex items-center gap-1 text-[11px] text-faint">
                   <Paperclip className="w-3 h-3" />{r.attach}
                 </span>
               )}
@@ -535,7 +552,7 @@ const ReadingPane: React.FC<{
     return (
       <div className="flex-1 grid place-items-center text-center text-faint p-10">
         <div>
-          <Mail className="w-9 h-9 mx-auto mb-3 text-neutral-300 dark:text-neutral-700" />
+          <Mail className="w-9 h-9 mx-auto mb-3 text-faint" />
           <div className="text-sm">{t('messages.selectPrompt', 'Select a message to read')}</div>
         </div>
       </div>
@@ -576,7 +593,7 @@ const ReadingPane: React.FC<{
           detailQuery.isLoading ? <Loading /> : detailQuery.data ? (
             <QueueDetail d={detailQuery.data} fromAddr={identities?.automated} t={t} />
           ) : (
-            <div className="text-sm text-neutral-500">{t('messages.loadError', 'Could not load this message.')}</div>
+            <div className="text-sm text-muted">{t('messages.loadError', 'Could not load this message.')}</div>
           )
         ) : (
           <ReceivedDetail
@@ -620,15 +637,15 @@ const QueueDetail: React.FC<{ d: import('../../../services/email.service').Email
 
     {d.attachments.length > 0 && (
       <div className="mt-5">
-        <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-400 mb-2">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-2">
           {d.attachments.length} {t('messages.attachments', 'attachment(s)')}
         </div>
         <div className="flex flex-col gap-2 max-w-md">
           {d.attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint bg-neutral-50 dark:bg-neutral-800/40">
-              <FileText className="w-5 h-5 text-red-500 flex-none" />
+            <div key={i} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-line-faint bg-subtle">
+              <FileText className="w-5 h-5 text-danger flex-none" />
               <span className="text-[13.5px] font-medium text-heading truncate">{a.filename}</span>
-              <span className="ml-auto text-[11px] text-neutral-400" title={t('messages.sentAttachHint', 'Sent attachments are not archived yet — Phase 2.')}>
+              <span className="ml-auto text-[11px] text-faint" title={t('messages.sentAttachHint', 'Sent attachments are not archived yet — Phase 2.')}>
                 {t('messages.notArchived', 'not archived yet')}
               </span>
             </div>
@@ -680,22 +697,26 @@ const ReceivedDetail: React.FC<{
 
       {item.inbound_document_id != null && (
         <div className="mt-5 flex flex-wrap gap-2">
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => onViewDoc(item.inbound_document_id as number)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-accent-dark hover:opacity-90 text-white text-sm font-medium"
+            leftIcon={<FileText className="w-4 h-4" />}
           >
-            <FileText className="w-4 h-4" />{t('messages.viewDocument', 'View document')}
-          </button>
-          <button
+            {t('messages.viewDocument', 'View document')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={onOpenAccounting}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-line-strong text-body text-sm font-medium hover:bg-hover-soft"
+            leftIcon={<Link2 className="w-4 h-4" />}
           >
-            <Link2 className="w-4 h-4" />{t('messages.openInAccounting', 'Open in Accounting inbox')}
-          </button>
+            {t('messages.openInAccounting', 'Open in Accounting inbox')}
+          </Button>
         </div>
       )}
       {item.error && (
-        <div className="mt-4 text-sm text-red-600 dark:text-red-400">{item.error}</div>
+        <div className="mt-4 text-sm text-danger-text">{item.error}</div>
       )}
     </>
   );
@@ -721,7 +742,7 @@ const Toolbar: React.FC<{
         title={enabled ? undefined : t('messages.soon', 'Available in a later phase')}
         className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[13px] font-medium ${
           enabled ? 'hover:bg-hover-soft ' : 'cursor-not-allowed opacity-50 '
-        }${accent ? 'text-accent-dark font-semibold' : 'text-body'}`}
+        }${accent ? 'text-accent font-semibold' : 'text-body'}`}
       >
         <Icon className="w-[15px] h-[15px]" />{label}
       </button>
@@ -783,48 +804,51 @@ const PdfModal: React.FC<{ docId: number; onClose: () => void; t: TFunction }> =
     return () => { cancelled = true; if (revoked) URL.revokeObjectURL(revoked); };
   }, [docId, page]);
 
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-6" onClick={onClose}>
-      <div className="bg-shell rounded-xl w-[min(620px,94vw)] max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-line-faint">
-          <FileText className="w-4 h-4 text-red-500" />
-          <span className="text-sm font-medium text-heading">{t('messages.document', 'Document')}</span>
-          <div className="ml-auto flex items-center gap-1">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft disabled:opacity-40">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs tabular-nums text-neutral-500 w-6 text-center">{page}</span>
-            <button onClick={() => setPage((p) => p + 1)}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button onClick={onClose} aria-label={t('messages.close', 'Close')}
-              className="w-8 h-8 grid place-items-center rounded-lg text-neutral-500 hover:bg-hover-soft ml-1">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+    <Modal
+      open
+      onClose={onClose}
+      title={(
+        <span className="inline-flex items-center gap-2">
+          <FileText className="w-4 h-4 text-danger" aria-hidden="true" />
+          {t('messages.document', 'Document')}
+        </span>
+      )}
+      description={t('messages.rasterNote', 'Server-rendered preview — the raw file never reaches the browser.')}
+      size="md"
+      footer={(
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            aria-label={t('common.previous', 'Previous')}
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <span className="text-xs tabular-nums text-muted w-6 text-center">{page}</span>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setPage((p) => p + 1)}
+            aria-label={t('common.next', 'Next')}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
         </div>
-        <div className="overflow-auto p-5 bg-subtle grid place-items-center min-h-[240px]">
-          {err ? (
-            <div className="text-sm text-muted">{t('messages.previewUnavailable', 'Preview unavailable')}</div>
-          ) : url ? (
-            <img src={url} alt="" className="max-w-full shadow-lg rounded" />
-          ) : (
-            <Loading />
-          )}
-        </div>
-        <div className="text-center text-[11px] text-neutral-400 py-2 border-t border-line-faint">
-          {t('messages.rasterNote', 'Server-rendered preview — the raw file never reaches the browser.')}
-        </div>
+      )}
+    >
+      <div className="-mx-6 -my-4 p-5 bg-subtle grid place-items-center min-h-[240px]">
+        {err ? (
+          <div className="text-sm text-muted">{t('messages.previewUnavailable', 'Preview unavailable')}</div>
+        ) : url ? (
+          <img src={url} alt="" className="max-w-full shadow-lg rounded" />
+        ) : (
+          <Loading />
+        )}
       </div>
-    </div>
+    </Modal>
   );
 };
 

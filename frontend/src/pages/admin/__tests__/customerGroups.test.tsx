@@ -16,6 +16,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ConfirmDialogProvider } from '../../../components/common/ConfirmDialog';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -121,7 +122,9 @@ function renderPageWithClient(url = '/admin/clients/accounts') {
   const utils = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[url]}>
-        <CustomerManagementPage />
+        <ConfirmDialogProvider>
+          <CustomerManagementPage />
+        </ConfirmDialogProvider>
         <LocationProbe />
         <NavigateProbe />
       </MemoryRouter>
@@ -227,7 +230,7 @@ describe('the overview', () => {
     expect(byName('Email')).toBeUndefined();
     expect(byName('Name')?.className).not.toContain('hidden');
     // On a phone only the name cell shows…
-    for (const name of ['Groups', 'Events', 'Status']) {
+    for (const name of ['Groups', 'Galleries', 'Status']) {
       expect(byName(name)?.className).toContain('hidden sm:table-cell');
     }
     // …and below 2xl (1440 leaves the card ~760px) Company and Last login

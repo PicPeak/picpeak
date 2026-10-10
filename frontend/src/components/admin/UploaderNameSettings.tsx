@@ -37,7 +37,7 @@ export const UploaderNameSettings: React.FC<UploaderNameSettingsProps> = ({
         id={`${idPrefix}-mode`}
         value={mode}
         onChange={(e) => onModeChange(e.target.value as GuestNameMode)}
-        className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+        className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
       >
         {MODES.map((value) => (
           <option key={value} value={value}>{t(`events.uploaderNames.modes.${value}`)}</option>
@@ -56,7 +56,7 @@ export const UploaderNameSettings: React.FC<UploaderNameSettingsProps> = ({
             type="checkbox"
             checked={showToGuests}
             onChange={(e) => onShowToGuestsChange(e.target.checked)}
-            className="w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+            className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
           />
           <span className="ml-2 text-sm text-body">
             {t('events.uploaderNames.showToGuests')}

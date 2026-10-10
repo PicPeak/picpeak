@@ -17,10 +17,10 @@ import type { ContractConsentDefinition } from '../../../services/contractTempla
 const MAX_CONSENTS = 8;
 const MAX_TEXT = 1000;
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
   + 'bg-panel text-sm text-heading';
 const labelClass = 'block text-sm font-medium text-body mb-1';
-const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
+const iconButton = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 p-1 rounded border border-line-strong text-body '
   + 'disabled:opacity-40 hover:bg-hover';
 
 /** The next free `declaration_<n>` key. */
@@ -59,7 +59,7 @@ export const TemplateConsentsEditor: React.FC<{
         {t('contracts.templates.consents.help', 'Each one is a separate checkbox on the signing page, never pre-ticked. Required ones must be ticked to sign. The wording is part of what is signed: changing it gives the declaration a new version when the draft is saved, and contracts already sent keep the wording they went out with.')}
       </p>
       {value.length === 0 && (
-        <p className="text-sm text-red-700 dark:text-red-400">
+        <p className="text-sm text-danger-text">
           {t('contracts.templates.consents.none', 'Add at least one required declaration before publishing.')}
         </p>
       )}

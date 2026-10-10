@@ -102,7 +102,7 @@ const Clause: React.FC<ClauseProps> = ({
             <span className="ml-2 text-xs font-normal text-muted">{t('contracts.templates.customised', 'customised')}</span>
           )}
           {item.blockArchived && (
-            <span className="ml-2 text-xs font-normal text-red-700 dark:text-red-400">{t('contracts.templates.archivedBlock', 'Archived in the library')}</span>
+            <span className="ml-2 text-xs font-normal text-danger-text">{t('contracts.templates.archivedBlock', 'Archived in the library')}</span>
           )}
           {pages && pages.lastPage > pages.firstPage && (
             <span className="ml-2 text-xs font-normal text-muted">

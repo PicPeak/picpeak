@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useModalFocus } from '../../../hooks/useModalFocus';
-import { Button, Card } from '../../common';
+import { Button, Modal } from '../../common';
 
 interface FolderNameModalProps {
   isOpen: boolean;
@@ -32,7 +30,7 @@ const FolderNameDialog: React.FC<FolderNameModalProps> = ({
   onConfirm,
 }) => {
   const { t } = useTranslation();
-  const panelRef = useModalFocus<HTMLDivElement>(true, onClose, isLoading);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(initialName);
   const trimmed = name.trim();
   const submit = () => {
@@ -40,53 +38,38 @@ const FolderNameDialog: React.FC<FolderNameModalProps> = ({
   };
 
   return (
-    <div
-      ref={panelRef}
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
+    <Modal
+      open
+      onClose={() => { if (!isLoading) onClose(); }}
+      title={title}
+      size="sm"
+      initialFocusRef={inputRef}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={isLoading}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={!trimmed} isLoading={isLoading}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
     >
-      <Card className="w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-heading">{title}</h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1 hover:bg-hover rounded-lg transition-colors"
-              disabled={isLoading}
-              aria-label={t('common.close', 'Close')}
-            >
-              <X className="w-5 h-5 text-muted" />
-            </button>
-          </div>
-          <label htmlFor="folder-name" className="block text-sm font-medium text-body mb-2">
-            {t('photos.folders.name', 'Folder name')}
-          </label>
-          <input
-            id="folder-name"
-            type="text"
-            value={name}
-            maxLength={MAX_NAME_LENGTH}
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submit();
-              if (e.key === 'Escape') onClose();
-            }}
-            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500"
-          />
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={onClose} disabled={isLoading}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button variant="primary" onClick={submit} disabled={!trimmed} isLoading={isLoading}>
-              {confirmLabel}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
+      <label htmlFor="folder-name" className="block text-sm font-medium text-body mb-2">
+        {t('photos.folders.name', 'Folder name')}
+      </label>
+      <input
+        ref={inputRef}
+        id="folder-name"
+        type="text"
+        value={name}
+        maxLength={MAX_NAME_LENGTH}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submit();
+        }}
+        className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent"
+      />
+    </Modal>
   );
 };

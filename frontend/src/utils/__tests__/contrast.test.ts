@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contrastRatio, getReadableForeground, relativeLuminance } from '../contrast';
+import { contrastRatio, getReadableForeground, isDarkBackground, readableAccentText, relativeLuminance } from '../contrast';
 
 describe('getReadableForeground', () => {
   describe('against the legacy hardcoded #ffffff fallback', () => {
@@ -77,5 +77,41 @@ describe('contrastRatio', () => {
   it('matches a known mid-tone pair', () => {
     // tailwind blue-600 on white, as published by WebAIM's checker.
     expect(contrastRatio('#2563EB', '#FFFFFF')).toBeCloseTo(5.17, 2);
+  });
+});
+
+describe('readableAccentText', () => {
+  it('keeps an accent that already reads', () => {
+    expect(readableAccentText('#017C7C', '#FFFFFF')).toBe('#017C7C');
+  });
+
+  it('darkens a pastel accent on a light card until it reads, keeping its hue', () => {
+    const text = readableAccentText('#E8B4A0', '#FFFFFF');
+    expect(contrastRatio(text, '#FFFFFF')).toBeGreaterThanOrEqual(4.5);
+    expect(text).not.toBe('#000000');
+  });
+
+  it('lightens a dark accent on a dark panel', () => {
+    const text = readableAccentText('#014E4E', '#262626');
+    expect(contrastRatio(text, '#262626')).toBeGreaterThanOrEqual(4.5);
+    expect(relativeLuminance(text)).toBeGreaterThan(relativeLuminance('#014E4E'));
+  });
+
+  it('returns unparseable input unchanged', () => {
+    expect(readableAccentText('var(--x)', '#FFFFFF')).toBe('var(--x)');
+  });
+});
+
+describe('the black/white crossover (review of PR 1896)', () => {
+  it('moves a failing accent toward black on a mid grey, where black reads better', () => {
+    // #8a9a8a: luminance 0.30 — under 0.5, yet black gives 7.07:1 and white 2.97:1.
+    const text = readableAccentText('#9aaa9a', '#8a9a8a');
+    expect(contrastRatio(text, '#8a9a8a')).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('calls a background dark only when white reads better on it', () => {
+    expect(isDarkBackground('#8a9a8a')).toBe(false);
+    expect(isDarkBackground('#1a1a1a')).toBe(true);
+    expect(isDarkBackground('#ffffff')).toBe(false);
   });
 });

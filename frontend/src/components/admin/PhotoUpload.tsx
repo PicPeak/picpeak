@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Upload, X, Image, Info, FolderUp, FilePlus } from 'lucide-react';
-import { Button } from '../common';
+import { Upload, X, Image, FolderUp, FilePlus } from 'lucide-react';
+import { Button, Notice } from '../common';
 import { clsx } from 'clsx';
 import { toast } from 'react-toastify';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
@@ -464,13 +464,9 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
       {/* One session at a time: the bar tracks a single upload, so a second
           one waits until it is through. */}
       {isUploading && (
-        <div
-          role="status"
-          className="flex items-start gap-2 rounded-lg border border-line bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-body"
-        >
-          <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-neutral-500" />
-          <p>{t('upload.alreadyRunning', 'An upload is already running. It has to finish before the next one can start.')}</p>
-        </div>
+        <Notice tone="neutral">
+          {t('upload.alreadyRunning', 'An upload is already running. It has to finish before the next one can start.')}
+        </Notice>
       )}
 
       {/* Target folder (issue 1786): where files without a folder of their
@@ -486,7 +482,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
             id="upload-target-folder"
             value={looseFolderId ?? ''}
             onChange={(e) => setLooseFolderId(e.target.value ? Number(e.target.value) : null)}
-            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500"
+            className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent"
           >
             <option value="">{t('photos.folders.galleryRoot', 'Gallery root')}</option>
             {folderOptions.map((option) => (
@@ -506,7 +502,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
         <select
           value={selectedCategoryId || ''}
           onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : null)}
-          className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 border border-line-strong rounded-lg bg-panel text-heading focus:ring-2 focus:ring-accent"
         >
           <option value="">{t('upload.noCategory')}</option>
           {filterCategories.map((category) => (
@@ -524,7 +520,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
           id="replace-by-name"
           checked={replaceByName}
           onChange={(e) => setReplaceByName(e.target.checked)}
-          className="rounded border-neutral-300 text-accent focus:ring-primary-500"
+          className="rounded border-line-strong text-accent focus:ring-accent"
         />
         <label htmlFor="replace-by-name" className="text-sm text-body">
           {t('upload.replaceByName', 'Replace existing photos with same name')}
@@ -563,7 +559,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
         <p
           className={clsx(
             "text-xs mt-2",
-            remainingSlots === 0 ? "text-red-600" : "text-muted"
+            remainingSlots === 0 ? "text-danger-text" : "text-muted"
           )}
         >
           {remainingSlots === 0
@@ -641,7 +637,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
                 className="flex items-center justify-between p-2 bg-subtle rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <Image className="w-5 h-5 text-neutral-400" />
+                  <Image className="w-5 h-5 text-faint" />
                   <div>
                     <p className="text-sm font-medium text-body truncate max-w-xs">
                       {file.name}
@@ -657,7 +653,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
                     e.stopPropagation();
                     removeFile(index);
                   }}
-                  className="p-1 hover:bg-neutral-200 dark:hover:bg-neutral-700 rounded"
+                  className="p-1 hover:bg-fill rounded"
                 >
                   <X className="w-4 h-4" />
                 </button>

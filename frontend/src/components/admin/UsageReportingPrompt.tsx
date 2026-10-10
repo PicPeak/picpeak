@@ -81,7 +81,7 @@ export default function UsageReportingPrompt() {
         </header>
 
         <div tabIndex={0} role="group" aria-label={t('productUsagePrompt.title')}
-          className="min-h-0 overflow-y-auto px-6 py-2 focus-visible:outline-primary-600">
+          className="min-h-0 overflow-y-auto px-6 py-2 focus-visible:outline-accent">
           <UsageReportingPoints />
         </div>
 

@@ -2,7 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Eye, Download, UserPlus, Grid3x3, List } from 'lucide-react';
-import { Card, Button, Loading } from '../common';
+import {
+  Card, Button, Loading, useConfirm, Badge, Notice, EmptyState, ErrorState,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
+} from '../common';
 import { guestsService, AdminGuest } from '../../services/guests.service';
 import { AdminGuestDetail } from './AdminGuestDetail';
 import { GuestSelectionsAggregate } from './GuestSelectionsAggregate';
@@ -20,6 +23,7 @@ type View = 'list' | 'aggregate';
 
 export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, eventName }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { format: fmtDate } = useLocalizedDate();
   const [view, setView] = useState<View>('list');
   const [selectedGuest, setSelectedGuest] = useState<AdminGuest | null>(null);
@@ -29,7 +33,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
   const [keepId, setKeepId] = useState<number | null>(null);
   const inviteModal = useModal();
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['admin-guests', eventId],
     queryFn: () => guestsService.getEventGuests(eventId),
   });
@@ -54,10 +58,13 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
     errorMessage: () => t('admin.guests.mergedError', 'Failed to merge guests'),
   });
 
-  const handleDelete = (guest: AdminGuest) => {
-    if (window.confirm(t('admin.guests.forgetGuestConfirm', 'Remove this guest? Their picks will be anonymized but kept in aggregate totals.'))) {
-      deleteMutation.mutate(guest.id);
-    }
+  const handleDelete = async (guest: AdminGuest) => {
+    const ok = await confirm({
+      message: t('admin.guests.forgetGuestConfirm', 'Remove this guest? Their picks will be anonymized but kept in aggregate totals.'),
+      variant: 'danger',
+      confirmLabel: t('admin.guests.forgetGuest', 'Remove guest'),
+    });
+    if (ok) deleteMutation.mutate(guest.id);
   };
 
   const handleExport = async (guest: AdminGuest, format: 'txt' | 'csv' | 'json') => {
@@ -98,7 +105,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
     );
   };
 
-  const performMerge = () => {
+  const performMerge = async () => {
     if (mergeSelection.length < 2) {
       toast.warning(t('admin.guests.mergeSelectAtLeastTwo', 'Select at least 2 guests to merge'));
       return;
@@ -120,9 +127,12 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
       'Merge {{count}} guests into {{name}}? This cannot be undone.',
       { count: mergeSelection.length, name: keepLabel }
     );
-    if (window.confirm(confirmMsg)) {
-      mergeMutation.mutate({ keepId, mergeIds });
-    }
+    const ok = await confirm({
+      message: confirmMsg,
+      variant: 'danger',
+      confirmLabel: t('admin.guests.mergeNow', 'Merge selected'),
+    });
+    if (ok) mergeMutation.mutate({ keepId, mergeIds });
   };
 
   // Stable identity so the duplicate grouping below is not recomputed on
@@ -184,7 +194,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                 {t('admin.guests.mergeSelected', '{{count}} selected', { count: mergeSelection.length })}
               </span>
               {keepId === null && (
-                <span className="text-sm text-amber-700 dark:text-amber-300">
+                <span className="text-sm text-warning-text">
                   {t('admin.guests.mergePickKeepHint', 'Pick the entry to keep')}
                 </span>
               )}
@@ -253,93 +263,100 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
           decides which name and verification state the merged guest keeps, and
           that is the admin's call, not a default. */}
       {duplicateGroups.length > 0 && !mergeMode && (
-        <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/30 px-4 py-3 flex items-center justify-between gap-4">
-          <p className="text-sm text-amber-800 dark:text-amber-200">
-            {t('admin.guests.duplicatesFound', {
-              guests: duplicateCount,
-              groups: duplicateGroups.length,
-              defaultValue: '{{guests}} guest entries look like {{groups}} returning visitor(s) — same email, registered more than once. Their picks are split until they are merged.',
-            })}
-          </p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              setMergeMode(true);
-              setMergeSelection(duplicateGroups[0].map((g) => g.id));
-              setKeepId(null);
-            }}
-            className="shrink-0"
-          >
-            {t('admin.guests.reviewDuplicates', 'Review')}
-          </Button>
-        </div>
+        <Notice
+          tone="warning"
+          className="mb-4"
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setMergeMode(true);
+                setMergeSelection(duplicateGroups[0].map((g) => g.id));
+                setKeepId(null);
+              }}
+              className="shrink-0"
+            >
+              {t('admin.guests.reviewDuplicates', 'Review')}
+            </Button>
+          }
+        >
+          {t('admin.guests.duplicatesFound', {
+            guests: duplicateCount,
+            groups: duplicateGroups.length,
+            defaultValue: '{{guests}} guest entries look like {{groups}} returning visitor(s) — same email, registered more than once. Their picks are split until they are merged.',
+          })}
+        </Notice>
       )}
 
-      {guests.length === 0 ? (
+      {isError && !data ? (
         <Card>
-          <div className="p-8 text-center text-muted">
-            {t('admin.guests.empty', 'No guests have registered yet.')}
-          </div>
+          <ErrorState
+            size="inline"
+            onRetry={() => refetch()}
+            retrying={isFetching}
+          />
+        </Card>
+      ) : guests.length === 0 ? (
+        <Card>
+          <EmptyState size="inline" title={t('admin.guests.empty', 'No guests have registered yet.')} />
         </Card>
       ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-subtle border-b border-line">
+            <Table>
+              <TableHead>
                 <tr>
-                  {mergeMode && <th className="px-4 py-3 w-8" />}
+                  {mergeMode && <TableHeaderCell className="w-8" />}
                   {mergeMode && (
-                    <th className="px-4 py-3 w-16 text-left text-xs font-medium text-soft uppercase">
+                    <TableHeaderCell className="w-16">
                       {t('admin.guests.mergeKeepColumn', 'Keep')}
-                    </th>
+                    </TableHeaderCell>
                   )}
-                  <th className="px-4 py-3 text-left text-xs font-medium text-soft uppercase">
+                  <TableHeaderCell>
                     {t('admin.guests.columns.name', 'Name')}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell>
                     {t('admin.guests.columns.email', 'Email')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.likes', 'Likes')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.favorites', 'Favorites')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.comments', 'Comments')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.ratings', 'Ratings')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.reactions', 'Reactions')}
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell align="right">
                     {t('admin.guests.columns.colorLabels', 'Color labels')}
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-soft uppercase">
+                  </TableHeaderCell>
+                  <TableHeaderCell>
                     {t('admin.guests.columns.lastSeen', 'Last seen')}
-                  </th>
-                  <th className="px-4 py-3" />
+                  </TableHeaderCell>
+                  <TableHeaderCell />
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
+              </TableHead>
+              <TableBody>
                 {guests.map((guest) => (
-                  <tr key={guest.id} className="hover:bg-hover-soft">
+                  <TableRow key={guest.id} className="hover:bg-hover-soft">
                     {mergeMode && (
-                      <td className="px-4 py-3">
+                      <TableCell>
                         <input
                           type="checkbox"
                           aria-label={t('admin.guests.mergeInclude', 'Include {{name}} in the merge', { name: guest.name })}
                           checked={mergeSelection.includes(guest.id)}
                           onChange={() => toggleMergeSelection(guest.id)}
-                          className="w-4 h-4 text-accent rounded focus:ring-primary-500"
+                          className="w-4 h-4 text-accent rounded focus:ring-accent"
                         />
-                      </td>
+                      </TableCell>
                     )}
                     {mergeMode && (
-                      <td className="px-4 py-3">
+                      <TableCell>
                         {/* The survivor, chosen rather than derived. Only
                             selectable among the rows actually being merged. */}
                         <input
@@ -349,54 +366,55 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                           checked={keepId === guest.id}
                           disabled={!mergeSelection.includes(guest.id)}
                           onChange={() => setKeepId(guest.id)}
-                          className="w-4 h-4 text-accent focus:ring-primary-500 disabled:opacity-40"
+                          className="w-4 h-4 text-accent focus:ring-accent disabled:opacity-40"
                         />
-                      </td>
+                      </TableCell>
                     )}
-                    <td className="px-4 py-3 font-medium text-heading">
+                    <TableCell className="font-medium text-heading">
                       {guest.name}
                       {guest.email_verified_at && (
-                        <span className="ml-2 text-xs text-green-600">✓</span>
+                        <span className="ml-2 text-xs text-success-text">✓</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-soft">
+                    </TableCell>
+                    <TableCell className="text-soft">
                       {guest.email || '—'}
                       {guest.duplicate_group && (
-                        <span
-                          className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200"
+                        <Badge
+                          tone="warning"
+                          className="ml-2"
                           title={t('admin.guests.duplicateHint', 'Another entry on this gallery uses the same email — likely the same person registered twice.')}
                         >
                           {t('admin.guests.duplicateBadge', 'duplicate?')}
-                        </span>
+                        </Badge>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.likes}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.favorites}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.comments}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.ratings}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.reactions}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm text-heading">
+                    </TableCell>
+                    <TableCell align="right" className="text-heading">
                       {guest.stats.color_labels ?? 0}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-soft">
+                    </TableCell>
+                    <TableCell className="text-soft">
                       {fmtDate(guest.last_seen_at)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
+                    </TableCell>
+                    <TableCell align="right">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
                           onClick={() => setSelectedGuest(guest)}
-                          className="p-1 text-neutral-500 hover:text-accent"
+                          className="p-1 text-muted hover:text-accent"
                           title={t('admin.guests.view', 'View details')}
                         >
                           <Eye className="w-4 h-4" />
@@ -404,7 +422,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                         <div className="relative group">
                           <button
                             type="button"
-                            className="p-1 text-neutral-500 hover:text-accent"
+                            className="p-1 text-muted hover:text-accent"
                             title={t('admin.guests.export', 'Export')}
                           >
                             <Download className="w-4 h-4" />
@@ -424,19 +442,17 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                         <button
                           type="button"
                           onClick={() => handleDelete(guest)}
-                          className="p-1 text-neutral-500 hover:text-red-600"
+                          className="p-1 text-muted hover:text-danger-text"
                           title={t('admin.guests.forgetGuest', 'Remove guest')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+              </TableBody>
+            </Table>
       )}
 
       {selectedGuest && (

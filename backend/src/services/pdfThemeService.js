@@ -7,12 +7,27 @@
  */
 
 const { db, logActivity } = require('../database/db');
+const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
 const businessProfileService = require('./businessProfileService');
 const themeModel = require('./pdf/theme');
 const { availableFamilies } = require('./pdf/fonts');
 const uploadedFonts = require('./pdf/uploadedFonts');
+const { loadBrandingTheme } = require('./galleryTheme');
+
+/**
+ * The Branding theme a document's accent can follow. Best effort: a document
+ * renders with the built-in look rather than fail on it.
+ */
+async function brandingTheme() {
+  try {
+    return await loadBrandingTheme();
+  } catch (error) {
+    logger.warn('Could not read the Branding theme for PDF colours', { error: error.message });
+    return null;
+  }
+}
 
 /** Bundled families plus the active uploaded ones (`upload-<id>`). */
 async function allFamilies() {
@@ -59,16 +74,17 @@ async function loadRows() {
 async function resolveTheme(scope) {
   const { byScope } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
-  return withFontFiles(themeModel.resolveTheme(scope, byScope, profile));
+  return withFontFiles(themeModel.resolveTheme(scope, byScope, profile, await brandingTheme()));
 }
 
 /** Every scope's stored settings and, for document types, the resolved theme. */
 async function listThemes() {
   const { byScope, updatedAt } = await loadRows();
   const { profile } = await businessProfileService.getProfile();
+  const brandTheme = await brandingTheme();
   return {
     themes: themeModel.SCOPES.map((scope) => {
-      const resolved = themeModel.resolveTheme(scope, byScope, profile);
+      const resolved = themeModel.resolveTheme(scope, byScope, profile, brandTheme);
       return {
         scope,
         settings: byScope[scope] || {},
@@ -78,6 +94,11 @@ async function listThemes() {
         warnings: themeModel.themeWarnings(resolved),
       };
     }),
+    // What a colour falls back to when neither the document type nor "All
+    // documents" sets it: the brand accent (when it reads on paper), else the
+    // built-in look. The form says which.
+    brandColors: themeModel.brandColors(brandTheme),
+    builtInColors: themeModel.BUILT_IN_COLORS,
     fontFamilies: availableFamilies(),
     // Uploaded fonts a theme may use, `[{ family: 'upload-<id>', name }]`.
     uploadedFonts: await uploadedFonts.uploadedFamilies(),
@@ -124,7 +145,7 @@ async function resolveDraftTheme(scope, settings) {
   const rows = { ...byScope, [scope]: clean };
   // Previewing the default scope shows its effect on a quote.
   const docScope = scope === 'default' ? 'quote' : scope;
-  return withFontFiles(themeModel.resolveTheme(docScope, rows, profile));
+  return withFontFiles(themeModel.resolveTheme(docScope, rows, profile, await brandingTheme()));
 }
 
 // ---------------------------------------------------------------------

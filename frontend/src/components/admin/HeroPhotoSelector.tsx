@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Image as ImageIcon, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, AuthenticatedImage } from '../common';
+import { Button, AuthenticatedImage, Modal } from '../common';
 import { AdminPhoto } from '../../services/photos.service';
 
 interface HeroPhotoSelectorProps {
@@ -41,7 +41,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
           {t('events.heroPhoto')}
         </label>
         {currentHeroPhoto ? (
-          <div className="relative w-full h-48 rounded-lg overflow-hidden bg-neutral-100">
+          <div className="relative w-full h-48 rounded-lg overflow-hidden bg-inset">
             <AuthenticatedImage
               src={currentHeroPhoto.thumbnail_url || currentHeroPhoto.url}
               alt={currentHeroPhoto.filename}
@@ -49,7 +49,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
             />
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">{t('events.noHeroPhotoSelected')}</p>
+          <p className="text-sm text-muted">{t('events.noHeroPhotoSelected')}</p>
         )}
       </div>
     );
@@ -65,7 +65,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
       </p>
       
       {currentHeroPhoto ? (
-        <div className="relative w-full h-48 rounded-lg overflow-hidden bg-neutral-100 mb-2">
+        <div className="relative w-full h-48 rounded-lg overflow-hidden bg-inset mb-2">
           <AuthenticatedImage
             src={currentHeroPhoto.thumbnail_url || currentHeroPhoto.url}
             alt={currentHeroPhoto.filename}
@@ -76,7 +76,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
               variant="secondary"
               size="sm"
               onClick={() => setIsOpen(true)}
-              className="bg-white/90 hover:bg-white"
+              className="bg-white/90 hover:bg-panel"
             >
               {t('common.change')}
             </Button>
@@ -85,7 +85,7 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
               size="sm"
               onClick={handleRemove}
               leftIcon={<X className="w-4 h-4" />}
-              className="bg-white/90 hover:bg-white"
+              className="bg-white/90 hover:bg-panel"
             >
               {t('common.remove')}
             </Button>
@@ -104,70 +104,57 @@ export const HeroPhotoSelector: React.FC<HeroPhotoSelectorProps> = ({
       )}
 
       {/* Photo Selection Modal */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <Card className="max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="p-6 border-b border-line">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-heading">{t('events.selectHeroPhoto')}</h2>
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-2 hover:bg-hover rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-              {photos.length === 0 ? (
-                <p className="text-center text-neutral-500 py-8">
-                  {t('events.noPhotosAvailable')}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {photos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      onClick={() => handleSelect(photo.id)}
-                      className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                        photo.id === selectedPhotoId
-                          ? 'border-accent-dark ring-2 ring-primary-500 ring-offset-2'
-                          : 'border-transparent hover:border-neutral-300'
-                      }`}
-                    >
-                      <div className="aspect-square bg-neutral-100">
-                        <AuthenticatedImage
-                          src={photo.thumbnail_url || photo.url}
-                          alt={photo.filename}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      {photo.id === selectedPhotoId && (
-                        <div className="absolute top-2 right-2 bg-accent-dark/150 text-white rounded-full p-1">
-                          <Check className="w-4 h-4" />
-                        </div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-                        <p className="text-white text-xs truncate">{photo.filename}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="p-6 border-t border-line flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setIsOpen(false)}
+      <Modal
+        open={isOpen}
+        onClose={() => setIsOpen(false)}
+        title={t('events.selectHeroPhoto')}
+        size="xl"
+        closeOnBackdrop={false}
+        footer={
+          <Button
+            variant="outline"
+            onClick={() => setIsOpen(false)}
+          >
+            {t('common.cancel')}
+          </Button>
+        }
+      >
+        {photos.length === 0 ? (
+          <p className="text-center text-muted py-8">
+            {t('events.noPhotosAvailable')}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {photos.map((photo) => (
+              <div
+                key={photo.id}
+                onClick={() => handleSelect(photo.id)}
+                className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                  photo.id === selectedPhotoId
+                    ? 'border-accent-dark ring-2 ring-accent ring-offset-2'
+                    : 'border-transparent hover:border-line-strong'
+                }`}
               >
-                {t('common.cancel')}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
+                <div className="aspect-square bg-inset">
+                  <AuthenticatedImage
+                    src={photo.thumbnail_url || photo.url}
+                    alt={photo.filename}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                {photo.id === selectedPhotoId && (
+                  <div className="absolute top-2 right-2 bg-accent-dark/150 text-white rounded-full p-1">
+                    <Check className="w-4 h-4" />
+                  </div>
+                )}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                  <p className="text-white text-xs truncate">{photo.filename}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

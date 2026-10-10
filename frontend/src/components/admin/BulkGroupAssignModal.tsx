@@ -11,9 +11,8 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
 
-import { Button, Card } from '../common';
+import { Badge, Button, Modal } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import {
   customerAdminService,
@@ -102,136 +101,126 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
   ));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <Card className="w-full max-w-md max-h-full overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="bulk-group-title">
-        <div className="p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 id="bulk-group-title" className="text-lg font-semibold text-heading">
-              {mode === 'add'
-                ? t('customers.groups.bulk.addTitle', {
-                  count: customerIds.length,
-                  defaultValue_one: 'Add {{count}} customer to groups',
-                  defaultValue_other: 'Add {{count}} customers to groups',
-                })
-                : t('customers.groups.bulk.removeTitle', {
-                  count: customerIds.length,
-                  defaultValue_one: 'Remove {{count}} customer from groups',
-                  defaultValue_other: 'Remove {{count}} customers from groups',
-                })}
-            </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={apply.isPending}
-              aria-label={t('common.close', 'Close')}
-              className="rounded-lg p-1 hover:bg-hover"
-            >
-              <X className="h-5 w-5 text-muted" />
-            </button>
-          </div>
+    <Modal
+      open
+      onClose={() => { if (!apply.isPending) onClose(); }}
+      title={
+        mode === 'add'
+          ? t('customers.groups.bulk.addTitle', {
+            count: customerIds.length,
+            defaultValue_one: 'Add {{count}} customer to groups',
+            defaultValue_other: 'Add {{count}} customers to groups',
+          })
+          : t('customers.groups.bulk.removeTitle', {
+            count: customerIds.length,
+            defaultValue_one: 'Remove {{count}} customer from groups',
+            defaultValue_other: 'Remove {{count}} customers from groups',
+          })
+      }
+      size="sm"
+      closeOnBackdrop={false}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={apply.isPending}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => apply.mutate()}
+            isLoading={apply.isPending}
+            disabled={picked.length === 0 || preview.isFetching || !preview.data || effect === 0}
+          >
+            {mode === 'add'
+              ? t('customers.groups.bulk.confirmAdd', {
+                count: effect,
+                defaultValue_one: 'Add {{count}} membership',
+                defaultValue_other: 'Add {{count}} memberships',
+              })
+              : t('customers.groups.bulk.confirmRemove', {
+                count: effect,
+                defaultValue_one: 'Remove {{count}} membership',
+                defaultValue_other: 'Remove {{count}} memberships',
+              })}
+          </Button>
+        </>
+      }
+    >
+      {options.length === 0 ? (
+        <p className="text-sm text-muted">
+          {mode === 'add'
+            ? t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')
+            : t('customers.groups.bulk.noneCarried', 'None of the selected customers is in a group.')}
+        </p>
+      ) : (
+        <ul className="max-h-60 space-y-2 overflow-y-auto">
+          {options.map((group) => (
+            <li key={group.id}>
+              <label className="flex items-center gap-2 text-sm text-body">
+                <input type="checkbox" checked={picked.includes(group.id)} onChange={() => toggle(group.id)} />
+                <GroupDot color={group.color} className="h-2.5 w-2.5" />
+                <span>{group.name}</span>
+                {group.isArchived && (
+                  <Badge tone="neutral">
+                    {t('customers.groups.archived', 'Archived')}
+                  </Badge>
+                )}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
 
-          {options.length === 0 ? (
-            <p className="text-sm text-muted">
+      <div className="mt-4 min-h-[2.5rem] text-sm text-body" aria-live="polite">
+        {picked.length > 0 && (preview.isFetching ? (
+          <span className="text-muted">
+            {t('customers.groups.bulk.previewing', 'Working out the change…')}
+          </span>
+        ) : preview.isError ? (
+          <span className="text-danger-text">
+            {overLimit
+              ? t('customers.groups.bulk.overGroupLimit', {
+                count: overLimit.customers,
+                max: overLimit.limit,
+                defaultValue_one: '{{count}} selected customer would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
+                defaultValue_other: '{{count}} selected customers would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
+              })
+              : t('customers.groups.bulk.previewError', 'The change could not be previewed. Close this and try again.')}
+          </span>
+        ) : preview.data && (
+          <>
+            <p>
               {mode === 'add'
-                ? t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')
-                : t('customers.groups.bulk.noneCarried', 'None of the selected customers is in a group.')}
+                ? t('customers.groups.bulk.addsSummary', {
+                  count: preview.data.added,
+                  defaultValue_one: 'Adds {{count}} membership.',
+                  defaultValue_other: 'Adds {{count}} memberships.',
+                })
+                : t('customers.groups.bulk.removesSummary', {
+                  count: preview.data.removed,
+                  defaultValue_one: 'Removes {{count}} membership.',
+                  defaultValue_other: 'Removes {{count}} memberships.',
+                })}
             </p>
-          ) : (
-            <ul className="max-h-60 space-y-2 overflow-y-auto">
-              {options.map((group) => (
-                <li key={group.id}>
-                  <label className="flex items-center gap-2 text-sm text-body">
-                    <input type="checkbox" checked={picked.includes(group.id)} onChange={() => toggle(group.id)} />
-                    <GroupDot color={group.color} className="h-2.5 w-2.5" />
-                    <span>{group.name}</span>
-                    {group.isArchived && (
-                      <span className="text-xs text-muted">
-                        {t('customers.groups.archived', 'Archived')}
-                      </span>
-                    )}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="mt-4 min-h-[2.5rem] text-sm text-body" aria-live="polite">
-            {picked.length > 0 && (preview.isFetching ? (
-              <span className="text-muted">
-                {t('customers.groups.bulk.previewing', 'Working out the change…')}
-              </span>
-            ) : preview.isError ? (
-              <span className="text-red-600 dark:text-red-400">
-                {overLimit
-                  ? t('customers.groups.bulk.overGroupLimit', {
-                    count: overLimit.customers,
-                    max: overLimit.limit,
-                    defaultValue_one: '{{count}} selected customer would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
-                    defaultValue_other: '{{count}} selected customers would be in more than {{max}} groups. Take them out of the selection, or out of other groups first.',
+            {unchanged.map((row) => (
+              <p key={row.groupId} className="text-muted">
+                {mode === 'add'
+                  ? t('customers.groups.bulk.alreadyIn', {
+                    count: row.count,
+                    name: nameOf(row.groupId),
+                    defaultValue_one: '{{count}} customer is already in {{name}}.',
+                    defaultValue_other: '{{count}} customers are already in {{name}}.',
                   })
-                  : t('customers.groups.bulk.previewError', 'The change could not be previewed. Close this and try again.')}
-              </span>
-            ) : preview.data && (
-              <>
-                <p>
-                  {mode === 'add'
-                    ? t('customers.groups.bulk.addsSummary', {
-                      count: preview.data.added,
-                      defaultValue_one: 'Adds {{count}} membership.',
-                      defaultValue_other: 'Adds {{count}} memberships.',
-                    })
-                    : t('customers.groups.bulk.removesSummary', {
-                      count: preview.data.removed,
-                      defaultValue_one: 'Removes {{count}} membership.',
-                      defaultValue_other: 'Removes {{count}} memberships.',
-                    })}
-                </p>
-                {unchanged.map((row) => (
-                  <p key={row.groupId} className="text-muted">
-                    {mode === 'add'
-                      ? t('customers.groups.bulk.alreadyIn', {
-                        count: row.count,
-                        name: nameOf(row.groupId),
-                        defaultValue_one: '{{count}} customer is already in {{name}}.',
-                        defaultValue_other: '{{count}} customers are already in {{name}}.',
-                      })
-                      : t('customers.groups.bulk.notIn', {
-                        count: row.count,
-                        name: nameOf(row.groupId),
-                        defaultValue_one: '{{count}} customer is not in {{name}}.',
-                        defaultValue_other: '{{count}} customers are not in {{name}}.',
-                      })}
-                  </p>
-                ))}
-              </>
+                  : t('customers.groups.bulk.notIn', {
+                    count: row.count,
+                    name: nameOf(row.groupId),
+                    defaultValue_one: '{{count}} customer is not in {{name}}.',
+                    defaultValue_other: '{{count}} customers are not in {{name}}.',
+                  })}
+              </p>
             ))}
-          </div>
-
-          <div className="mt-4 flex justify-end gap-3">
-            <Button variant="outline" onClick={onClose} disabled={apply.isPending}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => apply.mutate()}
-              isLoading={apply.isPending}
-              disabled={picked.length === 0 || preview.isFetching || !preview.data || effect === 0}
-            >
-              {mode === 'add'
-                ? t('customers.groups.bulk.confirmAdd', {
-                  count: effect,
-                  defaultValue_one: 'Add {{count}} membership',
-                  defaultValue_other: 'Add {{count}} memberships',
-                })
-                : t('customers.groups.bulk.confirmRemove', {
-                  count: effect,
-                  defaultValue_one: 'Remove {{count}} membership',
-                  defaultValue_other: 'Remove {{count}} memberships',
-                })}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
+          </>
+        ))}
+      </div>
+    </Modal>
   );
 };

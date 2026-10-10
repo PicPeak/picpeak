@@ -21,11 +21,11 @@ import { SectionPageHeader } from '../../../components/admin/SectionPageHeader';
 
 const STATUS_STYLES: Record<CampaignStatus, string> = {
   draft: 'bg-inset text-body',
-  queued: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
-  sending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
-  sent: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+  queued: 'bg-info-soft text-info-text',
+  sending: 'bg-warning-soft text-warning-text',
+  sent: 'bg-success-soft text-success-text',
   cancelled: 'bg-subtle text-muted',
-  failed: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+  failed: 'bg-danger-soft text-danger-text',
 };
 
 export const StatusChip: React.FC<{ status: CampaignStatus }> = ({ status }) => {
@@ -63,7 +63,7 @@ export const NewsletterListPage: React.FC = () => {
         name: t('newsletters.untitled', 'Untitled campaign'),
         subject: t('newsletters.untitledSubject', 'Newsletter'),
       });
-      navigate(`/admin/clients/newsletters/${campaign.id}/edit`);
+      navigate(`/admin/clients/newsletters/${campaign.id}`);
     } catch {
       toast.error(t('newsletters.createFailed', 'Could not create the campaign.'));
     }
@@ -91,6 +91,7 @@ export const NewsletterListPage: React.FC = () => {
   return (
     <div>
       <SectionPageHeader
+        feature="newsletters"
         icon={Megaphone}
         title={t('newsletters.title', 'Newsletters')}
         description={t('newsletters.subtitle', 'Send a campaign to your customer accounts. Everyone who has opted out is skipped automatically, and every send carries an unsubscribe link.')}
@@ -151,7 +152,7 @@ export const NewsletterListPage: React.FC = () => {
                         // page has no edit action, so linking a draft there
                         // left the operator with no way to resume it.
                         to={c.status === 'draft' && canSend
-                          ? `/admin/clients/newsletters/${c.id}/edit`
+                          ? `/admin/clients/newsletters/${c.id}`
                           : `/admin/clients/newsletters/${c.id}`}
                         className="font-medium hover:underline"
                         style={{ color: 'var(--color-accent)' }}
@@ -163,7 +164,7 @@ export const NewsletterListPage: React.FC = () => {
                     <td className="px-4 py-3"><StatusChip status={c.status} /></td>
                     <td className="px-4 py-3 text-right tabular-nums">{c.recipientCount}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{c.sentCount}</td>
-                    <td className={`px-4 py-3 text-right tabular-nums ${c.failedCount > 0 ? 'text-red-600 dark:text-red-400 font-medium' : ''}`}>
+                    <td className={`px-4 py-3 text-right tabular-nums ${c.failedCount > 0 ? 'text-danger-text font-medium' : ''}`}>
                       {c.failedCount}
                     </td>
                     <td className="px-4 py-3 text-muted">
@@ -177,7 +178,7 @@ export const NewsletterListPage: React.FC = () => {
                           type="button"
                           onClick={() => remove(c)}
                           aria-label={t('newsletters.deleteAria', 'Delete {{name}}', { name: c.name }) as string}
-                          className="text-neutral-400 hover:text-red-600 dark:hover:text-red-400"
+                          className="text-faint hover:text-danger-text"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

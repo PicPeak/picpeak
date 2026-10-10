@@ -9,7 +9,6 @@ import {
   Edit,
   UserX,
   UserCheck,
-  X,
   AlertTriangle,
   Clock,
   Shield,
@@ -20,7 +19,9 @@ import {
 } from 'lucide-react';
 import { parseISO, isPast } from 'date-fns';
 
-import { Button, Input, Card, Loading } from '../../components/common';
+import { Badge, Button, Input, Card, Loading, Modal, Tabs, ErrorState, EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell } from '../../components/common';
+import type { BadgeTone } from '../../components/common';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { userManagementService } from '../../services/userManagement.service';
 import type { AdminUser, AdminRole, AdminInvitation } from '../../types';
 import { useLocalizedDate, useModal, useMutationWithToast } from "../../hooks";
@@ -29,18 +30,18 @@ import { RoleManagementTab } from '../../components/admin/RoleManagementTab';
 
 type TabType = 'users' | 'invitations' | 'roles';
 
-// Role badge colors
-const getRoleBadgeColor = (roleName: string): string => {
+// Role badge tones
+const getRoleBadgeTone = (roleName: string): BadgeTone => {
   switch (roleName?.toLowerCase()) {
     case 'super_admin':
-      return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800';
+      return 'danger';
     case 'admin':
-      return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      return 'info';
     case 'editor':
-      return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
+      return 'success';
     case 'viewer':
     default:
-      return 'bg-inset text-body border-line';
+      return 'neutral';
   }
 };
 
@@ -94,26 +95,35 @@ const CreateInvitationModal: React.FC<CreateInvitationModalProps> = ({
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-heading">
-              {t('userManagement.createInvitation')}
-            </h2>
-            <button
-              onClick={handleClose}
-              className="p-1 hover:bg-hover rounded-lg transition-colors"
-              disabled={isLoading}
-            >
-              <X className="w-5 h-5 text-muted" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit}>
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!isLoading) handleClose(); }}
+      title={t('userManagement.createInvitation')}
+      size="sm"
+      footer={(
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleClose}
+            disabled={isLoading}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form="create-invitation-form"
+            variant="primary"
+            isLoading={isLoading}
+            leftIcon={<Mail className="w-4 h-4" />}
+          >
+            {t('userManagement.sendInvitation')}
+          </Button>
+        </>
+      )}
+    >
+          <form id="create-invitation-form" onSubmit={handleSubmit}>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-body mb-1">
@@ -130,7 +140,7 @@ const CreateInvitationModal: React.FC<CreateInvitationModalProps> = ({
                   disabled={isLoading}
                 />
                 {errors.email && (
-                  <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+                  <p className="mt-1 text-sm text-danger-text">{errors.email}</p>
                 )}
               </div>
 
@@ -144,7 +154,7 @@ const CreateInvitationModal: React.FC<CreateInvitationModalProps> = ({
                     setRoleId(e.target.value ? Number(e.target.value) : '');
                     setErrors((prev) => ({ ...prev, role: undefined }));
                   }}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
                   disabled={isLoading}
                 >
                   <option value="">{t('userManagement.selectRole')}</option>
@@ -155,33 +165,12 @@ const CreateInvitationModal: React.FC<CreateInvitationModalProps> = ({
                   ))}
                 </select>
                 {errors.role && (
-                  <p className="mt-1 text-sm text-red-600">{errors.role}</p>
+                  <p className="mt-1 text-sm text-danger-text">{errors.role}</p>
                 )}
               </div>
             </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleClose}
-                disabled={isLoading}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                isLoading={isLoading}
-                leftIcon={<Mail className="w-4 h-4" />}
-              >
-                {t('userManagement.sendInvitation')}
-              </Button>
-            </div>
           </form>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };
 
@@ -226,24 +215,36 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
     onClose();
   };
 
-  if (!isOpen || !user) return null;
+  if (!user) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-heading">
-              {t('userManagement.editUser')}
-            </h2>
-            <button
-              onClick={handleClose}
-              className="p-1 hover:bg-hover rounded-lg transition-colors"
-              disabled={isLoading}
-            >
-              <X className="w-5 h-5 text-muted" />
-            </button>
-          </div>
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!isLoading) handleClose(); }}
+      title={t('userManagement.editUser')}
+      size="sm"
+      footer={(
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleClose}
+            disabled={isLoading}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form="edit-user-form"
+            variant="primary"
+            isLoading={isLoading}
+            leftIcon={<Edit className="w-4 h-4" />}
+          >
+            {t('userManagement.saveChanges')}
+          </Button>
+        </>
+      )}
+    >
 
           <div className="mb-4 p-3 bg-inset rounded-lg">
             <p className="text-sm text-body">
@@ -252,7 +253,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
             <p className="text-sm text-muted">{user.email}</p>
           </div>
 
-          <form onSubmit={handleSubmit}>
+          <form id="edit-user-form" onSubmit={handleSubmit}>
             <div>
               <label className="block text-sm font-medium text-body mb-1">
                 {t('userManagement.role')}
@@ -260,7 +261,7 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
               <select
                 value={roleId}
                 onChange={(e) => setRoleId(e.target.value ? Number(e.target.value) : '')}
-                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent-dark"
                 disabled={isLoading}
               >
                 <option value="">{t('userManagement.selectRole')}</option>
@@ -288,29 +289,8 @@ const EditUserModal: React.FC<EditUserModalProps> = ({
                 {t('userManagement.creditNameHelp', 'Credited on photos this account uploads when the file has no photographer name in its metadata.')}
               </p>
             </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleClose}
-                disabled={isLoading}
-              >
-                {t('common.cancel')}
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                isLoading={isLoading}
-                leftIcon={<Edit className="w-4 h-4" />}
-              >
-                {t('userManagement.saveChanges')}
-              </Button>
-            </div>
           </form>
-        </div>
-      </Card>
-    </div>
+    </Modal>
   );
 };
 
@@ -338,54 +318,43 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  if (!isOpen) return null;
-
+  // Stays open while the action runs and on a failure, so the admin sees
+  // the outcome; the caller closes it on success.
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-md">
-        <div className="p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <div
-              className={`p-2 rounded-full ${
-                variant === 'danger' ? 'bg-red-100 dark:bg-red-900/40' : 'bg-amber-100 dark:bg-amber-900/40'
-              }`}
-            >
-              <AlertTriangle
-                className={`w-5 h-5 ${
-                  variant === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
-                }`}
-              />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-heading">{title}</h2>
-              <p className="text-sm text-soft mt-1">{message}</p>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={isLoading}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={onConfirm}
-              isLoading={isLoading}
-              className={
-                variant === 'danger'
-                  ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
-                  : ''
-              }
-            >
-              {confirmText}
-            </Button>
-          </div>
-        </div>
-      </Card>
-    </div>
+    <Modal
+      open={isOpen}
+      onClose={() => { if (!isLoading) onClose(); }}
+      title={title}
+      size="sm"
+      footer={(
+        <>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={isLoading}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant={variant === 'danger' ? 'danger' : 'primary'}
+            onClick={onConfirm}
+            isLoading={isLoading}
+          >
+            {confirmText}
+          </Button>
+        </>
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle
+          className={`w-5 h-5 flex-shrink-0 ${
+            variant === 'danger' ? 'text-danger-text' : 'text-warning-text'
+          }`}
+          aria-hidden="true"
+        />
+        <p className="text-sm text-soft">{message}</p>
+      </div>
+    </Modal>
   );
 };
 
@@ -414,6 +383,7 @@ export const UserManagementPage: React.FC = () => {
     data: users,
     isLoading: usersLoading,
     error: usersError,
+    refetch: refetchUsers,
   } = useQuery({
     queryKey: ['admin-users'],
     queryFn: userManagementService.getUsers,
@@ -431,6 +401,7 @@ export const UserManagementPage: React.FC = () => {
     data: invitations,
     isLoading: invitationsLoading,
     error: invitationsError,
+    refetch: refetchInvitations,
   } = useQuery({
     queryKey: ['admin-invitations'],
     queryFn: userManagementService.getInvitations,
@@ -630,15 +601,27 @@ export const UserManagementPage: React.FC = () => {
   // Loading state
   const isLoading = usersLoading || rolesLoading || invitationsLoading;
 
+  const pageHeader = (
+    <SectionPageHeader
+      icon={Users}
+      title={t('userManagement.title')}
+      description={t('userManagement.subtitle')}
+      actions={(
+        <Button
+          variant="primary"
+          leftIcon={<Plus className="w-5 h-5" />}
+          onClick={createInvitationModal.open}
+        >
+          {t('userManagement.inviteUser')}
+        </Button>
+      )}
+    />
+  );
+
   if (isLoading) {
     return (
       <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-heading">
-            {t('userManagement.title')}
-          </h1>
-          <p className="text-soft mt-1">{t('userManagement.subtitle')}</p>
-        </div>
+        {pageHeader}
         <div className="flex items-center justify-center min-h-[400px]">
           <Loading size="lg" text={t('userManagement.loading')} />
         </div>
@@ -647,21 +630,14 @@ export const UserManagementPage: React.FC = () => {
   }
 
   // Error state
-  if (usersError || invitationsError) {
+  if ((usersError && !users) || (invitationsError && !invitations)) {
     return (
       <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-heading">
-            {t('userManagement.title')}
-          </h1>
-          <p className="text-soft mt-1">{t('userManagement.subtitle')}</p>
-        </div>
-        <div className="text-center py-12">
-          <p className="text-red-600">{t('userManagement.loadError')}</p>
-          <Button onClick={() => window.location.reload()} className="mt-4">
-            {t('common.tryAgain')}
-          </Button>
-        </div>
+        {pageHeader}
+        <ErrorState
+          title={t('userManagement.loadError')}
+          onRetry={() => { void refetchUsers(); void refetchInvitations(); }}
+        />
       </div>
     );
   }
@@ -680,22 +656,7 @@ export const UserManagementPage: React.FC = () => {
 
   return (
     <div>
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-heading">
-            {t('userManagement.title')}
-          </h1>
-          <p className="text-soft mt-1">{t('userManagement.subtitle')}</p>
-        </div>
-        <Button
-          variant="primary"
-          leftIcon={<Plus className="w-5 h-5" />}
-          onClick={createInvitationModal.open}
-        >
-          {t('userManagement.inviteUser')}
-        </Button>
-      </div>
+      {pageHeader}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -723,7 +684,7 @@ export const UserManagementPage: React.FC = () => {
                 {users?.filter((u) => u.isActive).length || 0}
               </p>
             </div>
-            <CheckCircle className="w-8 h-8 text-green-600" />
+            <CheckCircle className="w-8 h-8 text-success-text" />
           </div>
         </Card>
 
@@ -737,7 +698,7 @@ export const UserManagementPage: React.FC = () => {
                 {invitations?.length || 0}
               </p>
             </div>
-            <Mail className="w-8 h-8 text-blue-600" />
+            <Mail className="w-8 h-8 text-info-text" />
           </div>
         </Card>
 
@@ -751,38 +712,19 @@ export const UserManagementPage: React.FC = () => {
                 {users?.filter((u) => !u.isActive).length || 0}
               </p>
             </div>
-            <XCircle className="w-8 h-8 text-neutral-400" />
+            <XCircle className="w-8 h-8 text-faint" />
           </div>
         </Card>
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b border-line mb-6">
-        <nav className="-mb-px flex gap-6">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2 ${
-                activeTab === tab.key
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-muted hover:text-body'
-              }`}
-            >
-              {tab.label}
-              <span
-                className={`px-2 py-0.5 text-xs rounded-full ${
-                  activeTab === tab.key
-                    ? 'bg-accent-dark/15 text-accent-dark'
-                    : 'bg-inset text-soft'
-                }`}
-              >
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </nav>
-      </div>
+      <Tabs
+        className="mb-6"
+        items={tabs.map((tab) => ({ id: tab.key, label: tab.label, count: tab.count }))}
+        value={activeTab}
+        onChange={setActiveTab}
+        aria-label={t('userManagement.title')}
+      />
 
       {/* Search */}
       {activeTab !== 'roles' && (
@@ -796,7 +738,7 @@ export const UserManagementPage: React.FC = () => {
                     ? t('userManagement.searchUsersPlaceholder')
                     : t('userManagement.searchInvitationsPlaceholder')
                 }
-                leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<Search className="w-5 h-5 text-faint" />}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -807,247 +749,241 @@ export const UserManagementPage: React.FC = () => {
 
       {/* Users Tab Content */}
       {activeTab === 'users' && (
-        <Card className="overflow-visible">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-subtle border-b border-line">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.user')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.role')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.status')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.lastLogin')}
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-panel divide-y divide-line">
-                {filteredUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-muted">
-                      {searchTerm
-                        ? t('userManagement.noUsersFound')
-                        : t('userManagement.noUsers')}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-700/50">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-accent-dark/15 flex items-center justify-center">
-                            <span className="text-accent-dark font-medium text-sm">
-                              {user.username.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-heading">
-                              {user.username}
-                            </p>
-                            <p className="text-xs text-muted">{user.email}</p>
-                            {isSuperAdmin && user.emailLinkEligible === false && (
-                              <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
-                                <AlertTriangle className="w-3 h-3" />
-                                {t('userManagement.ssoNotConfirmed', 'Email not confirmed for SSO')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${getRoleBadgeColor(
-                            user.roleName || ''
-                          )}`}
-                        >
-                          <Shield className="w-3 h-3" />
-                          {user.roleDisplayName || user.roleName || t('userManagement.noRole')}
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeaderCell>
+                {t('userManagement.table.user')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.role')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.status')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.lastLogin')}
+              </TableHeaderCell>
+              <TableHeaderCell align="right">
+                {t('userManagement.table.actions')}
+              </TableHeaderCell>
+            </tr>
+          </TableHead>
+          <TableBody>
+            {filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState
+                    size="inline"
+                    icon={<Users />}
+                    title={searchTerm
+                      ? t('userManagement.noUsersFound')
+                      : t('userManagement.noUsers')}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredUsers.map((user) => (
+                <TableRow key={user.id} className="hover:bg-hover-soft">
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-accent-soft flex items-center justify-center">
+                        <span className="text-on-accent-soft font-medium text-sm">
+                          {user.username.charAt(0).toUpperCase()}
                         </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            user.isActive
-                              ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                              : 'bg-inset text-muted'
-                          }`}
-                        >
-                          {user.isActive
-                            ? t('userManagement.status.active')
-                            : t('userManagement.status.inactive')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {user.lastLogin ? (
-                          <div className="flex items-center gap-1 text-sm text-body">
-                            <Clock className="w-4 h-4" />
-                            {formatDistanceToNow(parseISO(user.lastLogin), {
-                              addSuffix: true,
-                            })}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-faint">
-                            {t('userManagement.neverLoggedIn')}
-                          </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-heading">
+                          {user.username}
+                        </p>
+                        <p className="text-xs text-muted">{user.email}</p>
+                        {isSuperAdmin && user.emailLinkEligible === false && (
+                          <Badge tone="warning" icon={<AlertTriangle />} className="mt-1">
+                            {t('userManagement.ssoNotConfirmed', 'Email not confirmed for SSO')}
+                          </Badge>
                         )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {/* Only a Super Admin can set email_link_eligible, and the
-                              row only needs it while it is false (migration 227). */}
-                          {isSuperAdmin && user.emailLinkEligible === false && (
-                            <button
-                              onClick={() => handleConfirmEmail(user)}
-                              className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors"
-                              title={t('userManagement.confirmEmailForSso', 'Confirm email for SSO')}
-                            >
-                              <MailCheck className="w-4 h-4" />
-                            </button>
-                          )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge tone={getRoleBadgeTone(user.roleName || '')} icon={<Shield />}>
+                      {user.roleDisplayName || user.roleName || t('userManagement.noRole')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge tone={user.isActive ? 'success' : 'neutral'}>
+                      {user.isActive
+                        ? t('userManagement.status.active')
+                        : t('userManagement.status.inactive')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {user.lastLogin ? (
+                      <div className="flex items-center gap-1 text-sm text-body">
+                        <Clock className="w-4 h-4" />
+                        {formatDistanceToNow(parseISO(user.lastLogin), {
+                          addSuffix: true,
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-faint">
+                        {t('userManagement.neverLoggedIn')}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <div className="flex items-center justify-end gap-2">
+                      {/* Only a Super Admin can set email_link_eligible, and the
+                          row only needs it while it is false (migration 227). */}
+                      {isSuperAdmin && user.emailLinkEligible === false && (
+                        <button
+                          onClick={() => handleConfirmEmail(user)}
+                          className="p-1.5 text-faint hover:text-warning-text hover:bg-warning-soft rounded-lg transition-colors"
+                          title={t('userManagement.confirmEmailForSso', 'Confirm email for SSO')}
+                          aria-label={t('userManagement.confirmEmailForSso', 'Confirm email for SSO') as string}
+                        >
+                          <MailCheck className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleEditUser(user)}
+                        className="p-1.5 text-faint hover:text-accent hover:bg-accent-soft rounded-lg transition-colors"
+                        title={t('userManagement.editUser')}
+                        aria-label={t('userManagement.editUser') as string}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      {user.isActive ? (
+                        <button
+                          onClick={() => handleDeactivateUser(user)}
+                          className="p-1.5 text-faint hover:text-danger-text hover:bg-danger-soft rounded-lg transition-colors"
+                          title={t('userManagement.deactivateUser')}
+                          aria-label={t('userManagement.deactivateUser') as string}
+                        >
+                          <UserX className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <>
                           <button
-                            onClick={() => handleEditUser(user)}
-                            className="p-1.5 text-neutral-400 hover:text-accent hover:bg-accent-dark/15 rounded-lg transition-colors"
-                            title={t('userManagement.editUser')}
+                            onClick={() => handleActivateUser(user)}
+                            className="p-1.5 text-faint hover:text-success-text hover:bg-success-soft rounded-lg transition-colors"
+                            title={t('userManagement.activateUser', 'Reactivate user')}
+                            aria-label={t('userManagement.activateUser', 'Reactivate user') as string}
                           >
-                            <Edit className="w-4 h-4" />
+                            <UserCheck className="w-4 h-4" />
                           </button>
-                          {user.isActive ? (
-                            <button
-                              onClick={() => handleDeactivateUser(user)}
-                              className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                              title={t('userManagement.deactivateUser')}
-                            >
-                              <UserX className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => handleActivateUser(user)}
-                                className="p-1.5 text-neutral-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors"
-                                title={t('userManagement.activateUser', 'Reactivate user')}
-                              >
-                                <UserCheck className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(user)}
-                                className="p-1.5 text-neutral-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                title={t('userManagement.deleteUser', 'Delete user permanently')}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="p-1.5 text-faint hover:text-danger-text hover:bg-danger-soft rounded-lg transition-colors"
+                            title={t('userManagement.deleteUser', 'Delete user permanently')}
+                            aria-label={t('userManagement.deleteUser', 'Delete user permanently') as string}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
       )}
 
       {/* Invitations Tab Content */}
       {activeTab === 'invitations' && (
-        <Card className="overflow-visible">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-subtle border-b border-line">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.email')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.role')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.invitedBy')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.expires')}
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                    {t('userManagement.table.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-panel divide-y divide-line">
-                {filteredInvitations.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-muted">
-                      {searchTerm
-                        ? t('userManagement.noInvitationsFound')
-                        : t('userManagement.noInvitations')}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredInvitations.map((invitation) => {
-                    const isExpired = isPast(parseISO(invitation.expiresAt));
-                    return (
-                      <tr key={invitation.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-700/50">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-                              <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <p className="text-sm font-medium text-heading">
-                              {invitation.email}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${getRoleBadgeColor(
-                              invitation.roleName || ''
-                            )}`}
-                          >
-                            <Shield className="w-3 h-3" />
-                            {invitation.roleName}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-body">
-                          {invitation.invitedBy || '-'}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1 text-sm ${
-                              isExpired ? 'text-red-600 dark:text-red-400' : 'text-body'
-                            }`}
-                          >
-                            <Clock className="w-4 h-4" />
-                            {isExpired
-                              ? t('userManagement.expired')
-                              : formatDistanceToNow(parseISO(invitation.expiresAt), {
-                                  addSuffix: true,
-                                })}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleCancelInvitation(invitation)}
-                            className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                            title={t('userManagement.cancelInvitation')}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeaderCell>
+                {t('userManagement.table.email')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.role')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.invitedBy')}
+              </TableHeaderCell>
+              <TableHeaderCell>
+                {t('userManagement.table.expires')}
+              </TableHeaderCell>
+              <TableHeaderCell align="right">
+                {t('userManagement.table.actions')}
+              </TableHeaderCell>
+            </tr>
+          </TableHead>
+          <TableBody>
+            {filteredInvitations.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <EmptyState
+                    size="inline"
+                    icon={<Mail />}
+                    title={searchTerm
+                      ? t('userManagement.noInvitationsFound')
+                      : t('userManagement.noInvitations')}
+                    action={searchTerm ? undefined : (
+                      <Button variant="outline" size="sm" leftIcon={<Plus className="w-4 h-4" />} onClick={createInvitationModal.open}>
+                        {t('userManagement.inviteUser')}
+                      </Button>
+                    )}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredInvitations.map((invitation) => {
+                const isExpired = isPast(parseISO(invitation.expiresAt));
+                return (
+                  <TableRow key={invitation.id} className="hover:bg-hover-soft">
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-info-soft flex items-center justify-center">
+                          <Mail className="w-5 h-5 text-info-text" />
+                        </div>
+                        <p className="text-sm font-medium text-heading">
+                          {invitation.email}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge tone={getRoleBadgeTone(invitation.roleName || '')} icon={<Shield />}>
+                        {invitation.roleName}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {invitation.invitedBy || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center gap-1 text-sm ${
+                          isExpired ? 'text-danger-text' : 'text-body'
+                        }`}
+                      >
+                        <Clock className="w-4 h-4" />
+                        {isExpired
+                          ? t('userManagement.expired')
+                          : formatDistanceToNow(parseISO(invitation.expiresAt), {
+                              addSuffix: true,
+                            })}
+                      </span>
+                    </TableCell>
+                    <TableCell align="right">
+                      <button
+                        onClick={() => handleCancelInvitation(invitation)}
+                        className="p-1.5 text-faint hover:text-danger-text hover:bg-danger-soft rounded-lg transition-colors"
+                        title={t('userManagement.cancelInvitation')}
+                        aria-label={t('userManagement.cancelInvitation') as string}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
       )}
 
       {/* Roles Tab Content */}

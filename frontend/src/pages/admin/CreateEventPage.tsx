@@ -5,7 +5,6 @@ import {
   Mail,
   Lock,
   Clock,
-  ArrowLeft,
   Palette,
   Eye,
   EyeOff,
@@ -18,9 +17,10 @@ import {
 import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
 
-import { Button, Input, Card, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
+import { Button, Input, Card, Notice, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { TeamMemberPicker } from '../../components/admin/TeamMemberPicker';
 import { GalleryRecipientsList } from '../../components/admin/GalleryRecipientsList';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
@@ -702,19 +702,19 @@ export const CreateEventPage: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <SectionPageHeader
+        icon={Calendar}
+        title={t('events.create')}
+        actions={(
           <Button
-            variant="ghost"
-            size="sm"
-            leftIcon={<ArrowLeft className="w-4 h-4" />}
+            type="button"
+            variant="outline"
             onClick={() => navigate('/admin/events')}
           >
-            {t('common.back')}
+            {t('common.cancel')}
           </Button>
-          <h1 className="text-2xl font-bold text-heading">{t('events.create')}</h1>
-        </div>
-      </div>
+        )}
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Event Details */}
@@ -853,13 +853,13 @@ export const CreateEventPage: React.FC = () => {
                     value={formData.external_path}
                     onChange={(folder) => setFormData(prev => ({ ...prev, external_path: folder }))}
                   />
-                  {errors.external_path && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{errors.external_path}</p>}
+                  {errors.external_path && <p className="text-xs text-danger-text mt-1">{errors.external_path}</p>}
                 </div>
                 <div className="space-y-4">
                   <label className={`flex items-start gap-2 ${canImport ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
                     <input
                       type="checkbox"
-                      className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
+                      className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
                       checked={canImport && formData.import_now}
                       disabled={!canImport}
                       onChange={(e) => setFormData(prev => ({ ...prev, import_now: e.target.checked }))}
@@ -872,7 +872,7 @@ export const CreateEventPage: React.FC = () => {
                   <label className={`flex items-start gap-2 ${canImport ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}>
                     <input
                       type="checkbox"
-                      className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
+                      className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
                       checked={canImport && formData.external_watch}
                       disabled={!canImport}
                       onChange={(e) => setFormData(prev => ({ ...prev, external_watch: e.target.checked }))}
@@ -967,7 +967,7 @@ export const CreateEventPage: React.FC = () => {
                         type="checkbox"
                         checked={formData.review_contributor_uploads}
                         onChange={(e) => setFormData((prev) => ({ ...prev, review_contributor_uploads: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+                        className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
                       />
                       <span className="ml-2 text-sm text-body">
                         {t('events.team.reviewUploads', 'Review team members\' uploads before they are published')}
@@ -1003,7 +1003,7 @@ export const CreateEventPage: React.FC = () => {
                         setFormData(prev => ({ ...prev, admin_email: email }));
                       }
                     }}
-                    className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                    className="text-xs px-2 py-1 border border-line-strong bg-panel text-heading rounded focus:ring-2 focus:ring-accent focus:border-accent-dark"
                   >
                     <option value="">{t('events.adminEmailCustom', 'Custom email')}</option>
                     {activeAdmins.map(a => (
@@ -1020,7 +1020,7 @@ export const CreateEventPage: React.FC = () => {
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
                   checked={formData.require_password}
                   onChange={(e) => {
                     const checked = e.target.checked;
@@ -1046,19 +1046,18 @@ export const CreateEventPage: React.FC = () => {
               </label>
 
               {!formData.require_password && (
-                <div className="rounded-md border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/30 p-3 text-xs text-orange-800 dark:text-orange-300">
-                  {t('events.publicGalleryWarning', 'Public galleries are accessible to anyone with the link. Consider enabling download watermarks and monitoring activity.')} 
-                </div>
+                <Notice tone="warning" size="sm">
+                  {t('events.publicGalleryWarning', 'Public galleries are accessible to anyone with the link. Consider enabling download watermarks and monitoring activity.')}
+                </Notice>
               )}
             </div>
 
             {formData.require_password && portalOnly && (
-              <div className="rounded-md border border-line bg-inset p-3 text-sm text-body flex items-start gap-2">
-                <Key className="w-4 h-4 mt-0.5 shrink-0 text-soft" />
+              <Notice tone="neutral" icon={<Key className="w-4 h-4" />}>
                 <span>
                   {t('events.recipients.generatedPasswordNote', 'Customers sign in through their customer portal, so no gallery password is needed. A strong one is generated to keep the gallery link locked. If you add a customer email later, you set a password then.')}
                 </span>
-              </div>
+              </Notice>
             )}
 
             {formData.require_password && !portalOnly && (
@@ -1126,7 +1125,7 @@ export const CreateEventPage: React.FC = () => {
               <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+                  className="mt-1 w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
                   checked={formData.client_access_enabled}
                   onChange={(e) => setFormData(prev => ({
                     ...prev,
@@ -1198,15 +1197,9 @@ export const CreateEventPage: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/30 p-3">
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300">
-                  <Clock className="w-4 h-4" />
-                  <span className="text-sm font-medium">{t('events.noExpiration', 'No Expiration')}</span>
-                </div>
-                <p className="mt-1 text-xs text-blue-700 dark:text-blue-400">
-                  {t('events.noExpirationHelp', 'This gallery will remain active until manually archived.')}
-                </p>
-              </div>
+              <Notice tone="info" icon={<Clock className="w-5 h-5" />} title={t('events.noExpiration', 'No Expiration')}>
+                {t('events.noExpirationHelp', 'This gallery will remain active until manually archived.')}
+              </Notice>
             )}
 
             {/* Photo Cap */}
@@ -1269,7 +1262,7 @@ export const CreateEventPage: React.FC = () => {
               <select
                 value={formData.default_photo_sort}
                 onChange={(e) => setFormData({ ...formData, default_photo_sort: e.target.value })}
-                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
               >
                 <option value="upload_date_desc">{t('photoSort.uploadDateNewest', 'Upload Date (Newest First)')}</option>
                 <option value="upload_date_asc">{t('photoSort.uploadDateOldest', 'Upload Date (Oldest First)')}</option>
@@ -1287,7 +1280,7 @@ export const CreateEventPage: React.FC = () => {
                   type="checkbox"
                   checked={formData.allow_user_uploads}
                   onChange={(e) => setFormData({ ...formData, allow_user_uploads: e.target.checked })}
-                  className="rounded border-line-strong text-accent focus:ring-primary-500"
+                  className="rounded border-line-strong text-accent focus:ring-accent"
                 />
                 <div>
                   <span className="text-sm font-medium text-body">
@@ -1310,7 +1303,7 @@ export const CreateEventPage: React.FC = () => {
                       ...formData,
                       upload_category_id: e.target.value ? Number(e.target.value) : null
                     })}
-                    className="w-full px-3 py-2 border border-line-strong rounded-lg focus:ring-2 focus:ring-primary-500 bg-panel text-heading"
+                    className="w-full px-3 py-2 border border-line-strong rounded-lg focus:ring-2 focus:ring-accent bg-panel text-heading"
                   >
                     <option value="">{t('events.selectCategory')}</option>
                     {categories.map(category => (
@@ -1354,7 +1347,7 @@ export const CreateEventPage: React.FC = () => {
                 <input
                   type="checkbox"
                   role="switch"
-                  className="w-4 h-4 text-accent border-line-strong rounded focus:ring-primary-500"
+                  className="w-4 h-4 text-accent border-line-strong rounded focus:ring-accent"
                   checked={formData.custom_theme_enabled}
                   onChange={(e) => {
                     customThemeChosenRef.current = true;

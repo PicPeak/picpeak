@@ -9,6 +9,7 @@ import { Button, MarkdownContent, PoweredBy } from '../common';
 import { DynamicFavicon } from '../common/DynamicFavicon';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { GalleryConfirmDialog } from './GalleryConfirmDialog';
 import { buildResourceUrl } from '../../utils/url';
 import { cmsService, type PublicCMSPage } from '../../services/cms.service';
 import type { HeaderStyleType } from '../../types/theme.types';
@@ -145,6 +146,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
     ? (brandingSettings?.logo_url_dark || brandingSettings?.logo_url)
     : (brandingSettings?.logo_url || brandingSettings?.logo_url_dark);
   const guestIdentity = useGuestIdentityOptional();
+  const [forgetOpen, setForgetOpen] = React.useState(false);
 
   // Footer legal-link config. Cached aggressively because the toggle state
   // changes rarely and the gallery footer renders on every page view.
@@ -275,7 +277,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
       : 'text-center';
 
   const promoSlot = promoMarkdown ? (
-    <div className="gallery-promo border-t border-surface bg-surface/50">
+    <div className="gallery-promo border-t border-border-token">
       {/*
        * Inner block uses .container (matches the footer's container
        * width) + the alignment class. We deliberately drop the
@@ -311,7 +313,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   })().trim();
 
   const infoSlot = infoMarkdown ? (
-    <div className="gallery-info-banner border-b border-surface bg-surface/50">
+    <div className="gallery-info-banner border-b border-border-token">
       <div className="container py-3 sm:py-4 px-4">
         <MarkdownContent
           source={infoMarkdown}
@@ -335,7 +337,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
       <DynamicFavicon />
 
       {/* Header structure */}
-      <header className={`gallery-header bg-surface border-b border-surface sticky top-0 z-40 ${isHeroHeader || isBannerHeader ? 'shadow-sm' : ''}`}>
+      <header className={`gallery-header bg-surface border-b border-border-token sticky top-0 z-40 ${isHeroHeader || isBannerHeader ? 'shadow-sm' : ''}`}>
         {/* Standard / Banner header - full bar with logo, event info, and actions (all layouts) */}
         {!isHeroHeader && !isMinimalHeader && !isNoHeader && (
           <div className="container py-3 relative">
@@ -636,9 +638,12 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
       {/* Colored banner — only when headerStyle === 'banner', regardless of layout */}
       {isBannerHeader && (
         <div
-          className="gallery-hero relative text-white overflow-hidden"
+          className="gallery-hero relative overflow-hidden"
           style={{
-            backgroundColor: theme.accentColor || '#22c55e',
+            // The label colour the theme computes for its accent, so a pale
+            // accent keeps a readable title.
+            color: 'var(--color-accent-fg, #ffffff)',
+            backgroundColor: theme.accentColor || 'var(--color-accent)',
             backgroundImage: theme.backgroundPattern !== 'none' 
               ? `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M0 40L40 0H20L0 20M40 40V20L20 40'/%3E%3C/g%3E%3C/svg%3E")`
               : undefined
@@ -665,14 +670,14 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                     }}
                   />
                   {shouldShowCompanyName() && brandingSettings?.company_name && (
-                    <div className="mt-3 text-xl sm:text-2xl font-semibold text-white/90" style={{ textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}>
+                    <div className="mt-3 text-xl sm:text-2xl font-semibold opacity-90" style={{ textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}>
                       {brandingSettings.company_name}
                     </div>
                   )}
                 </div>
               )}
               {!shouldShowLogo('hero') && shouldShowCompanyName() && brandingSettings?.company_name && (
-                <div className="mb-6 text-2xl sm:text-3xl font-bold text-white" style={{ textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}>
+                <div className="mb-6 text-2xl sm:text-3xl font-bold" style={{ textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)' }}>
                   {brandingSettings.company_name || 'PicPeak'}
                 </div>
               )}
@@ -690,7 +695,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
               
               {/* Event Details */}
               {(event.event_date || event.expires_at) && (
-                <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-white/80" style={{ textShadow: '0 1px 3px rgba(0, 0, 0, 0.3)' }}>
+                <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 opacity-80" style={{ textShadow: '0 1px 3px rgba(0, 0, 0, 0.3)' }}>
                   {event.event_date && (
                     <span className="flex items-center text-lg">
                       <Calendar className="w-5 h-5 mr-2" />
@@ -729,7 +734,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
       {promoPosition === 'above_footer' && promoSlot}
 
       {/* Footer */}
-      <footer className="gallery-footer mt-8 sm:mt-12 py-6 sm:py-8 border-t border-surface">
+      <footer className="gallery-footer mt-8 sm:mt-12 py-6 sm:py-8 border-t border-border-token">
         <div className="container text-center px-4">
           {brandingSettings?.support_email && (
             <p className="text-xs sm:text-sm text-muted-theme mb-2">
@@ -821,16 +826,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   <button
                     type="button"
                     className="text-xs text-muted-theme hover:text-theme transition-colors"
-                    onClick={async () => {
-                      // Outside guest identity mode the identity is only an
-                      // uploader name; feedback never belonged to it (#1561).
-                      const message = guestIdentity.identityMode === 'guest'
-                        ? t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.')
-                        : t('gallery.footer.forgetMeConfirmUploads', 'Your name will be removed from the photos you uploaded to this gallery.');
-                      if (window.confirm(message)) {
-                        await guestIdentity.forget();
-                      }
-                    }}
+                    onClick={() => setForgetOpen(true)}
                   >
                     {t('gallery.footer.forgetMe', 'Forget me ({{name}})', { name: guestIdentity.identity.name })}
                   </button>
@@ -853,6 +849,25 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
           )}
         </div>
       </footer>
+
+      {guestIdentity?.identity && (
+        <GalleryConfirmDialog
+          open={forgetOpen}
+          variant="danger"
+          title={t('gallery.footer.forgetMeTitle', 'Forget me?')}
+          // Outside guest identity mode the identity is only an uploader
+          // name; feedback never belonged to it (#1561).
+          message={guestIdentity.identityMode === 'guest'
+            ? t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.')
+            : t('gallery.footer.forgetMeConfirmUploads', 'Your name will be removed from the photos you uploaded to this gallery.')}
+          confirmLabel={t('gallery.footer.forgetMeAction', 'Forget me')}
+          onCancel={() => setForgetOpen(false)}
+          onConfirm={async () => {
+            setForgetOpen(false);
+            await guestIdentity.forget();
+          }}
+        />
+      )}
 
       {/* Promotional banner (#440) — rendered below the footer when
           branding_promo_position = 'below_footer'. */}

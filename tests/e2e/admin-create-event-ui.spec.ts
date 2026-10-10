@@ -19,16 +19,16 @@ test('admin can create event via UI @smoke', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /Dashboard/i })).toBeVisible({ timeout: 20000 });
 
   // Navigate to create event page
-  const createButton = page.getByRole('button', { name: /Create Event/i });
+  const createButton = page.getByRole('button', { name: /Create Gallery/i });
   if (await createButton.count()) {
     await createButton.first().click();
   } else {
     await page.goto('/admin/events/new');
   }
 
-  await expect(page.getByRole('heading', { name: /^Create$/i })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('heading', { name: /^Create Gallery$/i })).toBeVisible({ timeout: 10000 });
 
-  await page.getByLabel(/Event Name/i).fill(eventName);
+  await page.getByLabel(/Gallery Name/i).fill(eventName);
   await page.getByLabel(/Customer Name/i).fill('Host User');
   // The date picker prefills today in the display format (dd/mm/yyyy), and its
   // calendar button carries the same label, so check the textbox has a value.
@@ -38,7 +38,7 @@ test('admin can create event via UI @smoke', async ({ page }) => {
   await page.getByLabel(/Gallery Password/i).fill('UiPlay123!');
   await page.getByLabel(/Confirm Password/i).fill('UiPlay123!');
 
-  await page.getByRole('button', { name: /Create Event/i }).click();
+  await page.getByRole('button', { name: /Create Gallery/i }).click();
 
   await expect(page).toHaveURL(/\/admin\/events\//, { timeout: 20000 });
   await expect(page.getByRole('heading', { name: eventName })).toBeVisible();

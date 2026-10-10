@@ -70,8 +70,8 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
         className={[
           'relative block rounded-full overflow-hidden transition-all',
           selected
-            ? 'ring-[3px] ring-offset-2 ring-primary-600'
-            : 'ring-1 ring-[color:var(--color-surface-border)] group-hover:ring-[color:var(--color-muted-text)] group-focus-visible:ring-primary-500',
+            ? 'ring-[3px] ring-offset-2 ring-accent'
+            : 'ring-1 ring-[color:var(--color-surface-border)] group-hover:ring-[color:var(--color-muted-text)] group-focus-visible:ring-accent',
         ].join(' ')}
         style={{
           width: `${size}px`,
@@ -166,7 +166,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
         <button
           type="button"
           onClick={() => onCollapsedChange(false)}
-          className="text-primary-600 hover:text-primary-700 font-medium"
+          className="text-accent font-medium"
         >
           {t('gallery.people.show', { defaultValue: 'Show' })}
         </button>
@@ -189,7 +189,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
             <button
               type="button"
               onClick={onShowAll}
-              className="flex items-center gap-0.5 text-sm text-primary-600 hover:text-primary-700"
+              className="flex items-center gap-0.5 text-sm text-accent"
             >
               {t('gallery.people.showAll', {
                 count: people.length,
@@ -233,7 +233,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
             style={{ backgroundColor: 'var(--color-surface-border)' }}
           >
             <div
-              className="h-full bg-primary-500 transition-all duration-500"
+              className="h-full bg-accent-strong transition-all duration-500"
               style={{ width: `${scan.total ? Math.round((scan.scanned / scan.total) * 100) : 0}%` }}
             />
           </div>

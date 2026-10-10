@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Receipt, Download } from 'lucide-react';
 import { customerService, type CustomerInvoice } from '../../services/customer.service';
-import { Card, Loading } from '../../components/common';
+import { Card, EmptyState, ErrorState, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
 import { formatMoney } from '../../utils/money';
 import { formatShortDate } from '../../utils/dateShort';
@@ -40,7 +40,7 @@ const STATUS_OPTIONS: { value: StatusFilter; key: string; fallback: string }[] =
 
 export const CustomerBillsPage: React.FC = () => {
   const { t } = useTranslation();
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['customer-invoices'],
     queryFn: () => customerService.listInvoices(),
   });
@@ -79,7 +79,7 @@ export const CustomerBillsPage: React.FC = () => {
     if (status === 403) {
       return (
         <div className="container py-8">
-          <h1 className="text-2xl font-bold mb-2">{t('customer.bills.title', 'Invoices')}</h1>
+          <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.bills.title', 'Invoices')}</h1>
           <p className="text-muted-theme">
             {t('customer.bills.disabled',
               'This feature is currently disabled for your account. Please contact your photographer if you expected to see invoices here.')}
@@ -89,7 +89,11 @@ export const CustomerBillsPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-status hue-danger">{t('customer.bills.loadError', 'Could not load invoices.')}</p>
+        <ErrorState
+          title={t('customer.bills.loadError', 'Could not load invoices.')}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
       </div>
     );
   }
@@ -127,9 +131,7 @@ export const CustomerBillsPage: React.FC = () => {
 
       {invoices.length === 0 ? (
         <Card padding="lg">
-          <p className="text-center text-muted-theme py-8">
-            {t('customer.bills.empty', 'No invoices yet.')}
-          </p>
+          <EmptyState size="inline" title={t('customer.bills.empty', 'No invoices yet.')} />
         </Card>
       ) : (
         <>
@@ -141,7 +143,7 @@ export const CustomerBillsPage: React.FC = () => {
             visibleRowCount={visible.length}
           />
           <Card padding="none">
-            <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+            <ul className="divide-y divide-border-token">
               {visible.map((inv) => (
                 <InvoiceRow key={inv.id} inv={inv} onViewPdf={() => handleViewPdf(inv)} />
               ))}
@@ -176,12 +178,7 @@ function FilterSortBar<S extends string>({
         <select
           value={statusFilter}
           onChange={(e) => onStatusChange(e.target.value as S)}
-          className="text-sm px-2 py-1 rounded border"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-surface-border)',
-            color: 'var(--color-text)',
-          }}
+          className="input-themed h-9 w-auto"
         >
           {statusOptions.map((o) => (
             <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
@@ -193,12 +190,7 @@ function FilterSortBar<S extends string>({
         <select
           value={sort}
           onChange={(e) => onSortChange(e.target.value as SortKey)}
-          className="text-sm px-2 py-1 rounded border"
-          style={{
-            backgroundColor: 'var(--color-surface)',
-            borderColor: 'var(--color-surface-border)',
-            color: 'var(--color-text)',
-          }}
+          className="input-themed h-9 w-auto"
         >
           {SORT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
@@ -236,7 +228,7 @@ const InvoiceRow: React.FC<{ inv: CustomerInvoice; onViewPdf: () => void }> = ({
   // pair.
   const showOutstanding = !isStorno && !isCancelled && outstanding > 0;
 
-  // Token-derived, because `dark:` does not fire on the customer surface
+  // Token-derived: the chip follows the studio palette in light and dark
   // (see .status-chip in index.css).
   const statusClass = isStorno
     ? 'status-chip hue-storno'

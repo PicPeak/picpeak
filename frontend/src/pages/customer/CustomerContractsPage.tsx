@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { ScrollText, PenLine, Download, ShieldCheck } from 'lucide-react';
 import { customerService, type CustomerContract } from '../../services/customer.service';
 import { PORTAL_SIGNING_SCOPE, signingSessionStore } from '../../services/publicContractSigning.service';
-import { Card, Loading } from '../../components/common';
+import { Card, EmptyState, ErrorState, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
 
 import { formatShortDate } from '../../utils/dateShort';
@@ -48,7 +48,7 @@ const STATUS_OPTIONS: { value: StatusFilter; key: string; fallback: string }[] =
 
 export const CustomerContractsPage: React.FC = () => {
   const { t } = useTranslation();
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['customer-contracts'],
     queryFn: () => customerService.listContracts(),
   });
@@ -72,7 +72,7 @@ export const CustomerContractsPage: React.FC = () => {
     if (status === 403) {
       return (
         <div className="container py-8">
-          <h1 className="text-2xl font-bold mb-2">{t('customer.contracts.title', 'Contracts')}</h1>
+          <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.contracts.title', 'Contracts')}</h1>
           <p className="text-muted-theme">
             {t('customer.contracts.disabled',
               'This feature is currently disabled for your account.')}
@@ -82,7 +82,11 @@ export const CustomerContractsPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-status hue-danger">{t('customer.contracts.loadError', 'Could not load contracts.')}</p>
+        <ErrorState
+          title={t('customer.contracts.loadError', 'Could not load contracts.')}
+          onRetry={() => { void refetch(); }}
+          retrying={isFetching}
+        />
       </div>
     );
   }
@@ -103,9 +107,7 @@ export const CustomerContractsPage: React.FC = () => {
 
       {all.length === 0 ? (
         <Card padding="lg">
-          <p className="text-center text-muted-theme py-8">
-            {t('customer.contracts.empty', 'No contracts yet.')}
-          </p>
+          <EmptyState size="inline" title={t('customer.contracts.empty', 'No contracts yet.')} />
         </Card>
       ) : (
         <>
@@ -117,12 +119,7 @@ export const CustomerContractsPage: React.FC = () => {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className="text-sm px-2 py-1 rounded border"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-surface-border)',
-                  color: 'var(--color-text)',
-                }}
+                className="input-themed h-9 w-auto"
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{t(o.key, o.fallback)}</option>
@@ -134,12 +131,7 @@ export const CustomerContractsPage: React.FC = () => {
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
-                className="text-sm px-2 py-1 rounded border"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-surface-border)',
-                  color: 'var(--color-text)',
-                }}
+                className="input-themed h-9 w-auto"
               >
                 <option value="newest">{t('customer.sort.newest', 'Newest first')}</option>
                 <option value="oldest">{t('customer.sort.oldest', 'Oldest first')}</option>
@@ -152,7 +144,7 @@ export const CustomerContractsPage: React.FC = () => {
             </div>
           </div>
           <Card padding="none">
-            <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+            <ul className="divide-y divide-border-token">
               {visible.map((c) => <ContractRow key={c.id} c={c} />)}
             </ul>
           </Card>
@@ -216,7 +208,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
   const handleDownload = () => openBlob(() => customerService.contractPdfUrl(c.id));
   const handleCertificate = () => openBlob(() => customerService.contractCertificateUrl(c.id));
 
-  // Token-derived, because `dark:` does not fire on the customer surface
+  // Token-derived: the chip follows the studio palette in light and dark
   // (see .status-chip in index.css). These were fixed light colours, so on a
   // dark portal the contract's status — the reason this list exists — was
   // dark text on a pale chip nobody could read.
@@ -283,7 +275,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
             type="button"
             onClick={handleSign}
             disabled={opening}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-dark text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-strong text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
             <PenLine className="w-4 h-4" />
             {opening
@@ -296,7 +288,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
             type="button"
             onClick={handleSign}
             disabled={opening}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-dark text-white hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-strong text-accent-fg hover:opacity-90 disabled:opacity-50"
           >
             <PenLine className="w-4 h-4" />
             {opening
@@ -308,12 +300,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm border"
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              borderColor: 'var(--color-surface-border)',
-              color: 'var(--color-text)',
-            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm border bg-surface border-border-token text-theme"
           >
             <Download className="w-4 h-4" />
             {c.hasSignedPdf
@@ -328,12 +315,7 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
           <button
             type="button"
             onClick={handleCertificate}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm border"
-            style={{
-              backgroundColor: 'var(--color-surface)',
-              borderColor: 'var(--color-surface-border)',
-              color: 'var(--color-text)',
-            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm border bg-surface border-border-token text-theme"
           >
             <ShieldCheck className="w-4 h-4" />
             {t('customer.contracts.downloadCertificate', 'Signing certificate')}

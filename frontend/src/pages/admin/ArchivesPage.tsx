@@ -6,7 +6,6 @@ import {
   Calendar,
   HardDrive,
   FileArchive,
-  AlertCircle,
   RotateCcw,
   Trash2,
   ChevronLeft,
@@ -15,8 +14,9 @@ import {
 import { format, parseISO, isValid } from 'date-fns';
 import { toast } from 'react-toastify';
 
-import { Button, Input, Card, Loading } from '../../components/common';
+import { Button, Input, Card, Loading, Notice, ErrorState, EmptyState, Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell, useConfirm } from '../../components/common';
 import { PermissionGate } from '../../components/admin/PermissionGate';
+import { SectionPageHeader } from '../../components/admin/SectionPageHeader';
 import { useQuery } from '@tanstack/react-query';
 import { archiveService, type ArchiveSortBy } from '../../services/archive.service';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import { useMutationWithToast } from '../../hooks';
 export const ArchivesPage: React.FC = () => {
   const { t } = useTranslation();
   const { formatTime: fmtTime } = useLocalizedDate();
+  const confirm = useConfirm();
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
@@ -60,7 +61,7 @@ export const ArchivesPage: React.FC = () => {
   // server-side against the whole archive table — doing them in the client
   // silently scoped them to the 20 rows of the current page while the
   // pagination footer kept reporting the unfiltered total.
-  const { data: archivesData, isLoading } = useQuery({
+  const { data: archivesData, isLoading, isError, isRefetching, refetch } = useQuery({
     queryKey: ['admin-archives', currentPage, debouncedSearchTerm, filterType, sortBy],
     queryFn: () => archiveService.getArchives(currentPage, 20, debouncedSearchTerm || undefined, filterType, sortBy),
     placeholderData: (prev) => prev,
@@ -99,16 +100,23 @@ export const ArchivesPage: React.FC = () => {
     }
   };
 
-  const handleRestore = (archive: typeof archives[0]) => {
-    if (confirm(t('archives.confirmRestore').replace('{{name}}', archive.eventName))) {
-      restoreMutation.mutate(archive.id);
-    }
+  const handleRestore = async (archive: typeof archives[0]) => {
+    const ok = await confirm({
+      title: t('archives.restoreTitle', 'Restore archive?'),
+      message: t('archives.confirmRestoreNamed', 'Restore "{{name}}"? The gallery becomes active again.', { name: archive.eventName }),
+      confirmLabel: t('archives.restoreAction', 'Restore gallery'),
+    });
+    if (ok) restoreMutation.mutate(archive.id);
   };
 
-  const handleDelete = (archive: typeof archives[0]) => {
-    if (confirm(t('archives.confirmDelete').replace('{{name}}', archive.eventName))) {
-      deleteMutation.mutate(archive.id);
-    }
+  const handleDelete = async (archive: typeof archives[0]) => {
+    const ok = await confirm({
+      title: t('archives.deleteTitle', 'Delete archive?'),
+      message: t('archives.confirmDeleteNamed', 'Permanently delete the archive of "{{name}}" with all its photos? This cannot be undone.', { name: archive.eventName }),
+      variant: 'danger',
+      confirmLabel: t('archives.deleteAction', 'Delete archive'),
+    });
+    if (ok) deleteMutation.mutate(archive.id);
   };
 
   // Details view not implemented yet
@@ -126,11 +134,7 @@ export const ArchivesPage: React.FC = () => {
 
   return (
     <div>
-      {/* Page Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-heading">{t('archives.title')}</h1>
-        <p className="text-soft mt-1">{t('archives.subtitle')}</p>
-      </div>
+      <SectionPageHeader icon={Archive} title={t('archives.title')} description={t('archives.subtitle')} />
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -150,7 +154,7 @@ export const ArchivesPage: React.FC = () => {
               <p className="text-sm text-soft">{t('archives.storageUsed')}</p>
               <p className="text-2xl font-bold text-heading">{archiveService.formatBytes(totals.archiveSize)}</p>
             </div>
-            <HardDrive className="w-8 h-8 text-blue-600" />
+            <HardDrive className="w-8 h-8 text-info-text" />
           </div>
         </Card>
 
@@ -162,7 +166,7 @@ export const ArchivesPage: React.FC = () => {
                 {totals.photos === 0 ? '0' : totals.photos.toLocaleString()}
               </p>
             </div>
-            <FileArchive className="w-8 h-8 text-green-600" />
+            <FileArchive className="w-8 h-8 text-success-text" />
           </div>
         </Card>
 
@@ -177,7 +181,7 @@ export const ArchivesPage: React.FC = () => {
                 }
               </p>
             </div>
-            <Calendar className="w-8 h-8 text-purple-600" />
+            <Calendar className="w-8 h-8 text-chart-4" />
           </div>
         </Card>
       </div>
@@ -189,7 +193,7 @@ export const ArchivesPage: React.FC = () => {
             <Input
               type="text"
               placeholder={t('archives.searchPlaceholder')}
-              leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+              leftIcon={<Search className="w-5 h-5 text-faint" />}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -199,7 +203,7 @@ export const ArchivesPage: React.FC = () => {
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="px-4 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              className="px-4 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
             >
               <option value="all">{t('archives.allTypes')}</option>
               <option value="wedding">{t('archives.wedding')}</option>
@@ -212,7 +216,7 @@ export const ArchivesPage: React.FC = () => {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-4 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
+              className="px-4 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent focus:border-accent-dark"
             >
               <option value="date">{t('archives.sortByDate')}</option>
               <option value="name">{t('archives.sortByName')}</option>
@@ -223,121 +227,113 @@ export const ArchivesPage: React.FC = () => {
       </Card>
 
       {/* Archives Table */}
-      <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-subtle border-b border-line">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.event')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.type')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.archivedDate')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.size')}
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.photos')}
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-muted uppercase tracking-wider">
-                  {t('archives.tableHeaders.actions')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-panel divide-y divide-line">
-              {archives.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-muted">
-                    {t('archives.noArchivesFound')}
-                  </td>
-                </tr>
-              ) : (
-                archives.map((archive) => (
-                  <tr key={archive.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-700/50">
-                    <td className="px-6 py-4">
-                      <div>
-                        <p className="text-sm font-medium text-heading">{archive.eventName}</p>
-                        <p className="text-xs text-muted">
-                          {t('archives.eventDateNA').replace('N/A', formatDate(archive.eventDate, 'MMM d, yyyy') || 'N/A')}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-body capitalize">
-                      {archive.eventType}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-body">
-                      <div>
-                        <p>{formatDate(archive.archivedAt, 'MMM d, yyyy') || t('archives.processing')}</p>
-                        <p className="text-xs text-muted">
-                          {archive.archivedAt ? fmtTime(archive.archivedAt) : ''}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-body">
-                      {archiveService.formatBytes(archive.archiveSize)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-body">
-                      {archive.photoCount}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {/* Details view not implemented yet
+      {isError && !archivesData ? (
+        <Card>
+          <ErrorState
+            size="inline"
+            title={t('archives.loadFailed', 'Could not load the archives')}
+            onRetry={() => refetch()}
+            retrying={isRefetching}
+          />
+        </Card>
+      ) : (
+        <Table>
+          <TableHead>
+            <tr>
+              <TableHeaderCell>{t('archives.tableHeaders.event')}</TableHeaderCell>
+              <TableHeaderCell>{t('archives.tableHeaders.type')}</TableHeaderCell>
+              <TableHeaderCell>{t('archives.tableHeaders.archivedDate')}</TableHeaderCell>
+              <TableHeaderCell>{t('archives.tableHeaders.size')}</TableHeaderCell>
+              <TableHeaderCell>{t('archives.tableHeaders.photos')}</TableHeaderCell>
+              <TableHeaderCell align="right">{t('archives.tableHeaders.actions')}</TableHeaderCell>
+            </tr>
+          </TableHead>
+          <TableBody>
+            {archives.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6}>
+                  <EmptyState
+                    size="inline"
+                    icon={<Archive />}
+                    title={t('archives.noArchivesFound')}
+                    description={debouncedSearchTerm || filterType !== 'all'
+                      ? t('archives.noArchivesMatchHint', 'Nothing matches this search or filter.')
+                      : t('archives.noArchivesHint', 'Archive a gallery from its menu in the gallery list; it shows up here.')}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              archives.map((archive) => (
+                <TableRow key={archive.id} className="hover:bg-hover-soft">
+                  <TableCell>
+                    <div>
+                      <p className="text-sm font-medium text-heading">{archive.eventName}</p>
+                      <p className="text-xs text-muted">
+                        {t('archives.eventDateNA').replace('N/A', formatDate(archive.eventDate, 'MMM d, yyyy') || 'N/A')}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell className="capitalize">
+                    {archive.eventType}
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <p>{formatDate(archive.archivedAt, 'MMM d, yyyy') || t('archives.processing')}</p>
+                      <p className="text-xs text-muted">
+                        {archive.archivedAt ? fmtTime(archive.archivedAt) : ''}
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    {archiveService.formatBytes(archive.archiveSize)}
+                  </TableCell>
+                  <TableCell>
+                    {archive.photoCount}
+                  </TableCell>
+                  <TableCell align="right">
+                    <div className="flex items-center justify-end gap-2">
+                      <PermissionGate permission="archives.download">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleViewDetails(archive)}
-                          leftIcon={<Eye className="w-4 h-4" />}
+                          onClick={() => handleDownload(archive)}
+                          leftIcon={<Download className="w-4 h-4" />}
+                          disabled={!archive.archivePath}
                         >
-                          Details
+                          {t('archives.download')}
                         </Button>
-                        */}
-                        <PermissionGate permission="archives.download">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDownload(archive)}
-                            leftIcon={<Download className="w-4 h-4" />}
-                            disabled={!archive.archivePath}
-                          >
-                            {t('archives.download')}
-                          </Button>
-                        </PermissionGate>
-                        <PermissionGate permission="archives.restore">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRestore(archive)}
-                            leftIcon={<RotateCcw className="w-4 h-4" />}
-                            disabled={restoreMutation.isPending}
-                          >
-                            {t('archives.restore')}
-                          </Button>
-                        </PermissionGate>
-                        <PermissionGate permission="archives.delete">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDelete(archive)}
-                            leftIcon={<Trash2 className="w-4 h-4" />}
-                            className="text-red-600 hover:text-red-700"
-                            disabled={deleteMutation.isPending}
-                          >
-                            {t('archives.delete')}
-                          </Button>
-                        </PermissionGate>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                      </PermissionGate>
+                      <PermissionGate permission="archives.restore">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRestore(archive)}
+                          leftIcon={<RotateCcw className="w-4 h-4" />}
+                          disabled={restoreMutation.isPending}
+                        >
+                          {t('archives.restore')}
+                        </Button>
+                      </PermissionGate>
+                      <PermissionGate permission="archives.delete">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDelete(archive)}
+                          leftIcon={<Trash2 className="w-4 h-4" />}
+                          className="text-danger-text"
+                          disabled={deleteMutation.isPending}
+                        >
+                          {t('archives.delete')}
+                        </Button>
+                      </PermissionGate>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      )}
 
       {/* Pagination. The count is shown for any non-empty result — it used to
           be inside the totalPages > 1 guard, so a search that narrowed to a
@@ -346,7 +342,7 @@ export const ArchivesPage: React.FC = () => {
           controls are conditional now. */}
       {archivesData?.pagination && archivesData.pagination.total > 0 && (
         <div className="mt-6 flex items-center justify-between">
-          <div className="text-sm text-neutral-600">
+          <div className="text-sm text-soft">
             {t('archives.showing', {
               from: ((currentPage - 1) * archivesData.pagination.limit) + 1,
               to: Math.min(currentPage * archivesData.pagination.limit, archivesData.pagination.total),
@@ -382,17 +378,9 @@ export const ArchivesPage: React.FC = () => {
       )}
 
       {/* Storage Warning */}
-      <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{t('archives.storageManagement')}</p>
-            <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-              {t('archives.storageInfo')}
-            </p>
-          </div>
-        </div>
-      </div>
+      <Notice tone="warning" title={t('archives.storageManagement')} className="mt-6">
+        {t('archives.storageInfo')}
+      </Notice>
     </div>
   );
 };

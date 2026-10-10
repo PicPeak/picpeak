@@ -69,7 +69,7 @@ export const ThemeDisplay: React.FC<ThemeDisplayProps> = ({
   
   if (!themeConfig) {
     return (
-      <div className={`text-sm text-neutral-500 ${className}`}>
+      <div className={`text-sm text-muted ${className}`}>
         {t('events.noThemeSet')}
       </div>
     );

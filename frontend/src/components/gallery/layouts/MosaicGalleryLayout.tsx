@@ -84,7 +84,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         }}
         onDownload={onDownload}
         onToggleSelect={onToggleSelect}
-        className="photo-card relative group cursor-pointer overflow-hidden rounded-lg bg-neutral-100 mb-2"
+        className="photo-card relative group cursor-pointer overflow-hidden rounded-lg bg-elevated mb-2"
         style={{
           breakInside: 'avoid',
           aspectRatio: aspectRatio.toString()
@@ -132,7 +132,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
         afterOverlay={((photo.like_count ?? 0) > 0 || likedLocal) ? (
           <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
             <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
-              <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+              <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
             </span>
           </div>
         ) : undefined}

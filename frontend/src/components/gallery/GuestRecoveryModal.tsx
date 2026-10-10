@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import { useGuestIdentity } from '../../contexts/GuestIdentityContext';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * Email-based identity recovery flow (Phase 3.2).
@@ -24,8 +25,7 @@ export const GuestRecoveryModal: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-
-  if (!recoveryOpen) return null;
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const reset = () => {
     setStep('email');
@@ -40,6 +40,8 @@ export const GuestRecoveryModal: React.FC = () => {
     reset();
     closeRecovery();
   };
+
+  useGalleryDialog({ open: recoveryOpen, onClose: handleClose, panelRef });
 
   const backToPrompt = () => {
     reset();
@@ -85,14 +87,23 @@ export const GuestRecoveryModal: React.FC = () => {
     }
   };
 
+  if (!recoveryOpen) return null;
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-black bg-opacity-50" onClick={handleClose} />
-      <div className="relative bg-surface rounded-lg shadow-xl max-w-md w-full p-6">
+      <div className="fixed inset-0 bg-black/50" onClick={handleClose} />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="guest-recovery-title"
+        className="relative bg-surface border border-border-token text-theme rounded-lg shadow-xl max-w-md w-full p-6"
+      >
         <button
           type="button"
           onClick={handleClose}
-          className="absolute top-4 right-4 p-1 hover:bg-black/10 rounded-lg transition-colors"
+          aria-label={t('common.close', 'Close')}
+          className="absolute top-4 right-4 p-1 hover-surface rounded-lg transition-colors"
         >
           <X className="w-5 h-5 text-muted-theme" />
         </button>
@@ -106,7 +117,7 @@ export const GuestRecoveryModal: React.FC = () => {
           {t('gallery.guestRecovery.back', 'Back')}
         </button>
 
-        <h2 className="text-lg font-semibold text-theme mb-2">
+        <h2 id="guest-recovery-title" className="text-lg font-semibold text-theme mb-2">
           {t('gallery.guestRecovery.title', 'Recover your picks')}
         </h2>
         <p className="text-sm text-muted-theme mb-4">
@@ -122,12 +133,12 @@ export const GuestRecoveryModal: React.FC = () => {
         </p>
 
         {info && step === 'code' && (
-          <div className="text-sm text-green-700 bg-green-50 dark:bg-green-900/20 rounded px-3 py-2 mb-3">
+          <div role="status" className="text-sm status-chip hue-success rounded px-3 py-2 mb-3">
             {info}
           </div>
         )}
         {error && (
-          <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded px-3 py-2 mb-3">
+          <div role="alert" className="text-sm status-chip hue-danger rounded px-3 py-2 mb-3">
             {error}
           </div>
         )}

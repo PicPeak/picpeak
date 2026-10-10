@@ -28,7 +28,7 @@ interface SignerRow {
   email: string;
 }
 
-const INPUT = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm text-heading';
+const INPUT = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-sm text-heading';
 
 function rowsFrom(overview: ContractSignersOverview): SignerRow[] {
   return overview.signers
@@ -179,7 +179,7 @@ export const SignersEditorCard: React.FC<SignersEditorCardProps> = ({ contractId
           {t('contracts.signers.title', 'Signers')}
         </h2>
         {dirty && (
-          <span className="text-xs text-amber-700 dark:text-amber-300">
+          <span className="text-xs text-warning-text">
             {t('contracts.signers.unsaved', 'Unsaved changes')}
           </span>
         )}
@@ -191,7 +191,7 @@ export const SignersEditorCard: React.FC<SignersEditorCardProps> = ({ contractId
       {isLoading ? (
         <Loading />
       ) : isError ? (
-        <p className="text-sm text-red-700 dark:text-red-300">
+        <p className="text-sm text-danger-text">
           {t('contracts.signers.loadError', 'The signers couldn\'t be loaded. Reload the page to try again.')}
         </p>
       ) : (
@@ -231,7 +231,7 @@ export const SignersEditorCard: React.FC<SignersEditorCardProps> = ({ contractId
                         type="button"
                         onClick={() => removeRow(r.key)}
                         aria-label={t('contracts.signers.remove', 'Remove signer {{number}}', { number: i + 1 })}
-                        className="p-2 rounded-md text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-hover"
+                        className="p-2 rounded-md text-muted hover:text-danger-text hover:bg-hover"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -295,7 +295,7 @@ export const SignersEditorCard: React.FC<SignersEditorCardProps> = ({ contractId
             </fieldset>
 
             {error && (
-              <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>
+              <p role="alert" className="text-sm text-danger-text">{error}</p>
             )}
 
             <div className="flex justify-end">

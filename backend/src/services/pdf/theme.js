@@ -231,7 +231,22 @@ function deepFreeze(value) {
  * `profile` is the business_profile row (for its font family and folding
  * marks). Returns a frozen object.
  */
-function resolveTheme(scope, rows = {}, profile = null) {
+/**
+ * The colours a document inherits from Branding › Colours when neither the
+ * document type nor "All documents" sets them: the filled accent, for the
+ * title and headings. Only when it reads on white paper (3:1, the limit
+ * themeWarnings uses for the accent); a pale brand colour leaves the
+ * built-in black. The neutrals stay print-tuned: a dark web palette's
+ * light text would vanish on paper.
+ */
+function brandColors(brandTheme) {
+  if (!brandTheme || typeof brandTheme !== 'object') return {};
+  const accent = brandTheme.accentDarkColor || brandTheme.primaryColor;
+  if (typeof accent !== 'string' || !HEX_COLOR.test(accent)) return {};
+  return contrastOnWhite(accent) >= 3 ? { accent: accent.toLowerCase() } : {};
+}
+
+function resolveTheme(scope, rows = {}, profile = null, brandTheme = null) {
   const own = rows[scope] || {};
   const base = rows.default || {};
   const builtIn = BUILT_IN_BY_SCOPE[scope] || {};
@@ -239,7 +254,7 @@ function resolveTheme(scope, rows = {}, profile = null) {
   return deepFreeze({
     scope,
     fontFamily: first(own.fontFamily, base.fontFamily, profile && profile.pdf_font_family) || null,
-    colors: { ...BUILT_IN.colors, ...(base.colors || {}), ...(own.colors || {}) },
+    colors: { ...BUILT_IN.colors, ...brandColors(brandTheme), ...(base.colors || {}), ...(own.colors || {}) },
     titleSize: first(own.titleSize, base.titleSize, builtIn.titleSize, BUILT_IN.titleSize),
     footer: { ...first(own.footer, base.footer, builtIn.footer, BUILT_IN.footer) },
     pageNumbers: first(own.pageNumbers, base.pageNumbers, BUILT_IN.pageNumbers),
@@ -317,6 +332,8 @@ function builtInTheme(scope) {
 }
 
 module.exports = {
+  brandColors,
+  BUILT_IN_COLORS: BUILT_IN.colors,
   MARGIN_BOUNDS,
   LOGO_POSITIONS,
   LOGO_STACKS,

@@ -1451,7 +1451,6 @@
         "clients": "Клиенты"
       },
       "status": {
-        "stable": "стабильно",
         "beta": "бета",
         "new": "новое",
         "experimental": "эксперимент",
@@ -3454,8 +3453,7 @@
       "calendar": "Календарь",
       "quotes": "Сметы",
       "bills": "Счета",
-      "profile": "Профиль",
-      "soon": "Скоро"
+      "profile": "Профиль"
     },
     "comingSoon": {
       "tag": "Скоро"

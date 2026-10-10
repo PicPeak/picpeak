@@ -96,10 +96,10 @@ describe('BackupConfiguration destination highlight', () => {
     const selected = screen.getByRole('button', { name: /destinationTypes.local.name/ });
     const other = screen.getByRole('button', { name: /destinationTypes.s3.name/ });
 
-    expect(selected.className).toContain('border-primary-600');
-    expect(selected.querySelector('svg')?.getAttribute('class')).toContain('text-primary-600');
-    expect(other.className).not.toContain('border-primary-600');
-    expect(selected.className).not.toMatch(/border-primary(\s|$)|accent-dark\//);
+    expect(selected.className).toContain('border-accent');
+    expect(selected.querySelector('svg')?.getAttribute('class')).toContain('text-accent');
+    expect(other.className).not.toMatch(/border-accent(\s|$)/);
+    expect(selected.className).not.toMatch(/accent-dark\//);
   });
 });
 

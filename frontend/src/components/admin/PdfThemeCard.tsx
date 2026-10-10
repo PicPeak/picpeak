@@ -3,21 +3,24 @@
  * (#1445). "All documents" holds the defaults; each document type can
  * override any of them. An empty field inherits — from "All documents",
  * then the business profile (the PDF font above, folding marks), then the
- * built-in look. Saved on its own, separate from the page's Save button,
- * and previewed with a sample document from the real PDF pipeline.
+ * built-in look. A colour nothing sets follows Branding › Colours (the
+ * filled accent, when it reads on paper). The drafts live on the Branding
+ * page (usePdfThemeDrafts) and save with its save bar; a sample document
+ * from the real PDF pipeline previews them.
  *
  * Layout (#1445): four presets to start from (applied into the form, not
  * stored as a reference), margins within bounds that keep a letter fitting
  * a window envelope, the address window, the logo's place, body size and
  * line height — with readability warnings that inform and never block.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Card } from '../common';
-import { PermissionGate } from './PermissionGate';
+import { Button, Card, Notice, Tabs } from '../common';
+import { usePermission } from '../../hooks/usePermission';
+import { contrastRatio } from '../../utils/contrast';
 import {
   pdfThemesService,
   type PdfColorKey, type PdfFooterMode, type PdfFoldingMarks, type PdfLogoPosition, type PdfLogoStack,
@@ -41,7 +44,7 @@ const LOGO_STACKS: PdfLogoStack[] = ['above', 'inline'];
 const BODY_SIZES = [9, 9.5, 10, 10.5, 11, 11.5, 12];
 const LINE_HEIGHTS = [1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6];
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 w-full px-3 py-2 rounded-md border border-line-strong '
   + 'bg-panel text-sm text-heading';
 const labelClass = 'block text-sm font-medium text-body mb-1';
 
@@ -49,21 +52,108 @@ function errorMessage(err: unknown): string | undefined {
   return (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
 }
 
-export const PdfThemeCard: React.FC = () => {
-  const { t } = useTranslation();
+/** Settings compared by content, not key order. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+type Updater = (d: PdfThemeSettings) => PdfThemeSettings;
+
+/**
+ * The PDF theme drafts of every document type, held by the page so they save
+ * with its save bar (UX.md § 2). Only touched scopes hold a draft; the rest
+ * follow the server. `save()` writes each changed scope, keeps the failed
+ * ones as drafts and returns them.
+ */
+export function usePdfThemeDrafts(enabled = true) {
   const queryClient = useQueryClient();
+  const canEdit = usePermission('settings.banking');
+  const { data } = useQuery({ queryKey: ['pdf-themes'], queryFn: () => pdfThemesService.list(), enabled });
+  const [drafts, setDrafts] = useState<Partial<Record<PdfThemeScope, PdfThemeSettings>>>({});
+
+  const stored = (scope: PdfThemeScope): PdfThemeSettings => data?.themes.find((th) => th.scope === scope)?.settings || {};
+  const draftOf = (scope: PdfThemeScope): PdfThemeSettings => drafts[scope] ?? stored(scope);
+  const setDraft = (scope: PdfThemeScope, update: Updater) =>
+    setDrafts((d) => ({ ...d, [scope]: update(d[scope] ?? stored(scope)) }));
+  const dirtyScopes = canEdit
+    ? SCOPES.filter((s) => drafts[s] !== undefined && stableStringify(drafts[s]) !== stableStringify(stored(s)))
+    : [];
+  const invalidScopes = dirtyScopes.filter((s) => !draftIsValid(drafts[s] as PdfThemeSettings));
+
+  // Each failed document type with the server's reason, so the error names
+  // both (the failed drafts stay for another try).
+  const save = async (): Promise<Array<{ scope: PdfThemeScope; message?: string }>> => {
+    const failed: Array<{ scope: PdfThemeScope; message?: string }> = [];
+    for (const scope of dirtyScopes) {
+      try {
+        await pdfThemesService.save(scope, drafts[scope] as PdfThemeSettings);
+      } catch (err) {
+        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        failed.push({ scope, message });
+      }
+    }
+    await queryClient.invalidateQueries({ queryKey: ['pdf-themes'] });
+    setDrafts((d) => Object.fromEntries(failed.map(({ scope }) => [scope, d[scope]])));
+    return failed;
+  };
+
+  return {
+    data, canEdit, draftOf, setDraft, dirtyScopes, invalidScopes, save,
+    isDirty: dirtyScopes.length > 0,
+    discard: () => setDrafts({}),
+  };
+}
+
+export type PdfThemeDrafts = ReturnType<typeof usePdfThemeDrafts>;
+
+function draftIsValid(draft: PdfThemeSettings): boolean {
+  const marginsOk = MARGIN_SIDES.every((side) => {
+    const value = draft.layout?.margins?.[side];
+    return value == null || (!Number.isNaN(value) && value >= MARGIN_BOUNDS[side][0] && value <= MARGIN_BOUNDS[side][1]);
+  });
+  return marginsOk && Object.values(draft.colors || {}).every((c) => HEX.test(c as string));
+}
+
+interface PdfThemeCardProps {
+  state: PdfThemeDrafts;
+  /** The Colours card's filled accent, unsaved edits included: what a
+   *  document inherits when nothing sets its accent. */
+  brandAccent?: string;
+}
+
+export const PdfThemeCard: React.FC<PdfThemeCardProps> = ({ state, brandAccent }) => {
+  const { t } = useTranslation();
   const [scope, setScope] = useState<PdfThemeScope>('default');
-  const [draft, setDraft] = useState<PdfThemeSettings>({});
   const [busy, setBusy] = useState(false);
 
-  const { data } = useQuery({ queryKey: ['pdf-themes'], queryFn: () => pdfThemesService.list() });
+  const { data } = state;
   const row = data?.themes.find((th) => th.scope === scope);
   const resolved = row?.resolved;
+  const draft = state.draftOf(scope);
+  const setDraft = (update: Updater) => state.setDraft(scope, update);
 
-  // Load the scope's stored settings whenever the scope or the saved data changes.
-  useEffect(() => {
-    setDraft(row?.settings ? { ...row.settings } : {});
-  }, [row?.settings, scope]);
+  // What a colour nothing sets falls back to, and where from. The brand
+  // accent is the Colours card's live value, used when it reads on paper
+  // (the same 3:1 rule the server applies).
+  const brand: Partial<Record<PdfColorKey, string>> = brandAccent !== undefined
+    ? (HEX.test(brandAccent) && contrastRatio(brandAccent, '#ffffff') >= 3 ? { accent: brandAccent.toLowerCase() } : {})
+    : (data?.brandColors || {});
+  const inherited = (key: PdfColorKey): { value: string; source: 'default' | 'branding' | 'builtIn' } => {
+    const fromDefault = scope !== 'default' ? state.draftOf('default').colors?.[key] : undefined;
+    if (fromDefault) return { value: fromDefault, source: 'default' };
+    if (brand[key]) return { value: brand[key] as string, source: 'branding' };
+    return { value: data?.builtInColors?.[key] || resolved?.colors[key] || '#000000', source: 'builtIn' };
+  };
+  const sourceLabel = {
+    default: t('branding.pdfTheme.fromAllDocuments', 'From All documents'),
+    branding: t('branding.pdfTheme.fromBranding', 'From Colours'),
+    builtIn: t('branding.pdfTheme.builtIn', 'Built-in'),
+  };
 
   const setColor = (key: PdfColorKey, value: string | null) => setDraft((d) => {
     const colors: Partial<Record<PdfColorKey, string>> = { ...(d.colors || {}) };
@@ -102,29 +192,10 @@ export const PdfThemeCard: React.FC = () => {
     return next;
   });
   const applyPreset = (preset: PdfThemePreset) => setDraft((d) => ({ ...d, ...PDF_THEME_PRESETS[preset] }));
-  const marginInvalid = MARGIN_SIDES.some((side) => {
-    const value = draft.layout?.margins?.[side];
-    return value != null && (Number.isNaN(value) || value < MARGIN_BOUNDS[side][0] || value > MARGIN_BOUNDS[side][1]);
-  });
   const warnings = resolved ? themeWarnings(effectiveTheme(resolved, draft)) : [];
   const warningText = (w: (typeof warnings)[number]) => t(`branding.pdfTheme.warnings.${w.code}`, w.code, {
     color: w.key ? t(`branding.pdfTheme.color.${w.key}`, w.key) : '', value: w.value, limit: w.limit,
   });
-
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['pdf-themes'] });
-
-  const save = async (settings: PdfThemeSettings) => {
-    setBusy(true);
-    try {
-      await pdfThemesService.save(scope, settings);
-      await refresh();
-      toast.success(t('branding.pdfTheme.saved', 'PDF theme saved'));
-    } catch (err) {
-      toast.error(errorMessage(err) || t('branding.pdfTheme.saveFailed', 'Could not save the PDF theme'));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const preview = async () => {
     setBusy(true);
@@ -151,7 +222,7 @@ export const PdfThemeCard: React.FC = () => {
   const footerMode = draft.footer?.mode;
 
   return (
-    <Card padding="md" className="mb-6">
+    <Card padding="md">
       <div className="flex items-start gap-3 mb-4">
         <FileText className="w-5 h-5 mt-0.5 text-body" aria-hidden />
         <div>
@@ -159,27 +230,31 @@ export const PdfThemeCard: React.FC = () => {
             {t('branding.pdfTheme.title', 'PDF theme')}
           </h3>
           <p className="text-sm text-soft">
-            {t('branding.pdfTheme.description', 'Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from "All documents", then your business profile.')}
+            {t('branding.pdfTheme.description', 'Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from "All documents", then Colours above (the filled accent, for headings) and your business profile.')}
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label={t('branding.pdfTheme.scopeLabel', 'Document type') as string}>
-        {SCOPES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            aria-pressed={scope === s}
-            onClick={() => setScope(s)}
-            className={`px-3 py-1.5 rounded-md text-sm border ${scope === s
-              ? 'bg-primary-600 text-white border-primary-600'
-              : 'border-line-strong text-body hover:bg-hover'}`}
-          >
-            {t(`branding.pdfTheme.scope.${s}`, s)}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        aria-label={t('branding.pdfTheme.scopeLabel', 'Document type') as string}
+        items={SCOPES.map((s) => ({
+          id: s,
+          label: t(`branding.pdfTheme.scope.${s}`, s),
+          dirty: state.dirtyScopes.includes(s),
+          dirtyLabel: t('settings.saveBar.unsaved', 'You have unsaved changes'),
+        }))}
+        value={scope}
+        onChange={setScope}
+        className="mb-4"
+      />
 
+      {!state.canEdit && (
+        <Notice tone="neutral" size="sm" className="mb-4">
+          {t('branding.pdfTheme.readOnly', 'You can see the PDF theme but not change it.')}
+        </Notice>
+      )}
+
+      <fieldset disabled={!state.canEdit} className="min-w-0">
       <div className="mb-4">
         <p className={labelClass} id="pdf-theme-presets-label">{t('branding.pdfTheme.presets', 'Start from a preset')}</p>
         <div className="flex flex-wrap gap-2" role="group" aria-labelledby="pdf-theme-presets-label">
@@ -190,7 +265,7 @@ export const PdfThemeCard: React.FC = () => {
           ))}
         </div>
         <p className="text-xs text-muted mt-1">
-          {t('branding.pdfTheme.presetsHint', 'A preset fills in the form; nothing is saved until you save the theme.')}
+          {t('branding.pdfTheme.presetsHint', 'A preset fills in the form; nothing is saved until you save the page.')}
         </p>
       </div>
 
@@ -199,27 +274,30 @@ export const PdfThemeCard: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {COLOR_KEYS.map((key) => {
             const own = draft.colors?.[key];
-            const shown = own || resolved?.colors[key] || '#000000';
+            const fallback = inherited(key);
+            const shown = own || fallback.value;
             const inputId = `pdf-theme-color-${key}`;
             return (
               <div key={key} className="flex items-center gap-2">
                 <input
                   id={inputId}
                   type="color"
-                  value={shown}
+                  value={HEX.test(shown) ? shown : '#000000'}
                   onChange={(e) => setColor(key, e.target.value)}
                   className="h-9 w-12 rounded border border-line-strong bg-transparent"
                 />
                 <label htmlFor={inputId} className="flex-1 text-sm text-body">
                   {t(`branding.pdfTheme.color.${key}`, key)}
                   <span className="block text-xs text-muted tabular-nums">
-                    {own ? own : `${t('branding.pdfTheme.inherited', 'Inherited')} · ${shown}`}
+                    {own ? own : `${sourceLabel[fallback.source]} · ${fallback.value}`}
                   </span>
                 </label>
                 {own && (
                   <button type="button" onClick={() => setColor(key, null)}
                     className="text-xs underline text-body">
-                    {t('branding.pdfTheme.reset', 'Reset')}
+                    {fallback.source === 'branding'
+                      ? t('branding.pdfTheme.followBranding', 'Follow Colours')
+                      : t('branding.pdfTheme.reset', 'Reset')}
                   </button>
                 )}
               </div>
@@ -366,29 +444,24 @@ export const PdfThemeCard: React.FC = () => {
       </p>
 
       {warnings.length > 0 && (
-        <div role="status" aria-live="polite"
-          className="mb-4 p-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
-          <p className="font-medium mb-1">{t('branding.pdfTheme.warningsTitle', 'Readability')}</p>
+        <Notice tone="warning" size="sm" title={t('branding.pdfTheme.warningsTitle', 'Readability')} className="mb-4">
           <ul className="list-disc pl-5 space-y-0.5">
             {warnings.map((w) => <li key={`${w.code}-${w.key || ''}`}>{warningText(w)}</li>)}
           </ul>
-        </div>
+        </Notice>
       )}
+      </fieldset>
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" onClick={preview} disabled={busy}>
           {t('branding.pdfTheme.preview', 'Preview PDF')}
         </Button>
-        <PermissionGate permission="settings.banking">
-          <Button variant="outline" onClick={() => { setDraft({}); void save({}); }}
-            disabled={busy || !row || Object.keys(row.settings || {}).length === 0}>
+        {state.canEdit && (
+          <Button variant="outline" onClick={() => setDraft(() => ({}))}
+            disabled={Object.keys(draft).length === 0}>
             {t('branding.pdfTheme.resetScope', 'Reset to inherited')}
           </Button>
-          <Button onClick={() => void save(draft)}
-            disabled={busy || marginInvalid || Object.values(draft.colors || {}).some((c) => !HEX.test(c))}>
-            {t('branding.pdfTheme.save', 'Save theme')}
-          </Button>
-        </PermissionGate>
+        )}
       </div>
     </Card>
   );

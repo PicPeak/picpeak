@@ -154,16 +154,18 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
 
       {/* Comment Form */}
       {showCommentForm && (
-        <form onSubmit={handleSubmitComment} className="space-y-3 p-4 bg-surface rounded-lg border border-surface">
+        <form onSubmit={handleSubmitComment} className="space-y-3 p-4 bg-surface rounded-lg border border-border-token">
           {requireNameEmail && !isGuestMode && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
+                themed
                 placeholder={t('feedback.yourName', 'Your name')}
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 error={errors.guest_name}
               />
               <Input
+                themed
                 type="email"
                 placeholder={t('feedback.yourEmail', 'Your email')}
                 value={guestEmail}
@@ -179,14 +181,14 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
               placeholder={t('feedback.writeComment', 'Write a comment...')}
-              className={`w-full px-3 py-2 text-sm border rounded-lg resize-vertical min-h-[100px] focus:ring-2 focus:ring-primary-500 focus:border-accent-dark ${
-                errors.comment_text ? 'border-red-500' : 'border-surface'
+              className={`w-full px-3 py-2 text-sm bg-surface text-theme placeholder:text-muted-theme border rounded-lg resize-vertical min-h-[100px] focus:ring-2 focus:ring-accent focus:border-accent-dark ${
+                errors.comment_text ? 'border-danger' : 'border-border-token'
               }`}
               rows={4}
               maxLength={500}
             />
             {errors.comment_text && (
-              <p className="text-xs text-red-600 mt-1">{errors.comment_text}</p>
+              <p className="text-xs text-status hue-danger mt-1">{errors.comment_text}</p>
             )}
             <p className="text-xs text-muted-theme mt-1">
               {commentText.length}/500
@@ -225,7 +227,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
           {visibleComments.map((comment) => (
             <div key={comment.id} className="flex gap-3">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-black/10 rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-elevated rounded-full flex items-center justify-center">
                   <User className="w-4 h-4 text-muted-theme" />
                 </div>
               </div>
@@ -238,7 +240,7 @@ export const PhotoComments: React.FC<PhotoCommentsProps> = ({
                     {format(new Date(comment.created_at), 'PP')}
                   </span>
                   {comment.is_mine && !comment.is_approved && (
-                    <span className="text-xs text-orange-600">
+                    <span className="text-xs text-status hue-warning">
                       {t('feedback.pendingApproval', 'Pending approval')}
                     </span>
                   )}

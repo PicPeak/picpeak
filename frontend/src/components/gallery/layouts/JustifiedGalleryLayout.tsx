@@ -140,7 +140,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
       // unmounting shifts nothing; same outer band as Grid, see there.
       releaseRootMargin={bands.keep}
       fadeInWhenVisible={animationType === 'fade'}
-      skeletonClassName="skeleton w-full h-full rounded-lg"
+      skeletonClassName="skeleton bg-border-token w-full h-full rounded-lg"
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
@@ -176,7 +176,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
               className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm"
               title="Liked"
             >
-              <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+              <Heart className="w-3.5 h-3.5 text-danger" fill="currentColor" />
             </span>
           )}
           {averageRating > 0 && (
@@ -184,7 +184,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
               className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm"
               title="Rated"
             >
-              <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
+              <Star className="w-3.5 h-3.5 text-rating" fill="currentColor" />
             </span>
           )}
           {commentCount > 0 && (

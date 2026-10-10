@@ -91,10 +91,10 @@ export const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({
       minLength: passwordComplexity === 'simple' ? 6 : passwordComplexity === 'moderate' ? 8 : 12
     });
     
-    if (validation.score <= 1) return { label: t('passwordGenerator.weak'), color: 'text-red-600' };
-    if (validation.score <= 2) return { label: t('passwordGenerator.fair'), color: 'text-yellow-600' };
-    if (validation.score <= 3) return { label: t('passwordGenerator.good'), color: 'text-blue-600' };
-    return { label: t('passwordGenerator.strong'), color: 'text-green-600' };
+    if (validation.score <= 1) return { label: t('passwordGenerator.weak'), color: 'text-danger-text' };
+    if (validation.score <= 2) return { label: t('passwordGenerator.fair'), color: 'text-warning-text' };
+    if (validation.score <= 3) return { label: t('passwordGenerator.good'), color: 'text-info-text' };
+    return { label: t('passwordGenerator.strong'), color: 'text-success-text' };
   };
 
   return (
@@ -174,7 +174,7 @@ export const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({
                         title={t('passwordGenerator.copyPassword')}
                       >
                         {copiedIndex === index ? (
-                          <Check className="w-4 h-4 text-green-600" />
+                          <Check className="w-4 h-4 text-success-text" />
                         ) : (
                           <Copy className="w-4 h-4" />
                         )}
@@ -194,8 +194,8 @@ export const PasswordGenerator: React.FC<PasswordGeneratorProps> = ({
               })}
             </div>
             
-            <div className="mt-3 p-2 bg-blue-50 rounded-md">
-              <p className="text-xs text-blue-800">
+            <div className="mt-3 p-2 bg-info-soft rounded-md">
+              <p className="text-xs text-info-text">
                 <strong>{t('passwordGenerator.pattern')}</strong> {t('passwordGenerator.patternDescription')}
               </p>
             </div>

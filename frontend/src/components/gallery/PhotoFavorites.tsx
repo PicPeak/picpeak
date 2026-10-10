@@ -118,8 +118,8 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       disabled={isSubmitting}
       className={`group flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
         isFavorited 
-          ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' 
-          : 'bg-surface text-muted-theme hover:bg-black/10'
+          ? 'status-chip hue-warning hover:brightness-95' 
+          : 'bg-elevated text-muted-theme hover-surface'
       } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
       aria-label={isFavorited ? t('feedback.unfavorite', 'Remove from favorites') : t('feedback.favorite', 'Add to favorites')}
     >

@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { FolderOpen, FolderTree, RefreshCw } from 'lucide-react';
 import type { Event } from '../../../types';
-import { Button, useConfirm } from '../../../components/common';
+import { Button, useConfirm, Badge } from '../../../components/common';
 import { invalidateFolderViews } from '../../../components/admin/folders/folderQueries';
 import { foldersService } from '../../../services/folders.service';
 import { usePermission } from '../../../hooks/usePermission';
@@ -63,12 +63,12 @@ export const ExternalSourceBar: React.FC<{ event: Event; onChangeFolder: () => v
         <code className="px-1.5 py-0.5 rounded bg-inset text-xs break-all">/external-media/{event.external_path}</code>
       </span>
       {watched && (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+        <Badge tone="success">
           {t('events.externalSource.watching', 'Watching for new files')}
-        </span>
+        </Badge>
       )}
       {imp.failed ? (
-        <span className="text-xs text-red-700 dark:text-red-400" role="alert">
+        <span className="text-xs text-danger-text" role="alert">
           {imp.failureText}
         </span>
       ) : (

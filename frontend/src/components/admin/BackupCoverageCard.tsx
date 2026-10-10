@@ -5,7 +5,6 @@ import {
   ShieldAlert,
   Database,
   FolderTree,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
   EyeOff,
@@ -17,7 +16,11 @@ import { useQuery } from '@tanstack/react-query';
 // Locale-aware formatters per [[feedback_respect_general_format_settings]].
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-import { Card, Button } from '../common';
+import {
+  Card, Button, Badge, Notice, ErrorState,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
+} from '../common';
+import type { BadgeTone } from '../common';
 import {
   adminService,
   BackupCoverageReport,
@@ -56,7 +59,17 @@ export const BackupCoverageCard: React.FC = () => {
     <Card className="p-6">
       <Header report={data} loading={isLoading} onRefresh={() => refetch()} refreshing={isFetching} />
 
-      {isError && (
+      {isError && !data && (
+        <ErrorState
+          size="inline"
+          message={t('backup.coverage.error', 'Could not load coverage report: {{message}}', {
+            message: (error as Error)?.message ?? 'unknown error',
+          })}
+          onRetry={() => refetch()}
+          retrying={isFetching}
+        />
+      )}
+      {isError && data && (
         <ErrorBanner message={(error as Error)?.message ?? 'unknown error'} />
       )}
 
@@ -99,13 +112,13 @@ const Header: React.FC<{
       <div>
         <div className="flex items-center gap-2 mb-1">
           {loading || refreshing ? (
-            <Loader2 className="w-5 h-5 text-neutral-400 animate-spin" />
+            <Loader2 className="w-5 h-5 text-faint animate-spin" />
           ) : healthy ? (
-            <ShieldCheck className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <ShieldCheck className="w-5 h-5 text-success-text" />
           ) : report ? (
-            <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <ShieldAlert className="w-5 h-5 text-warning-text" />
           ) : (
-            <ShieldCheck className="w-5 h-5 text-neutral-400" />
+            <ShieldCheck className="w-5 h-5 text-faint" />
           )}
           <h3 className="text-lg font-semibold text-heading">
             {t('backup.coverage.title', 'Backup coverage')}
@@ -137,24 +150,21 @@ const Header: React.FC<{
 const ErrorBanner: React.FC<{ message: string }> = ({ message }) => {
   const { t } = useTranslation();
   return (
-    <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 text-sm text-red-700 dark:text-red-300">
+    <Notice tone="danger" className="mb-4">
       {t('backup.coverage.error', 'Could not load coverage report: {{message}}', { message })}
-    </div>
+    </Notice>
   );
 };
 
 const FallbackWarning: React.FC = () => {
   const { t } = useTranslation();
   return (
-    <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
-      <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-      <span>
-        {t(
-          'backup.coverage.fallbackInUse',
-          'The backup_paths table is missing. The walker is using its legacy hard-coded fallback. Migration 108 may not have run — check server logs and re-run migrations.',
-        )}
-      </span>
-    </div>
+    <Notice tone="warning" className="mb-4">
+      {t(
+        'backup.coverage.fallbackInUse',
+        'The backup_paths table is missing. The walker is using its legacy hard-coded fallback. Migration 108 may not have run — check server logs and re-run migrations.',
+      )}
+    </Notice>
   );
 };
 
@@ -282,51 +292,44 @@ const SummaryCard: React.FC<{
 const PathsTable: React.FC<{ paths: BackupCoverageReport['paths'] }> = ({ paths }) => {
   const { t } = useTranslation();
   return (
-    <div className="border border-line rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-neutral-50 dark:bg-neutral-800/50 border-b border-line">
-        <h4 className="text-sm font-semibold text-heading">
-          {t('backup.coverage.paths.heading', 'Configured paths')}
-        </h4>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 dark:bg-neutral-800/30">
-            <tr className="text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-3 py-2">{t('backup.coverage.paths.path', 'Path')}</th>
-              <th className="px-3 py-2">{t('backup.coverage.paths.coverage', 'Coverage')}</th>
-              <th className="px-3 py-2">{t('backup.coverage.paths.featureFlag', 'Feature flag')}</th>
-              <th className="px-3 py-2">{t('backup.coverage.paths.description', 'Description')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paths.map((p) => (
-              <tr
-                key={p.path}
-                className="border-t border-line"
-              >
-                <td className="px-3 py-2 font-mono text-xs text-body">
-                  {p.path}
-                </td>
-                <td className="px-3 py-2">
-                  <CoverageBadge coverage={p.coverage} />
-                </td>
-                <td className="px-3 py-2 text-xs text-soft">
-                  {p.featureFlag
-                    ? `${p.featureFlag} = ${p.featureFlagValue === null ? '∅' : String(p.featureFlagValue)}`
-                    : '—'}
-                </td>
-                <td className="px-3 py-2 text-xs text-soft">
-                  {p.path === 'transfers' && p.description === 'Admin deliverable transfer attachments'
-                    ? t('backup.coverage.paths.transferDescription')
-                    : p.path === 'watermarks' && p.description === 'Managed watermarked gallery renditions'
-                      ? t('backup.coverage.paths.watermarkDescription')
-                      : p.description ?? '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div>
+      <h4 className="mb-2 text-sm font-semibold text-heading">
+        {t('backup.coverage.paths.heading', 'Configured paths')}
+      </h4>
+      <Table>
+        <TableHead>
+          <tr>
+            <TableHeaderCell>{t('backup.coverage.paths.path', 'Path')}</TableHeaderCell>
+            <TableHeaderCell>{t('backup.coverage.paths.coverage', 'Coverage')}</TableHeaderCell>
+            <TableHeaderCell>{t('backup.coverage.paths.featureFlag', 'Feature flag')}</TableHeaderCell>
+            <TableHeaderCell>{t('backup.coverage.paths.description', 'Description')}</TableHeaderCell>
+          </tr>
+        </TableHead>
+        <TableBody>
+          {paths.map((p) => (
+            <TableRow key={p.path}>
+              <TableCell className="font-mono text-xs">
+                {p.path}
+              </TableCell>
+              <TableCell>
+                <CoverageBadge coverage={p.coverage} />
+              </TableCell>
+              <TableCell className="text-xs text-soft">
+                {p.featureFlag
+                  ? `${p.featureFlag} = ${p.featureFlagValue === null ? '∅' : String(p.featureFlagValue)}`
+                  : '—'}
+              </TableCell>
+              <TableCell className="text-xs text-soft">
+                {p.path === 'transfers' && p.description === 'Admin deliverable transfer attachments'
+                  ? t('backup.coverage.paths.transferDescription')
+                  : p.path === 'watermarks' && p.description === 'Managed watermarked gallery renditions'
+                    ? t('backup.coverage.paths.watermarkDescription')
+                    : p.description ?? '—'}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 };
@@ -335,43 +338,38 @@ const DriftSection: React.FC<{ drift: BackupCoverageReport['drift'] }> = ({ drif
   const { t } = useTranslation();
   if (drift.unconfiguredOnDisk.length === 0) {
     return (
-      <div className="mt-4 p-3 rounded-lg bg-green-50 dark:bg-green-900/30 text-sm text-green-700 dark:text-green-300 flex items-center gap-2">
-        <CheckCircle2 className="w-4 h-4" />
+      <Notice tone="success" className="mt-4">
         {t(
           'backup.coverage.drift.none',
           'No drift detected — every top-level subdirectory under STORAGE_PATH is either in backup_paths or in the expected non-backup allow-list.',
         )}
-      </div>
+      </Notice>
     );
   }
   return (
-    <div className="mt-4 border border-amber-300 dark:border-amber-700 rounded-lg overflow-hidden">
-      <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-300 dark:border-amber-700">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300" />
-          <h4 className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-            {t('backup.coverage.drift.heading', 'Drift detected: subdirectories not covered by any backup_paths row')}
-          </h4>
-        </div>
-        <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-          {t(
-            'backup.coverage.drift.caption',
-            'These directories exist on disk but the walker will skip them. Either add a backup_paths row, move the files into a covered location, or — if they are runtime caches — confirm they are safe to exclude.',
-          )}
-        </p>
-      </div>
-      <ul className="divide-y divide-amber-200 dark:divide-amber-800">
+    <Notice
+      tone="warning"
+      className="mt-4"
+      title={t('backup.coverage.drift.heading', 'Drift detected: subdirectories not covered by any backup_paths row')}
+    >
+      <p className="text-xs">
+        {t(
+          'backup.coverage.drift.caption',
+          'These directories exist on disk but the walker will skip them. Either add a backup_paths row, move the files into a covered location, or — if they are runtime caches — confirm they are safe to exclude.',
+        )}
+      </p>
+      <ul className="mt-2 divide-y divide-warning-line">
         {drift.unconfiguredOnDisk.map((d) => (
           <li
             key={d}
-            className="px-3 py-2 font-mono text-xs text-amber-900 dark:text-amber-100 flex items-center gap-2"
+            className="py-1.5 font-mono text-xs flex items-center gap-2"
           >
-            <EyeOff className="w-3.5 h-3.5" />
+            <EyeOff className="w-3.5 h-3.5 text-warning-text" />
             {d}
           </li>
         ))}
       </ul>
-    </div>
+    </Notice>
   );
 };
 
@@ -401,9 +399,7 @@ const CoverageBadge: React.FC<{ coverage: BackupPathCoverage }> = ({ coverage })
   };
   const { tone, label } = map[coverage];
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${TONE_BG[tone]}`}>
-      {label}
-    </span>
+    <Badge tone={TONE_BADGE[tone]}>{label}</Badge>
   );
 };
 
@@ -423,9 +419,16 @@ type Tone = 'neutral' | 'green' | 'amber' | 'red';
 
 const TONE_BG: Record<Tone, string> = {
   neutral: 'bg-subtle text-body',
-  green: 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300',
-  amber: 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
-  red: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+  green: 'bg-success-soft text-success-text',
+  amber: 'bg-warning-soft text-warning-text',
+  red: 'bg-danger-soft text-danger-text',
+};
+
+const TONE_BADGE: Record<Tone, BadgeTone> = {
+  neutral: 'neutral',
+  green: 'success',
+  amber: 'warning',
+  red: 'danger',
 };
 
 function formatBytes(bytes: number): string {

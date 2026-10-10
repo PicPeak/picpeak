@@ -21,7 +21,7 @@ import {
   FileText, Send, CheckCircle2, XCircle, Clock,
   Receipt, AlertTriangle, TrendingUp, Wallet,
 } from 'lucide-react';
-import { Card } from '../common';
+import { Card, ErrorState } from '../common';
 import { fetchCrmOverview, type CrmOverviewStats } from '../../services/bills.service';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -62,7 +62,7 @@ export const CrmOverviewSection: React.FC = () => {
   const quotesBlock     = quotesOn && showQuotes;
   const invoicesBlock   = billsOn && showInvoices;
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['crm-overview'],
     queryFn: () => fetchCrmOverview(),
     enabled: anyCrm,
@@ -88,10 +88,15 @@ export const CrmOverviewSection: React.FC = () => {
         <h2 className="text-xl font-bold text-heading mb-2">
           {t('crmOverview.title', 'CRM overview')}
         </h2>
-        <p className="text-sm text-red-600">
-          {t('crmOverview.loadError',
-            'Could not load CRM stats. Check that you have bills.view or quotes.view permission and that the backend is on the latest build.')}
-        </p>
+        <Card>
+          <ErrorState
+            size="inline"
+            message={t('crmOverview.loadError',
+              'Could not load CRM stats. Check that you have bills.view or quotes.view permission and that the backend is on the latest build.')}
+            onRetry={() => refetch()}
+            retrying={isFetching}
+          />
+        </Card>
       </section>
     );
   }
@@ -139,7 +144,7 @@ export const CrmOverviewSection: React.FC = () => {
           )}
           {showOutstanding && (
             <StatCard
-              icon={<Wallet className="w-5 h-5 text-red-600" />}
+              icon={<Wallet className="w-5 h-5 text-danger-text" />}
               label={t('crmOverview.outstanding', 'Outstanding payments')}
               value={formatMoney(d.outstanding.totalMinor, cur)}
               sub={t('crmOverview.outstandingSub', '{{count}} invoice(s) unpaid', {
@@ -159,43 +164,43 @@ export const CrmOverviewSection: React.FC = () => {
               <FileText className="w-5 h-5" />
               {t('crmOverview.quotes.title', 'Quotes')}
             </h3>
-            <Link to="/admin/clients/quotes" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            <Link to="/admin/clients/quotes" className="text-sm text-accent hover:underline">
               {t('crmOverview.viewAll', 'View all')} →
             </Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard
-              icon={<Clock className="w-5 h-5 text-amber-600" />}
+              icon={<Clock className="w-5 h-5 text-warning-text" />}
               label={t('quotes.status.draft', 'Drafts')}
               value={d.quotes.draft}
               to="/admin/clients/quotes?status=draft"
             />
             <StatCard
-              icon={<Send className="w-5 h-5 text-blue-600" />}
+              icon={<Send className="w-5 h-5 text-info-text" />}
               label={t('quotes.status.sent', 'Sent / open')}
               value={d.quotes.sent}
               to="/admin/clients/quotes?status=sent"
             />
             <StatCard
-              icon={<CheckCircle2 className="w-5 h-5 text-green-600" />}
+              icon={<CheckCircle2 className="w-5 h-5 text-success-text" />}
               label={t('quotes.status.accepted', 'Accepted')}
               value={d.quotes.accepted}
               to="/admin/clients/quotes?status=accepted"
             />
             <StatCard
-              icon={<XCircle className="w-5 h-5 text-red-600" />}
+              icon={<XCircle className="w-5 h-5 text-danger-text" />}
               label={t('quotes.status.declined', 'Declined')}
               value={d.quotes.declined}
               to="/admin/clients/quotes?status=declined"
             />
             <StatCard
-              icon={<Clock className="w-5 h-5 text-neutral-500" />}
+              icon={<Clock className="w-5 h-5 text-muted" />}
               label={t('quotes.status.expired', 'Expired')}
               value={d.quotes.expired}
               to="/admin/clients/quotes?status=expired"
             />
             <StatCard
-              icon={<CheckCircle2 className="w-5 h-5 text-emerald-700" />}
+              icon={<CheckCircle2 className="w-5 h-5 text-success-text" />}
               label={t('quotes.status.converted', 'Converted')}
               value={d.quotes.converted}
               to="/admin/clients/quotes?status=converted"
@@ -212,37 +217,37 @@ export const CrmOverviewSection: React.FC = () => {
               <Receipt className="w-5 h-5" />
               {t('crmOverview.invoices.title', 'Invoices')}
             </h3>
-            <Link to="/admin/clients/bills" className="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            <Link to="/admin/clients/bills" className="text-sm text-accent hover:underline">
               {t('crmOverview.viewAll', 'View all')} →
             </Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <StatCard
-              icon={<Clock className="w-5 h-5 text-amber-600" />}
+              icon={<Clock className="w-5 h-5 text-warning-text" />}
               label={t('bills.status.scheduled', 'Scheduled')}
               value={d.invoices.scheduled}
               to="/admin/clients/bills?status=scheduled"
             />
             <StatCard
-              icon={<Send className="w-5 h-5 text-blue-600" />}
+              icon={<Send className="w-5 h-5 text-info-text" />}
               label={t('bills.status.sent', 'Sent / open')}
               value={d.invoices.sent}
               to="/admin/clients/bills?status=sent"
             />
             <StatCard
-              icon={<CheckCircle2 className="w-5 h-5 text-green-600" />}
+              icon={<CheckCircle2 className="w-5 h-5 text-success-text" />}
               label={t('bills.status.paid', 'Paid')}
               value={d.invoices.paid}
               to="/admin/clients/bills?status=paid"
             />
             <StatCard
-              icon={<AlertTriangle className="w-5 h-5 text-red-600" />}
+              icon={<AlertTriangle className="w-5 h-5 text-danger-text" />}
               label={t('bills.status.overdue', 'Overdue')}
               value={d.invoices.overdue}
               to="/admin/clients/bills?status=overdue"
             />
             <StatCard
-              icon={<XCircle className="w-5 h-5 text-neutral-500" />}
+              icon={<XCircle className="w-5 h-5 text-muted" />}
               label={t('bills.status.cancelled', 'Cancelled')}
               value={d.invoices.cancelled}
               to="/admin/clients/bills?status=cancelled"

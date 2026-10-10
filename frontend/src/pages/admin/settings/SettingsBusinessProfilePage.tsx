@@ -149,7 +149,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         <h3 className="font-semibold text-heading mb-3">{t('businessProfile.section.defaults', 'Defaults')}</h3>
         {/* Pointer so admins who look for the old VAT/hourly-rate fields here
             know where they went. */}
-        <p className="mb-3 rounded-md border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
+        <p className="mb-3 rounded-md border border-info-line bg-info-soft px-3 py-2 text-xs text-info-text">
           {t('businessProfile.movedToAccounting', 'The VAT rate, VAT label and default hourly rate now live under Settings → Accounting.')}
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -163,7 +163,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             <select
               value={normalizeCurrency(profile.defaultCurrency)}
               onChange={(e) => setProfile({ ...profile, defaultCurrency: e.target.value })}
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             >
               {currencyOptions(profile.defaultCurrency).map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -182,7 +182,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             <select
               value={profile.timezone || ''}
               onChange={(e) => setProfile({ ...profile, timezone: e.target.value || null })}
-              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-line-strong bg-panel text-heading text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             >
               <option value="">
                 {t('businessProfile.field.timezoneSystemDefault', 'System default')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
@@ -295,7 +295,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           open blocks is held until the next opening. */}
       <Card>
         <div className="flex items-center gap-2 mb-1">
-          <Clock className="w-5 h-5 text-neutral-500" />
+          <Clock className="w-5 h-5 text-muted" />
           <h3 className="font-semibold text-heading">{t('businessProfile.businessHours.title', 'Business hours')}</h3>
         </div>
         <p className="text-sm text-soft mb-4">
@@ -327,7 +327,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           the legal line below comes from the fields already on this page. */}
       <Card>
         <div className="flex items-center gap-2 mb-1">
-          <Mail className="w-5 h-5 text-neutral-500" />
+          <Mail className="w-5 h-5 text-muted" />
           <h3 className="font-semibold text-heading">
             {t('businessProfile.emailSignature.title', 'Email signature')}
           </h3>
@@ -376,7 +376,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
           what the operator types — it cannot validate IBAN/BIC, QR-IID
           or scan-compatibility with any specific bank's e-banking app.
           See https://docs.picpeak.app/features/crm/disclaimers. */}
-      <div className="mt-4 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
+      <div className="mt-4 p-3 rounded-md border border-warning-line bg-warning-soft text-sm text-warning-text">
         <p className="font-medium mb-1">
           {t('businessProfile.qrDisclaimer.title', 'QR-bill / bank data — verify before going live')}
         </p>
@@ -474,7 +474,7 @@ const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile
     && !profile.vatId && !profile.emailSignatureExtra;
   if (isEmpty) {
     return (
-      <p className="text-sm text-amber-700 dark:text-amber-400">
+      <p className="text-sm text-warning-text">
         {t('businessProfile.emailSignature.previewEmpty',
           'Signature is on but every field above is blank — nothing will be added to the footer.')}
       </p>
@@ -569,7 +569,7 @@ const BusinessHoursEditor: React.FC<{
                   <button
                     type="button"
                     onClick={() => addBlock(iso)}
-                    className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-700"
+                    className="inline-flex items-center gap-1 text-sm text-accent"
                   >
                     <Plus className="w-4 h-4" />
                     {t('businessProfile.businessHours.addHours', 'Add hours')}
@@ -585,7 +585,7 @@ const BusinessHoursEditor: React.FC<{
                     ariaLabel={t('businessProfile.businessHours.startTime', 'Opening time') as string}
                     className="w-32 shrink-0"
                   />
-                  <span className="text-neutral-400">–</span>
+                  <span className="text-faint">–</span>
                   <TimeField
                     value={block.end}
                     onChange={(v) => updateBlock(iso, idx, { end: v })}
@@ -596,7 +596,7 @@ const BusinessHoursEditor: React.FC<{
                     type="button"
                     onClick={() => removeBlock(iso, idx)}
                     aria-label={t('common.remove', 'Remove') as string}
-                    className="p-1.5 text-neutral-400 hover:text-red-600"
+                    className="p-1.5 text-faint hover:text-danger-text"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -605,7 +605,7 @@ const BusinessHoursEditor: React.FC<{
                       type="button"
                       onClick={() => addBlock(iso)}
                       aria-label={t('businessProfile.businessHours.addBlock', 'Add another block') as string}
-                      className="p-1.5 text-primary-600 hover:text-primary-700"
+                      className="p-1.5 text-accent"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
@@ -618,7 +618,7 @@ const BusinessHoursEditor: React.FC<{
               <button
                 type="button"
                 onClick={() => copyToAll(iso)}
-                className="shrink-0 inline-flex items-center gap-1 pt-2 text-xs text-neutral-500 hover:text-body"
+                className="shrink-0 inline-flex items-center gap-1 pt-2 text-xs text-muted hover:text-body"
               >
                 <Copy className="w-3.5 h-3.5" />
                 {t('businessProfile.businessHours.copyToAll', 'Copy to all days')}
@@ -690,18 +690,18 @@ const PdfLogoUploader: React.FC<PdfLogoUploaderProps> = ({ profile, setProfile }
           accept="image/png,image/jpeg,image/svg+xml"
           onChange={onPick}
           disabled={uploading}
-          className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-primary-700 disabled:opacity-60"
+          className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-accent-strong file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white disabled:opacity-60"
         />
         {profile.logoPath && (
           <>
-            <span className="text-xs text-neutral-500 font-mono break-all">{profile.logoPath}</span>
+            <span className="text-xs text-muted font-mono break-all">{profile.logoPath}</span>
             <Button variant="outline" size="sm" onClick={onClear} disabled={uploading}>
               {t('common.remove', 'Remove')}
             </Button>
           </>
         )}
       </div>
-      <p className="text-xs text-neutral-500 mt-1">
+      <p className="text-xs text-muted mt-1">
         {t('businessProfile.field.pdfLogoUploadHelp',
           'Used on every quote and invoice PDF. SVG is accepted and rasterised to PNG automatically. When empty, the renderer falls back to the global Branding logo.')}
       </p>
@@ -825,7 +825,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
       {openForm === 'new' && renderForm('new', () => create.mutate(), create.isPending)}
 
       {accounts.length === 0 ? (
-        <p className="text-sm text-neutral-500">{t('businessProfile.noBanks', 'No bank accounts configured yet.')}</p>
+        <p className="text-sm text-muted">{t('businessProfile.noBanks', 'No bank accounts configured yet.')}</p>
       ) : (
         <ul className="divide-y divide-line">
           {accounts.map((b) => (
@@ -833,9 +833,9 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
               <li className="py-2 flex items-center justify-between">
                 <div>
                   <div className="font-medium text-sm text-heading">{b.label || b.iban}
-                    {b.isDefault && <Star className="inline w-4 h-4 ml-1 text-amber-500" />}
+                    {b.isDefault && <Star className="inline w-4 h-4 ml-1 text-warning" />}
                   </div>
-                  <div className="text-xs text-neutral-500 font-mono">{b.iban.replace(/(.{4})/g, '$1 ').trim()}{b.currency ? ` · ${b.currency}` : ''}</div>
+                  <div className="text-xs text-muted font-mono">{b.iban.replace(/(.{4})/g, '$1 ').trim()}{b.currency ? ` · ${b.currency}` : ''}</div>
                 </div>
                 <div className="flex gap-2">
                   {!b.isDefault && (
@@ -854,7 +854,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
                     if (window.confirm(t('businessProfile.bank.confirmDelete', 'Remove this bank account?'))) remove.mutate(b.id);
                   }}
                     title={t('common.delete', 'Delete') as string}>
-                    <Trash2 className="w-4 h-4 text-red-600" />
+                    <Trash2 className="w-4 h-4 text-danger-text" />
                   </Button>
                 </div>
               </li>

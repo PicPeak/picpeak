@@ -82,9 +82,10 @@ describe('UploadProgressBar', () => {
     const { resolve } = deferredPost();
     const onClose = vi.fn();
     const user = userEvent.setup();
-    const { container } = renderWithUploadSession(<PhotoUploadModal isOpen eventId={1} onClose={onClose} />);
+    renderWithUploadSession(<PhotoUploadModal isOpen eventId={1} onClose={onClose} />);
 
-    await pickAndUpload(container, user, ['a.png', 'b.png']);
+    // The modal portals into document.body, outside the render container.
+    await pickAndUpload(document.body, user, ['a.png', 'b.png']);
 
     expect(onClose).toHaveBeenCalledTimes(1);
     const bar = await screen.findByTestId('upload-progress-bar');

@@ -173,3 +173,26 @@ test('a stored row is re-checked on read: values the rules refuse are dropped ke
     .toEqual({ colors: { accent: '#123456' }, bodySize: 11, fontFamily: 'Gone', footer: { mode: 'none', text: '' } });
   expect(theme.sanitizeStoredSettings('{"fontFamily":"../../etc"}')).toEqual({});
 });
+
+describe('brand accent (Branding › Colours)', () => {
+  const brand = { accentDarkColor: '#014E4E' };
+
+  test('a document with no accent of its own takes the brand filled accent', () => {
+    expect(theme.resolveTheme('quote', {}, null, brand).colors.accent).toBe('#014e4e');
+    expect(theme.brandColors(brand)).toEqual({ accent: '#014e4e' });
+    // The neutrals stay print-tuned.
+    expect(theme.resolveTheme('quote', {}, null, brand).colors.text).toBe('#000000');
+  });
+
+  test('All documents and the document type still win over the brand', () => {
+    const rows = { default: { colors: { accent: '#000000' } }, invoice: { colors: { accent: '#112233' } } };
+    expect(theme.resolveTheme('quote', rows, null, brand).colors.accent).toBe('#000000');
+    expect(theme.resolveTheme('invoice', rows, null, brand).colors.accent).toBe('#112233');
+  });
+
+  test('a brand colour too pale for paper leaves the built-in black', () => {
+    expect(theme.resolveTheme('quote', {}, null, { accentDarkColor: '#ffe066' }).colors.accent).toBe('#000000');
+    expect(theme.brandColors({ accentDarkColor: '#ffe066' })).toEqual({});
+    expect(theme.resolveTheme('quote', {}, null, { accentDarkColor: 'teal' }).colors.accent).toBe('#000000');
+  });
+});

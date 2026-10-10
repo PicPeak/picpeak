@@ -140,8 +140,8 @@ export const PhotoDecision: React.FC<PhotoDecisionProps> = ({
   const buttonClass = (active: boolean, tone: 'approve' | 'reject') => `flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm transition-all ${
     active
       ? (tone === 'approve'
-        ? 'bg-green-600 text-white ring-1 ring-green-300'
-        : 'bg-red-600 text-white ring-1 ring-red-300')
+        ? 'bg-success text-white ring-1 ring-success'
+        : 'bg-danger text-white ring-1 ring-danger')
       : 'bg-white/10 text-white hover:bg-white/20'
   } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`;
 
@@ -196,7 +196,7 @@ export const PhotoDecision: React.FC<PhotoDecisionProps> = ({
           // the form opens upward. Phones keep it near the top: the soft
           // keyboard covers the lower half and the toolbar wraps to a height
           // that varies with the enabled buttons.
-          className="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:bottom-full sm:mb-2 sm:w-72 p-3 rounded-lg shadow-xl bg-surface border border-surface z-40 space-y-2"
+          className="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:bottom-full sm:mb-2 sm:w-72 p-3 rounded-lg shadow-xl bg-surface border border-border-token z-40 space-y-2"
           onSubmit={(e) => {
             e.preventDefault();
             void submit({ decision: 'rejected', reason: reasonDraft });
@@ -222,7 +222,7 @@ export const PhotoDecision: React.FC<PhotoDecisionProps> = ({
             onChange={(e) => setReasonDraft(e.target.value)}
             maxLength={DECISION_REASON_MAX_LENGTH}
             rows={3}
-            className="w-full px-2 py-1.5 text-sm rounded border border-surface bg-transparent"
+            className="w-full px-2 py-1.5 text-sm rounded border border-border-token bg-transparent"
             style={{ color: 'var(--color-text)' }}
             placeholder={t('feedback.decisionReasonPlaceholder', 'e.g. eyes closed, not my best side')}
           />

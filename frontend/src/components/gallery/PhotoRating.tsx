@@ -140,8 +140,8 @@ export const PhotoRating: React.FC<PhotoRatingProps> = ({
               <Star
                 className={`w-6 h-6 transition-colors ${
                   star <= (hoveredRating || currentRating)
-                    ? 'fill-yellow-500 text-yellow-500'
-                    : 'text-black/30 hover:text-yellow-400'
+                    ? 'fill-rating text-rating'
+                    : 'text-muted-theme hover:text-rating'
                 }`}
               />
             </button>

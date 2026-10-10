@@ -43,7 +43,6 @@ import { CrmDevelopmentPage } from './pages/admin/clients/CrmDevelopmentPage';
 // Newsletter campaigns (#1264). Gated by the `newsletters` flag inside the
 // Clients block; the API refuses these routes independently when it is off.
 import { NewsletterListPage } from './pages/admin/newsletters/NewsletterListPage';
-import { NewsletterComposerPage } from './pages/admin/newsletters/NewsletterComposerPage';
 import { NewsletterDetailPage } from './pages/admin/newsletters/NewsletterDetailPage';
 import { TaxReportPage } from './pages/admin/clients/TaxReportPage';
 import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
@@ -63,6 +62,7 @@ import { WorkflowApprovalsPage } from './pages/admin/workflows/WorkflowApprovals
 import { WorkflowEditorPage } from './pages/admin/workflows/WorkflowEditorPage';
 import { ContractsListPage } from './pages/admin/contracts/ContractsListPage';
 import { ContractEditorPage } from './pages/admin/contracts/ContractEditorPage';
+import { RedirectToRecord } from './components/admin/RedirectToRecord';
 import { ContractDetailPage } from './pages/admin/contracts/ContractDetailPage';
 import { BlockLibraryPage } from './pages/admin/contracts/BlockLibraryPage';
 import { ContractTemplatesPage } from './pages/admin/contracts/ContractTemplatesPage';
@@ -278,7 +278,7 @@ function App() {
                             <Route path="quotes/catalog/templates/:id" element={<QuoteTemplateEditorPage />} />
                             <Route path="quotes/new" element={<QuoteEditorPage />} />
                             <Route path="quotes/:id" element={<QuoteDetailPage />} />
-                            <Route path="quotes/:id/edit" element={<QuoteEditorPage />} />
+                            <Route path="quotes/:id/edit" element={<RedirectToRecord base="/admin/clients/quotes" />} />
                           </Route>
                           {/* Project Overview (CRM) — admin-only grouping
                               layer above events, gated by `projects`. */}
@@ -291,7 +291,7 @@ function App() {
                             <Route path="bills" element={<BillsListPage />} />
                             <Route path="bills/new" element={<BillEditorPage />} />
                             <Route path="bills/:id" element={<BillDetailPage />} />
-                            <Route path="bills/:id/edit" element={<BillEditorPage />} />
+                            <Route path="bills/:id/edit" element={<RedirectToRecord base="/admin/clients/bills" />} />
                           </Route>
 
                           {/* Contracts (CRM) — gated by `contracts`. Independent
@@ -305,7 +305,7 @@ function App() {
                             <Route path="contracts/templates/:id" element={<Suspense fallback={<Loading />}><ContractTemplateEditorPage /></Suspense>} />
                             <Route path="contracts/attachments" element={<ContractAttachmentsPage />} />
                             <Route path="contracts/:id" element={<ContractDetailPage />} />
-                            <Route path="contracts/:id/edit" element={<ContractEditorPage />} />
+                            <Route path="contracts/:id/edit" element={<RedirectToRecord base="/admin/clients/contracts" />} />
                           </Route>
 
                           {/* Hour logging (standalone surface) — gated by
@@ -340,7 +340,7 @@ function App() {
                           <Route element={<RequireFeature flag="newsletters" />}>
                             <Route path="newsletters" element={<NewsletterListPage />} />
                             <Route path="newsletters/:id" element={<NewsletterDetailPage />} />
-                            <Route path="newsletters/:id/edit" element={<NewsletterComposerPage />} />
+                            <Route path="newsletters/:id/edit" element={<RedirectToRecord base="/admin/clients/newsletters" />} />
                           </Route>
                           {/* Developer tools — gated by `crmDevelopment`. */}
                           <Route element={<RequireFeature flag="crmDevelopment" />}>

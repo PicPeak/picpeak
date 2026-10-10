@@ -313,7 +313,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
                   className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
                     showVariables
                       ? 'bg-accent-dark/15 text-accent-dark'
-                      : 'bg-inset text-body hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                      : 'bg-inset text-body hover:bg-fill'
                   }`}
                   type="button"
                 >
@@ -342,8 +342,8 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
               onClick={isSourceMode ? switchToVisual : switchToSource}
               className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
                 isSourceMode
-                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                  : 'bg-inset text-body hover:bg-neutral-200 dark:hover:bg-neutral-600'
+                  ? 'bg-warning-soft text-warning-text'
+                  : 'bg-inset text-body hover:bg-fill'
               }`}
               type="button"
             >
@@ -363,7 +363,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
             onChange={(e) => setLinkUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addLink()}
             placeholder={t('email.editor.enterUrl')}
-            className="flex-1 px-3 py-1 text-sm border border-accent-dark/30 bg-panel text-heading rounded-md focus:ring-2 focus:ring-primary-500"
+            className="flex-1 px-3 py-1 text-sm border border-accent-dark/30 bg-panel text-heading rounded-md focus:ring-2 focus:ring-accent"
             autoFocus
           />
           <button
@@ -375,7 +375,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
           </button>
           <button
             onClick={() => { setShowLinkDialog(false); setLinkUrl(''); }}
-            className="px-3 py-1 text-sm bg-fill text-body rounded-md hover:bg-neutral-300 dark:hover:bg-neutral-600"
+            className="px-3 py-1 text-sm bg-fill text-body rounded-md hover:bg-fill-strong"
             type="button"
           >
             {t('email.editor.cancel')}
@@ -396,7 +396,7 @@ export const EmailTemplateEditor: React.FC<EmailTemplateEditorProps> = ({
       ) : (
         <EditorContent
           editor={editor}
-          className="min-h-[300px] p-4 prose prose-neutral dark:prose-invert max-w-none bg-shell text-heading focus:outline-none [&_.ProseMirror]:min-h-[300px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-neutral-900 [&_.ProseMirror]:dark:text-neutral-100 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-neutral-400 [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
+          className="min-h-[300px] p-4 prose prose-neutral dark:prose-invert max-w-none bg-shell text-heading focus:outline-none [&_.ProseMirror]:min-h-[300px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:text-heading [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-faint [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0"
         />
       )}
     </div>

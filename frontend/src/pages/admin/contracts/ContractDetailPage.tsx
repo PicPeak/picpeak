@@ -1,17 +1,18 @@
 /**
  * Admin → Contract detail page.
  *
- * Read-only view for sent / signed / cancelled contracts. Surfaces:
+ * One page per contract: a draft is edited in place (ContractForm with the
+ * page's save bar); sent / signed / cancelled contracts are read-only.
+ * Surfaces:
  *   - Status + signing evidence (names, IPs, timestamps)
  *   - PDF download + signed-PDF download (when present)
  *   - "Counter-sign" form when customer has signed
  *   - "Upload signed PDF" file picker (admin path)
  *   - "Send" / "Cancel" buttons for drafts
  *
- * The actual editor lives at /:id/edit and refuses to load when the
- * contract is no longer in draft status.
+ * `/:id/edit` redirects here (RedirectToRecord).
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -21,11 +22,15 @@ import { billsService } from '../../../services/bills.service';
 import { quotesService } from '../../../services/quotes.service';
 import SignaturePad from 'signature_pad';
 import {
-  Edit2, Send, X, FileDown, Upload, CheckSquare, ScrollText,
+  Send, X, FileDown, Upload, CheckSquare, Eye, ScrollText,
   ArrowRightCircle, Receipt, RotateCcw, MailCheck,
   ShieldCheck, CheckCircle2, XCircle,
 } from 'lucide-react';
-import { Button, Card, Loading } from '../../../components/common';
+import { ActionMenu, Badge, Button, Card, Loading, Notice, useConfirm, type ActionMenuItem, type BadgeTone } from '../../../components/common';
+import { DocumentHeader } from '../../../components/admin/DocumentHeader';
+import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
+import { usePermission } from '../../../hooks/usePermission';
+import { ContractForm, type ContractFormHandle, type ContractFormState } from './ContractEditorPage';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import {
   contractsService,
@@ -49,17 +54,10 @@ function signerProgressOf(signers: { role: string; status: string }[] | undefine
   return { signed: customers.filter((s) => s.status === 'signed').length, total: customers.length };
 }
 
-function statusBadgeClass(status: ContractStatus): string {
-  return status === 'fully_signed'         ? 'bg-green-100 text-green-800'
-    : status === 'signed_by_customer'      ? 'bg-blue-100 text-blue-800'
-    : status === 'signed_by_admin'         ? 'bg-blue-100 text-blue-800'
-    : status === 'sent'                    ? 'bg-amber-100 text-amber-800'
-    : status === 'declined'                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
-    : status === 'cancelled'               ? 'bg-neutral-200 text-neutral-600'
-    : status === 'expired'                 ? 'bg-neutral-200 text-neutral-600'
-    : status === 'awaiting_data'           ? 'bg-amber-100 text-amber-800'
-    :                                        'bg-neutral-100 text-neutral-700';
-}
+const STATUS_TONE: Partial<Record<ContractStatus, BadgeTone>> = {
+  draft: 'neutral', awaiting_data: 'warning', sent: 'warning', signed_by_customer: 'info', signed_by_admin: 'info',
+  fully_signed: 'success', declined: 'danger', cancelled: 'neutral', expired: 'neutral',
+};
 
 export const ContractDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -258,6 +256,13 @@ export const ContractDetailPage: React.FC = () => {
     errorMessage: t('contracts.detail.convertError', 'Convert failed') as string,
   });
 
+  const confirm = useConfirm();
+  const canManage = usePermission('contracts.manage');
+  // A draft's page is its editor; the form reports unsaved edits.
+  const formRef = useRef<ContractFormHandle>(null);
+  const [formState, setFormState] = useState<ContractFormState>({ dirty: false, busy: false, valid: true });
+  const onFormState = useCallback((next: ContractFormState) => setFormState(next), []);
+
   if (isLoading) return <Loading />;
   if (!data || !data.contract) {
     return (
@@ -267,6 +272,10 @@ export const ContractDetailPage: React.FC = () => {
     );
   }
   const c = data.contract;
+  // Sent contracts are locked at the service layer: cancel and start a
+  // fresh one for amendments.
+  const editable = canManage && c.status === 'draft';
+  const dirty = editable && formState.dirty;
 
   async function handlePdfDownload() {
     if (!numericId) return;
@@ -336,438 +345,400 @@ export const ContractDetailPage: React.FC = () => {
     }
   }
 
+  const customerName = c.customer.companyName
+    || [c.customer.firstName, c.customer.lastName].filter(Boolean).join(' ')
+    || c.customer.displayName
+    || c.customer.email;
+  // Once signed by everyone, a contract converts into an event + invoices
+  // (or invoices only). Afterwards an extra invoice starts from it instead.
+  const alreadyConverted = !!c.convertedEventId || (Array.isArray(linkedInvoices) && linkedInvoices.length > 0);
+  const canConvert = c.status === 'fully_signed' && !alreadyConverted;
+
+  const previewDraft = async () => {
+    // Unsaved changes are saved first: the PDF is rendered from the draft.
+    if (dirty && !(await formRef.current?.save())) return;
+    await handlePdfPreview();
+  };
+  const sendDraft = async () => {
+    if (dirty) {
+      if (!(await confirm({
+        title: t('contracts.detail.saveAndSendTitle', 'Send with your unsaved changes?'),
+        message: t('contracts.detail.saveAndSendMessage', 'Your changes are saved first, then you review the contract before it goes out.'),
+        confirmLabel: t('contracts.detail.saveAndReview', 'Save & review'),
+      }))) return;
+      if (!(await formRef.current?.save())) return;
+    }
+    setReviewing(true);
+  };
+  const cancelContract = async () => {
+    if (await confirm({
+      message: t('contracts.detail.cancelConfirm', 'Cancel this contract? Customer signing link will be invalidated.'),
+      variant: 'danger',
+      confirmLabel: t('contracts.detail.cancelContract', 'Cancel contract'),
+    })) cancelMutation.mutate();
+  };
+  const resendSigned = async () => {
+    if (await confirm({
+      message: t('contracts.detail.confirmResendSigned', 'Re-send the signed contract PDF to both parties?'),
+      confirmLabel: t('contracts.detail.resendSigned', 'Re-send signed PDF'),
+    })) resendSignedMutation.mutate();
+  };
+  const convertToEvent = async () => {
+    if (await confirm({
+      message: t('contracts.detail.confirmConvertEvent', 'Convert this contract into an event + scheduled invoices?'),
+      confirmLabel: t('contracts.detail.convertToEvent', 'Convert to event'),
+    })) convertToEventMutation.mutate();
+  };
+  const convertToInvoice = async () => {
+    if (await confirm({
+      message: t('contracts.detail.confirmConvertInvoice', 'Convert this contract into invoice(s) only? No gallery / event will be created.'),
+      confirmLabel: t('contracts.detail.convertToInvoice', 'Convert to invoice only'),
+    })) convertToInvoiceMutation.mutate();
+  };
+
+  const menu: ActionMenuItem[] = [
+    ...(canManage && canConvert && flags.bills ? [{ key: 'invoice', icon: <Receipt />, label: t('contracts.detail.convertToInvoice', 'Convert to invoice only'), disabled: convertToInvoiceMutation.isPending || convertToEventMutation.isPending, onSelect: () => { void convertToInvoice(); } }] : []),
+    // Already converted: extra invoices (expenses, change requests) start
+    // from the contract, pre-filled with its customer, event and lines.
+    ...(canManage && c.status === 'fully_signed' && alreadyConverted && flags.bills ? [{ key: 'newInvoice', icon: <Receipt />, label: t('contracts.detail.newInvoice', 'New invoice'), onSelect: () => navigate(`/admin/clients/bills/new?fromContractId=${c.id}`) }] : []),
+    // The upload completes the contract for every signer, so it goes through
+    // a dialog that confirms whose signatures the paper copy carries (#1446).
+    ...(canManage && (c.status === 'sent' || c.status === 'signed_by_customer') ? [{ key: 'upload', icon: <Upload />, label: t('contracts.detail.uploadSigned', 'Upload signed PDF'), disabled: uploadMutation.isPending, onSelect: () => setUploadOpen(true) }] : []),
+    ...(c.signedPdfPath ? [{ key: 'signedPdf', icon: <FileDown />, label: t('contracts.detail.downloadSignedPdf', 'Download signed PDF'), onSelect: () => { void handleSignedPdfDownload(); } }] : []),
+    // The signing certificate (#1446): the evidence record issued at completion.
+    ...(hasCertificate ? [{ key: 'certificate', icon: <FileDown />, label: t('contracts.detail.downloadCertificate', 'Download signing certificate'), onSelect: () => { void handleCertificateDownload(); } }] : []),
+    // Recovery: re-render the signed PDF and resend the confirmation email.
+    ...(canManage && c.status === 'fully_signed' ? [{ key: 'resend', icon: <MailCheck />, label: t('contracts.detail.resendSigned', 'Re-send signed PDF'), disabled: resendSignedMutation.isPending, onSelect: () => { void resendSigned(); } }] : []),
+    ...(canManage && (c.status === 'draft' || c.status === 'sent' || c.status === 'awaiting_data') ? [{ key: 'cancel', icon: <X />, label: t('contracts.detail.cancelContract', 'Cancel contract'), danger: true, disabled: cancelMutation.isPending, onSelect: () => { void cancelContract(); } }] : []),
+  ];
+
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold flex items-center gap-2 flex-1">
-          <ScrollText className="w-6 h-6" />
-          <span className="font-mono text-base">{c.contractNumber}</span>
-          {c.title && <span className="text-base text-soft">— {c.title}</span>}
-          {c.templateName && (
-            <span className="text-xs font-normal text-soft">
-              {t('contracts.detail.fromTemplate', 'Template: {{name}} · v{{version}}', { name: c.templateName, version: c.templateVersion ?? '' })}
-            </span>
-          )}
-        </h1>
-        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusBadgeClass(c.status)}`}>
-          {contractStatusLabel(t, c.status, signerProgressOf(signersQuery.data?.signers))}
-        </span>
-      </div>
-
-      {/* Action bar */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {c.status === 'draft' && (
+      <DocumentHeader
+        title={<span className="font-mono">{c.contractNumber}</span>}
+        status={(
+          <Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>
+            {contractStatusLabel(t, c.status, signerProgressOf(signersQuery.data?.signers))}
+          </Badge>
+        )}
+        meta={(
           <>
-            <Button variant="outline" onClick={() => navigate(`/admin/clients/contracts/${c.id}/edit`)}>
-              <Edit2 className="w-4 h-4 mr-1" />
-              {t('contracts.detail.edit', 'Edit')}
-            </Button>
-            <Button variant="outline" onClick={handlePdfPreview}>
-              <FileDown className="w-4 h-4 mr-1" />
-              {t('contracts.detail.previewPdf', 'Preview PDF')}
-            </Button>
-            <Button onClick={() => setReviewing(true)} disabled={sendMutation.isPending}>
-              <Send className="w-4 h-4 mr-1" />
-              {t('contracts.detail.send', 'Send to customer')}
-            </Button>
+            <span>{t('contracts.forCustomer', 'for {{name}}', { name: customerName })}</span>
+            {c.title && <span>· {c.title}</span>}
+            {c.templateName && (
+              <span>· {t('contracts.detail.fromTemplate', 'Template: {{name}} · v{{version}}', { name: c.templateName, version: c.templateVersion ?? '' })}</span>
+            )}
           </>
         )}
-        {c.status === 'awaiting_data' && (c.dataCollectedAt ? (
-          <Button onClick={() => sendMutation.mutate({})} disabled={sendMutation.isPending}>
-            <Send className="w-4 h-4 mr-1" />
-            {t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
-          </Button>
-        ) : (
-          <span className="self-center text-sm text-soft">
-            {t('contracts.detail.waitingForDetails', 'Waiting for the customer to complete their details. The contract is prepared and sent to the other signers once they have.')}
-          </span>
-        ))}
-        {(c.status === 'draft' || c.status === 'sent' || c.status === 'awaiting_data') && (
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (window.confirm(t('contracts.detail.cancelConfirm', 'Cancel this contract? Customer signing link will be invalidated.') as string)) {
-                cancelMutation.mutate();
-              }
-            }}
-            disabled={cancelMutation.isPending}
-          >
-            <X className="w-4 h-4 mr-1" />
-            {t('contracts.detail.cancel', 'Cancel')}
-          </Button>
-        )}
-        {c.pdfPath && (
-          <Button variant="outline" onClick={handlePdfDownload}>
-            <FileDown className="w-4 h-4 mr-1" />
-            {t('contracts.detail.downloadPdf', 'Download PDF')}
-          </Button>
-        )}
-        {c.signedPdfPath && (
-          <Button variant="outline" onClick={handleSignedPdfDownload}>
-            <FileDown className="w-4 h-4 mr-1" />
-            {t('contracts.detail.downloadSignedPdf', 'Download signed PDF')}
-          </Button>
-        )}
-        {/* The signing certificate (#1446) — the evidence record issued at
-            completion. It used to leave the server only as an email
-            attachment, so a lost email was a lost certificate. */}
-        {hasCertificate && (
-          <Button variant="outline" onClick={handleCertificateDownload}>
-            <FileDown className="w-4 h-4 mr-1" />
-            {t('contracts.detail.downloadCertificate', 'Download signing certificate')}
-          </Button>
-        )}
-        {/* Recovery action — on fully-signed contracts, lets the admin
-            re-render the signed PDF (if a previous render failed) and
-            resend the confirmation email to both parties. Also useful
-            when the customer claims they didn't receive it. */}
-        {c.status === 'fully_signed' && (
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (window.confirm(t('contracts.detail.confirmResendSigned',
-                'Re-send the signed contract PDF to both parties?') as string)) {
-                resendSignedMutation.mutate();
-              }
-            }}
-            disabled={resendSignedMutation.isPending}
-          >
-            <MailCheck className="w-4 h-4 mr-1" />
-            {t('contracts.detail.resendSigned', 'Re-send signed PDF')}
-          </Button>
-        )}
-        {(c.status === 'sent' || c.status === 'signed_by_customer') && (
-          // The upload completes the contract for every signer, so it goes
-          // through a dialog that has the admin confirm whose signatures the
-          // paper copy carries (#1446).
-          <Button
-            variant="outline"
-            onClick={() => setUploadOpen(true)}
-            disabled={uploadMutation.isPending}
-          >
-            <Upload className="w-4 h-4 mr-1" />
-            {t('contracts.detail.uploadSigned', 'Upload signed PDF')}
-          </Button>
-        )}
-
-        {/* Forward conversions — only available once both parties have
-            signed. The two "Convert to ..." buttons replay the source
-            quote's installment schedule (so they require a source
-            quote OR a standalone-contract path the backend handles).
-            Once conversion has happened (event row created OR at least
-            one invoice already references this contract) the source
-            quote is in 'converted' status and both convert calls would
-            error. We swap them for a "New invoice" link that mints an
-            ad-hoc invoice — admins commonly want extra invoices on
-            top of the scheduled ones (out-of-pocket expenses, change
-            requests, etc.). */}
-        {c.status === 'fully_signed' && (() => {
-          const alreadyConverted = !!c.convertedEventId
-            || (Array.isArray(linkedInvoices) && linkedInvoices.length > 0);
-          if (alreadyConverted) {
-            // fromContractId tells the bill editor to pre-fill customer
-            // + event snapshot from the contract AND line items +
-            // currency + VAT from the source quote (when present).
-            // Mirrors the convertToInvoiceOnly auto-fill but for the
-            // ad-hoc "extra invoice" flow.
-            // H.5 — gate behind the `bills` flag; without it the
-            // /admin/clients/bills/new route is hidden + the button
-            // would lead nowhere.
-            if (!flags.bills) return null;
-            return (
-              <Link to={`/admin/clients/bills/new?fromContractId=${c.id}`}>
-                <Button variant="outline">
-                  <Receipt className="w-4 h-4 mr-1" />
-                  {t('contracts.detail.newInvoice', 'New invoice')}
-                </Button>
-              </Link>
-            );
-          }
-          return (
-            <>
-              <Button
-                onClick={() => {
-                  if (window.confirm(t('contracts.detail.confirmConvertEvent',
-                    'Convert this contract into an event + scheduled invoices?') as string)) {
-                    convertToEventMutation.mutate();
-                  }
-                }}
-                disabled={convertToEventMutation.isPending}
-              >
-                <ArrowRightCircle className="w-4 h-4 mr-1" />
+        actions={(
+          <>
+            <ActionMenu items={menu} />
+            {c.status === 'draft' ? (
+              <Button variant="outline" onClick={() => { void previewDraft(); }} disabled={formState.busy} leftIcon={<Eye className="w-4 h-4" />}>
+                {t('contracts.detail.previewPdf', 'Preview PDF')}
+              </Button>
+            ) : c.pdfPath ? (
+              <Button variant="outline" onClick={handlePdfDownload} leftIcon={<FileDown className="w-4 h-4" />}>
+                {t('contracts.detail.downloadPdf', 'Download PDF')}
+              </Button>
+            ) : null}
+            {canManage && c.status === 'draft' && (
+              <Button onClick={() => { void sendDraft(); }} disabled={sendMutation.isPending || formState.busy} leftIcon={<Send className="w-4 h-4" />}>
+                {t('contracts.detail.send', 'Send to customer')}
+              </Button>
+            )}
+            {canManage && c.status === 'awaiting_data' && c.dataCollectedAt && (
+              <Button onClick={() => sendMutation.mutate({})} disabled={sendMutation.isPending} leftIcon={<Send className="w-4 h-4" />}>
+                {t('contracts.detail.finishSending', 'Finish sending with the customer\'s details')}
+              </Button>
+            )}
+            {canManage && canConvert && (
+              <Button onClick={() => { void convertToEvent(); }} disabled={convertToEventMutation.isPending || convertToInvoiceMutation.isPending} leftIcon={<ArrowRightCircle className="w-4 h-4" />}>
                 {t('contracts.detail.convertToEvent', 'Convert to event')}
               </Button>
-              {flags.bills && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (window.confirm(t('contracts.detail.confirmConvertInvoice',
-                      'Convert this contract into invoice(s) only? No gallery / event will be created.') as string)) {
-                      convertToInvoiceMutation.mutate();
-                    }
-                  }}
-                  disabled={convertToInvoiceMutation.isPending}
-                >
-                  <Receipt className="w-4 h-4 mr-1" />
-                  {t('contracts.detail.convertToInvoice', 'Convert to invoice only')}
-                </Button>
-              )}
-            </>
-          );
-        })()}
-      </div>
-
-      {/* Migration 136 — recovery banner. The post-sign PDF stamp is
-          best-effort (wrapped in try/catch so signature evidence
-          persists even when pdf-lib chokes). When the most recent
-          attempt failed, signed_pdf_render_failed_at is non-null and
-          we surface it here so the admin can hit "Re-send signed PDF"
-          (which re-stamps from the immutable pdf_path) without having
-          to discover the orphan state via monitoring. */}
-      {c.signedPdfRenderFailedAt && (
-        <Card padding="lg" className="mb-4 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30">
-          <h2 className="font-semibold mb-1 text-red-900 dark:text-red-200">
-            {t('contracts.detail.renderFailedTitle',
-              'Signed PDF stamp failed — re-stamp required')}
-          </h2>
-          <p className="text-sm text-red-900 dark:text-red-200">
-            {t('contracts.detail.renderFailedBody',
-              'The signature evidence is recorded, but the stamped PDF was not generated on the last attempt. Click "Re-send signed PDF" above to re-stamp from the original document and resend.')}
-          </p>
-          {c.signedPdfRenderError && (
-            <p className="mt-2 text-xs font-mono text-red-800 dark:text-red-300 break-words">
-              {c.signedPdfRenderError}
-            </p>
-          )}
-        </Card>
+            )}
+          </>
+        )}
+      />
+      {c.status === 'awaiting_data' && !c.dataCollectedAt && (
+        <Notice tone="info" className="mb-4">
+          {t('contracts.detail.waitingForDetails', 'Waiting for the customer to complete their details. The contract is prepared and sent to the other signers once they have.')}
+        </Notice>
       )}
 
-      {/* Recipient + dates */}
-      <Card padding="lg" className="mb-4">
-        <h2 className="font-semibold mb-2">{t('contracts.detail.parties', 'Parties')}</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-xs uppercase text-muted tracking-wide">
-              {t('contracts.detail.customer', 'Customer')}
-            </p>
-            <p className="font-medium">
-              {c.customer.companyName
-                || [c.customer.firstName, c.customer.lastName].filter(Boolean).join(' ')
-                || c.customer.displayName
-                || c.customer.email}
-            </p>
-            <p className="text-xs text-body">{c.customer.email}</p>
+      {editable ? (
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
+          <div className="min-w-0">
+            <ContractForm ref={formRef} contractId={c.id} onStateChange={onFormState} />
           </div>
-          <div>
-            <p className="text-xs uppercase text-muted tracking-wide">
-              {t('contracts.detail.dates', 'Dates')}
-            </p>
-            <p className="text-xs">
-              <span className="text-body">{t('contracts.detail.issued', 'Issued')}: </span>
-              {formatDate(c.issueDate)}
-            </p>
-            {c.validUntil && (
-              <p className="text-xs">
-                <span className="text-body">{t('contracts.detail.signBy', 'Sign by')}: </span>
-                {formatDate(c.validUntil)}
-              </p>
-            )}
-            {c.sentAt && (
-              <p className="text-xs">
-                <span className="text-body">{t('contracts.detail.sentAt', 'Sent at')}: </span>
-                {formatDateTime(c.sentAt)}
-              </p>
-            )}
-            {/* Inline lineage badges so the linked invoice / source
-                quote numbers are visible at-a-glance, matching the
-                "From contract" badge layout on BillDetailPage's top
-                stats. The full lineage card below still lists all
-                linked invoices with status, but the most common
-                lookup ("which invoice did this contract become?") now
-                surfaces without scrolling. */}
-            {sourceQuoteId && (
-              <p className="text-xs">
-                <span className="text-body">{t('contracts.detail.fromQuote', 'From quote')}: </span>
-                <Link
-                  to={`/admin/clients/quotes/${sourceQuoteId}`}
-                  className="text-accent-dark hover:underline font-mono"
-                >
-                  {sourceQuoteData?.quote?.quoteNumber || `#${sourceQuoteId}`}
-                </Link>
-              </p>
-            )}
-            {linkedInvoices && linkedInvoices.length > 0 && (
-              <p className="text-xs">
-                <span className="text-body">{t('contracts.detail.linkedInvoice', 'Invoice')}: </span>
-                <Link
-                  to={`/admin/clients/bills/${linkedInvoices[0].id}`}
-                  className="text-accent-dark hover:underline font-mono"
-                >
-                  {linkedInvoices[0].invoiceNumber}
-                </Link>
-                {linkedInvoices.length > 1 && (
-                  <span className="text-body"> (+{linkedInvoices.length - 1})</span>
-                )}
-              </p>
-            )}
+          <div className="space-y-4">
+            <DocumentLineageCard dealUuid={c.dealUuid} current={{ kind: 'contract', id: c.id }} />
           </div>
         </div>
-      </Card>
-
-      {/* Signatures v2: every signer, the signing log, the evidence. */}
-      {isV2 && signersQuery.data && numericId !== null && (
-        <SigningOverviewCard contractId={numericId} contractStatus={c.status} overview={signersQuery.data} />
-      )}
-
-      {/* Signature evidence — contracts sent before v2 (the Signers card
-          above covers v2). */}
-      {legacySigning && (c.signedByCustomerAt || c.signedByAdminAt) && (
-        <Card padding="lg" className="mb-4">
-          <h2 className="font-semibold mb-2">{t('contracts.detail.signatures', 'Signatures')}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="p-3 rounded border border-line">
-              <p className="text-xs uppercase text-muted tracking-wide">
-                {t('contracts.detail.signedByCustomer', 'Signed by customer')}
+      ) : (
+        <>
+          {/* Migration 136 — recovery banner. The post-sign PDF stamp is
+              best-effort (wrapped in try/catch so signature evidence
+              persists even when pdf-lib chokes). When the most recent
+              attempt failed, signed_pdf_render_failed_at is non-null and
+              we surface it here so the admin can hit "Re-send signed PDF"
+              (which re-stamps from the immutable pdf_path) without having
+              to discover the orphan state via monitoring. */}
+          {c.signedPdfRenderFailedAt && (
+            <Card padding="lg" className="mb-4 border-danger-line bg-danger-soft">
+              <h2 className="font-semibold mb-1 text-danger-text">
+                {t('contracts.detail.renderFailedTitle',
+                  'Signed PDF stamp failed — re-stamp required')}
+              </h2>
+              <p className="text-sm text-danger-text">
+                {t('contracts.detail.renderFailedBody',
+                  'The signature evidence is recorded, but the stamped PDF was not generated on the last attempt. Click "Re-send signed PDF" above to re-stamp from the original document and resend.')}
               </p>
-              {c.signedByCustomerAt ? (
-                <>
-                  <p className="font-medium">{c.signedCustomerName}</p>
-                  <p className="text-xs text-body">{formatDateTime(c.signedByCustomerAt)}</p>
-                  {!c.signedCustomerSignaturePath && (
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                      {t('contracts.detail.noSignatureImage',
-                        'No signature image captured — use "Re-stamp signatures" below to add one.')}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-body">—</p>
+              {c.signedPdfRenderError && (
+                <p className="mt-2 text-xs font-mono text-danger-text break-words">
+                  {c.signedPdfRenderError}
+                </p>
               )}
-            </div>
-            <div className="p-3 rounded border border-line">
-              <p className="text-xs uppercase text-muted tracking-wide">
-                {t('contracts.detail.signedByAdmin', 'Counter-signed')}
-              </p>
-              {c.signedByAdminAt ? (
-                <>
-                  <p className="font-medium">{c.signedAdminName}</p>
-                  <p className="text-xs text-body">{formatDateTime(c.signedByAdminAt)}</p>
-                  {!c.signedAdminSignaturePath && (
-                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                      {t('contracts.detail.noSignatureImage',
-                        'No signature image captured — use "Re-stamp signatures" below to add one.')}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-xs text-body">—</p>
-              )}
-            </div>
-          </div>
-        </Card>
-      )}
+            </Card>
+          )}
 
-      {/* Counter-sign form. Mirrors the public sign page: typed name +
-          drawn signature (signature_pad) so the rendered PDF carries
-          both signatures, not just typed labels. */}
-      {c.status === 'signed_by_customer' && !c.signedByAdminAt && (
-        <PermissionGate permission="contracts.manage">
-          <CountersignCard
-            name={countersignName}
-            setName={setCountersignName}
-            padRef={countersignPadRef}
-            onSubmit={() => countersignMutation.mutate()}
-            pending={countersignMutation.isPending}
-            modeChoice={isV2 ? { mode: countersignMode, setMode: setCountersignMode } : null}
+          {/* Recipient + dates */}
+          <Card padding="lg" className="mb-4">
+            <h2 className="font-semibold mb-2">{t('contracts.detail.parties', 'Parties')}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs uppercase text-muted tracking-wide">
+                  {t('contracts.detail.customer', 'Customer')}
+                </p>
+                <p className="font-medium">
+                  {c.customer.companyName
+                    || [c.customer.firstName, c.customer.lastName].filter(Boolean).join(' ')
+                    || c.customer.displayName
+                    || c.customer.email}
+                </p>
+                <p className="text-xs text-body">{c.customer.email}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-muted tracking-wide">
+                  {t('contracts.detail.dates', 'Dates')}
+                </p>
+                <p className="text-xs">
+                  <span className="text-body">{t('contracts.detail.issued', 'Issued')}: </span>
+                  {formatDate(c.issueDate)}
+                </p>
+                {c.validUntil && (
+                  <p className="text-xs">
+                    <span className="text-body">{t('contracts.detail.signBy', 'Sign by')}: </span>
+                    {formatDate(c.validUntil)}
+                  </p>
+                )}
+                {c.sentAt && (
+                  <p className="text-xs">
+                    <span className="text-body">{t('contracts.detail.sentAt', 'Sent at')}: </span>
+                    {formatDateTime(c.sentAt)}
+                  </p>
+                )}
+                {/* Inline lineage badges so the linked invoice / source
+                    quote numbers are visible at-a-glance, matching the
+                    "From contract" badge layout on BillDetailPage's top
+                    stats. The full lineage card below still lists all
+                    linked invoices with status, but the most common
+                    lookup ("which invoice did this contract become?") now
+                    surfaces without scrolling. */}
+                {sourceQuoteId && (
+                  <p className="text-xs">
+                    <span className="text-body">{t('contracts.detail.fromQuote', 'From quote')}: </span>
+                    <Link
+                      to={`/admin/clients/quotes/${sourceQuoteId}`}
+                      className="text-accent-dark hover:underline font-mono"
+                    >
+                      {sourceQuoteData?.quote?.quoteNumber || `#${sourceQuoteId}`}
+                    </Link>
+                  </p>
+                )}
+                {linkedInvoices && linkedInvoices.length > 0 && (
+                  <p className="text-xs">
+                    <span className="text-body">{t('contracts.detail.linkedInvoice', 'Invoice')}: </span>
+                    <Link
+                      to={`/admin/clients/bills/${linkedInvoices[0].id}`}
+                      className="text-accent-dark hover:underline font-mono"
+                    >
+                      {linkedInvoices[0].invoiceNumber}
+                    </Link>
+                    {linkedInvoices.length > 1 && (
+                      <span className="text-body"> (+{linkedInvoices.length - 1})</span>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* Signatures v2: every signer, the signing log, the evidence. */}
+          {isV2 && signersQuery.data && numericId !== null && (
+            <SigningOverviewCard contractId={numericId} contractStatus={c.status} overview={signersQuery.data} />
+          )}
+
+          {/* Signature evidence — contracts sent before v2 (the Signers card
+              above covers v2). */}
+          {legacySigning && (c.signedByCustomerAt || c.signedByAdminAt) && (
+            <Card padding="lg" className="mb-4">
+              <h2 className="font-semibold mb-2">{t('contracts.detail.signatures', 'Signatures')}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div className="p-3 rounded border border-line">
+                  <p className="text-xs uppercase text-muted tracking-wide">
+                    {t('contracts.detail.signedByCustomer', 'Signed by customer')}
+                  </p>
+                  {c.signedByCustomerAt ? (
+                    <>
+                      <p className="font-medium">{c.signedCustomerName}</p>
+                      <p className="text-xs text-body">{formatDateTime(c.signedByCustomerAt)}</p>
+                      {!c.signedCustomerSignaturePath && (
+                        <p className="text-xs text-warning-text mt-1">
+                          {t('contracts.detail.noSignatureImage',
+                            'No signature image captured — use "Re-stamp signatures" below to add one.')}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-body">—</p>
+                  )}
+                </div>
+                <div className="p-3 rounded border border-line">
+                  <p className="text-xs uppercase text-muted tracking-wide">
+                    {t('contracts.detail.signedByAdmin', 'Counter-signed')}
+                  </p>
+                  {c.signedByAdminAt ? (
+                    <>
+                      <p className="font-medium">{c.signedAdminName}</p>
+                      <p className="text-xs text-body">{formatDateTime(c.signedByAdminAt)}</p>
+                      {!c.signedAdminSignaturePath && (
+                        <p className="text-xs text-warning-text mt-1">
+                          {t('contracts.detail.noSignatureImage',
+                            'No signature image captured — use "Re-stamp signatures" below to add one.')}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-body">—</p>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Counter-sign form. Mirrors the public sign page: typed name +
+              drawn signature (signature_pad) so the rendered PDF carries
+              both signatures, not just typed labels. */}
+          {c.status === 'signed_by_customer' && !c.signedByAdminAt && (
+            <PermissionGate permission="contracts.manage">
+              <CountersignCard
+                name={countersignName}
+                setName={setCountersignName}
+                padRef={countersignPadRef}
+                onSubmit={() => countersignMutation.mutate()}
+                pending={countersignMutation.isPending}
+                modeChoice={isV2 ? { mode: countersignMode, setMode: setCountersignMode } : null}
+              />
+            </PermissionGate>
+          )}
+
+          {/* Re-stamp signatures card. Available on any already-signed
+              contract whose customer and/or admin signature image didn't
+              capture. Lets the admin draw the missing signature(s) on
+              their behalf and re-render the PDF. Names + timestamps + IPs
+              stay untouched — this is purely a "the canvas glitched, here
+              is the image we should have captured" recovery. */}
+          {legacySigning
+            && (c.status === 'signed_by_customer' || c.status === 'signed_by_admin' || c.status === 'fully_signed')
+            && (!c.signedCustomerSignaturePath || !c.signedAdminSignaturePath) && (
+            <RestampSignaturesCard
+              contract={c}
+              onSuccess={() => queryClient.invalidateQueries({ queryKey: ['contract', numericId] })}
+            />
+          )}
+
+          {/* Cross-document lineage via deal_uuid (migration 140). Replaces
+              the per-FK LinkedDocumentsCard for quotes / contracts /
+              invoices / Storni. Events sit outside the deal_uuid group, so
+              a converted-event link gets its own small badge below. */}
+          <DocumentLineageCard
+            dealUuid={c.dealUuid}
+            current={{ kind: 'contract', id: c.id }}
+            className="mb-4"
           />
-        </PermissionGate>
-      )}
+          {c.convertedEventId && (
+            <Card padding="md" className="mb-4">
+              <p className="text-sm">
+                <span className="text-muted mr-2">
+                  {t('contracts.detail.convertedToEvent', 'Converted to event')}:
+                </span>
+                <Link to={`/admin/events/${c.convertedEventId}`} className="font-medium text-accent hover:underline">
+                  #{c.convertedEventId}
+                </Link>
+              </p>
+            </Card>
+          )}
 
-      {/* Re-stamp signatures card. Available on any already-signed
-          contract whose customer and/or admin signature image didn't
-          capture. Lets the admin draw the missing signature(s) on
-          their behalf and re-render the PDF. Names + timestamps + IPs
-          stay untouched — this is purely a "the canvas glitched, here
-          is the image we should have captured" recovery. */}
-      {legacySigning
-        && (c.status === 'signed_by_customer' || c.status === 'signed_by_admin' || c.status === 'fully_signed')
-        && (!c.signedCustomerSignaturePath || !c.signedAdminSignaturePath) && (
-        <RestampSignaturesCard
-          contract={c}
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['contract', numericId] })}
+          {/* Block summary */}
+          <Card padding="lg">
+            <h2 className="font-semibold mb-2">{t('contracts.detail.blocks', 'Included blocks')}</h2>
+            {c.inclusions && c.inclusions.length > 0 ? (
+              <ul className="space-y-1 text-sm">
+                {c.inclusions
+                  .filter((inc) => inc.included)
+                  .map((inc) => (
+                    <li key={inc.id} className="flex items-center gap-2">
+                      <span className="text-xs uppercase tracking-wide text-muted w-24">{inc.section}</span>
+                      <span>{inc.block?.name || `Block ${inc.blockId}`}</span>
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted">
+                {t('contracts.detail.noBlocks', 'No blocks included.')}
+              </p>
+            )}
+          </Card>
+
+          {(c.attachments || []).length > 0 && (
+            <Card padding="lg" className="mt-4">
+              <h2 className="font-semibold mb-2">{t('contracts.attachments.heading', 'Attachments')}</h2>
+              <ul className="space-y-1 text-sm">
+                {(c.attachments || []).map((a) => (
+                  <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-heading">{a.name}</span>
+                    <span className="text-xs text-muted">
+                      {a.delivery === 'merged'
+                        ? t('contracts.attachments.merged', 'In the contract PDF')
+                        : t('contracts.attachments.separate', 'Separate file')}
+                      {' · '}{t('contracts.attachments.pages', '{{count}} pages', { count: a.pages })} · {formatAttachmentSize(a.bytes)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Audit trail (issue #5 from the maintainer plan) — a
+              chronological timeline of every event recorded on this
+              contract, sourced from activity_logs. Shows up below the
+              included blocks at the bottom of the page so it doesn't
+              dominate the layout but is always reachable. */}
+          {numericId && <IntegrityCheckCard contractId={numericId} />}
+          {numericId && <GeneratedDocumentsCard contractId={numericId} />}
+          {numericId && <AuditTrailCard contractId={numericId} />}
+        </>
+      )}
+      {editable && (
+        <SettingsSaveBar
+          isDirty={formState.dirty}
+          isSaving={formState.busy}
+          canSave={formState.valid}
+          onSave={() => { void formRef.current?.save(); }}
+          onDiscard={() => formRef.current?.discard()}
         />
       )}
-
-      {/* Cross-document lineage via deal_uuid (migration 140). Replaces
-          the per-FK LinkedDocumentsCard for quotes / contracts /
-          invoices / Storni. Events sit outside the deal_uuid group, so
-          a converted-event link gets its own small badge below. */}
-      <DocumentLineageCard
-        dealUuid={c.dealUuid}
-        current={{ kind: 'contract', id: c.id }}
-        className="mb-4"
-      />
-      {c.convertedEventId && (
-        <Card padding="md" className="mb-4">
-          <p className="text-sm">
-            <span className="text-muted mr-2">
-              {t('contracts.detail.convertedToEvent', 'Converted to event')}:
-            </span>
-            <Link to={`/admin/events/${c.convertedEventId}`} className="font-medium text-primary-600 dark:text-primary-400 hover:underline">
-              #{c.convertedEventId}
-            </Link>
-          </p>
-        </Card>
-      )}
-
-      {/* Block summary */}
-      <Card padding="lg">
-        <h2 className="font-semibold mb-2">{t('contracts.detail.blocks', 'Included blocks')}</h2>
-        {c.inclusions && c.inclusions.length > 0 ? (
-          <ul className="space-y-1 text-sm">
-            {c.inclusions
-              .filter((inc) => inc.included)
-              .map((inc) => (
-                <li key={inc.id} className="flex items-center gap-2">
-                  <span className="text-xs uppercase tracking-wide text-neutral-500 w-24">{inc.section}</span>
-                  <span>{inc.block?.name || `Block ${inc.blockId}`}</span>
-                </li>
-              ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-neutral-500">
-            {t('contracts.detail.noBlocks', 'No blocks included.')}
-          </p>
-        )}
-      </Card>
-
-      {(c.attachments || []).length > 0 && (
-        <Card padding="lg" className="mt-4">
-          <h2 className="font-semibold mb-2">{t('contracts.attachments.heading', 'Attachments')}</h2>
-          <ul className="space-y-1 text-sm">
-            {(c.attachments || []).map((a) => (
-              <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-heading">{a.name}</span>
-                <span className="text-xs text-muted">
-                  {a.delivery === 'merged'
-                    ? t('contracts.attachments.merged', 'In the contract PDF')
-                    : t('contracts.attachments.separate', 'Separate file')}
-                  {' · '}{t('contracts.attachments.pages', '{{count}} pages', { count: a.pages })} · {formatAttachmentSize(a.bytes)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
-      {/* Audit trail (issue #5 from the maintainer plan) — a
-          chronological timeline of every event recorded on this
-          contract, sourced from activity_logs. Shows up below the
-          included blocks at the bottom of the page so it doesn't
-          dominate the layout but is always reachable. */}
-      {numericId && <IntegrityCheckCard contractId={numericId} />}
-      {numericId && <GeneratedDocumentsCard contractId={numericId} />}
-      {numericId && <AuditTrailCard contractId={numericId} />}
 
       {numericId && (
         <PaperSignatureUploadDialog
@@ -830,22 +801,22 @@ export const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractI
   // one that was altered.
   const isMissing = (c: ContractIntegrityCheck) => c.ok === false && !(c.expected && c.actual);
   const verdict = (c: ContractIntegrityCheck) => (c.ok === true ? (
-    <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-300">
+    <span className="inline-flex items-center gap-1 text-xs text-success-text">
       <CheckCircle2 className="w-3.5 h-3.5" />
       {t('contracts.detail.integrity.match', 'Hash matches')}
     </span>
   ) : isMissing(c) ? (
-    <span className="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
+    <span className="inline-flex items-center gap-1 text-xs text-danger-text">
       <XCircle className="w-3.5 h-3.5" />
       {t('contracts.detail.integrity.missingArtefact', 'Missing — the file (or record) is gone')}
     </span>
   ) : c.ok === false ? (
-    <span className="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
+    <span className="inline-flex items-center gap-1 text-xs text-danger-text">
       <XCircle className="w-3.5 h-3.5" />
       {t('contracts.detail.integrity.mismatch', 'Hash mismatch — file altered')}
     </span>
   ) : (
-    <span className="text-xs text-neutral-500">{t('contracts.detail.integrity.notCheckable', 'Not checkable')}</span>
+    <span className="text-xs text-muted">{t('contracts.detail.integrity.notCheckable', 'Not checkable')}</span>
   ));
 
   return (
@@ -875,18 +846,18 @@ export const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractI
           </Button>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 mb-3">
+      <p className="text-xs text-muted mb-3">
         {t('contracts.detail.integrity.helpReport',
           'Re-reads every file of this contract — both PDFs, the signing certificate, each signature image and attachment — and re-checks the frozen content, the attachment list and the signing log against what was recorded when each was made. A mismatch names the item that changed.')}
       </p>
       {error && (
-        <p className="text-sm text-red-700 dark:text-red-300">
+        <p className="text-sm text-danger-text">
           {t('contracts.detail.integrity.error', 'Integrity check failed.')}
         </p>
       )}
       {data && data.checks && (
         <>
-          <p className={`text-sm font-medium mb-2 ${data.ok ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+          <p className={`text-sm font-medium mb-2 ${data.ok ? 'text-success-text' : 'text-danger-text'}`}>
             {data.ok
               ? t('contracts.detail.integrity.allOk', 'Every check passed.')
               : t('contracts.detail.integrity.someFailed', 'At least one check failed.')}
@@ -897,16 +868,16 @@ export const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractI
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-sm font-medium">
                     {t(`contracts.detail.integrity.check.${c.check}`, c.check)}
-                    {c.subject && <span className="ml-1 font-normal text-neutral-500">· {c.subject}</span>}
+                    {c.subject && <span className="ml-1 font-normal text-muted">· {c.subject}</span>}
                   </span>
                   {verdict(c)}
                 </div>
-                {c.note && c.note !== 'missing' && <p className="text-[11px] text-neutral-500">{c.note}</p>}
+                {c.note && c.note !== 'missing' && <p className="text-[11px] text-muted">{c.note}</p>}
                 <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-0.5 text-[11px] font-mono">
-                  <dt className="text-neutral-500">{t('contracts.detail.integrity.expected', 'expected')}</dt>
+                  <dt className="text-muted">{t('contracts.detail.integrity.expected', 'expected')}</dt>
                   <dd className="break-all">{c.expected || '—'}</dd>
-                  <dt className="text-neutral-500">{t('contracts.detail.integrity.actual', 'actual')}</dt>
-                  <dd className={c.ok === false ? 'break-all text-red-700 dark:text-red-300' : 'break-all'}>{c.actual || '—'}</dd>
+                  <dt className="text-muted">{t('contracts.detail.integrity.actual', 'actual')}</dt>
+                  <dd className={c.ok === false ? 'break-all text-danger-text' : 'break-all'}>{c.actual || '—'}</dd>
                 </dl>
               </li>
             ))}
@@ -1010,7 +981,7 @@ const AuditTrailCard: React.FC<{ contractId: number }> = ({ contractId }) => {
         <h2 className="font-semibold mb-2">
           {t('contracts.detail.auditTrail', 'Audit trail')}
         </h2>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted">
           {t('contracts.detail.auditEmpty', 'No audit-log entries yet.')}
         </p>
       </Card>
@@ -1023,7 +994,7 @@ const AuditTrailCard: React.FC<{ contractId: number }> = ({ contractId }) => {
         <ScrollText className="w-4 h-4" />
         {t('contracts.detail.auditTrail', 'Audit trail')}
       </h2>
-      <p className="text-xs text-neutral-500 mb-3">
+      <p className="text-xs text-muted mb-3">
         {t('contracts.detail.auditTrailHelp',
           'Every event recorded on this contract. The list is append-only and is the source of truth if the contract is challenged.')}
       </p>
@@ -1054,14 +1025,14 @@ const AuditTrailCard: React.FC<{ contractId: number }> = ({ contractId }) => {
             <li key={e.id} className="flex items-start gap-3 text-sm border-l-2 border-accent-dark pl-3">
               <div className="flex-1 min-w-0">
                 <div className="font-medium">{label}</div>
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-muted">
                   {e.actor_name || e.actor_type || 'system'}
                   {metaChips.length > 0 && (
                     <span className="ml-2 font-mono">· {metaChips.join(' · ')}</span>
                   )}
                 </div>
               </div>
-              <div className="text-xs text-neutral-500 whitespace-nowrap font-mono">
+              <div className="text-xs text-muted whitespace-nowrap font-mono">
                 {fmtDateTime(e.created_at)}
               </div>
             </li>
@@ -1253,7 +1224,7 @@ const RestampSignaturesCard: React.FC<RestampCardProps> = ({ contract, onSuccess
   const missingAdmin = !contract.signedAdminSignaturePath && contract.signedByAdminAt;
 
   return (
-    <Card padding="lg" className="mb-4 border-amber-300 dark:border-amber-700">
+    <Card padding="lg" className="mb-4 border-warning-line">
       <h2 className="font-semibold mb-2">
         {t('contracts.detail.restampTitle', 'Re-stamp missing signatures')}
       </h2>

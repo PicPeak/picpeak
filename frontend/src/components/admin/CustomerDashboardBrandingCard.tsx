@@ -16,7 +16,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Save, Image as ImageIcon, Type, UserCog } from 'lucide-react';
-import { Button, Card, Loading } from '../common';
+import { Button, Card, Loading, Switch } from '../common';
 import { api } from '../../config/api';
 import { useMutationWithToast } from '../../hooks';
 
@@ -49,27 +49,10 @@ interface ToggleProps {
 }
 
 const Toggle: React.FC<ToggleProps> = ({ enabled, onChange, label, hint, icon: Icon }) => (
-  <label className="flex items-start justify-between gap-4 py-3 cursor-pointer">
-    <div className="flex items-start gap-3 min-w-0">
-      <Icon className="w-5 h-5 mt-0.5 text-muted flex-shrink-0" />
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-heading">{label}</div>
-        {hint && <p className="text-xs text-muted mt-0.5">{hint}</p>}
-      </div>
-    </div>
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      onClick={onChange}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${enabled ? '' : 'bg-fill-strong'}`}
-      style={enabled ? { backgroundColor: 'var(--color-accent, #5C8762)' } : undefined}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`}
-      />
-    </button>
-  </label>
+  <div className="flex items-start gap-3 py-3">
+    <Icon className="w-5 h-5 mt-0.5 text-muted flex-shrink-0" />
+    <Switch className="flex-1 min-w-0" checked={enabled} onChange={() => onChange()} label={label} description={hint} />
+  </div>
 );
 
 export const CustomerDashboardBrandingCard: React.FC = () => {

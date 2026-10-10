@@ -119,8 +119,9 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
 
     // The mutation runs its function asynchronously, so wait for the pending
     // state before counting.
-    const saving = await screen.findByRole('button', { name: /saving/i });
-    expect(saving).toBeDisabled();
+    // The save bar's button shows the pending state while the create runs.
+    await waitFor(() => expect(screen.getByRole('button', { name: /create draft/i })).toHaveAttribute('aria-busy', 'true'));
+    expect(screen.getByRole('button', { name: /create draft/i })).toBeDisabled();
     expect(create).toHaveBeenCalledTimes(1);
 
     rejectCreate(httpError(500, { error: 'An unexpected error occurred', code: 'INTERNAL_ERROR', requestId: 'req-pending' }));
@@ -256,7 +257,7 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
     await screen.findByRole('alert');
 
     fireEvent.click(await screen.findByRole('button', { name: /create draft/i }));
-    await screen.findByRole('button', { name: /saving/i });
+    await waitFor(() => expect(screen.getByRole('button', { name: /create draft/i })).toHaveAttribute('aria-busy', 'true'));
     fireEvent.click(screen.getByText('pick other customer'));
     resolveReplay({ contract: { id: 7 }, replayed: true });
     await waitFor(() => expect(update).toHaveBeenCalledTimes(1));

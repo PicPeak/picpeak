@@ -12,11 +12,11 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Type } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Card } from '../common';
+import { Button, Card, Notice, useConfirm } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { pdfThemesService } from '../../services/pdfThemes.service';
 
-const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
+const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-line-strong '
   + 'bg-panel text-sm text-heading';
 const labelClass = 'block text-sm font-medium text-body mb-1';
 const FACES = ['regular', 'bold', 'italic'] as const;
@@ -31,6 +31,7 @@ function apiError(err: unknown): { message?: string; code?: string } {
 
 export const PdfFontsCard: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['pdf-fonts'], queryFn: () => pdfThemesService.fonts() });
   const [name, setName] = useState('');
@@ -74,7 +75,11 @@ export const PdfFontsCard: React.FC = () => {
   };
 
   const archive = async (id: number) => {
-    if (!window.confirm(t('branding.pdfFonts.archiveConfirm', 'Archive this font? Documents whose theme uses it fall back to Helvetica.') as string)) return;
+    if (!(await confirm({
+      message: t('branding.pdfFonts.archiveConfirm', 'Archive this font? Documents whose theme uses it fall back to Helvetica.') as string,
+      variant: 'danger',
+      confirmLabel: t('branding.pdfFonts.archive', 'Archive') as string,
+    }))) return;
     try {
       await pdfThemesService.archiveFont(id);
       await refresh();
@@ -98,11 +103,11 @@ export const PdfFontsCard: React.FC = () => {
       </div>
 
       {data?.legacyMoveFailure && (
-        <p role="status" className="mb-4 p-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
+        <Notice tone="warning" size="sm" className="mb-4">
           {t('branding.pdfFonts.legacyFailed', 'The font set before this update could not be moved: {{reason}}', {
             reason: t(`branding.pdfFonts.errors.${data.legacyMoveFailure.reason}`, data.legacyMoveFailure.reason),
           })}
-        </p>
+        </Notice>
       )}
 
       {fonts.length > 0 && (
@@ -113,7 +118,7 @@ export const PdfFontsCard: React.FC = () => {
               <span className="text-xs text-soft">
                 {font.files.map((f) => t(`branding.pdfFonts.face.${STYLE_FACE[f.style]}`, FACE_LABELS[STYLE_FACE[f.style]] || f.style)).join(' · ')}
               </span>
-              {!font.isActive && <span className="text-xs text-neutral-500">{t('branding.pdfFonts.archived', 'Archived')}</span>}
+              {!font.isActive && <span className="text-xs text-muted">{t('branding.pdfFonts.archived', 'Archived')}</span>}
               <span className="flex-1 text-xs text-soft truncate" title={font.licenceNote}>{font.licenceNote}</span>
               {font.isActive && (
                 <PermissionGate permission="settings.banking">
@@ -153,7 +158,7 @@ export const PdfFontsCard: React.FC = () => {
             <input type="checkbox" className="mt-1" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
             {t('branding.pdfFonts.confirm', 'I have the right to embed this font in the documents I send.')}
           </label>
-          {problem && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{problem}</p>}
+          {problem && <p role="alert" className="text-sm text-danger-text">{problem}</p>}
           <div className="flex justify-end">
             <Button type="submit" disabled={!ready || busy}>{t('branding.pdfFonts.upload', 'Add font')}</Button>
           </div>

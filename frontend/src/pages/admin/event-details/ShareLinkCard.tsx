@@ -222,7 +222,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
               />
             ) : (
               <div className="w-28 h-28 rounded-lg border border-line bg-inset flex items-center justify-center">
-                <QrCode className="w-8 h-8 text-neutral-300 dark:text-neutral-500" />
+                <QrCode className="w-8 h-8 text-faint" />
               </div>
             )}
             <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -259,7 +259,7 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
                 {stored ? t('events.hideGalleryPassword', 'Hide password') : t('events.showGalleryPassword', 'Show password')}
               </Button>
               {stored && (
-                <div className="rounded-lg border border-line bg-neutral-50 dark:bg-neutral-700/50 p-3 space-y-2 text-sm" data-testid="stored-gallery-password">
+                <div className="rounded-lg border border-line bg-subtle p-3 space-y-2 text-sm" data-testid="stored-gallery-password">
                   {!stored.password && !stored.client_password ? (
                     <p className="text-soft">{t('events.galleryPasswordNotStored')}</p>
                   ) : (
@@ -273,10 +273,10 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
                         <button
                           type="button"
                           onClick={() => copySecret(key, value as string)}
-                          className="p-1 text-neutral-500 hover:text-heading"
+                          className="p-1 text-muted hover:text-heading"
                           aria-label={`${t('events.copy')} ${label}`}
                         >
-                          {copiedSecret === key ? <CheckCircle className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                          {copiedSecret === key ? <CheckCircle className="w-4 h-4 text-success-text" /> : <Copy className="w-4 h-4" />}
                         </button>
                       </div>
                     ))

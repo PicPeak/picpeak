@@ -7,6 +7,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ConfirmDialogProvider } from '../../../../components/common/ConfirmDialog';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -27,7 +28,9 @@ import { DownloadLimitUsage } from '../DownloadLimitUsage';
 function renderUsage(ownedByOther?: boolean) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <DownloadLimitUsage eventId={3} downloadLimit={10} ownedByOther={ownedByOther} />
+      <ConfirmDialogProvider>
+        <DownloadLimitUsage eventId={3} downloadLimit={10} ownedByOther={ownedByOther} />
+      </ConfirmDialogProvider>
     </QueryClientProvider>,
   );
 }

@@ -30,23 +30,9 @@ import { Lock, Save, User as UserIcon, MapPin, Phone, Mail } from 'lucide-react'
 
 import { Button, Input, Loading, CountrySelect } from '../../components/common';
 
-/**
- * Inline tile wrapper used in place of <Card> on this page.
- *
- * The global .card class (used by <Card>) hard-codes bg-white + neutral
- * borders, which fights the dark theme on the customer surface (the same
- * fix the dashboard already shipped). Pinning to the theme tokens here
- * keeps every section card consistent with the sidebar and the
- * dashboard.
- */
+/** A section card on the theme tokens, like the dashboard's. */
 const ProfileTile: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    className="rounded-xl border p-6 sm:p-8"
-    style={{
-      backgroundColor: 'var(--color-surface)',
-      borderColor: 'var(--color-surface-border)',
-    }}
-  >
+  <div className="rounded-xl border p-6 sm:p-8 bg-surface border-border-token">
     {children}
   </div>
 );
@@ -225,10 +211,11 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.email', 'Email (login)')}
               </label>
               <Input
+                themed
                 value={profile.email}
                 readOnly
                 disabled
-                leftIcon={<Mail className="w-5 h-5 text-neutral-400" />}
+                leftIcon={<Mail className="w-5 h-5" />}
               />
               <p className="mt-1 text-xs text-muted-theme">
                 {t('customer.profile.field.emailHint', 'Contact your photographer if you need to change your login email.')}
@@ -243,12 +230,7 @@ export const CustomerProfilePage: React.FC = () => {
                 id="profile-salutation"
                 value={form.salutation || ''}
                 onChange={(e) => updateField('salutation', e.target.value)}
-                className="w-full rounded-lg border px-3 h-10 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-surface-border)',
-                  color: 'var(--color-text)',
-                }}
+                className="input-themed"
               >
                 {SALUTATION_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{t(o.labelKey, o.fallback)}</option>
@@ -261,6 +243,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.firstName', 'First name')}
               </label>
               <Input
+                themed
                 id="profile-first-name"
                 name="given-name"
                 autoComplete="given-name"
@@ -274,6 +257,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.lastName', 'Last name')}
               </label>
               <Input
+                themed
                 id="profile-last-name"
                 name="family-name"
                 autoComplete="family-name"
@@ -287,6 +271,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.displayName', 'Display name')}
               </label>
               <Input
+                themed
                 id="profile-display-name"
                 name="nickname"
                 autoComplete="nickname"
@@ -314,6 +299,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.phone', 'Phone')}
               </label>
               <Input
+                themed
                 id="profile-phone"
                 name="tel"
                 type="tel"
@@ -328,6 +314,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.companyName', 'Company name')}
               </label>
               <Input
+                themed
                 id="profile-company"
                 name="organization"
                 autoComplete="organization"
@@ -343,6 +330,7 @@ export const CustomerProfilePage: React.FC = () => {
               {/* No standard autocomplete token for VAT — leave it off so
                   browsers don't try to fill it from a random saved value. */}
               <Input
+                themed
                 id="profile-vat"
                 name="vat-id"
                 value={form.vatId || ''}
@@ -380,6 +368,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.addressLine1', 'Address line 1')}
               </label>
               <Input
+                themed
                 id="profile-address-line1"
                 name="address-line1"
                 autoComplete="billing address-line1"
@@ -393,6 +382,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.addressLine2', 'Address line 2')}
               </label>
               <Input
+                themed
                 id="profile-address-line2"
                 name="address-line2"
                 autoComplete="billing address-line2"
@@ -406,6 +396,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.postalCode', 'Postal code')}
               </label>
               <Input
+                themed
                 id="profile-postal-code"
                 name="postal-code"
                 autoComplete="billing postal-code"
@@ -420,6 +411,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.city', 'City')}
               </label>
               <Input
+                themed
                 id="profile-city"
                 name="address-level2"
                 autoComplete="billing address-level2"
@@ -433,6 +425,7 @@ export const CustomerProfilePage: React.FC = () => {
                 {t('customer.profile.field.state', 'State / region')}
               </label>
               <Input
+                themed
                 id="profile-state"
                 name="address-level1"
                 autoComplete="billing address-level1"
@@ -482,6 +475,7 @@ export const CustomerProfilePage: React.FC = () => {
               {t('customer.profile.password.current', 'Current password')}
             </label>
             <Input
+              themed
               type="password"
               value={pwForm.current}
               onChange={(e) => setPwForm((p) => ({ ...p, current: e.target.value }))}
@@ -494,6 +488,7 @@ export const CustomerProfilePage: React.FC = () => {
               {t('customer.profile.password.next', 'New password')}
             </label>
             <Input
+              themed
               type="password"
               value={pwForm.next}
               onChange={(e) => setPwForm((p) => ({ ...p, next: e.target.value }))}
@@ -506,6 +501,7 @@ export const CustomerProfilePage: React.FC = () => {
               {t('customer.profile.password.confirm', 'Confirm new password')}
             </label>
             <Input
+              themed
               type="password"
               value={pwForm.confirm}
               onChange={(e) => setPwForm((p) => ({ ...p, confirm: e.target.value }))}

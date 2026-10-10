@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Card } from '../common';
+import { Button, Input, Card, Notice } from '../common';
 import { adminService } from '../../services/admin.service';
 
 export const MandatoryPasswordChangeModal: React.FC = () => {
@@ -105,11 +105,11 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
       <Card className="w-full max-w-md">
         <div className="p-6">
           <div className="mb-6 text-center">
-            <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-              <AlertCircle className="w-6 h-6 text-amber-600" />
+            <div className="mx-auto w-12 h-12 bg-warning-soft rounded-full flex items-center justify-center mb-4">
+              <AlertCircle className="w-6 h-6 text-warning-text" />
             </div>
-            <h2 className="text-xl font-semibold text-neutral-900 mb-2">{t('mandatoryPasswordChange.title')}</h2>
-            <p className="text-sm text-neutral-600">
+            <h2 className="text-xl font-semibold text-heading mb-2">{t('mandatoryPasswordChange.title')}</h2>
+            <p className="text-sm text-soft">
               {t('mandatoryPasswordChange.description')}
             </p>
           </div>
@@ -117,7 +117,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Current Password */}
             <div>
-              <label htmlFor="currentPassword" className="block text-sm font-medium text-neutral-700 mb-1">
+              <label htmlFor="currentPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.currentPassword')}
               </label>
               <div className="relative">
@@ -128,7 +128,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   onChange={handleInputChange('currentPassword')}
                   error={errors.currentPassword}
                   placeholder={t('passwordChange.currentPasswordPlaceholder')}
-                  leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Lock className="w-5 h-5 text-faint" />}
                 />
                 <button
                   type="button"
@@ -136,8 +136,8 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.current ? 
-                    <EyeOff className="w-4 h-4 text-neutral-500" /> : 
-                    <Eye className="w-4 h-4 text-neutral-500" />
+                    <EyeOff className="w-4 h-4 text-muted" /> : 
+                    <Eye className="w-4 h-4 text-muted" />
                   }
                 </button>
               </div>
@@ -145,7 +145,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
 
             {/* New Password */}
             <div>
-              <label htmlFor="newPassword" className="block text-sm font-medium text-neutral-700 mb-1">
+              <label htmlFor="newPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.newPassword')}
               </label>
               <div className="relative">
@@ -156,7 +156,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   onChange={handleInputChange('newPassword')}
                   error={errors.newPassword}
                   placeholder={t('passwordChange.newPasswordPlaceholder')}
-                  leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Lock className="w-5 h-5 text-faint" />}
                 />
                 <button
                   type="button"
@@ -164,8 +164,8 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.new ? 
-                    <EyeOff className="w-4 h-4 text-neutral-500" /> : 
-                    <Eye className="w-4 h-4 text-neutral-500" />
+                    <EyeOff className="w-4 h-4 text-muted" /> : 
+                    <Eye className="w-4 h-4 text-muted" />
                   }
                 </button>
               </div>
@@ -173,7 +173,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
 
             {/* Confirm Password */}
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-neutral-700 mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-body mb-1">
                 {t('passwordChange.confirmPassword')}
               </label>
               <div className="relative">
@@ -184,7 +184,7 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   onChange={handleInputChange('confirmPassword')}
                   error={errors.confirmPassword}
                   placeholder={t('passwordChange.confirmPasswordPlaceholder')}
-                  leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
+                  leftIcon={<Lock className="w-5 h-5 text-faint" />}
                 />
                 <button
                   type="button"
@@ -192,29 +192,23 @@ export const MandatoryPasswordChangeModal: React.FC = () => {
                   className="absolute right-3 top-2 p-1 hover:bg-hover rounded"
                 >
                   {showPasswords.confirm ? 
-                    <EyeOff className="w-4 h-4 text-neutral-500" /> : 
-                    <Eye className="w-4 h-4 text-neutral-500" />
+                    <EyeOff className="w-4 h-4 text-muted" /> : 
+                    <Eye className="w-4 h-4 text-muted" />
                   }
                 </button>
               </div>
             </div>
 
             {/* Password Requirements */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-blue-800">
-                  <p className="font-medium">{t('passwordChange.requirements')}</p>
-                  <ul className="list-disc list-inside mt-1 space-y-1">
-                    <li>{t('mandatoryPasswordChange.minLength')}</li>
-                    <li>{t('mandatoryPasswordChange.mustContainUpperLower')}</li>
-                    <li>{t('mandatoryPasswordChange.mustContainNumbers')}</li>
-                    <li>{t('mandatoryPasswordChange.mustContainSpecial')}</li>
-                    <li>{t('passwordChange.mustDiffer')}</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
+            <Notice tone="info" title={t('passwordChange.requirements')}>
+              <ul className="list-disc list-inside space-y-1">
+                <li>{t('mandatoryPasswordChange.minLength')}</li>
+                <li>{t('mandatoryPasswordChange.mustContainUpperLower')}</li>
+                <li>{t('mandatoryPasswordChange.mustContainNumbers')}</li>
+                <li>{t('mandatoryPasswordChange.mustContainSpecial')}</li>
+                <li>{t('passwordChange.mustDiffer')}</li>
+              </ul>
+            </Notice>
 
             {/* Action Button */}
             <div className="pt-2">

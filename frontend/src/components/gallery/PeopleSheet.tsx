@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Search, X, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +6,7 @@ import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import type { GalleryPerson, Photo } from '../../types';
 import { faceCropStyle } from './faceCrop';
 import { facePreviewUrl } from './imageTiers';
+import { useGalleryDialog } from './hooks/useGalleryDialog';
 
 /**
  * "Show all" people (#1074).
@@ -46,6 +47,9 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
     return people.filter((p) => p.label?.toLowerCase().includes(q));
   }, [people, query]);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  useGalleryDialog({ open, onClose, panelRef });
+
   if (!open) return null;
 
   return (
@@ -57,6 +61,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
       />
 
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={t('gallery.people.title', { defaultValue: 'People in this gallery' })}
@@ -96,7 +101,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('gallery.people.searchPlaceholder', { defaultValue: 'Find a person' })}
-                className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                 style={{
                   backgroundColor: 'var(--color-background)',
                   borderColor: 'var(--color-surface-border)',
@@ -124,7 +129,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                     className={[
                       'relative block w-16 h-16 rounded-full overflow-hidden transition-all',
                       selected
-                        ? 'ring-[3px] ring-offset-2 ring-primary-600'
+                        ? 'ring-[3px] ring-offset-2 ring-accent'
                         : 'ring-1 ring-[color:var(--color-surface-border)] group-hover:ring-[color:var(--color-muted-text)]',
                     ].join(' ')}
                     style={{

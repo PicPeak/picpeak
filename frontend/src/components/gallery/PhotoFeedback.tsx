@@ -173,7 +173,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
 
       {/* Comments Section */}
       {settings.allow_comments && showComments && (
-        <div className="border-t pt-4">
+        <div className="border-t border-border-token pt-4">
           <PhotoComments
             photoId={photoId}
             gallerySlug={gallerySlug}

@@ -210,7 +210,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
                   leftIcon={<Trash2 className="w-4 h-4" />}
                   onClick={() => handleDelete(current)}
                   disabled={deleteMutation.isPending}
-                  className="text-red-600 dark:text-red-400"
+                  className="text-danger-text"
                 >
                   {t('photos.folders.delete', 'Delete folder')}
                 </Button>
@@ -229,10 +229,10 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
                 checked={current.allow_downloads}
                 disabled={downloadsMutation.isPending}
                 onChange={(e) => downloadsMutation.mutate({ id: current.id, allow: e.target.checked })}
-                className="rounded border-line-strong text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-accent"
               />
               {current.allow_downloads ? (
-                <DownloadCloud className="w-4 h-4 text-green-600 dark:text-green-400" aria-hidden="true" />
+                <DownloadCloud className="w-4 h-4 text-success-text" aria-hidden="true" />
               ) : (
                 <Download className="w-4 h-4 text-faint" aria-hidden="true" />
               )}
@@ -271,7 +271,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
             <button
               type="button"
               onClick={() => onChange('pending')}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-sm text-amber-800 dark:text-amber-300"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-warning-line bg-warning-soft text-sm text-warning-text"
             >
               <FolderClock className="w-4 h-4" aria-hidden="true" />
               {t('photos.folders.waitingChip', 'Waiting for a folder')}

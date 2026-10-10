@@ -123,15 +123,16 @@ vi.mock('../../../../services/customerAdmin.service', () => ({
   },
 }));
 
-import { NewsletterComposerPage } from '../NewsletterComposerPage';
+import { NewsletterDetailPage } from '../NewsletterDetailPage';
 
 function renderComposer() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/admin/clients/newsletters/7/edit']}>
+      <MemoryRouter initialEntries={['/admin/clients/newsletters/7']}>
         <Routes>
-          <Route path="/admin/clients/newsletters/:id/edit" element={<NewsletterComposerPage />} />
+          {/* One page per campaign: a draft's page is the composer. */}
+          <Route path="/admin/clients/newsletters/:id" element={<NewsletterDetailPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -226,7 +227,7 @@ describe('newsletter composer', () => {
     await screen.findByTestId('recipient-summary');
     await waitFor(() => expect(resolveSpy).toHaveBeenCalled());
 
-    expect(screen.getByRole('button', { name: /Queue campaign/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Send campaign/i })).toBeDisabled();
   });
 
   it('disables the queue button when the body is empty', async () => {
@@ -237,7 +238,7 @@ describe('newsletter composer', () => {
     // missing bodyHtml, not by an empty recipient list.
     await waitFor(() => expect(summary).toHaveTextContent('42 recipients'));
 
-    expect(screen.getByRole('button', { name: /Queue campaign/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Send campaign/i })).toBeDisabled();
   });
 
   it('disables the queue button when the subject is empty', async () => {
@@ -248,14 +249,14 @@ describe('newsletter composer', () => {
     // missing subject, not by an empty recipient list.
     await waitFor(() => expect(summary).toHaveTextContent('42 recipients'));
 
-    expect(screen.getByRole('button', { name: /Queue campaign/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Send campaign/i })).toBeDisabled();
   });
 
   it('confirms with the recipient count and rate before queueing', async () => {
     renderComposer();
     await screen.findByTestId('recipient-summary');
 
-    await userEvent.click(screen.getByRole('button', { name: /Queue campaign/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Send campaign/i }));
 
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
     const opts = confirmSpy.mock.calls[0][0] as { message: string; confirmLabel: string };
@@ -271,7 +272,7 @@ describe('newsletter composer', () => {
     renderComposer();
     await screen.findByTestId('recipient-summary');
 
-    await userEvent.click(screen.getByRole('button', { name: /Queue campaign/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Send campaign/i }));
 
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
     expect(queueSpy).not.toHaveBeenCalled();
@@ -286,12 +287,13 @@ describe('newsletter composer', () => {
     expect(await screen.findByText('Ada')).toBeInTheDocument();
   });
 
-  it('refuses to edit a campaign that is already queued', async () => {
+  it('shows a queued campaign as its sending view, not the composer', async () => {
     campaignFixture = { ...baseCampaign, status: 'queued' };
     renderComposer();
 
-    expect(await screen.findByText(/can no longer be edited/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Queue campaign/i })).not.toBeInTheDocument();
+    expect(await screen.findByText(baseCampaign.subject)).toBeInTheDocument();
+    expect(screen.queryByTestId('recipient-summary')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Send campaign|Queue campaign/i })).not.toBeInTheDocument();
   });
 
   it('hides manual mode from a role that cannot read customers', async () => {

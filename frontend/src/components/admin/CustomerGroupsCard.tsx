@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Tags } from 'lucide-react';
 
-import { Button, Card } from '../common';
+import { Button, Card, ErrorState } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import { customerAdminService, type CustomerGroup } from '../../services/customerAdmin.service';
 import { CustomerGroupChip, GroupDot } from './CustomerGroupChips';
@@ -35,7 +35,7 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
   const assigned = useMemo(() => groups || [], [groups]);
   useEffect(() => { setSelected(assigned.map((group) => group.id)); }, [assigned]);
 
-  const { data: catalogue } = useQuery({
+  const { data: catalogue, isError: catalogueFailed, isFetching: catalogueFetching, refetch: refetchCatalogue } = useQuery({
     queryKey: ['admin-customer-groups'],
     queryFn: () => customerAdminService.listGroups(true),
     enabled: editing,
@@ -83,7 +83,9 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
         )
       ) : (
         <div className="space-y-3">
-          {options.length === 0 ? (
+          {catalogueFailed && !catalogue ? (
+            <ErrorState size="inline" onRetry={() => refetchCatalogue()} retrying={catalogueFetching} />
+          ) : options.length === 0 ? (
             <p className="text-sm text-muted">
               {t('customers.groups.emptyCatalogue', 'No groups yet. Create one under Customers → Groups.')}
             </p>

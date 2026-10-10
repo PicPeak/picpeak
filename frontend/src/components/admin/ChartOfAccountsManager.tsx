@@ -15,8 +15,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { X, Plus, Pencil, Trash2, AlertCircle } from 'lucide-react';
-import { Button, Card, CardContent, Input, Loading } from '../common';
+import { Plus, Pencil, Trash2, AlertCircle } from 'lucide-react';
+import {
+  Button, Card, CardContent, Input, Loading, Modal, useConfirm,
+  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
+} from '../common';
 import {
   ledgerService, type LedgerAccount, type AccountType, type LedgerSettings,
 } from '../../services/ledger.service';
@@ -50,13 +53,19 @@ const AccountModal: React.FC<{ account?: LedgerAccount; onClose: () => void; onD
     errorMessage: (e: any) => e?.response?.data?.error || e.message || 'Failed',
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4">
-      <div className="mt-20 w-full max-w-sm rounded-xl bg-shell shadow-xl">
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-base font-semibold text-heading">{isEdit ? t('ledger.account.editTitle', 'Edit account') : t('ledger.account.addTitle', 'Add account')}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600"><X className="w-5 h-5" /></button>
-        </div>
-        <div className="px-5 py-4 space-y-3">
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={isEdit ? t('ledger.account.editTitle', 'Edit account') : t('ledger.account.addTitle', 'Add account')}
+      footer={(
+        <>
+          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !number || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
+        </>
+      )}
+    >
+        <div className="space-y-3">
           <div><label className={labelCls}>{t('ledger.account.number', 'Account number')}</label><Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="6700" /></div>
           <div><label className={labelCls}>{t('ledger.account.name', 'Name')}</label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div><label className={labelCls}>{t('ledger.account.type', 'Type')}</label>
@@ -65,17 +74,13 @@ const AccountModal: React.FC<{ account?: LedgerAccount; onClose: () => void; onD
             </select>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
-          <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !number || !name}>{save.isPending ? t('common.saving', 'Saving…') : t('common.save', 'Save')}</Button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 
 export const ChartOfAccountsManager: React.FC = () => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [accountModal, setAccountModal] = useState<{ account?: LedgerAccount } | null>(null);
 
@@ -173,33 +178,46 @@ export const ChartOfAccountsManager: React.FC = () => {
             <h2 className="text-base font-semibold text-heading">{t('ledger.accounts.title', 'Chart of accounts')}</h2>
             <Button size="sm" onClick={() => setAccountModal({})}><Plus className="w-4 h-4 mr-1" /> {t('ledger.account.addTitle', 'Add account')}</Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-muted border-b border-line">
-                <tr>
-                  <th className="py-1.5 pr-3 font-medium">{t('ledger.account.number', 'No.')}</th>
-                  <th className="py-1.5 pr-3 font-medium">{t('ledger.account.name', 'Name')}</th>
-                  <th className="py-1.5 pr-3 font-medium">{t('ledger.account.type', 'Type')}</th>
-                  <th className="py-1.5 pr-3 font-medium text-right">{t('common.actions', 'Actions')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line-faint">
-                {(accounts ?? []).map((a) => (
-                  <tr key={a.id} className={a.active ? '' : 'opacity-50'}>
-                    <td className="py-1.5 pr-3 tabular-nums font-medium text-heading">{a.number}</td>
-                    <td className="py-1.5 pr-3 text-body">{a.name}</td>
-                    <td className="py-1.5 pr-3 text-muted">{t(`ledger.accountType.${a.type}`, a.type)}</td>
-                    <td className="py-1.5 pr-3">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => setAccountModal({ account: a })} className="p-1 text-neutral-500 hover:text-body"><Pencil className="w-4 h-4" /></button>
-                        <button onClick={() => { if (window.confirm(t('ledger.account.confirmDelete', 'Delete this account?') as string)) delAccount.mutate(a.id); }} className="p-1 text-neutral-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHead>
+              <tr>
+                <TableHeaderCell>{t('ledger.account.number', 'Account number')}</TableHeaderCell>
+                <TableHeaderCell>{t('ledger.account.name', 'Name')}</TableHeaderCell>
+                <TableHeaderCell>{t('ledger.account.type', 'Type')}</TableHeaderCell>
+                <TableHeaderCell align="right">{t('common.actions', 'Actions')}</TableHeaderCell>
+              </tr>
+            </TableHead>
+            <TableBody>
+              {(accounts ?? []).map((a) => (
+                <TableRow key={a.id} className={a.active ? '' : 'opacity-50'}>
+                  <TableCell className="tabular-nums font-medium text-heading">{a.number}</TableCell>
+                  <TableCell>{a.name}</TableCell>
+                  <TableCell className="text-muted">{t(`ledger.accountType.${a.type}`, a.type)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="icon-sm" onClick={() => setAccountModal({ account: a })} aria-label={t('common.edit', 'Edit')}><Pencil className="w-4 h-4" /></Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-faint hover:text-danger-text"
+                        aria-label={t('common.delete', 'Delete')}
+                        onClick={async () => {
+                          if (!(await confirm({
+                            message: t('ledger.account.confirmDelete', 'Delete account {{number}} "{{name}}"? It can no longer be used for bookings or the export. This cannot be undone.', { number: a.number, name: a.name }) as string,
+                            variant: 'danger',
+                            confirmLabel: t('ledger.account.deleteAction', 'Delete account') as string,
+                          }))) return;
+                          delAccount.mutate(a.id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 

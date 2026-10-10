@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Eye, Palette, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent } from '../../components/common';
+import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent, Tabs } from '../../components/common';
+import { ThemeColorPreview, type ColorKey } from '../../components/admin/theme-customizer/ThemeColorPreview';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
 import { useTheme, type ThemeConfig, GALLERY_THEME_PRESETS } from '../../contexts/ThemeContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +13,7 @@ import { buildResourceUrl } from '../../utils/url';
 import { useFeatureEnabled, useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { CustomerDashboardBrandingCard } from '../../components/admin/CustomerDashboardBrandingCard';
 import { PdfTypographyCard } from '../../components/admin/PdfTypographyCard';
-import { PdfThemeCard } from '../../components/admin/PdfThemeCard';
+import { PdfThemeCard, usePdfThemeDrafts } from '../../components/admin/PdfThemeCard';
 import { PdfFontsCard } from '../../components/admin/PdfFontsCard';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { useMutationWithToast } from '../../hooks';
@@ -40,6 +41,7 @@ const INITIAL_BRANDING: BrandingSettings = {
   logo_display_mode: 'logo_and_text',
   hide_powered_by: false,
   force_color_mode: null,
+  status_colors: {},
   login_logo_frame_enabled: true,
   login_logo_size: 'medium',
   facebook_url: '',
@@ -80,6 +82,10 @@ export const BrandingPage: React.FC = () => {
   // fall back to Helvetica" — same encoding the column uses.
   const [pdfFontFamily, setPdfFontFamily] = useState<string | null>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  // The PDF theme (quotes, invoices, contracts) sits under the Colours card
+  // and saves with this page's save bar.
+  const pdfEnabled = !!(flags.quotes || flags.bills || flags.taxReport || flags.contracts);
+  const pdfTheme = usePdfThemeDrafts(pdfEnabled);
 
   // Fetch current settings
   const { data: settings, isLoading } = useQuery({
@@ -184,26 +190,20 @@ export const BrandingPage: React.FC = () => {
     setBrandingSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  /**
-   * Force color mode is the only branding setting that auto-saves on click —
-   * users expect a toggle that takes effect immediately, not a setting they
-   * have to remember to click "Save" for. We keep all other branding fields
-   * on the bulk-save flow because typing in a text input shouldn't trigger
-   * a network round-trip per keystroke. Auto-save here invalidates the
-   * public-settings query so AdminDarkModeContext reapplies live without
-   * waiting for its 30-second poll.
-   */
+  // Force color mode is a setting like the rest: it goes through the draft
+  // and the save bar (UX.md § 2), and the colour preview shows its effect
+  // before it is saved.
   const handleForceColorModeChange = (value: 'dark' | 'light' | null) => {
-    const previous = loadedBranding.force_color_mode;
-    const next = { ...brandingSettings, force_color_mode: value };
-    setBrandingSettings(next);
-    // Instant-save: not a pending change for the save bar. If the request
-    // fails the snapshot goes back to what the server still holds, so the
-    // draft reads dirty and Save offers the retry.
-    setLoadedBranding(prev => ({ ...prev, force_color_mode: value }));
-    brandingMutation.mutate(next, {
-      onError: () => setLoadedBranding(prev => ({ ...prev, force_color_mode: previous })),
-    });
+    handleBrandingChange('force_color_mode', value);
+  };
+
+  // The colour picker being hovered or edited, so the preview can point at
+  // where it lands; focusing one brings the colour preview forward.
+  const [colorFocus, setColorFocus] = useState<ColorKey | null>(null);
+  const [previewTab, setPreviewTab] = useState<'colors' | 'gallery'>('colors');
+  const handleColorFocus = (key: ColorKey | null) => {
+    setColorFocus(key);
+    if (key) setPreviewTab('colors');
   };
 
   const handleThemeChange = (newTheme: ThemeConfig) => {
@@ -380,7 +380,16 @@ export const BrandingPage: React.FC = () => {
     }
   };
 
+  // Covers the whole save: branding, theme, PDF font and every PDF scope.
+  const [isSaving, setIsSaving] = useState(false);
   const handleSave = async () => {
+    if (pdfTheme.invalidScopes.length > 0) {
+      toast.error(t('branding.pdfTheme.invalid', 'The PDF theme for {{scopes}} has a margin or colour that is not valid. Fix it before saving.', {
+        scopes: pdfTheme.invalidScopes.map((scope) => t(`branding.pdfTheme.scope.${scope}`, scope)).join(', '),
+      }));
+      return;
+    }
+    setIsSaving(true);
     try {
       // Sync logo URL from theme to branding settings, but never let an
       // undefined/empty theme.logoUrl wipe a logo that is still configured in
@@ -407,6 +416,17 @@ export const BrandingPage: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ['business-profile-snapshot'] });
       }
 
+      // PDF theme: each changed document type on its own; the failed ones
+      // stay as drafts and are named.
+      const failedPdfScopes = await pdfTheme.save();
+      if (failedPdfScopes.length > 0) {
+        toast.error(t('branding.pdfTheme.saveFailedScopes', 'Could not save the PDF theme for: {{scopes}}', {
+          scopes: failedPdfScopes
+            .map(({ scope, message }) => `${t(`branding.pdfTheme.scope.${scope}`, scope)}${message ? ` (${message})` : ''}`)
+            .join(', '),
+        }));
+      }
+
       // Apply theme globally
       setTheme(currentTheme);
 
@@ -418,20 +438,24 @@ export const BrandingPage: React.FC = () => {
       setLoadedPdfFontFamily(pdfFontFamily);
     } catch (error) {
       console.error('Failed to save settings:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   // Everything handleSave writes. The upload endpoints store their URL on
   // the spot, so the upload handlers move the snapshot along with the draft
   // and an upload alone does not read as dirty.
-  const isDirty = JSON.stringify([brandingSettings, currentTheme, currentThemeName, pdfFontFamily])
-    !== JSON.stringify([loadedBranding, loadedTheme, loadedThemeName, loadedPdfFontFamily]);
+  const isDirty = pdfTheme.isDirty
+    || JSON.stringify([brandingSettings, currentTheme, currentThemeName, pdfFontFamily])
+      !== JSON.stringify([loadedBranding, loadedTheme, loadedThemeName, loadedPdfFontFamily]);
 
   const handleDiscard = () => {
     setBrandingSettings(loadedBranding);
     setCurrentTheme(loadedTheme);
     setCurrentThemeName(loadedThemeName);
     setPdfFontFamily(loadedPdfFontFamily);
+    pdfTheme.discard();
     if (isPreviewMode) {
       setTheme(loadedTheme);
     }
@@ -513,7 +537,7 @@ export const BrandingPage: React.FC = () => {
               <textarea
                 value={brandingSettings.footer_text}
                 onChange={(e) => handleBrandingChange('footer_text', e.target.value)}
-                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                 rows={2}
                 placeholder={`© ${new Date().getFullYear()} Your Company. All rights reserved.`}
               />
@@ -588,7 +612,7 @@ export const BrandingPage: React.FC = () => {
                   <select
                     value={brandingSettings.promo_position || 'above_footer'}
                     onChange={(e) => handleBrandingChange('promo_position', e.target.value as 'above_footer' | 'below_footer')}
-                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                   >
                     <option value="above_footer">{t('branding.promo.aboveFooter', 'Above footer')}</option>
                     <option value="below_footer">{t('branding.promo.belowFooter', 'Below footer')}</option>
@@ -603,7 +627,7 @@ export const BrandingPage: React.FC = () => {
                   <select
                     value={brandingSettings.promo_alignment || 'center'}
                     onChange={(e) => handleBrandingChange('promo_alignment', e.target.value as 'left' | 'center' | 'right')}
-                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                   >
                     <option value="left">{t('branding.promo.alignLeft', 'Left')}</option>
                     <option value="center">{t('branding.promo.alignCenter', 'Center (default — matches footer)')}</option>
@@ -618,7 +642,7 @@ export const BrandingPage: React.FC = () => {
                 <textarea
                   value={brandingSettings.promo_markdown || ''}
                   onChange={(e) => handleBrandingChange('promo_markdown', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent font-mono text-sm"
                   rows={5}
                   placeholder={t('branding.promo.placeholder', '**Spring offer**: 20% off prints with code SPRING — see the [print shop](https://example.com).')}
                 />
@@ -636,7 +660,7 @@ export const BrandingPage: React.FC = () => {
                       will see (#482). */}
                   <MarkdownContent
                     source={brandingSettings.promo_markdown}
-                    className={`text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
+                    className={`text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-accent ${
                       brandingSettings.promo_alignment === 'left' ? 'text-left'
                         : brandingSettings.promo_alignment === 'right' ? 'text-right'
                         : 'text-center'
@@ -667,7 +691,7 @@ export const BrandingPage: React.FC = () => {
                 <textarea
                   value={brandingSettings.info_markdown || ''}
                   onChange={(e) => handleBrandingChange('info_markdown', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent font-mono text-sm"
                   rows={3}
                   placeholder={t('branding.infoBanner.placeholder', 'Use the menu button in the top-left corner to filter the photos.')}
                 />
@@ -684,7 +708,7 @@ export const BrandingPage: React.FC = () => {
                       classes — so the admin sees what guests will see. */}
                   <MarkdownContent
                     source={brandingSettings.info_markdown}
-                    className="text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
+                    className="text-sm text-body prose prose-sm dark:prose-invert max-w-none prose-a:text-accent text-center"
                   />
                 </div>
               )}
@@ -757,7 +781,7 @@ export const BrandingPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={handleRemoveLogo}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                        className="absolute -top-2 -right-2 bg-danger text-white rounded-full w-6 h-6 flex items-center justify-center hover:opacity-90"
                       >
                         ×
                       </button>
@@ -801,7 +825,7 @@ export const BrandingPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={handleRemoveDarkLogo}
-                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                        className="absolute -top-2 -right-2 bg-danger text-white rounded-full w-6 h-6 flex items-center justify-center hover:opacity-90"
                       >
                         ×
                       </button>
@@ -837,7 +861,7 @@ export const BrandingPage: React.FC = () => {
                 <select
                   value={brandingSettings.logo_size || 'medium'}
                   onChange={(e) => handleBrandingChange('logo_size', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                 >
                   <option value="small">{t('branding.logoSizeSmall', 'Small (32px)')}</option>
                   <option value="medium">{t('branding.logoSizeMedium', 'Medium (48px)')}</option>
@@ -859,7 +883,7 @@ export const BrandingPage: React.FC = () => {
                     max="200"
                     value={brandingSettings.logo_max_height || 48}
                     onChange={(e) => handleBrandingChange('logo_max_height', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                   />
                   <p className="text-xs text-soft mt-1">
                     {t('branding.logoMaxHeightHelp', 'Set a custom maximum height for the logo (20-200 pixels)')}
@@ -910,7 +934,7 @@ export const BrandingPage: React.FC = () => {
                 <select
                   value={brandingSettings.logo_display_mode || 'logo_and_text'}
                   onChange={(e) => handleBrandingChange('logo_display_mode', e.target.value)}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                 >
                   <option value="logo_only">{t('branding.logoOnly', 'Logo Only')}</option>
                   <option value="text_only">{t('branding.textOnly', 'Company Name Only')}</option>
@@ -925,7 +949,7 @@ export const BrandingPage: React.FC = () => {
                     type="checkbox"
                     checked={brandingSettings.logo_display_header !== false}
                     onChange={(e) => handleBrandingChange('logo_display_header', e.target.checked)}
-                    className="rounded border-line-strong text-accent focus:ring-primary-500"
+                    className="rounded border-line-strong text-accent focus:ring-accent"
                   />
                   <div>
                     <span className="text-sm font-medium text-heading">
@@ -942,7 +966,7 @@ export const BrandingPage: React.FC = () => {
                     type="checkbox"
                     checked={brandingSettings.logo_display_hero !== false}
                     onChange={(e) => handleBrandingChange('logo_display_hero', e.target.checked)}
-                    className="rounded border-line-strong text-accent focus:ring-primary-500"
+                    className="rounded border-line-strong text-accent focus:ring-accent"
                   />
                   <div>
                     <span className="text-sm font-medium text-heading">
@@ -975,7 +999,7 @@ export const BrandingPage: React.FC = () => {
                   type="checkbox"
                   checked={brandingSettings.login_logo_frame_enabled !== false}
                   onChange={(e) => handleBrandingChange('login_logo_frame_enabled', e.target.checked)}
-                  className="mt-0.5 rounded border-line-strong text-accent focus:ring-primary-500"
+                  className="mt-0.5 rounded border-line-strong text-accent focus:ring-accent"
                 />
                 <div>
                   <span className="text-sm font-medium text-heading">
@@ -998,7 +1022,7 @@ export const BrandingPage: React.FC = () => {
                 <select
                   value={brandingSettings.login_logo_size || 'medium'}
                   onChange={(e) => handleBrandingChange('login_logo_size', e.target.value as 'small' | 'medium' | 'large' | 'xlarge')}
-                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3 py-2 border border-line-strong bg-panel text-heading rounded-lg focus:ring-2 focus:ring-accent"
                 >
                   <option value="small">{t('branding.loginLogo.sizeSmall', 'Small')}</option>
                   <option value="medium">{t('branding.loginLogo.sizeMedium', 'Medium (default)')}</option>
@@ -1017,7 +1041,7 @@ export const BrandingPage: React.FC = () => {
                 type="checkbox"
                 checked={brandingSettings.hide_powered_by === true}
                 onChange={(e) => handleBrandingChange('hide_powered_by', e.target.checked)}
-                className="rounded border-line-strong text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-heading">
@@ -1036,7 +1060,7 @@ export const BrandingPage: React.FC = () => {
                 type="checkbox"
                 checked={brandingSettings.watermark_enabled}
                 onChange={(e) => handleBrandingChange('watermark_enabled', e.target.checked)}
-                className="rounded border-line-strong text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-accent"
               />
               <div>
                 <span className="text-sm font-medium text-heading">{t('branding.enableWatermarks')}</span>
@@ -1142,7 +1166,7 @@ export const BrandingPage: React.FC = () => {
                     WebkitAppearance: 'none',
                     appearance: 'none',
                     height: '8px',
-                    background: '#d4d4d4',
+                    background: 'var(--ui-fill-strong)',
                     borderRadius: '4px',
                     outline: 'none'
                   }}
@@ -1171,7 +1195,7 @@ export const BrandingPage: React.FC = () => {
                     WebkitAppearance: 'none',
                     appearance: 'none',
                     height: '8px',
-                    background: '#d4d4d4',
+                    background: 'var(--ui-fill-strong)',
                     borderRadius: '4px',
                     outline: 'none'
                   }}
@@ -1206,7 +1230,7 @@ export const BrandingPage: React.FC = () => {
                 type="checkbox"
                 checked={isPreviewMode}
                 onChange={(e) => setIsPreviewMode(e.target.checked)}
-                className="rounded border-line-strong text-accent focus:ring-primary-500"
+                className="rounded border-line-strong text-accent focus:ring-accent"
               />
               <span className="text-sm text-body">{t('branding.applyLivePreview')}</span>
             </label>
@@ -1230,6 +1254,12 @@ export const BrandingPage: React.FC = () => {
                 hideActions={true}
                 forceColorMode={brandingSettings.force_color_mode ?? null}
                 onForceColorModeChange={handleForceColorModeChange}
+                statusColors={brandingSettings.status_colors || {}}
+                onStatusColorsChange={(next) => handleBrandingChange('status_colors', next)}
+                onColorFocus={handleColorFocus}
+                slotAfterColors={pdfEnabled
+                  ? <PdfThemeCard state={pdfTheme} brandAccent={currentTheme.accentDarkColor} />
+                  : null}
                 // The global CSS template: every gallery without custom
                 // styling renders with it (backend services/galleryTheme).
                 cssTemplates={cssTemplates}
@@ -1243,32 +1273,49 @@ export const BrandingPage: React.FC = () => {
               />
             </div>
 
-            {/* Right side - Gallery Preview */}
+            {/* Right side: the preview, next to the pickers. Colours shows
+                only the palette being edited (and where a hovered colour
+                lands); Gallery renders it as a gallery page. */}
             <div className="lg:sticky lg:top-4 lg:h-fit">
               <Card className="p-4">
-                <h3 className="text-sm font-medium text-body mb-3">
-                  {t('branding.livePreview')}
-                </h3>
-                <GalleryPreview
-                  theme={currentTheme}
-                  branding={{ ...brandingSettings, logo_url_dark: logoDarkUrl }}
-                  className="shadow-lg"
+                <Tabs
+                  aria-label={t('branding.livePreview')}
+                  items={[
+                    { id: 'colors' as const, label: t('branding.colorPreview.colorsTab', 'Colours') },
+                    { id: 'gallery' as const, label: t('branding.colorPreview.galleryTab', 'Gallery') },
+                  ]}
+                  value={previewTab}
+                  onChange={setPreviewTab}
+                  className="mb-4"
                 />
+                {previewTab === 'colors' ? (
+                  <ThemeColorPreview
+                    theme={currentTheme}
+                    statusColors={brandingSettings.status_colors || {}}
+                    forceColorMode={brandingSettings.force_color_mode ?? null}
+                    highlight={colorFocus}
+                  />
+                ) : (
+                  <GalleryPreview
+                    theme={currentTheme}
+                    branding={{ ...brandingSettings, logo_url_dark: logoDarkUrl }}
+                    className="shadow-lg"
+                  />
+                )}
               </Card>
             </div>
           </div>
         </div>
 
-        {(flags.quotes || flags.bills || flags.taxReport || flags.contracts) && <PdfThemeCard />}
         {(flags.quotes || flags.bills || flags.taxReport || flags.contracts) && <PdfFontsCard />}
 
         {/* Event-Specific Themes Info */}
-        <Card padding="md" className="bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800">
+        <Card padding="md" className="bg-info-soft border-info-line">
           <div className="flex items-start gap-3">
-            <Palette className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <Palette className="w-5 h-5 text-info-text flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200">{t('branding.eventSpecificThemes')}</h3>
-              <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+              <h3 className="text-sm font-medium text-info-text">{t('branding.eventSpecificThemes')}</h3>
+              <p className="text-sm text-info-text mt-1">
                 {t('branding.eventThemesInfo')}
               </p>
             </div>
@@ -1277,7 +1324,7 @@ export const BrandingPage: React.FC = () => {
 
         <SettingsSaveBar
           isDirty={isDirty}
-          isSaving={brandingMutation.isPending || themeMutation.isPending}
+          isSaving={isSaving}
           onSave={() => { void handleSave(); }}
           onDiscard={handleDiscard}
         />

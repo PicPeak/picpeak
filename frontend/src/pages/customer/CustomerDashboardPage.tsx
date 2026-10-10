@@ -23,14 +23,14 @@
  */
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
+import { Calendar, Clock, Download, ExternalLink, History, ImageIcon, Info } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
 
-import { Button, Loading } from '../../components/common';
+import { Button, EmptyState, ErrorState, Loading } from '../../components/common';
 import { formatMoneyMinor } from '../../utils/money';
 import {
   customerService, type CustomerDashboard, type CustomerEvent, type CustomerRecentItem,
@@ -55,11 +55,6 @@ const SORT_OPTIONS: Array<{ value: SortKey; labelKey: string; fallback: string }
  */
 const DEFAULT_SORT: SortKey = 'newest';
 
-const surfaceStyle = {
-  backgroundColor: 'var(--color-surface)',
-  borderColor: 'var(--color-surface-border)',
-};
-
 const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ items }) => {
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
@@ -71,12 +66,12 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   if (total === 0) return null;
 
   return (
-    <section aria-labelledby="needs-action-title" className="rounded-xl border mb-6 overflow-hidden" style={surfaceStyle}>
+    <section aria-labelledby="needs-action-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
       <h2 id="needs-action-title" className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
         <Info className="w-5 h-5" />
         {t('customer.dashboard.needsAction', 'Needs your attention')}
       </h2>
-      <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+      <ul className="divide-y divide-border-token">
         {items.quotes.map((q) => (
           <li key={`q-${q.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
             <span className="text-sm text-theme">
@@ -183,12 +178,12 @@ const Recent: React.FC<{ items: CustomerRecentItem[] }> = ({ items }) => {
   const { format: fmtDate } = useLocalizedDate();
   if (items.length === 0) return null;
   return (
-    <section aria-labelledby="recent-title" className="rounded-xl border mb-6 overflow-hidden" style={surfaceStyle}>
+    <section aria-labelledby="recent-title" className="rounded-xl border mb-6 overflow-hidden bg-surface border-border-token">
       <h2 id="recent-title" className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
         <History className="w-5 h-5" />
         {t('customer.dashboard.recentTitle', 'Recent')}
       </h2>
-      <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+      <ul className="divide-y divide-border-token">
         {items.map((item) => (
           <li key={`${item.kind}-${item.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
             <Link to={item.link} className="text-sm text-theme hover:underline min-w-0 break-all">
@@ -209,7 +204,7 @@ export const CustomerDashboardPage: React.FC = () => {
   // language.
   const { format: fmtLocalized } = useLocalizedDate();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['customer-dashboard'],
     queryFn: () => customerService.getDashboard(),
   });
@@ -304,11 +299,12 @@ export const CustomerDashboardPage: React.FC = () => {
       {isLoading ? (
         <div className="flex justify-center py-16"><Loading size="lg" /></div>
       ) : error || !data ? (
-        <div role="alert" className="rounded-xl border p-6 flex items-start gap-3" style={surfaceStyle}>
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-status hue-danger" />
-          <p className="text-theme">
-            {t('customer.dashboard.loadError', 'Could not load your galleries. Please try again.')}
-          </p>
+        <div className="rounded-xl border bg-surface border-border-token">
+          <ErrorState
+            title={t('customer.dashboard.loadError', 'Could not load your galleries. Please try again.')}
+            onRetry={() => { void refetch(); }}
+            retrying={isFetching}
+          />
         </div>
       ) : (
         <>
@@ -335,8 +331,7 @@ export const CustomerDashboardPage: React.FC = () => {
                   id="customer-events-sort"
                   value={sort}
                   onChange={(e) => setSort(e.target.value as SortKey)}
-                  className="rounded-lg border px-3 h-9 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                  style={{ ...surfaceStyle, color: 'var(--color-text)' }}
+                  className="input-themed h-9 w-auto"
                 >
                   {SORT_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -349,22 +344,18 @@ export const CustomerDashboardPage: React.FC = () => {
           </div>
 
           {sortedEvents.length === 0 ? (
-            <div className="rounded-xl border p-6" style={surfaceStyle}>
-              <div className="text-center py-12">
-                <ImageIcon className="w-12 h-12 mx-auto mb-3 text-muted-theme" aria-hidden="true" />
-                <h2 className="text-lg font-semibold text-theme mb-2">
-                  {t('customer.dashboard.emptyTitle', 'No galleries yet')}
-                </h2>
-                <p className="text-sm text-muted-theme">
-                  {t('customer.dashboard.emptyBody', 'Once your photographer assigns you to a gallery, it will appear here.')}
-                </p>
-              </div>
+            <div className="rounded-xl border bg-surface border-border-token">
+              <EmptyState
+                icon={<ImageIcon />}
+                title={t('customer.dashboard.emptyTitle', 'No galleries yet')}
+                description={t('customer.dashboard.emptyBody', 'Once your photographer assigns you to a gallery, it will appear here.')}
+              />
             </div>
           ) : (
             // Inline list — one row per gallery. Open and Download are
             // separate buttons so click bubbling doesn't cross-trigger.
-            <div className="rounded-xl border overflow-hidden" style={surfaceStyle}>
-              <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+            <div className="rounded-xl border overflow-hidden bg-surface border-border-token">
+              <ul className="divide-y divide-border-token">
                 {sortedEvents.map((ev) => {
                   const date = formatDate(ev.eventDate);
                   const expires = formatDate(ev.expiresAt);
@@ -375,8 +366,7 @@ export const CustomerDashboardPage: React.FC = () => {
                   return (
                     <li
                       key={ev.id}
-                      className="px-4 py-3 sm:px-5 sm:py-4 flex items-center gap-3 sm:gap-4"
-                      style={{ borderColor: 'var(--color-surface-border)' }}
+                      className="px-4 py-3 sm:px-5 sm:py-4 flex items-center gap-3 sm:gap-4 border-border-token"
                     >
                       <div className="flex-1 min-w-0">
                         <h3 className="text-sm sm:text-base font-semibold text-theme truncate">
@@ -399,7 +389,7 @@ export const CustomerDashboardPage: React.FC = () => {
                             <span>{t('customer.dashboard.notAvailable', 'Not available yet')}</span>
                           )}
                           {isOpening && (
-                            <span className="text-xs" style={{ color: 'var(--color-accent)' }}>
+                            <span className="text-xs text-accent">
                               {t('customer.dashboard.opening', 'Opening…')}
                             </span>
                           )}
@@ -454,8 +444,8 @@ export const CustomerDashboardPage: React.FC = () => {
               <p className="mt-1 mb-3 text-sm text-muted-theme">
                 {t('customer.dashboard.expiredHint', 'These galleries have expired and can no longer be opened. Contact your photographer if you still need the photos.')}
               </p>
-              <div className="rounded-xl border overflow-hidden" style={surfaceStyle}>
-                <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+              <div className="rounded-xl border overflow-hidden bg-surface border-border-token">
+                <ul className="divide-y divide-border-token">
                   {expiredEvents.map((ev) => (
                     <li key={ev.id} className="px-4 py-3 sm:px-5 flex items-center gap-3">
                       <div className="flex-1 min-w-0">

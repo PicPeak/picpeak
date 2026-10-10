@@ -65,7 +65,7 @@ describe('create transfer dialog file picker', () => {
   it.each(['', 'L', 'LB', 'LBM Logos'])('keeps the picked files with title %j', async (title) => {
     const user = userEvent.setup();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const { container } = render(
+    render(
       <QueryClientProvider client={queryClient}>
         <ConfirmDialogProvider>
           <TransfersPage />
@@ -78,7 +78,8 @@ describe('create transfer dialog file picker', () => {
     await user.click(await screen.findByRole('button', { name: /send files/i }));
     if (title) await user.type(screen.getByPlaceholderText(/wedding finals/i), title);
 
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    // The dialog is portalled to <body>, outside the render container.
+    const input = document.body.querySelector<HTMLInputElement>('input[type="file"]')!;
     pickFiles(input, [
       new File(['<svg/>'], 'LBM_Logo_sqr.svg', { type: 'image/svg+xml' }),
       new File(['<svg/>'], 'LBM_Logo_sqr_boxed.svg', { type: 'image/svg+xml' }),

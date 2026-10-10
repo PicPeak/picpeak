@@ -67,7 +67,7 @@ export const AccountingLayout: React.FC = () => {
     return (
       <div>
         <div className="rounded-xl border border-dashed border-line-strong bg-shell p-8 text-center">
-          <Landmark className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
+          <Landmark className="w-10 h-10 mx-auto mb-3 text-faint" />
           <h2 className="text-lg font-semibold text-heading mb-1">
             {t('accounting.empty.title', 'No accounting features enabled')}
           </h2>

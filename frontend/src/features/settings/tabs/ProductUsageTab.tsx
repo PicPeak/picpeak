@@ -7,7 +7,7 @@ import {
 } from '../../../services/productUsage.service';
 import { ExternalLink } from 'lucide-react';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
-import { Button, Card } from '../../../components/common';
+import { Button, Card, ErrorState, Notice } from '../../../components/common';
 import { UsageCatalog } from '../UsageCatalog';
 import { ProductUsageConsentDialog } from '../components/ProductUsageConsentDialog';
 
@@ -22,7 +22,7 @@ export default function ProductUsageTab() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const { data, isPending, isError } = useQuery({
+  const { data, isPending, isFetching, refetch } = useQuery({
     queryKey: ['productUsage'],
     queryFn: service.status,
     refetchInterval: 30000
@@ -66,7 +66,18 @@ export default function ProductUsageTab() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   if (isPending) return <p>{t('productUsage.loading')}</p>;
-  if (isError || !data) return <p role="alert">{t('productUsage.failed')}</p>;
+  // A failed background refetch keeps the last status on screen; only a
+  // first load that never succeeded shows the error.
+  if (!data) {
+    return (
+      <ErrorState
+        title={t('productUsage.failed')}
+        onRetry={() => refetch()}
+        retrying={isFetching}
+        size="inline"
+      />
+    );
+  }
   const active = data.status === 'active';
   // Signed-in portal access without the credential ever touching a URL that
   // a server sees. The backend asks the collector for a short-lived session
@@ -157,7 +168,7 @@ export default function ProductUsageTab() {
           <p>{t('productUsage.lastReport', { date: data.last_report_date })}</p>
         )}
         {data.collector_error === 'INVALID_COLLECTOR_URL' && (
-          <p role="alert" className="text-amber-700 dark:text-amber-300">
+          <p role="alert" className="text-warning-text">
             {/* Shown alongside the real controls, not instead of them: with a
                 bad URL the operator still needs to read their status and
                 still needs to be able to withdraw. */}
@@ -192,41 +203,43 @@ export default function ProductUsageTab() {
         {data.can_abandon && (
           // The one dead end the operator cannot retry out of. Offered only
           // here, and worded so nobody mistakes it for a confirmed deletion.
-          <div className="rounded border border-amber-300 dark:border-amber-700 p-3 space-y-2">
-            <p>
-              {t(
-                data.abandon_never_registered
-                  ? 'productUsage.abandonExplanationUnregistered'
-                  : 'productUsage.abandonExplanation'
-              )}
-            </p>
-            <Button
-              variant="outline"
-              className={WRAPPING_BUTTON}
-              disabled={busy}
-              onClick={async () => {
-                if (
-                  await confirm({
-                    title: t('productUsage.abandon'),
-                    message: t(
-                      data.abandon_never_registered
-                        ? 'productUsage.abandonConfirmUnregistered'
-                        : 'productUsage.abandonConfirm'
-                    ),
-                    confirmLabel: t('productUsage.abandon'),
-                    variant: 'danger'
-                  })
-                ) {
-                  await run(async () => {
-                    await service.abandon();
-                    setPreview(null);
-                  });
-                }
-              }}
-            >
-              {t('productUsage.abandon')}
-            </Button>
-          </div>
+          <Notice
+            tone="warning"
+            action={
+              <Button
+                variant="outline"
+                className={WRAPPING_BUTTON}
+                disabled={busy}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: t('productUsage.abandon'),
+                      message: t(
+                        data.abandon_never_registered
+                          ? 'productUsage.abandonConfirmUnregistered'
+                          : 'productUsage.abandonConfirm'
+                      ),
+                      confirmLabel: t('productUsage.abandon'),
+                      variant: 'danger'
+                    })
+                  ) {
+                    await run(async () => {
+                      await service.abandon();
+                      setPreview(null);
+                    });
+                  }
+                }}
+              >
+                {t('productUsage.abandon')}
+              </Button>
+            }
+          >
+            {t(
+              data.abandon_never_registered
+                ? 'productUsage.abandonExplanationUnregistered'
+                : 'productUsage.abandonExplanation'
+            )}
+          </Notice>
         )}
         {active && data.pending_action && data.pending_action !== 'consent' && (
           // The portal button below (and the v5-upgrade button above, when
@@ -306,7 +319,7 @@ export default function ProductUsageTab() {
                       href={portalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
+                      className="text-sm text-accent hover:underline self-center"
                     >
                       {t('productUsage.portalReady')}
                     </a>
@@ -324,7 +337,7 @@ export default function ProductUsageTab() {
                 </a>
               )}
               <a
-                className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
+                className="text-sm text-accent hover:underline self-center"
                 href={`${data.collector_url}/transparency`}
                 target="_blank"
                 rel="noreferrer"

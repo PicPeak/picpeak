@@ -20,8 +20,8 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { FileText, ScrollText, Receipt, AlertTriangle, Pencil } from 'lucide-react';
-import { Button, Card } from '../common';
+import { FileText, ScrollText, Receipt, Pencil } from 'lucide-react';
+import { Badge, Button, Card, ErrorState } from '../common';
 import { formatMoneyMinor } from '../../utils/money';
 import { api } from '../../config/api';
 import { EditInstallmentPlanModal } from './EditInstallmentPlanModal';
@@ -76,7 +76,7 @@ export const DocumentLineageCard: React.FC<DocumentLineageCardProps> = ({
 }) => {
   const { t } = useTranslation();
   const [showEditPlan, setShowEditPlan] = useState(false);
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, isFetching, refetch } = useQuery({
     queryKey: ['deal-lineage', dealUuid],
     queryFn: async () => {
       const res = await api.get(`/admin/deals/${dealUuid}/documents`);
@@ -97,13 +97,15 @@ export const DocumentLineageCard: React.FC<DocumentLineageCardProps> = ({
       </Card>
     );
   }
-  if (error) {
+  if (error && !data) {
     return (
       <Card padding="md" className={className}>
-        <p className="text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
-          {t('dealLineage.error', 'Could not load related documents.')}
-        </p>
+        <ErrorState
+          size="inline"
+          title={t('dealLineage.error', 'Could not load related documents.')}
+          onRetry={() => refetch()}
+          retrying={isFetching}
+        />
       </Card>
     );
   }
@@ -284,9 +286,9 @@ const Row: React.FC<{
       <div className="flex items-center gap-2 min-w-0">
         <span className={`font-mono text-sm ${isCurrent ? 'text-muted' : ''}`}>{number}</span>
         {badge && (
-          <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+          <Badge tone="storno" caps>
             {badge}
-          </span>
+          </Badge>
         )}
         {meta && (
           <span className="text-xs text-muted truncate">{meta}</span>
@@ -303,7 +305,7 @@ const Row: React.FC<{
   }
   return (
     <li>
-      <Link to={href} className="block hover:bg-neutral-50 dark:hover:bg-neutral-800/40 -mx-2 px-2 rounded">
+      <Link to={href} className="block hover:bg-hover-soft -mx-2 px-2 rounded">
         {inner}
       </Link>
     </li>

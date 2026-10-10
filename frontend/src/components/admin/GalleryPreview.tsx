@@ -51,7 +51,7 @@ const PreviewPhoto: React.FC<{
 }) => (
   <div className={`relative overflow-hidden rounded-lg bg-gradient-to-br from-neutral-200 to-neutral-300 ${aspectRatio} ${className}`}>
     <div className="absolute inset-0 flex items-center justify-center">
-      <Camera className="w-8 h-8 text-neutral-400" />
+      <Camera className="w-8 h-8 text-faint" />
     </div>
     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
       <p className="text-white text-xs truncate">{photo.filename}</p>
@@ -184,7 +184,7 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
           <div className="space-y-6">
             {['Today', 'Yesterday'].map((date, dateIdx) => (
               <div key={date}>
-                <h4 className="text-sm font-medium text-neutral-700 mb-2">{date}</h4>
+                <h4 className="text-sm font-medium text-body mb-2">{date}</h4>
                 <div className={`grid grid-cols-3 ${gapClass}`}>
                   {mockPhotos.slice(dateIdx * 3, (dateIdx * 3) + 3).map((photo) => (
                     <PreviewPhoto key={photo.id} photo={photo} />
@@ -214,7 +214,7 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
   
   return (
     <div
-      className={`bg-white rounded-lg shadow-sm overflow-hidden ${className}`}
+      className={`bg-panel rounded-lg shadow-sm overflow-hidden ${className}`}
       style={{
         backgroundColor: theme.backgroundColor || '#ffffff',
         color: theme.textColor || '#171717',
@@ -291,8 +291,8 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
                   className="h-8 w-auto object-contain"
                 />
               ) : (
-                <div className="h-8 w-8 rounded-full bg-neutral-200 flex items-center justify-center">
-                  <Camera className="w-4 h-4 text-neutral-500" />
+                <div className="h-8 w-8 rounded-full bg-fill flex items-center justify-center">
+                  <Camera className="w-4 h-4 text-muted" />
                 </div>
               )
             )}
@@ -300,7 +300,7 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
               <div>
                 <p className="text-sm font-semibold leading-tight">{brandName}</p>
                 {brandTagline && (
-                  <p className="text-xs text-neutral-500 leading-tight">{brandTagline}</p>
+                  <p className="text-xs text-muted leading-tight">{brandTagline}</p>
                 )}
               </div>
             )}
@@ -334,7 +334,7 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
       {/* (isNoHeader renders nothing here — goes straight to layout bar) */}
 
       {/* Layout info bar */}
-      <div className="px-4 py-1 border-b text-xs text-neutral-500 flex justify-between" style={{ borderColor: theme.primaryColor ? `${theme.primaryColor}20` : '#e5e7eb' }}>
+      <div className="px-4 py-1 border-b text-xs text-muted flex justify-between" style={{ borderColor: theme.primaryColor ? `${theme.primaryColor}20` : '#e5e7eb' }}>
         <span>Gallery preview</span>
         <span className="capitalize">{isHeroHeader ? `Hero + ${activeLayout}` : isMinimalHeader ? `Minimal + ${activeLayout}` : isNoHeader ? `No header + ${activeLayout}` : `${activeLayout} layout`}</span>
       </div>
