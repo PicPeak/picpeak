@@ -11,6 +11,9 @@ import { useTranslation } from 'react-i18next';
 import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 import { useUploadProgress } from '../../hooks/useUploadProgress';
 import { photosService } from '../../services/photos.service';
+import { uploadMultipartBudget } from '../../utils/uploadMultipartBudget';
+import { adminUploadErrorKey } from '../../utils/publicUploadErrors';
+import { CAPACITY_RETRY_DELAYS_MS, isTransientUploadRefusal, retryWhileBusy } from '../../utils/uploadCapacityRetry';
 
 interface PhotoUploadProps {
   eventId: number;
@@ -59,6 +62,8 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
   const [currentChunk, setCurrentChunk] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
   const [phase, setPhase] = useState<UploadPhase>({ kind: 'idle' });
+  // The server is busy: the current batch waits to be sent again.
+  const [waitingForCapacity, setWaitingForCapacity] = useState<{ attempt: number; total: number } | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [replaceByName, setReplaceByName] = useState(false);
   // Upload IDs returned from each chunk POST. The processing tracker
@@ -250,6 +255,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     const MAX_FILES_PER_CHUNK = Math.max(1, Math.min(50, maxFilesPerUpload)); // Max 50 files per chunk
     const maxBatchSizeMb = Number(settings?.general_max_upload_batch_size_mb) || 95;
     const MAX_BYTES_PER_CHUNK = maxBatchSizeMb * 1024 * 1024;
+    const payloadBudget = uploadMultipartBudget(MAX_BYTES_PER_CHUNK);
 
     // Split: large singles use resumable/chunked API; the rest keep the proven multipart path.
     const largeFiles = selectedFiles.filter((f) =>
@@ -281,7 +287,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     for (const file of smallFiles) {
       // Start a new chunk if adding this file would exceed limits
       if (currentChunk.length >= MAX_FILES_PER_CHUNK ||
-          (currentChunkSize + file.size > MAX_BYTES_PER_CHUNK && currentChunk.length > 0)) {
+          (currentChunkSize + file.size > payloadBudget && currentChunk.length > 0)) {
         chunks.push(currentChunk);
         currentChunk = [];
         currentChunkSize = 0;
@@ -309,6 +315,10 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     // so we can settle immediately when nothing is left in the async worker.
     let largeSucceeded = 0;
     let unitIndex = 0;
+    let capacityRefused = false;
+    // A busy server is waited out, batch by batch. Only a refusal that
+    // waiting cannot cure (no disk space, a limit) stops the rest.
+    const whileBusy = { delaysMs: CAPACITY_RETRY_DELAYS_MS, onWaiting: setWaitingForCapacity };
 
     try {
       // --- Large files: existing backend chunked-upload (10MB parts) ---
@@ -323,7 +333,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
         });
 
         try {
-          await photosService.uploadLargeFile(
+          await retryWhileBusy(() => photosService.uploadLargeFile(
             eventId,
             file,
             selectedCategoryId,
@@ -341,23 +351,32 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
                 bytePct: Math.round(Math.min(pct, 100)),
               });
             }
-          );
+          ), whileBusy);
           largeSucceeded += 1;
           // complete() already ran ffmpeg + insert — refresh grid
           if (onUploadComplete) onUploadComplete();
         } catch (error: any) {
           console.error(`Error uploading large file ${file.name}:`, error);
-          const reason =
+          const code = error?.response?.data?.code;
+          const capacityKey = adminUploadErrorKey(code);
+          const reason = capacityKey ? t(capacityKey) :
             error?.response?.data?.error ||
             error?.message ||
             t('upload.failures.transferReason', 'Transfer failed');
           collected.push({ filename: file.name, reason, kind: 'transfer' });
+          if (capacityKey && !isTransientUploadRefusal(code)) {
+            capacityRefused = true;
+            const unsent = [...largeFilesToUpload.slice(li + 1), ...chunks.flat()];
+            collected.push(...unsent.map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+            break;
+          }
         }
         unitIndex += 1;
       }
 
       // --- Small files: existing multipart batch path ---
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        if (capacityRefused) break;
         setCurrentChunk(unitIndex + 1);
         const chunk = chunks[chunkIndex];
         const formData = new FormData();
@@ -381,7 +400,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
         });
 
         try {
-          const response = await api.post(`/admin/events/${eventId}/upload`, formData, {
+          const response = await retryWhileBusy(() => api.post(`/admin/events/${eventId}/upload`, formData, {
             onUploadProgress: (progressEvent) => {
               if (progressEvent.total) {
                 const chunkProgress = progressEvent.loaded / progressEvent.total;
@@ -416,7 +435,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
                 }
               }
             },
-          });
+          }), whileBusy);
 
           totalReplaced += (response.data?.replacedCount || 0);
           // The backend accepts the request (202) but may reject individual
@@ -444,7 +463,9 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
           }
         } catch (error: any) {
           console.error(`Error uploading chunk ${chunkIndex + 1}:`, error);
-          const reason =
+          const code = error?.response?.data?.code;
+          const capacityKey = adminUploadErrorKey(code);
+          const reason = capacityKey ? t(capacityKey) :
             error?.response?.data?.error ||
             error?.message ||
             t('upload.failures.transferReason', 'Transfer failed');
@@ -452,7 +473,13 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
             ...chunk.map((f) => ({ filename: f.name, reason, kind: 'transfer' as const }))
           );
 
-          // Continue with next chunk even if one fails
+          if (capacityKey && !isTransientUploadRefusal(code)) {
+            collected.push(...chunks.slice(chunkIndex + 1).flat()
+              .map(f => ({ filename: f.name, reason, kind: 'transfer' as const })));
+            break;
+          }
+          // Ordinary per-file/transport failures, and a server that stayed
+          // busy through every retry, still allow later batches.
         }
         unitIndex += 1;
       }
@@ -827,8 +854,14 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
             <>
               <div className="flex justify-between text-sm text-neutral-600 dark:text-neutral-400 mb-1">
                 <span>
-                  {t('upload.transferring')}
-                  {totalChunks > 1 && ` (${t('common.chunk')} ${currentChunk}/${totalChunks})`}
+                  {waitingForCapacity ? (
+                    <span data-testid="upload-waiting-for-capacity">{t('upload.adminCapacity.waiting', waitingForCapacity)}</span>
+                  ) : (
+                    <>
+                      {t('upload.transferring')}
+                      {totalChunks > 1 && ` (${t('common.chunk')} ${currentChunk}/${totalChunks})`}
+                    </>
+                  )}
                 </span>
                 <span>{uploadProgress}%</span>
               </div>

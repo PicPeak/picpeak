@@ -3,7 +3,7 @@
  *
  * A "transfer" is a share link that bundles ORIGINAL photos picked from any
  * number of events and hands them to a recipient as a download link. It can
- * also open a short (6-char) upload token so the client can send files back
+ * also open a short (10-char) upload code so the client can send files back
  * (logos etc.).
  *
  * Design decisions (from the issue):
@@ -33,10 +33,10 @@ const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { filterOwnedEventIds } = require('../middleware/ownership');
 
 // Unambiguous alphabet for the client upload token — no 0/O/1/I/L to keep it
-// easy to read aloud / type from an email. 6 chars ≈ 31 bits; brute force is
-// mitigated by the per-route rate limiter + IP lockout on the upload endpoint.
+// easy to read aloud / type from an email. Ten characters give about 49.6 bits;
+// migration 241 rotates legacy shorter codes before the route rejects them.
 const UPLOAD_TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const UPLOAD_TOKEN_LENGTH = 6;
+const UPLOAD_TOKEN_LENGTH = 10;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -49,9 +49,9 @@ function generateDownloadToken() {
   return crypto.randomBytes(32).toString('hex'); // 64 hex chars
 }
 
-function generateUploadTokenCandidate() {
+function generateUploadTokenCandidate(length = UPLOAD_TOKEN_LENGTH) {
   let out = '';
-  for (let i = 0; i < UPLOAD_TOKEN_LENGTH; i += 1) {
+  for (let i = 0; i < length; i += 1) {
     // crypto.randomInt is unbiased over [0, len); a plain byte % len would
     // over-represent the first (256 % len) characters of the alphabet.
     out += UPLOAD_TOKEN_ALPHABET[crypto.randomInt(0, UPLOAD_TOKEN_ALPHABET.length)];
@@ -84,7 +84,7 @@ async function generateUniqueUploadToken(conn = db) {
     if (!clash) return candidate;
   }
   // Astronomically unlikely; fall back to a longer token so we never loop.
-  return generateUploadTokenCandidate() + generateUploadTokenCandidate();
+  return generateUploadTokenCandidate(UPLOAD_TOKEN_LENGTH + 4);
 }
 
 /** Storage-relative directory that holds a transfer's client uploads. */
@@ -953,6 +953,8 @@ function assertUploadable(transfer) {
   if (!transfer || transfer.deleted_at) return { ok: false, code: 'NOT_FOUND', status: 404 };
   const allow = transfer.allow_uploads === true || transfer.allow_uploads === 1;
   if (!allow) return { ok: false, code: 'UPLOADS_DISABLED', status: 403 };
+  const isActive = transfer.is_active === true || transfer.is_active === 1;
+  if (!isActive) return { ok: false, code: 'UPLOADS_DISABLED', status: 403 };
   const exp = transfer.upload_expires_at || transfer.expires_at;
   if (exp && new Date(exp).getTime() <= Date.now()) {
     return { ok: false, code: 'UPLOAD_EXPIRED', status: 410 };
@@ -961,8 +963,8 @@ function assertUploadable(transfer) {
 }
 
 /** Record a client-uploaded file (bytes already written by the route/multer). */
-async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, mimeType, ip }) {
-  const [id] = await db('transfer_uploads').insert({
+async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, mimeType, ip }, conn = db) {
+  const [id] = await conn('transfer_uploads').insert({
     transfer_id: transferId,
     original_filename: String(originalFilename || 'file').slice(0, 512),
     stored_path: storedPath,
@@ -971,7 +973,7 @@ async function addUpload(transferId, { originalFilename, storedPath, sizeBytes, 
     uploader_ip: ip || null,
     uploaded_at: new Date(),
   }).returning('id');
-  await db('transfers').where({ id: transferId }).update({ updated_at: new Date() });
+  await conn('transfers').where({ id: transferId }).update({ updated_at: new Date() });
   return typeof id === 'object' && id !== null ? id.id : id;
 }
 
@@ -1017,6 +1019,7 @@ async function removeUploadedFiles(transferId) {
 module.exports = {
   // constants / helpers
   UPLOAD_TOKEN_LENGTH,
+  generateUniqueUploadToken,
   getFrontendUrl,
   uploadDirKey,
   extraFilesDirKey,

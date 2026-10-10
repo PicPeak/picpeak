@@ -54,6 +54,12 @@ vi.mock('../../../services/photos.service', async () => {
   };
 });
 
+// Three quick retries instead of ten over four minutes.
+vi.mock('../../../utils/uploadCapacityRetry', async () => ({
+  ...(await vi.importActual<typeof import('../../../utils/uploadCapacityRetry')>('../../../utils/uploadCapacityRetry')),
+  CAPACITY_RETRY_DELAYS_MS: [20, 20, 20],
+}));
+
 vi.mock('../../../hooks/useUploadProgress', () => ({
   useUploadProgress: () => ({
     snapshots: {},
@@ -127,6 +133,23 @@ describe('PhotoUpload large single files', () => {
     expect(uploadLargeFile).not.toHaveBeenCalled();
   });
 
+  it('uses chunks at the exact raw limit so multipart framing cannot overflow it', async () => {
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    const exact = file('at-limit.mp4', 'video/mp4', 2);
+    await selectAndUpload(container, [exact]);
+    await waitFor(() => expect(uploadLargeFile).toHaveBeenCalledTimes(1));
+    expect(uploadLargeFile.mock.calls[0][1]).toBe(exact);
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('splits a file-size sum at the raw limit to leave space for multipart headers', async () => {
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, [file('a.jpg', 'image/jpeg', 1), file('b.jpg', 'image/jpeg', 1)]);
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
+    for (const call of postMock.mock.calls) expect((call[1] as FormData).getAll('photos')).toHaveLength(1);
+    expect(uploadLargeFile).not.toHaveBeenCalled();
+  });
+
   it('splits a mixed selection between the two paths', async () => {
     const { container } = renderWithClient(<PhotoUpload eventId={7} />);
     const big = file('highlights.mp4', 'video/mp4', 3);
@@ -156,6 +179,76 @@ describe('PhotoUpload large single files', () => {
     const report = await screen.findByTestId('upload-failure-report');
     expect(within(report).getByText('broken.mp4')).toBeInTheDocument();
     expect(within(report).getByText(/Transfer failed/)).toBeInTheDocument();
+  });
+
+  it('shows localized capacity guidance for a refused chunk instead of its raw server error', async () => {
+    uploadLargeFile.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_STORAGE_LOW', error: 'Raw capacity refusal' } } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, [file('waiting.mp4', 'video/mp4', 3)]);
+    const report = await screen.findByTestId('upload-failure-report');
+    expect(within(report).getByText(/upload\.adminCapacity\.storage/)).toBeInTheDocument();
+    expect(within(report).queryByText('Raw capacity refusal')).not.toBeInTheDocument();
+  });
+
+  it('stops unsent large files and multipart batches after a refusal waiting cannot cure, reporting each filename', async () => {
+    uploadLargeFile.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_STORAGE_LOW' } } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, [file('first.mp4', 'video/mp4', 3), file('later.mp4', 'video/mp4', 3), file('small.jpg', 'image/jpeg', 0.5)]);
+    const report = await screen.findByTestId('upload-failure-report');
+    for (const name of ['first.mp4', 'later.mp4', 'small.jpg']) expect(within(report).getByText(name)).toBeInTheDocument();
+    expect(uploadLargeFile).toHaveBeenCalledTimes(1);
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it('stops later multipart batches after capacity refusal without retrying or discarding accepted work', async () => {
+    postMock.mockResolvedValueOnce({ data: { count: 1, upload_id: 'accepted-before-refusal', errors: [] } });
+    postMock.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_STORAGE_LOW' } } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, ['a.jpg', 'b.jpg', 'c.jpg'].map(name => file(name, 'image/jpeg', 1)));
+    const report = await screen.findByTestId('upload-failure-report');
+    expect(postMock).toHaveBeenCalledTimes(2);
+    expect(within(report).queryByText('a.jpg')).not.toBeInTheDocument();
+    expect(within(report).getByText('b.jpg')).toBeInTheDocument();
+    expect(within(report).getByText('c.jpg')).toBeInTheDocument();
+    expect(uploadLargeFile).not.toHaveBeenCalled();
+  });
+
+  it.each(['UPLOAD_PENDING_LIMIT', 'UPLOAD_CONCURRENCY_LIMIT', 'UPLOAD_TIMEOUT'])('waits and re-sends a batch refused with %s instead of failing it and the rest', async (code) => {
+    postMock.mockReset();
+    postMock.mockRejectedValueOnce({ response: { data: { code } } });
+    postMock.mockRejectedValueOnce({ response: { data: { code } } });
+    postMock.mockResolvedValue({ data: { successCount: 1, count: 1, upload_id: 'u1', errors: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, ['a.jpg', 'b.jpg'].map(name => file(name, 'image/jpeg', 1)));
+    expect(await screen.findByTestId('upload-waiting-for-capacity')).toHaveTextContent('upload.adminCapacity.waiting');
+    // Batch one: two refusals, then accepted. Batch two follows.
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(4));
+    expect((postMock.mock.calls[2][1] as FormData).getAll('photos')[0]).toBe((postMock.mock.calls[0][1] as FormData).getAll('photos')[0]);
+    await waitFor(() => expect(screen.queryByTestId('upload-waiting-for-capacity')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('upload-failure-report')).not.toBeInTheDocument();
+  });
+
+  it('waits out a busy server for a large file too', async () => {
+    uploadLargeFile.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_CONCURRENCY_LIMIT' } } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, [file('ceremony.mp4', 'video/mp4', 3), file('ok.jpg', 'image/jpeg', 0.5)]);
+    await waitFor(() => expect(uploadLargeFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('upload-failure-report')).not.toBeInTheDocument();
+  });
+
+  it('fails only the batch whose retries ran out, with admin wording, and still sends the next one', async () => {
+    postMock.mockReset();
+    for (let n = 0; n < 4; n++) postMock.mockRejectedValueOnce({ response: { data: { code: 'UPLOAD_PENDING_LIMIT' } } });
+    postMock.mockResolvedValue({ data: { successCount: 1, count: 1, upload_id: 'u1', errors: [] } });
+    const { container } = renderWithClient(<PhotoUpload eventId={7} />);
+    await selectAndUpload(container, ['a.jpg', 'b.jpg'].map(name => file(name, 'image/jpeg', 1)));
+    const report = await screen.findByTestId('upload-failure-report');
+    // One send and three retries for a.jpg, then b.jpg goes through.
+    expect(postMock).toHaveBeenCalledTimes(5);
+    expect(within(report).getByText('a.jpg')).toBeInTheDocument();
+    expect(within(report).getByText(/upload\.adminCapacity\.busy/)).toBeInTheDocument();
+    expect(within(report).queryByText('b.jpg')).not.toBeInTheDocument();
   });
 
   it('skips a large file into the report when replace-by-name is on', async () => {

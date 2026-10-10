@@ -16,6 +16,7 @@ const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 const { networkLimit } = require('../utils/networkRateCap');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
+const { originalAssetDenial, galleryPolicyContext } = require('../services/galleryAssetPolicy');
 
 const router = express.Router();
 
@@ -106,6 +107,9 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
       return res.status(403).json({ error: 'Photo not available' });
     }
+
+    const denial = await originalAssetDenial(req, photo, { display: true });
+    if (denial) return res.status(403).json(denial);
 
     // Check for suspicious activity
     const isSuspicious = await secureImageService.detectSuspiciousActivity(rateLimitFingerprint, photoId);
@@ -338,6 +342,11 @@ router.get('/:slug/photo/:photoId/signed/:token', async (req, res) => {
     if (photo.visibility === 'hidden' && !tokenData.clientBypass) {
       return res.status(403).json({ error: 'Photo not available' });
     }
+
+    // The signed URL proves its issuing grant, not entitlement to source
+    // bytes after downloads/category policy changed. Recheck at every use.
+    const denial = await originalAssetDenial(galleryPolicyContext(event, tokenData.galleryAccess), photo, { display: true });
+    if (denial) return res.status(403).json(denial);
 
     // Get watermark settings
     const watermarkSettings = await watermarkService.getWatermarkSettings();

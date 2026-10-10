@@ -16,6 +16,7 @@ const { getStorage } = require('./storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextSessionCutoff, invalidateSessionsIssuedSoFar } = require('../utils/sessionCutoff');
+const { assertCompleteFileRestore, resolveBackupPointLocation } = require('../utils/backupRestorePoint');
 
 // A manifest is attacker-influenceable (hand-crafted backup). Reject any
 // entry path that would resolve OUTSIDE its intended base directory
@@ -84,17 +85,12 @@ function assertSafeSqlitePath(p) {
 // swapped or truncated in the backup store was still replayed as SQL. A keyed
 // manifest covers this checksum, which makes the check meaningful against a
 // tampered store. Manifests written before the checksum existed carry none:
-// they restore with a warning, or are refused when the operator requires keyed
-// manifests (BACKUP_MANIFEST_REQUIRE_KEYED), since there is nothing to verify.
-async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () => {}) {
+// Missing digests are permitted only by the separately host-approved,
+// target-bound unauthenticated recovery flow, never ordinary force.
+async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () => {}, { allowUnverified = false } = {}) {
   const expected = typeof expectedChecksum === 'string' ? expectedChecksum.trim().toLowerCase() : '';
-  if (!expected) {
-    if (/^(1|true|yes)$/i.test(String(process.env.BACKUP_MANIFEST_REQUIRE_KEYED || ''))) {
-      throw new Error(
-        'The backup manifest records no checksum for the database dump, so it cannot be verified. ' +
-        'Refusing to restore because BACKUP_MANIFEST_REQUIRE_KEYED is set.'
-      );
-    }
+  if (!/^[a-f0-9]{64}$/.test(expected)) {
+    if (!allowUnverified) throw new Error('The backup manifest requires a valid SHA-256 database dump checksum; refusing unverified restore');
     warn('Backup manifest records no database dump checksum; the dump was restored without verification');
     return { verified: false };
   }
@@ -112,6 +108,34 @@ async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () 
     );
   }
   return { verified: true };
+}
+
+function allowsUnauthenticatedContent(manifest) {
+  const authentication = backupManifest.getAuthentication(manifest);
+  return authentication.valid && authentication.authenticated === false && authentication.recovery === true;
+}
+
+function requireContentChecksum(manifest, checksum, label) {
+  if (typeof checksum === 'string' && /^[a-f0-9]{64}$/i.test(checksum)) return checksum.toLowerCase();
+  if (allowsUnauthenticatedContent(manifest)) return null;
+  throw new Error(`The backup manifest requires a valid SHA-256 checksum for ${label}`);
+}
+
+function resolveRestoreFiles(manifest, options) {
+  const entries = manifest.files.manifest;
+  if (options.restoreType !== 'selective') return entries;
+  const byPath = new Map();
+  for (const entry of entries) {
+    if (byPath.has(entry.path)) throw new Error('Ambiguous duplicate file paths in the authenticated manifest');
+    byPath.set(entry.path, entry);
+  }
+  return options.selectedItems.filter(item => item.type === 'file').map(item => {
+    const entry = byPath.get(item.path);
+    if (!entry) throw new Error('Selected file is not present in the authenticated manifest');
+    // Selection chooses a name only; checksum, size, permissions and time
+    // always come from the authenticated entry, never the request object.
+    return entry;
+  });
 }
 
 // `restore_max_file_size_mb` (restore settings, default from migration 032)
@@ -245,6 +269,46 @@ async function resolveContainedDbBackupCandidates(backupPath, dbBackupFile, warn
     return contained;
   });
 }
+
+async function stageDatabaseDump(source, expectedChecksum, tempDir, { allowUnverified = false, warn = () => {} } = {}) {
+  await fs.mkdir(tempDir, { recursive: true });
+  const dir = await fs.mkdtemp(path.join(tempDir, 'verified-dump-'));
+  const dump = path.join(dir, source.endsWith('.gz') ? 'dump.gz' : 'dump.db');
+  try {
+    await fs.chmod(dir, 0o700);
+    // restore_max_file_size_mb is the ceiling for one media object out of
+    // the manifest. The dump is the whole database in one file and restored
+    // at any size before it was staged here, so it is bounded by its own
+    // measured size and by the room in the staging volume instead.
+    const { size } = await fs.lstat(source);
+    const { bavail, bsize } = await fs.statfs(dir);
+    if (size > bavail * bsize) {
+      throw new Error(`The database dump is ${size} bytes but only ${bavail * bsize} bytes are free in ${tempDir} to stage it`);
+    }
+    const root = await fs.realpath(path.dirname(source));
+    const handle = await openRestoreSource(root, path.basename(source), size);
+    await writeBounded(handle.createReadStream(), dump, size, 'Database dump');
+    await verifyDatabaseDumpChecksum(dump, expectedChecksum, warn, { allowUnverified });
+    return { dump, cleanup: () => fs.rm(dir, { recursive: true, force: true }) };
+  } catch (error) {
+    await fs.rm(dir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+// Database replay can replace the running audit row, or put an older row at
+// its numeric ID. Update only this exact run; otherwise append a new record
+// after verification so authenticated/explicit-recovery outcomes survive.
+async function persistRestoreRun(run, completion) {
+  const updated = await db('restore_runs').where({
+    id: run.id, started_at: run.record.started_at,
+  }).update(completion);
+  if (!updated) {
+    const result = await db('restore_runs').insert({ ...run.record, ...completion }).returning('id');
+    run.id = Array.isArray(result) ? (result[0]?.id || result[0]) : result;
+  }
+}
+
 const { formatBytes } = require('../utils/formatBytes');
 const os = require('os');
 
@@ -305,6 +369,7 @@ class RestoreService {
     this.isRunning = true;
     this.restoreLog = [];
     this.preservedMetaSnapshot = [];  // reset per run
+    this.preRestoreBackupPath = null;
     const startTime = new Date();
     let restoreRun = null;
 
@@ -314,21 +379,36 @@ class RestoreService {
       this.log('info', 'Starting restore operation', { options: this.sanitizeOptions(options) });
 
       // Create restore run record
-      const result = await db('restore_runs').insert({
-        started_at: startTime,
+      const runRecord = {
+        // ISO text has the same identity in PostgreSQL and SQLite (and
+        // avoids cross-realm Date coercion in SQLite-backed fixtures).
+        started_at: startTime.toISOString(),
         status: 'running',
         restore_type: options.restoreType,
         source: options.source,
         manifest_path: options.manifestPath,
         is_dry_run: options.dryRun || false
-      }).returning('id');
+      };
+      const result = await db('restore_runs').insert(runRecord).returning('id');
       const runId = Array.isArray(result) ? (result[0]?.id || result[0]) : result;
 
-      restoreRun = { id: runId };
+      restoreRun = { id: runId, record: runRecord };
 
       // Step 1: Load and validate manifest
       this.updateProgress('Loading and validating manifest...');
       const manifest = await this.loadAndValidateManifest(options.manifestPath, options.s3Config);
+      const authentication = backupManifest.getAuthentication(manifest);
+      this.log(authentication.authenticated ? 'info' : 'warn', 'Backup manifest authentication outcome', authentication);
+      // Mandatory before force/dry-run, safety backup, or any restore sink.
+      if (options.restoreType === 'full' || options.restoreType === 'database') {
+        requireContentChecksum(manifest, manifest.database.checksum, 'database dump');
+      }
+      if (['full', 'files', 'selective'].includes(options.restoreType)) {
+        for (const file of resolveRestoreFiles(manifest, options)) requireContentChecksum(manifest, file.checksum, file.path);
+      }
+      assertCompleteFileRestore(manifest, options);
+      const backupConfig = await require('./backupService').getBackupConfig();
+      const selectedBackup = await resolveBackupPointLocation(manifest, options, backupConfig);
       this.log('info', 'Manifest loaded and validated', {
         backupId: manifest.backup.id,
         backupType: manifest.backup.type,
@@ -363,10 +443,11 @@ class RestoreService {
         this.log('info', 'Dry run completed successfully');
         
         await db('restore_runs').where('id', runId).update({
-          completed_at: new Date(),
+          completed_at: new Date().toISOString(),
           status: 'completed',
           statistics: JSON.stringify({
             dryRun: true,
+            authentication,
             validation,
             spaceCheck,
             manifest: {
@@ -395,39 +476,13 @@ class RestoreService {
         this.log('warn', 'Pre-restore backup skipped at user request');
       }
 
-      // Step 5: Download backup if from S3, or resolve the local root.
-      //
-      // The wizard passes `options.source = 'local'` (the SOURCE TYPE
-      // string) — not a path. The old code assigned that string to
-      // `localBackupPath` verbatim and every downstream `path.join(...)`
-      // ended up with junk like `local/database/<file>.sql.gz`. Caused
-      // the disaster-recovery restore flow to fail with
-      // `Database backup file not found: local/database/...` even when
-      // the manifest recorded the correct absolute path AND the file
-      // existed at exactly that path on disk.
-      //
-      // Resolve `'local'` to the configured backup destination root by
-      // reading `backup_destination_path` from app_settings. That's the
-      // same root the file-backup walker writes to, so every relative
-      // `file.path` in the manifest resolves correctly via
-      // `path.join(localBackupPath, file.path)` further down.
-      let localBackupPath = options.source;
-      if (options.source === 'local') {
-        try {
-          const row = await db('app_settings')
-            .where('setting_key', 'backup_destination_path')
-            .first();
-          if (row?.setting_value) {
-            let parsed;
-            try { parsed = JSON.parse(row.setting_value); } catch (_) { parsed = row.setting_value; }
-            if (parsed) localBackupPath = parsed;
-          }
-        } catch (err) {
-          this.log('warn', `Could not resolve backup_destination_path: ${err.message}`);
-        }
-      } else if (options.source.startsWith('s3://')) {
+      // Step 5: Use the selected restore point, not today's destination or
+      // another run's mirror. The wizard's source type tokens were resolved
+      // and their roots validated before any destructive restore work.
+      let localBackupPath = selectedBackup;
+      if (selectedBackup.startsWith('s3://')) {
         this.updateProgress('Downloading backup from S3...');
-        localBackupPath = await this.downloadFromS3(options.source, manifest, options);
+        localBackupPath = await this.downloadFromS3(selectedBackup, manifest, options);
       }
 
       // Step 6: Perform the actual restore based on type
@@ -627,8 +682,8 @@ class RestoreService {
       const durationSeconds = Math.round((endTime - startTime) / 1000);
 
       // Update restore run record
-      await db('restore_runs').where('id', runId).update({
-        completed_at: endTime,
+      await persistRestoreRun(restoreRun, {
+        completed_at: endTime.toISOString(),
         status: 'completed',
         // Default for the column is `false`. Without this line, every
         // SUCCESSFUL restore ends up with `status='completed',
@@ -644,6 +699,8 @@ class RestoreService {
         statistics: JSON.stringify({
           ...restoreResult,
           verification,
+          authentication,
+          log: this.restoreLog,
           durationSeconds
         })
       });
@@ -715,8 +772,8 @@ class RestoreService {
             ? `${error.message} (rolled back successfully to pre-restore state)`
             : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
           : `${error.message} (no pre-restore backup available — destination may be partial)`;
-        await db('restore_runs').where('id', restoreRun.id).update({
-          completed_at: new Date(),
+        await persistRestoreRun(restoreRun, {
+          completed_at: new Date().toISOString(),
           status: 'failed',
           error_message: failureMessage,
           was_rollback_attempted: rollbackAttempted,
@@ -772,7 +829,7 @@ class RestoreService {
       throw new Error('Selected items are required for selective restore');
     }
 
-    if (options.source.startsWith('s3://') && !options.s3Config) {
+    if ((options.source === 's3' || options.source.startsWith('s3://')) && !options.s3Config) {
       throw new Error('S3 configuration is required for S3-based backups');
     }
   }
@@ -788,13 +845,13 @@ class RestoreService {
       const tempManifestPath = path.join(this.tempDir, 'manifest.json');
       await fs.mkdir(this.tempDir, { recursive: true });
       await this.downloadFileFromS3(manifestPath, tempManifestPath, s3Config);
-      manifest = await backupManifest.loadManifest(tempManifestPath);
+      manifest = await backupManifest.loadManifest(tempManifestPath, { allowRecovery: true });
     } else {
-      manifest = await backupManifest.loadManifest(manifestPath);
+      manifest = await backupManifest.loadManifest(manifestPath, { allowRecovery: true });
     }
 
     // Validate manifest
-    backupManifest.validateManifest(manifest);
+    backupManifest.validateManifest(manifest, { allowRecovery: true });
 
     return manifest;
   }
@@ -820,7 +877,7 @@ class RestoreService {
       // attacker who could rewrite the backup store simply deleted the field
       // to skip verification altogether. The helper owns that case now and
       // rejects it.
-      const checksumResult = backupManifest.verifyManifestChecksum(manifest);
+      const checksumResult = backupManifest.verifyManifestChecksum(manifest, { allowRecovery: true });
       checksumResult.warnings.forEach((w) => this.log('warn', w));
       if (!checksumResult.valid) {
         validation.errors.push(checksumResult.error || 'Manifest checksum verification failed');
@@ -1122,10 +1179,11 @@ class RestoreService {
 
       // Download files if needed
       if (['full', 'files', 'selective'].includes(options.restoreType)) {
-        const filesToDownload = recoveryFiles.selectedManifestFiles(manifest, options);
+        const filesToDownload = resolveRestoreFiles(manifest, options);
 
         let downloaded = 0;
         for (const file of filesToDownload) {
+          const expectedChecksum = requireContentChecksum(manifest, file.checksum, file.path);
           const s3Key = path.posix.join(prefix, file.path);
           const localFilePath = path.join(localPath, file.path);
 
@@ -1150,9 +1208,9 @@ class RestoreService {
             });
             
             // Verify checksum if available
-            if (file.checksum) {
+            if (expectedChecksum) {
               const downloadedChecksum = await this.calculateChecksum(localFilePath);
-              if (downloadedChecksum !== file.checksum) {
+              if (downloadedChecksum !== expectedChecksum) {
                 throw new Error(`Checksum mismatch for ${file.path}`);
               }
             }
@@ -1282,9 +1340,15 @@ class RestoreService {
     // inherently safe (path.basename() strips any directory component) and
     // is always inside `backupPath`, which is itself always one of the
     // allowed roots below.
-    const candidates = await resolveContainedDbBackupCandidates(
+    let candidates = await resolveContainedDbBackupCandidates(
       backupPath, dbBackupFile, (msg, meta) => this.log('warn', msg, meta)
     );
+    // A downloaded S3 dump takes precedence over an old absolute filename
+    // still present on this host. Never replay a different local artifact.
+    if (_options?.source?.startsWith('s3://') || _options?.source === 's3') {
+      const stagedCandidate = path.join(backupPath, 'database', path.basename(dbBackupFile));
+      candidates = candidates.filter(candidate => path.resolve(candidate) === path.resolve(stagedCandidate));
+    }
 
     if (candidates.length === 0) {
       throw new Error(
@@ -1316,46 +1380,47 @@ class RestoreService {
 
     // Before anything is decompressed or replayed: the dump must be the one
     // the manifest describes.
-    await verifyDatabaseDumpChecksum(
-      dbBackupPath, manifest.database.checksum, (msg) => this.log('warn', msg)
-    );
+    const staged = await stageDatabaseDump(dbBackupPath, manifest.database.checksum, this.tempDir, {
+      allowUnverified: allowsUnauthenticatedContent(manifest), warn: msg => this.log('warn', msg),
+    });
+    dbBackupPath = staged.dump;
     this.log('info', 'Database dump checksum checked against the manifest');
 
     // Decompress if needed
     let restoreFile = dbBackupPath;
-    if (dbBackupPath.endsWith('.gz')) {
-      this.log('info', 'Decompressing database backup...');
-      const decompressedPath = dbBackupPath.replace('.gz', '');
-      await this.decompressFile(dbBackupPath, decompressedPath);
-      restoreFile = decompressedPath;
-    }
-
-    // Snapshot of operator-meta keys captured BEFORE the DROP.
-    // Stashed onto `this.preservedMetaSnapshot` so the parent
-    // `restore()` method can drain + apply it AFTER post-restore
-    // verification passes. Order matters here:
-    //
-    //   - PR #596 round 1: lifted the declaration above the
-    //     SQLite/PG split to fix a ReferenceError when the replay
-    //     was inline at the bottom of this method.
-    //   - PR #596 round 3: moved the REPLAY itself out of here and
-    //     into restore(), because the round-1 in-method replay ran
-    //     BEFORE post-restore verification — which then counted the
-    //     replayed row and flagged
-    //       Table app_settings row count mismatch: expected 190, got 191
-    //     as a verification failure even though both Stage A and
-    //     the replay had succeeded. Verification now sees the
-    //     as-restored DB (matches the backup exactly), replay layers
-    //     on top after verification has signed off.
-    //
-    // SQLite branch leaves `preservedMetaSnapshot` empty — verification
-    // and replay both no-op for it, unchanged behaviour.
-    const PRESERVED_META_KEYS = [
-      'restore_allow_force',
-      'restore_allow_force_auto_upgraded',
-    ];
-
     try {
+      if (dbBackupPath.endsWith('.gz')) {
+        this.log('info', 'Decompressing database backup...');
+        const decompressedPath = dbBackupPath.slice(0, -3);
+        await this.decompressFile(dbBackupPath, decompressedPath);
+        restoreFile = decompressedPath;
+      }
+
+      // Snapshot of operator-meta keys captured BEFORE the DROP.
+      // Stashed onto `this.preservedMetaSnapshot` so the parent
+      // `restore()` method can drain + apply it AFTER post-restore
+      // verification passes. Order matters here:
+      //
+      //   - PR #596 round 1: lifted the declaration above the
+      //     SQLite/PG split to fix a ReferenceError when the replay
+      //     was inline at the bottom of this method.
+      //   - PR #596 round 3: moved the REPLAY itself out of here and
+      //     into restore(), because the round-1 in-method replay ran
+      //     BEFORE post-restore verification — which then counted the
+      //     replayed row and flagged
+      //       Table app_settings row count mismatch: expected 190, got 191
+      //     as a verification failure even though both Stage A and
+      //     the replay had succeeded. Verification now sees the
+      //     as-restored DB (matches the backup exactly), replay layers
+      //     on top after verification has signed off.
+      //
+      // SQLite branch leaves `preservedMetaSnapshot` empty — verification
+      // and replay both no-op for it, unchanged behaviour.
+      const PRESERVED_META_KEYS = [
+        'restore_allow_force',
+        'restore_allow_force_auto_upgraded',
+      ];
+
       if (this.dbType === 'sqlite') {
         // SQLite restore
         const dbPath = knexConfig.connection.filename;
@@ -1612,6 +1677,7 @@ END $$;`
       if (restoreFile !== dbBackupPath) {
         await fs.unlink(restoreFile).catch(() => {});
       }
+      await staged.cleanup();
     }
   }
 
@@ -1622,10 +1688,7 @@ END $$;`
     this.updateProgress('Restoring files...');
 
     const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-    const filesToRestore = getStorage().kind() === 's3'
-      ? recoveryFiles.selectedManifestFiles(manifest, options)
-      : options.restoreType === 'selective'
-        ? options.selectedItems.filter(item => item.type === 'file') : manifest.files.manifest;
+    const filesToRestore = resolveRestoreFiles(manifest, options);
 
     let restoredCount = 0;
     const errors = [];
@@ -1651,6 +1714,7 @@ END $$;`
           errors.push(`Refusing ${file.path}: recorded at ${file.size} bytes, above the restore size limit`);
           continue;
         }
+        const expectedChecksum = requireContentChecksum(manifest, file.checksum, file.path);
 
         // Validates the key, so it runs before a descriptor is open: a
         // throw here must not leave one behind.
@@ -1669,10 +1733,10 @@ END $$;`
           continue;
         }
 
-        // Until the read stream takes the descriptor over, this loop owns
-        // it: a failure preparing the target (mkdir on a path blocked by a
-        // file, a full disk) must close it, or a manifest full of such
-        // entries runs the process out of descriptors.
+        // Capture and authenticate store bytes BEFORE touching the live
+        // target. A failed checksum must not publish a new file that the
+        // pre-restore tar rollback would leave behind.
+        let stageDir = null;
         let targetBackup = null;
         if (remote) {
           let captured;
@@ -1691,6 +1755,16 @@ END $$;`
           }
         }
         try {
+          await fs.mkdir(this.tempDir, { recursive: true });
+          stageDir = await fs.mkdtemp(path.join(this.tempDir, 'verified-file-'));
+          await fs.chmod(stageDir, 0o700);
+          const stagedPath = path.join(stageDir, 'file');
+          // The stream owns/closes the vetted descriptor once created.
+          await writeBounded(sourceHandle.createReadStream(), stagedPath, maxBytes, file.path);
+          if (expectedChecksum && await this.calculateChecksum(stagedPath) !== expectedChecksum) {
+            throw new Error('Checksum verification failed');
+          }
+
           // Create target directory
           await fs.mkdir(path.dirname(targetPath), { recursive: true });
 
@@ -1700,25 +1774,12 @@ END $$;`
             targetBackup = `${targetPath}.restore-backup`;
             await fs.copyFile(targetPath, targetBackup);
           } catch (error) {
-            // Target doesn't exist, no backup needed
+            if (error.code !== 'ENOENT') throw error;
+            targetBackup = null; // Target doesn't exist, no backup needed.
           }
-        } catch (error) {
-          await sourceHandle.close().catch(() => {});
-          throw error;
-        }
 
-        try {
-          // Copy file from the vetted descriptor, bounded by the size limit.
-          // The read stream closes the handle when it ends or is destroyed.
-          await writeBounded(sourceHandle.createReadStream(), targetPath, maxBytes, file.path);
-
-          // Verify checksum if available
-          if (file.checksum) {
-            const restoredChecksum = await this.calculateChecksum(targetPath);
-            if (restoredChecksum !== file.checksum) {
-              throw new Error('Checksum verification failed');
-            }
-          }
+          // Publish only the private, verified copy, never reopen store bytes.
+          await fs.copyFile(stagedPath, targetPath);
 
           // Set file permissions if available
           if (file.permissions) {
@@ -1749,6 +1810,10 @@ END $$;`
             await fs.unlink(targetBackup);
           }
           throw error;
+        } finally {
+          // Also covers failures before a read stream takes the handle.
+          await sourceHandle.close().catch(() => {});
+          if (stageDir) await fs.rm(stageDir, { recursive: true, force: true });
         }
 
       } catch (error) {
@@ -1861,9 +1926,7 @@ END $$;`
       // only had to order the bad entry after them to pass.
       if (options.restoreType === 'full' || options.restoreType === 'files' || options.restoreType === 'selective') {
         const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-        const filesToVerify = getStorage().kind() === 's3' ? recoveryFiles.selectedManifestFiles(manifest, options) : options.restoreType === 'selective'
-          ? options.selectedItems.filter(item => item.type === 'file')
-          : manifest.files.manifest;
+        const filesToVerify = resolveRestoreFiles(manifest, options);
 
         for (const file of filesToVerify) {
           const filePath = path.join(storagePath, file.path);
@@ -2313,6 +2376,9 @@ module.exports = {
     assertSafeSqlitePath,
     pathEscapes,
     resolveContainedDbBackupCandidates,
+    stageDatabaseDump,
+    resolveRestoreFiles,
+    requireContentChecksum,
     verifyDatabaseDumpChecksum,
     getRestoreMaxFileBytes,
     nextSessionCutoff,

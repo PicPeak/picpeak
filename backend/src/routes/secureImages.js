@@ -8,7 +8,7 @@ const galleryAccessService = require('../services/galleryAccessService');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
-const { parseBooleanInput } = require('../utils/parsers');
+const { originalAssetDenial, galleryPolicyContext } = require('../services/galleryAssetPolicy');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
 const { withLocalCopy } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
@@ -209,6 +209,10 @@ router.get('/:slug/secure/:photoId/:token',
         return res.status(403).json({ error: 'Photo not available' });
       }
 
+      const denial = await originalAssetDenial(
+        galleryPolicyContext(event, tokenValidation.data?.galleryAccess), photo, { display: true });
+      if (denial) return res.status(403).json(denial);
+
       // Resolve photo through storage backend (managed) or fall back to local
       // path (external reference mode). secureImageService needs a local file,
       // so we materialize a tmp copy via withLocalCopy in S3 mode.
@@ -287,9 +291,8 @@ router.get('/:slug/secure-download/:photoId/:token',
 
       // Check if downloads are allowed. SQLite stores the flag as 0/1, so a
       // strict `=== false` never fired there and the guard was inert (#1028).
-      if (!parseBooleanInput(req.event.allow_downloads, true)) {
-        return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-      }
+      const denial = await originalAssetDenial(req);
+      if (denial) return res.status(403).json(denial);
 
       // Verify secure token
       const tokenValidation = secureImageService.verifySecureToken(
@@ -302,6 +305,8 @@ router.get('/:slug/secure-download/:photoId/:token',
       }
 
       await galleryAccessService.authorize(req.event, tokenValidation.data?.galleryAccess);
+      const issuingDenial = await originalAssetDenial(galleryPolicyContext(req.event, tokenValidation.data?.galleryAccess));
+      if (issuingDenial) return res.status(403).json(issuingDenial);
 
       // Bind the token to the photo it was minted for (GHSA-crxv) — the
       // /secure serve route does this, but secure-download did not, so a
@@ -328,14 +333,8 @@ router.get('/:slug/secure-download/:photoId/:token',
       // Per-category download opt-out (#640) — the regular single-photo
       // download enforces this too; the secure path skipped it. SQLite
       // returns the boolean as numeric 0, so check both forms.
-      if (photo.category_id) {
-        const cat = await db('photo_categories')
-          .where('id', photo.category_id)
-          .first('allow_downloads');
-        if (cat && (cat.allow_downloads === false || cat.allow_downloads === 0)) {
-          return res.status(403).json({ error: 'Downloads are disabled for this category' });
-        }
-      }
+      const photoDenial = await originalAssetDenial(req, photo);
+      if (photoDenial) return res.status(403).json(photoDenial);
 
       // Resolve photo through storage backend (managed) or local disk (external).
       const storageKey = resolvePhotoStorageKey(req.event, photo);

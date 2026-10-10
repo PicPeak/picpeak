@@ -25,13 +25,16 @@ jest.mock('../../src/utils/safeExec', () => ({
   spawnFromFile: jest.fn()
 }));
 jest.mock('../../src/utils/networkValidation', () => ({
-  isHostAllowed: jest.fn().mockResolvedValue(true)
+  resolveHost: jest.fn().mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] }),
+  isPrivateIP: jest.requireActual('../../src/utils/networkValidation').isPrivateIP
 }));
 
+// Load the actual connection boundary before mock-fs hides source files.
+require('../../src/utils/rsyncConnection');
 const backupService = require('../../src/services/backupService');
 const { databaseBackupService } = require('../../src/services/databaseBackup');
 const { spawnAsync } = require('../../src/utils/safeExec');
-const { isHostAllowed } = require('../../src/utils/networkValidation');
+const { resolveHost } = require('../../src/utils/networkValidation');
 const { db } = require('../../src/database/db');
 const logger = require('../../src/utils/logger');
 const { queueEmail } = require('../../src/services/emailProcessor');
@@ -74,6 +77,7 @@ describe('Enhanced Backup Service Tests', () => {
       delete: jest.fn()
     };
     db.mockReturnValue(mockDb);
+    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
     
     // Mock cron job
     mockCronJob = {
@@ -103,6 +107,7 @@ describe('Enhanced Backup Service Tests', () => {
     backupManifest.saveManifest = jest.fn().mockResolvedValue('/path/to/manifest.json');
     backupManifest.loadManifest = jest.fn().mockResolvedValue({});
     backupManifest.validateManifest = jest.fn();
+    backupManifest.getAuthentication = jest.fn().mockReturnValue({ valid: true, authenticated: true, recovery: false, warnings: [] });
     backupManifest.generateSummaryReport = jest.fn().mockReturnValue('Summary report');
     
     // Mock logger
@@ -115,7 +120,7 @@ describe('Enhanced Backup Service Tests', () => {
     // throw when no dump is available — give both a passing default so each
     // test can focus on the destination path it actually covers.
     databaseBackupService.backup.mockResolvedValue({ path: DB_DUMP_PATH, size: 13 });
-    isHostAllowed.mockResolvedValue(true);
+    resolveHost.mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] });
     jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
       type: 'sqlite',
       backupFile: DB_DUMP_PATH,
@@ -219,6 +224,7 @@ describe('Enhanced Backup Service Tests', () => {
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
         type: 'sqlite',
         backupFile: DB_DUMP_PATH,
+        checksum: crypto.createHash('sha256').update('database dump').digest('hex'),
         hasChanged: true
       });
       
@@ -268,7 +274,7 @@ describe('Enhanced Backup Service Tests', () => {
       }));
     });
 
-    it('should skip unchanged files in incremental backup', async () => {
+    it('should include unchanged files in every standalone S3 restore point', async () => {
       const config = {
         backup_enabled: true,
         backup_destination_type: 's3',
@@ -296,12 +302,12 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      // Should skip unchanged file
+      // File-state bookkeeping must not omit bytes from this restore point.
       const uploadCalls = mockS3Client.upload.mock.calls;
       const photo1Uploaded = uploadCalls.some(call => 
         call[1].includes('photo1.jpg')
       );
-      expect(photo1Uploaded).toBe(false);
+      expect(photo1Uploaded).toBe(true);
     });
 
     it('should include database backup when configured', async () => {
@@ -322,7 +328,7 @@ describe('Enhanced Backup Service Tests', () => {
         type: 'sqlite',
         backupFile: '/backup/db-backup.sql',
         size: 1024000,
-        checksum: 'abc123',
+        checksum: crypto.createHash('sha256').update('database backup content').digest('hex'),
         hasChanged: false
       });
       
@@ -393,7 +399,7 @@ describe('Enhanced Backup Service Tests', () => {
       expect(backupManifest.generateManifest).toHaveBeenCalledWith(
         expect.objectContaining({
           backupType: 'full',
-          backupPath: '/backup',
+          backupPath: expect.stringMatching(/^\/backup\/backup-[0-9a-f-]{36}$/),
           format: 'json'
         })
       );
@@ -401,7 +407,7 @@ describe('Enhanced Backup Service Tests', () => {
       expect(backupManifest.saveManifest).toHaveBeenCalled();
     });
 
-    it('should generate incremental manifest when parent exists', async () => {
+    it('should generate an independent full manifest even when parent history exists', async () => {
       const config = {
         backup_enabled: true,
         backup_destination_type: 'local',
@@ -430,8 +436,13 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      expect(backupManifest.loadManifest).toHaveBeenCalledWith('/backup/manifests/previous.json');
-      expect(backupManifest.generateIncrementalManifest).toHaveBeenCalled();
+      expect(backupManifest.loadManifest).not.toHaveBeenCalled();
+      expect(backupManifest.generateIncrementalManifest).not.toHaveBeenCalled();
+      expect(backupManifest.generateManifest).toHaveBeenCalledWith(expect.objectContaining({
+        backupType: 'full',
+        parentBackupId: null,
+        customMetadata: expect.objectContaining({ restore_point: 'standalone-v1' }),
+      }));
     });
 
     it('should upload manifest to S3 for S3 backups', async () => {
@@ -497,7 +508,8 @@ describe('Enhanced Backup Service Tests', () => {
       
       // Verify files were copied to local destination
       const fs = require('fs');
-      const destPath = '/backup/local/events/active/event1/photo1.jpg';
+      const destPath = path.join(backupManifest.generateManifest.mock.calls[0][0].backupPath,
+        'events/active/event1/photo1.jpg');
       expect(fs.existsSync(destPath)).toBe(true);
     });
 
@@ -532,6 +544,87 @@ describe('Enhanced Backup Service Tests', () => {
       const [, rsyncArgs] = spawnAsync.mock.calls[0];
       expect(rsyncArgs).toContain('-avz');
       expect(rsyncArgs[rsyncArgs.length - 1]).toBe('backup@backup.example.com:/remote/backup');
+      expect(rsyncArgs[rsyncArgs.indexOf('-e') + 1]).toContain('Hostname=8.8.8.8');
+      expect(rsyncArgs[rsyncArgs.indexOf('-e') + 1]).toContain('StrictHostKeyChecking=yes');
+      expect(resolveHost).toHaveBeenCalledTimes(1);
+    });
+
+    it('records a refused host key under its code, not as a bare rsync exit, and uses the stored port', async () => {
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true, backup_email_on_failure: true,
+        backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup',
+        backup_rsync_port: 2222 });
+      mockDb.select.mockResolvedValue([]); mockDb.first.mockResolvedValue(null);
+      mockDb.where.mockImplementation(function where(column) {
+        return column === 'is_active' ? Promise.resolve([{ email: 'admin@example.com' }]) : this;
+      });
+      resolveHost.mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] });
+      const stderr = 'Host key verification failed.\r\nrsync error: unexplained error (code 255)';
+      spawnAsync.mockRejectedValue(Object.assign(new Error(`rsync exited with code 255: ${stderr}`), { code: 255, stderr }));
+      mockStorage({ '/storage/events/active': {} });
+      await backupService.runBackup();
+      const shell = spawnAsync.mock.calls[0][1][spawnAsync.mock.calls[0][1].indexOf('-e') + 1];
+      expect(shell).toContain('\'-p\' \'2222\'');
+      expect(shell).toContain('HostKeyAlias=[backup.example.com]:2222');
+      const failure = expect.objectContaining({ error_message: expect.stringMatching(/^RSYNC_SSH_HOST_KEY_UNTRUSTED: /) });
+      expect(mockDb.update).toHaveBeenCalledWith(failure);
+      expect(queueEmail).toHaveBeenCalledWith(null, 'admin@example.com', 'backup_failed', failure);
+    });
+
+    it('keeps any other rsync failure as it was reported', async () => {
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true,
+        backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup' });
+      mockDb.select.mockResolvedValue([]); mockDb.first.mockResolvedValue(null);
+      resolveHost.mockResolvedValue({ reason: 'ok', addresses: [{ address: '8.8.8.8', family: 4 }] });
+      spawnAsync.mockRejectedValue(Object.assign(new Error('rsync exited with code 23: partial transfer'), { stderr: 'partial transfer' }));
+      mockStorage({ '/storage/events/active': {} });
+      await backupService.runBackup();
+      expect(mockDb.update).toHaveBeenCalledWith(expect.objectContaining({ error_message: 'rsync exited with code 23: partial transfer' }));
+    });
+
+    it('does not start rsync or mark a run complete when the stored host rebounds private', async () => {
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({ backup_enabled: true,
+        backup_destination_type: 'rsync', backup_rsync_host: 'backup.example.com', backup_rsync_path: '/remote/backup' });
+      mockDb.select.mockResolvedValue([]); mockDb.first.mockResolvedValue(null);
+      resolveHost.mockResolvedValue({ reason: 'private' });
+      mockStorage({ '/storage/events/active': {} });
+      await backupService.runBackup();
+      expect(spawnAsync).not.toHaveBeenCalled();
+      expect(mockDb.update).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed',
+        error_message: expect.stringContaining('RSYNC_HOST_FORBIDDEN') }));
+    });
+  });
+
+  describe('rsync file that disappears mid-run', () => {
+    it('leaves a file deleted between the walk and the hash out of the manifest instead of failing the run', async () => {
+      mockDb.select.mockResolvedValue([]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
+      mockDb.first.mockResolvedValue(null);
+      jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue({
+        backup_enabled: true,
+        backup_destination_type: 'rsync',
+        backup_rsync_host: 'backup.example.com',
+        backup_rsync_user: 'backup',
+        backup_rsync_path: '/remote/backup'
+      });
+      mockStorage({
+        '/storage/events/active/event1': {
+          'kept.jpg': Buffer.from('kept'),
+          'gone.jpg': Buffer.from('gone')
+        }
+      });
+      spawnAsync.mockImplementation(async () => {
+        require('fs').unlinkSync('/storage/events/active/event1/gone.jpg');
+        return { stdout: 'Number of files transferred: 2\nTotal file size: 8 bytes' };
+      });
+
+      await backupService.runBackup();
+
+      const failed = mockDb.update.mock.calls.find(([row]) => row.status === 'failed');
+      expect(failed).toBeUndefined();
+      const paths = backupManifest.generateManifest.mock.calls[0][0].files.map((file) => file.path);
+      expect(paths.some((p) => p.endsWith('kept.jpg'))).toBe(true);
+      expect(paths.some((p) => p.endsWith('gone.jpg'))).toBe(false);
+      expect(logger.warn.mock.calls.some(([message]) => /gone\.jpg disappeared/.test(String(message)))).toBe(true);
     });
   });
 
@@ -572,7 +665,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       await backupService.runBackup();
       
-      // Should continue with other files despite error
+      // A required file read failure must fail the point rather than omit it.
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining('Failed to backup file'),
         expect.any(Error)
@@ -747,8 +840,10 @@ describe('Enhanced Backup Service Tests', () => {
       expect(status).toEqual({
         isRunning: false,
         isHealthy: true,
-        lastRun: { ...run, manifestValid: true },
-        lastBackup: { ...run, manifestValid: true },
+        signingKey: { ready: true, source: 'env', keyId: expect.any(String) },
+        manifestAuthentication: { valid: true, authenticated: true, recovery: false, warnings: [] },
+        lastRun: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
+        lastBackup: { ...run, manifestValid: true, authentication: { valid: true, authenticated: true, recovery: false, warnings: [] } },
         lastSuccessfulBackup: run,
         zombieRuns: [],
         recentRuns: [run],
@@ -757,6 +852,21 @@ describe('Enhanced Backup Service Tests', () => {
         nextScheduledRun: expect.any(String),
         nextBackup: expect.any(String)
       });
+    });
+
+    it('does not report the backup system unhealthy only because the latest manifest predates authentication', async () => {
+      mockDb.limit.mockResolvedValue([
+        { id: 1, started_at: new Date(), completed_at: new Date(), status: 'completed', manifest_path: '/backup/manifest.json' }
+      ]);
+      mockDb.select.mockResolvedValue([]);
+      backupManifest.getAuthentication.mockReturnValue({ valid: false, authenticated: false, legacy: true, error: 'Manifest is not authenticated', warnings: [] });
+
+      const status = await backupService.getBackupStatus();
+
+      expect(backupManifest.loadManifest).toHaveBeenCalledWith('/backup/manifest.json', { inspect: true });
+      expect(status.manifestAuthentication).toEqual({ authenticated: false, state: 'legacy' });
+      expect(status.lastBackup.manifestValid).toBe(false);
+      expect(status.isHealthy).toBe(true);
     });
 
     // Issue 1641: the management header read lastBackup as "last successful".
@@ -804,6 +914,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       expect(result).toEqual({
         manifest: manifest,
+        authenticated: true,
         summary: 'Summary'
       });
     });

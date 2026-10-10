@@ -66,19 +66,45 @@ docker compose up -d
 
 On first start, open **http://localhost:3000/admin** and follow the in-browser setup to create your admin account. Full details — the one-time setup token, Docker file permissions, and ARM64 notes — are in **[First-run setup](https://docs.picpeak.app/getting-started/first-login)**.
 
+The frontend port is published on every host interface by default; the raw
+backend port binds to host loopback (`PICPEAK_BACKEND_BIND_ADDRESS` overrides
+it). For public access, terminate TLS in a reverse proxy on the host and set
+`PICPEAK_BIND_ADDRESS=127.0.0.1` so the plain-HTTP port cannot be reached
+around it.
+
+Compose trusts one forwarding hop (its frontend nginx). For a host-local TLS
+proxy in front of the frontend, set `TRUST_PROXY=2`, `COOKIE_SECURE=true` and
+`ENABLE_HSTS=true`. Keep the frontend loopback-only with this two-hop setting,
+and configure the outer proxy to append or overwrite forwarding headers using
+the real client address. The installer selects these settings in proxy mode.
+
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. See [RELEASING.md](RELEASING.md) for the promotion cadence.
+
+> [!NOTE]
+> **Recommended hardening:** an existing install keeps working without
+> changes. With `TRUST_PROXY` unset PicPeak still trusts forwarding headers
+> from every private-range address (and logs a warning at startup); set it to
+> the exact number of reverse-proxy hops instead. Behind TLS, also set
+> `COOKIE_SECURE=true`, and bind the origin to loopback
+> (`PICPEAK_BIND_ADDRESS=127.0.0.1` for Compose, `LISTEN_HOST=127.0.0.1` for a
+> native install). The Compose files now publish the raw backend port on host
+> loopback only and pass `TRUST_PROXY` through unchanged (the installer writes an exact hop count for new installs). Unattended installer runs require
+> `--allow-insecure-http` before creating a plaintext deployment.
 
 ### Or: one container, no compose file
 
 For a home server, a NAS, or a single small studio, the all-in-one image runs the whole app as one process with SQLite — no compose file, no separate database, no reverse proxy to wire up:
 
 ```bash
-docker run -d --name picpeak -p 3000:3000 \
+docker run -d --name picpeak -p 127.0.0.1:3000:3000 \
+  -e COOKIE_SECURE=auto \
   -v picpeak:/data \
   ghcr.io/picpeak/picpeak/aio:main
 ```
 
-No environment variables to set — the JWT secret is generated on first start and kept on the volume.
+The cookie mode above (also the default) suits this loopback-only HTTP quick
+start. A TLS deployment should set `COOKIE_SECURE=true` and enable HSTS. The
+JWT secret is generated on first start and kept on the volume.
 
 Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`, or open `db/SETUP_TOKEN` on the volume with any file manager if the host has no shell.
 
@@ -96,6 +122,14 @@ The compose stack above is still the right choice for anything busier — SQLite
 | ML sidecar (optional) | `ghcr.io/picpeak/picpeak/ml` | [`picpeak/ml`](https://hub.docker.com/r/picpeak/ml) |
 
 Both registries get the same digests and the same tags — `stable`/`latest`, a pinned `x.y.z`, and `beta`/`main` for the active development channel — for `linux/amd64` and `linux/arm64`. Keep every image in one install on the **same** tag.
+
+### Rsync/SSH backup destination security
+
+Rsync connection tests and backup runs resolve and vet every DNS answer, then pin SSH to approved public addresses. Private, metadata, reserved and mixed public/private destinations are refused. For multi-address destinations, an application-owned TCP relay can try the next captured literal only before connecting; it never resolves DNS again or retries an established SSH/rsync operation. SSH host-key verification remains bound to the configured hostname, including when its approved address changes. No private-network bypass is provided.
+
+Before use, obtain the destination's SSH host public key and fingerprint through an independent trusted channel with its operator. Provision a `known_hosts` entry for that hostname; do not trust unverified `ssh-keyscan` output or delete a changed-key entry merely to make a test pass. Existing verified entries remain usable. Unknown or changed keys fail instead of being learned automatically.
+
+Pass `BACKUP_SSH_KNOWN_HOSTS` into the backend/AIO process to select an absolute readable trust-file path (without spaces or shell syntax). Otherwise a configured private key uses `known_hosts` in its directory. These selected files may be read-only and are the only host-key trust source. With neither selected, pre-provisioned OpenSSH default user/global trust remains available; default identity files and an SSH agent still work when no key is configured. Mount trust and key files persistently and independently of backup contents. The SSH connection ignores local/system configuration, aliases, proxies and control sockets, connects to the SSH port from the backup settings (22 by default), and does not accept ports or jump hosts from SSH configuration. For a port other than 22 the `known_hosts` entry is named `[host]:port`, as `ssh-keyscan -p` writes it; the host part is always the lower-case name without a trailing dot. When the selected trust file is missing, the backend logs the expected path at startup. Verify intentional server key replacements independently before updating the approved entry.
 
 ## 🌟 Why PicPeak?
 
@@ -131,6 +165,60 @@ Unlike expensive SaaS solutions, PicPeak gives you:
 
 ## 📖 Documentation
 
+### Standard backup authenticity and recovery
+
+Standard JSON/YAML backups use a v3 canonical HMAC-SHA256 manifest. The signature
+binds the full restore description, algorithm and key ID, including dump/file
+digests and stored-path metadata. Normal restores refuse missing keys, unsigned
+manifests, algorithm downgrades and unsafe legacy checksum serialization; `force`
+and the install trigger do not bypass this boundary. This is separate from the
+portable `.picpeak` format.
+
+Retain the **dedicated signing key separately and off-host** before relying on a
+backup. Compose provisions `backup_manifest_key` in the private backend secrets
+volume, not the Postgres/Redis volumes. Native/AIO creates
+`DATA_DIR/backup-manifest.key` (native default: `backend/data`) on first signing,
+outside backed-up storage. An explicit `BACKUP_MANIFEST_KEY` must be 64 hex digits
+from a random 32-byte value (`openssl rand -hex 32`); an explicit
+`BACKUP_MANIFEST_KEY_FILE` must be outside the managed/legacy storage estate.
+Verification never generates a replacement for a lost key. Restore the original
+key on a fresh recovery host, not a key supplied by the backup being verified.
+System Health reports key readiness and latest manifest authenticity separately
+from completion. A missing/invalid key or unverified manifest is not healthy.
+An invalid key (wrong encoding, group/world-writable or symlinked key file) does
+not stop the server: it is logged at boot, shown in System Health, and backups
+fail until it is corrected. A latest manifest that only predates authentication
+is reported as legacy rather than unhealthy; the next backup signs a new one.
+
+Retain previous v3 keys with `BACKUP_MANIFEST_KEYS_OLD` (comma-separated 64-hex
+values) while rotating. Only canonical pre-v3 HMAC manifests can use the explicit
+`BACKUP_MANIFEST_LEGACY_KEY` compatibility setting (the original key string, of
+any length); an earlier passphrase-style `BACKUP_MANIFEST_KEY` left in place
+verifies those manifests the same way but never signs a new one. The old
+under-covering serializer is never accepted as authenticated. Preserve all keys needed by retained backups. Installer
+reconfiguration keeps signing/key-ring settings but clears one-artifact recovery
+approval; key files survive updates independently of application source.
+
+If an old backup is unsigned, uses the unsafe legacy serializer, or its original
+key was lost, it is **unauthenticated**. Recover only on an isolated host after
+independently inspecting/trusting its contents (database dumps may contain SQL
+and client commands). Run the read-only helper:
+
+```sh
+cd backend
+node scripts/backup-manifest-recovery-digest.js /trusted/staged/manifest.json
+```
+
+Set `BACKUP_MANIFEST_RECOVERY_SHA256` to that complete artifact digest and
+`BACKUP_MANIFEST_RECOVERY_REASON` to a meaningful operator reason in trusted host
+configuration, restart the recovery process and restore that one manifest.
+The exception does not prove authenticity; inspection/health still reject it.
+Restores prominently log and retain the unauthenticated outcome and reason.
+Different artifact contents cannot reuse the approval. Missing content digests
+are allowed only in this explicitly approved flow; recorded digests must still
+match. **Remove both recovery variables immediately afterward**, restart, retain
+the audit and create a new authenticated backup with a separately retained key.
+
 Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** — deployment, admin settings, API, branding, and more.
 
 | Topic | Link |
@@ -159,6 +247,23 @@ Capturing S3-primary backups uses a private temporary tree: provide temporary di
 
 Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `STORAGE_S3_*` credentials/bucket/prefix. Recovery uses deployment-relative keys, not the source bucket namespace, and verifies actual target objects rather than unused local copies. Standard recovery's default safety backup preserves prior S3 bytes/metadata and removes newly created keys on rollback. Legacy format-1 portable archives remain readable; transfer attachments always retain download-only delivery headers. Portable import database/files atomicity is a separate limitation.
 
+### Mail network policy
+
+Every SMTP/IMAP connection validates and consumes only its current vetted DNS
+answers, while retaining the configured hostname for TLS verification. Private
+mail servers require deployment-owned `MAIL_PRIVATE_ENDPOINTS` entries with an
+exact protocol, hostname and explicit port, for example `smtp://mailhog:1025` or
+`imap://mail.internal:993`. No settings request can add an approval. The
+`SMTP_HOST`/`SMTP_PORT` pair in the deployment environment counts as approved
+for exactly that host and port, so a relay the deployment itself names keeps
+sending after an upgrade; a host or port changed in the admin UI does not.
+Approved endpoints may resolve to private, loopback or carrier-grade NAT
+addresses. Metadata, link-local, multicast and reserved addresses remain
+forbidden even with an approval. For the Compose `dev` mail catcher, set
+`SMTP_HOST=mailhog` and `SMTP_PORT=1025`.
+An approval does not disable TLS certificate checks; production private TLS
+servers still need a trusted certificate for their configured hostname.
+
 ## 📊 Comparison with Alternatives
 
 | Feature | PicPeak | PicDrop | Scrapbook.de | Pixieset |
@@ -185,6 +290,10 @@ Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `ST
 - **Analytics**: Privacy-focused with Umami integration
 - **External media**: point PicPeak at `EXTERNAL_MEDIA_ROOT` to reference existing originals read-only, index quickly, and generate thumbnails on demand
 
+Official images use Sharp's bundled native libraries. Custom installations using
+a globally installed libvips must also provide librsvg 2.63.2 or newer for safe
+SVG decoding; updating the npm package does not update system libraries.
+
 ## 📸 Screenshots
 
 <details>
@@ -206,6 +315,82 @@ Before restoring on a fresh host, configure the target `STORAGE_BACKEND` and `ST
 We love contributions! PicPeak is built by photographers, for photographers — whether you're fixing bugs, adding features, or improving docs. See the [Contributing Guide](CONTRIBUTING.md) to get started.
 
 Found a security issue? Please open a [security issue](https://github.com/PicPeak/picpeak/issues/new?labels=security). See [SECURITY.md](SECURITY.md) for the policy.
+
+## Standalone backup restore points
+
+New local and S3 scheduled/manual file backups copy every eligible file into
+a unique restore-point directory or object prefix. Their manifests are full
+catalogues marked `standalone-v1`, with no parent dependency; an included,
+verified database dump lives inside the same point. Existing path, feature,
+filename and maximum-file-size exclusions still apply. These backups do not
+cover storage outside the configured backup scope.
+
+Local/S3 `backup_incremental` settings no longer skip unchanged files. Plan
+capacity for a full copy per retained point and temporary space for one S3
+upload file. After each successful run the newest `backup_retention_count`
+points of the current destination are kept (default 7, `0` keeps all) and
+older ones are removed whole with their history entries. Legacy backup trees
+are never pruned. An earlier point is not overwritten by a later run, a run
+that fails removes its partial copy, and deleting separately retained
+database dumps does not invalidate a standalone point.
+
+Select the point's manifest in the restore wizard. A rescued local mount must
+be under a configured backup location (or `RESTORE_ALLOWED_ROOTS`); its
+default nested `manifests/` layout can move or be renamed without rewriting
+the manifest. A downloaded ZIP's root `manifest.json` also identifies its
+extracted directory as the selected point.
+S3 recovery uses the selected manifest's bucket/prefix and current credentials.
+Keep custom manifests together with their recorded snapshot location.
+
+An empty `RESTORE_ON_INSTALL` trigger still auto-selects the newest local
+manifest, searching both the shared `manifests/` directory and immediate
+`backup-UUID/manifests/` points. For a renamed point or custom manifest location,
+put its explicit manifest path in the trigger file instead.
+Here, newest means the manifest file's modification time across both layouts,
+not its filename or an unverified timestamp inside it. Automatic discovery does
+not follow symlinked point/manifests directories. To recover an older point or
+avoid changed timestamps after copying a rescue mount, name the exact manifest
+in the trigger instead of leaving it empty.
+
+Older ambiguous incremental local/S3 backups cannot prove a complete file set
+and are refused for full/file restores, including forced restores and
+`RESTORE_ON_INSTALL`. A legacy local backup whose manifest is a full catalogue
+(the first run into a destination) still restores. Database-only
+and selective file recovery remain available; they do not establish complete
+recovery. Take and test a new standalone point before relying on it. Existing
+rsync catalogue behavior and portable `.picpeak` exports are unchanged.
+
+## Analytics integration security
+
+Settings → Analytics supports Umami and Rybbit through PicPeak-owned, data-only
+event forwarding. Third-party scripts and legacy custom HTML snippets are never
+executed or sent to visitors. Existing custom configurations are disabled; choose
+Umami, Rybbit or None and save to clear the old snippet. Configure collectors in
+the admin settings; the former build-time `VITE_UMAMI_*` variables are no longer read.
+
+Gallery page views and supported download/search/protection events remain
+tracked. Gallery capability suffixes are redacted regardless of token length;
+query strings, fragments, page titles, referrers, account/photo identifiers and
+free-text event properties are not collected. Administrator, customer portal,
+client-access login, short-link, slideshow and other capability pages are excluded.
+Do Not Track and Global Privacy Control are respected. Visitor IP and User-Agent
+still reach the chosen collector for device/location attribution. Vendor-only
+auto-capture, session replay and feature flags are not supported.
+
+Optional dashboard embeds require an unrelated HTTPS host outside PicPeak's
+authentication cookie domain. Same-host alternate ports and collectors covered
+by `COOKIE_DOMAIN` are blocked. Embedding stays disabled if the authenticated
+settings response cannot confirm the cookie scope; built-in statistics remain
+available. Embeds also require browser support for credentialless iframes,
+isolate all cookies/storage across redirects, and disallow popups. Unsupported
+browsers use built-in statistics, without an ordinary-iframe fallback. Your
+frame CSP must separately permit an eligible dashboard.
+
+Production collectors must use HTTPS. Migrate HTTP collectors to HTTPS before
+upgrading. Local HTTP testing requires `ANALYTICS_ALLOW_INSECURE_HTTP=true` in a
+non-production backend; it never enables HTTP in production. For an internal
+HTTPS collector, explicitly approve its exact origin with
+`INTEGRATION_PRIVATE_ORIGINS`; each connection is still address-checked.
 
 ## ☕ Support the Project
 

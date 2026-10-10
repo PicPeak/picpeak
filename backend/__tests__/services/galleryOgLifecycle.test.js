@@ -75,8 +75,8 @@ describe('OG metadata and cover follow the gallery lifecycle', () => {
 
     // A stored thumbnail the live cover can stream.
     const storage = require('../../src/services/storage').getStorage();
-    await storage.put('thumbnails/og-cover.jpg', Buffer.from('not really a jpeg'));
-    require('../../src/services/imageProcessor').ensureThumbnail.mockResolvedValue('thumbnails/og-cover.jpg');
+    await storage.put('thumbnails/thumb_og-cover.jpg', Buffer.from('not really a jpeg'));
+    require('../../src/services/imageProcessor').ensureThumbnail.mockResolvedValue('thumbnails/thumb_og-cover.jpg');
 
     app = express();
     app.get('/og/gallery/:slug/cover', og.handleGalleryOgCover);

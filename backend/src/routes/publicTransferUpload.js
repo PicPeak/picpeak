@@ -1,7 +1,7 @@
 /**
  * Public → Transfer upload routes (PicTransfer client uploads, #997).
  *
- * Mounted at /api/public/transfer-upload. NO authentication — a short (6-char)
+ * Mounted at /api/public/transfer-upload. NO authentication — a short (10-char)
  * upload token in the link is the only secret. This lets a photographer send a
  * client "here's a code, upload your logo / files here". Because the token is
  * low-entropy, brute force is mitigated by a tight per-route rate limiter plus
@@ -29,6 +29,8 @@ const { getStorage } = require('../services/storage');
 const transferService = require('../services/transferService');
 const { _internal: tokenLock } = require('../utils/publicTokenGuards');
 const logger = require('../utils/logger');
+const { withPublicUpload } = require('../middleware/publicUploadStream');
+const uploadQuota = require('../services/publicUploadQuota');
 
 const router = express.Router();
 
@@ -36,28 +38,30 @@ const router = express.Router();
 // probed) once an admin disables the feature under Settings → Features.
 router.use(requireFeatureFlag('transfers'));
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 const MAX_FILES_PER_UPLOAD = 25;
 const DEFAULT_ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/tiff', 'application/pdf', 'application/zip'];
 
 const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
-const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+// The page splits one selection (up to MAX_FILES_PER_UPLOAD files) into
+// requests that each fit the per-request byte budget; bytes are bounded by
+// the upload quota, this only bounds the request count.
+const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
 
 // Upload tokens are drawn from an unambiguous alphabet (see transferService).
-// Accept a small range of lengths so a future longer token still validates.
-const TOKEN_RE = /^[A-Za-z0-9]{4,16}$/;
+// Legacy shorter codes are rotated by migration 241 and rejected afterward.
+const TOKEN_RE = /^[A-Za-z0-9]{10,16}$/;
 
 async function loadUploadTransfer(req, res) {
   const ip = clientIpForAudit(req);
+  const token = req.params.token;
+  if (!token || !TOKEN_RE.test(token)) {
+    res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
+    return null;
+  }
   // Short upload codes retain their pre-lookup lockout, isolated from the
   // high-entropy document links so one surface cannot disable the other.
   if (tokenLock.isIpLocked(ip, 'transfer_uploads')) {
     res.status(429).json({ error: 'Too many invalid attempts. Try again later.', code: 'TOKEN_LOOKUP_LOCKED' });
-    return null;
-  }
-  const token = req.params.token;
-  if (!token || !TOKEN_RE.test(token)) {
-    res.status(400).json({ error: 'Invalid token format', code: 'BAD_TOKEN' });
     return null;
   }
   const transfer = await transferService.getTransferByUploadToken(token);
@@ -88,6 +92,8 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
       expires_at: transfer.upload_expires_at || transfer.expires_at,
       max_size_mb: maxSizeMb,
       max_files: MAX_FILES_PER_UPLOAD,
+      // Raw body budget of one request; the page batches a selection to fit.
+      max_request_bytes: await uploadQuota.requestBudget(maxSizeMb * 1024 * 1024),
       allowed_mime: Array.isArray(allowed) ? allowed : DEFAULT_ALLOWED,
     },
   });
@@ -117,23 +123,10 @@ async function preUploadGuard(req, res, next) {
   }
 }
 
-// Multer writes to a per-transfer temp dir; we then hand files to the storage
-// backend (so S3 works too) and delete the temp copy.
-const tempStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(getStoragePath(), 'temp', 'transfer-uploads');
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const safe = sanitizeFilename(path.basename(file.originalname), 60) || 'file';
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}-${safe}`);
-  },
-});
-
-function buildUploader(maxSizeBytes, allowed) {
+function buildUploader(maxSizeBytes, allowed, { storage, streamHandler, maxFiles, rejectBody }) {
   return multer({
-    storage: tempStorage,
+    storage,
+    streamHandler,
     // CVE-2026-82333: files arrive as repeated `files` parts via .array(),
     // not bracket-indexed field names like `files[0]`, and this route is
     // unauthenticated (token-only) — no legitimate field name uses
@@ -143,89 +136,90 @@ function buildUploader(maxSizeBytes, allowed) {
     // parts and multer keeps every one in memory before the handler ever
     // runs (Codex security audit 2026-09-30).
     limits: {
-      fileSize: maxSizeBytes, files: MAX_FILES_PER_UPLOAD, fieldArrayIndexLimit: 0,
-      fields: 5, fieldSize: 1024, parts: MAX_FILES_PER_UPLOAD + 5,
+      fileSize: maxSizeBytes, files: maxFiles, fieldArrayIndexLimit: 0,
+      fields: 5, fieldSize: 1024, parts: maxFiles + 5,
     },
     fileFilter: (req, file, cb) => {
       if (validateFileType(file.originalname, file.mimetype, allowed)) return cb(null, true);
-      return cb(new Error('This file type is not allowed'));
+      const error = Object.assign(new Error('This file type is not allowed'), { expose: true });
+      rejectBody(error); return cb(error);
     },
-  }).array('files', MAX_FILES_PER_UPLOAD);
+  }).array('files', maxFiles);
 }
 
 router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUploadGuard, handleAsync(async (req, res) => {
   const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
   const allowedSetting = await getAppSetting('transfer_upload_allowed_mime', DEFAULT_ALLOWED);
   const allowed = Array.isArray(allowedSetting) ? allowedSetting : DEFAULT_ALLOWED;
-  const uploader = buildUploader(maxSizeMb * 1024 * 1024, allowed);
+  await withPublicUpload(req, res, {
+    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, maxFileBytes: maxSizeMb * 1024 * 1024, fileField: 'files',
+    fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
+  }, options => buildUploader(maxSizeMb * 1024 * 1024, allowed, options), async (uploadReservation, res) => {
 
-  try {
-    await new Promise((resolve, reject) => {
-      uploader(req, res, (err) => (err ? reject(err) : resolve()));
-    });
-  } catch (err) {
-    // Translate multer errors to a clean 4xx.
-    const msg = err && err.code === 'LIMIT_FILE_SIZE'
-      ? `Each file must be ${maxSizeMb} MB or smaller`
-      : (err && err.message) || 'Upload failed';
-    if (!res.headersSent) res.status(400).json({ error: msg, code: 'UPLOAD_REJECTED' });
-    return;
-  }
-
-  if (!req.files || !req.files.length) {
-    return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
-  }
-
-  // Nothing becomes permanent on the strength of the pre-body check. The
-  // body is on disk already, so a refusal — or a database error while
-  // re-reading the row — removes it; otherwise every request during an
-  // outage leaves its temporary files behind.
-  const dropTempFiles = () => {
-    for (const file of req.files) {
-      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+    if (!req.files || !req.files.length) {
+      return res.status(400).json({ error: 'No files uploaded', code: 'NO_FILES' });
     }
-  };
-  let current;
-  try {
-    current = await reloadUploadTransfer(req.params.token);
-  } catch (error) {
-    dropTempFiles();
-    throw error;
-  }
-  if (!current.transfer) {
-    dropTempFiles();
-    return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
-  }
-  const transfer = current.transfer;
 
-  const storage = getStorage();
-  const ip = clientIpForAudit(req);
-  const saved = [];
-  for (const file of req.files) {
-    const safeName = sanitizeFilename(path.basename(file.originalname), 120) || 'file';
-    const key = path.posix.join(transferService.uploadDirKey(transfer.id), `${Date.now()}-${saved.length}-${safeName}`);
+    // Nothing becomes permanent on the strength of the pre-body check. The
+    // body is on disk already, so a refusal — or a database error while
+    // re-reading the row — removes it; otherwise every request during an
+    // outage leaves its temporary files behind.
+    const dropTempFiles = () => {
+      for (const file of req.files) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    };
+    let current;
     try {
-      await storage.putFromFile(key, file.path);
-      await transferService.addUpload(transfer.id, {
-        originalFilename: file.originalname,
-        storedPath: key,
-        sizeBytes: file.size,
-        mimeType: file.mimetype,
-        ip,
-      });
-      saved.push({ filename: file.originalname, size_bytes: file.size });
-    } catch (err) {
-      logger.error('transfer upload: failed to store file', { transferId: transfer.id, error: err.message });
-    } finally {
-      // Remove the temp copy regardless of outcome.
-      try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      current = await reloadUploadTransfer(req.params.token);
+    } catch (error) {
+      dropTempFiles();
+      throw error;
     }
-  }
+    if (!current.transfer) {
+      dropTempFiles();
+      return res.status(current.gate.status).json({ error: 'This upload link is no longer available', code: current.gate.code });
+    }
+    const transfer = current.transfer;
 
-  if (!saved.length) {
-    return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED' });
-  }
-  return successResponse(res, { uploaded: saved.length, files: saved }, 201, 'Files uploaded');
+    const storage = getStorage();
+    const ip = clientIpForAudit(req);
+    const saved = [];
+    for (const file of req.files) {
+      const safeName = sanitizeFilename(path.basename(file.originalname), 120) || 'file';
+      const key = path.posix.join(transferService.uploadDirKey(transfer.id), `${Date.now()}-${saved.length}-${safeName}`);
+      let charge;
+      let settled = false;
+      try {
+        charge = await uploadQuota.prepareObject(uploadReservation, key, file.size);
+        await storage.putFromFile(key, file.path);
+        settled = true;
+        await uploadQuota.commitObject(charge, 'transfer', conn => transferService.addUpload(transfer.id, {
+          originalFilename: file.originalname,
+          storedPath: key,
+          sizeBytes: file.size,
+          mimeType: file.mimetype,
+          ip,
+        }, conn));
+        saved.push({ filename: file.originalname, size_bytes: file.size });
+      } catch (err) {
+        if (charge) await uploadQuota.failedObject(charge, { storage, settled }).catch(cleanupError => {
+          logger.warn('Transfer object cleanup failed; quota remains charged', { error: cleanupError.message });
+        });
+        logger.error('transfer upload: failed to store file', {
+          transferId: transfer.id, filename: file.originalname, error: err.message,
+        });
+      } finally {
+      // Remove the temp copy regardless of outcome.
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+    }
+
+    if (!saved.length) {
+      return res.status(500).json({ error: 'Could not store the uploaded files', code: 'STORE_FAILED' });
+    }
+    return successResponse(res, { uploaded: saved.length, files: saved }, 201, 'Files uploaded');
+  });
 }));
 
 module.exports = router;

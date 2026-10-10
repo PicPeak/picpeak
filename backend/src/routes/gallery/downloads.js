@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, logActivity } = require('../../database/db');
-const { parseBooleanInput } = require('../../utils/parsers');
+const { originalAssetDenial } = require('../../services/galleryAssetPolicy');
 const archiver = require('archiver');
 const path = require('path');
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
@@ -78,9 +78,8 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const { photoId } = req.params;
 
     // Check if downloads are allowed for this event
-    if (!parseBooleanInput(req.event.allow_downloads, true)) {
-      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-    }
+    const denial = await originalAssetDenial(req);
+    if (denial) return res.status(403).json(denial);
 
     const photo = await db('photos')
       .where({ id: photoId, event_id: req.event.id })
@@ -98,14 +97,8 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // Per-category download permission (#640). Photos without a category are
     // always downloadable when the event allows downloads — only categorised
     // photos can opt out per-category.
-    if (photo.category_id) {
-      const cat = await db('photo_categories')
-        .where('id', photo.category_id)
-        .first('allow_downloads');
-      if (cat && !parseBooleanInput(cat.allow_downloads, true)) {
-        return res.status(403).json({ error: 'Downloads are disabled for this category' });
-      }
-    }
+    const photoDenial = await originalAssetDenial(req, photo);
+    if (photoDenial) return res.status(403).json(photoDenial);
 
     // Download resolution (#858). Resolved BEFORE the counters below: a
     // rejected resolution must not inflate download stats, which a guest
@@ -498,9 +491,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
   let cancelled = false;
   try {
     // Check if downloads are allowed for this event
-    if (!parseBooleanInput(req.event.allow_downloads, true)) {
-      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-    }
+    const denial = await originalAssetDenial(req);
+    if (denial) return res.status(403).json(denial);
 
     // Try to serve pre-generated zip (instant download with Content-Length).
     // Guests may use the prebuilt cache ONLY when the event has no hidden
@@ -773,9 +765,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
   let selectedAdmission = null;
   try {
     // Check if downloads are allowed for this event
-    if (!parseBooleanInput(req.event.allow_downloads, true)) {
-      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-    }
+    const denial = await originalAssetDenial(req);
+    if (denial) return res.status(403).json(denial);
 
     const ids = Array.isArray(req.body?.photo_ids) ? req.body.photo_ids : [];
     if (!ids.length) {
@@ -970,9 +961,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 // Kick off (or join) a build. Returns the polling token.
 router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
-    if (!parseBooleanInput(req.event.allow_downloads, true)) {
-      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-    }
+    const denial = await originalAssetDenial(req);
+    if (denial) return res.status(403).json(denial);
 
     const policy = await resolveEventDownloadPolicy(req.event);
     if (!policy.pickerEnabled) {
@@ -1050,9 +1040,8 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
   try {
     // Downloads can be switched off after a job was created — every other
     // download route re-checks this per request, so this one must too.
-    if (!parseBooleanInput(req.event.allow_downloads, true)) {
-      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
-    }
+    const denial = await originalAssetDenial(req);
+    if (denial) return res.status(403).json(denial);
 
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id) {

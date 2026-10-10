@@ -4,7 +4,7 @@
  * Three surfaces share one file:
  *   - Admin CRUD under /admin/transfers/* (cookie auth).
  *   - Public recipient download under /public/transfer/:token (token in URL).
- *   - Public client upload under /public/transfer-upload/:token (6-char token).
+ *   - Public client upload under /public/transfer-upload/:token (10-char code).
  */
 import { api } from '../config/api';
 import { getApiBaseUrl } from '../utils/url';
@@ -127,6 +127,8 @@ export interface UploadInfo {
   expires_at: string;
   max_size_mb: number;
   max_files: number;
+  /** Raw body budget of one upload request, in bytes. */
+  max_request_bytes: number;
   allowed_mime: string[];
 }
 
