@@ -34,7 +34,7 @@ async function main() {
   // The CRM access policy, where this build has one, denies an actor-less
   // caller; an operator script is a trusted one.
   const policy = path.join(__dirname, '../src/database/crmAccess.js');
-  if (fs.existsSync(policy)) await require(policy).withTrustedCrmAccess('operator clears a portable restore fence', run);
+  if (fs.existsSync(policy)) await require(policy).withTrustedCrmAccess('operator CLI: clear-portable-restore-fence', run);
   else await run();
   await db.destroy();
 }

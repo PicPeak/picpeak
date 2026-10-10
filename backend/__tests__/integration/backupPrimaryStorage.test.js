@@ -206,7 +206,15 @@ it('standard local backup actually copies captured S3 bytes and records object m
   expect(run.status).toBe('completed');
   const manifest = (await backup.getBackupManifest(run.id)).manifest;
   expect(manifest.files.manifest.find(file => file.path === original)).toMatchObject({ checksum: sha(objects.get(original).bytes), object_metadata: metadata });
-  expect(await fs.readFile(path.join(tmpDir, 'backups', original))).toEqual(objects.get(original).bytes);
+  // A standalone restore point: the staged S3 bytes, the dump (checked against
+  // its recorded creation digest) and nothing outside this run's directory.
+  const snapshot = JSON.parse(run.statistics).snapshot_path;
+  expect(path.dirname(snapshot)).toBe(path.join(tmpDir, 'backups'));
+  expect(path.basename(snapshot)).toMatch(/^backup-[0-9a-f-]{36}$/);
+  expect(await fs.readFile(path.join(snapshot, original))).toEqual(objects.get(original).bytes);
+  expect(manifest.metadata.restore_point).toBe('standalone-v1');
+  const dump = await fs.readFile(path.join(snapshot, manifest.database.backup_file));
+  expect(sha(dump)).toBe(manifest.database.checksum);
 });
 
 it('S3 backup destination receives actual primary bytes/metadata and does not skip metadata-only updates', async () => {
@@ -241,7 +249,8 @@ it('the actual rsync invocation transfers the selected staged hybrid estate, not
   await db('app_settings').where('setting_key', 'database_backup_destination_path').update({
     setting_value: JSON.stringify(path.join(process.env.STORAGE_PATH, 'backups', 'database')),
   });
-  const network = jest.spyOn(require('../../src/utils/networkValidation'), 'isHostAllowed').mockResolvedValue(true);
+  const network = jest.spyOn(require('../../src/utils/rsyncConnection'), 'resolveRsyncConnection')
+    .mockResolvedValue({ rsyncShell: 'ssh', rsyncTarget: 'backup.example.com' });
   const spawn = jest.spyOn(require('../../src/utils/safeExec'), 'spawnAsync').mockImplementation(async (command, args) => {
     expect(command).toBe('rsync');
     const source = args[args.length - 2];
@@ -261,10 +270,17 @@ it('the actual rsync invocation transfers the selected staged hybrid estate, not
 
 it('fails a captured hybrid backup when a local CRM document cannot be published', async () => {
   await seedEstate(); await configure();
-  await fs.mkdir(path.join(tmpDir, 'backups', 'business-docs'), { recursive: true });
-  await fs.writeFile(path.join(tmpDir, 'backups', 'business-docs', 'invoice'), 'blocked');
-  await backup.runBackup(true);
-  expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('failed');
+  const copyFile = fs.copyFile.bind(fs);
+  const copy = jest.spyOn(fs, 'copyFile').mockImplementation(async (source, target, ...rest) => {
+    if (/backups\/backup-[0-9a-f-]{36}\/business-docs\/invoice\//.test(String(target))) throw new Error('invoice publication failed');
+    return copyFile(source, target, ...rest);
+  });
+  try {
+    await backup.runBackup(true);
+  } finally { copy.mockRestore(); }
+  expect((await db('backup_runs').orderBy('id', 'desc').first())).toMatchObject({ status: 'failed', error_message: expect.stringMatching(/invoice publication failed/) });
+  // The partial snapshot of the staged estate is taken away again.
+  expect((await fs.readdir(path.join(tmpDir, 'backups'))).filter(name => name.startsWith('backup-'))).toEqual([]);
 });
 
 it('fails a captured hybrid backup when the S3 destination rejects a local CRM document', async () => {
@@ -411,11 +427,12 @@ it('records primary capture/destination failures as failed rather than completed
   await backup.runBackup(true);
   expect((await db('backup_runs').orderBy('id', 'desc').first())).toMatchObject({ status: 'failed', error_message: expect.stringMatching(/read failure/) });
   readFault = null;
-  await fs.mkdir(path.join(tmpDir, 'backups'), { recursive: true });
-  // Block the destination's events directory with a regular file.
-  await fs.writeFile(path.join(tmpDir, 'backups', 'events'), 'blocked');
+  // Make the destination itself unusable: a regular file where the root goes.
+  await fs.rm(path.join(tmpDir, 'backups'), { recursive: true, force: true });
+  await fs.writeFile(path.join(tmpDir, 'backups'), 'blocked');
   await backup.runBackup(true);
   expect((await db('backup_runs').orderBy('id', 'desc').first()).status).toBe('failed');
+  await fs.rm(path.join(tmpDir, 'backups'), { force: true });
 });
 
 async function sourceCatalogue(entries) {
@@ -472,8 +489,16 @@ it('rsync source can be an owned materialized hybrid catalogue, with no raw-root
   const materialized = await files.materialize(inventory, stage);
   expect(await fs.readFile(path.join(stage, original))).toEqual(objects.get(original).bytes);
   expect(materialized.find(file => file.relativePath === original).objectMetadata).toEqual(metadata);
-  const args = backup.buildRsyncArgs({ backup_rsync_host: 'backup.example.com', backup_rsync_path: '/backups' }, [], stage);
-  expect(args[args.length - 2]).toBe(`${stage}/`);
+  const network = jest.spyOn(require('../../src/utils/rsyncConnection'), 'resolveRsyncConnection')
+    .mockResolvedValue({ rsyncShell: 'ssh -p 2222', rsyncTarget: 'backup.example.com' });
+  try {
+    const args = await backup.buildRsyncArgs({ backup_rsync_host: 'backup.example.com', backup_rsync_path: '/backups', backup_rsync_port: 2222 }, [], stage);
+    expect(args[args.length - 2]).toBe(`${stage}/`);
+    // The pinned connection of the base branch still drives the socket.
+    expect(network).toHaveBeenCalledWith(expect.objectContaining({ host: 'backup.example.com', port: 2222 }));
+    expect(args[args.indexOf('-e') + 1]).toBe('ssh -p 2222');
+    expect(args[args.length - 1]).toBe('backup.example.com:/backups');
+  } finally { network.mockRestore(); }
 });
 
 it('treats renditions as optional: a stale or malformed derived key does not fail the inventory or the dump', async () => {
@@ -526,7 +551,8 @@ it('local storage with an rsync destination reads the storage root in place and 
   const old = new Date('2020-01-02T03:04:05.000Z'); await fs.utimes(source, old, old);
   await configure('rsync');
   const materialize = jest.spyOn(files, 'materialize');
-  const network = jest.spyOn(require('../../src/utils/networkValidation'), 'isHostAllowed').mockResolvedValue(true);
+  const network = jest.spyOn(require('../../src/utils/rsyncConnection'), 'resolveRsyncConnection')
+    .mockResolvedValue({ rsyncShell: 'ssh', rsyncTarget: 'backup.example.com' });
   const spawn = jest.spyOn(require('../../src/utils/safeExec'), 'spawnAsync').mockImplementation(async (command, args) => {
     const [root, stage] = args.slice(-3);
     expect(root).toBe(`${process.env.STORAGE_PATH}/`);
