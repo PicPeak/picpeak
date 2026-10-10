@@ -222,7 +222,7 @@ it('same-install engine migration sidecar is private/namespace-bound, never an a
   await expect(index.readMigrationIndex(link, storage.namespace)).rejects.toThrow();
 });
 
-it.each(['../x', 'events/../x', '/absolute', './events/x', 'events//x', 'events/./x', 'events\\x', '.picpeak-generations/attempt-whatever/object'])('rejects bypass key %s across read/write/list/signed and stage plans', async bad => {
+it.each(['../x', 'events/../x', '.picpeak-generations/attempt-whatever/object'])('rejects bypass key %s across read/write/list/signed and stage plans', async bad => {
   await expect(storage.put(bad, Buffer.from('x'))).rejects.toThrow();
   await expect(storage.get(bad)).rejects.toThrow();
   await expect(storage.list(bad)).rejects.toThrow();
@@ -230,19 +230,112 @@ it.each(['../x', 'events/../x', '/absolute', './events/x', 'events//x', 'events/
   expect(() => storage.createRestoreGeneration('attempt-validation', [bad])).toThrow();
 });
 
+// Storage calls take these spellings as they always did (normalised); a
+// restore plan, which becomes an index entry, still has to be exact.
+it.each(['/absolute', './events/x', 'events//x', 'events/./x', 'events\\x'])('a restore plan refuses the loosely spelled key %s', bad => {
+  expect(() => storage.createRestoreGeneration('attempt-validation', [bad])).toThrow();
+});
+
 it('fails closed for missing/corrupt/foreign/aliased/oversized index; no lazy IO DB query', async () => {
   const rows = index.encodeRows(storage.namespace, new Map());
   await db(index.TABLE).insert({ ...rows[0], mapping: 'not json' });
   await expect(storage.init()).rejects.toThrow('Corrupt'); await expect(storage.get(key)).rejects.toThrow('initialized');
-  await db(index.TABLE).update({ mapping: rows[0].mapping, namespace: '0'.repeat(64) });
-  await expect(storage.init()).rejects.toThrow('foreign');
   await db(index.TABLE).del(); await storage.init();
   const physical = `.picpeak-generations/attempt-alias/${crypto.randomUUID()}`;
   expect(() => index.validateRows([{ ...rows[0], mapping: JSON.stringify({ version: 1, entries: [[key, physical], ['thumbnails/x', physical]] }) }], storage.namespace)).toThrow('physical');
-  expect(() => storage.createRestoreGeneration('attempt-overcount', Array(index.MAX_ENTRIES + 1).fill(key))).toThrow('plan');
+  process.env.PICPEAK_IMPORT_MAX_ENTRIES = '3';
+  try { expect(() => storage.createRestoreGeneration('attempt-overcount', Array(4).fill(key))).toThrow('plan'); }
+  finally { delete process.env.PICPEAK_IMPORT_MAX_ENTRIES; }
   expect(() => index.validateRows([{ ...rows[0], mapping: 'x'.repeat(index.MAX_ENCODED_BYTES + 1) }])).toThrow('oversized');
   await db.schema.dropTable(index.TABLE); await expect(storage.init()).rejects.toThrow('unavailable'); await migration.up(db); await storage.init();
   await db.transaction(async trx => { await trx('restored_rows').insert({ id: 1, value: 'held connection' }); expect(await read(await storage.get(key))).toEqual(Buffer.from('old-original')); });
+});
+
+it('normalises keys as before the index existed, then validates them', async () => {
+  // Callers have always been able to pass these spellings of one key.
+  for (const spelling of [`./${key}`, `/${key}`, key.split('/').join('\\')]) {
+    expect(await read(await storage.get(spelling))).toEqual(Buffer.from('old-original'));
+    expect(await storage.exists(spelling)).toBe(true);
+  }
+  await storage.put('./uploads/logos/logo.png', Buffer.from('logo'), metadata);
+  expect(await read(await storage.get('uploads/logos/logo.png'))).toEqual(Buffer.from('logo'));
+  expect((await storage.list('/uploads/')).map(entry => entry.key)).toEqual(['uploads/logos/logo.png']);
+  // A mapped object is found under every spelling too.
+  const generation = storage.createRestoreGeneration('attempt-normalised', [key]);
+  await generation.storage.put(key, Buffer.from('restored'), metadata); await verify(generation, key, Buffer.from('restored'));
+  await db.transaction(trx => generation.publish(trx)); await restart();
+  expect(await read(await storage.get(`./${key}`))).toEqual(Buffer.from('restored'));
+  for (const bad of ['../escape', 'a/../b', '.picpeak-generations/x/y', './.picpeak-generations/x']) {
+    await expect(storage.get(bad)).rejects.toThrow(/traversal|Reserved/);
+  }
+});
+
+it('with a mapping present, a prefixed listing never walks the whole generation store', async () => {
+  const other = 'thumbnails/ordinary/thumb.jpg';
+  const generation = storage.createRestoreGeneration('attempt-listing', [key, other]);
+  for (const logical of [key, other]) { await generation.storage.put(logical, Buffer.from(logical), metadata); await verify(generation, logical, Buffer.from(logical)); }
+  await db.transaction(trx => generation.publish(trx)); await restart();
+  await storage.put('events/active/ordinary/plain.jpg', Buffer.from('plain'), metadata);
+  const listed = jest.spyOn(storage, '_listPhysical');
+  try {
+    const entries = await storage.list('events/active/');
+    expect(entries.map(entry => entry.key).sort()).toEqual(['events/active/ordinary/plain.jpg', key].sort());
+    expect(entries.find(entry => entry.key === key).size).toBe(Buffer.byteLength(key));
+    expect(listed.mock.calls.map(call => call[0])).toEqual(['owned-tenant/events/active/']);
+    listed.mockClear();
+    // No mapped object under the prefix: nothing but the prefix itself.
+    expect((await storage.list('uploads/')).length).toBe(0);
+    expect(listed.mock.calls.map(call => call[0])).toEqual(['owned-tenant/uploads/']);
+    listed.mockClear();
+    expect((await storage.list('')).map(entry => entry.key).sort()).toEqual(['events/active/ordinary/plain.jpg', key, other].sort());
+    expect(listed).toHaveBeenCalledTimes(1);
+  } finally { listed.mockRestore(); }
+});
+
+it('the namespace survives a re-spelled endpoint; a really different store continues read-only instead of failing init', async () => {
+  const identity = extra => new S3StorageBackend({ ...config, ...extra }).namespace;
+  const base = identity({ endpoint: 'https://minio.example.com:9000' });
+  for (const endpoint of ['https://MINIO.example.com:9000/', 'http://minio.example.com:9000', 'minio.example.com:9000', 'https://minio.example.com.:9000//']) {
+    expect(identity({ endpoint })).toBe(base);
+  }
+  expect(identity({ endpoint: 'https://minio.example.com' })).toBe(identity({ endpoint: 'https://minio.example.com:443/' }));
+  expect(identity({ endpoint: undefined, region: 'EU-central-1 ' })).toBe(identity({ endpoint: 'https://s3.eu-central-1.amazonaws.com', region: 'eu-central-1' }));
+  expect(identity({ endpoint: 'https://other.example.com:9000' })).not.toBe(base);
+  expect(identity({ bucket: 'another-bucket' })).not.toBe(identity({}));
+
+  const generation = storage.createRestoreGeneration('attempt-mismatch', [key]);
+  await generation.storage.put(key, Buffer.from('restored'), metadata); await verify(generation, key, Buffer.from('restored'));
+  await db.transaction(trx => generation.publish(trx));
+  await db(index.TABLE).update({ namespace: '0'.repeat(64) });
+  await expect(storage.init()).resolves.toBeUndefined();
+  expect(storage.readOnly).toBe(true);
+  // Reads still follow the index; nothing that could diverge from it is written.
+  expect(await read(await storage.get(key))).toEqual(Buffer.from('restored'));
+  for (const write of [() => storage.put(key, Buffer.from('x'), metadata), () => storage.delete(key),
+    () => storage.copy(key, 'uploads/copy.jpg'), () => storage.rename(key, 'uploads/moved.jpg'),
+    () => storage.putFromFile(key, __filename, metadata)]) {
+    await expect(write()).rejects.toMatchObject({ code: 'STORAGE_INDEX_MISMATCH', statusCode: 503 });
+  }
+  expect(() => storage.createRestoreGeneration('attempt-readonly', [key])).toThrow(expect.objectContaining({ code: 'STORAGE_INDEX_MISMATCH' }));
+  await db(index.TABLE).update({ namespace: storage.namespace });
+  await storage.init();
+  expect(storage.readOnly).toBe(false);
+  await storage.put(key, Buffer.from('writable again'), metadata);
+});
+
+it('a later restore is not blocked by the entries of earlier ones', async () => {
+  expect(index.maxEntries()).toBe(2000000);
+  process.env.PICPEAK_IMPORT_MAX_ENTRIES = '3';
+  try {
+    for (const [attempt, keys] of [['attempt-first', ['thumbnails/a.jpg', 'thumbnails/b.jpg']], ['attempt-second', ['thumbnails/b.jpg', 'thumbnails/c.jpg']]]) {
+      const generation = storage.createRestoreGeneration(attempt, keys);
+      for (const logical of keys) { await generation.storage.put(logical, Buffer.from(attempt), metadata); await verify(generation, logical, Buffer.from(attempt)); }
+      await db.transaction(trx => generation.publish(trx)); await restart();
+    }
+    // b.jpg was restored twice and holds one entry: the superseded one is gone.
+    expect([...storage.mapping.keys()].sort()).toEqual(['thumbnails/a.jpg', 'thumbnails/b.jpg', 'thumbnails/c.jpg']);
+    expect(await read(await storage.get('thumbnails/b.jpg'))).toEqual(Buffer.from('attempt-second'));
+  } finally { delete process.env.PICPEAK_IMPORT_MAX_ENTRIES; }
 });
 
 it('preserves target map when full native DB restore imports foreign or old index data/schema; exported index is excluded', async () => {
