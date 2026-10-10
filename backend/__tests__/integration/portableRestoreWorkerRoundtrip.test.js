@@ -53,7 +53,8 @@ linux('portable restore actual supervised worker roundtrip', () => {
     expect(await fs.readFile(first, 'utf8')).toBe('CURRENT-FIRST');
     expect(await fs.readFile(path.join(second, 'keep.txt'), 'utf8')).toBe('CURRENT-KEEP');
     const state = await db('portable_restore_control').where({ id: 1 }).first();
-    expect(state.state).toBe('restart_required');
+    // A verified rollback reopens the instance; nothing has to be restarted.
+    expect(state.state).toBe('open');
     expect(JSON.parse(state.result_json).outcome).toBe('rolled_back');
   }, 120000);
 
@@ -110,7 +111,7 @@ linux('portable restore actual supervised worker roundtrip', () => {
     expect(await fs.readFile(first, 'utf8')).toBe('PRIOR-FIRST');
     expect(await fs.readFile(second, 'utf8')).toBe('PRIOR-SECOND');
     const state = await db('portable_restore_control').where({ id: 1 }).first();
-    expect(state.state).toBe('restart_required');
+    expect(state.state).toBe('open');
     expect(JSON.parse(state.result_json)).toMatchObject({ outcome: 'rolled_back', recoveryAttempted: true });
     expect(await db('portable_restore_commits').where({ attempt_id: state.attempt_id })).toEqual([]);
     await fs.unlink(evidence);

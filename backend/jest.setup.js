@@ -6,13 +6,6 @@
 // is how engine-sensitive changes are checked on Postgres, and must win.
 process.env.NODE_ENV = 'test';
 if (!process.env.DATABASE_CLIENT) process.env.DATABASE_CLIENT = 'sqlite3';
-// Only an explicitly opted-in unstarted Supertest app may omit runtime control
-// initialization. NODE_ENV alone never does, and a live fence always wins.
-require('./src/services/portableRestoreCoordinator').enterUnstartedServerFixtureContext();
-
-beforeEach(() => {
-  require('./src/services/portableRestoreCoordinator').enterUnstartedServerFixtureContext();
-});
 
 // Supertest 6 binds an IPv6 wildcard listener but hardcodes an IPv4 URL.
 // macOS can allocate that IPv6 port while a different IPv4 service owns it.

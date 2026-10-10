@@ -596,7 +596,9 @@ const FLAG_ALIASES = {
 
 // Filesystem noise that must never land in a backup: NFS silly-rename
 // artifacts (issue #871 showed .nfs* files uploaded to S3) and OS metadata.
-const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db'];
+// .picpeak-maintenance is the private workspace of a portable restore (the
+// uploaded archive, its extracted copy, undo copies): never backup content.
+const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db', '.picpeak-maintenance'];
 
 /**
  * Resolve the walker's target subdirectories from `backup_paths`.

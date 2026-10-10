@@ -54,11 +54,25 @@ function createWorkRegistry() {
     return promise;
   }
 
-  async function drain() {
+  // Resolves true once nothing is pending. With `timeoutMs` it gives up after
+  // that long and resolves false, leaving the remaining work untouched: the
+  // caller decides whether to cut connections or abandon the drain.
+  async function drain({ timeoutMs } = {}) {
+    const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
     for (;;) {
       const current = [...pending].map(item => item.promise);
-      if (current.length === 0) return;
-      await Promise.allSettled(current);
+      if (current.length === 0) return true;
+      const settled = Promise.allSettled(current);
+      if (deadline === null) await settled;
+      else {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return false;
+        let timer;
+        const expired = new Promise(resolve => { timer = setTimeout(resolve, remaining, true); });
+        const late = await Promise.race([settled.then(() => false), expired]);
+        clearTimeout(timer);
+        if (late) return false;
+      }
       // A parent can enqueue a child before resolving. Repeat, rather than
       // declaring the initial snapshot of promises the complete work set.
     }

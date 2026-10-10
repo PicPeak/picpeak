@@ -12,7 +12,7 @@ const { createApplicationWorkMiddleware, ownRouteHandlers } = require('../../src
 const { fixtureIngress } = require('./helpers/restoreIngress');
 
 describe('exact portable restore control admission', () => {
-  let db, cleanup, app, work, restore, uploadRoot, superId, adminId, inactiveId, ingress;
+  let db, cleanup, app, work, restore, preflight, uploadRoot, superId, adminId, inactiveId, ingress;
   const attemptId = crypto.randomUUID();
   const capability = 'c'.repeat(64);
   const token = (id, type = 'admin') => jwt.sign({ id, type, role: 'super_admin' }, process.env.JWT_SECRET,
@@ -34,7 +34,9 @@ describe('exact portable restore control admission', () => {
   });
   beforeEach(() => {
     work = createWorkRegistry(); work.closeAdmission();
+    preflight = jest.fn(async () => ({ entries: 1, expandedBytes: 1, largestBytes: 1, tables: 0 }));
     restore = {
+      capability: jest.fn(async () => ({ available: true, reason: null, message: null, maintenance: false, restartRequired: false })),
       admitUpload: jest.fn(async () => {}),
       start: jest.fn(async () => ({ attemptId, progressToken: capability, state: 'draining' })),
       progress: jest.fn(async (id, token, superAdmin) => {
@@ -46,12 +48,42 @@ describe('exact portable restore control admission', () => {
       }),
     };
     app = express();
-    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter({ work, restore, ingress }));
+    app.use(require('../../src/routes/portableRestoreControl').createRestoreControlRouter({ work, restore, ingress, preflight }));
     app.use(createApplicationWorkMiddleware({ work, admitRequest: () => { throw new Error('should never admit'); } }));
     app.all('*', (_req, res) => res.json({ ordinary: true }));
     ownRouteHandlers(app, work);
   });
   afterAll(async () => { await cleanup(); });
+
+  it('answers 503 with the reason, before accepting a byte, where the host cannot run a restore', async () => {
+    restore.capability.mockResolvedValue({ available: false, reason: 'RESTORE_STORAGE_UNSUPPORTED',
+      message: 'Portable restore needs STORAGE_PATH on a local filesystem', maintenance: false, restartRequired: false });
+    const response = await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`).expect(503);
+    expect(response.body).toEqual({ code: 'RESTORE_STORAGE_UNSUPPORTED', error: 'Portable restore needs STORAGE_PATH on a local filesystem' });
+    expect(restore.admitUpload).not.toHaveBeenCalled();
+    expect(restore.start).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads')).catch(() => [])).toEqual([]);
+    const capabilityResponse = await request(app).get('/api/admin/backup/picpeak/restore-capability')
+      .set('Authorization', `Bearer ${token(superId)}`).expect(200);
+    expect(capabilityResponse.body).toMatchObject({ available: false, reason: 'RESTORE_STORAGE_UNSUPPORTED' });
+    await request(app).get('/api/admin/backup/picpeak/restore-capability').expect(401);
+    await request(app).get('/api/admin/backup/picpeak/restore-capability').set('Authorization', `Bearer ${token(adminId)}`).expect(403);
+  });
+
+  it('validates the uploaded archive inside the request and never fences for one it refuses', async () => {
+    preflight.mockRejectedValue(Object.assign(new Error('This backup is from a newer database schema than this instance.'),
+      { code: 'RESTORE_MANIFEST_INVALID', statusCode: 400 }));
+    const response = await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`).expect(400);
+    expect(response.body).toEqual({ code: 'RESTORE_MANIFEST_INVALID', error: 'This backup is from a newer database schema than this instance.' });
+    expect(preflight).toHaveBeenCalledWith(expect.stringContaining(uploadRoot));
+    expect(restore.start).not.toHaveBeenCalled();
+    expect(await fs.readdir(path.join(uploadRoot, 'uploads'))).toEqual([]);
+    preflight.mockRejectedValue(Object.assign(new Error('The PostgreSQL role of this instance cannot run a restore'),
+      { code: 'RESTORE_PRIVILEGE_MISSING', statusCode: 400 }));
+    await importAt('/api/admin/backup/picpeak/import').set('Authorization', `Bearer ${token(superId)}`)
+      .expect(400).expect(res => expect(res.body.code).toBe('RESTORE_PRIVILEGE_MISSING'));
+    expect(restore.start).not.toHaveBeenCalled();
+  });
   const importAt = url => request(app).post(url).attach('backup', Buffer.from('complete owned archive fixture'), 'test.picpeak');
 
   it.each([['no token', null, 401], ['delegated role with forged super claim', () => token(adminId), 403],

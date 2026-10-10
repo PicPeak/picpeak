@@ -3,7 +3,11 @@
 const fs = require('fs');
 const { TextDecoder } = require('util');
 
-const MAX_ROW_BYTES = 1024 * 1024;
+// One exported row is one NDJSON line. The largest ones PicPeak writes are
+// text and JSON columns (email bodies with inline images, page CSS, contract
+// HTML, settings blobs), so the default is far above any of them; raise it
+// with PICPEAK_IMPORT_MAX_ROW_BYTES for an install that outgrew it.
+const MAX_ROW_BYTES = 64 * 1024 * 1024;
 const MAX_TABLE_BYTES = 8 * 1024 ** 3;
 const MAX_TABLE_ROWS = 10000000;
 const MAX_COLUMNS = 512;
@@ -16,8 +20,13 @@ function refusal(message) {
   return Object.assign(new Error(message), { code: 'PICPEAK_IMPORT_ROW_LIMIT', statusCode: 413 });
 }
 
+function rowByteLimit() {
+  const value = Number(process.env.PICPEAK_IMPORT_MAX_ROW_BYTES);
+  return Number.isSafeInteger(value) && value > 0 ? value : MAX_ROW_BYTES;
+}
+
 function bounds(options) {
-  const limits = { rowBytes: MAX_ROW_BYTES, tableBytes: MAX_TABLE_BYTES, rows: MAX_TABLE_ROWS };
+  const limits = { rowBytes: rowByteLimit(), tableBytes: MAX_TABLE_BYTES, rows: MAX_TABLE_ROWS };
   for (const key of Object.keys(limits)) {
     if (options[key] === undefined) continue;
     if (!Number.isSafeInteger(options[key]) || options[key] <= 0 || options[key] > limits[key]) throw refusal(`Invalid portable NDJSON ${key} limit`);
@@ -98,5 +107,5 @@ async function* rowBatches(filePath, options = {}) {
   if (batch.length) yield batch;
 }
 
-module.exports = { readNdjson, rowBatches, MAX_ROW_BYTES, MAX_TABLE_BYTES, MAX_TABLE_ROWS,
+module.exports = { readNdjson, rowBatches, rowByteLimit, MAX_ROW_BYTES, MAX_TABLE_BYTES, MAX_TABLE_ROWS,
   MAX_COLUMNS, MAX_BATCH_BYTES, MAX_BATCH_ROWS, MAX_BATCH_BINDINGS };

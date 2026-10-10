@@ -38,7 +38,7 @@ const EPOCH = '085f59f1-de77-4b57-a604-061dc82413b7';
 const OTHER_EPOCH = '5d552aab-92aa-4448-8a65-cc8752d82df1';
 const ENV = ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', 'PICPEAK_IMPORT_WORKER_TIMEOUT_MS', 'PICPEAK_IMPORT_WORKER_CPU_SECONDS', 'NODE_ENV'];
 const MAX_REQUEST = 32768;
-const HARD_METADATA = 32 * 1024 * 1024;
+const HARD_METADATA = 256 * 1024 * 1024;
 let fixture;
 let directory;
 let descriptor;
@@ -100,27 +100,40 @@ afterEach(async () => {
 });
 
 describe('production portable worker resource configuration', () => {
-  it('uses finite default native memory, JavaScript heap, wall and CPU limits', () => {
-    expect(worker.workerConfiguration()).toEqual({ memoryBytes: 768 * 1024 * 1024, heap: 384, wallMs: 1800000, cpuSeconds: 600 });
+  const GiB = 1024 ** 3;
+  it('starts from a base budget for a small archive and sets no CPU-time limit', () => {
+    expect(worker.workerConfiguration()).toEqual({ memoryBytes: 768 * 1024 * 1024, heap: 460, wallMs: 1800000, cpuSeconds: 0, fileBytes: 10 * GiB });
   });
 
-  it('accepts only documented boundary configurations and caps heap below native memory', () => {
+  it('scales memory, wall time and the per-file ceiling with the archive so a large restore does not time out into a rollback', () => {
+    const large = worker.workerConfiguration({ entries: 1000000, expandedBytes: 500 * GiB, largestBytes: 40 * GiB });
+    expect(large).toEqual({ memoryBytes: 2768 * 1024 * 1024, heap: 1660, cpuSeconds: 0, fileBytes: 41 * GiB,
+      wallMs: 1800000 + (500 * GiB / (4 * 1024 * 1024)) * 1000 + 1000000 * 20 });
+    // 500 GiB under the former fixed budget (30 minutes wall, 600 CPU seconds) could not finish.
+    expect(large.wallMs).toBeGreaterThan(24 * 60 * 60 * 1000);
+    // The default limits (2,000,000 entries, 1 TiB) stay inside the runner's seven-day ceiling.
+    expect(worker.workerConfiguration({ entries: 2000000, expandedBytes: 1024 ** 4, largestBytes: 0 }).wallMs).toBe(303944000);
+  });
+
+  it('lets the environment set each budget, including a CPU limit', () => {
     process.env.PICPEAK_IMPORT_WORKER_MEMORY_MIB = '256';
     process.env.PICPEAK_IMPORT_WORKER_TIMEOUT_MS = '1';
     process.env.PICPEAK_IMPORT_WORKER_CPU_SECONDS = '1';
-    expect(worker.workerConfiguration()).toEqual({ memoryBytes: 256 * 1024 * 1024, heap: 128, wallMs: 1, cpuSeconds: 1 });
-    process.env.PICPEAK_IMPORT_WORKER_MEMORY_MIB = '4096';
-    process.env.PICPEAK_IMPORT_WORKER_TIMEOUT_MS = '7200000';
-    process.env.PICPEAK_IMPORT_WORKER_CPU_SECONDS = '7200';
-    expect(worker.workerConfiguration()).toEqual({ memoryBytes: 4096 * 1024 * 1024, heap: 1024, wallMs: 7200000, cpuSeconds: 7200 });
+    expect(worker.workerConfiguration({ entries: 1000000 })).toMatchObject({ memoryBytes: 256 * 1024 * 1024, heap: 153, wallMs: 1, cpuSeconds: 1 });
+    process.env.PICPEAK_IMPORT_WORKER_MEMORY_MIB = '65536';
+    process.env.PICPEAK_IMPORT_WORKER_TIMEOUT_MS = '604800000';
+    process.env.PICPEAK_IMPORT_WORKER_CPU_SECONDS = '2592000';
+    expect(worker.workerConfiguration()).toMatchObject({ memoryBytes: 65536 * 1024 * 1024, wallMs: 604800000, cpuSeconds: 2592000 });
+    for (const name of ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', 'PICPEAK_IMPORT_WORKER_TIMEOUT_MS', 'PICPEAK_IMPORT_WORKER_CPU_SECONDS']) process.env[name] = '';
+    expect(worker.workerConfiguration()).toMatchObject({ memoryBytes: 768 * 1024 * 1024, wallMs: 1800000, cpuSeconds: 0 });
   });
 
   it.each([
-    ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', '255'], ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', '4097'],
-    ['PICPEAK_IMPORT_WORKER_TIMEOUT_MS', '7200001'], ['PICPEAK_IMPORT_WORKER_CPU_SECONDS', '7201'],
+    ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', '255'], ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', '65537'], ['PICPEAK_IMPORT_WORKER_MEMORY_MIB', '0'],
+    ['PICPEAK_IMPORT_WORKER_TIMEOUT_MS', '604800001'], ['PICPEAK_IMPORT_WORKER_TIMEOUT_MS', '0'], ['PICPEAK_IMPORT_WORKER_CPU_SECONDS', '2592001'],
     ...['PICPEAK_IMPORT_WORKER_MEMORY_MIB', 'PICPEAK_IMPORT_WORKER_TIMEOUT_MS', 'PICPEAK_IMPORT_WORKER_CPU_SECONDS']
-      .flatMap(name => ['', '0', '-1', '1.5', 'NaN', 'Infinity', '9007199254740992'].map(value => [name, value])),
-  ])('refuses invalid %s=%s instead of falling back to unlimited work', (name, value) => {
+      .flatMap(name => ['-1', '1.5', 'NaN', 'Infinity', '9007199254740992'].map(value => [name, value])),
+  ])('refuses invalid %s=%s instead of guessing a budget', (name, value) => {
     process.env[name] = value;
     expect(() => worker.workerConfiguration()).toThrow(expect.objectContaining(unsafe));
   });
@@ -170,7 +183,7 @@ describe('private bounded metadata helpers', () => {
     await expect(fsp.stat(path.join(directory, 'out.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('supports explicit generation-manifest budgets up to 32 MiB without enlarging the default request budget', async () => {
+  it('supports explicit generation-manifest budgets up to the metadata cap without enlarging the default request budget', async () => {
     const value = { pad: 'x'.repeat(MAX_REQUEST + 1) };
     const file = await privateFile('generation.json', JSON.stringify(value));
     await expect(worker.readOwnedJson(file)).rejects.toMatchObject(unsafe);
@@ -279,8 +292,8 @@ describe('worker admission and immutable request protocol', () => {
     expect(where).toHaveBeenCalledWith({ id: 1, attempt_id: ATTEMPT, epoch: EPOCH, state: 'restoring' });
     expect(input.onStart).toHaveBeenCalledWith(descriptor);
     expect(mockRunnerRun).toHaveBeenCalledWith(process.execPath,
-      ['--jitless', '--max-old-space-size=384', expect.stringMatching(/workers\/portableRestoreWorker\.js$/), 'import', file],
-      expect.objectContaining({ memoryBytes: 768 * 1024 * 1024, heap: 384, wallMs: 1800000, cpuSeconds: 600,
+      ['--jitless', '--max-old-space-size=460', expect.stringMatching(/workers\/portableRestoreWorker\.js$/), 'import', file],
+      expect.objectContaining({ lane: 'long', memoryBytes: 768 * 1024 * 1024, wallMs: 1800000, cpuSeconds: 0,
         outputBytes: 1024 * 1024, fileBytes: 10 * 1024 * 1024 * 1024, leasePath: descriptor.path,
         env: { NODE_OPTIONS: '', TMPDIR: path.join(directory, 'workspace') }, onStart: expect.any(Function) }));
     await worker.startWorker(args());

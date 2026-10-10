@@ -7,7 +7,7 @@ const path = require('path');
 const zlib = require('zlib');
 const archiver = require('archiver');
 const {
-  HARD_LIMITS, openBoundedArchive, assertArchiveWithinLimits, extractWithinLimits, readEntryWithin,
+  HARD_LIMITS, limits, archiveCensus, openBoundedArchive, assertArchiveWithinLimits, extractWithinLimits, readEntryWithin,
 } = require('../../src/services/portableImportArchive');
 
 const ENV = ['PICPEAK_IMPORT_MAX_ENTRIES', 'PICPEAK_IMPORT_MAX_EXPANDED_BYTES', 'PICPEAK_IMPORT_MAX_MANIFEST_BYTES'];
@@ -162,16 +162,43 @@ describe('bounded portable archive enumeration', () => {
     await expect(open(file)).rejects.toMatchObject({ statusCode: 413 });
   });
 
-  it('never permits environment settings to enlarge hard ceilings', async () => {
-    process.env.PICPEAK_IMPORT_MAX_ENTRIES = String(HARD_LIMITS.entries * 10);
-    process.env.PICPEAK_IMPORT_MAX_EXPANDED_BYTES = String(HARD_LIMITS.expandedBytes * 10);
-    process.env.PICPEAK_IMPORT_MAX_MANIFEST_BYTES = String(HARD_LIMITS.manifestBytes * 10);
-    const file = await crafted([{ name: 'manifest.json', declared: HARD_LIMITS.manifestBytes + 1 }]);
+  it('accepts by default what earlier releases accepted, and the environment moves each limit either way', async () => {
+    expect(HARD_LIMITS.entries).toBe(2000000);
+    expect(HARD_LIMITS.expandedBytes).toBe(1024 ** 4);
+    expect(limits()).toMatchObject({ entries: 2000000, expandedBytes: 1024 ** 4 });
+    const options = { validateFileKey };
+    // Far beyond the 100,000 entries / 32 GiB this layer once hard-capped.
+    const many = Array.from({ length: 150000 }, (_, i) => ({ name: `files/business-docs/${i}.pdf`, size: 1 }));
+    expect(archiveCensus(many, options)).toMatchObject({ entries: 150000 });
+    expect(archiveCensus([{ name: 'files/business-docs/video.mov', size: 200 * 1024 ** 3 }], options))
+      .toMatchObject({ expandedBytes: 200 * 1024 ** 3, largestBytes: 200 * 1024 ** 3 });
+    expect(() => archiveCensus([{ name: 'data/a.ndjson', size: HARD_LIMITS.expandedBytes + 1 }], options))
+      .toThrow(expect.objectContaining({ statusCode: 413 }));
+    process.env.PICPEAK_IMPORT_MAX_EXPANDED_BYTES = String(HARD_LIMITS.expandedBytes * 2);
+    expect(archiveCensus([{ name: 'data/a.ndjson', size: HARD_LIMITS.expandedBytes + 1 }], options)).toMatchObject({ entries: 1 });
+    process.env.PICPEAK_IMPORT_MAX_ENTRIES = '3';
+    expect(() => archiveCensus(many.slice(0, 4), options)).toThrow(expect.objectContaining({ statusCode: 413 }));
+    process.env.PICPEAK_IMPORT_MAX_ENTRIES = '4000000';
+    expect(limits().entries).toBe(4000000);
+    process.env.PICPEAK_IMPORT_MAX_MANIFEST_BYTES = '10';
+    const file = await crafted([{ name: 'manifest.json', declared: 11 }]);
     await expect(open(file)).rejects.toMatchObject({ statusCode: 400 });
-    await expect(assertArchiveWithinLimits([{ name: 'data/a.ndjson', size: HARD_LIMITS.expandedBytes + 1 }], workspace))
-      .rejects.toMatchObject({ statusCode: 413 });
-    await expect(assertArchiveWithinLimits(Array.from({ length: HARD_LIMITS.entries + 1 }, (_, i) => ({ name: `data/t${i}.ndjson`, size: 0 })), workspace))
-      .rejects.toMatchObject({ statusCode: 413 });
+  });
+
+  it('verifies a data-descriptor entry against the central directory size and CRC', async () => {
+    const content = Buffer.from('{"id":1}\n');
+    const good = { name: 'data/events.ndjson', content, declared: content.length, crc: zlib.crc32(content), flags: 8 };
+    const manifest = { name: 'manifest.json', content: Buffer.from('{}'), declared: 2, crc: zlib.crc32(Buffer.from('{}')), flags: 8 };
+    for (const [label, entry, ok] of [['intact', good, true], ['wrong CRC', { ...good, crc: 1 }, false],
+      ['understated size', { ...good, declared: 1 }, false]]) {
+      const zip = await open(await crafted([manifest, entry]));
+      try {
+        const read = readEntryWithin(zip, 'data/events.ndjson', 1024);
+        if (ok) await expect(read).resolves.toEqual(content);
+        else await expect(read).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('checksum or size mismatch') });
+        expect(label).toBeTruthy();
+      } finally { await zip.close(); }
+    }
   });
 
   it('refuses archive source symlinks and hardlinks', async () => {
@@ -231,13 +258,13 @@ describe('bounded actual expansion and measured workspace capacity', () => {
   });
 
   it('counts real inflated bytes before writing and removes only its own partial leaf', async () => {
-    const file = await crafted([{ name: 'manifest.json', content: Buffer.from('{}') },
+    const file = await crafted([{ name: 'manifest.json', content: Buffer.from('{}'), declared: 2, crc: zlib.crc32(Buffer.from('{}')) },
       { name: 'data/big.ndjson', content: Buffer.alloc(2 * 1024 * 1024, 65) }]);
     process.env.PICPEAK_IMPORT_MAX_EXPANDED_BYTES = '100';
     const zip = await open(file);
     try {
       const entries = Object.values(await zip.entries());
-      await expect(assertArchiveWithinLimits(entries, workspace)).resolves.toEqual({ entries: 2, expandedBytes: 2 });
+      await expect(assertArchiveWithinLimits(entries, workspace)).resolves.toEqual({ entries: 2, expandedBytes: 3 });
       await expect(extractWithinLimits(zip, entries, workspace)).rejects.toMatchObject({ statusCode: 413 });
       await expect(fsp.stat(path.join(workspace, 'data/big.ndjson'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(await fsp.readFile(path.join(workspace, 'manifest.json'), 'utf8')).toBe('{}');

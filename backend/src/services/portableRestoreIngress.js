@@ -13,7 +13,7 @@ const RESERVE_BYTES = 256 * 1024 ** 2;
 const RESERVE_INODES = 1024;
 const CHUNK_BYTES = 64 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const LOCAL_FILESYSTEMS = new Set([0xef53n, 0x58465342n, 0x9123683en, 0x01021994n, 0x794c7630n, 0x2fc12fc1n, 0xf2f52010n]);
+const { isLocalFilesystem } = require('./portableRestoreCapability');
 const error = (code, message, status = 503) => new AppError(message, status, code);
 const invalid = () => error('RESTORE_ARCHIVE_INVALID', 'Restore archive is invalid or changed', 400);
 
@@ -31,7 +31,7 @@ function createIngress({ paths = restorePaths, leases, filesystem = fsp } = {}) 
     try { stats = await filesystem.statfs(slot.storage.privateRoot, { bigint: true }); }
     catch (_) { throw error('RESTORE_CAPACITY_UNKNOWN', 'Restore capacity is unavailable', 507); }
     if (!stats || typeof stats.type !== 'bigint') throw error('RESTORE_CAPACITY_UNKNOWN', 'Restore capacity is unavailable', 507);
-    if (!LOCAL_FILESYSTEMS.has(stats.type) || String(stats.type) !== slot.storage.filesystem) {
+    if (!isLocalFilesystem(stats.type) || String(stats.type) !== slot.storage.filesystem) {
       throw error('RESTORE_STORAGE_UNSAFE', 'Restore workspace filesystem changed');
     }
     if ([stats.bavail, stats.bsize, stats.ffree].some(value => typeof value !== 'bigint' || value < 0n)

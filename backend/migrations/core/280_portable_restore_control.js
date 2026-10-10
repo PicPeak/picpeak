@@ -1,7 +1,7 @@
 'use strict';
 
-// Runtime authority, not portable instance data. This schema must be available
-// before ordinary startup or recovery can inspect the restoration fence.
+// Runtime authority, not portable instance data. Nothing reads or writes
+// these tables until a portable restore is first used on the instance.
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('portable_restore_control'))) {
     await knex.schema.createTable('portable_restore_control', table => {
@@ -34,7 +34,12 @@ exports.up = async function up(knex) {
       table.string('ack_epoch', 36);
       table.string('startup_ready_epoch', 36);
       table.timestamp('registered_at').defaultTo(knex.fn.now());
+      // ISO string written by the runtime itself; decides whether a
+      // registration whose kernel lease cannot be probed is still alive.
+      table.string('heartbeat_at', 32);
     });
+  } else if (!(await knex.schema.hasColumn('portable_restore_instances', 'heartbeat_at'))) {
+    await knex.schema.alterTable('portable_restore_instances', table => table.string('heartbeat_at', 32));
   }
   if (!(await knex.schema.hasTable('portable_restore_commits'))) {
     await knex.schema.createTable('portable_restore_commits', table => {

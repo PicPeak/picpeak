@@ -120,7 +120,7 @@ async function readManifestFromZip(picpeakPath) {
   const zip = await boundedArchive.openBoundedArchive(picpeakPath, { validateFileKey: importFilePathProblem });
   try {
     const tooLarge = () => archiveLimitError('The backup manifest is too large to be a PicPeak manifest.', 400);
-    const bytes = await boundedArchive.readEntryWithin(zip, 'manifest.json', boundedArchive.HARD_LIMITS.manifestBytes, tooLarge);
+    const bytes = await boundedArchive.readEntryWithin(zip, 'manifest.json', boundedArchive.limits().manifestBytes, tooLarge);
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } finally { await zip.close(); }
 }

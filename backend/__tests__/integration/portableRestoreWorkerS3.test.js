@@ -249,7 +249,7 @@ native('actual portable worker with primary MinIO generations', () => {
     await assertRemoteEstate('prior'); await assertLocalEstate('prior');
     expect(await db('storage_s3_generation_index').where({ id: 1 }).first()).toEqual(priorIndex);
     const control = await db('portable_restore_control').where({ id: 1 }).first();
-    expect(control.state).toBe('restart_required');
+    expect(control.state).toBe('open');
     expect(JSON.parse(control.result_json)).toMatchObject({ outcome: 'rolled_back', recoveryAttempted: true });
     expect(await db('portable_restore_commits').where({ attempt_id: control.attempt_id })).toEqual([]);
   }, 120000);
