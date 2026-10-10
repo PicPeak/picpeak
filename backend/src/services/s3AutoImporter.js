@@ -17,7 +17,8 @@
 
 const path = require('path');
 const mime = require('mime-types');
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { retryTransient } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
@@ -109,7 +110,7 @@ async function processEvent(event, storage) {
       if (isImage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
-            const metadata = await sharp(localPath).metadata();
+            const metadata = await retryTransient(() => sharp(localPath).metadata());
             // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
             const dims = require('./imageProcessor').orientedDimensions(metadata);
             if (dims.width && dims.height) {

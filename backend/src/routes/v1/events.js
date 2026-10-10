@@ -16,7 +16,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
-const sharp = require('sharp');
+const sharp = require('../../services/isolatedSharp');
 const { body, query, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('../../utils/routeHelpers');
 const { db, logActivity } = require('../../database/db');
@@ -561,13 +561,16 @@ async function handleV1PhotoUpload(req, res) {
       const meta = await sharp(tempPath).metadata();
       // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
       ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
-    } catch { /* non-fatal */ }
+    } catch (error) {
+      if (require('../../services/imageResourcePolicy').isResourceError(error)) throw error;
+    }
 
     let thumbRel = null;
     try {
       thumbRel = await generateThumbnail(tempPath);
     } catch (err) {
       logger.warn('v1 thumbnail generation failed', { err: err.message });
+      if (require('../../services/imageResourcePolicy').isResourceError(err)) throw err;
     }
 
     // Upload the original via the storage backend (local fs OR S3),

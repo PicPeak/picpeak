@@ -1355,6 +1355,11 @@ async function startServerInternal() {
     // sharp/ffmpeg/EXIF pipeline off the request thread.
     backgroundProcessor.start();
 
+    // Decide now how image work is isolated, so a host that cannot run the
+    // memory-limited image worker says so in the startup log, once.
+    require('./src/services/isolatedSharp').prepare()
+      .catch((err) => logger.warn('Image worker check failed at boot', { error: err.message }));
+
     // Public upload leases: heartbeat this process's live requests and reap
     // the ones a dead process left behind, now and every 30 s.
     const publicUploadQuota = require('./src/services/publicUploadQuota');

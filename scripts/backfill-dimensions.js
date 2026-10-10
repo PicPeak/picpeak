@@ -3,7 +3,7 @@
  */
 const path = require('path');
 const fs = require('fs');
-const sharp = require('sharp');
+const sharp = require('../backend/src/services/isolatedSharp');
 
 // Dynamic require for knex to use the app's config
 const config = require('../backend/knexfile');

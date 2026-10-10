@@ -37,7 +37,7 @@ exports.up = async function(knex) {
   // Import sharp dynamically (only needed during migration)
   let sharp;
   try {
-    sharp = require('sharp');
+    sharp = require('../../src/services/isolatedSharp');
   } catch (err) {
     console.error('[Migration 064] Sharp not available, skipping backfill:', err.message);
     return;

@@ -51,7 +51,8 @@ describe('Admin photos in reference mode', () => {
 
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn().mockResolvedValue('thumbnails/mock-thumb.jpg'),
-      ensureThumbnail: jest.fn()
+      ensureThumbnail: jest.fn(),
+      isRawFilename: () => false
     }));
 
     jest.doMock('../../src/middleware/uploadValidation', () => ({

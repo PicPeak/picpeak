@@ -8,7 +8,8 @@
 
 const path = require('path');
 const fsp = require('fs/promises');
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { isResourceError } = require('./imageResourcePolicy');
 const { db } = require('../database/db');
 const {
   generateThumbnail, extractCaptureDate, withProcessableImage,
@@ -171,12 +172,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
         const metadata = await sharp(proc.path).metadata();
         // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
         ({ width, height } = require('./imageProcessor').orientedDimensions(metadata));
-      } catch {
+      } catch (error) {
+        if (isResourceError(error)) throw error;
         // Non-image or corrupt
       }
       try {
         thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
-      } catch {
+      } catch (error) {
+        if (isResourceError(error)) throw error;
         logger.warn('Failed to generate thumbnail for replaced photo', { photoId: existingPhoto.id });
       }
     } finally {

@@ -9,6 +9,8 @@ const { resolvePhotoStorageKey } = require('./photoResolver');
 const logger = require('../utils/logger');
 const uploadQuota = require('./publicUploadQuota');
 const { insertPhotoWithinCap, photoCapOf } = require('./photoCap');
+const imageAdmission = require('./imageWorkAdmission');
+const { isResourceError, describe: describeImageError } = require('./imageResourcePolicy');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -181,7 +183,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         try {
           thumbnailPath = await generateThumbnail(proc.path, { outputBasename: proc.outputBasename });
           try {
-            const sharp = require('sharp');
+            const sharp = require('./isolatedSharp');
             const metadata = await sharp(proc.path).metadata();
             // Oriented, not raw — see orientedDimensions (#1185).
             const dims = require('./imageProcessor').orientedDimensions(metadata);
@@ -189,6 +191,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
               imageMetadata = { width: dims.width, height: dims.height };
             }
           } catch (metadataError) {
+            if (isResourceError(metadataError)) throw metadataError;
             logger.warn(`Could not extract image dimensions for ${file.originalname}:`, metadataError.message);
           }
         } finally {
@@ -420,6 +423,7 @@ async function queueFilesForProcessing(files, options = {}) {
 
   // Once the cap is hit, the rest of the batch is refused without storing it.
   let capReached = false;
+  const preparedImages = await imageAdmission.prepareBatch(fileList, uploadReservation?.signal);
   const capRefusal = () => Object.assign(new Error(photoCapError(photoCap).error), { code: 'PHOTO_CAP_REACHED' });
 
   for (const file of fileList) {
@@ -448,6 +452,10 @@ async function queueFilesForProcessing(files, options = {}) {
       const finalKey = path.posix.join(finalDestPathRel, newFilename);
       const relativePath = path.posix.join(event.slug, newFilename);
       const isVideo = isVideoMimeType(file.mimetype);
+
+      // An image over the server's limits is refused here, before promotion
+      // or queue insertion, with a message naming the limit.
+      if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
@@ -506,6 +514,8 @@ async function queueFilesForProcessing(files, options = {}) {
     } catch (err) {
       // An object with no photo row is invisible to every listing and every
       // cleanup, so a failure after the upload removes what it stored.
+      // An object with no photo row is invisible to every listing and every
+      // cleanup, so a failure after the upload removes what it stored.
       if (!rowCommitted && uploadCharge) {
         await require('./publicUploadQuota').failedObject(uploadCharge, { storage, settled: promotionSettled }).catch(cleanupError => {
           logger.warn('Public photo cleanup failed; quota remains charged', { error: cleanupError.message });
@@ -516,6 +526,7 @@ async function queueFilesForProcessing(files, options = {}) {
         filename: file?.originalname || 'unknown',
         error: err.message,
         ...(err.code === 'PHOTO_CAP_REACHED' ? { code: err.code, limit: photoCap } : {}),
+        ...describeImageError(err),
       });
     }
   }
@@ -613,9 +624,10 @@ async function processPhoto(photoId) {
           if (thumbnailPath) updateData.thumbnail_path = thumbnailPath;
         } catch (e) {
           logger.warn(`processPhoto: thumbnail generation failed for ${photoId}`, { error: e.message });
+          if (isResourceError(e)) throw e;
         }
         try {
-          const sharp = require('sharp');
+          const sharp = require('./isolatedSharp');
           const metadata = await sharp(proc.path).metadata();
           // Oriented, not raw — see orientedDimensions (#1185).
           const dims = require('./imageProcessor').orientedDimensions(metadata);
@@ -625,6 +637,7 @@ async function processPhoto(photoId) {
           }
         } catch (e) {
           logger.warn(`processPhoto: dimensions extraction failed for ${photoId}`, { error: e.message });
+          if (isResourceError(e)) throw e;
         }
       } finally {
         await proc.cleanup();

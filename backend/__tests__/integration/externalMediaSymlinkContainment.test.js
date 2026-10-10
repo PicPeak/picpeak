@@ -65,7 +65,7 @@ describe('external media symlink containment', () => {
       ...jest.requireActual('../../src/middleware/ownership'),
       requireEventOwnership: (_req, _res, next) => next(),
     }));
-    jest.doMock('sharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
+    jest.doMock('../../src/services/isolatedSharp', () => () => ({ metadata: async () => ({ width: 100, height: 200 }) }));
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn(async () => 'thumbnails/mock.jpg'),
       ensureThumbnail: jest.fn(),

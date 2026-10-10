@@ -18,7 +18,8 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const sharp = require('sharp');
+const sharp = require('./isolatedSharp');
+const { retryTransient } = require('./imageResourcePolicy');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { getExternalMediaRoot } = require('./externalMediaService');
@@ -458,7 +459,9 @@ async function importExternalFolder({
         let width = null;
         let height = null;
         try {
-          const metadata = await sharp(f.full).metadata();
+          // A busy image worker is asked again before the file goes in
+          // without dimensions; it is never left out of the import for that.
+          const metadata = await retryTransient(() => sharp(f.full).metadata());
           // Oriented, not raw: a portrait shot from a body that tags rather
           // than rotates reports landscape dimensions, and the grid would size
           // its tile from those (#1185).

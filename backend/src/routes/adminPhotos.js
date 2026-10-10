@@ -356,6 +356,8 @@ async function handleAdminPhotoUpload(req, res) {
     let counter = (parseInt(existingCount.count) || 0) + 1;
     const storage = getStorage();
 
+    const imageAdmission = require('../services/imageWorkAdmission');
+    const preparedImages = await imageAdmission.prepareBatch(filesToUpload, req.publicUploadReservation?.signal);
     for (const file of filesToUpload) {
       let object;
       let promotionSettled = false;
@@ -377,6 +379,8 @@ async function handleAdminPhotoUpload(req, res) {
         const finalKey = path.posix.join(finalDestPathRel, newFilename);
         const relativePath = path.posix.join(event.slug, newFilename);
         const isVideo = isVideoMimeType(file.mimetype);
+
+        if (!isVideo) await imageAdmission.inspect(file.path, newFilename, req.publicUploadReservation?.signal, preparedImages);
 
         // 1. Move file to its final storage key first. If the worker
         //    later picks up the photo row, the file is guaranteed to
@@ -440,7 +444,8 @@ async function handleAdminPhotoUpload(req, res) {
           }
         }
         logger.error(`Error queuing file ${file.originalname}:`, err);
-        errors.push({ filename: file.originalname, error: err.message });
+        errors.push({ filename: file.originalname, error: err.message,
+          ...require('../services/imageResourcePolicy').describe(err) });
       }
     }
     
@@ -670,6 +675,9 @@ router.post(
         processing_status: 'pending',
         processing_error: null,
         processing_started_at: null,
+        // An explicit retry starts a new attempt cycle, due at once.
+        processing_attempts: 0,
+        processing_retry_at: null,
       });
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {
