@@ -6,7 +6,7 @@
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 
 import { useFeedbackChange } from '../useFeedbackChange';
 import type { GalleryData } from '../../../../types';
@@ -235,6 +235,29 @@ describe('useFeedbackChange', () => {
     // Not written, but not trusted either: the list is cached for minutes, so
     // it is marked stale and the next visit fetches it.
     expect(queryClient.getQueryState(LIST_KEY)!.isInvalidated).toBe(true);
+  });
+
+  // The guest left and is already back when the old visit's save completes:
+  // the list on screen came from the cache and has to be fetched now.
+  it('refetches a list that is on screen again when a previous visit\'s save completes', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000 } } });
+    queryClient.setQueryData(LIST_KEY, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const first = renderHook(() => useFeedbackChange('summer', vi.fn()), { wrapper });
+    const captured = first.result.current;
+    first.unmount();
+    // Back in the gallery: its list is being shown from the cache.
+    const listFetch = vi.fn().mockResolvedValue({ photos: [{ id: 1, filename: 'a.jpg', is_liked: true, like_count: 1 }] });
+    renderHook(() => useQuery({ queryKey: LIST_KEY, queryFn: listFetch }), { wrapper });
+    expect(listFetch).not.toHaveBeenCalled();
+
+    captured(1);
+
+    await waitFor(() => expect(listFetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: true }));
+    expect(getPhotoFeedback).not.toHaveBeenCalled();
   });
 
   // A PIN client's list carries the counts even when the gallery hides them
