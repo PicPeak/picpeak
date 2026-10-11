@@ -360,6 +360,10 @@ describe.each(engines)('portable restore coordinator (%s)', client => {
       native.files.clear();
       await db('portable_restore_instances').update({ heartbeat_at: new Date(Date.now() - HEARTBEAT_STALE_MS - 1000).toISOString() });
       const rebooted = { ...storage, identity: { bootId: crypto.randomUUID(), host: null } };
+      // The dead owner's worker never reports. Only the recovery the new
+      // process starts gets a result; resolving the owner's own gate let the
+      // stopped owner finish the rollback first, now and then.
+      terminal = gate(); allGates.push(terminal);
       terminal.result = { outcome: 'rolled_back', summary: {} };
       terminal.resolve();
       const b = create({ identity: rebooted });
