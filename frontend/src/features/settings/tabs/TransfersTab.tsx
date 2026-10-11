@@ -8,6 +8,7 @@ import { Button, Card, Input, Loading, Notice } from '../../../components/common
 import { SettingsSaveBar } from '../../../components/admin/SettingsSaveBar';
 import { api } from '../../../config/api';
 import { usePermission } from '../../../hooks/usePermission';
+import { parseWholeNumber } from '../../../utils/wholeNumber';
 
 /**
  * Settings → PicTransfer (#1544).
@@ -33,7 +34,10 @@ interface TransferSettings {
   accept_all: boolean;
   allowed_types: AllowedType[];
   max_size_mb: number;
-  max_files: number;
+  // The field's text, not a number: a number input reports "" while "1e2" is
+  // half typed, and converting on every keystroke rewrote the field under
+  // the admin's hands. Parsed for validation and when saving.
+  max_files: string;
 }
 
 // Mirrors MAX_FILES_CEILING in backend/src/services/transferUploadPolicy.js.
@@ -79,7 +83,7 @@ export const TransfersTab: React.FC = () => {
         extensions: tp.extensions || [],
       })),
       max_size_mb: Number(data.max_size_mb) || 50,
-      max_files: Number(data.max_files) || 25,
+      max_files: String(Number(data.max_files) || 25),
     };
     setForm(shaped);
     setLoaded(shaped);
@@ -92,7 +96,7 @@ export const TransfersTab: React.FC = () => {
         accept_all: form.accept_all,
         allowed_types: form.allowed_types,
         max_size_mb: form.max_size_mb,
-        max_files: form.max_files,
+        max_files: parseWholeNumber(form.max_files),
       });
     },
     onSuccess: () => {
@@ -108,6 +112,8 @@ export const TransfersTab: React.FC = () => {
   if (isLoading || !form) return <Loading />;
 
   const update = (patch: Partial<TransferSettings>) => setForm({ ...form, ...patch });
+  // The whole text as a number: "1e2" is 100, "2.5" and "" are not a count.
+  const maxFiles = parseWholeNumber(form.max_files);
 
   const updateType = (index: number, patch: Partial<AllowedType>) => {
     const next = form.allowed_types.map((tp, i) => (i === index ? { ...tp, ...patch } : tp));
@@ -235,10 +241,8 @@ export const TransfersTab: React.FC = () => {
             min={1}
             max={MAX_FILES_CEILING}
             label={t('settings.transfers.maxFiles', 'Maximum files per upload')}
-            value={String(form.max_files)}
-            // The whole value, not parseInt's prefix: "1e2" is 100 and "2.5"
-            // is not a file count; canSave below refuses what is not whole.
-            onChange={(e) => update({ max_files: Number(e.target.value) })}
+            value={form.max_files}
+            onChange={(e) => update({ max_files: e.target.value })}
           />
           <p className="mt-1 text-xs text-soft">
             {t('settings.transfers.maxFilesHint', 'How many files a client can select in one go, 1 to {{max}}. A client can upload again afterwards; a single file request can have its own value.', { max: MAX_FILES_CEILING })}
@@ -255,7 +259,7 @@ export const TransfersTab: React.FC = () => {
         onDiscard={() => setForm(loaded)}
         canSave={canEdit
           && form.max_size_mb >= 1
-          && Number.isInteger(form.max_files) && form.max_files >= 1 && form.max_files <= MAX_FILES_CEILING
+          && maxFiles !== null && maxFiles >= 1 && maxFiles <= MAX_FILES_CEILING
           && (form.accept_all || form.allowed_types.some((tp) => tp.mime.includes('/')))}
       />
     </div>
