@@ -1280,7 +1280,7 @@
       "title": "SEO & Robots",
       "indexingTitle": "Indexation des moteurs de recherche",
       "allowIndexing": "Autoriser l'indexation par les moteurs de recherche",
-      "allowIndexingHelp": "Lorsqu'il est désactivé, tous les robots sont bloqués via robots.txt. Recommandé pour les plateformes de photos privées.",
+      "allowIndexingHelp": "Lorsqu'il est désactivé, aucune page ne peut apparaître dans les résultats de recherche. Lorsqu'il est activé, seule la page d'accueil publique le peut. Les galeries, les liens de partage et les pages de connexion ne sont jamais indexés.",
       "sitemapUrl": "URL du plan du site",
       "sitemapUrlHelp": "Optionnel. Ajouté à robots.txt si fourni.",
       "aiBlockingTitle": "Blocage des IA & Bots",

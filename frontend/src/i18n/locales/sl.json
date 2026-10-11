@@ -2457,7 +2457,7 @@
       "title": "SEO in roboti",
       "indexingTitle": "Indeksiranje iskalnikov",
       "allowIndexing": "Dovoli indeksiranje iskalnikom",
-      "allowIndexingHelp": "Ko je onemogočeno, so vsi pajki blokirani prek robots.txt. Priporočeno izklopljeno za zasebne fotografske platforme.",
+      "allowIndexingHelp": "Ko je onemogočeno, se nobena stran ne more pojaviti v rezultatih iskanja. Ko je omogočeno, le javna vstopna stran. Galerije, povezave za deljenje in prijavne strani se nikoli ne indeksirajo.",
       "sitemapUrl": "URL zemljevida strani",
       "sitemapUrlHelp": "Neobvezno. Dodano v robots.txt, če je navedeno.",
       "aiBlockingTitle": "Blokiranje AI in botov",

@@ -1,11 +1,11 @@
 /**
  * robots.txt must not hide the pages that refuse indexing themselves.
  *
- * A sign-in page blocked by robots.txt is never fetched, so a crawler never
- * sees its noindex and keeps the bare URL in its results. /admin, /customer
- * and the site root therefore stay crawlable and answer
- * "X-Robots-Tag: noindex" (isNoindexPath; the $spa_robots_tag map in
- * frontend/nginx.conf).
+ * A page blocked by robots.txt is never fetched, so a crawler never sees its
+ * noindex and keeps the bare URL in its results. Every app page answers
+ * "X-Robots-Tag: noindex" (frontend/nginx.conf; sendSpa in server.js), so
+ * robots.txt leaves the pages crawlable and blocks only what carries no such
+ * header.
  */
 
 let mockRows = [];
@@ -16,42 +16,46 @@ jest.mock('../../src/database/db', () => ({
   })),
 }));
 
-const { generateRobotsTxt, clearRobotsTxtCache, isNoindexPath } = require('../../src/services/robotsTxtService');
+const { generateRobotsTxt, clearRobotsTxtCache } = require('../../src/services/robotsTxtService');
 
 const robots = async (settings) => {
   mockRows = Object.entries(settings).map(([setting_key, value]) => ({ setting_key, setting_value: JSON.stringify(value) }));
   clearRobotsTxtCache();
   return (await generateRobotsTxt()).split('\n');
 };
+// The rules of the `User-agent: *` groups only.
+const forEveryone = (lines) => {
+  const rules = [];
+  let mine = false;
+  for (const line of lines) {
+    if (line.startsWith('User-agent:')) mine = line === 'User-agent: *';
+    else if (mine && /^(Dis)?allow:/i.test(line)) rules.push(line);
+  }
+  return rules;
+};
 
 describe('robots.txt', () => {
-  it('never disallows /admin, with indexing on or off', async () => {
+  it('never keeps a crawler away from the pages, with indexing on or off', async () => {
     for (const seo_allow_indexing of [true, false]) {
-      const lines = await robots({ seo_allow_indexing });
-      expect(lines).not.toContain('Disallow: /admin');
-      expect(lines).toContain('Disallow: /api');
+      const rules = forEveryone(await robots({ seo_allow_indexing }));
+      expect(rules).toContain('Disallow: /api');
+      for (const blocked of ['Disallow: /', 'Disallow: /admin', 'Disallow: /customer', 'Disallow: /gallery']) {
+        expect(rules).not.toContain(blocked);
+      }
     }
   });
 
-  it('with indexing off blocks everything but the pages that carry noindex', async () => {
-    const lines = await robots({ seo_allow_indexing: false });
-    expect(lines).toEqual(expect.arrayContaining(['Disallow: /', 'Allow: /$', 'Allow: /admin', 'Allow: /customer']));
+  it('with indexing off blocks the media paths, which carry no noindex', async () => {
+    expect(forEveryone(await robots({ seo_allow_indexing: false })))
+      .toEqual(['Disallow: /api', 'Disallow: /photos', 'Disallow: /thumbnails', 'Disallow: /uploads', 'Disallow: /og']);
   });
 
-  it('with indexing on adds no blanket rule', async () => {
-    const lines = await robots({ seo_allow_indexing: true, seo_block_ai_crawlers: false });
-    expect(lines).not.toContain('Disallow: /');
-    expect(lines.filter((line) => line.startsWith('Allow:'))).toEqual([]);
+  it('with indexing on blocks the API only', async () => {
+    expect(forEveryone(await robots({ seo_allow_indexing: true }))).toEqual(['Disallow: /api']);
   });
-});
 
-describe('isNoindexPath', () => {
-  it('covers the admin and customer-portal shells only', () => {
-    for (const path of ['/admin', '/admin/login', '/admin/events/3', '/customer', '/customer/login']) {
-      expect(isNoindexPath(path)).toBe(true);
-    }
-    for (const path of ['/', '/gallery/a', '/administrator', '/customers', '/setup', undefined]) {
-      expect(isNoindexPath(path)).toBe(false);
-    }
+  it('still shuts AI crawlers out entirely', async () => {
+    const lines = await robots({ seo_allow_indexing: true, seo_blocked_ai_agents: ['GPTBot'] });
+    expect(lines.slice(lines.indexOf('User-agent: GPTBot'))[1]).toBe('Disallow: /');
   });
 });

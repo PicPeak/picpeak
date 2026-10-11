@@ -1257,7 +1257,7 @@
       "title": "SEO & Robots",
       "indexingTitle": "Zoekmachine-indexering",
       "allowIndexing": "Zoekmachine-indexering toestaan",
-      "allowIndexingHelp": "Wanneer uitgeschakeld worden alle crawlers geblokkeerd via robots.txt. Aangeraden uit voor prive fotoplatforms.",
+      "allowIndexingHelp": "Wanneer uitgeschakeld kan geen enkele pagina in zoekresultaten verschijnen. Wanneer ingeschakeld alleen de openbare startpagina. Galerijen, deellinks en inlogpagina's worden nooit geïndexeerd.",
       "sitemapUrl": "Sitemap-URL",
       "sitemapUrlHelp": "Optioneel. Wordt toegevoegd aan robots.txt indien opgegeven.",
       "aiBlockingTitle": "AI & Bot-blokkering",
