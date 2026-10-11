@@ -32,7 +32,9 @@ const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
 const { sanitizeForZipEntry, buildContentDisposition } = require('../utils/filenameSanitizer');
-const { setAttachmentHeaders, opaqueStoredName } = require('./transferUploadPolicy');
+const {
+  setAttachmentHeaders, opaqueStoredName, normalizeMaxFiles, getTransferUploadPolicy, effectiveMaxFiles,
+} = require('./transferUploadPolicy');
 const { filterOwnedEventIds } = require('../middleware/ownership');
 
 // Unambiguous alphabet for the client upload token — no 0/O/1/I/L to keep it
@@ -224,6 +226,7 @@ async function createTransfer(input, admin) {
     graceDays,
     photoIds = [],
     deliveryMethod = 'link',
+    maxFilesPerUpload,
   } = input || {};
 
   // A transfer is one thing or the other (#1544). A send never accepts uploads;
@@ -269,6 +272,10 @@ async function createTransfer(input, admin) {
     // The 64-hex `token` is the request link. The short code stays on as the
     // optional read-aloud alternative, with its own per-network lockout.
     row.upload_token = await generateUniqueUploadToken();
+    // Only written when the request has its own limit, so nothing changes
+    // for a create that does not ask for one (issue 1914).
+    const ownLimit = normalizeMaxFiles(maxFilesPerUpload);
+    if (ownLimit) row.max_files_per_upload = ownLimit;
   }
 
   const [id] = await db('transfers').insert(row).returning('id');
@@ -356,6 +363,9 @@ function serializeTransfer(row) {
     delivery_method: row.delivery_method === 'email' ? 'email' : 'link',
     upload_token: row.upload_token || null,
     upload_expires_at: row.upload_expires_at || null,
+    // Requests only: this request's own files-per-upload limit, or null when
+    // it follows the global default (issue 1914).
+    max_files_per_upload: request ? normalizeMaxFiles(row.max_files_per_upload) : null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     status: computeStatus(row),
@@ -410,8 +420,14 @@ async function getTransfer(id) {
     .orderBy('id', 'asc')
     .select('id', 'email', 'last_sent_at');
 
+  // What the upload page will be told, so the admin sees the number in force
+  // whether or not this request overrides the default.
+  const effectiveLimit = normalizeKind(row.kind) === KIND_REQUEST
+    ? effectiveMaxFiles(row, await getTransferUploadPolicy()) : null;
+
   return {
     ...serializeTransfer(row),
+    effective_max_files_per_upload: effectiveLimit,
     file_count: files.length + extraFiles.length,
     upload_count: uploads.length,
     extra_files: extraFiles.map((f) => ({
@@ -464,6 +480,10 @@ async function updateTransfer(id, fields) {
     if (Number.isFinite(days) && days > 0) {
       update.expires_at = new Date(Date.now() + days * DAY_MS);
     }
+  }
+  // null clears the override, so the request follows the global default again.
+  if (fields.maxFilesPerUpload !== undefined && normalizeKind(row.kind) === KIND_REQUEST) {
+    update.max_files_per_upload = normalizeMaxFiles(fields.maxFilesPerUpload);
   }
   if (fields.isActive !== undefined) {
     update.is_active = formatBoolean(!!fields.isActive);

@@ -33,7 +33,11 @@ interface TransferSettings {
   accept_all: boolean;
   allowed_types: AllowedType[];
   max_size_mb: number;
+  max_files: number;
 }
+
+// Mirrors MAX_FILES_CEILING in backend/src/services/transferUploadPolicy.js.
+const MAX_FILES_CEILING = 1000;
 
 /** Display form: `.jpg, .jpeg` — what the admin actually thinks in. */
 function extensionsToText(extensions: string[]): string {
@@ -75,6 +79,7 @@ export const TransfersTab: React.FC = () => {
         extensions: tp.extensions || [],
       })),
       max_size_mb: Number(data.max_size_mb) || 50,
+      max_files: Number(data.max_files) || 25,
     };
     setForm(shaped);
     setLoaded(shaped);
@@ -87,6 +92,7 @@ export const TransfersTab: React.FC = () => {
         accept_all: form.accept_all,
         allowed_types: form.allowed_types,
         max_size_mb: form.max_size_mb,
+        max_files: form.max_files,
       });
     },
     onSuccess: () => {
@@ -222,6 +228,20 @@ export const TransfersTab: React.FC = () => {
             {t('settings.transfers.maxSizeHint', 'Applies per file, not per upload.')}
           </p>
         </div>
+
+        <div className="mt-6 max-w-xs">
+          <Input
+            type="number"
+            min={1}
+            max={MAX_FILES_CEILING}
+            label={t('settings.transfers.maxFiles', 'Maximum files per upload')}
+            value={String(form.max_files)}
+            onChange={(e) => update({ max_files: parseInt(e.target.value, 10) || 0 })}
+          />
+          <p className="mt-1 text-xs text-soft">
+            {t('settings.transfers.maxFilesHint', 'How many files a client can select in one go, 1 to {{max}}. A client can upload again afterwards; a single file request can have its own value.', { max: MAX_FILES_CEILING })}
+          </p>
+        </div>
       </Card>
 
       </fieldset>
@@ -233,6 +253,7 @@ export const TransfersTab: React.FC = () => {
         onDiscard={() => setForm(loaded)}
         canSave={canEdit
           && form.max_size_mb >= 1
+          && form.max_files >= 1 && form.max_files <= MAX_FILES_CEILING
           && (form.accept_all || form.allowed_types.some((tp) => tp.mime.includes('/')))}
       />
     </div>

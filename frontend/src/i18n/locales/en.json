@@ -1065,7 +1065,9 @@
       "requestMessage": "What do you need from them? (optional)",
       "requestMessagePlaceholder": "Shown to the client on the upload page",
       "uploadWindowDays": "Accept uploads for (days)",
-      "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link."
+      "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link.",
+      "maxFilesPerUpload": "Max files per upload",
+      "maxFilesDefault": "Default ({{count}})"
     },
     "picker": {
       "title": "Select images from other events",
@@ -1154,7 +1156,12 @@
     "someDropped": "{{count}} attached file(s) were not kept — a file request only collects files: {{names}}",
     "deleteRequestAction": "Delete request",
     "deleteAction": "Delete transfer",
-    "loadFailed": "Could not load the transfers"
+    "loadFailed": "Could not load the transfers",
+    "uploadLimit": "Files per upload",
+    "uploadLimitOwn": "The client can select up to {{count}} files at once. This request has its own limit.",
+    "uploadLimitDefault": "The client can select up to {{count}} files at once (the default from Settings).",
+    "uploadLimitSaved": "Upload limit saved",
+    "uploadLimitUseDefault": "Use the default"
   },
   "workflows": {
     "title": "Workflows",
@@ -3602,7 +3609,9 @@
       "extensions": "Extensions",
       "maxSize": "Maximum file size (MB)",
       "maxSizeHint": "Applies per file, not per upload.",
-      "readOnly": "Only admins who can edit settings can change what clients may send."
+      "readOnly": "Only admins who can edit settings can change what clients may send.",
+      "maxFiles": "Maximum files per upload",
+      "maxFilesHint": "How many files a client can select in one go, 1 to {{max}}. A client can upload again afterwards; a single file request can have its own value."
     }
   },
   "analytics": {

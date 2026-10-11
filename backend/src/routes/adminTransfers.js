@@ -29,6 +29,8 @@ const {
   getTransferUploadPolicy,
   validateTransferFileType,
   setAttachmentHeaders,
+  normalizeMaxFiles,
+  MAX_FILES_CEILING,
 } = require('../services/transferUploadPolicy');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -245,6 +247,20 @@ router.post('/',
       .map((e) => String(e || '').trim()).filter(Boolean).slice(0, 100);
     const deliveryMethod = b.deliveryMethod === 'email' ? 'email' : 'link';
 
+    // Empty means "use the global default"; anything else has to be a usable
+    // number, or the request would be created with a limit the admin did not
+    // ask for (issue 1914). Multipart text, so it arrives as a string.
+    const ownLimitGiven = isRequest && b.maxFilesPerUpload != null && String(b.maxFilesPerUpload).trim() !== '';
+    if (ownLimitGiven && !normalizeMaxFiles(b.maxFilesPerUpload)) {
+      for (const file of req.files || []) {
+        try { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); } catch (_) { /* noop */ }
+      }
+      return res.status(400).json({
+        error: `Maximum files per upload must be a whole number between 1 and ${MAX_FILES_CEILING}`,
+        code: 'BAD_FILE_COUNT',
+      });
+    }
+
     // A send has to be sending something. Before #1544 the file filter threw,
     // so a create whose files were all rejected was a 400; now the filter skips
     // them, and without this the row is created empty and — on
@@ -276,6 +292,7 @@ router.post('/',
       // against ownership there, and silently dropping them here is clearer.
       photoIds: isRequest ? [] : photoIds,
       deliveryMethod,
+      maxFilesPerUpload: ownLimitGiven ? b.maxFilesPerUpload : undefined,
     }, req.admin);
 
     // Likewise: the admin's own deliverable files are outbound content.
@@ -317,6 +334,15 @@ router.post('/',
   })),
 );
 
+// The global files-per-upload default, for the create dialog's "use the
+// default (N)" hint (issue 1914). An admin who creates requests need not hold
+// settings.view, so it is answered here. Above the `/:id` routes, which would
+// otherwise take the word for an id.
+router.get('/upload-defaults', requirePermission('events.view'), handleAsync(async (req, res) => {
+  const policy = await getTransferUploadPolicy();
+  return successResponse(res, { max_files_per_upload: policy.maxFiles, max_files_ceiling: MAX_FILES_CEILING });
+}));
+
 // Ownership guard for every `/:id`, `/:id/files`, `/:id/download`, … route.
 // One mount covers them all — the POST `/` create + GET `/` list above are not
 // matched (no :id), and each route keeps its own requirePermission.
@@ -346,6 +372,8 @@ router.patch('/:id',
     body('expiresInDays').optional({ nullable: true }).isInt({ min: 1, max: 3650 }),
     body('expiresAt').optional({ nullable: true }).isISO8601(),
     body('isActive').optional().isBoolean(),
+    // null clears a request's own limit (back to the global default).
+    body('maxFilesPerUpload').optional({ nullable: true }).isInt({ min: 1, max: MAX_FILES_CEILING }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -357,6 +385,7 @@ router.patch('/:id',
       expiresInDays: req.body.expiresInDays,
       expiresAt: req.body.expiresAt,
       isActive: req.body.isActive,
+      maxFilesPerUpload: req.body.maxFilesPerUpload,
     });
     if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
     return successResponse(res, { transfer }, 200, 'Transfer updated');

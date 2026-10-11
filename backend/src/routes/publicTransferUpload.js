@@ -33,6 +33,7 @@ const { clientIpForAudit } = require('../utils/clientIp');
 const { getStorage } = require('../services/storage');
 const {
   getTransferUploadPolicy,
+  effectiveMaxFiles,
   validateTransferFileType,
   allowedMimeList,
   allowedExtensionList,
@@ -49,8 +50,6 @@ const router = express.Router();
 // probed) once an admin disables the feature under Settings → Features.
 router.use(requireFeatureFlag('transfers'));
 
-const MAX_FILES_PER_UPLOAD = 25;
-
 // S3 parity with the download routes: an object written for a transfer says it
 // is opaque and should be saved, so a presigned URL — or a bucket someone makes
 // public — behaves exactly like fetching it through PicPeak (#1544).
@@ -60,7 +59,7 @@ const TRANSFER_OBJECT_OPTIONS = {
 };
 
 const infoLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
-// The page splits one selection (up to MAX_FILES_PER_UPLOAD files) into
+// The page splits one selection (up to the request's files-per-upload limit) into
 // requests that each fit the per-request byte budget; bytes are bounded by
 // the upload quota, this only bounds the request count.
 const uploadLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
@@ -123,7 +122,8 @@ router.get('/:token', infoLimiter, [param('token').matches(TOKEN_RE)], handleAsy
       message: transfer.message || null,
       expires_at: transfer.upload_expires_at || transfer.expires_at,
       max_size_mb: policy.maxSizeMb,
-      max_files: MAX_FILES_PER_UPLOAD,
+      // This request's own limit, or the global default (issue 1914).
+      max_files: effectiveMaxFiles(transfer, policy),
       // Raw body budget of one request; the page batches a selection to fit.
       max_request_bytes: await uploadQuota.requestBudget(policy.maxSizeMb * 1024 * 1024),
       // The page filters on these before uploading, so an unsupported file is
@@ -196,7 +196,7 @@ router.post('/:token', uploadLimiter, [param('token').matches(TOKEN_RE)], preUpl
   const policy = await getTransferUploadPolicy();
   const maxSizeMb = policy.maxSizeMb;
   await withPublicUpload(req, res, {
-    transferId: req.transferRow.id, maxFiles: MAX_FILES_PER_UPLOAD, maxFileBytes: maxSizeMb * 1024 * 1024, fileField: 'files',
+    transferId: req.transferRow.id, maxFiles: effectiveMaxFiles(req.transferRow, policy), maxFileBytes: maxSizeMb * 1024 * 1024, fileField: 'files',
     fileLimitMessage: `Each file must be ${maxSizeMb} MB or smaller`,
   }, options => buildUploader(maxSizeMb * 1024 * 1024, policy, options), async (uploadReservation, res) => {
 

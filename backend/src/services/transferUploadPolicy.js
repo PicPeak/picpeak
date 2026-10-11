@@ -168,8 +168,30 @@ async function getTransferUploadPolicy() {
   }
 
   const maxSizeMb = Number(await getAppSetting('transfer_max_upload_size_mb', 50)) || 50;
+  const maxFiles = normalizeMaxFiles(await getAppSetting('transfer_upload_max_files', DEFAULT_MAX_FILES))
+    || DEFAULT_MAX_FILES;
 
-  return { acceptAll, allowedTypes, maxSizeMb };
+  return { acceptAll, allowedTypes, maxSizeMb, maxFiles };
+}
+
+// How many files a client may select in one upload round (issue 1914). 25 was
+// the hardcoded value; the ceiling keeps one round a size the per-request
+// multer limits and the upload page can still handle.
+const DEFAULT_MAX_FILES = 25;
+const MAX_FILES_CEILING = 1000;
+
+/** A usable files-per-upload value, or null for anything else. */
+function normalizeMaxFiles(value) {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_FILES_CEILING ? n : null;
+}
+
+/**
+ * The limit in force for one file request: its own override when it has one,
+ * otherwise the global default from `policy`.
+ */
+function effectiveMaxFiles(transfer, policy) {
+  return normalizeMaxFiles(transfer && transfer.max_files_per_upload) || policy.maxFiles;
 }
 
 /**
@@ -271,6 +293,10 @@ module.exports = {
   SAFE_ECHO_MIME,
   normalizeAllowedTypes,
   getTransferUploadPolicy,
+  DEFAULT_MAX_FILES,
+  MAX_FILES_CEILING,
+  normalizeMaxFiles,
+  effectiveMaxFiles,
   validateTransferFileType,
   allowedMimeList,
   allowedExtensionList,
