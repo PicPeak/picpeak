@@ -8,7 +8,7 @@
  */
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-i18next', () => ({
@@ -49,5 +49,32 @@ describe.each([
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(onSaved).toHaveBeenCalledWith('1');
+  });
+
+  // A toggle paused while offline is sent later, by whatever the component
+  // looks like then. It must still go to the photo it was made on.
+  it('sends a toggle that was paused offline for the photo it was made on', async () => {
+    submitFeedback.mockReset().mockResolvedValue({});
+    const onSaved = vi.fn();
+    const queryClient = new QueryClient();
+    const ui = (photoId: string) => (
+      <QueryClientProvider client={queryClient}>
+        {React.createElement(Component as React.FC<Record<string, unknown>>, { photoId, gallerySlug: 'g', isEnabled: true, onSaved, ...state })}
+      </QueryClientProvider>
+    );
+    onlineManager.setOnline(false);
+    try {
+      const { rerender } = render(ui('1'));
+      fireEvent.click(screen.getByRole('button'));
+      rerender(ui('2'));
+      expect(submitFeedback).not.toHaveBeenCalled();
+      onlineManager.setOnline(true);
+
+      await waitFor(() => expect(submitFeedback).toHaveBeenCalledTimes(1));
+      expect(submitFeedback).toHaveBeenCalledWith('g', '1', expect.anything());
+      await waitFor(() => expect(onSaved).toHaveBeenCalledWith('1'));
+    } finally {
+      onlineManager.setOnline(true);
+    }
   });
 });

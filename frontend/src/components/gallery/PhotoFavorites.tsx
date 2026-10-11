@@ -40,8 +40,11 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
 
   const submitFavoriteMutation = useMutation({
-    mutationFn: (data: { guest_name?: string; guest_email?: string } = {}) => 
-      feedbackService.submitFeedback(gallerySlug, photoId, {
+    // The photo travels with the call. The function and the callbacks below
+    // are the latest render's, which in the lightbox can already show another
+    // photo: a toggle paused offline would otherwise be sent for that one.
+    mutationFn: (data: { photoId: string; guest_name?: string; guest_email?: string }) =>
+      feedbackService.submitFeedback(gallerySlug, data.photoId, {
         feedback_type: 'favorite',
         guest_name: data.guest_name || undefined,
         guest_email: data.guest_email || undefined
@@ -53,12 +56,9 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       if (onFavoriteChange) {
         onFavoriteChange(!isFavorited);
       }
-      // The photo this toggle is for. The callbacks below run from the
-      // latest render, which in the lightbox can already show another photo.
-      return { photoId };
     },
-    onSuccess: (_data, _variables, context) => {
-      const savedPhotoId = context?.photoId ?? photoId;
+    onSuccess: (_data, variables) => {
+      const savedPhotoId = variables.photoId;
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, savedPhotoId] });
       // The parent refreshes this photo's row; without one, the whole list.
       if (onSaved) onSaved(savedPhotoId);
@@ -92,7 +92,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       } catch {
         return;
       }
-      submitFavoriteMutation.mutate({});
+      submitFavoriteMutation.mutate({ photoId });
       return;
     }
 
@@ -102,14 +102,14 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       const identityPayload = savedIdentity
         ? { guest_name: savedIdentity.name, guest_email: savedIdentity.email }
         : {};
-      submitFavoriteMutation.mutate(identityPayload);
+      submitFavoriteMutation.mutate({ ...identityPayload, photoId });
     }
   };
 
   const handleIdentitySubmit = (name: string, email: string) => {
     setSavedIdentity({ name, email });
     setShowIdentityModal(false);
-    submitFavoriteMutation.mutate({ guest_name: name, guest_email: email });
+    submitFavoriteMutation.mutate({ photoId, guest_name: name, guest_email: email });
   };
 
   if (!isEnabled) return null;

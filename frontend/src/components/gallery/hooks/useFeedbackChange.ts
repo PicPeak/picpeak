@@ -53,10 +53,11 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
     queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
     const listKey = ['gallery-photos', slug];
     // Nothing from a visit that has ended is written into the lists. They are
-    // marked stale instead, without fetching now: the list is cached for
-    // minutes, and a guest coming back would otherwise see the hearts and
-    // counts from before the toggle.
-    const leaveStale = () => queryClient.invalidateQueries({ queryKey: listKey, refetchType: 'none' });
+    // invalidated instead: the list is cached for minutes, and a guest coming
+    // back would otherwise see the hearts and counts from before the toggle.
+    // A list nobody is showing is only marked stale; one that is on screen
+    // again (the guest already came back) is fetched now.
+    const leaveStale = () => queryClient.invalidateQueries({ queryKey: listKey });
     // Called for a gallery that has been left.
     if (servedSlug.current !== slug) { leaveStale(); return; }
 
