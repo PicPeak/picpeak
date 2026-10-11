@@ -114,6 +114,10 @@ jobs:
       release_tag: ${{ needs.release-please.outputs.tag_name }}
       release_sha: ${{ needs.release-please.outputs.sha }}
       release_id: ${{ needs.release-please.outputs.release_id }}
+    # Pass only these names; environment-scoped values take precedence.
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   whatsnew:
     needs: release-please
