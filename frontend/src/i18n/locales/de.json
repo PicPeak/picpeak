@@ -2608,7 +2608,7 @@
       "title": "SEO & Robots",
       "indexingTitle": "Suchmaschinen-Indexierung",
       "allowIndexing": "Suchmaschinen-Indexierung erlauben",
-      "allowIndexingHelp": "Wenn deaktiviert, werden alle Crawler über robots.txt blockiert. Für private Foto-Plattformen empfohlen auszuschalten.",
+      "allowIndexingHelp": "Wenn deaktiviert, kann keine Seite in Suchergebnissen erscheinen. Wenn aktiviert, nur die öffentliche Startseite. Galerien, Freigabe-Links und Anmeldeseiten werden nie indexiert.",
       "sitemapUrl": "Sitemap-URL",
       "sitemapUrlHelp": "Optional. Wird zur robots.txt hinzugefügt, falls angegeben.",
       "aiBlockingTitle": "KI- & Bot-Blockierung",

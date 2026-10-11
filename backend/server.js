@@ -539,8 +539,8 @@ async function handlePublicSiteRequest(req, res, next) {
       return;
     }
 
-    // With indexing off robots.txt still lets crawlers fetch the root, so
-    // the landing page has to refuse indexing itself.
+    // robots.txt lets crawlers fetch the root either way, so with indexing
+    // off the landing page has to refuse indexing itself.
     if (payload.seoSettings?.seo_allow_indexing !== true) res.setHeader('X-Robots-Tag', 'noindex');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
@@ -817,7 +817,7 @@ app.get('/s/:shortSlug', async (req, res) => {
 });
 
 // robots.txt endpoint (dynamic, served from DB settings)
-const { generateRobotsTxt, isNoindexPath } = require('./src/services/robotsTxtService');
+const { generateRobotsTxt } = require('./src/services/robotsTxtService');
 app.get('/robots.txt', async (req, res) => {
   try {
     const robotsTxt = await generateRobotsTxt();
@@ -1049,8 +1049,9 @@ try {
     // revalidate so a redeploy is picked up, while the hashed assets below
     // cache immutably.
     const sendSpa = (res) => {
-      // nginx parity: the $spa_robots_tag map in frontend/nginx.conf.
-      if (isNoindexPath(res.req?.path)) res.setHeader('X-Robots-Tag', 'noindex');
+      // Only the landing page is ever indexable; the app shell never is
+      // (nginx parity: `location = /index.html`).
+      res.setHeader('X-Robots-Tag', 'noindex');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.type('html').send(spaHtml);
     };

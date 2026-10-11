@@ -157,10 +157,11 @@ http {
 
 
 class SpaRobotsHeaderTest(unittest.TestCase):
-    # robots.txt leaves /admin and /customer crawlable so that a crawler can
-    # read "X-Robots-Tag: noindex" on them; a Disallow kept the bare login URL
-    # in search results. Gallery pages follow the SEO settings instead.
-    def test_admin_and_portal_shells_answer_noindex(self):
+    # Only the landing page at `/` (served by the backend) is ever indexable.
+    # robots.txt leaves the app pages crawlable so that a crawler can read
+    # "X-Robots-Tag: noindex" on them; a Disallow kept bare login and share
+    # URLs in search results.
+    def test_every_app_page_answers_noindex(self):
         with tempfile.TemporaryDirectory(prefix="picpeak-nginx-test-") as directory:
             directory = Path(directory)
             (directory / "frontend.conf").write_text((ROOT / "frontend/nginx.conf").read_text())
@@ -178,12 +179,9 @@ http {
                     "-p", "127.0.0.1::80", "-v", f"{directory}:/fixtures:ro",
                     IMAGE, "nginx", "-c", "/fixtures/nginx.conf", "-g", "daemon off;")
                 port = int(run("docker", "port", name, "80/tcp").split(":")[-1])
-                expected = {
-                    "/admin/login": "noindex", "/admin": "noindex", "/admin?next=/x": "noindex",
-                    "/customer/login": "noindex", "/customer/events/a": "noindex",
-                    "/gallery/some-slug": None, "/administrator": None, "/setup": None,
-                }
-                for uri, value in expected.items():
+                pages = ("/admin/login", "/admin", "/customer/login", "/gallery/some-slug/token",
+                         "/transfer/abc123", "/setup", "/some-short-link", "/index.html")
+                for uri in pages:
                     with self.subTest(uri=uri):
                         for attempt in range(30):
                             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
@@ -199,7 +197,7 @@ http {
                             finally:
                                 connection.close()
                         self.assertEqual(response.status, 200)
-                        self.assertEqual(response.getheader("X-Robots-Tag"), value)
+                        self.assertEqual(response.getheader("X-Robots-Tag"), "noindex")
                         # The location's own header list must not drop these.
                         self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
             finally:

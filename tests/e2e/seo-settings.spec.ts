@@ -129,19 +129,20 @@ test.describe('robots.txt Endpoint', () => {
 
     const body = await response.text();
     expect(body).toContain('User-agent');
-    // /admin is not disallowed: its pages carry X-Robots-Tag: noindex, which
+    // The pages are not disallowed: they carry X-Robots-Tag: noindex, which
     // a crawler only sees if it may fetch them.
     expect(body).not.toContain('Disallow: /admin');
     expect(body).toContain('Disallow: /api');
   });
 
   // Blocked by robots.txt, a crawler never saw a noindex and kept the bare
-  // login URL in its results; the shell now says it in a header.
-  test('the admin login refuses indexing in a header @smoke', async ({ request }) => {
-    const response = await request.get('/admin/login');
-    expect(response.status()).toBe(200);
-    expect(response.headers()['x-robots-tag']).toBe('noindex');
-    expect((await request.get('/setup')).headers()['x-robots-tag']).toBeUndefined();
+  // URL in its results; every app page now says it in a header.
+  test('app pages refuse indexing in a header @smoke', async ({ request }) => {
+    for (const path of ['/admin/login', '/customer/login', '/gallery/no-such-gallery']) {
+      const response = await request.get(path);
+      expect(response.status()).toBe(200);
+      expect(response.headers()['x-robots-tag']).toBe('noindex');
+    }
   });
 
   test('robots.txt blocks AI crawlers by default', async ({ request }) => {

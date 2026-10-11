@@ -56,26 +56,25 @@ async function generateRobotsTxt() {
 
   const lines = [];
 
-  // The API is never crawled. /admin is deliberately NOT disallowed: its
-  // pages answer "X-Robots-Tag: noindex" (isNoindexPath), and a crawler only
-  // obeys that if it may fetch the page. A Disallow left the bare login URL
-  // in search results.
+  // The API is never crawled. The app pages are deliberately NOT disallowed:
+  // every one answers "X-Robots-Tag: noindex" (frontend/nginx.conf; sendSpa
+  // in server.js), and a crawler only obeys that if it may fetch the page. A
+  // Disallow left bare login and share URLs in search results.
   lines.push('# Protected paths');
   lines.push('User-agent: *');
   lines.push('Disallow: /api');
   lines.push('');
 
   if (!allowIndexing) {
-    // Block everything for all agents, except the pages that carry noindex
-    // themselves (the longer Allow wins over "Disallow: /").
-    lines.push('# Indexing disabled - block all crawlers');
+    // Nothing is indexable: the landing page answers noindex as well
+    // (handlePublicSiteRequest). Only what carries no such header is blocked.
+    lines.push('# Indexing disabled. Pages stay crawlable on purpose: each answers');
+    lines.push('# "X-Robots-Tag: noindex", which only takes effect if a crawler may fetch it.');
     lines.push('User-agent: *');
-    lines.push('Disallow: /');
-    lines.push('# Crawlable on purpose: these answer "X-Robots-Tag: noindex", which only');
-    lines.push('# takes effect if a crawler may fetch the page.');
-    lines.push('Allow: /$');
-    lines.push('Allow: /admin');
-    lines.push('Allow: /customer');
+    lines.push('Disallow: /photos');
+    lines.push('Disallow: /thumbnails');
+    lines.push('Disallow: /uploads');
+    lines.push('Disallow: /og');
     lines.push('');
   }
 
@@ -125,15 +124,6 @@ async function generateRobotsTxt() {
   return result;
 }
 
-/**
- * Pages that are never to be indexed, whatever the SEO settings say: the admin
- * and customer-portal shells (their sign-in pages are the ones a search engine
- * finds). Mirrored by the $spa_robots_tag map in frontend/nginx.conf.
- */
-function isNoindexPath(path) {
-  return /^\/(admin|customer)(\/|$)/.test(path || '');
-}
-
 function clearRobotsTxtCache() {
   cachedRobotsTxt = null;
   cacheTimestamp = 0;
@@ -141,6 +131,5 @@ function clearRobotsTxtCache() {
 
 module.exports = {
   generateRobotsTxt,
-  isNoindexPath,
   clearRobotsTxtCache
 };
