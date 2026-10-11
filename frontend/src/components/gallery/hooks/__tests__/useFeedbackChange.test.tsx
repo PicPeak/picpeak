@@ -208,6 +208,7 @@ describe('useFeedbackChange', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: false, like_count: 0 });
+    expect(queryClient.getQueryState(LIST_KEY)!.isInvalidated).toBe(true);
   });
 
   // A tile's submit can finish after the gallery was left and still call the
@@ -231,6 +232,9 @@ describe('useFeedbackChange', () => {
     expect(getPhotoFeedback).not.toHaveBeenCalled();
     expect(refetch).not.toHaveBeenCalled();
     expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: false });
+    // Not written, but not trusted either: the list is cached for minutes, so
+    // it is marked stale and the next visit fetches it.
+    expect(queryClient.getQueryState(LIST_KEY)!.isInvalidated).toBe(true);
   });
 
   // A PIN client's list carries the counts even when the gallery hides them
