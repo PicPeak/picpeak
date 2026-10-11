@@ -28,6 +28,10 @@ import { feedbackService } from '../../../services/feedback.service';
 vi.mock('../../../services/gallery.service', () => ({ galleryService: { trackPhotoView: vi.fn() } }));
 vi.mock('../../common', () => ({ AuthenticatedImage: ({ alt }: { alt: string }) => <img alt={alt} /> }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn() } }));
+vi.mock('../FeedbackIdentityModal', () => ({
+  FeedbackIdentityModal: ({ isOpen, onSubmit }: { isOpen: boolean; onSubmit: (name: string, email: string) => void }) =>
+    (isOpen ? <button onClick={() => onSubmit('Anna', 'anna@example.com')}>identify</button> : null),
+}));
 import { toast } from 'react-toastify';
 
 import { PhotoLightbox } from '../PhotoLightbox';
@@ -48,6 +52,27 @@ async function likeWith(error: unknown) {
   await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
 }
 const LIKE = /^like photo$/i;
+
+// The like that waits behind the name-and-email prompt is a third path.
+describe('PhotoLightbox — a refused like after the identity prompt', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('names the rate limit too', async () => {
+    vi.mocked(feedbackService.getGalleryFeedbackSettings).mockResolvedValueOnce({
+      feedback_enabled: true, allow_ratings: false, allow_likes: true, allow_comments: false, require_name_email: true,
+    } as never);
+    vi.mocked(feedbackService.submitFeedback).mockRejectedValueOnce({ response: { status: 429 } });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PhotoLightbox photos={[photo]} initialIndex={0} onClose={vi.fn()} slug="g" feedbackEnabled />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: LIKE }));
+    fireEvent.click(await screen.findByRole('button', { name: 'identify' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Too many requests. Wait a few minutes, then try again.'));
+  });
+});
 
 describe('PhotoLightbox — a refused like', () => {
   beforeEach(() => { vi.clearAllMocks(); });

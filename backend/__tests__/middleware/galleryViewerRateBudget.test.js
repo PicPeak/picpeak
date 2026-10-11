@@ -71,7 +71,9 @@ describe('a verified viewer working in their gallery', () => {
     expect(await statuses(app, 1, 'get', '/api/public/settings')).toEqual([429]);
   });
 
-  it.each(['photos', 'photos/42/feedback', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people'])(
+  // photo/<id>/view is the beacon the lightbox posts for every slide: left
+  // on the ordinary budget, about 300 slides still locked the guest out.
+  it.each(['photos', 'photos/42/feedback', 'my-feedback', 'feedback-summary', 'feedback-settings', 'info', 'stats', 'people', 'photo/42/view'])(
     'covers /%s', (rest) => {
       expect(isOwnGalleryViewerRequest({ path: `/api/gallery/wedding-2026/${rest}`, headers: viewer(), cookies: {} })).toBe(true);
     });
@@ -79,7 +81,7 @@ describe('a verified viewer working in their gallery', () => {
 
 describe('everything else keeps the ordinary budget', () => {
   it('downloads and uploads, even with the gallery token', async () => {
-    for (const rest of ['download/42', 'download-all', 'download-selected', 'download-jobs', 'uploads']) {
+    for (const rest of ['download/42', 'download-all', 'download-selected', 'download-jobs', 'uploads', 'photo/42/view/extra', 'photo/42']) {
       const app = await buildApp();
       expect(await statuses(app, MAX + 1, 'post', `/api/gallery/wedding-2026/${rest}`, viewer())).toEqual([200, 200, 200, 429]);
     }
