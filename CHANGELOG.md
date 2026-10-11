@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.168.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.0-beta.0...v3.168.1-beta.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* **restore:** bound portable imports and coordinate maintenance recovery ([#1894](https://github.com/PicPeak/picpeak/issues/1894)) ([d4c97ad](https://github.com/PicPeak/picpeak/commit/d4c97ad067039273846aa60b3068dcbdc3712316))
+
 ## [3.168.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.167.6-beta.0...v3.168.0-beta.0) (2026-10-10)
 
 
