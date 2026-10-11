@@ -145,6 +145,13 @@ test.describe('robots.txt Endpoint', () => {
     }
   });
 
+  // A crawler that indexes can be served the share preview instead of the
+  // app shell (Applebot is one); that page has to refuse indexing too.
+  test('the share preview served to crawlers refuses indexing @smoke', async ({ request }) => {
+    const response = await request.get('/gallery/no-such-gallery', { headers: { 'user-agent': 'Applebot/0.1' } });
+    expect(response.headers()['x-robots-tag']).toContain('noindex');
+  });
+
   test('robots.txt blocks AI crawlers by default', async ({ request }) => {
     const response = await request.get('/robots.txt');
     const body = await response.text();

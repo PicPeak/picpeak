@@ -157,6 +157,14 @@ describe('GET /s/:shortSlug — social crawler (OG metadata)', () => {
     expect(res.text).toMatch(/og:url/);
   });
 
+  // Gallery and short links are crawlable (the app shell answers noindex),
+  // and a crawler that indexes may be served this preview instead of the shell.
+  it('the preview page refuses indexing in its own markup', async () => {
+    const { renderOgHtml } = require('../../src/services/galleryOgService');
+    const html = renderOgHtml({ title: 'T', description: 'D', image: 'https://x.test/i.jpg', url: 'https://x.test/s/a', siteName: 'S' });
+    expect(html).toContain('<meta name="robots" content="noindex" />');
+  });
+
   it('og:url canonical points at /s/<slug>, not the underlying gallery URL', async () => {
     await seedEventAndShortUrl({
       slug: 'canonical-test', shortSlug: 'canonical-short',

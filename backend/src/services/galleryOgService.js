@@ -247,6 +247,10 @@ async function buildOgMetadata(slug, requestPath) {
   };
 }
 
+// The preview page is for link unfurlers, never for a search index: robots.txt
+// leaves gallery and short links crawlable (the app shell answers noindex),
+// and some crawlers that index, Applebot for one, are served this page
+// instead of the shell. Hence the robots meta here, for every caller.
 function renderOgHtml(meta) {
   const t = escapeHtml(meta.title);
   const d = escapeHtml(meta.description);
@@ -259,6 +263,7 @@ function renderOgHtml(meta) {
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="robots" content="noindex" />
   <title>${t}</title>
   <meta name="description" content="${d}" />
   <meta property="og:type" content="website" />
@@ -291,6 +296,7 @@ async function handleGalleryOgRequest(req, res) {
     const meta = await buildOgMetadata(slug, req.originalUrl);
     res.set('Cache-Control', 'public, max-age=300');
     res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('X-Robots-Tag', 'noindex');
     res.send(renderOgHtml(meta));
   } catch (error) {
     logger.error('Failed to render gallery OG page', { error: error.message });

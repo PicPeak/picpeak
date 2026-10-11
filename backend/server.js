@@ -531,15 +531,20 @@ async function handlePublicSiteRequest(req, res, next) {
     // link for self-hosted faces) or a SEO toggle must stop answering 304 to
     // clients that cached the previous HTML, or they keep it until a
     // settings change happens to move the payload hash.
-    const etag = `W/"${require('crypto').createHash('sha1').update(document).digest('hex')}"`;
+    //
+    // robots.txt lets crawlers fetch the root either way, so with indexing
+    // off the landing page has to refuse indexing itself. That is a header,
+    // not part of the document, so it goes into the validator as well and is
+    // sent on a 304 too: otherwise a crawler that cached the page while
+    // indexing was on keeps revalidating its indexable copy.
+    const noindex = payload.seoSettings?.seo_allow_indexing !== true;
+    if (noindex) res.setHeader('X-Robots-Tag', 'noindex');
+    const etag = `W/"${require('crypto').createHash('sha1').update(document).update(noindex ? 'noindex' : 'index').digest('hex')}"`;
     if (req.headers['if-none-match'] === etag) {
       res.status(304).end();
       return;
     }
 
-    // robots.txt lets crawlers fetch the root either way, so with indexing
-    // off the landing page has to refuse indexing itself.
-    if (payload.seoSettings?.seo_allow_indexing !== true) res.setHeader('X-Robots-Tag', 'noindex');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
     res.setHeader('ETag', etag);
@@ -800,6 +805,7 @@ app.get('/s/:shortSlug', async (req, res) => {
         meta.url = `${base}/s/${row.short_slug}`;
         res.set('Cache-Control', 'public, max-age=300');
         res.set('Content-Type', 'text/html; charset=utf-8');
+        res.set('X-Robots-Tag', 'noindex');
         res.send(renderOgHtml(meta));
         // Hit accounting is fire-and-forget — don't block the bot.
         galleryShortUrlService.recordHit(row.id).catch(() => {});
