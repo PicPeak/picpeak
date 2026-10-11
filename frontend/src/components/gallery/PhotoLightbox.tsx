@@ -1310,7 +1310,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               setMyLiked(true);
             } catch (err) {
               // Per-guest cap reached (#655) on the post-identity-modal submit.
-              if (!handleLimitError(err)) throw err;
+              // Anything else is said out loud too: rethrown from here it was
+              // a rejection nobody handled, so the heart again did nothing.
+              if (!handleLimitError(err)) showLikeError(err);
             }
           } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
             // Explicit number check above: a pending rating of 0 (= clear
