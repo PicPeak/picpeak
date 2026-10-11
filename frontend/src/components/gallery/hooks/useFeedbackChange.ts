@@ -38,13 +38,22 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
   // from a stale one: it would land on the list of a later visit, or of the
   // next guest. Answers asked for before that point are dropped.
   const visit = useRef(0);
-  useEffect(() => () => { visit.current += 1; }, [slug]);
+  // The gallery this hook currently serves, null once it is left. A tile's
+  // submit can finish after that and still call the handler it captured.
+  const servedSlug = useRef<string | null>(null);
+  useEffect(() => {
+    servedSlug.current = slug;
+    return () => { servedSlug.current = null; visit.current += 1; };
+  }, [slug]);
 
   return useCallback((toggledPhotoId?: number) => {
     // Guest-mode Rated/Liked filter membership + chip counts come
     // from my-feedback, not the photo rows (#538) — refresh it too
     // so e.g. a cleared rating (#884) leaves the Rated filter.
     queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+    // Called for a gallery that has been left: the lists now belong to a
+    // later visit, which fetches its own.
+    if (servedSlug.current !== slug) return;
 
     const listKey = ['gallery-photos', slug];
     // A list request already out may carry the row from before the toggle and

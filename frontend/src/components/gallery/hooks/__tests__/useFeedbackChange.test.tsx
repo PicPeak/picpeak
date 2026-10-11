@@ -210,6 +210,29 @@ describe('useFeedbackChange', () => {
     expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: false, like_count: 0 });
   });
 
+  // A tile's submit can finish after the gallery was left and still call the
+  // handler it captured. That handler must not start a refresh of its own.
+  it('does nothing when it is called after the gallery was left', async () => {
+    getPhotoFeedback.mockResolvedValue(feedback(true, 1));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(LIST_KEY, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    const refetch = vi.fn();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(() => useFeedbackChange('summer', refetch), { wrapper });
+    const captured = result.current;
+    unmount();
+
+    captured(1);
+    captured();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getPhotoFeedback).not.toHaveBeenCalled();
+    expect(refetch).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: false });
+  });
+
   // A PIN client's list carries the counts even when the gallery hides them
   // from guests; the per-photo answer does not, and would wipe them.
   it('refetches the list instead of patching when told not to patch', () => {
