@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
@@ -349,6 +350,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => { mounted = false; };
   }, [slug, currentPhoto?.id, feedbackSettings?.feedback_enabled]);
 
+  // Said out loud, as the grid's like button does (PhotoLikes): a 429 was
+  // only logged, so to the guest the heart did nothing (issue 1891).
+  const showLikeError = (err: unknown) => {
+    const rateLimited = (err as { response?: { status?: number } })?.response?.status === 429;
+    toast.error(rateLimited
+      ? t('feedback.likeRateLimited', 'Too many requests. Wait a few minutes, then try again.')
+      : t('feedback.likeError', 'Failed to update like'));
+  };
+
   const submitLike = async () => {
     // Guest identity mode: ensure we have a per-person guest token. The
     // server reads name/email from the token — body values are ignored.
@@ -372,8 +382,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       } catch (err) {
         // Per-guest cap reached (#655) surfaces the shared modal.
         if (handleLimitError(err)) return;
-        // eslint-disable-next-line no-console
-        console.warn('Like submit failed', err);
+        showLikeError(err);
       }
       return;
     }
@@ -403,8 +412,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       if (onFeedbackChange) onFeedbackChange();
     } catch (err) {
       if (handleLimitError(err)) return;
-      // eslint-disable-next-line no-console
-      console.warn('Like submit failed', err);
+      showLikeError(err);
     }
   };
 

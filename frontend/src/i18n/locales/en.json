@@ -4938,6 +4938,7 @@
     "ratingsCount_one": "{{count}} ratings",
     "ratingsCount_other": "{{count}} ratings",
     "likeError": "Failed to update like",
+    "likeRateLimited": "Too many requests. Wait a few minutes, then try again.",
     "unlike": "Unlike",
     "like": "Like",
     "favoriteError": "Failed to update favorite",
