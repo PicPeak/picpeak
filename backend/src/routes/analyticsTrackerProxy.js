@@ -62,7 +62,12 @@ router.post('/events', express.json({ limit: '4kb', strict: true }), async (req,
   if (req.get('Sec-GPC') === '1') return res.sendStatus(204);
   if (req.get('DNT') === '1') {
     let honor = true;
-    try { honor = (await getAppSetting('analytics_honor_do_not_track', true)) !== false; } catch (_) { /* honour it */ }
+    // Read as the public settings read it for the client, so the two agree
+    // about a row written before the setting was validated as a boolean.
+    try {
+      const stored = await getAppSetting('analytics_honor_do_not_track', true);
+      honor = stored !== false && stored !== 'false';
+    } catch (_) { /* honour it */ }
     if (honor) return res.sendStatus(204);
   }
   let upstream;

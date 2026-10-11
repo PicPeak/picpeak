@@ -237,6 +237,15 @@ const rejectUnauthorizedProtectedKeys = async (settings, req, res) => {
     });
     return true;
   }
+  // Also shared by every generic writer, so the stored value has one shape
+  // whichever endpoint wrote it: a strict boolean (issue 1921). The client
+  // reads it through the public settings and the relay reads it directly;
+  // a string would let the two disagree about who is counted.
+  if (Object.hasOwn(settings, 'analytics_honor_do_not_track')
+    && typeof settings.analytics_honor_do_not_track !== 'boolean') {
+    res.status(400).json({ error: 'analytics_honor_do_not_track must be true or false', code: 'BAD_BOOLEAN' });
+    return true;
+  }
   return false;
 };
 
@@ -2068,13 +2077,6 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
           error: `analytics_tracker_provider must be one of: ${valid.join(', ')}`,
         });
       }
-    }
-
-    // A strict boolean: the relay and the public settings both treat anything
-    // but an explicit `false` as "honour the signal" (issue 1921).
-    if (Object.prototype.hasOwnProperty.call(settings, 'analytics_honor_do_not_track')
-      && typeof settings.analytics_honor_do_not_track !== 'boolean') {
-      return res.status(400).json({ error: 'analytics_honor_do_not_track must be true or false' });
     }
 
     // Custom snippets are rejected at the shared generic-writer boundary.

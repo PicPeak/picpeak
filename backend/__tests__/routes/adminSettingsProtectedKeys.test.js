@@ -223,7 +223,17 @@ describe('settings protected-key boundary (/general)', () => {
     expect(denied.body.keys.map((k) => k.key)).toEqual(['analytics_honor_do_not_track']);
     expect(await readSetting('analytics_honor_do_not_track')).toBeUndefined();
 
-    expect((await put(superTok, 'false')).status).toBe(400);
+    // Every generic writer refuses a non-boolean, so the client (public
+    // settings) and the relay can never read the stored value differently.
+    for (const endpoint of ['analytics', 'general', 'seo', 'security']) {
+      for (const bad of ['false', 'true', 0, null]) {
+        const res = await auth(request(app).put(`/api/admin/settings/${endpoint}`), superTok)
+          .send({ analytics_honor_do_not_track: bad });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('BAD_BOOLEAN');
+      }
+    }
+    expect(await readSetting('analytics_honor_do_not_track')).toBeUndefined();
     expect((await put(superTok, false)).status).toBe(200);
     expect(await readSetting('analytics_honor_do_not_track')).toBe(false);
     // Unchanged for the delegated role again, now against the stored value.

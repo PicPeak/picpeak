@@ -47,6 +47,13 @@ it('relays a Do Not Track request once the operator switched that off', async ()
   expect((await post({ DNT: '1' })).status).toBe(PASSED_ON);
 });
 
+it('reads a stored string the way the public settings do', async () => {
+  mockSettings.analytics_honor_do_not_track = 'false';
+  expect((await post({ DNT: '1' })).status).toBe(PASSED_ON);
+  mockSettings.analytics_honor_do_not_track = 'true';
+  expect((await post({ DNT: '1' })).status).toBe(DROPPED);
+});
+
 it('always drops Global Privacy Control, whatever the setting', async () => {
   mockSettings.analytics_honor_do_not_track = false;
   expect((await post({ 'Sec-GPC': '1' })).status).toBe(DROPPED);
