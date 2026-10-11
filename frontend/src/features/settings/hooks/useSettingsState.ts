@@ -93,6 +93,8 @@ export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
 export interface AnalyticsSettings {
   // 'custom' identifies a disabled legacy configuration in the settings UI.
   tracker_provider: TrackerProvider;
+  // Off counts visitors whose browser sends Do Not Track (issue 1921).
+  honor_do_not_track: boolean;
   umami_enabled: boolean;
   umami_url: string;
   umami_website_id: string;
@@ -221,6 +223,7 @@ export function useSettingsState() {
   // Analytics settings state
   const [analyticsSettings, setAnalyticsSettings] = useState<AnalyticsSettings>({
     tracker_provider: 'none',
+    honor_do_not_track: true,
     umami_enabled: false,
     umami_url: '',
     umami_website_id: '',
@@ -387,6 +390,7 @@ export function useSettingsState() {
 
       const analyticsLoaded: AnalyticsSettings = {
         tracker_provider: provider,
+        honor_do_not_track: toBoolean(settings.analytics_honor_do_not_track, true),
         umami_enabled: toBoolean(settings.analytics_umami_enabled, false),
         umami_url: settings.analytics_umami_url || '',
         umami_website_id: settings.analytics_umami_website_id || '',

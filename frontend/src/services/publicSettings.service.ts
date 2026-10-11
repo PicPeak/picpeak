@@ -72,6 +72,7 @@ export interface PublicSettings {
   // Pluggable trackers (#663 Phase 1). Only the provider is public; a
   // missing value falls back to the legacy umami_enabled flag.
   analytics_tracker_provider?: 'none' | 'umami' | 'rybbit';
+  analytics_honor_do_not_track?: boolean;
   // Deprecated compatibility field: always empty; custom scripts are disabled.
   analytics_custom_head_html?: string;
   // Upload settings

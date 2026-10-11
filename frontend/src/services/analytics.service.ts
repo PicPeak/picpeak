@@ -7,7 +7,9 @@ import { useLocation } from 'react-router-dom';
 
 export type TrackerProvider = 'none' | 'umami' | 'rybbit';
 type InitConfig = { provider: TrackerProvider; doNotTrack?: boolean; autoTrack?: boolean;
-  websiteId?: string; domains?: string[] };
+  websiteId?: string; domains?: string[];
+  /** The operator's setting (issue 1921); only an explicit false stops honouring Do Not Track. */
+  honorDoNotTrack?: boolean };
 type Cache = { site: string; token: string };
 const PRIVATE_ROOTS = new Set(['admin', 'customer', 's', 'invite', 'quote', 'contract',
   'payment-check', 'transfer', 'transfer-upload', 'slideshow']);
@@ -71,12 +73,14 @@ class AnalyticsService {
   private lastPageView: string | null = null;
   private cache?: Cache;
   private domains?: string[];
+  private honorDoNotTrack = true;
 
   initialize(config: InitConfig) {
     if (this.initialized) return;
     // Anything else, a legacy custom configuration included, stays inert.
     this.provider = config.provider === 'umami' || config.provider === 'rybbit' ? config.provider : 'none';
     this.domains = config.domains;
+    this.honorDoNotTrack = config.honorDoNotTrack !== false;
     this.initialized = true;
     this.routePath = window.location.pathname;
     // Settings resolve after the initial route effect. Record the first
@@ -95,7 +99,9 @@ class AnalyticsService {
     return this.initialized && this.provider !== 'none'
       && analyticsPath(this.routePath) !== null
       && analyticsPath(window.location.pathname) !== null
-      && navigator.doNotTrack !== '1'
+      // Global Privacy Control always opts a visitor out; Do Not Track does
+      // unless the operator switched that off. The relay applies the same rule.
+      && (!this.honorDoNotTrack || navigator.doNotTrack !== '1')
       && (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl !== true
       && (!this.domains?.length || this.domains.includes(window.location.hostname));
   }

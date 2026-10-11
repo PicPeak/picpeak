@@ -51,6 +51,23 @@ it.each(['doNotTrack', 'globalPrivacyControl'])('respects browser %s', preferenc
   const service = fresh(); service.initialize({ provider: 'umami', doNotTrack: false, autoTrack: true }); service.trackDownload(1, 'wedding');
   expect(fetchMock).not.toHaveBeenCalled();
 });
+// Issue 1921: the operator may count Do Not Track visitors; Global Privacy
+// Control stays an opt-out whatever the setting says.
+it('counts a Do Not Track browser only when the operator switched honouring off', () => {
+  // A plain object: the page view reads navigator.language, which a
+  // prototype-chained stand-in cannot answer.
+  vi.stubGlobal('navigator', { doNotTrack: '1', language: 'en' });
+  const honouring = fresh(); honouring.initialize({ provider: 'umami', honorDoNotTrack: true }); honouring.trackDownload(1, 'wedding');
+  expect(fetchMock).not.toHaveBeenCalled();
+  const counting = fresh(); counting.initialize({ provider: 'umami', honorDoNotTrack: false });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it('never counts a Global Privacy Control browser, even with Do Not Track honouring off', () => {
+  const nav = Object.create(navigator); Object.defineProperty(nav, 'globalPrivacyControl', { value: true });
+  vi.stubGlobal('navigator', nav);
+  const service = fresh(); service.initialize({ provider: 'umami', honorDoNotTrack: false }); service.trackDownload(1, 'wedding');
+  expect(fetchMock).not.toHaveBeenCalled();
+});
 it('retains None, domain restrictions, and the admin-event no-op', () => {
   const service = fresh(); service.initialize({ provider: 'none' }); service.trackPageView(); service.trackDownload(1, 'wedding');
   const restricted = fresh(); restricted.initialize({ provider: 'umami', domains: ['not-this-host.example'] });

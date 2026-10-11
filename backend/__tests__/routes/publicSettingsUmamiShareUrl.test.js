@@ -54,6 +54,20 @@ describe('public settings — Umami share URL stays private', () => {
     expect(JSON.stringify(res.body)).not.toContain('SECRET-TOKEN');
   });
 
+  // The client drops events for a Do Not Track browser unless this says
+  // false (issue 1921); nothing stored means on.
+  it('tells the client whether Do Not Track is honoured, on by default', async () => {
+    expect((await request(app).get('/api/public/settings')).body.analytics_honor_do_not_track).toBe(true);
+    await db('app_settings').insert({
+      setting_key: 'analytics_honor_do_not_track', setting_value: JSON.stringify(false), setting_type: 'analytics',
+    });
+    try {
+      expect((await request(app).get('/api/public/settings')).body.analytics_honor_do_not_track).toBe(false);
+    } finally {
+      await db('app_settings').where({ setting_key: 'analytics_honor_do_not_track' }).del();
+    }
+  });
+
   it('never exposes legacy custom executable HTML, even with a stale Umami enabled flag', async () => {
     for (const [key, value] of Object.entries({
       analytics_tracker_provider: 'custom',

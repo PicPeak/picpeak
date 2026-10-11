@@ -200,6 +200,11 @@ router.get('/', async (req, res) => {
           ? 'umami'
           : 'none';
       })(),
+      // Whether the client drops events for a browser that sends Do Not Track
+      // (issue 1921). On unless switched off; Global Privacy Control is
+      // always honoured and has no switch.
+      analytics_honor_do_not_track: settingsObject.analytics_honor_do_not_track !== false
+        && settingsObject.analytics_honor_do_not_track !== 'false',
       // Never distribute administrator-supplied executable HTML, including
       // legacy rows written through another generic settings endpoint.
       analytics_custom_head_html: '',

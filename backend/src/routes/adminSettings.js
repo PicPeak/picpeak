@@ -153,6 +153,9 @@ const TRACKER_CODE_KEYS = new Set([
   'analytics_umami_url',
   'analytics_rybbit_url',
   'analytics_custom_head_html',
+  // Decides whether visitors who sent Do Not Track are counted (issue 1921):
+  // the same kind of decision as where the events go.
+  'analytics_honor_do_not_track',
 ]);
 const parseStoredSetting = (row) => {
   if (!row) return undefined;
@@ -167,6 +170,7 @@ const effectiveMissingSetting = async (key) => {
     return umami === true || umami === 'true' ? 'umami' : 'none';
   }
   if (key === 'analytics_umami_enabled') return false;
+  if (key === 'analytics_honor_do_not_track') return true;
   return null;
 };
 // A rule names either the owning `perm`, or `superAdmin: true` when the key is
@@ -2064,6 +2068,13 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
           error: `analytics_tracker_provider must be one of: ${valid.join(', ')}`,
         });
       }
+    }
+
+    // A strict boolean: the relay and the public settings both treat anything
+    // but an explicit `false` as "honour the signal" (issue 1921).
+    if (Object.prototype.hasOwnProperty.call(settings, 'analytics_honor_do_not_track')
+      && typeof settings.analytics_honor_do_not_track !== 'boolean') {
+      return res.status(400).json({ error: 'analytics_honor_do_not_track must be true or false' });
     }
 
     // Custom snippets are rejected at the shared generic-writer boundary.

@@ -57,7 +57,14 @@ router.post('/events', express.json({ limit: '4kb', strict: true }), async (req,
   const event = validateEvent(req.body);
   if (!event) return res.status(400).json({ error: 'Invalid analytics event' });
   // Independent of the browser preference, never relay an opted-out request.
-  if (req.get('DNT') === '1' || req.get('Sec-GPC') === '1') return res.sendStatus(204);
+  // Global Privacy Control always counts as one. Do Not Track does unless the
+  // operator switched that off (issue 1921); unreadable settings honour it.
+  if (req.get('Sec-GPC') === '1') return res.sendStatus(204);
+  if (req.get('DNT') === '1') {
+    let honor = true;
+    try { honor = (await getAppSetting('analytics_honor_do_not_track', true)) !== false; } catch (_) { /* honour it */ }
+    if (honor) return res.sendStatus(204);
+  }
   let upstream;
   try { upstream = await resolveUpstream(); }
   catch (err) {

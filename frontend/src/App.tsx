@@ -126,7 +126,10 @@ function AnalyticsBootstrap() {
     const explicit = settings?.analytics_tracker_provider;
     const provider = explicit === 'umami' || explicit === 'rybbit' ? explicit
       : !explicit && settings?.umami_enabled ? 'umami' : 'none';
-    analyticsService.initialize({ provider: settings?.enable_analytics === false ? 'none' : provider });
+    analyticsService.initialize({
+      provider: settings?.enable_analytics === false ? 'none' : provider,
+      honorDoNotTrack: settings?.analytics_honor_do_not_track !== false,
+    });
   }, [settings, isError]);
   return null;
 }
