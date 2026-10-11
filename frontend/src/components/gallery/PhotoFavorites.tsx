@@ -17,7 +17,7 @@ interface PhotoFavoritesProps {
   requireNameEmail?: boolean;
   onFavoriteChange?: (favorited: boolean) => void;
   /** The server accepted the toggle. */
-  onSaved?: () => void;
+  onSaved?: (photoId: string) => void;
 }
 
 export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
@@ -53,11 +53,15 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       if (onFavoriteChange) {
         onFavoriteChange(!isFavorited);
       }
+      // The photo this toggle is for. The callbacks below run from the
+      // latest render, which in the lightbox can already show another photo.
+      return { photoId };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
+    onSuccess: (_data, _variables, context) => {
+      const savedPhotoId = context?.photoId ?? photoId;
+      queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, savedPhotoId] });
       // The parent refreshes this photo's row; without one, the whole list.
-      if (onSaved) onSaved();
+      if (onSaved) onSaved(savedPhotoId);
       else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
     },
     onError: (error: any) => {

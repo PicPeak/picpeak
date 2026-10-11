@@ -81,8 +81,10 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
 
   // The gallery list is told once the server has the toggle, not from the
   // optimistic update above: it refreshes that one row from the server.
-  const handleToggleSaved = () => {
-    if (onFeedbackUpdate) onFeedbackUpdate(Number(photoId));
+  // The id comes from the toggle itself: by the time it is saved the panel
+  // may already show the next photo.
+  const handleToggleSaved = (savedPhotoId: string) => {
+    if (onFeedbackUpdate) onFeedbackUpdate(Number(savedPhotoId));
   };
 
   // Optimistic reaction switch: decrement the old emoji, increment the new.
