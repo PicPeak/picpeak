@@ -859,6 +859,8 @@ async function streamTransferArchive(transfer, res) {
   return appended;
 }
 
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+
 // The longest file name common file systems accept, in bytes.
 const MAX_FILENAME_BYTES = 255;
 
@@ -921,7 +923,11 @@ async function streamUploadsArchive(transfer, res) {
   const stop = () => {
     stopped = true;
     guard.destroyAll();
+    archive.unpipe(res);
     try { archive.abort(); } catch (_) { /* already aborted */ }
+    // Keep the aborted archive flowing, or the entry it was compressing
+    // never ends and its file stays open (as the gallery ZIP routes do).
+    archive.resume();
   };
   const fail = (err) => {
     if (stopped) return;
@@ -942,7 +948,10 @@ async function streamUploadsArchive(transfer, res) {
     // As it will exist once unpacked: Windows drops trailing dots and spaces
     // ("report.pdf." lands on "report.pdf"), and no file system takes a name
     // over the byte limit, duplicate or not.
-    const cleaned = sanitizeForZipEntry(upload.original_filename).replace(/[. ]+$/, '');
+    let cleaned = sanitizeForZipEntry(upload.original_filename).replace(/[. ]+$/, '');
+    // Device names to Windows whatever the extension: such an entry cannot be
+    // unpacked there.
+    if (WINDOWS_RESERVED_NAME.test(cleaned)) cleaned = `_${cleaned}`;
     const base = prefixedZipName('', cleaned || `file-${upload.id}`);
     // Upper- then lower-cased, which folds the letters a plain lowercase
     // keeps apart ("σ" and final "ς", "ß" and "ss") the way a
@@ -957,7 +966,17 @@ async function streamUploadsArchive(transfer, res) {
     try {
       const srcStat = storage.kind() === 'local' ? await storage.stat(upload.stored_path) : true;
       if (!srcStat) throw new Error(`Upload missing in storage: ${upload.stored_path}`);
-      archive.append(guard.track(await storage.get(upload.stored_path)), { name });
+      const source = await storage.get(upload.stored_path);
+      // The download may have ended during either await. The guard destroys
+      // a source handed to it after that without listening to it, and a lazy
+      // read that then fails to open (the file was deleted meanwhile) would
+      // be an error nobody handles. So: listen first, then stop here.
+      source.on('error', () => {});
+      if (stopped) {
+        source.destroy();
+        break;
+      }
+      archive.append(guard.track(source), { name });
       appended += 1;
     } catch (err) {
       logger.warn('transferService: skipping upload in uploads archive', {
@@ -966,7 +985,12 @@ async function streamUploadsArchive(transfer, res) {
     }
   }
 
-  if (!stopped) await archive.finalize();
+  if (stopped) return appended;
+  // finalize() settles on the archive's end or error, and an aborted archive
+  // may emit neither; the response closing ends the wait too.
+  const finalized = archive.finalize();
+  finalized.catch(() => {}); // reported through fail()
+  await Promise.race([finalized, new Promise((resolve) => res.once('close', resolve))]);
   return appended;
 }
 

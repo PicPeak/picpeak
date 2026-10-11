@@ -31,6 +31,7 @@ const {
   setAttachmentHeaders,
 } = require('../services/transferUploadPolicy');
 const logger = require('../utils/logger');
+const { streamingArchiveAdmission } = require('../utils/archiveStreamGuard');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
 const fs = require('fs');
 
@@ -586,6 +587,19 @@ router.get('/:id/uploads/download',
     if (!transfer.uploads || transfer.uploads.length === 0) {
       return res.status(404).json({ error: 'No files received yet', code: 'NO_UPLOADS' });
     }
+    // The process-wide limit on archives being streamed at once, shared with
+    // the gallery ZIP routes: each holds storage reads for as long as its
+    // download takes.
+    const release = await streamingArchiveAdmission.acquire();
+    if (!release) {
+      res.set('Retry-After', '10');
+      return res.status(429).json({
+        error: 'Too many downloads are being prepared right now. Please try again shortly.', code: 'ARCHIVES_BUSY',
+      });
+    }
+    // Left while waiting for the slot: 'close' has fired and will not again.
+    if (res.destroyed || res.closed) return release();
+    res.once('close', release);
     await transferService.streamUploadsArchive(transfer, res);
   }),
 );

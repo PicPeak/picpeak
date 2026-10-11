@@ -222,6 +222,65 @@ describe('GET /:id/uploads/download', () => {
     expect(Buffer.byteLength(renamed)).toBeLessThanOrEqual(255);
   });
 
+  it('renames what Windows reads as a device name', async () => {
+    const id = await makeTransfer('request', 'reserved');
+    await receive(id, 'CON.jpg', 'c', '2026-10-01T10:00:00.000Z');
+    await receive(id, 'aux', 'a', '2026-10-02T10:00:00.000Z');
+    await receive(id, 'console.jpg', 'fine', '2026-10-03T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(unzip(res.body)).toEqual({ '_CON.jpg': 'c', _aux: 'a', 'console.jpg': 'fine' });
+  });
+
+  it('answers 429 instead of streaming when the process is already busy with archives', async () => {
+    const { streamingArchiveAdmission } = require('../../src/utils/archiveStreamGuard');
+    jest.spyOn(streamingArchiveAdmission, 'acquire').mockResolvedValue(null);
+    const id = await makeTransfer('request', 'busy');
+    await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
+
+    const res = await download(id);
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe('ARCHIVES_BUSY');
+    expect(res.headers['retry-after']).toBe('10');
+    expect(res.headers['content-disposition']).toBeUndefined();
+  });
+
+  it('gives its archive slot back when the download is over', async () => {
+    const { streamingArchiveAdmission } = require('../../src/utils/archiveStreamGuard');
+    const id = await makeTransfer('request', 'slot');
+    await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
+    const before = streamingArchiveAdmission.active;
+
+    expect((await download(id).buffer(true).parse(binary)).status).toBe(200);
+    for (let i = 0; i < 50 && streamingArchiveAdmission.active !== before; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(streamingArchiveAdmission.active).toBe(before);
+  });
+
+  // The response can close while a source is being looked up. The guard then
+  // destroys the source without listening to it; if that source goes on to
+  // fail, nobody handles the error and the process ends.
+  it('survives a source that fails after the download was cancelled during its lookup', async () => {
+    const id = await makeTransfer('request', 'cancel-mid-lookup');
+    await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
+    const { Readable } = require('stream');
+    const { EventEmitter } = require('events');
+    const res = Object.assign(new EventEmitter(), {
+      destroyed: false, writableFinished: false, setHeader: jest.fn(),
+      write: () => true, end: jest.fn(), destroy: jest.fn(),
+    });
+    const late = new Readable({ read() {} });
+    jest.spyOn(storage, 'get').mockImplementation(async () => {
+      res.emit('close'); // cancelled while the source was being opened
+      process.nextTick(() => late.destroy(new Error('ENOENT: deleted meanwhile')));
+      return late;
+    });
+
+    await transferService.streamUploadsArchive({ id, title: 'cancel-mid-lookup' }, res);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(late.destroyed).toBe(true);
+  });
+
   it('opens nothing for a response that was closed before streaming began', async () => {
     const id = await makeTransfer('request', 'closed-early');
     await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
