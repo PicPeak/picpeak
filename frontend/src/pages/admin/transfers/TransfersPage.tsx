@@ -29,6 +29,7 @@ import { AdminAuthenticatedImage } from '../../../components/admin/AdminAuthenti
 import { TransferPhotoPicker, type PickedPhoto } from '../../../components/admin/TransferPhotoPicker';
 import { useMutationWithToast } from '../../../hooks/useMutationWithToast';
 import { usePermission } from '../../../hooks/usePermission';
+import { parseWholeNumber } from '../../../utils/wholeNumber';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import {
   transfersService,
@@ -36,6 +37,9 @@ import {
   type TransferKind,
   type TransferWriteResult,
 } from '../../../services/transfers.service';
+
+// Mirrors MAX_FILES_CEILING in backend/src/services/transferUploadPolicy.js.
+const MAX_FILES_CEILING = 1000;
 
 function formatBytes(bytes: number | null | undefined): string {
   if (!bytes) return '0 B';
@@ -314,7 +318,7 @@ const CreateTransferModal: React.FC<{
       message: message.trim() || null,
       expiresInDays: parseInt(expiresInDays, 10) || 14,
       maxDownloads: !isRequest && maxDownloads ? parseInt(maxDownloads, 10) : null,
-      maxFilesPerUpload: isRequest && maxFilesPerUpload ? parseInt(maxFilesPerUpload, 10) : null,
+      maxFilesPerUpload: isRequest ? ownLimit : null,
       photoIds: isRequest ? [] : picked.map((p) => p.id),
       files: isRequest ? [] : files,
       deliveryMethod,
@@ -352,8 +356,13 @@ const CreateTransferModal: React.FC<{
 
   // A send needs something to send. A request needs somewhere to send the ask,
   // unless the operator is going to hand the link over themselves.
+  // Empty follows the default; anything else has to be the whole number on
+  // screen, in range, or the request would get a limit nobody typed.
+  const ownLimit = parseWholeNumber(maxFilesPerUpload);
+  const ownLimitInvalid = isRequest && maxFilesPerUpload.trim() !== ''
+    && (ownLimit === null || ownLimit < 1 || ownLimit > (uploadDefaults?.max_files_ceiling ?? MAX_FILES_CEILING));
   const canSubmit = isRequest
-    ? !(deliveryMethod === 'email' && parsedEmails.length === 0)
+    ? !ownLimitInvalid && !(deliveryMethod === 'email' && parsedEmails.length === 0)
     : (picked.length > 0 || files.length > 0) && !(deliveryMethod === 'email' && parsedEmails.length === 0);
 
   return (
@@ -447,6 +456,9 @@ const CreateTransferModal: React.FC<{
                 placeholder={uploadDefaults
                   ? t('transfers.field.maxFilesDefault', 'Default ({{count}})', { count: uploadDefaults.max_files_per_upload })
                   : ''}
+                error={ownLimitInvalid
+                  ? t('transfers.field.maxFilesInvalid', 'A whole number from 1 to {{max}}', { max: uploadDefaults?.max_files_ceiling ?? MAX_FILES_CEILING })
+                  : undefined}
               />
             )}
           </div>
@@ -610,7 +622,8 @@ const UploadLimitEditor: React.FC<{ transfer: Transfer; canEdit: boolean; onSave
   const { t } = useTranslation();
   const own = transfer.max_files_per_upload ?? null;
   const [value, setValue] = useState(own ? String(own) : '');
-  const parsed = parseInt(value, 10);
+  const parsed = parseWholeNumber(value);
+  const usable = parsed !== null && parsed >= 1 && parsed <= MAX_FILES_CEILING;
   const saveMutation = useMutationWithToast({
     mutationFn: (limit: number | null) => transfersService.update(transfer.id, { maxFilesPerUpload: limit }),
     successMessage: t('transfers.uploadLimitSaved', 'Upload limit saved'),
@@ -641,7 +654,7 @@ const UploadLimitEditor: React.FC<{ transfer: Transfer; canEdit: boolean; onSave
           <Button
             size="sm"
             variant="outline"
-            disabled={!(parsed >= 1) || parsed === own}
+            disabled={!usable || parsed === own}
             isLoading={saveMutation.isPending}
             onClick={() => saveMutation.mutate(parsed)}
           >

@@ -1067,7 +1067,8 @@
       "uploadWindowDays": "Uploads annehmen für (Tage)",
       "requestRecipientsHint": "Mehrere Adressen mit Komma trennen. Jede erhält den Upload-Link.",
       "maxFilesPerUpload": "Max. Dateien pro Upload",
-      "maxFilesDefault": "Standard ({{count}})"
+      "maxFilesDefault": "Standard ({{count}})",
+      "maxFilesInvalid": "Eine ganze Zahl von 1 bis {{max}}"
     },
     "picker": {
       "title": "Bilder aus anderen Events auswählen",
@@ -1116,7 +1117,8 @@
       "anyType": "Jeder Dateityp wird akzeptiert.",
       "acceptedTypes": "Akzeptiert: {{types}}",
       "someFailed": "Diese Dateien konnten nicht gespeichert werden. Bitte erneut versuchen: {{names}}",
-      "removeFile": "{{name}} entfernen"
+      "removeFile": "{{name}} entfernen",
+      "pacing": "Der Server bittet um eine kurze Pause. Weiter in {{seconds}} Sekunden …"
     },
     "newSend": "Dateien senden",
     "newRequest": "Dateien anfordern",

@@ -1067,7 +1067,8 @@
       "uploadWindowDays": "Accept uploads for (days)",
       "requestRecipientsHint": "Separate multiple addresses with commas. Each one gets the upload link.",
       "maxFilesPerUpload": "Max files per upload",
-      "maxFilesDefault": "Default ({{count}})"
+      "maxFilesDefault": "Default ({{count}})",
+      "maxFilesInvalid": "A whole number from 1 to {{max}}"
     },
     "picker": {
       "title": "Select images from other events",
@@ -1116,7 +1117,8 @@
       "anyType": "Any file type is accepted.",
       "acceptedTypes": "Accepted: {{types}}",
       "someFailed": "These files could not be stored. Please try them again: {{names}}",
-      "removeFile": "Remove {{name}}"
+      "removeFile": "Remove {{name}}",
+      "pacing": "The server asked for a short pause. Continuing in {{seconds}} seconds…"
     },
     "newSend": "Send files",
     "newRequest": "Request files",

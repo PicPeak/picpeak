@@ -236,7 +236,9 @@ export const TransfersTab: React.FC = () => {
             max={MAX_FILES_CEILING}
             label={t('settings.transfers.maxFiles', 'Maximum files per upload')}
             value={String(form.max_files)}
-            onChange={(e) => update({ max_files: parseInt(e.target.value, 10) || 0 })}
+            // The whole value, not parseInt's prefix: "1e2" is 100 and "2.5"
+            // is not a file count; canSave below refuses what is not whole.
+            onChange={(e) => update({ max_files: Number(e.target.value) })}
           />
           <p className="mt-1 text-xs text-soft">
             {t('settings.transfers.maxFilesHint', 'How many files a client can select in one go, 1 to {{max}}. A client can upload again afterwards; a single file request can have its own value.', { max: MAX_FILES_CEILING })}
@@ -253,7 +255,7 @@ export const TransfersTab: React.FC = () => {
         onDiscard={() => setForm(loaded)}
         canSave={canEdit
           && form.max_size_mb >= 1
-          && form.max_files >= 1 && form.max_files <= MAX_FILES_CEILING
+          && Number.isInteger(form.max_files) && form.max_files >= 1 && form.max_files <= MAX_FILES_CEILING
           && (form.accept_all || form.allowed_types.some((tp) => tp.mime.includes('/')))}
       />
     </div>

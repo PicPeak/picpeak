@@ -97,6 +97,29 @@ describe('creating a file request', () => {
   });
 });
 
+// parseInt read a prefix: "1e2" (100 to a number input) was saved as 1 and
+// "2.5" as 2, a limit other than the one on screen.
+describe('the limit field takes the whole value', () => {
+  it('reads 1e2 as one hundred and refuses a fraction', async () => {
+    vi.mocked(transfersService.create).mockResolvedValue({ transfer: request(100, 100) } as never);
+    const user = userEvent.setup();
+    show();
+    await user.click((await screen.findAllByRole('button', { name: 'Request files' }))[0]);
+    await user.click(screen.getByRole('button', { name: 'Share a link' }));
+    const field = await screen.findByLabelText('Max files per upload');
+
+    await user.type(field, '2.5');
+    expect(screen.getByRole('button', { name: 'Create request' })).toBeDisabled();
+    expect(screen.getByText('A whole number from 1 to 1000')).toBeInTheDocument();
+
+    await user.clear(field);
+    await user.type(field, '1e2');
+    await user.click(screen.getByRole('button', { name: 'Create request' }));
+    await waitFor(() => expect(transfersService.create).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(transfersService.create).mock.calls[0][0]).toMatchObject({ maxFilesPerUpload: 100 });
+  });
+});
+
 describe('a request\'s detail view', () => {
   async function openDetail(own: number | null, effective: number) {
     vi.mocked(transfersService.list).mockResolvedValue([request(own, effective)] as never);
