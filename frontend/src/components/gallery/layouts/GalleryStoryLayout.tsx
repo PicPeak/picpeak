@@ -120,37 +120,23 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // every payload, and only the ids whose submit is still in flight keep
   // their optimistic state.
   const inFlightLikesRef = useRef<Set<number>>(new Set());
-  // A like the server accepted is refreshed one row at a time (issue 1891),
-  // so a payload can arrive that already has another photo's new row but not
-  // this one's yet. Until its own row agrees, or a few seconds have passed,
-  // the like stays protected like one still in flight. Keyed by a token so a
-  // newer toggle on the same photo is not released by an older timer.
-  const settlingLikesRef = useRef<Map<number, number>>(new Map());
-  const settleToken = useRef(0);
   // A like made in the lightbox reaches this set only through the parent's
   // refetch. Until that payload lands, Favourite selected would decide from
   // a set that is known to be behind, so it waits; a short timeout covers a
   // parent that never refetches.
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   const awaitingRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // A lightbox like that names its photo is refreshed as one row (issue
-  // 1891), so "the payload landed" has to mean that photo's row changed: a
-  // payload carrying only another photo's refreshed row must not end the
-  // wait. Photo id -> is_liked before the toggle.
-  const awaitedRowsRef = useRef<Map<number, boolean>>(new Map());
-  const photosRef = useRef(photos);
-  photosRef.current = photos;
-  const handleLightboxFeedbackChange = useCallback((toggledPhotoId?: number) => {
+  // Deliberately without the photo id, here and in runLikeBatch: this layout
+  // asks for the whole list after a like. The favourites set and the wait
+  // below assume one consistent payload; refreshing a single row instead
+  // (issue 1891, as the other layouts do) made them act on a half-updated
+  // list and undo saved likes.
+  const handleLightboxFeedbackChange = useCallback(() => {
     if (onFeedbackChange) {
       setAwaitingRefresh(true);
-      const row = typeof toggledPhotoId === 'number' ? photosRef.current.find((p) => p.id === toggledPhotoId) : undefined;
-      if (row && !awaitedRowsRef.current.has(row.id)) awaitedRowsRef.current.set(row.id, !!row.is_liked);
       if (awaitingRefreshTimer.current) clearTimeout(awaitingRefreshTimer.current);
-      awaitingRefreshTimer.current = setTimeout(() => {
-        awaitedRowsRef.current.clear();
-        setAwaitingRefresh(false);
-      }, 5000);
-      onFeedbackChange(toggledPhotoId);
+      awaitingRefreshTimer.current = setTimeout(() => setAwaitingRefresh(false), 5000);
+      onFeedbackChange();
     }
   }, [onFeedbackChange]);
   useEffect(() => () => {
@@ -158,27 +144,14 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, []);
   useEffect(() => {
     if (photos.length === 0) return;
-    awaitedRowsRef.current.forEach((wasLiked, id) => {
-      const row = photos.find((p) => p.id === id);
-      if (!row || !!row.is_liked !== wasLiked) awaitedRowsRef.current.delete(id);
-    });
-    if (awaitedRowsRef.current.size === 0) {
-      setAwaitingRefresh(false);
-      if (awaitingRefreshTimer.current) {
-        clearTimeout(awaitingRefreshTimer.current);
-        awaitingRefreshTimer.current = null;
-      }
+    setAwaitingRefresh(false);
+    if (awaitingRefreshTimer.current) {
+      clearTimeout(awaitingRefreshTimer.current);
+      awaitingRefreshTimer.current = null;
     }
     setFavorites((previous) => {
-      const liked = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
-      const next = new Set(liked);
+      const next = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
       inFlightLikesRef.current.forEach((id) => {
-        // Its row has caught up: the payload is the truth for it again.
-        if (settlingLikesRef.current.has(id) && liked.has(id) === previous.has(id)) {
-          settlingLikesRef.current.delete(id);
-          inFlightLikesRef.current.delete(id);
-          return;
-        }
         if (previous.has(id)) next.add(id);
         else next.delete(id);
       });
@@ -258,10 +231,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       return next;
     });
     if (!bulk) apply(ids, unlike);
-    ids.forEach((id) => {
-      inFlightLikesRef.current.add(id);
-      settlingLikesRef.current.delete(id);
-    });
+    ids.forEach((id) => inFlightLikesRef.current.add(id));
     const done: number[] = [];
     for (let i = 0; i < ids.length; i += 5) {
       const batch = ids.slice(i, i + 5);
@@ -275,23 +245,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     const failed = ids.filter((id) => !done.includes(id));
     if (bulk) apply(done, unlike);
     else if (failed.length > 0) apply(failed, !unlike);
-    // What was saved stays protected until its refreshed row arrives; with no
-    // parent to refresh it, and for what failed, protection ends here.
-    const settling = onFeedbackChange ? done : [];
-    ids.forEach((id) => { if (!settling.includes(id)) inFlightLikesRef.current.delete(id); });
-    if (settling.length > 0) {
-      settleToken.current += 1;
-      const token = settleToken.current;
-      settling.forEach((id) => settlingLikesRef.current.set(id, token));
-      setTimeout(() => settling.forEach((id) => {
-        if (settlingLikesRef.current.get(id) !== token) return;
-        settlingLikesRef.current.delete(id);
-        inFlightLikesRef.current.delete(id);
-      }), 5000);
-    }
+    ids.forEach((id) => inFlightLikesRef.current.delete(id));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
-      onFeedbackChange?.(done.length === 1 ? done[0] : undefined);
+      onFeedbackChange?.();
     }
     if (failed.length > 0) {
       if (bulk) toast.error(t('gallery.favoriteSelectedError'));

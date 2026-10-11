@@ -56,11 +56,8 @@ vi.mock('../../../common', () => ({
   PoweredBy: () => null,
 }));
 vi.mock('../../PhotoLightbox', () => ({
-  PhotoLightbox: ({ onFeedbackChange }: { onFeedbackChange?: (toggledPhotoId?: number) => void }) => (
-    <>
-      <button data-testid="lightbox" onClick={() => onFeedbackChange?.()}>lightbox</button>
-      <button data-testid="lightbox-like-2" onClick={() => onFeedbackChange?.(2)}>like 2</button>
-    </>
+  PhotoLightbox: ({ onFeedbackChange }: { onFeedbackChange?: () => void }) => (
+    <button data-testid="lightbox" onClick={onFeedbackChange}>lightbox</button>
   ),
 }));
 vi.mock('../../FeedbackIdentityModal', () => ({
@@ -455,31 +452,6 @@ describe('GalleryStoryLayout selection mode (issue 1716)', () => {
     expect(within(bar(container) as HTMLElement).getByTestId('story-favorite-selected')).not.toBeDisabled();
     const heart2 = cardLink(container, 2).closest('.story-photo-card')?.querySelector('.story-photo-card-btn');
     expect(heart2?.classList.contains('favorite')).toBe(true);
-  });
-
-  // The lightbox like names its photo and is refreshed as one row. A payload
-  // that only carries another photo's refreshed row is not that refresh:
-  // offering the bulk toggle then would send photo 2's like a second time,
-  // which removes it.
-  it('keeps waiting when the payload that lands is for another photo', () => {
-    const h = handlers();
-    const view = (list = photos) => (
-      <GalleryStoryLayout {...baseProps} {...h} photos={list} isSelectionMode selectedPhotos={new Set([2, 3])} />
-    );
-    const { container, rerender } = render(<GalleryStoryLayout {...baseProps} {...h} isSelectionMode={false} selectedPhotos={new Set([2, 3])} />);
-    fireEvent.click(cardLink(container, 2));
-    fireEvent.click(screen.getByTestId('lightbox-like-2'));
-    expect(h.onFeedbackChange).toHaveBeenCalledWith(2);
-    const favourite = () => within(bar(container) as HTMLElement).getByTestId('story-favorite-selected');
-
-    rerender(view());
-    expect(favourite()).toBeDisabled();
-    // Photo 3's row is refreshed; photo 2's has not arrived.
-    rerender(view([photo(1, { is_liked: true }), photo(2), photo(3, { is_liked: true })]));
-    expect(favourite()).toBeDisabled();
-    // Now photo 2's row: the wait is over.
-    rerender(view([photo(1, { is_liked: true }), photo(2, { is_liked: true }), photo(3, { is_liked: true })]));
-    expect(favourite()).not.toBeDisabled();
   });
 
   it('stays busy while a batch waits behind the identity modal, and releases on cancel', async () => {
