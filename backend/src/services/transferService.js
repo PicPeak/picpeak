@@ -858,6 +858,61 @@ async function streamTransferArchive(transfer, res) {
   return appended;
 }
 
+/**
+ * Stream a ZIP of everything a client sent through a file request to `res`
+ * (issue 1914): every upload round, oldest first, under the name the client
+ * gave each file. Two files with the same name are kept apart by prefixing
+ * the later one with its id, compared case-insensitively so the archive also
+ * unpacks intact on a case-insensitive file system.
+ *
+ * The bytes are stored exactly as received and are not opened here either.
+ *
+ * Returns the number of files appended.
+ */
+async function streamUploadsArchive(transfer, res) {
+  const uploads = await db('transfer_uploads')
+    .where('transfer_id', transfer.id)
+    .orderBy('uploaded_at', 'asc')
+    .orderBy('id', 'asc')
+    .select('id', 'original_filename', 'stored_path');
+
+  const archiveName = `${sanitizeForZipEntry(transfer.title || 'uploads') || 'uploads'}.zip`;
+  // Same guarantees as streamTransferArchive: a known type, nosniff, sandbox.
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', buildContentDisposition(archiveName));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', 'default-src \'none\'; sandbox');
+
+  const archive = archiver('zip', { zlib: { level: 5 } });
+  archive.on('error', (err) => {
+    logger.error('transferService: uploads archive error', { transferId: transfer.id, error: err.message });
+    try { res.destroy(err); } catch (_) { /* noop */ }
+  });
+  archive.pipe(res);
+
+  const storage = getStorage();
+  const usedNames = new Set();
+  let appended = 0;
+  for (const upload of uploads) {
+    let name = sanitizeForZipEntry(upload.original_filename) || `file-${upload.id}`;
+    if (usedNames.has(name.toLowerCase())) name = `${upload.id}-${name}`;
+    usedNames.add(name.toLowerCase());
+    try {
+      const srcStat = storage.kind() === 'local' ? await storage.stat(upload.stored_path) : true;
+      if (!srcStat) throw new Error(`Upload missing in storage: ${upload.stored_path}`);
+      archive.append(await storage.get(upload.stored_path), { name });
+      appended += 1;
+    } catch (err) {
+      logger.warn('transferService: skipping upload in uploads archive', {
+        transferId: transfer.id, uploadId: upload.id, error: err.message,
+      });
+    }
+  }
+
+  await archive.finalize();
+  return appended;
+}
+
 /** Load the admin-uploaded deliverable files for a transfer, in order. */
 async function loadTransferExtraFiles(transferId) {
   return db('transfer_extra_files')
@@ -1389,6 +1444,7 @@ module.exports = {
   assertDownloadable,
   claimDownload,
   streamTransferArchive,
+  streamUploadsArchive,
   streamTransferFile,
   streamTransferExtraFile,
   // uploads

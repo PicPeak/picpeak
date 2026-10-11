@@ -1,0 +1,163 @@
+/**
+ * "Download all" for the files a client sent through a file request
+ * (issue 1914).
+ *
+ * Received files could only be fetched one at a time; the ZIP route answered
+ * NOT_A_SEND for a request. The new route zips every upload round under the
+ * names the client gave, keeps two files with the same name apart, and is
+ * refused for a send, for a request nothing was sent to, and without
+ * photos.download.
+ */
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const zlib = require('zlib');
+
+process.env.NODE_ENV = 'test';
+process.env.TEST_DATABASE_PATH = path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-uploads-zip-')), 'db.sqlite',
+);
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'uploads-zip-test-secret';
+process.env.STORAGE_PATH = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-uploads-zip-storage-'));
+
+const request = require('supertest');
+const {
+  bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
+} = require('../integration/helpers/crmDb');
+const svc = require('../../src/services/userManagementService');
+const { clearPermissionCache } = require('../../src/middleware/permissions');
+
+jest.setTimeout(120000);
+
+let db; let cleanup; let app; let transferService; let storage; let token; let viewerToken;
+const future = new Date(Date.now() + 864e5).toISOString();
+const auth = (req, tok = token) => req.set('Authorization', `Bearer ${tok}`);
+const binary = (res, cb) => { const chunks = []; res.on('data', (c) => chunks.push(c)); res.on('end', () => cb(null, Buffer.concat(chunks))); };
+
+/** name -> content for every entry, read from the ZIP's central directory. */
+function unzip(buffer) {
+  const entries = {};
+  // The end record says where the central directory starts and how long it is.
+  const eocd = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  let at = buffer.readUInt32LE(eocd + 16);
+  const count = buffer.readUInt16LE(eocd + 10);
+  for (let i = 0; i < count; i += 1) {
+    const method = buffer.readUInt16LE(at + 10);
+    const size = buffer.readUInt32LE(at + 20);
+    const nameLength = buffer.readUInt16LE(at + 28);
+    const extraLength = buffer.readUInt16LE(at + 30);
+    const commentLength = buffer.readUInt16LE(at + 32);
+    const local = buffer.readUInt32LE(at + 42);
+    const name = buffer.toString('utf8', at + 46, at + 46 + nameLength);
+    const start = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
+    const raw = buffer.subarray(start, start + size);
+    entries[name] = (method === 0 ? raw : zlib.inflateRawSync(raw)).toString('utf8');
+    at += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+async function makeTransfer(kind, title) {
+  const [id] = await db('transfers').insert({
+    token: `${kind}-${Math.random().toString(16).slice(2)}`.padEnd(64, '0').slice(0, 64),
+    kind, title, expires_at: future, created_at: new Date().toISOString(),
+  }).returning('id');
+  return typeof id === 'object' ? id.id : id;
+}
+async function receive(transferId, filename, content, uploadedAt) {
+  const key = transferService.newUploadFileKey(transferId);
+  await storage.put(key, Buffer.from(content));
+  const id = await transferService.addUpload(transferId, {
+    originalFilename: filename, storedPath: key, sizeBytes: content.length, mimeType: 'application/octet-stream',
+  });
+  await db('transfer_uploads').where({ id }).update({ uploaded_at: uploadedAt });
+  return id;
+}
+const download = (id, tok) => auth(request(app).get(`/api/admin/transfers/${id}/uploads/download`), tok);
+
+beforeAll(async () => {
+  ({ db, cleanup } = await bootCrmDb());
+  const { adminId } = await seedMinimal(db);
+  await assignAdminRole(db, adminId, 'super_admin');
+  token = mintAdminToken(adminId);
+  // May open the request and fetch single files, but holds no photos.download.
+  const role = await svc.createRole({ name: 'transfer_viewer', permissions: ['events.view'] }, adminId);
+  const viewer = await db('admin_users').insert({
+    username: 'viewer', email: 'viewer@example.com', password_hash: 'x',
+    role_id: role.id, must_change_password: false, created_at: new Date().toISOString(),
+  }).returning('id');
+  viewerToken = mintAdminToken(viewer[0]?.id ?? viewer[0]);
+  clearPermissionCache();
+  const flag = await db('feature_flags').where({ key: 'transfers' }).first();
+  if (flag) await db('feature_flags').where({ key: 'transfers' }).update({ value: true });
+  else await db('feature_flags').insert({ key: 'transfers', value: true });
+  // Under jest a service's `new Date()` binds as a foreign-realm Date that
+  // node-sqlite3 stringifies; normalise bindings as the other transfer suites do.
+  const clientProto = Object.getPrototypeOf(db.client);
+  const origQuery = clientProto._query;
+  clientProto._query = function patchedQuery(connection, obj) {
+    if (obj && Array.isArray(obj.bindings)) {
+      obj.bindings = obj.bindings.map(
+        (b) => (b && typeof b === 'object' && typeof b.toISOString === 'function' ? b.toISOString() : b),
+      );
+    }
+    return origQuery.call(this, connection, obj);
+  };
+  transferService = require('../../src/services/transferService');
+  storage = require('../../src/services/storage').getStorage();
+  app = buildRouteApp('/api/admin/transfers', require('../../src/routes/adminTransfers'));
+});
+
+afterAll(async () => { if (cleanup) await cleanup(); });
+
+describe('GET /:id/uploads/download', () => {
+  it('zips every upload round under the client\'s names and keeps same-named files apart', async () => {
+    const id = await makeTransfer('request', 'Hochzeit Müller: Bilder');
+    await receive(id, 'IMG_0001.jpg', 'first round', '2026-10-01T10:00:00.000Z');
+    await receive(id, 'notes.txt', 'second round', '2026-10-02T10:00:00.000Z');
+    const twin = await receive(id, 'img_0001.JPG', 'same name, later', '2026-10-03T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/zip');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-disposition']).toMatch(/^attachment; filename=".*\.zip"/);
+    expect(decodeURIComponent(res.headers['content-disposition'])).toContain('Hochzeit Müller');
+    expect(unzip(res.body)).toEqual({
+      'IMG_0001.jpg': 'first round',
+      'notes.txt': 'second round',
+      [`${twin}-img_0001.JPG`]: 'same name, later',
+    });
+  });
+
+  it('leaves out a file whose bytes are gone instead of failing the archive', async () => {
+    const id = await makeTransfer('request', 'partial');
+    await receive(id, 'kept.txt', 'still here', '2026-10-01T10:00:00.000Z');
+    const lost = await receive(id, 'lost.txt', 'gone', '2026-10-02T10:00:00.000Z');
+    await storage.delete((await db('transfer_uploads').where({ id: lost }).first()).stored_path);
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect(unzip(res.body)).toEqual({ 'kept.txt': 'still here' });
+  });
+
+  it('answers JSON, not an attachment, when there is nothing to zip', async () => {
+    const empty = await download(await makeTransfer('request', 'empty'));
+    expect(empty.status).toBe(404);
+    expect(empty.body.code).toBe('NO_UPLOADS');
+    expect(empty.headers['content-disposition']).toBeUndefined();
+
+    const send = await download(await makeTransfer('send', 'outgoing'));
+    expect(send.status).toBe(400);
+    expect(send.body.code).toBe('NOT_A_REQUEST');
+
+    expect((await download(999999)).status).toBe(404);
+  });
+
+  it('needs photos.download, as the outgoing bundle does', async () => {
+    const id = await makeTransfer('request', 'guarded');
+    await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
+    expect((await download(id, viewerToken)).status).toBe(403);
+    expect((await request(app).get(`/api/admin/transfers/${id}/uploads/download`)).status).toBe(401);
+  });
+});

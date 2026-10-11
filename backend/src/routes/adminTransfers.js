@@ -569,6 +569,27 @@ router.get('/:id/download',
   }),
 );
 
+// Admin download of everything a client sent through a file request, as one
+// ZIP (issue 1914). The same permission as the outgoing bundle above.
+router.get('/:id/uploads/download',
+  requirePermission('photos.download'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const transfer = await transferService.getTransfer(parseInt(req.params.id, 10));
+    if (!transfer) return res.status(404).json({ error: 'Transfer not found' });
+    if (transfer.kind !== transferService.KIND_REQUEST) {
+      return res.status(400).json({ error: 'Only a file request receives files', code: 'NOT_A_REQUEST' });
+    }
+    // Before the attachment headers go on, or the browser saves this answer
+    // as the ZIP.
+    if (!transfer.uploads || transfer.uploads.length === 0) {
+      return res.status(404).json({ error: 'No files received yet', code: 'NO_UPLOADS' });
+    }
+    await transferService.streamUploadsArchive(transfer, res);
+  }),
+);
+
 // Admin download of a single client-uploaded file
 router.get('/:id/uploads/:uploadId/download',
   requirePermission('events.view'),

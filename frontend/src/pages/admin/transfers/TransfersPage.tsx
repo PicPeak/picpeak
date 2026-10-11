@@ -863,9 +863,19 @@ const TransferDetailModal: React.FC<DetailProps> = ({ transferId, onClose, onCop
 
                 {/* What the client sent. */}
                 <div className="rounded-lg border border-line p-4">
-                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-body">
-                    <Inbox className="h-4 w-4" /> {t('transfers.filesReceived', 'Files received')} · {transfer.upload_count}
-                  </h3>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-body">
+                      <Inbox className="h-4 w-4" /> {t('transfers.filesReceived', 'Files received')} · {transfer.upload_count}
+                    </h3>
+                    {/* The ZIP route is photos.download, like the outgoing bundle. */}
+                    {canDownload && transfer.uploads && transfer.uploads.length > 0 && (
+                      <a href={transfersService.adminUploadsDownloadUrl(transferId)}>
+                        <Button size="sm" variant="outline" leftIcon={<Download className="h-4 w-4" />}>
+                          {t('transfers.downloadAll', 'Download all')}
+                        </Button>
+                      </a>
+                    )}
+                  </div>
                   {transfer.uploads && transfer.uploads.length > 0 ? (
                     <>
                       <ul className="divide-y divide-line-faint">

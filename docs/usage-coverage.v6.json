@@ -1368,6 +1368,7 @@
         "DELETE /:id/upload-code",
         "POST /:id/resend",
         "GET /:id/download",
+        "GET /:id/uploads/download",
         "GET /:id/uploads/:uploadId/download"
       ]
     },

@@ -268,6 +268,10 @@ export const transfersService = {
   adminDownloadUrl(id: number): string {
     return `${getApiBaseUrl()}/admin/transfers/${id}/download`;
   },
+  /** Everything a client sent through a file request, as one ZIP. */
+  adminUploadsDownloadUrl(id: number): string {
+    return `${getApiBaseUrl()}/admin/transfers/${id}/uploads/download`;
+  },
   adminUploadDownloadUrl(id: number, uploadId: number): string {
     return `${getApiBaseUrl()}/admin/transfers/${id}/uploads/${uploadId}/download`;
   },
