@@ -181,6 +181,24 @@ describe('GET /:id/uploads/download', () => {
     expect(Object.values(unzip(res.body))).toEqual(['first', 'second']);
   });
 
+  it('bounds a single over-long name and keeps apart names that differ only by a trailing dot', async () => {
+    const id = await makeTransfer('request', 'edge-names');
+    // 480 bytes: fine as a row, too long for any file system.
+    await receive(id, `${'\u5199'.repeat(155)}.jpeg`, 'long', '2026-10-01T10:00:00.000Z');
+    await receive(id, 'report.pdf', 'one', '2026-10-02T10:00:00.000Z');
+    const dotted = await receive(id, 'report.pdf.', 'two', '2026-10-03T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    const entries = unzip(res.body);
+    const names = Object.keys(entries);
+    expect(names).toHaveLength(3);
+    for (const name of names) expect(Buffer.byteLength(name)).toBeLessThanOrEqual(255);
+    expect(names[0]).toMatch(/^\u5199+\.jpeg$/);
+    expect(entries['report.pdf']).toBe('one');
+    expect(entries[`${dotted}-report.pdf`]).toBe('two');
+  });
+
   it('opens nothing for a response that was closed before streaming began', async () => {
     const id = await makeTransfer('request', 'closed-early');
     await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');

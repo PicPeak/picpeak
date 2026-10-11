@@ -938,7 +938,11 @@ async function streamUploadsArchive(transfer, res) {
   const usedNames = new Set();
   let appended = 0;
   for (const upload of uploads) {
-    const base = sanitizeForZipEntry(upload.original_filename) || `file-${upload.id}`;
+    // As it will exist once unpacked: Windows drops trailing dots and spaces
+    // ("report.pdf." lands on "report.pdf"), and no file system takes a name
+    // over the byte limit, duplicate or not.
+    const cleaned = sanitizeForZipEntry(upload.original_filename).replace(/[. ]+$/, '');
+    const base = prefixedZipName('', cleaned || `file-${upload.id}`);
     const seenAs = (candidate) => candidate.normalize('NFC').toLowerCase();
     let name = base;
     for (let attempt = 1; usedNames.has(seenAs(name)); attempt += 1) {
