@@ -156,5 +156,55 @@ http {
                                   unsafe_control=scenario == "unsafe-control")
 
 
+class SpaRobotsHeaderTest(unittest.TestCase):
+    # robots.txt leaves /admin and /customer crawlable so that a crawler can
+    # read "X-Robots-Tag: noindex" on them; a Disallow kept the bare login URL
+    # in search results. Gallery pages follow the SEO settings instead.
+    def test_admin_and_portal_shells_answer_noindex(self):
+        with tempfile.TemporaryDirectory(prefix="picpeak-nginx-test-") as directory:
+            directory = Path(directory)
+            (directory / "frontend.conf").write_text((ROOT / "frontend/nginx.conf").read_text())
+            (directory / "nginx.conf").write_text("""worker_processes 1;
+events { worker_connections 128; }
+http {
+    include /etc/nginx/mime.types;
+    include /fixtures/frontend.conf;
+}
+""")
+            name = "picpeak-nginx-test-" + uuid.uuid4().hex[:12]
+            try:
+                # The image's own welcome page stands in for the SPA shell.
+                run("docker", "run", "-d", "--name", name, "--add-host", "backend:127.0.0.1",
+                    "-p", "127.0.0.1::80", "-v", f"{directory}:/fixtures:ro",
+                    IMAGE, "nginx", "-c", "/fixtures/nginx.conf", "-g", "daemon off;")
+                port = int(run("docker", "port", name, "80/tcp").split(":")[-1])
+                expected = {
+                    "/admin/login": "noindex", "/admin": "noindex", "/admin?next=/x": "noindex",
+                    "/customer/login": "noindex", "/customer/events/a": "noindex",
+                    "/gallery/some-slug": None, "/administrator": None, "/setup": None,
+                }
+                for uri, value in expected.items():
+                    with self.subTest(uri=uri):
+                        for attempt in range(30):
+                            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                            try:
+                                connection.request("GET", uri, headers={"Host": "localhost"})
+                                response = connection.getresponse()
+                                response.read()
+                                break
+                            except (ConnectionError, OSError):
+                                if attempt == 29:
+                                    raise
+                                time.sleep(0.1)
+                            finally:
+                                connection.close()
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.getheader("X-Robots-Tag"), value)
+                        # The location's own header list must not drop these.
+                        self.assertEqual(response.getheader("X-Content-Type-Options"), "nosniff")
+            finally:
+                run("docker", "rm", "-f", name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

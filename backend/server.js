@@ -505,6 +505,8 @@ async function handlePublicSiteRequest(req, res, next) {
     const payload = await getPublicSitePayload();
 
     if (!payload.enabled) {
+      // The root is crawlable (robotsTxtService), so say it here too.
+      res.setHeader('X-Robots-Tag', 'noindex');
       res.redirect(302, '/admin/login');
       return;
     }
@@ -513,7 +515,7 @@ async function handlePublicSiteRequest(req, res, next) {
     try {
       const seoRows = await db('app_settings')
         .where('setting_type', 'seo')
-        .whereIn('setting_key', ['seo_meta_noindex', 'seo_meta_nofollow', 'seo_meta_noai'])
+        .whereIn('setting_key', ['seo_allow_indexing', 'seo_meta_noindex', 'seo_meta_nofollow', 'seo_meta_noai'])
         .select('setting_key', 'setting_value');
       const seoSettings = {};
       for (const row of seoRows) {
@@ -537,6 +539,9 @@ async function handlePublicSiteRequest(req, res, next) {
       return;
     }
 
+    // With indexing off robots.txt still lets crawlers fetch the root, so
+    // the landing page has to refuse indexing itself.
+    if (payload.seoSettings?.seo_allow_indexing !== true) res.setHeader('X-Robots-Tag', 'noindex');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=30, must-revalidate');
     res.setHeader('ETag', etag);
@@ -812,7 +817,7 @@ app.get('/s/:shortSlug', async (req, res) => {
 });
 
 // robots.txt endpoint (dynamic, served from DB settings)
-const { generateRobotsTxt } = require('./src/services/robotsTxtService');
+const { generateRobotsTxt, isNoindexPath } = require('./src/services/robotsTxtService');
 app.get('/robots.txt', async (req, res) => {
   try {
     const robotsTxt = await generateRobotsTxt();
@@ -1044,6 +1049,8 @@ try {
     // revalidate so a redeploy is picked up, while the hashed assets below
     // cache immutably.
     const sendSpa = (res) => {
+      // nginx parity: the $spa_robots_tag map in frontend/nginx.conf.
+      if (isNoindexPath(res.req?.path)) res.setHeader('X-Robots-Tag', 'noindex');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.type('html').send(spaHtml);
     };

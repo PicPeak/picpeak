@@ -67,14 +67,18 @@ export const SEOTab: React.FC<SEOTabProps> = ({
 
     lines.push('# Protected paths');
     lines.push('User-agent: *');
-    lines.push('Disallow: /admin');
     lines.push('Disallow: /api');
     lines.push('');
 
     if (!seoSettings.allow_indexing) {
-      lines.push('# Indexing disabled');
+      lines.push('# Indexing disabled - block all crawlers');
       lines.push('User-agent: *');
       lines.push('Disallow: /');
+      lines.push('# Crawlable on purpose: these answer "X-Robots-Tag: noindex", which only');
+      lines.push('# takes effect if a crawler may fetch the page.');
+      lines.push('Allow: /$');
+      lines.push('Allow: /admin');
+      lines.push('Allow: /customer');
       lines.push('');
     }
 
