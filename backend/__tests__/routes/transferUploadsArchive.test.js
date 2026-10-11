@@ -227,9 +227,13 @@ describe('GET /:id/uploads/download', () => {
     await receive(id, 'CON.jpg', 'c', '2026-10-01T10:00:00.000Z');
     await receive(id, 'aux', 'a', '2026-10-02T10:00:00.000Z');
     await receive(id, 'console.jpg', 'fine', '2026-10-03T10:00:00.000Z');
+    await receive(id, 'CON .jpg', 'spaced', '2026-10-04T10:00:00.000Z');
+    await receive(id, 'COM\u00b9.jpg', 'superscript', '2026-10-05T10:00:00.000Z');
 
     const res = await download(id).buffer(true).parse(binary);
-    expect(unzip(res.body)).toEqual({ '_CON.jpg': 'c', _aux: 'a', 'console.jpg': 'fine' });
+    expect(unzip(res.body)).toEqual({
+      '_CON.jpg': 'c', _aux: 'a', 'console.jpg': 'fine', '_CON .jpg': 'spaced', '_COM\u00b9.jpg': 'superscript',
+    });
   });
 
   it('answers 429 instead of streaming when the process is already busy with archives', async () => {

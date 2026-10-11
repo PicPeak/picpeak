@@ -859,7 +859,9 @@ async function streamTransferArchive(transfer, res) {
   return appended;
 }
 
-const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+// Windows also ignores spaces before the extension here, and counts the
+// superscript digits as device numbers.
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])\s*(\.|$)/i;
 
 // The longest file name common file systems accept, in bytes.
 const MAX_FILENAME_BYTES = 255;
