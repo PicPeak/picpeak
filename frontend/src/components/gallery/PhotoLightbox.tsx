@@ -1277,9 +1277,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               gallerySlug={slug}
               showComments={true}
               className="space-y-4"
-              onFeedbackUpdate={(toggledPhotoId) => {
-                if (onFeedbackChange) onFeedbackChange(toggledPhotoId);
-              }}
+              // Only when someone above refreshes the row; otherwise the
+              // panel's buttons invalidate the list themselves.
+              onFeedbackUpdate={onFeedbackChange ? (toggledPhotoId) => onFeedbackChange(toggledPhotoId) : undefined}
             />
           </div>
         </div>

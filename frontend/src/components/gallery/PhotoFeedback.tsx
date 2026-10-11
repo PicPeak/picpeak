@@ -83,6 +83,8 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   // optimistic update above: it refreshes that one row from the server.
   // The id comes from the toggle itself: by the time it is saved the panel
   // may already show the next photo.
+  // Only handed down when a parent refreshes the row: without one the
+  // buttons fall back to invalidating the list themselves.
   const handleToggleSaved = (savedPhotoId: string) => {
     if (onFeedbackUpdate) onFeedbackUpdate(Number(savedPhotoId));
   };
@@ -148,7 +150,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
               isEnabled={true}
               requireNameEmail={settings.require_name_email || false}
               onLikeChange={handleLikeChange}
-              onSaved={handleToggleSaved}
+              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
             />
           )}
 
@@ -161,7 +163,7 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
               isEnabled={true}
               requireNameEmail={settings.require_name_email || false}
               onFavoriteChange={handleFavoriteChange}
-              onSaved={handleToggleSaved}
+              onSaved={onFeedbackUpdate ? handleToggleSaved : undefined}
             />
           )}
         </div>

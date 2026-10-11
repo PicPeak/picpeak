@@ -121,8 +121,10 @@ describe('useFeedbackChange', () => {
     onFeedbackChange(1);
     await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
     // The refetched list arrives: the photo is not liked.
-    await new Promise((resolve) => setTimeout(resolve, 2));
-    queryClient.setQueryData(LIST_KEY, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    await queryClient.fetchQuery({
+      queryKey: LIST_KEY, staleTime: 0,
+      queryFn: async () => ({ photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] }) as unknown as GalleryData,
+    });
     answer(feedback(true, 1));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -137,12 +139,33 @@ describe('useFeedbackChange', () => {
 
     onFeedbackChange(1);
     await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
-    queryClient.setQueryData(otherGuest, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    await queryClient.fetchQuery({
+      queryKey: otherGuest,
+      queryFn: async () => ({ photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] }) as unknown as GalleryData,
+    });
     answer(feedback(true, 1));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(queryClient.getQueryData<GalleryData>(otherGuest)!.photos[0]).toMatchObject({ is_liked: false });
     expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: true });
+  });
+
+  // A tile rating writes into the same cached lists. That is not a newer
+  // snapshot of the list, and must not cost the like its only refresh.
+  it('still applies an answer after another write to the cached list', async () => {
+    let answer: (value: unknown) => void = () => {};
+    getPhotoFeedback.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const { queryClient, rows, onFeedbackChange } = setup();
+
+    onFeedbackChange(1);
+    await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    queryClient.setQueriesData<GalleryData>({ queryKey: ['gallery-photos', 'summer'] }, (old) =>
+      (old ? { ...old, photos: old.photos.map((p) => (p.id === 2 ? { ...p, my_rating: 4 } : p)) } : old));
+    answer(feedback(true, 1));
+
+    await waitFor(() => expect(rows()[0]).toMatchObject({ is_liked: true, like_count: 1 }));
+    expect(rows()[1]).toMatchObject({ my_rating: 4 });
   });
 
   it('applies the answers for two photos asked for at the same time', async () => {
