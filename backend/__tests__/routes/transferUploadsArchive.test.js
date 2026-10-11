@@ -108,6 +108,7 @@ beforeAll(async () => {
   app = buildRouteApp('/api/admin/transfers', require('../../src/routes/adminTransfers'));
 });
 
+afterEach(() => jest.restoreAllMocks());
 afterAll(async () => { if (cleanup) await cleanup(); });
 
 describe('GET /:id/uploads/download', () => {
@@ -128,6 +129,55 @@ describe('GET /:id/uploads/download', () => {
       'notes.txt': 'second round',
       [`${twin}-img_0001.JPG`]: 'same name, later',
     });
+  });
+
+  it('keeps looking when the id-prefixed name is itself taken', async () => {
+    const id = await makeTransfer('request', 'collisions');
+    const first = await receive(id, 'a.txt', 'one', '2026-10-01T10:00:00.000Z');
+    // Named like the prefix the third file would get.
+    await receive(id, `${first + 2}-a.txt`, 'two', '2026-10-02T10:00:00.000Z');
+    const third = await receive(id, 'A.TXT', 'three', '2026-10-03T10:00:00.000Z');
+    expect(third).toBe(first + 2);
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect(unzip(res.body)).toEqual({
+      'a.txt': 'one',
+      [`${third}-a.txt`]: 'two',
+      [`${third}-2-A.TXT`]: 'three',
+    });
+  });
+
+  // A source that fails while it is still queued has no archiver listener
+  // yet: unhandled, that error ends the process.
+  it('ends the download, not the process, when a queued source fails', async () => {
+    const id = await makeTransfer('request', 'source-fails');
+    await receive(id, 'a.txt', 'a'.repeat(1024), '2026-10-01T10:00:00.000Z');
+    await receive(id, 'b.txt', 'b', '2026-10-02T10:00:00.000Z');
+    const { Readable } = require('stream');
+    const opened = [];
+    const realGet = storage.get.bind(storage);
+    let calls = 0;
+    jest.spyOn(storage, 'get').mockImplementation(async (key) => {
+      calls += 1;
+      if (calls === 1) return realGet(key);
+      const failing = new Readable({ read() {} });
+      opened.push(failing);
+      process.nextTick(() => failing.destroy(Object.assign(new Error('ECONNRESET: source dropped'), { code: 'ECONNRESET' })));
+      return failing;
+    });
+
+    let outcome;
+    try {
+      outcome = { response: await download(id).buffer(true).parse(binary).timeout({ response: 4000, deadline: 6000 }) };
+    } catch (error) { outcome = { error }; }
+
+    expect(outcome.response || outcome.error).toBeTruthy();
+    expect(opened).toHaveLength(1);
+    // An 'error' nobody listens for is an uncaught exception, which would have
+    // ended this test run; reaching the next request is the proof.
+    jest.restoreAllMocks();
+    expect((await download(id).buffer(true).parse(binary)).status).toBe(200);
   });
 
   it('leaves out a file whose bytes are gone instead of failing the archive', async () => {

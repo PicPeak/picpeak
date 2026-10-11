@@ -21,6 +21,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
+const { createArchiveStreamGuard } = require('../utils/archiveStreamGuard');
 
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
@@ -861,11 +862,15 @@ async function streamTransferArchive(transfer, res) {
 /**
  * Stream a ZIP of everything a client sent through a file request to `res`
  * (issue 1914): every upload round, oldest first, under the name the client
- * gave each file. Two files with the same name are kept apart by prefixing
- * the later one with its id, compared case-insensitively so the archive also
- * unpacks intact on a case-insensitive file system.
+ * gave each file. A name already taken, compared case-insensitively so the
+ * archive also unpacks intact on a case-insensitive file system, gets the
+ * upload's id in front, and a counter if even that is taken.
  *
  * The bytes are stored exactly as received and are not opened here either.
+ *
+ * Reads go through the archive stream guard: two open at a time rather than
+ * one per file, a source that fails while still queued ends the download
+ * instead of the process, and a cancelled download releases what it holds.
  *
  * Returns the number of files appended.
  */
@@ -884,23 +889,41 @@ async function streamUploadsArchive(transfer, res) {
   res.setHeader('Content-Security-Policy', 'default-src \'none\'; sandbox');
 
   const archive = archiver('zip', { zlib: { level: 5 } });
-  archive.on('error', (err) => {
+  let stopped = false;
+  // Every way out releases the open reads; abort() throws if archiver has
+  // already torn itself down.
+  const stop = () => {
+    stopped = true;
+    guard.destroyAll();
+    try { archive.abort(); } catch (_) { /* already aborted */ }
+  };
+  const fail = (err) => {
+    if (stopped) return;
     logger.error('transferService: uploads archive error', { transferId: transfer.id, error: err.message });
+    stop();
     try { res.destroy(err); } catch (_) { /* noop */ }
-  });
+  };
+  const guard = createArchiveStreamGuard({ onFatalError: fail });
+  archive.on('error', fail);
+  // The admin cancelled the download: nothing reads the archive any more.
+  res.on('close', () => { if (!res.writableFinished && !stopped) stop(); });
   archive.pipe(res);
 
   const storage = getStorage();
   const usedNames = new Set();
   let appended = 0;
   for (const upload of uploads) {
-    let name = sanitizeForZipEntry(upload.original_filename) || `file-${upload.id}`;
-    if (usedNames.has(name.toLowerCase())) name = `${upload.id}-${name}`;
+    const base = sanitizeForZipEntry(upload.original_filename) || `file-${upload.id}`;
+    let name = base;
+    for (let attempt = 1; usedNames.has(name.toLowerCase()); attempt += 1) {
+      name = attempt === 1 ? `${upload.id}-${base}` : `${upload.id}-${attempt}-${base}`;
+    }
     usedNames.add(name.toLowerCase());
+    if (!await guard.acquire()) break;
     try {
       const srcStat = storage.kind() === 'local' ? await storage.stat(upload.stored_path) : true;
       if (!srcStat) throw new Error(`Upload missing in storage: ${upload.stored_path}`);
-      archive.append(await storage.get(upload.stored_path), { name });
+      archive.append(guard.track(await storage.get(upload.stored_path)), { name });
       appended += 1;
     } catch (err) {
       logger.warn('transferService: skipping upload in uploads archive', {
@@ -909,7 +932,7 @@ async function streamUploadsArchive(transfer, res) {
     }
   }
 
-  await archive.finalize();
+  if (!stopped) await archive.finalize();
   return appended;
 }
 
