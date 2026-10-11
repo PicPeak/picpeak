@@ -184,6 +184,32 @@ describe('useFeedbackChange', () => {
     await waitFor(() => expect(rows()[1]).toMatchObject({ is_liked: true, like_count: 5 }));
   });
 
+  // Leaving the gallery ends the bookkeeping that tells a stale answer from a
+  // fresh one; an answer still on its way must not reach the next visit's list.
+  it('drops an answer that arrives after the gallery was left', async () => {
+    let answer: (value: unknown) => void = () => {};
+    getPhotoFeedback.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(LIST_KEY, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result, unmount } = renderHook(() => useFeedbackChange('summer', vi.fn()), { wrapper });
+
+    result.current(1);
+    await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
+    unmount();
+    // The next visit fetched the list again: not liked (another guest, say).
+    await queryClient.fetchQuery({
+      queryKey: LIST_KEY, staleTime: 0,
+      queryFn: async () => ({ photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] }) as unknown as GalleryData,
+    });
+    answer(feedback(true, 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: false, like_count: 0 });
+  });
+
   // A PIN client's list carries the counts even when the gallery hides them
   // from guests; the per-photo answer does not, and would wipe them.
   it('refetches the list instead of patching when told not to patch', () => {

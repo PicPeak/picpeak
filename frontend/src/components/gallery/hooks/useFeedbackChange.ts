@@ -33,6 +33,12 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
     if (scope !== 'gallery-photos' || eventSlug !== slug) return;
     listFetches.current.set(event.query.queryHash, (listFetches.current.get(event.query.queryHash) ?? 0) + 1);
   }), [queryClient, slug]);
+  // Once the gallery is left (or the slug changes) nothing counts the list
+  // fetches any more, so an answer still on its way could no longer be told
+  // from a stale one: it would land on the list of a later visit, or of the
+  // next guest. Answers asked for before that point are dropped.
+  const visit = useRef(0);
+  useEffect(() => () => { visit.current += 1; }, [slug]);
 
   return useCallback((toggledPhotoId?: number) => {
     // Guest-mode Rated/Liked filter membership + chip counts come
@@ -55,8 +61,10 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
     // guest's list after an identity switch) and must not be patched with it.
     const lists = () => queryClient.getQueryCache().findAll({ queryKey: listKey });
     const fetchesAtRequest = new Map(lists().map((query) => [query.queryHash, listFetches.current.get(query.queryHash) ?? 0]));
+    const visitAtRequest = visit.current;
     feedbackService.getPhotoFeedback(slug, String(toggledPhotoId))
       .then((fresh) => {
+        if (visit.current !== visitAtRequest) return;
         if (latestRequest.current.get(toggledPhotoId) !== request) return;
         for (const query of lists()) {
           if (fetchesAtRequest.get(query.queryHash) !== (listFetches.current.get(query.queryHash) ?? 0)) continue;
@@ -76,6 +84,6 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
               : old);
         }
       })
-      .catch(() => { refetch(); });
+      .catch(() => { if (visit.current === visitAtRequest) refetch(); });
   }, [queryClient, slug, refetch, patchRows]);
 }

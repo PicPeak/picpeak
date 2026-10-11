@@ -133,11 +133,23 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // parent that never refetches.
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   const awaitingRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A lightbox like that names its photo is refreshed as one row (issue
+  // 1891), so "the payload landed" has to mean that photo's row changed: a
+  // payload carrying only another photo's refreshed row must not end the
+  // wait. Photo id -> is_liked before the toggle.
+  const awaitedRowsRef = useRef<Map<number, boolean>>(new Map());
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
   const handleLightboxFeedbackChange = useCallback((toggledPhotoId?: number) => {
     if (onFeedbackChange) {
       setAwaitingRefresh(true);
+      const row = typeof toggledPhotoId === 'number' ? photosRef.current.find((p) => p.id === toggledPhotoId) : undefined;
+      if (row && !awaitedRowsRef.current.has(row.id)) awaitedRowsRef.current.set(row.id, !!row.is_liked);
       if (awaitingRefreshTimer.current) clearTimeout(awaitingRefreshTimer.current);
-      awaitingRefreshTimer.current = setTimeout(() => setAwaitingRefresh(false), 5000);
+      awaitingRefreshTimer.current = setTimeout(() => {
+        awaitedRowsRef.current.clear();
+        setAwaitingRefresh(false);
+      }, 5000);
       onFeedbackChange(toggledPhotoId);
     }
   }, [onFeedbackChange]);
@@ -146,10 +158,16 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, []);
   useEffect(() => {
     if (photos.length === 0) return;
-    setAwaitingRefresh(false);
-    if (awaitingRefreshTimer.current) {
-      clearTimeout(awaitingRefreshTimer.current);
-      awaitingRefreshTimer.current = null;
+    awaitedRowsRef.current.forEach((wasLiked, id) => {
+      const row = photos.find((p) => p.id === id);
+      if (!row || !!row.is_liked !== wasLiked) awaitedRowsRef.current.delete(id);
+    });
+    if (awaitedRowsRef.current.size === 0) {
+      setAwaitingRefresh(false);
+      if (awaitingRefreshTimer.current) {
+        clearTimeout(awaitingRefreshTimer.current);
+        awaitingRefreshTimer.current = null;
+      }
     }
     setFavorites((previous) => {
       const liked = new Set(photos.filter((p) => p.is_liked).map((p) => p.id));
