@@ -51,11 +51,15 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
     // from my-feedback, not the photo rows (#538) — refresh it too
     // so e.g. a cleared rating (#884) leaves the Rated filter.
     queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
-    // Called for a gallery that has been left: the lists now belong to a
-    // later visit, which fetches its own.
-    if (servedSlug.current !== slug) return;
-
     const listKey = ['gallery-photos', slug];
+    // Nothing from a visit that has ended is written into the lists. They are
+    // marked stale instead, without fetching now: the list is cached for
+    // minutes, and a guest coming back would otherwise see the hearts and
+    // counts from before the toggle.
+    const leaveStale = () => queryClient.invalidateQueries({ queryKey: listKey, refetchType: 'none' });
+    // Called for a gallery that has been left.
+    if (servedSlug.current !== slug) { leaveStale(); return; }
+
     // A list request already out may carry the row from before the toggle and
     // would land on top of the patch, so it is restarted instead.
     if (!patchRows || toggledPhotoId === undefined || queryClient.isFetching({ queryKey: listKey }) > 0) {
@@ -73,7 +77,7 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
     const visitAtRequest = visit.current;
     feedbackService.getPhotoFeedback(slug, String(toggledPhotoId))
       .then((fresh) => {
-        if (visit.current !== visitAtRequest) return;
+        if (visit.current !== visitAtRequest) { leaveStale(); return; }
         if (latestRequest.current.get(toggledPhotoId) !== request) return;
         for (const query of lists()) {
           if (fetchesAtRequest.get(query.queryHash) !== (listFetches.current.get(query.queryHash) ?? 0)) continue;
@@ -93,6 +97,6 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
               : old);
         }
       })
-      .catch(() => { if (visit.current === visitAtRequest) refetch(); });
+      .catch(() => { if (visit.current === visitAtRequest) refetch(); else leaveStale(); });
   }, [queryClient, slug, refetch, patchRows]);
 }
