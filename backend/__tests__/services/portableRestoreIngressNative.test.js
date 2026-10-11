@@ -10,6 +10,32 @@ const { createIngress } = require('../../src/services/portableRestoreIngress');
 const gate = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const linux = process.platform === 'linux' ? describe : describe.skip;
 
+linux('first restore upload of an instance', () => {
+  let directory, previous;
+  beforeEach(async () => {
+    directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'picpeak-first-ingress-')));
+    previous = process.env.STORAGE_PATH; process.env.STORAGE_PATH = path.join(directory, 'storage');
+    await fs.mkdir(process.env.STORAGE_PATH);
+  });
+  afterEach(async () => {
+    if (previous === undefined) delete process.env.STORAGE_PATH; else process.env.STORAGE_PATH = previous;
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  // Nothing creates the workspace at boot, so the upload has to: without it
+  // the first import of every instance failed with ENOENT (answered as 503).
+  it('creates the private workspace that boot leaves absent', async () => {
+    const workspace = path.join(process.env.STORAGE_PATH, '.picpeak-maintenance');
+    await expect(fs.stat(workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+    let ran = false;
+    await createIngress().withIngress(async () => { ran = true; });
+    expect(ran).toBe(true);
+    const stat = await fs.stat(workspace);
+    expect(stat.isDirectory()).toBe(true);
+    expect(stat.mode & 0o077).toBe(0);
+  });
+});
+
 linux('actual Node-held shared restore ingress lease', () => {
   let directory, previous, storage, native;
   beforeEach(async () => {

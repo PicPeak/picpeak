@@ -99,7 +99,9 @@ function createIngress({ paths = restorePaths, leases, filesystem = fsp } = {}) 
       }
       return run();
     }
-    const storage = await paths.storageIdentity();
+    // The workspace is not created at boot; the first upload of an instance
+    // that has never restored creates it here.
+    const storage = await paths.storageIdentity({ create: true });
     const leasePath = path.join(storage.privateRoot, 'upload.lease');
     const lease = await leaseService().acquire(leasePath);
     const slot = { storage, lease, accepting: true, operations: new Set(), streams: new Set(), cleanup: new Map() };
