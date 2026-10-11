@@ -109,4 +109,71 @@ describe('useFeedbackChange', () => {
 
     expect(rows()[0]).toMatchObject({ is_liked: false, like_count: 0 });
   });
+
+  // A like's answer is slow; meanwhile an unlike of the same photo ends in a
+  // list refetch (a list request happened to be out). The slow answer must
+  // not put the like back on top of that fresher list.
+  it('drops an answer that a list fetch has overtaken', async () => {
+    let answer: (value: unknown) => void = () => {};
+    getPhotoFeedback.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const { queryClient, rows, onFeedbackChange } = setup();
+
+    onFeedbackChange(1);
+    await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
+    // The refetched list arrives: the photo is not liked.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    queryClient.setQueryData(LIST_KEY, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    answer(feedback(true, 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rows()[0]).toMatchObject({ is_liked: false, like_count: 0 });
+  });
+
+  it('does not write one guest\'s like into a list fetched for another', async () => {
+    let answer: (value: unknown) => void = () => {};
+    getPhotoFeedback.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const { queryClient, onFeedbackChange } = setup();
+    const otherGuest = ['gallery-photos', 'summer', 'all', 42];
+
+    onFeedbackChange(1);
+    await waitFor(() => expect(getPhotoFeedback).toHaveBeenCalledTimes(1));
+    queryClient.setQueryData(otherGuest, { photos: [{ id: 1, filename: 'a.jpg', is_liked: false, like_count: 0 }] } as unknown as GalleryData);
+    answer(feedback(true, 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<GalleryData>(otherGuest)!.photos[0]).toMatchObject({ is_liked: false });
+    expect(queryClient.getQueryData<GalleryData>(LIST_KEY)!.photos[0]).toMatchObject({ is_liked: true });
+  });
+
+  it('applies the answers for two photos asked for at the same time', async () => {
+    const answers: Array<(value: unknown) => void> = [];
+    getPhotoFeedback.mockImplementation(() => new Promise((resolve) => { answers.push(resolve); }));
+    const { rows, onFeedbackChange } = setup();
+
+    onFeedbackChange(1);
+    onFeedbackChange(2);
+    await waitFor(() => expect(answers).toHaveLength(2));
+    answers[0](feedback(true, 1));
+    await waitFor(() => expect(rows()[0]).toMatchObject({ is_liked: true }));
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    answers[1](feedback(true, 5));
+
+    await waitFor(() => expect(rows()[1]).toMatchObject({ is_liked: true, like_count: 5 }));
+  });
+
+  // A PIN client's list carries the counts even when the gallery hides them
+  // from guests; the per-photo answer does not, and would wipe them.
+  it('refetches the list instead of patching when told not to patch', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const refetch = vi.fn();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useFeedbackChange('summer', refetch, { patchRows: false }), { wrapper });
+
+    result.current(1);
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(getPhotoFeedback).not.toHaveBeenCalled();
+  });
 });
