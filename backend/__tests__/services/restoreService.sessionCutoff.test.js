@@ -27,6 +27,12 @@ jest.mock('../../src/utils/safeExec', () => ({
   spawnFromFile: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }),
 }));
 jest.mock('../../src/services/emailProcessor', () => ({ queueEmail: jest.fn() }));
+// Session-cutoff controls isolate the already admitted native restore body;
+// whole-operation admission/ownership has its own maintenance-owner suite.
+jest.mock('../../src/services/portableRestoreIngress', () => ({ withIngress: run => run() }), { virtual: true });
+jest.mock('../../src/services/portableRestoreCoordinator', () => ({
+  admitUpload: async () => {}, isRegistered: () => false,
+}));
 
 const { bootCrmDb } = require('../integration/helpers/crmDb');
 

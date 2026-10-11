@@ -9,6 +9,8 @@ const sharp = require('sharp');
 const LocalFsStorage = require('../../src/services/storage/LocalFsStorage');
 const S3StorageBackend = require('../../src/services/storage/S3StorageBackend');
 const storageModule = require('../../src/services/storage');
+const knex = require('knex');
+const indexMigration = require('../../migrations/core/250_storage_s3_generation_index');
 
 // Stub out the DB so getThumbnailSettings falls into its catch and uses defaults.
 jest.mock('../../src/database/db', () => ({
@@ -50,6 +52,8 @@ function backendCases() {
           forcePathStyle: true,
         });
         await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+        const indexDatabase = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+        await indexMigration.up(indexDatabase);
         const storage = new S3StorageBackend({
           bucket,
           region: TEST_S3.region,
@@ -58,6 +62,7 @@ function backendCases() {
           secretAccessKey: TEST_S3.secretAccessKey,
           forcePathStyle: true,
           sslEnabled: false,
+          indexDatabase,
         });
         await storage.init();
         return {
@@ -71,6 +76,8 @@ function backendCases() {
               }));
             }
             await s3Client.send(new DeleteBucketCommand({ Bucket: bucket }));
+            await indexDatabase.destroy();
+            s3Client.destroy();
           },
         };
       },

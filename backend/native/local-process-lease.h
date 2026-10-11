@@ -16,7 +16,8 @@ static int open_process_lease_file(const char *name, int create) {
         stat.st_nlink != 1 || stat.st_uid != geteuid()) { close(file); return -1; }
     if (filesystem.f_type != EXT4_SUPER_MAGIC && filesystem.f_type != XFS_SUPER_MAGIC &&
         filesystem.f_type != BTRFS_SUPER_MAGIC && filesystem.f_type != TMPFS_MAGIC &&
-        filesystem.f_type != OVERLAYFS_SUPER_MAGIC && (unsigned long)filesystem.f_type != 0x2fc12fc1UL) {
+        filesystem.f_type != OVERLAYFS_SUPER_MAGIC && (unsigned long)filesystem.f_type != 0x2fc12fc1UL &&
+        (unsigned long)filesystem.f_type != 0xf2f52010UL) {
         close(file); return -1;
     }
     return file;

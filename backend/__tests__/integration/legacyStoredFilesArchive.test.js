@@ -78,7 +78,19 @@ afterAll(async () => {
 
 afterEach(() => {
   fs.rmSync(path.join(base, 'source'), { recursive: true, force: true });
-  fs.rmSync(path.join(base, 'target'), { recursive: true, force: true });
+  // This suite reuses one target database. Its durable control row must keep
+  // the same volume marker and lifetime-lease inodes between offline restores.
+  // Empty only business files; deleting the maintenance directory would make
+  // the next case a different, correctly rejected, authoritative installation.
+  const targetRoot = path.join(base, 'target', 'root');
+  if (fs.existsSync(targetRoot)) {
+    for (const entry of fs.readdirSync(targetRoot)) {
+      if (entry !== '.picpeak-maintenance') {
+        fs.rmSync(path.join(targetRoot, entry), { recursive: true, force: true });
+      }
+    }
+  }
+  fs.rmSync(path.join(base, 'target', 'app'), { recursive: true, force: true });
 });
 
 describe('legacy-root documents in archives', () => {

@@ -46,6 +46,11 @@
  * @property {(srcRelPath: string, dstRelPath: string) => Promise<void>} rename - Atomic on local fs; copy+delete on S3.
  * @property {(srcRelPath: string, dstRelPath: string) => Promise<void>} copy
  * @property {(relPath: string, ttlSeconds?: number) => Promise<string>} signedUrl - Presigned download URL (S3 only; LocalFs throws).
+ * @property {(attemptId: string, expectedKeys: string[]) => Object} [createRestoreGeneration]
+ *   Primary S3 only: attempt-isolated staging IO, recordVerified/manifest and
+ *   publish(trx). Publication must share the restored-row/commit-marker
+ *   transaction. All replicas MUST remain fenced until restart reloads the
+ *   target-local runtime index. No in-process cache activation is provided.
  */
 
 module.exports = {};

@@ -3,6 +3,7 @@ const path = require('path');
 const knex = require('knex');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
+const applicationWork = require('../services/activeApplicationWork');
 const { extractShareToken } = require('../utils/shareLinkUtils');
 const { installCrmAccess } = require('./crmAccess');
 
@@ -44,6 +45,12 @@ try {
 // repeatedly on 2026-05-30.
 let _db = knex(knexConfig);
 installCrmAccess(_db.client);
+let ownsApplicationWork = false;
+
+function enableApplicationWorkOwnership() {
+  require('./applicationWork').installApplicationWork(_db.client);
+  ownsApplicationWork = true;
+}
 
 const db = new Proxy(function knexCall() {}, {
   // db('tableName') — knex's query builder entry point
@@ -78,6 +85,7 @@ async function reinitPool() {
   }
   _db = knex(knexConfig);
   installCrmAccess(_db.client);
+  if (ownsApplicationWork) require('./applicationWork').installApplicationWork(_db.client);
   // Probe the new pool with a no-op query so we fail loudly here if
   // the new pool can't connect — better than silently handing the
   // caller a broken pool and surfacing the error on the next admin
@@ -652,7 +660,12 @@ async function ensureGlobalCategories() {
 }
 
 // Helper function to log activities
-async function logActivity(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
+function logActivity(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
+  return applicationWork.track('activity log', () => logActivityInternal(activityType, metadata, eventId, actor, executor))
+    .catch(error => logger.error('Failed to log activity:', { error: error.message }));
+}
+
+async function logActivityInternal(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
   try {
     // Callers issuing the log from inside a knex transaction must pass that
     // trx as `executor`, otherwise the global-`db` insert tries to grab a
@@ -691,4 +704,4 @@ async function logActivity(activityType, metadata = {}, eventId = null, actor = 
   }
 }
 
-module.exports = { db, initializeDatabase, logActivity, withRetry, reinitPool };
+module.exports = { db, initializeDatabase, logActivity, withRetry, reinitPool, enableApplicationWorkOwnership };

@@ -57,8 +57,9 @@ async function getSessionsValidAfter() {
 }
 
 /** Persist a new cutoff (unix seconds) and refresh the in-process cache. */
-async function setSessionsValidAfter(unixSeconds) {
-  await db('app_settings')
+async function setSessionsValidAfter(unixSeconds, { executor = db, refreshCache = true } = {}) {
+  if (!Number.isSafeInteger(unixSeconds) || unixSeconds < 0) throw new Error('Invalid session cutoff');
+  await executor('app_settings')
     .insert({
       setting_key: CUTOFF_KEY,
       setting_value: JSON.stringify(unixSeconds),
@@ -67,7 +68,10 @@ async function setSessionsValidAfter(unixSeconds) {
     })
     .onConflict('setting_key')
     .merge({ setting_value: JSON.stringify(unixSeconds), setting_type: 'number', updated_at: new Date() });
-  cache = { value: unixSeconds, expiry: Date.now() + CACHE_MS };
+  // A maintenance restore records this on the SAME transaction as its
+  // identity rows and commit marker. Never publish an uncommitted cutoff in
+  // a process cache; the coordinated restart clears every replica's cache.
+  if (refreshCache) cache = { value: unixSeconds, expiry: Date.now() + CACHE_MS };
 }
 
 /**
