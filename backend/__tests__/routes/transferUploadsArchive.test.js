@@ -148,6 +148,31 @@ describe('GET /:id/uploads/download', () => {
     });
   });
 
+  // macOS treats the composed and the decomposed spelling as one file name.
+  it('keeps apart two names that differ only in Unicode normalisation', async () => {
+    const id = await makeTransfer('request', 'unicode');
+    await receive(id, 'M\u00fcller.jpg', 'composed', '2026-10-01T10:00:00.000Z');
+    const second = await receive(id, 'Mu\u0308ller.jpg', 'decomposed', '2026-10-02T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    expect(unzip(res.body)).toEqual({
+      'M\u00fcller.jpg': 'composed',
+      [`${second}-Mu\u0308ller.jpg`]: 'decomposed',
+    });
+  });
+
+  it('opens nothing for a response that was closed before streaming began', async () => {
+    const id = await makeTransfer('request', 'closed-early');
+    await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
+    const get = jest.spyOn(storage, 'get');
+    const res = { destroyed: true, setHeader: jest.fn(), on: jest.fn() };
+
+    expect(await transferService.streamUploadsArchive({ id, title: 'closed-early' }, res)).toBe(0);
+    expect(get).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalled();
+  });
+
   // A source that fails while it is still queued has no archiver listener
   // yet: unhandled, that error ends the process.
   it('ends the download, not the process, when a queued source fails', async () => {

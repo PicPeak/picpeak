@@ -862,9 +862,11 @@ async function streamTransferArchive(transfer, res) {
 /**
  * Stream a ZIP of everything a client sent through a file request to `res`
  * (issue 1914): every upload round, oldest first, under the name the client
- * gave each file. A name already taken, compared case-insensitively so the
- * archive also unpacks intact on a case-insensitive file system, gets the
- * upload's id in front, and a counter if even that is taken.
+ * gave each file. A name already taken gets the upload's id in front, and a
+ * counter if even that is taken. Names are compared the way a case-insensitive,
+ * normalising file system (macOS, Windows) would see them, so the archive
+ * unpacks intact there too: "a.JPG" and "A.jpg" clash, and so do the composed
+ * and decomposed spellings of "Müller.jpg".
  *
  * The bytes are stored exactly as received and are not opened here either.
  *
@@ -880,6 +882,11 @@ async function streamUploadsArchive(transfer, res) {
     .orderBy('uploaded_at', 'asc')
     .orderBy('id', 'asc')
     .select('id', 'original_filename', 'stored_path');
+
+  // Cancelled while the rows were being read: 'close' has fired already and
+  // will not fire again for the listener below, so nothing would ever release
+  // the reads opened from here on.
+  if (res.destroyed) return 0;
 
   const archiveName = `${sanitizeForZipEntry(transfer.title || 'uploads') || 'uploads'}.zip`;
   // Same guarantees as streamTransferArchive: a known type, nosniff, sandbox.
@@ -914,11 +921,12 @@ async function streamUploadsArchive(transfer, res) {
   let appended = 0;
   for (const upload of uploads) {
     const base = sanitizeForZipEntry(upload.original_filename) || `file-${upload.id}`;
+    const seenAs = (candidate) => candidate.normalize('NFC').toLowerCase();
     let name = base;
-    for (let attempt = 1; usedNames.has(name.toLowerCase()); attempt += 1) {
+    for (let attempt = 1; usedNames.has(seenAs(name)); attempt += 1) {
       name = attempt === 1 ? `${upload.id}-${base}` : `${upload.id}-${attempt}-${base}`;
     }
-    usedNames.add(name.toLowerCase());
+    usedNames.add(seenAs(name));
     if (!await guard.acquire()) break;
     try {
       const srcStat = storage.kind() === 'local' ? await storage.stat(upload.stored_path) : true;
