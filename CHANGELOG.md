@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.168.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.1-beta.0...v3.168.2-beta.0) (2026-10-11)
+
+
+### Bug Fixes
+
+* **bills:** invoice edits save VAT code and linked gallery; galleries link on the CRM owner rule ([#1909](https://github.com/PicPeak/picpeak/issues/1909)) ([756ed95](https://github.com/PicPeak/picpeak/commit/756ed957b6a51387f845c68044070cf2c0b0e231))
+
 ## [3.168.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.168.0-beta.0...v3.168.1-beta.0) (2026-10-11)
 
 
