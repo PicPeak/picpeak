@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { feedbackService } from '../../../services/feedback.service';
 import type { GalleryData } from '../../../types';
@@ -23,6 +23,16 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
   // Two toggles on one photo can answer out of order; only the last one asked
   // for may write the row.
   const latestRequest = useRef(new Map<number, number>());
+  // How many times each cached list has been fetched. Counted from the cache's
+  // own events, because a list's dataUpdatedAt also moves on a manual write
+  // (a tile rating patches the same lists), and that is not a newer snapshot.
+  const listFetches = useRef(new Map<string, number>());
+  useEffect(() => queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) return;
+    const [scope, eventSlug] = event.query.queryKey as unknown[];
+    if (scope !== 'gallery-photos' || eventSlug !== slug) return;
+    listFetches.current.set(event.query.queryHash, (listFetches.current.get(event.query.queryHash) ?? 0) + 1);
+  }), [queryClient, slug]);
 
   return useCallback((toggledPhotoId?: number) => {
     // Guest-mode Rated/Liked filter membership + chip counts come
@@ -40,17 +50,16 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
 
     const request = (latestRequest.current.get(toggledPhotoId) ?? 0) + 1;
     latestRequest.current.set(toggledPhotoId, request);
-    // When each cached list was last fetched. A list fetched after this row
-    // was asked for is newer than the answer (a refetch after a later toggle,
-    // another guest's list after an identity switch) and must not be patched
-    // with it.
+    // The lists as they stand now. One fetched after this row was asked for
+    // is newer than the answer (a refetch after a later toggle, another
+    // guest's list after an identity switch) and must not be patched with it.
     const lists = () => queryClient.getQueryCache().findAll({ queryKey: listKey });
-    const fetchedAt = new Map(lists().map((query) => [query.queryHash, query.state.dataUpdatedAt]));
+    const fetchesAtRequest = new Map(lists().map((query) => [query.queryHash, listFetches.current.get(query.queryHash) ?? 0]));
     feedbackService.getPhotoFeedback(slug, String(toggledPhotoId))
       .then((fresh) => {
         if (latestRequest.current.get(toggledPhotoId) !== request) return;
         for (const query of lists()) {
-          if (fetchedAt.get(query.queryHash) !== query.state.dataUpdatedAt) continue;
+          if (fetchesAtRequest.get(query.queryHash) !== (listFetches.current.get(query.queryHash) ?? 0)) continue;
           queryClient.setQueryData<GalleryData>(query.queryKey, (old) =>
             old
               ? {
@@ -64,10 +73,7 @@ export function useFeedbackChange(slug: string, refetch: () => unknown, { patchR
                   }
                   : p)),
               }
-              : old,
-          // The patch is not a fetch: the list keeps its fetch time, so the
-          // answer to a second photo asked for meanwhile still applies.
-          { updatedAt: query.state.dataUpdatedAt });
+              : old);
         }
       })
       .catch(() => { refetch(); });
