@@ -47,6 +47,11 @@ on:
       release_id:
         type: string
         required: true
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
 
 # Separate rolling and exact-version runs; do not cancel the caller workflow.
 concurrency:
@@ -80,6 +85,7 @@ jobs:
       release_tag: ${{ steps.policy.outputs.release_tag }}
       channel: ${{ steps.policy.outputs.channel }}
       tags: ${{ steps.policy.outputs.tags }}
+      gate_environment: ${{ steps.policy.outputs.gate_environment }}
     steps:
     - name: Checkout triggering workflow source
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -113,17 +119,18 @@ jobs:
     needs: publication-policy
     if: needs.publication-policy.outputs.publish == 'true'
     runs-on: ubuntu-latest
-    environment: picpeak-release
+    # Rolling runs authorize automatically; only versions ask for self-review.
+    environment: ${{ needs.publication-policy.outputs.gate_environment }}
     permissions:
       contents: read
     steps:
-    - name: Record approved immutable publication
+    - name: Record authorized immutable publication
       env:
         SOURCE_SHA: ${{ needs.publication-policy.outputs.sha }}
         RELEASE_TAG: ${{ needs.publication-policy.outputs.release_tag }}
         CHANNEL: ${{ needs.publication-policy.outputs.channel }}
       run: |
-        printf 'Approved source: %s\nVersion: %s\nChannel: %s\n' "$SOURCE_SHA" "$RELEASE_TAG" "$CHANNEL" >> "$GITHUB_STEP_SUMMARY"
+        printf 'Authorized source: %s\nVersion: %s\nChannel: %s\n' "$SOURCE_SHA" "$RELEASE_TAG" "$CHANNEL" >> "$GITHUB_STEP_SUMMARY"
 
   # -----------------------------------------------------------------------------
   # Backend: per-arch build, then merge into a multi-arch manifest
@@ -311,7 +318,7 @@ jobs:
 
   merge-backend:
     needs: [publication-policy, approve-publication, build-backend]
-    environment: picpeak-release
+    environment: picpeak-publication
     runs-on: ubuntu-latest
     # No security-events permission here — vulnerability scanning moved
     # to per-arch build-backend jobs (#476). This job's only job is to
@@ -558,7 +565,7 @@ jobs:
 
   merge-frontend:
     needs: [publication-policy, approve-publication, build-frontend]
-    environment: picpeak-release
+    environment: picpeak-publication
     runs-on: ubuntu-latest
     # See merge-backend — vulnerability scanning moved to the per-arch
     # build-frontend matrix (#476). This job only publishes the manifest.
@@ -788,7 +795,7 @@ jobs:
 
   merge-aio:
     needs: [publication-policy, approve-publication, build-aio]
-    environment: picpeak-release
+    environment: picpeak-publication
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1261,7 +1268,7 @@ jobs:
 
   merge-ml:
     needs: [publication-policy, approve-publication, build-ml]
-    environment: picpeak-release
+    environment: picpeak-publication
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1362,7 +1369,7 @@ jobs:
   # per-repository, not per-tag, so once per merge is exactly enough.
   dockerhub-descriptions:
     needs: [publication-policy, approve-publication, merge-aio, merge-ml]
-    environment: picpeak-release
+    environment: picpeak-publication
     if: always() && needs.publication-policy.outputs.publish == 'true' && needs.publication-policy.outputs.release_tag == '' && needs.publication-policy.outputs.channel == 'beta' && github.repository == 'PicPeak/picpeak' && needs.merge-aio.result == 'success'
     runs-on: ubuntu-latest
     permissions:
