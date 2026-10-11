@@ -65,7 +65,7 @@ interface PhotoGridWithLayoutsProps {
     allowReactions?: boolean;
     requireNameEmail?: boolean;
   };
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   // Hero logo customization options
   heroLogoVisible?: boolean;
   heroLogoSize?: 'small' | 'medium' | 'large' | 'xlarge';

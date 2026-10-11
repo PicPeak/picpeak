@@ -126,12 +126,12 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // parent that never refetches.
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   const awaitingRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleLightboxFeedbackChange = useCallback(() => {
+  const handleLightboxFeedbackChange = useCallback((toggledPhotoId?: number) => {
     if (onFeedbackChange) {
       setAwaitingRefresh(true);
       if (awaitingRefreshTimer.current) clearTimeout(awaitingRefreshTimer.current);
       awaitingRefreshTimer.current = setTimeout(() => setAwaitingRefresh(false), 5000);
-      onFeedbackChange();
+      onFeedbackChange(toggledPhotoId);
     }
   }, [onFeedbackChange]);
   useEffect(() => () => {
@@ -243,7 +243,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     ids.forEach((id) => inFlightLikesRef.current.delete(id));
     if (done.length > 0) {
       if (bulk) toast.success(t(unlike ? 'gallery.favoritesRemoved' : 'gallery.favoritesAdded', { count: done.length }));
-      onFeedbackChange?.();
+      onFeedbackChange?.(done.length === 1 ? done[0] : undefined);
     }
     if (failed.length > 0) {
       if (bulk) toast.error(t('gallery.favoriteSelectedError'));

@@ -443,7 +443,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         await feedbackService.submitFeedback(slug, String(photo.id), {
           feedback_type: 'like',
         });
-        onFeedbackChange?.();
+        onFeedbackChange?.(photo.id);
       } catch (err) {
         console.warn('Like submit failed', err);
       }
@@ -470,7 +470,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
-      onFeedbackChange?.();
+      onFeedbackChange?.(photo.id);
     } catch (err) {
       console.warn('Like submit failed', err);
     }
@@ -498,7 +498,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           guest_name: name,
           guest_email: email,
         });
-        onFeedbackChange?.();
+        onFeedbackChange?.(pendingLikePhotoId);
       } catch (err) {
         console.warn('Like submit failed', err);
       }
