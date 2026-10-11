@@ -28,7 +28,7 @@ interface PhotoLightboxProps {
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
   initialShowFeedback?: boolean;
-  onFeedbackChange?: () => void;
+  onFeedbackChange?: (toggledPhotoId?: number) => void;
   disableRightClick?: boolean;
   enableDevtoolsProtection?: boolean;
   // When true, surface each photo's original camera filename in the
@@ -368,7 +368,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           setLikeCount(c => Math.max(0, c + (next ? 1 : -1)));
           return next;
         });
-        if (onFeedbackChange) onFeedbackChange();
+        if (onFeedbackChange) onFeedbackChange(currentPhoto.id);
       } catch (err) {
         // Per-guest cap reached (#655) surfaces the shared modal.
         if (handleLimitError(err)) return;
@@ -400,7 +400,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       // filter chips) in sync — the guest-mode path above already does
       // this; without it, likes made in the lightbox don't appear in
       // the Likes filter until a full page reload.
-      if (onFeedbackChange) onFeedbackChange();
+      if (onFeedbackChange) onFeedbackChange(currentPhoto.id);
     } catch (err) {
       if (handleLimitError(err)) return;
       // eslint-disable-next-line no-console
@@ -1277,8 +1277,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               gallerySlug={slug}
               showComments={true}
               className="space-y-4"
-              onFeedbackUpdate={() => {
-                if (onFeedbackChange) onFeedbackChange();
+              onFeedbackUpdate={(toggledPhotoId) => {
+                if (onFeedbackChange) onFeedbackChange(toggledPhotoId);
               }}
             />
           </div>
@@ -1337,7 +1337,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           }
           // Sync gallery photo list (feedback filter chips) — parity with
           // the direct submit paths.
-          if (onFeedbackChange) onFeedbackChange();
+          if (onFeedbackChange) onFeedbackChange(pendingAction?.type === 'like' ? currentPhoto.id : undefined);
           setPendingAction(null);
         }}
         feedbackType={

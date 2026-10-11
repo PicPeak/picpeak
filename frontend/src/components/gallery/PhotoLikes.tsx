@@ -16,6 +16,8 @@ interface PhotoLikesProps {
   isEnabled: boolean;
   requireNameEmail?: boolean;
   onLikeChange?: (liked: boolean) => void;
+  /** The server accepted the toggle. */
+  onSaved?: () => void;
 }
 
 export const PhotoLikes: React.FC<PhotoLikesProps> = ({
@@ -25,7 +27,8 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
   likeCount,
   isEnabled,
   requireNameEmail = false,
-  onLikeChange
+  onLikeChange,
+  onSaved
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -53,7 +56,9 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
-      queryClient.invalidateQueries({ queryKey: ['gallery-photos'] });
+      // The parent refreshes this photo's row; without one, the whole list.
+      if (onSaved) onSaved();
+      else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
     },
     onError: (error: any) => {
       // Revert optimistic update

@@ -16,6 +16,8 @@ interface PhotoFavoritesProps {
   isEnabled: boolean;
   requireNameEmail?: boolean;
   onFavoriteChange?: (favorited: boolean) => void;
+  /** The server accepted the toggle. */
+  onSaved?: () => void;
 }
 
 export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
@@ -25,7 +27,8 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   favoriteCount,
   isEnabled,
   requireNameEmail = false,
-  onFavoriteChange
+  onFavoriteChange,
+  onSaved
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -53,7 +56,9 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
-      queryClient.invalidateQueries({ queryKey: ['gallery-photos'] });
+      // The parent refreshes this photo's row; without one, the whole list.
+      if (onSaved) onSaved();
+      else queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
     },
     onError: (error: any) => {
       // Revert optimistic update
