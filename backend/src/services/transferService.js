@@ -859,6 +859,24 @@ async function streamTransferArchive(transfer, res) {
   return appended;
 }
 
+// The longest file name common file systems accept, in bytes.
+const MAX_FILENAME_BYTES = 255;
+
+/**
+ * `prefix` + `name`, shortened to fit a file name: a name that is already at
+ * the limit would otherwise leave the ZIP with an entry that cannot be
+ * unpacked (ENAMETOOLONG). The stem gives way, whole characters at a time,
+ * and the extension stays.
+ */
+function prefixedZipName(prefix, name) {
+  if (Buffer.byteLength(prefix + name) <= MAX_FILENAME_BYTES) return prefix + name;
+  const ext = path.extname(name);
+  const extension = Buffer.byteLength(ext) <= 32 ? ext : '';
+  const stem = Array.from(name.slice(0, name.length - extension.length));
+  while (stem.length > 1 && Buffer.byteLength(prefix + stem.join('') + extension) > MAX_FILENAME_BYTES) stem.pop();
+  return prefix + stem.join('') + extension;
+}
+
 /**
  * Stream a ZIP of everything a client sent through a file request to `res`
  * (issue 1914): every upload round, oldest first, under the name the client
@@ -924,7 +942,7 @@ async function streamUploadsArchive(transfer, res) {
     const seenAs = (candidate) => candidate.normalize('NFC').toLowerCase();
     let name = base;
     for (let attempt = 1; usedNames.has(seenAs(name)); attempt += 1) {
-      name = attempt === 1 ? `${upload.id}-${base}` : `${upload.id}-${attempt}-${base}`;
+      name = prefixedZipName(attempt === 1 ? `${upload.id}-` : `${upload.id}-${attempt}-`, base);
     }
     usedNames.add(seenAs(name));
     if (!await guard.acquire()) break;

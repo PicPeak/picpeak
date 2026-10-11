@@ -162,6 +162,25 @@ describe('GET /:id/uploads/download', () => {
     });
   });
 
+  // The id in front of a duplicate must not push a name past what a file
+  // system accepts, or that entry cannot be unpacked.
+  it('keeps a renamed duplicate within the file name limit, extension intact', async () => {
+    const id = await makeTransfer('request', 'long-names');
+    const long = `${'ä'.repeat(125)}.jpeg`; // 255 bytes
+    expect(Buffer.byteLength(long)).toBe(255);
+    await receive(id, long, 'first', '2026-10-01T10:00:00.000Z');
+    await receive(id, long, 'second', '2026-10-02T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    const names = Object.keys(unzip(res.body));
+    expect(names).toHaveLength(2);
+    expect(names[0]).toBe(long);
+    expect(Buffer.byteLength(names[1])).toBeLessThanOrEqual(255);
+    expect(names[1]).toMatch(/^\d+-ä+\.jpeg$/);
+    expect(Object.values(unzip(res.body))).toEqual(['first', 'second']);
+  });
+
   it('opens nothing for a response that was closed before streaming began', async () => {
     const id = await makeTransfer('request', 'closed-early');
     await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
