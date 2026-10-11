@@ -874,7 +874,8 @@ function prefixedZipName(prefix, name) {
   const extension = Buffer.byteLength(ext) <= 32 ? ext : '';
   const stem = Array.from(name.slice(0, name.length - extension.length));
   while (stem.length > 1 && Buffer.byteLength(prefix + stem.join('') + extension) > MAX_FILENAME_BYTES) stem.pop();
-  return prefix + stem.join('') + extension;
+  // Cutting can leave a dot or space at the end, which Windows drops again.
+  return (prefix + stem.join('') + extension).replace(/[. ]+$/, '');
 }
 
 /**
@@ -943,7 +944,10 @@ async function streamUploadsArchive(transfer, res) {
     // over the byte limit, duplicate or not.
     const cleaned = sanitizeForZipEntry(upload.original_filename).replace(/[. ]+$/, '');
     const base = prefixedZipName('', cleaned || `file-${upload.id}`);
-    const seenAs = (candidate) => candidate.normalize('NFC').toLowerCase();
+    // Upper- then lower-cased, which folds the letters a plain lowercase
+    // keeps apart ("σ" and final "ς", "ß" and "ss") the way a
+    // case-insensitive file system does.
+    const seenAs = (candidate) => candidate.normalize('NFC').toUpperCase().toLowerCase();
     let name = base;
     for (let attempt = 1; usedNames.has(seenAs(name)); attempt += 1) {
       name = prefixedZipName(attempt === 1 ? `${upload.id}-` : `${upload.id}-${attempt}-`, base);

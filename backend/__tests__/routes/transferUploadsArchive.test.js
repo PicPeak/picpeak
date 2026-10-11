@@ -199,6 +199,29 @@ describe('GET /:id/uploads/download', () => {
     expect(entries[`${dotted}-report.pdf`]).toBe('two');
   });
 
+  it('treats names as one that a case-insensitive file system folds together, also after shortening', async () => {
+    const id = await makeTransfer('request', 'folding');
+    await receive(id, '\u03c3.jpg', 'sigma', '2026-10-01T10:00:00.000Z');
+    const finalSigma = await receive(id, '\u03c2.jpg', 'final sigma', '2026-10-02T10:00:00.000Z');
+    // Shortened to 84 characters plus a space: the space has to go, and then
+    // it is the same name as the file that is only those 84 characters.
+    const stem = '\u5199'.repeat(84);
+    await receive(id, stem, 'short', '2026-10-03T10:00:00.000Z');
+    const cut = await receive(id, `${stem} ${'\u5199'.repeat(3)}`, 'cut', '2026-10-04T10:00:00.000Z');
+
+    const res = await download(id).buffer(true).parse(binary);
+    expect(res.status).toBe(200);
+    const entries = unzip(res.body);
+    expect(Object.keys(entries)).toHaveLength(4);
+    expect(entries['\u03c3.jpg']).toBe('sigma');
+    expect(entries[`${finalSigma}-\u03c2.jpg`]).toBe('final sigma');
+    expect(entries[stem]).toBe('short');
+    const renamed = Object.keys(entries).find((name) => entries[name] === 'cut');
+    expect(renamed.startsWith(`${cut}-`)).toBe(true);
+    expect(renamed).not.toMatch(/[. ]$/);
+    expect(Buffer.byteLength(renamed)).toBeLessThanOrEqual(255);
+  });
+
   it('opens nothing for a response that was closed before streaming began', async () => {
     const id = await makeTransfer('request', 'closed-early');
     await receive(id, 'a.txt', 'a', '2026-10-01T10:00:00.000Z');
