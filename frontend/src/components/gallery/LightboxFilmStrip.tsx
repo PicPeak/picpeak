@@ -74,7 +74,9 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
     <ul
       aria-label={t('gallery.filmStrip.label', 'Photos')}
       data-testid="lightbox-film-strip"
-      className="relative mx-auto mb-3 h-14 max-w-4xl overflow-hidden"
+      // Pulled up into the toolbar's own top padding: the strip costs the
+      // photo its 56 px and nothing more.
+      className="relative mx-auto -mt-2 mb-2 h-14 max-w-4xl overflow-hidden"
       style={{ maskImage: EDGE_FADE, WebkitMaskImage: EDGE_FADE }}
     >
       {photos.slice(first, last + 1).map((photo, offset) => {
@@ -134,23 +136,44 @@ export const LightboxFilmStrip: React.FC<LightboxFilmStripProps> = ({
   );
 };
 
+/** Thumbnails kept loaded on each side of the stand-in, ahead of the scrub. */
+const STAND_IN_REACH = 2;
+
 /**
  * What the lightbox shows instead of the preview while a key is held: the
  * photo's thumbnail, scaled up. Thumbnail only, like the strip.
+ *
+ * The two photos on either side are mounted too, hidden. A scrub moves on
+ * every 110 ms and a thumbnail takes a moment to arrive, so one requested
+ * only when its photo became current was replaced before it could be shown,
+ * and the stand-in stayed black for the whole scrub.
  */
-export const LightboxScrubStandIn: React.FC<{ photo: Photo; slug: string }> = ({ photo, slug }) => (
-  <div className="absolute inset-0 flex items-center justify-center" data-testid="lightbox-scrub-stand-in">
-    {photo.thumbnail_url && (
-      <AuthenticatedImage
-        queuePriority="high"
-        src={photo.thumbnail_url}
-        alt={photo.filename}
-        className="h-full w-full object-contain select-none pointer-events-none"
-        style={{ backgroundColor: 'transparent' }}
-        draggable={false}
-        isGallery={true}
-        slug={slug}
-      />
-    )}
-  </div>
-);
+export const LightboxScrubStandIn: React.FC<{ photos: Photo[]; currentIndex: number; slug: string }> = ({
+  photos,
+  currentIndex,
+  slug,
+}) => {
+  const first = Math.max(0, currentIndex - STAND_IN_REACH);
+  return (
+    <div className="absolute inset-0" data-testid="lightbox-scrub-stand-in">
+      {photos.slice(first, currentIndex + STAND_IN_REACH + 1).map((photo, offset) => photo.thumbnail_url && (
+        <div
+          key={photo.id}
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ visibility: first + offset === currentIndex ? 'visible' : 'hidden' }}
+        >
+          <AuthenticatedImage
+            queuePriority="high"
+            src={photo.thumbnail_url}
+            alt={photo.filename}
+            className="h-full w-full object-contain select-none pointer-events-none"
+            style={{ backgroundColor: 'transparent' }}
+            draggable={false}
+            isGallery={true}
+            slug={slug}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};

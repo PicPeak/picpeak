@@ -1419,7 +1419,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 a photo passed over — and underneath the landed slide until its
                 preview has loaded. */}
             {(scrubbing || (scrub.standIn && !isVideoCurrent)) && (
-              <LightboxScrubStandIn photo={currentPhoto} slug={slug} />
+              <LightboxScrubStandIn photos={photos} currentIndex={currentIndex} slug={slug} />
             )}
             {scrubbing ? null : isVideoCurrent && videoLocked ? (
               <div className="w-full h-full flex items-center justify-center p-6">

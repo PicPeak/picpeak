@@ -185,7 +185,12 @@ describe('lightbox hold-to-scrub', () => {
     expect(previewsRequested()).toEqual([]);
     // The thumbnail stands in, and the strip has moved with it.
     const standIn = screen.getByTestId('lightbox-scrub-stand-in');
-    expect(standIn.querySelector('[data-src]')).toHaveAttribute('data-src', '/thumb/110');
+    // The photo on screen is the visible one; its neighbours are loaded ahead, hidden.
+    const shown = Array.from(standIn.children).filter((el) => (el as HTMLElement).style.visibility === 'visible');
+    expect(shown).toHaveLength(1);
+    expect(shown[0].querySelector('[data-src]')).toHaveAttribute('data-src', '/thumb/110');
+    expect(Array.from(standIn.querySelectorAll('[data-src]')).map((el) => el.getAttribute('data-src')))
+      .toEqual(['/thumb/108', '/thumb/109', '/thumb/110', '/thumb/111', '/thumb/112']);
     expect(within(strip()).getByRole('button', { name: 'Photo 110 of 500' })).toHaveAttribute('aria-current', 'true');
 
     fireEvent.keyUp(document, { key: 'ArrowRight' });
