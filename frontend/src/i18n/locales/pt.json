@@ -524,6 +524,10 @@
     "preparingProgress_other": "{{count}} fotos preparadas",
     "videoFormatUnsupported": "Este formato de vídeo não pode ser reproduzido neste navegador. Baixe o arquivo para assistir.",
     "videoLoadFailed": "Não foi possível carregar este vídeo.",
+    "fullResolution": {
+      "loading": "Carregando resolução total…",
+      "readout": "100% é o tamanho original, pixel a pixel"
+    },
     "downloadLimit": {
       "reached": "Limite de downloads atingido. Entre em contato com seu fotógrafo para obter mais downloads.",
       "notEnough": "Restam apenas {{remaining}} downloads. Selecione menos fotos ou entre em contato com seu fotógrafo.",

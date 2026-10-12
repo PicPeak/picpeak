@@ -417,6 +417,10 @@
     "downloadEverything": "Télécharger toutes les photos",
     "videoFormatUnsupported": "Ce format vidéo ne peut pas être lu dans ce navigateur. Téléchargez-la pour la regarder.",
     "videoLoadFailed": "Cette vidéo n'a pas pu être chargée.",
+    "fullResolution": {
+      "loading": "Chargement de la pleine résolution…",
+      "readout": "100 % correspond à la taille d’origine, pixel pour pixel"
+    },
     "downloadLimit": {
       "reached": "Limite de téléchargements atteinte. Contactez votre photographe pour obtenir plus de téléchargements.",
       "notEnough": "Plus que {{remaining}} téléchargements. Sélectionnez moins de photos ou contactez votre photographe.",

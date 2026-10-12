@@ -410,6 +410,10 @@
     "downloadEverything": "Alle foto's downloaden",
     "videoFormatUnsupported": "Deze video-indeling kan niet in deze browser worden afgespeeld. Download de video om hem te bekijken.",
     "videoLoadFailed": "Deze video kon niet worden geladen.",
+    "fullResolution": {
+      "loading": "Volledige resolutie laden…",
+      "readout": "100% is het originele formaat, pixel voor pixel"
+    },
     "downloadLimit": {
       "reached": "Downloadlimiet bereikt. Neem contact op met je fotograaf voor meer downloads.",
       "notEnough": "Nog maar {{remaining}} downloads over. Selecteer minder foto’s of neem contact op met je fotograaf.",

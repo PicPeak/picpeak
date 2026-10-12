@@ -1393,6 +1393,10 @@
     "preparingProgress_other": "Zapakiranih fotografij: {{count}}",
     "videoFormatUnsupported": "Tega videoformata v tem brskalniku ni mogoče predvajati. Prenesite ga, da si ga ogledate.",
     "videoLoadFailed": "Tega videa ni bilo mogoče naložiti.",
+    "fullResolution": {
+      "loading": "Nalaganje polne ločljivosti…",
+      "readout": "100 % je izvirna velikost, piksel za piksel"
+    },
     "downloadLimit": {
       "reached": "Omejitev prenosov je dosežena. Za več prenosov se obrnite na fotografa.",
       "notEnough": "Preostalih prenosov: {{remaining}}. Izberite manj fotografij ali se obrnite na fotografa.",

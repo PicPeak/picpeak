@@ -2,10 +2,11 @@ import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 're
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star, Lock, Loader2 } from 'lucide-react';
 import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
+import { useFullResolutionZoom, FullResolutionImage } from './hooks/useFullResolutionZoom';
 import { PhotoFeedback } from './PhotoFeedback';
 import { lightboxImageUrl } from './imageTiers';
 import { feedbackService, type ColorLabel, type KeybindMode, type PhotoDecision as Decision } from '../../services/feedback.service';
@@ -210,6 +211,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // leaving currentIndex past the end. The effect below re-syncs the
   // index (or closes the lightbox when nothing is left).
   const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
+  // Zoom to original pixels (issue 1733). Inert, with the old 3x ceiling,
+  // unless the server offered this photo's original.
+  const fullZoom = useFullResolutionZoom({
+    photo: currentPhoto,
+    slug,
+    enabled: currentPhoto?.media_type !== 'video' && !(useCanvasRendering || protectionLevel === 'maximum'),
+    zoom,
+    setZoom,
+    setDragOffset,
+    containerRef: trackContainerRef,
+  });
+  const fullZoomLive = fullZoom.live;
 
   const { t } = useTranslation();
 
@@ -628,7 +641,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 0.5, 3));
+    // Through the ref: the keydown listener holds a handler from an older render.
+    setZoom((prev) => Math.min(prev + 0.5, fullZoomLive.current.maxZoom));
   };
 
   const handleZoomOut = () => {
@@ -673,8 +687,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   // Double-click returns a zoomed image to fit-to-screen (#886). At zoom 1
-  // it does nothing.
-  const handleDoubleClick = () => {
+  // it does nothing, unless the original may be loaded: then it goes to
+  // 100 % at the cursor (issue 1733).
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    if (fullZoom.onDoubleClick(e)) return;
     if (zoom > 1) {
       resetZoom();
     }
@@ -698,7 +714,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const deltaPx = e.deltaMode === 1 ? e.deltaY * 33
         : e.deltaMode === 2 ? e.deltaY * 300
         : e.deltaY;
-      const nextZoom = Math.min(3, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
+      const nextZoom = Math.min(fullZoomLive.current.maxZoom, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
       if (nextZoom === prevZoom) return;
       if (nextZoom <= 1) {
         // Sync the ref before the async setState so a burst of wheel
@@ -727,7 +743,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [currentPhoto]);
+  }, [currentPhoto, fullZoomLive]);
 
   // iOS Safari ignores user-scalable=no, so a pinch with one finger on the
   // toolbar or a button zoomed the page while the handlers below zoomed the
@@ -747,6 +763,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
   const handleTouchStart = (e: React.TouchEvent) => {
+    fullZoom.onTouchStart(e);
     if (e.touches.length === 2) {
       pinchRef.current = { distance: touchSpan(e.touches), zoom };
       setIsPinching(true);
@@ -783,7 +800,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     const pinch = pinchRef.current;
     if (e.touches.length === 2 && pinch) {
       const newDistance = touchSpan(e.touches);
-      const newZoom = Math.max(1, Math.min(3, pinch.zoom * (newDistance / pinch.distance)));
+      const newZoom = Math.max(1, Math.min(fullZoom.maxZoom, pinch.zoom * (newDistance / pinch.distance)));
       pinchRef.current = { distance: newDistance, zoom: newZoom };
       setZoom(newZoom);
       // Pinch-out back down to 1.0 has to re-centre the image — without
@@ -833,6 +850,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    fullZoom.onTouchEnd(e);
     if (e.touches.length === 2 && pinchRef.current) {
       // A third finger (palm) lifted: the remaining pair may be a different
       // two touches, so re-baseline or the zoom jumps on the next move.
@@ -1082,12 +1100,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             >
               <ZoomOut className="w-5 h-5 text-white" />
             </button>
-            <span className="text-white text-sm w-12 text-center">
-              {Math.round(zoom * 100)}%
+            <span
+              className="text-white text-sm w-12 text-center"
+              title={fullZoom.percent === null ? undefined : t('gallery.fullResolution.readout', '100% is the original size, pixel for pixel')}
+            >
+              {fullZoom.percent ?? Math.round(zoom * 100)}%
             </span>
             <button
               onClick={handleZoomIn}
-              disabled={zoom >= 3}
+              disabled={zoom >= fullZoom.maxZoom}
               className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Zoom in"
             >
@@ -1310,10 +1331,24 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             );
           }
 
+          const imageStyle: React.CSSProperties = {
+            transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
+            // No transition while a finger drives the transform: a pinch
+            // retargeting a 0.2s transition on every touchmove makes
+            // Safari promote and demote the image layer per frame, which
+            // flickers. The toolbar buttons and wheel keep the easing.
+            transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
+            // Own compositor layer for the gesture only, so Safari scales
+            // a texture instead of repainting the 300%-wide track layer —
+            // and repaints sharp once the fingers lift.
+            willChange: isDragging || isPinching ? 'transform' : undefined,
+          };
+
           return (
             <div
               key={slideKey(photo, slot)}
-              className="h-full flex items-center justify-center"
+              ref={fullZoom.slideRef}
+              className="relative h-full flex items-center justify-center"
               style={{ flex: '0 0 33.3333%' }}
             >
               <AuthenticatedImage
@@ -1327,18 +1362,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
-                style={{
-                  transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
-                  // No transition while a finger drives the transform: a pinch
-                  // retargeting a 0.2s transition on every touchmove makes
-                  // Safari promote and demote the image layer per frame, which
-                  // flickers. The toolbar buttons and wheel keep the easing.
-                  transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
-                  // Own compositor layer for the gesture only, so Safari scales
-                  // a texture instead of repainting the 300%-wide track layer —
-                  // and repaints sharp once the fingers lift.
-                  willChange: isDragging || isPinching ? 'transform' : undefined,
-                }}
+                style={imageStyle}
+                onLoad={fullZoom.onPreviewLoad}
                 draggable={false}
                 isGallery={true}
                 slug={slug}
@@ -1354,6 +1379,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   }
                 }}
               />
+              <FullResolutionImage overlay={fullZoom.overlay} style={imageStyle} />
             </div>
           );
         };
@@ -1424,6 +1450,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {renderSlide(prevPhoto, false, 'prev')}
                 {renderSlide(currentPhoto, true, 'current')}
                 {renderSlide(nextPhoto, false, 'next')}
+              </div>
+            )}
+            {fullZoom.loading && (
+              <div
+                role="status"
+                data-testid="lightbox-full-resolution-loading"
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-black/60 px-3 py-1 text-xs text-white pointer-events-none"
+              >
+                <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                {t('gallery.fullResolution.loading', 'Loading full resolution…')}
               </div>
             )}
           </div>

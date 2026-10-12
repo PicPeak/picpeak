@@ -224,6 +224,10 @@ export interface Photo {
   // the same /preview/:id URL, so an install that never flipped the toggle
   // stops serving multi-megabyte originals to display a photo on screen.
   slideshow_url?: string | null;
+  // Where the lightbox may load the untouched original once the viewer zooms
+  // past fit (issue 1733). Null unless this viewer could download exactly
+  // that file anyway; the route decides again on every request.
+  full_resolution_url?: string | null;
   type: 'collage' | 'individual' | 'video';
   // Filter category (Portraits, Ceremony …). Since migration 265 never a
   // folder: folders live in folder_id.

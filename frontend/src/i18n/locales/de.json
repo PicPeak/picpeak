@@ -2076,6 +2076,10 @@
     "downloadNow": "Herunterladen",
     "downloadPrepFailed": "Vorbereitung fehlgeschlagen",
     "downloadPrepTimeout": "Das dauert länger als erwartet. Bitte erneut versuchen.",
+    "fullResolution": {
+      "loading": "Volle Auflösung wird geladen…",
+      "readout": "100 % entspricht der Originalgröße, Pixel für Pixel"
+    },
     "people": {
       "title": "Personen in dieser Galerie",
       "showAll": "Alle {{count}} anzeigen",

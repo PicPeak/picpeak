@@ -1483,6 +1483,10 @@
     "downloadNow": "Download",
     "downloadPrepFailed": "Preparation failed",
     "downloadPrepTimeout": "This is taking longer than expected. Please try again.",
+    "fullResolution": {
+      "loading": "Loading full resolution…",
+      "readout": "100% is the original size, pixel for pixel"
+    },
     "people": {
       "title": "People in this gallery",
       "showAll": "Show all {{count}}",
