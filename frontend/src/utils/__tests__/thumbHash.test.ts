@@ -1,11 +1,17 @@
 /**
  * Tile placeholder decoder (issue 1733, B1).
  *
- * The hashes are the reference vectors the backend encoder test pins
- * (backend/__tests__/services/thumbHash.test.js): the same synthetic images,
- * a red ramp across, a green ramp down and a blue sawtooth. Decoding them
- * here closes the round trip: what the server stores comes back as the
- * picture it was taken from, at placeholder resolution.
+ * The hashes are what the reference encoder gives for the ramp images of the
+ * backend encoder test (backend/__tests__/services/thumbHash.test.js): a red
+ * ramp across, a green ramp down and a blue sawtooth. Decoding them here
+ * closes the round trip: what the server stores comes back as the picture it
+ * was taken from, at placeholder resolution.
+ *
+ * Nothing here pins decoded pixels byte for byte, on purpose. The decoder
+ * goes through Math.cos, whose last bit differs between V8 builds (x64 and
+ * arm64 Node 22 disagree), and a pixel that lands on an integer boundary can
+ * come out one level apart. The assertions are sizes, which come from the
+ * header alone, and means with margins far wider than that.
  */
 import { describe, it, expect } from 'vitest';
 import {
