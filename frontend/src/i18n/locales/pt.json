@@ -565,7 +565,12 @@
       "withDate": "As imagens restantes ainda estão em edição — a galeria completa estará disponível o mais tardar em {{date}}.",
       "noDetails": "As imagens restantes ainda estão em edição.",
       "progressLabel": "Fotos entregues até agora"
-    }
+    },
+    "preparedDownload": "Seu download preparado",
+    "downloadNotify": "Avise-me por e-mail quando estiver pronto",
+    "downloadNotifyRequested": "Enviaremos um e-mail quando o download estiver pronto. Você pode fechar esta janela.",
+    "downloadNotifyFailed": "Não foi possível configurar o aviso por e-mail. Mantenha esta janela aberta.",
+    "downloadGone": "Este download não está mais disponível. Solicite-o novamente."
   },
   "categories": {
     "title": "Categorias de Fotos",
@@ -1602,6 +1607,11 @@
       "placeholder": "Pesquisar nas definições…",
       "label": "Pesquisar nas definições",
       "noResults": "Nenhuma definição corresponde a “{{query}}”."
+    },
+    "downloads": {
+      "retention": "Manter os downloads preparados por (horas)",
+      "retentionHint": "Por quanto tempo um download preparado em um tamanho personalizado fica disponível antes de ser excluído. Um prazo maior permite que os convidados voltem para buscá-lo depois, mas cada download preparado ocupa aproximadamente o mesmo espaço em disco que as fotos que contém. Vale para os downloads preparados a partir de agora.",
+      "retentionInvalid": "Informe um número inteiro de horas entre {{min}} e {{max}}."
     }
   },
   "analytics": {

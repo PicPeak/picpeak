@@ -398,6 +398,12 @@ export const galleryService = {
     return response.data;
   },
 
+  // "Email me when it is ready" (issue 1733). No address is sent: the server
+  // uses the one it already holds for this visitor, or refuses.
+  async requestDownloadJobMail(slug: string, token: string): Promise<void> {
+    await api.post(`/gallery/${slug}/download-jobs/${token}/notify`);
+  },
+
   // Native browser download so the archive streams with Content-Length
   // (real progress bar, no in-memory blob for a multi-GB gallery).
   downloadJobFile(slug: string, token: string, filename: string): void {

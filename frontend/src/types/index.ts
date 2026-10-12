@@ -323,6 +323,11 @@ export interface DownloadJobState {
   error?: string;
   /** Set on a ready job the download limit would now refuse (issue 1560). */
   download_limit_reached?: { limit?: number; used?: number; remaining?: number };
+  /**
+   * "Email me when it is ready" (issue 1733). Present only while the job is
+   * being prepared and the server holds an address for this visitor.
+   */
+  notify?: 'available' | 'requested';
 }
 
 export interface PhotoCategory {

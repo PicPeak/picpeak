@@ -449,7 +449,12 @@
       "withDate": "De overige foto's worden nog bewerkt — de volledige galerie volgt uiterlijk op {{date}}.",
       "noDetails": "De overige foto's worden nog bewerkt.",
       "progressLabel": "Tot nu toe geleverde foto's"
-    }
+    },
+    "preparedDownload": "Je voorbereide download",
+    "downloadNotify": "Mail mij wanneer hij klaar is",
+    "downloadNotifyRequested": "We sturen je een e-mail zodra de download klaar is. Je kunt dit venster sluiten.",
+    "downloadNotifyFailed": "De e-mailmelding kon niet worden ingesteld. Houd dit venster open.",
+    "downloadGone": "Deze download is niet meer beschikbaar. Vraag hem opnieuw aan."
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -1474,6 +1479,11 @@
       "placeholder": "Instellingen zoeken…",
       "label": "Instellingen zoeken",
       "noResults": "Geen instelling komt overeen met “{{query}}”."
+    },
+    "downloads": {
+      "retention": "Voorbereide downloads bewaren gedurende (uren)",
+      "retentionHint": "Hoe lang een download die in een aangepast formaat is voorbereid beschikbaar blijft voordat hij wordt verwijderd. Met een langere duur kunnen gasten hem later ophalen, maar elke voorbereide download neemt ongeveer evenveel schijfruimte in als de foto's die erin zitten. Geldt voor downloads die vanaf nu worden voorbereid.",
+      "retentionInvalid": "Voer een geheel aantal uren in tussen {{min}} en {{max}}."
     }
   },
   "analytics": {

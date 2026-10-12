@@ -1736,6 +1736,7 @@
         "POST /:slug/download-selected",
         "POST /:slug/download-jobs",
         "GET /:slug/download-jobs/:token",
+        "POST /:slug/download-jobs/:token/notify",
         "GET /:slug/download-jobs/:token/file"
       ]
     },

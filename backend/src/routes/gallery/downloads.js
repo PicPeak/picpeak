@@ -25,6 +25,8 @@ const {
   renderPhotoForDownload, renderPreviewForDownload, previewDownloadName, resolveWatermarkSettings,
 } = require('../../services/downloadRendition');
 const downloadJobService = require('../../services/downloadJobService');
+const downloadJobNotifier = require('../../services/downloadJobNotifier');
+const { resolveGuest } = require('../../middleware/guestAuth');
 const {
   resolveEventDownloadPolicy,
   pickRequestedResolution,
@@ -1222,7 +1224,7 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
 // verifyGalleryAccess still runs and the job must belong to THIS event.
 // no-store: a cached 'preparing' would strand the caller in a poll that can
 // never observe the job finishing.
-router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, noStoreCache, async (req, res) => {
+router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, noStoreCache, async (req, res) => {
   try {
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id) {
@@ -1240,6 +1242,13 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       const check = await checkDownloads(req.event, Array.isArray(ids) ? ids : []);
       if (!check.ok) limitReached = downloadLimitError(check);
     }
+    // "Email me when it is ready" (issue 1733): offered while the build runs,
+    // and only to a requester the instance already holds an address for.
+    let notify;
+    if (job.status === 'pending' || job.status === 'building') {
+      const email = await downloadJobNotifier.recipientFor(req);
+      if (email) notify = (await downloadJobNotifier.isRequested(job.id, email)) ? 'requested' : 'available';
+    }
     res.json({
       status: job.status,
       resolution: job.resolution,
@@ -1247,9 +1256,36 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
       size_bytes: job.size_bytes || null,
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
       download_limit_reached: limitReached,
+      notify,
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read download job');
+  }
+});
+
+// "Email me when it is ready" (issue 1733). There is deliberately no address
+// in this request: the recipient is the verified guest identity or customer
+// account behind the session, so this cannot be used to mail a stranger.
+router.post('/:slug/download-jobs/:token/notify', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, resolveGuest, async (req, res) => {
+  try {
+    const job = await downloadJobService.getStatus(req.params.token);
+    if (!job || job.event_id !== req.event.id
+        || job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    const email = await downloadJobNotifier.recipientFor(req);
+    if (!email) {
+      return res.status(403).json({ error: 'Email notification is not available for this visit' });
+    }
+    if (job.status !== 'pending' && job.status !== 'building') {
+      return res.status(409).json({ error: 'This download is no longer being prepared', status: job.status });
+    }
+    if ((await downloadJobNotifier.request(job, email)) === 'limit') {
+      return res.status(429).json({ error: 'Too many email notifications requested. Please try again later' });
+    }
+    res.json({ notify: 'requested' });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to request the email notification');
   }
 });
 

@@ -1436,7 +1436,12 @@
       "withDate": "Preostale slike se še urejajo — celotna galerija bo na voljo najpozneje {{date}}.",
       "noDetails": "Preostale slike se še urejajo.",
       "progressLabel": "Do zdaj dostavljene fotografije"
-    }
+    },
+    "preparedDownload": "Vaš pripravljeni prenos",
+    "downloadNotify": "Obvestite me po e-pošti, ko bo pripravljen",
+    "downloadNotifyRequested": "Ko bo prenos pripravljen, vam bomo poslali e-pošto. To okno lahko zaprete.",
+    "downloadNotifyFailed": "E-poštnega obvestila ni bilo mogoče nastaviti. To okno pustite odprto.",
+    "downloadGone": "Ta prenos ni več na voljo. Zahtevajte ga znova."
   },
   "categories": {
     "title": "Kategorije fotografij",
@@ -3021,7 +3026,10 @@
       "eventIntro": "Samo za to galerijo preglasi globalne nastavitve prenosa. »Podeduj« sledi Nastavitve → Ločljivosti za prenos.",
       "inheritWith": "Podeduj ({{value}})",
       "effective": "Trenutno se daje: {{standard}}",
-      "pickerOn": "gostje lahko izberejo drugo velikost"
+      "pickerOn": "gostje lahko izberejo drugo velikost",
+      "retention": "Pripravljene prenose hrani (ur)",
+      "retentionHint": "Kako dolgo prenos, pripravljen v velikosti po meri, ostane na voljo, preden se izbriše. Daljši čas gostom omogoča, da se ponj vrnejo pozneje, vendar vsak pripravljeni prenos zasede približno toliko prostora na disku kot fotografije v njem. Velja za prenose, pripravljene od zdaj naprej.",
+      "retentionInvalid": "Vnesite celo število ur med {{min}} in {{max}}."
     },
     "captureDates": {
       "title": "Datumi zajema",

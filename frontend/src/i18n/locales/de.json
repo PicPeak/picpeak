@@ -2168,7 +2168,12 @@
     "preview": {
       "title": "Theme-Vorschau",
       "description": "So sehen Ihre Galerien mit den aktuellen Theme-Einstellungen aus."
-    }
+    },
+    "preparedDownload": "Ihr vorbereiteter Download",
+    "downloadNotify": "Per E-Mail benachrichtigen, wenn er bereit ist",
+    "downloadNotifyRequested": "Wir senden Ihnen eine E-Mail, sobald der Download bereit ist. Sie können dieses Fenster schließen.",
+    "downloadNotifyFailed": "Die E-Mail-Benachrichtigung konnte nicht eingerichtet werden. Bitte lassen Sie dieses Fenster geöffnet.",
+    "downloadGone": "Dieser Download ist nicht mehr verfügbar. Bitte fordern Sie ihn erneut an."
   },
   "categories": {
     "title": "Fotokategorien",
@@ -3900,7 +3905,10 @@
       "eventIntro": "Überschreibt die globalen Download-Einstellungen nur für diese Galerie. „Erben“ folgt Einstellungen → Download-Auflösungen.",
       "inheritWith": "Erben ({{value}})",
       "effective": "Gibt derzeit heraus: {{standard}}",
-      "pickerOn": "Gäste dürfen eine andere Größe wählen"
+      "pickerOn": "Gäste dürfen eine andere Größe wählen",
+      "retention": "Vorbereitete Downloads aufbewahren für (Stunden)",
+      "retentionHint": "Wie lange ein in einer eigenen Größe vorbereiteter Download verfügbar bleibt, bevor er gelöscht wird. Mit einer längeren Dauer können Gäste ihn später abholen, jeder vorbereitete Download belegt aber etwa so viel Speicherplatz wie die enthaltenen Fotos. Gilt für Downloads, die ab jetzt vorbereitet werden.",
+      "retentionInvalid": "Geben Sie eine ganze Zahl von Stunden zwischen {{min}} und {{max}} ein."
     },
     "captureDates": {
       "title": "Aufnahmedaten",

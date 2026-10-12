@@ -1575,7 +1575,12 @@
     "preview": {
       "title": "Theme preview",
       "description": "This is how your galleries will look with the current theme settings."
-    }
+    },
+    "preparedDownload": "Your prepared download",
+    "downloadNotify": "Email me when it is ready",
+    "downloadNotifyRequested": "We will email you when the download is ready. You can close this window.",
+    "downloadNotifyFailed": "The email notification could not be set up. Please keep this window open.",
+    "downloadGone": "This download is no longer available. Please request it again."
   },
   "categories": {
     "title": "Photo Categories",
@@ -3307,7 +3312,10 @@
       "eventIntro": "Override the site-wide download settings for this gallery only. \"Inherit\" follows Settings → Download resolutions.",
       "inheritWith": "Inherit ({{value}})",
       "effective": "Currently hands out: {{standard}}",
-      "pickerOn": "guests may choose another size"
+      "pickerOn": "guests may choose another size",
+      "retention": "Keep prepared downloads for (hours)",
+      "retentionHint": "How long a download prepared in a custom size stays available before it is deleted. Longer lets guests come back for it later, but each prepared download takes up about as much disk space as the photos in it. Applies to downloads prepared from now on.",
+      "retentionInvalid": "Enter a whole number of hours between {{min}} and {{max}}."
     },
     "captureDates": {
       "title": "Capture Dates",
