@@ -25,6 +25,7 @@ import { thumbnailUrlForTile } from '../imageTiers';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { feedbackLockKind } from '../../../utils/feedbackLock';
 import { useInputMode } from '../../../hooks/useInputMode';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { galleryService } from '../../../services/gallery.service';
@@ -423,6 +424,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
   const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
 
+  const toggleLiked = (photoId: number) => setLikedPhotoIds(prev => {
+    const next = new Set(prev);
+    if (next.has(photoId)) next.delete(photoId);
+    else next.add(photoId);
+    return next;
+  });
+
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
 
@@ -445,7 +453,9 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         });
         onFeedbackChange?.(photo.id);
       } catch (err) {
-        console.warn('Like submit failed', err);
+        // Refused by a finished selection (issue 1733): the heart goes back.
+        if (feedbackLockKind(err)) toggleLiked(photo.id);
+        else console.warn('Like submit failed', err);
       }
       return;
     }
@@ -472,7 +482,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       });
       onFeedbackChange?.(photo.id);
     } catch (err) {
-      console.warn('Like submit failed', err);
+      if (feedbackLockKind(err)) toggleLiked(photo.id);
+      else console.warn('Like submit failed', err);
     }
   }, [slug, savedIdentity, feedbackOptions, onFeedbackChange, guestIdentity]);
 

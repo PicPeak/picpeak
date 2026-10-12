@@ -1462,10 +1462,20 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const gridKey = viewAll ? 'all' : openFolder ? `folder-${openFolder.id}` : 'root';
 
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
+  const identityMode: 'simple' | 'guest' =
+    feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
+
   if (isFullPageLayout) {
     return (
+      // The same identity flow as the standard layout below (issue 1733):
+      // Premium and Story already ask for it (ensureIdentity) before a like,
+      // and finishing a selection needs it too. Without the provider a guest
+      // in guest identity mode was never asked for a name and got a 401.
+      <GuestIdentityProvider slug={slug} identityMode={identityMode}>
       <DownloadQuotaProvider slug={slug} event={data?.event}>
       <GalleryTileBadgesProvider value={tileBadges}>
+        <GuestNamePromptModal requireEmail={!!feedbackSettings?.require_name_email} />
+        <GuestRecoveryModal />
         {/* #1160: these layouts return early and render edge-to-edge, but they
             still get `filteredPhotos`, so without this the foldered photos
             would be hidden with no way in. Contained width so the folder strip
@@ -1477,7 +1487,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // container itself must not take hits, or it would block the nav's own
           // search/favourites/logout underneath. Only the real controls opt back
           // in via pointer-events-auto.
-          <div className="relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
+          // With the selection bar (issue 1733) the band starts below that
+          // nav in Story: the bar is wider than the gap the nav leaves, and on
+          // a phone it would cover the nav's logout and favourites.
+          <div className={`relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap ${
+            selectionBarShown && theme.galleryLayout === 'gallery-story' ? 'pt-20' : ''
+          }`}>
             {hasFolderNav && (
               <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
                 {buildFolderNav(true)}
@@ -1651,11 +1666,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         )}
       </GalleryTileBadgesProvider>
       </DownloadQuotaProvider>
+      </GuestIdentityProvider>
     );
   }
-
-  const identityMode: 'simple' | 'guest' =
-    feedbackSettings?.identity_mode === 'guest' ? 'guest' : 'simple';
 
   return (
     <GuestIdentityProvider slug={slug} identityMode={identityMode}>
