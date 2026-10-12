@@ -1,0 +1,247 @@
+/**
+ * Row windowing for Justified and Masonry rows (issue 1733, step 2).
+ *
+ * jsdom has no layout, so the grid's position is stood up through
+ * getBoundingClientRect on the `.photo-grid` container and the scroll
+ * position is whatever `gridTop` says.
+ */
+import React from 'react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { render, screen, act, fireEvent } from '@testing-library/react';
+
+import { JustifiedGalleryLayout } from '../JustifiedGalleryLayout';
+import { MasonryGalleryLayout } from '../MasonryGalleryLayout';
+import { buildRows, visibleRowRange, WINDOW_MIN_PHOTOS, type RowBox } from '../rowWindow';
+import { calculateJustifiedLayout, createJustifiedPhotos } from '../../../../utils/justifiedLayoutCalculator';
+import type { Photo } from '../../../../types';
+
+const mounts: number[] = [];
+vi.mock('../../PhotoCard', () => ({
+  PhotoCard: ({ photo, style, containerProps }: {
+    photo: Photo; style: React.CSSProperties; containerProps?: React.HTMLAttributes<HTMLDivElement>;
+  }) => {
+    React.useEffect(() => { mounts.push(photo.id); }, [photo.id]);
+    return (
+      <div data-testid="tile" data-photo={photo.id} data-likes={photo.like_count ?? 0} style={style} tabIndex={0} {...containerProps} />
+    );
+  },
+}));
+vi.mock('../../../common', () => ({ AuthenticatedImage: () => null }));
+vi.mock('../../../gallery/FeedbackIdentityModal', () => ({ FeedbackIdentityModal: () => null }));
+vi.mock('../../../../contexts/ThemeContext', () => ({
+  useTheme: () => ({ theme: { gallerySettings: { masonryMode: 'rows' } } }),
+}));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+vi.mock('../../../../hooks/useLocalizedDate', () => ({ useLocalizedDate: () => ({ format: () => '' }) }));
+
+const makePhotos = (count: number): Photo[] => Array.from({ length: count }, (_, i) => ({
+  id: i + 1,
+  filename: `IMG_${i + 1}.jpg`,
+  url: `/p/${i + 1}`,
+  thumbnail_url: `/t/${i + 1}`,
+  type: 'individual',
+  size: 1,
+  uploaded_at: '2026-01-01T00:00:00Z',
+  width: i % 3 === 0 ? 3000 : 4000,
+  height: i % 3 === 0 ? 4000 : 3000,
+} as Photo));
+
+const layoutProps = (photos: Photo[]) => ({
+  photos,
+  slug: 'x',
+  onPhotoClick: () => {},
+  onDownload: () => {},
+} as never);
+
+let gridTop = 0;
+let gridWidth = 1200;
+let resizeCallbacks: Array<{ target: Element; run: (width: number) => void }> = [];
+
+const tiles = () => screen.queryAllByTestId('tile');
+const tileIds = () => tiles().map((tile) => Number(tile.dataset.photo));
+const tileTop = (id: number) => parseFloat(tiles().find((tile) => Number(tile.dataset.photo) === id)!.style.top);
+
+function scrollGridTo(top: number) {
+  gridTop = top;
+  act(() => { window.dispatchEvent(new Event('scroll')); });
+}
+
+beforeEach(() => {
+  mounts.length = 0;
+  gridTop = 0;
+  gridWidth = 1200;
+  resizeCallbacks = [];
+  Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => gridWidth });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const top = String(this.className).includes('photo-grid') ? gridTop : 0;
+    return { top, bottom: top, left: 0, right: 0, width: gridWidth, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+  });
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { cb(0); return 0; });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private cb: (entries: unknown[]) => void) {}
+    observe(target: Element) {
+      resizeCallbacks.push({ target, run: (width) => this.cb([{ contentRect: { width } }]) });
+    }
+    unobserve() {}
+    disconnect() {}
+  });
+  // Scrolling the page moves the grid in the viewport.
+  window.scrollBy = vi.fn((_x: number, y: number) => { gridTop -= y; }) as never;
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+const row = (top: number, height = 100): RowBox => ({ top, bottom: top + height, from: 0, to: 1 });
+// Ten 100px rows with a 10px gap: row i spans [110i, 110i + 100].
+const tenRows = Array.from({ length: 10 }, (_, i) => row(i * 110));
+
+describe('visibleRowRange', () => {
+  it('is empty for an empty list', () => {
+    expect(visibleRowRange([], 0, 800, 100)).toEqual({ start: 0, end: 0 });
+  });
+
+  it('holds a single row while it is within the overscan, and drops it beyond', () => {
+    expect(visibleRowRange([row(0)], 0, 800, 0)).toEqual({ start: 0, end: 1 });
+    expect(visibleRowRange([row(0)], 150, 950, 100)).toEqual({ start: 0, end: 1 });
+    expect(visibleRowRange([row(0)], 250, 1050, 100)).toEqual({ start: 1, end: 1 });
+    expect(visibleRowRange([row(0)], -2000, -1200, 100)).toEqual({ start: 0, end: 0 });
+  });
+
+  it('finds the rows that intersect the viewport', () => {
+    // [330, 550]: rows 3 and 4 fully, row 2 ends at 320, row 5 starts at 550.
+    expect(visibleRowRange(tenRows, 330, 550, 0)).toEqual({ start: 3, end: 5 });
+    // A row cut by either edge counts.
+    expect(visibleRowRange(tenRows, 319, 551, 0)).toEqual({ start: 2, end: 6 });
+  });
+
+  it('widens by the overscan on both sides and clamps at the ends', () => {
+    expect(visibleRowRange(tenRows, 330, 550, 110)).toEqual({ start: 2, end: 6 });
+    expect(visibleRowRange(tenRows, 330, 550, 5000)).toEqual({ start: 0, end: 10 });
+    expect(visibleRowRange(tenRows, 5000, 5800, 0)).toEqual({ start: 10, end: 10 });
+  });
+
+  it('agrees with a linear scan over a real layout', () => {
+    const { items } = calculateJustifiedLayout(createJustifiedPhotos(makePhotos(500)), {
+      containerWidth: 1000, targetRowHeight: 250, spacing: 16,
+    });
+    const rows = buildRows(items);
+    expect(rows.reduce((sum, r) => sum + (r.to - r.from), 0)).toBe(500);
+    for (const viewTop of [-500, 0, 1234, 20000, rows[rows.length - 1].bottom - 10, 1e6]) {
+      const lo = viewTop - 300;
+      const hi = viewTop + 800 + 300;
+      const expected = rows.map((r, i) => (r.bottom > lo && r.top < hi ? i : -1)).filter((i) => i >= 0);
+      const { start, end } = visibleRowRange(rows, viewTop, viewTop + 800, 300);
+      expect(Array.from({ length: end - start }, (_, i) => start + i)).toEqual(expected);
+    }
+  });
+});
+
+describe.each([
+  ['Justified', JustifiedGalleryLayout],
+  ['Masonry rows', MasonryGalleryLayout],
+])('%s windowing', (_name, Layout) => {
+  it('mounts every tile of a small gallery', () => {
+    render(<Layout {...layoutProps(makePhotos(WINDOW_MIN_PHOTOS - 1))} />);
+    expect(tiles()).toHaveLength(WINDOW_MIN_PHOTOS - 1);
+  });
+
+  it('keeps 2000 photos to a small DOM while the container holds the full height', () => {
+    const { container } = render(<Layout {...layoutProps(makePhotos(2000))} />);
+    expect(tiles().length).toBeGreaterThan(0);
+    expect(tiles().length).toBeLessThan(150);
+    expect(tileIds()[0]).toBe(1);
+    const grid = container.querySelector<HTMLElement>('.photo-grid')!;
+    expect(parseFloat(grid.style.height)).toBeGreaterThan(50000);
+  });
+
+  it('follows the scroll position, and the grid moving under content above it', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    const before = tileIds();
+
+    scrollGridTo(-40000);
+    const after = tileIds();
+    expect(after.length).toBeLessThan(150);
+    expect(after[0]).toBeGreaterThan(before[before.length - 1]);
+    // Tiles sit at their own layout offsets, around the viewport.
+    expect(tileTop(after[0])).toBeGreaterThan(40000 - 800 * 4);
+    expect(tileTop(after[after.length - 1])).toBeLessThan(40000 + 800 * 5);
+
+    // A notice above the grid pushes it down with no scroll event; the body
+    // observer picks it up.
+    gridTop = -20000;
+    act(() => { resizeCallbacks.find((entry) => entry.target === document.body)!.run(0); });
+    expect(tileIds()[tileIds().length - 1]).toBeLessThan(after[0]);
+  });
+
+  it('re-windows at once when the list changes under a deep scroll position', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    scrollGridTo(-40000);
+
+    // Reversed sort: the same offset now shows the other end of the album,
+    // every tile at the offset the new layout gives it.
+    rerender(<Layout {...layoutProps([...photos].reverse())} />);
+    const ids = tileIds();
+    expect(ids.length).toBeLessThan(150);
+    expect(ids).toEqual([...ids].sort((a, b) => b - a));
+    expect(new Set(tiles().map((tile) => `${tile.style.top}/${tile.style.left}`)).size).toBe(ids.length);
+    expect(tileTop(ids[0])).toBeGreaterThan(40000 - 800 * 4);
+
+    // A filter that leaves less than the scroll offset: nothing is stranded.
+    rerender(<Layout {...layoutProps(photos.slice(0, 250))} />);
+    expect(tileIds().every((id) => id <= 250)).toBe(true);
+    expect(window.scrollBy).not.toHaveBeenCalled();
+  });
+
+  it('does not remount tiles when one photo is patched in the cache', () => {
+    const photos = makePhotos(2000);
+    const { rerender } = render(<Layout {...layoutProps(photos)} />);
+    const mountedBefore = [...mounts];
+    const target = tileIds()[3];
+
+    // What the like patch does: a new array with one new photo object.
+    rerender(<Layout {...layoutProps(photos.map((p) => (p.id === target ? { ...p, like_count: 1 } : p)))} />);
+    expect(mounts).toEqual(mountedBefore);
+    expect(tiles().find((tile) => Number(tile.dataset.photo) === target)!.dataset.likes).toBe('1');
+  });
+
+  it('keeps the viewer on the same photo when the container width changes', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    scrollGridTo(-40000);
+    // The first row that reaches into the viewport, and where it sits.
+    const anchorTile = tiles().find((tile) => parseFloat(tile.style.top) + parseFloat(tile.style.height) > 40000)!;
+    const anchorId = Number(anchorTile.dataset.photo);
+    const offset = parseFloat(anchorTile.style.top) - 40000;
+
+    gridWidth = 600;
+    act(() => {
+      resizeCallbacks.filter((entry) => entry.target !== document.body).forEach((entry) => entry.run(600));
+    });
+
+    // Narrower rows: the photo is far further down now.
+    // and the page was scrolled so it sits where it sat in the viewport.
+    const newTop = tileTop(anchorId);
+    expect(newTop).toBeGreaterThan(60000);
+    expect(window.scrollBy).toHaveBeenCalledTimes(1);
+    expect(newTop + gridTop).toBeCloseTo(offset, 3);
+  });
+
+  it('keeps the focused tile mounted when its row scrolls out of the window', () => {
+    render(<Layout {...layoutProps(makePhotos(2000))} />);
+    const first = tiles()[0];
+    fireEvent.focus(first);
+    scrollGridTo(-40000);
+    // Its row stays, first in document order, ahead of the windowed rows.
+    expect(tileIds()[0]).toBe(1);
+    expect(tileIds()[tileIds().length - 1]).toBeGreaterThan(100);
+    expect(tileIds()).toEqual([...tileIds()].sort((a, b) => a - b));
+
+    fireEvent.blur(screen.getAllByTestId('tile')[0]);
+    expect(tileIds()[0]).toBeGreaterThan(100);
+  });
+});

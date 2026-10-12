@@ -13,6 +13,7 @@ import { buildResourceUrl } from '../../../utils/url';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { useLazyBands } from './lazyBands';
+import { useWindowedItems, WINDOW_MIN_PHOTOS } from './rowWindow';
 import {
   calculateJustifiedLayout,
   createJustifiedPhotos,
@@ -57,6 +58,8 @@ interface JustifiedPhotoProps {
   onFeedbackChange?: (toggledPhotoId?: number) => void;
   liked?: boolean;
   onLikeSuccess?: () => void;
+  /** Reports focus entering (true) or leaving the tile, for row windowing. */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
@@ -79,6 +82,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
   onFeedbackChange,
   liked = false,
   onLikeSuccess,
+  onFocusChange,
 }) => {
   const bands = useLazyBands();
   const animationClass =
@@ -126,6 +130,8 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
         role: 'button',
         tabIndex: 0,
         'aria-label': `View photo ${photo.filename}`,
+        onFocus: () => onFocusChange?.(true),
+        onBlur: () => onFocusChange?.(false),
         onKeyDown: (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -390,14 +396,20 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
     });
   }, [photos, containerWidth, targetRowHeight, spacingPixels, lastRowBehavior]);
 
-  // Create a map for quick lookup of layout items by photo ID
-  const layoutItemMap = useMemo(() => {
-    const map = new Map<number, JustifiedLayoutItem>();
-    for (const item of layoutResult.items) {
-      map.set(item.photoId, item);
-    }
+  // Position of each photo in `photos`, which is what the lightbox indexes by.
+  const photoIndexById = useMemo(() => {
+    const map = new Map<number, number>();
+    photos.forEach((photo, index) => map.set(photo.id, index));
     return map;
-  }, [layoutResult.items]);
+  }, [photos]);
+
+  // Large galleries mount only the rows near the viewport (issue 1733).
+  const { visible: visibleItems, pin } = useWindowedItems(
+    containerRef,
+    layoutResult.items,
+    containerWidth,
+    photos.length >= WINDOW_MIN_PHOTOS,
+  );
 
   return (
     <>
@@ -518,15 +530,17 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
         className="photo-grid relative"
         style={{ height: layoutResult.containerHeight }}
       >
-        {photos.map((photo, index) => {
-          const layoutItem = layoutItemMap.get(photo.id);
-          if (!layoutItem) return null;
+        {visibleItems.map((layoutItem) => {
+          const index = photoIndexById.get(layoutItem.photoId);
+          if (index === undefined) return null;
+          const photo = photos[index];
 
           return (
             <JustifiedPhoto
               key={photo.id}
               photo={photo}
               layoutItem={layoutItem}
+              onFocusChange={(focused) => pin(focused ? photo.id : null)}
               isSelected={selectedPhotos.has(photo.id)}
               isSelectionMode={isSelectionMode}
               onClick={() => onPhotoClick(index)}
