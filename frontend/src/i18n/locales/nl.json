@@ -407,6 +407,8 @@
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
     "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
+    "newPhotos_one": "{{count}} nieuwe foto",
+    "newPhotos_other": "{{count}} nieuwe foto's",
     "downloadEverything": "Alle foto's downloaden",
     "videoFormatUnsupported": "Deze video-indeling kan niet in deze browser worden afgespeeld. Download de video om hem te bekijken.",
     "videoLoadFailed": "Deze video kon niet worden geladen.",
@@ -476,6 +478,8 @@
   "events": {
     "revealMode": "Onthullingsmodus (galerij verbergen tot de onthulling)",
     "revealModeHelp": "Gasten kunnen uploaden maar zien geen foto's totdat je de galerij onthult — handmatig of op het geplande tijdstip. Diavoorstelling en klanttoegang blijven werken.",
+    "liveRefresh": "Live verversen (gasten op nieuwe foto's wijzen)",
+    "liveRefreshHelp": "Een geopende galerij controleert elke 20 seconden of er nieuwe foto's zijn en biedt gasten een knop 'Nieuwe foto's' aan. Er wordt niets vanzelf opnieuw geladen.",
     "revealAt": "Geplande onthulling (optioneel)",
     "revealAtHelp": "Laat leeg om handmatig te onthullen met de knop \"Nu onthullen\".",
     "revealModeStatus": "Onthullingsmodus",

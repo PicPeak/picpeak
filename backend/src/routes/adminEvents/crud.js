@@ -1141,6 +1141,8 @@ module.exports = (router) => {
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean(),
+    // Live refresh of an open gallery (issue 1733, C5).
+    body('live_refresh').optional().isBoolean(),
     // Reveal mode (#838): hide the gallery from guests until reveal.
     body('reveal_mode').optional().isBoolean(),
     body('reveal_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
@@ -1880,6 +1882,9 @@ module.exports = (router) => {
       // Written through formatBoolean like the other event flags (#1561).
       if (Object.prototype.hasOwnProperty.call(updates, 'show_credits_to_guests')) {
         updates.show_credits_to_guests = formatBoolean(parseBooleanInput(updates.show_credits_to_guests, false));
+      }
+      if (Object.prototype.hasOwnProperty.call(updates, 'live_refresh')) {
+        updates.live_refresh = formatBoolean(parseBooleanInput(updates.live_refresh, false));
       }
 
       // Reveal mode (#838). Turning the toggle ON from off clears

@@ -515,6 +515,9 @@
     "backToGallery": "Todas as fotos",
     "downloadFolder": "Baixar pasta ({{count}})",
     "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
+    "newPhotos_one": "{{count}} nova foto",
+    "newPhotos_many": "{{count}} novas fotos",
+    "newPhotos_other": "{{count}} novas fotos",
     "downloadEverything": "Baixar todas as fotos",
     "downloadFolder_one": "Baixar pasta ({{count}})",
     "downloadFolder_other": "Baixar pasta ({{count}})",
@@ -592,6 +595,8 @@
   "events": {
     "revealMode": "Modo revelação (ocultar a galeria até a revelação)",
     "revealModeHelp": "Os convidados podem enviar fotos, mas não as veem até você revelar a galeria — manualmente ou no horário agendado. A apresentação de slides e o acesso do cliente continuam funcionando.",
+    "liveRefresh": "Atualização ao vivo (avisar os convidados sobre novas fotos)",
+    "liveRefreshHelp": "Uma galeria aberta verifica a cada 20 segundos se há novas fotos e oferece aos convidados um botão \"Novas fotos\". Nada é recarregado sozinho.",
     "revealAt": "Revelação agendada (opcional)",
     "revealAtHelp": "Deixe vazio para revelar manualmente com o botão \"Revelar agora\".",
     "revealModeStatus": "Modo revelação",

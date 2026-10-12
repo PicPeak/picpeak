@@ -89,6 +89,7 @@ interface UpdateEventData {
   allow_user_uploads?: boolean;
   guest_name_mode?: GuestNameMode;
   show_credits_to_guests?: boolean;
+  live_refresh?: boolean;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;

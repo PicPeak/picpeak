@@ -369,6 +369,20 @@ export const GuestsSection: React.FC<FieldsProps & {
           )}
         </div>
       )}
+      {/* Live refresh (issue 1733, C5). Not gated on uploads: the
+          photographer's own uploads during the event count as well. */}
+      <div>
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={f.live_refresh}
+            onChange={(e) => set({ live_refresh: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="ml-2 text-sm text-body">{t('events.liveRefresh')}</span>
+        </label>
+        <p className="text-xs text-muted mt-1 ml-6">{t('events.liveRefreshHelp')}</p>
+      </div>
       {/* Uploader names (#1561). Not gated on uploads: the visibility switch
           also covers credits read from EXIF. */}
       <UploaderNameSettings

@@ -1523,6 +1523,8 @@
     "backToGallery": "All photos",
     "downloadFolder": "Download folder ({{count}})",
     "downloadFolderCapped": "Download first {{limit}} of {{total}}",
+    "newPhotos_one": "{{count}} new photo",
+    "newPhotos_other": "{{count}} new photos",
     "downloadEverything": "Download all photos",
     "downloadFolder_one": "Download folder ({{count}})",
     "downloadFolder_other": "Download folder ({{count}})",
@@ -1621,6 +1623,8 @@
   "events": {
     "revealMode": "Reveal mode (hide gallery until reveal)",
     "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
+    "liveRefresh": "Live refresh (tell guests about new photos)",
+    "liveRefreshHelp": "An open gallery checks for new photos every 20 seconds and offers guests a \"new photos\" button. Nothing reloads on its own.",
     "revealAt": "Scheduled reveal (optional)",
     "revealAtHelp": "Leave empty to reveal manually with the \"Reveal now\" button.",
     "revealModeStatus": "Reveal mode",

@@ -2116,6 +2116,8 @@
     "backToGallery": "Alle Fotos",
     "downloadFolder": "Ordner herunterladen ({{count}})",
     "downloadFolderCapped": "Erste {{limit}} von {{total}} herunterladen",
+    "newPhotos_one": "{{count}} neues Foto",
+    "newPhotos_other": "{{count}} neue Fotos",
     "downloadEverything": "Alle Fotos herunterladen",
     "downloadFolder_one": "Ordner herunterladen ({{count}})",
     "downloadFolder_other": "Ordner herunterladen ({{count}})",
@@ -2214,6 +2216,8 @@
   "events": {
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
     "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
+    "liveRefresh": "Live-Aktualisierung (Gäste auf neue Fotos hinweisen)",
+    "liveRefreshHelp": "Eine geöffnete Galerie prüft alle 20 Sekunden, ob neue Fotos da sind, und bietet Gästen eine Schaltfläche „Neue Fotos“ an. Nichts wird von selbst neu geladen.",
     "revealAt": "Geplante Freigabe (optional)",
     "revealAtHelp": "Leer lassen, um manuell mit „Jetzt freigeben\" freizugeben.",
     "revealModeStatus": "Reveal-Modus",

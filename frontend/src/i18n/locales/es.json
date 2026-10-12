@@ -385,6 +385,9 @@
     "backToGallery": "Todas las fotos",
     "downloadFolder": "Descargar carpeta ({{count}})",
     "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
+    "newPhotos_one": "{{count}} foto nueva",
+    "newPhotos_many": "{{count}} fotos nuevas",
+    "newPhotos_other": "{{count}} fotos nuevas",
     "downloadEverything": "Descargar todas las fotos",
     "videoFormatUnsupported": "Este formato de vídeo no se puede reproducir en este navegador. Descárgalo para verlo.",
     "videoLoadFailed": "No se ha podido cargar este vídeo.",
@@ -462,6 +465,8 @@
   "events": {
     "revealMode": "Modo revelación (ocultar la galería hasta revelarla)",
     "revealModeHelp": "Los invitados pueden subir fotos pero no verlas hasta que reveles la galería — manualmente o a la hora programada. La presentación y el acceso de clientes siguen funcionando.",
+    "liveRefresh": "Actualización en vivo (avisar a los invitados de fotos nuevas)",
+    "liveRefreshHelp": "Una galería abierta comprueba cada 20 segundos si hay fotos nuevas y ofrece a los invitados un botón «Fotos nuevas». Nada se recarga por sí solo.",
     "revealAt": "Revelación programada (opcional)",
     "revealAtHelp": "Déjalo vacío para revelar manualmente con el botón \"Revelar ahora\".",
     "revealModeStatus": "Modo revelación",

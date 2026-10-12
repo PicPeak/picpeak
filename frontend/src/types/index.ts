@@ -48,6 +48,8 @@ export interface Event {
   // see the names. SQLite hands the flag back as 0/1.
   guest_name_mode?: GuestNameMode;
   show_credits_to_guests?: boolean | number;
+  // Live refresh of an open gallery (issue 1733, C5)
+  live_refresh?: boolean | number;
   // Reveal mode (#838)
   reveal_mode?: boolean;
   reveal_at?: string | null;
@@ -413,6 +415,8 @@ export interface GalleryData {
     hero_image_anchor?: string;
     // Default photo sort order
     default_photo_sort?: string;
+    // Live refresh (issue 1733, C5): poll /photos/state for new photos.
+    live_refresh?: boolean;
     // Mirror of admin's `general_use_original_filenames_for_downloads`.
     // When true, the lightbox surfaces each photo's `original_filename`
     // alongside the position counter (#508).

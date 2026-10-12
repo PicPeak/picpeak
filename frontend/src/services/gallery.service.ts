@@ -469,6 +469,12 @@ export const galleryService = {
     await api.patch(`/gallery/${slug}/photos/visibility/bulk`, { photoIds, visibility });
   },
 
+  // Live refresh (issue 1733, C5): what the photo list would hold right now.
+  async getPhotoState(slug: string, signal?: AbortSignal): Promise<{ count: number; max_id: number | null }> {
+    const response = await api.get<{ count: number; max_id: number | null }>(`/gallery/${slug}/photos/state`, { signal });
+    return response.data;
+  },
+
   // Get gallery statistics
   async getGalleryStats(slug: string): Promise<GalleryStats> {
     const response = await api.get<GalleryStats>(`/gallery/${slug}/stats`);
