@@ -1966,6 +1966,10 @@
     "cancelSelection": "Auswahl abbrechen",
     "selectAll": "Alle auswählen",
     "deselectAll": "Auswahl aufheben",
+    "selectionTray": {
+      "title": "Ausgewählt ({{count}})",
+      "remove": "{{name}} aus der Auswahl entfernen"
+    },
     "copyFilenames": {
       "button": "Dateinamen kopieren",
       "title": "Dateinamen kopieren",

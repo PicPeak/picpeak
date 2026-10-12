@@ -1372,6 +1372,10 @@
     "cancelSelection": "Cancel Selection",
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
+    "selectionTray": {
+      "title": "Selected ({{count}})",
+      "remove": "Remove {{name}} from the selection"
+    },
     "copyFilenames": {
       "button": "Copy filenames",
       "title": "Copy filenames",

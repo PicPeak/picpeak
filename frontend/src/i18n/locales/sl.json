@@ -1244,6 +1244,10 @@
     "cancelSelection": "Prekliči izbiro",
     "selectAll": "Izberi vse",
     "deselectAll": "Počisti izbiro",
+    "selectionTray": {
+      "title": "Izbrano ({{count}})",
+      "remove": "Odstrani {{name}} iz izbire"
+    },
     "copyFilenames": {
       "button": "Kopiraj imena datotek",
       "title": "Kopiraj imena datotek",

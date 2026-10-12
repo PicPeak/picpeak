@@ -14,6 +14,7 @@ import type { QuotaPhoto } from '../../utils/downloadLimit';
 import { selectLabel } from '../../utils/mediaCounts';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 import { GallerySidebarFolderTree, type SidebarFolderTreeProps } from './GallerySidebarFolderTree';
+import { GallerySidebarSelectionTray } from './GallerySidebarSelectionTray';
 import { lockBodyScroll } from '../../utils/scrollLock';
 
 interface GallerySidebarProps {
@@ -91,6 +92,11 @@ interface GallerySidebarProps {
   // when nothing is selected; the control is hidden at zero.
   onCopyFilenames?: () => void;
   copyFilenamesCount?: number;
+  // Selection tray (issue 1733, A3e): the selected photos themselves, and the
+  // way to take one out. Rendered only when both are passed.
+  selectedPhotoList?: Photo[];
+  onDeselectPhoto?: (photoId: number) => void;
+  slug?: string;
   /**
    * Folder navigation (issue 1786) as a collapsible tree. Absent for a gallery
    * without folders, which keeps its sidebar exactly as before.
@@ -152,6 +158,9 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onCreditChange,
   onCopyFilenames,
   copyFilenamesCount = 0,
+  selectedPhotoList,
+  onDeselectPhoto,
+  slug,
   folderTree,
 }) => {
   const { t } = useTranslation();
@@ -333,6 +342,11 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 )}
               </div>
             </div>
+          )}
+
+          {/* Selection tray (issue 1733, A3e) */}
+          {isSelectionMode && selectedPhotoList && onDeselectPhoto && (
+            <GallerySidebarSelectionTray photos={selectedPhotoList} onRemove={onDeselectPhoto} slug={slug} />
           )}
 
           {/* Filename list (issue 1733, A3d). Its own section rather than part

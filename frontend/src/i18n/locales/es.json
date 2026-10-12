@@ -329,6 +329,10 @@
     "photosSelected": "{{count}} seleccionadas",
     "selectAll": "Seleccionar todo",
     "deselectAll": "Deseleccionar todo",
+    "selectionTray": {
+      "title": "Seleccionadas ({{count}})",
+      "remove": "Quitar {{name}} de la selección"
+    },
     "copyFilenames": {
       "button": "Copiar nombres de archivo",
       "title": "Copiar nombres de archivo",

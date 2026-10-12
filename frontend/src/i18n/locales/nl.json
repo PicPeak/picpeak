@@ -308,6 +308,10 @@
     "cancelSelection": "Selectie annuleren",
     "selectAll": "Alles selecteren",
     "deselectAll": "Alles deselecteren",
+    "selectionTray": {
+      "title": "Geselecteerd ({{count}})",
+      "remove": "{{name}} uit de selectie verwijderen"
+    },
     "copyFilenames": {
       "button": "Bestandsnamen kopiëren",
       "title": "Bestandsnamen kopiëren",

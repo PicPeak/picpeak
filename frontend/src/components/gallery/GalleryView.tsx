@@ -933,6 +933,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const deselectAll = useCallback(() => {
     setSelectedPhotos(new Set());
   }, [setSelectedPhotos]);
+  // Selection tray in the sidebar (issue 1733, A3e).
+  const deselectPhoto = useCallback((photoId: number) => {
+    setSelectedPhotos((previous) => {
+      const next = new Set(previous);
+      next.delete(photoId);
+      return next;
+    });
+  }, [setSelectedPhotos]);
 
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
@@ -960,6 +968,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const photosForIds = useCallback(
     (ids: number[]): QuotaPhoto[] => ids.map((id) => photosById.get(id) || { id }),
     [photosById]
+  );
+  // Selection tray in the sidebar (issue 1733, A3e), in the order selected.
+  const selectedPhotoList = useMemo(
+    () => Array.from(selectedPhotos).flatMap((id) => photosById.get(id) ?? []),
+    [selectedPhotos, photosById]
   );
   const refuseOverQuota = (photos: QuotaPhoto[]): boolean => {
     if (downloadQuota.allows(photos)) return false;
@@ -1688,6 +1701,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onCreditChange={setSelectedCreditKey}
           onCopyFilenames={() => setShowCopyFilenames(true)}
           copyFilenamesCount={copyFilenames.photos.length}
+          selectedPhotoList={selectedPhotoList}
+          onDeselectPhoto={deselectPhoto}
+          slug={slug}
           folderTree={hasFolders ? {
             nodes: sidebarFolderTree,
             openPath: folderTrail.map((folder) => folder.id),

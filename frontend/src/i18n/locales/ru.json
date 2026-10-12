@@ -328,6 +328,10 @@
     "cancelSelection": "Отменить выбор",
     "selectAll": "Выбрать все",
     "deselectAll": "Снять выбор",
+    "selectionTray": {
+      "title": "Выбрано ({{count}})",
+      "remove": "Убрать {{name}} из выбора"
+    },
     "copyFilenames": {
       "button": "Скопировать имена файлов",
       "title": "Скопировать имена файлов",
