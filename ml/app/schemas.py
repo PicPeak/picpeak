@@ -30,6 +30,18 @@ class FacesResponse(BaseModel):
     faces: list[Face]
 
 
+class Tag(BaseModel):
+    # A key from tag_vocabulary.json, never free text.
+    tag: str
+    # Independent per tag, 0..1. Not a probability across the vocabulary.
+    score: float
+
+
+class TagsResponse(BaseModel):
+    model_version: str
+    tags: list[Tag]
+
+
 class InfoResponse(BaseModel):
     detector: str
     embedder: str

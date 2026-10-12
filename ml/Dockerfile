@@ -53,6 +53,28 @@ RUN if [ -z "${FACENET_ONNX_URL}" ] || [ -z "${FACENET_ONNX_SHA256}" ]; then \
     && curl -fsSL -o facenet512.onnx "${FACENET_ONNX_URL}" \
     && echo "${FACENET_ONNX_SHA256}  facenet512.onnx" | sha256sum -c -
 
+# Scene-tagging image encoder (issue 1733). OPTIONAL, and deliberately WITHOUT
+# a default: no artifact has been published for it yet, so there is no URL or
+# checksum that could honestly be pinned here. Leave both empty and the image
+# is built exactly as before; /tags then answers 503 and the backend keeps
+# tagged galleries queued.
+#
+# To ship tagging, produce the encoder with `tools/export_tagger.py`, publish
+# it, and pass BOTH arguments (and commit the matching
+# app/tag_text_embeddings.npz). One without the other fails the build, for
+# the same reason as above. See ml/README.md and ml/LICENSES.md.
+ARG TAG_ENCODER_ONNX_URL=
+ARG TAG_ENCODER_ONNX_SHA256=
+
+RUN if [ -n "${TAG_ENCODER_ONNX_URL}" ] || [ -n "${TAG_ENCODER_ONNX_SHA256}" ]; then \
+      if [ -z "${TAG_ENCODER_ONNX_URL}" ] || [ -z "${TAG_ENCODER_ONNX_SHA256}" ]; then \
+        echo "ERROR: TAG_ENCODER_ONNX_URL and TAG_ENCODER_ONNX_SHA256 must be set together." >&2; \
+        exit 1; \
+      fi \
+      && curl -fsSL -o tag_image_encoder.onnx "${TAG_ENCODER_ONNX_URL}" \
+      && echo "${TAG_ENCODER_ONNX_SHA256}  tag_image_encoder.onnx" | sha256sum -c -; \
+    fi
+
 # ---------------------------------------------------------------------------
 # Stage 2 — runtime
 # ---------------------------------------------------------------------------

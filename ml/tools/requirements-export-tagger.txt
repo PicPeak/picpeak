@@ -1,0 +1,18 @@
+# Build-time only: tools/export_tagger.py (issue 1733). Never installed in
+# the sidecar image.
+#
+# Lower bounds, not pins: this script has not been run yet (see its
+# docstring). Whoever runs it first should replace these with the exact
+# versions that produced the published artifact, as requirements-convert.txt
+# does for the FaceNet conversion.
+torch>=2.2
+# SigLIP landed in transformers 4.37.
+transformers>=4.37
+# SigLIP's tokenizer.
+sentencepiece
+protobuf
+onnx
+onnxruntime
+numpy
+# The script imports app/tagging.py for the vocabulary fingerprint.
+opencv-python-headless

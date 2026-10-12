@@ -28,6 +28,7 @@ published port is never a free face-detection API.
 | `GET /health` | `{"status": "ok"}` — unauthenticated, used by the compose healthcheck |
 | `GET /info` | `{detector, embedder, model_version, dim}` |
 | `POST /faces` | multipart `image` → `{model_version, faces: [...]}` |
+| `POST /tags` | multipart `image` → `{model_version, tags: [{tag, score}]}` (optional, see "Scene tagging") |
 
 Each face:
 
@@ -102,6 +103,59 @@ deterministic. So a re-conversion **will** have a different SHA-256, and that
 is expected rather than a sign of tampering. The checksum pins one published
 artifact so its URL cannot start serving different bytes; validating a fresh
 conversion is the parity check's job, not the hash's.
+
+## Scene tagging
+
+`POST /tags` scores one image against a fixed vocabulary of event-photography
+scenes ([`app/tag_vocabulary.json`](app/tag_vocabulary.json), 43 tags such as
+`ceremony`, `cake`, `dancing`, `outdoor`) and returns the ones that pass their
+threshold, best first, at most `TAG_TOP_K`:
+
+```jsonc
+{ "model_version": "siglip-base-patch16-224@<rev>+vocab<hash>",
+  "tags": [ { "tag": "cake", "score": 0.83 }, { "tag": "food", "score": 0.31 } ] }
+```
+
+Scores are independent per tag (sigmoid, the SigLIP formulation), so an image
+can carry several tags or none. The vocabulary describes scenes and objects
+only: nothing about who a person is.
+
+**The default image does not contain the tagging model**, and `/tags` answers
+`503` until it does. Nothing has been published for it yet; see
+[LICENSES.md](LICENSES.md). To build an image with tagging:
+
+```bash
+cd ml
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r tools/requirements-export-tagger.txt
+python tools/export_tagger.py --model google/siglip-base-patch16-224 \
+  --revision <commit of the model repository> --out-dir .
+```
+
+That writes `tag_image_encoder.onnx` (publish it; pass its URL and SHA-256 as
+`TAG_ENCODER_ONNX_URL` / `TAG_ENCODER_ONNX_SHA256`, as build args or as
+repository variables for CI) and `tag_text_embeddings.npz` (commit it to
+`ml/app/`). The two belong together: the sidecar refuses to tag when the
+embeddings were made for a different encoder file or a different vocabulary,
+so re-run the script after changing a key or a prompt.
+
+The model is loaded on the first `/tags` request, not at startup. The backend
+only calls `/tags` once the `autoTagging` feature flag and a gallery's own
+switch are both on, so an install that leaves tagging off never loads it.
+
+Expected cost, **estimated from the model's size and not measured**: the
+ViT-B/16 image tower is about 93M parameters, so roughly 370 MB on disk and
+400-600 MB of additional resident memory once loaded, and in the order of
+0.2-0.5 s per image on one CPU thread. The backend sends the stored
+thumbnail, not the original.
+
+| Variable | Default | |
+|---|---|---|
+| `TAG_SCORE_THRESHOLD` | `0.15` | a tag is reported at or above this score; a vocabulary entry may set its own `threshold` |
+| `TAG_TOP_K` | `5` | most tags reported per image |
+
+Both defaults are placeholders until they have been evaluated on real
+galleries.
 
 ## Not available on the all-in-one image
 

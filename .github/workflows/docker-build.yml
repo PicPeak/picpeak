@@ -1222,6 +1222,8 @@ jobs:
           VERSION=${{ steps.meta-ml.outputs.version }}
           FACENET_ONNX_URL=${{ vars.FACENET_ONNX_URL }}
           FACENET_ONNX_SHA256=${{ vars.FACENET_ONNX_SHA256 }}
+          TAG_ENCODER_ONNX_URL=${{ vars.TAG_ENCODER_ONNX_URL }}
+          TAG_ENCODER_ONNX_SHA256=${{ vars.TAG_ENCODER_ONNX_SHA256 }}
 
     - name: Export digest
       if: steps.push-decision.outputs.push == 'true'

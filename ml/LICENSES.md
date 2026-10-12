@@ -31,6 +31,37 @@ Pinned sources, verified by SHA-256 at build time:
 - FaceNet-512 source weights — `serengil/deepface_models` release `v1.0`
   `3f76b5117a9ca574d536af8199e6720089eb4ad3dc7e93534496d88265de864f`
 
+## Scene tagging (optional, not in the default image)
+
+> **Status: nothing is pinned yet.** No tagging artifact has been published,
+> so the image build carries no URL and no checksum for one
+> (`TAG_ENCODER_ONNX_URL` / `TAG_ENCODER_ONNX_SHA256` are empty), and the
+> default image contains no tagging model. The table below is the intended
+> source. Whoever publishes the artifact must confirm the licence from the
+> model repository at the exact revision they export, then fill in the
+> revision and both checksums here.
+
+| Artifact | Role | Source | Licence |
+|---|---|---|---|
+| `tag_image_encoder.onnx` | image encoder for zero-shot tags | image tower of `google/siglip-base-patch16-224`, exported by `tools/export_tagger.py` | Apache-2.0 (model card), code Apache-2.0 (`google-research/big_vision`) — **to be re-confirmed at the pinned revision** |
+| `app/tag_text_embeddings.npz` | text embeddings of `app/tag_vocabulary.json` | same model's text tower, same run | as above |
+
+To be recorded on publication:
+
+- model repository revision: `<not pinned yet>`
+- `tag_image_encoder.onnx` SHA-256: `<not published yet>`
+- `tag_text_embeddings.npz` SHA-256: `<not generated yet>`
+
+The same rule as for faces applies: only a model whose **weights** carry a
+commercial-use grant may be baked in. Several otherwise suitable image-text
+models fail it (weights under a research or non-commercial licence while the
+code is MIT), so a swap needs its weight licence checked, not its repository
+licence.
+
+No embeddings of guest photos are stored: the encoder's output is scored
+against the vocabulary and discarded, and only tag keys and scores reach the
+database.
+
 ## Deliberately NOT shipped
 
 | Artifact | Why not |
