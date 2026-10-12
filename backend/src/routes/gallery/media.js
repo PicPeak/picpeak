@@ -21,7 +21,9 @@ const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
 const { safePathJoin } = require('../../utils/fileSecurityUtils');
-const { originalAssetDenial, grantDenial, isPresentationRenditionKey } = require('../../services/galleryAssetPolicy');
+const {
+  originalAssetDenial, grantDenial, isPresentationRenditionKey, fullResolutionDenial,
+} = require('../../services/galleryAssetPolicy');
 const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
@@ -142,6 +144,15 @@ router.get('/:slug/photo/:photoId',
       // preview tier: playing one is counted instead (admitVideoStream, below
       // once the file is known to exist).
       const originalDenial = await originalAssetDenial(req, photo, { display: true });
+      // Full-resolution zoom (issue 1733). `?zoom=1` asks for the untouched
+      // original and nothing else: where the viewer may not download exactly
+      // that, it is refused rather than answered with the preview or a
+      // watermarked copy, so the lightbox never takes one for the original.
+      // A view, like every other answer of this route: no download counter.
+      if (req.query.zoom === '1') {
+        const zoomDenial = await fullResolutionDenial(req, photo);
+        if (zoomDenial) return res.status(403).json(zoomDenial);
+      }
       if (!isVideo && originalDenial) {
         // Keep the query (the ?v= cache-buster) so the preview is not served
         // from a stale cache entry.
