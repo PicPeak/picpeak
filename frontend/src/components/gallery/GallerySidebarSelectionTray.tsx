@@ -77,7 +77,9 @@ export const GallerySidebarSelectionTray: React.FC<GallerySidebarSelectionTrayPr
         {t('gallery.selectionTray.title', 'Selected ({{count}})', { count: photos.length })}
       </button>
       {open && (
-        <ul id={listId} className="mt-3 max-h-64 overflow-y-auto space-y-1">
+        // Five and a half rows: the cut-off row is what says the list scrolls
+        // where the scrollbar is an overlay (macOS, phones).
+        <ul id={listId} className="mt-3 max-h-[17.5rem] overflow-y-auto space-y-1">
           {photos.map((photo) => (
             <TrayRow key={photo.id} photo={photo} onRemove={onRemove} slug={slug} />
           ))}
