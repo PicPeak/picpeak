@@ -48,9 +48,6 @@ async function createGalleryPremiumEvent(page: Page) {
       multipart: {
         photos: { name: path.basename(imagePath), mimeType: 'image/png', buffer },
         category_id: 'individual',
-        // img1.png goes in twice; without the override the second copy is
-        // reported as a duplicate and not stored.
-        allow_duplicates: 'true',
       },
     });
     expect(uploadRes.ok()).toBeTruthy();

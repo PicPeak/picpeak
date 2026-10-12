@@ -87,7 +87,7 @@ const { validateFileType, createFileUploadValidator, normalizeUploadMimeType, is
 // clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
 //
 // The handler reads a few short text fields (category_id, the folder
-// placement, replace_by_name, match_mode, allow_duplicates). Busboy buffers every text part in memory before the handler
+// placement, replace_by_name, match_mode, detect_duplicates). Busboy buffers every text part in memory before the handler
 // runs, so without `fields`/`fieldSize`/`parts` sized to that a caller with
 // photos.upload could send thousands of multi-megabyte text parts and hold
 // them all on the heap.
@@ -208,10 +208,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
 async function handleAdminPhotoUpload(req, res) {
   try {
     const { eventId } = req.params;
-    const { category_id, replace_by_name, match_mode, allow_duplicates } = req.body;
-    // "Upload anyway" (issue 1733, C2): without it a file whose bytes this
-    // gallery already holds is reported back instead of stored again.
-    const allowDuplicates = allow_duplicates === 'true' || allow_duplicates === true;
+    const { category_id, replace_by_name, match_mode, detect_duplicates } = req.body;
+    // Opt-in per request (issue 1733, C2): with it a file whose bytes this
+    // gallery already holds is reported back instead of stored again. Without
+    // it every file is stored, as before the check existed.
+    const detectDuplicates = detect_duplicates === 'true' || detect_duplicates === true;
     let replaceByName = replace_by_name === 'true' || replace_by_name === true;
     // How replace_by_name finds its target (#745). 'exact' is the historical
     // behaviour and stays the default; 'number_token' matches on the trailing
@@ -405,7 +406,7 @@ async function handleAdminPhotoUpload(req, res) {
         // stored or queued: this response is the only place the uploader
         // hears about the file again. Same gallery only.
         const contentSha256 = await sha256File(file.path);
-        const existing = allowDuplicates ? null : await findDuplicate(event.id, contentSha256);
+        const existing = detectDuplicates ? await findDuplicate(event.id, contentSha256) : null;
         if (existing) {
           await fs.unlink(file.path).catch(() => {});
           duplicates.push({ filename: file.originalname, duplicate_of: duplicateName(existing) });
@@ -554,7 +555,8 @@ async function handleAdminPhotoUpload(req, res) {
       replacedCount: replacedPhotos.length,
       skippedReplacements,
       // Not stored: this gallery already holds the same bytes. Kept apart
-      // from `errors`, the uploader offers "upload anyway" for these.
+      // from `errors`, the uploader offers "upload anyway" for these. Always
+      // empty unless the request asked for detect_duplicates.
       duplicates,
       duplicateCount: duplicates.length,
       totalFiles: totalAttempted,
@@ -2074,7 +2076,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
   res.once('close', cancel);
   try {
     const { eventId, uploadId } = req.params;
-    const { category_id, allow_duplicates } = req.body;
+    const { category_id, detect_duplicates } = req.body;
 
     // Same rules as the batch upload route: the photo cap and the category
     // scope. Checked before the merge, so a refused upload writes nothing.
@@ -2101,12 +2103,12 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     // Complete the chunked upload (merge chunks)
     mergedFile = await chunkedUpload.completeUpload(uploadId, { owner: uploadOwner(req) });
 
-    // Same duplicate rule as the batch route (issue 1733, C2). The merged
-    // file is the first moment the whole content exists here, so this is the
-    // earliest a large file can be recognised.
+    // Same opt-in duplicate rule as the batch route (issue 1733, C2). The
+    // merged file is the first moment the whole content exists here, so this
+    // is the earliest a large file can be recognised.
     const contentSha256 = await sha256File(mergedFile.path);
-    const existing = allow_duplicates === true || allow_duplicates === 'true'
-      ? null : await findDuplicate(mergedFile.eventId, contentSha256);
+    const existing = detect_duplicates === true || detect_duplicates === 'true'
+      ? await findDuplicate(mergedFile.eventId, contentSha256) : null;
     if (existing) {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true }).catch(() => {});
       return res.status(409).json({

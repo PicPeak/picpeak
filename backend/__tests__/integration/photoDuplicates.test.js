@@ -6,8 +6,9 @@
  *    (admin multipart, admin chunked, guest, API v1), and a replacement
  *    rewrites it
  *  - the admin upload does not store a file whose bytes the same gallery
- *    already holds: it comes back under `duplicates`, apart from `errors`,
- *    naming the existing photo; `allow_duplicates` stores it anyway
+ *    already holds when the request carries `detect_duplicates`: it comes back
+ *    under `duplicates`, apart from `errors`, naming the existing photo;
+ *    without the flag every file is stored, as before the check existed
  *  - the match never crosses galleries
  *  - a guest upload is never refused or told anything
  *  - two uploads of one file at the same moment both land without an error
@@ -107,7 +108,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     const event = await makeEvent();
     await adminUpload(event, [['first.jpg', jpegA]]);
 
-    const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]]);
+    const res = await adminUpload(event, [['copy.jpg', jpegA], ['other.jpg', jpegB]], { detect_duplicates: 'true' });
     expect(res.status).toBe(202);
     expect(res.body.count).toBe(1);
     expect(res.body.duplicates).toEqual([{ filename: 'copy.jpg', duplicate_of: 'first.jpg' }]);
@@ -119,17 +120,17 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
 
   it('catches the same file twice in one request', async () => {
     const event = await makeEvent();
-    const res = await adminUpload(event, [['one.jpg', jpegA], ['two.jpg', jpegA]]);
+    const res = await adminUpload(event, [['one.jpg', jpegA], ['two.jpg', jpegA]], { detect_duplicates: 'true' });
     expect(res.body.count).toBe(1);
     expect(res.body.duplicates).toEqual([{ filename: 'two.jpg', duplicate_of: 'one.jpg' }]);
   });
 
-  it('stores it anyway with allow_duplicates', async () => {
+  it('stores every file when the request does not ask for detection', async () => {
     const event = await makeEvent();
     await adminUpload(event, [['first.jpg', jpegA]]);
-    const res = await adminUpload(event, [['copy.jpg', jpegA]], { allow_duplicates: 'true' });
+    const res = await adminUpload(event, [['copy.jpg', jpegA]]);
     expect(res.status).toBe(202);
-    expect(res.body).toMatchObject({ count: 1, duplicates: [] });
+    expect(res.body).toMatchObject({ count: 1, duplicates: [], duplicateCount: 0 });
     const rows = await photosOf(event);
     expect(rows).toHaveLength(2);
     expect(rows.map((p) => p.content_sha256)).toEqual([sha(jpegA), sha(jpegA)]);
@@ -139,7 +140,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     const one = await makeEvent();
     const two = await makeEvent();
     await adminUpload(one, [['first.jpg', jpegA]]);
-    const res = await adminUpload(two, [['first.jpg', jpegA]]);
+    const res = await adminUpload(two, [['first.jpg', jpegA]], { detect_duplicates: 'true' });
     expect(res.body).toMatchObject({ count: 1, duplicates: [] });
     expect(await photosOf(two)).toHaveLength(1);
   });
@@ -150,15 +151,15 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       event_id: event.id, filename: 'watched.jpg', path: `${event.slug}/watched.jpg`, type: 'individual',
       size_bytes: jpegA.length, uploaded_at: new Date().toISOString(),
     });
-    const res = await adminUpload(event, [['a.jpg', jpegA]]);
+    const res = await adminUpload(event, [['a.jpg', jpegA]], { detect_duplicates: 'true' });
     expect(res.body).toMatchObject({ count: 1, duplicates: [] });
   });
 
   it('two uploads of one file at the same moment both answer without an error', async () => {
     const event = await makeEvent();
     const [a, b] = await Promise.all([
-      adminUpload(event, [['a.jpg', jpegA]]),
-      adminUpload(event, [['b.jpg', jpegA]]),
+      adminUpload(event, [['a.jpg', jpegA]], { detect_duplicates: 'true' }),
+      adminUpload(event, [['b.jpg', jpegA]], { detect_duplicates: 'true' }),
     ]);
     expect([a.status, b.status]).toEqual([202, 202]);
     expect(a.body.errors).toBeUndefined();
@@ -193,7 +194,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     it('is what a later admin upload of the same file is a duplicate of', async () => {
       const event = await makeEvent();
       await guestUpload(event, jpegB);
-      const res = await adminUpload(event, [['mine.jpg', jpegB]]);
+      const res = await adminUpload(event, [['mine.jpg', jpegB]], { detect_duplicates: 'true' });
       expect(res.body.duplicates).toEqual([{ filename: 'mine.jpg', duplicate_of: 'guest.jpg' }]);
     });
   });
@@ -209,13 +210,13 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       return request(app).post(`${base}/${init.body.uploadId}/complete`).set('Authorization', `Bearer ${adminToken}`).send(body);
     };
 
-    it('stores the hash, refuses a duplicate with its own code, and accepts the override', async () => {
+    it('stores the hash, refuses a duplicate with its own code only when asked to detect', async () => {
       const event = await makeEvent();
       const first = await chunked(event, jpegA);
       expect(first.status).toBe(200);
       expect((await photosOf(event))[0].content_sha256).toBe(sha(jpegA));
 
-      const again = await chunked(event, jpegA);
+      const again = await chunked(event, jpegA, { detect_duplicates: true });
       expect(again.status).toBe(409);
       expect(again.body).toMatchObject({ code: 'DUPLICATE_PHOTO', duplicate_of: 'large.jpg' });
       expect(await photosOf(event)).toHaveLength(1);
@@ -225,7 +226,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
       }
       expect(await db('public_upload_requests').where({ active: 1 })).toHaveLength(0);
 
-      const anyway = await chunked(event, jpegA, { allow_duplicates: true });
+      const anyway = await chunked(event, jpegA);
       expect(anyway.status).toBe(200);
       expect(await photosOf(event)).toHaveLength(2);
     });
@@ -251,7 +252,7 @@ describe('Duplicate detection by content hash (issue 1733)', () => {
     expect((await photosOf(event))[0].content_sha256).toBe(sha(jpegB));
 
     // The old bytes are no longer in the gallery, the new ones are.
-    const res = await adminUpload(event, [['old.jpg', jpegA], ['new.jpg', jpegB]]);
+    const res = await adminUpload(event, [['old.jpg', jpegA], ['new.jpg', jpegB]], { detect_duplicates: 'true' });
     expect(res.body.count).toBe(1);
     expect(res.body.duplicates).toEqual([{ filename: 'new.jpg', duplicate_of: 'first.jpg' }]);
   });

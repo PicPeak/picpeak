@@ -5,7 +5,7 @@
  * names it under `duplicates` (multipart) or refuses the chunked complete
  * with DUPLICATE_PHOTO. These tests pin that the bar lists such files apart
  * from the failures, and that "upload anyway" sends exactly those files again
- * with the override, per file and for all.
+ * without asking for detection, per file and for all.
  */
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -114,8 +114,8 @@ describe('PhotoUpload duplicates', () => {
     expect(within(failures).getByText('broken.jpg')).toBeInTheDocument();
     expect(within(failures).queryByText('copy.jpg')).not.toBeInTheDocument();
 
-    // The first request never asks for duplicates.
-    expect((postMock.mock.calls[0][1] as FormData).get('allow_duplicates')).toBeNull();
+    // The first request asks the server to detect duplicates.
+    expect((postMock.mock.calls[0][1] as FormData).get('detect_duplicates')).toBe('true');
   });
 
   it('a duplicate alone is no failure and does not clear itself', async () => {
@@ -133,7 +133,7 @@ describe('PhotoUpload duplicates', () => {
     expect(screen.queryByRole('button', { name: 'Upload all anyway' })).not.toBeInTheDocument();
   });
 
-  it('"upload anyway" sends that file again with the override and keeps the others listed', async () => {
+  it('"upload anyway" sends that file again without detection and keeps the others listed', async () => {
     postMock
       .mockResolvedValueOnce({
         data: {
@@ -154,7 +154,7 @@ describe('PhotoUpload duplicates', () => {
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
     const second = postMock.mock.calls[1];
     expect(sentFiles(second)).toEqual(['b.jpg']);
-    expect((second[1] as FormData).get('allow_duplicates')).toBe('true');
+    expect((second[1] as FormData).get('detect_duplicates')).toBeNull();
     expect((second[1] as FormData).get('replace_by_name')).toBeNull();
 
     await waitFor(() => {
@@ -186,7 +186,7 @@ describe('PhotoUpload duplicates', () => {
 
     await waitFor(() => expect(postMock).toHaveBeenCalledTimes(2));
     expect(sentFiles(postMock.mock.calls[1])).toEqual(['a.jpg', 'b.jpg']);
-    expect((postMock.mock.calls[1][1] as FormData).get('allow_duplicates')).toBe('true');
+    expect((postMock.mock.calls[1][1] as FormData).get('detect_duplicates')).toBeNull();
     await waitFor(() => expect(screen.queryByTestId('upload-duplicate-report')).not.toBeInTheDocument());
   });
 
@@ -202,12 +202,12 @@ describe('PhotoUpload duplicates', () => {
     const report = await screen.findByTestId('upload-duplicate-report');
     expect(within(report).getByText(/same content as film\.mp4/)).toBeInTheDocument();
     expect(screen.queryByTestId('upload-failure-report')).not.toBeInTheDocument();
-    expect(uploadLargeFile.mock.calls[0][5]).toBe(false);
+    expect(uploadLargeFile.mock.calls[0][5]).toBe(true);
 
     await user.click(within(report).getByRole('button', { name: 'Upload anyway' }));
     await waitFor(() => expect(uploadLargeFile).toHaveBeenCalledTimes(2));
     expect(uploadLargeFile.mock.calls[1][1]).toBe(big);
-    expect(uploadLargeFile.mock.calls[1][5]).toBe(true);
+    expect(uploadLargeFile.mock.calls[1][5]).toBe(false);
     expect(postMock).not.toHaveBeenCalled();
   });
 });

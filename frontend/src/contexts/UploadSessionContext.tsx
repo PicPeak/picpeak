@@ -96,7 +96,7 @@ export interface StartUploadOptions {
   /** Per-request caps, resolved by the picker from admin settings. */
   maxFilesPerChunk: number;
   maxBytesPerChunk: number;
-  /** "Upload anyway": the server stores files it would report as duplicates. */
+  /** "Upload anyway": the server is not asked to detect duplicates and stores every file. */
   allowDuplicates?: boolean;
   /** Duplicates of the session before this one that were not sent again. */
   remainingDuplicates?: UploadDuplicate[];
@@ -287,7 +287,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
                 progress: Math.round(overall),
                 phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: Math.round(Math.min(pct, 100)) },
               });
-            }, folder, allowDuplicates), whileBusy);
+            }, folder, !allowDuplicates), whileBusy);
             largeSucceeded += 1;
             // complete() already ran ffmpeg + insert — refresh grid
             refreshEvent(eventId);
@@ -323,7 +323,7 @@ export const UploadSessionProvider: React.FC<{ children: React.ReactNode }> = ({
           chunk.forEach((file) => formData.append('photos', file));
           appendUploadPlacement(formData, placement);
           if (replaceByName) formData.append('replace_by_name', 'true');
-          if (allowDuplicates) formData.append('allow_duplicates', 'true');
+          if (!allowDuplicates) formData.append('detect_duplicates', 'true');
 
           patch({ currentChunk: index + 1, phase: { kind: 'transferring', chunkIndex: index, totalChunks: totalUnits, bytePct: 0 } });
 

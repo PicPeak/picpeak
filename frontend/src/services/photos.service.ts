@@ -360,12 +360,13 @@ class PhotosService {
     uploadId: string,
     categoryId?: number | null,
     folder: FolderPlacement = {},
-    allowDuplicates = false
+    detectDuplicates = false
   ): Promise<{ success: boolean; uploaded: number; photos: AdminPhoto[] }> {
     const response = await api.post(
       `/admin/photos/${eventId}/chunked-upload/${uploadId}/complete`,
-      // allow_duplicates is "upload anyway" (issue 1733, C2); sent only when set.
-      { ...uploadPlacementBody({ ...folder, categoryId }), ...(allowDuplicates ? { allow_duplicates: true } : {}) },
+      // detect_duplicates asks the server to refuse a file the gallery already
+      // holds (issue 1733, C2); "upload anyway" leaves it out.
+      { ...uploadPlacementBody({ ...folder, categoryId }), ...(detectDuplicates ? { detect_duplicates: true } : {}) },
       // Merge + ffmpeg thumbnail can take a while on large videos.
       { timeout: 0 }
     );
@@ -382,7 +383,7 @@ class PhotosService {
     categoryId?: number | null,
     onProgress?: (progress: number) => void,
     folder: FolderPlacement = {},
-    allowDuplicates = false
+    detectDuplicates = false
   ): Promise<AdminPhoto[]> {
     // Initialize upload
     const { uploadId, expectedChunks } = await this.initChunkedUpload(
@@ -407,7 +408,7 @@ class PhotosService {
       }
 
       // Complete upload
-      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder, allowDuplicates);
+      const result = await this.completeChunkedUpload(eventId, uploadId, categoryId, folder, detectDuplicates);
       return result.photos;
     } catch (error) {
       // Abort on error
