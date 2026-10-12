@@ -149,8 +149,10 @@ async function isAuthenticated(req) {
 
 // The routes a gallery viewer fetches once per tile: thumbnail, preview,
 // hero, photo. Downloads, the photo list, feedback and everything else stay
-// on the budget.
-const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(thumbnail|preview|hero|photo)\/[^/]+$/i;
+// on the budget. An adaptive stream (issue 1733) is one video fetched as a
+// playlist and a segment every six seconds: the same playback the photo
+// route serves in one request, so it is exempt the same way.
+const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(?:(?:thumbnail|preview|hero|photo)\/[^/]+|hls\/\d+\/(?:master\.m3u8|[^/]+\/[^/]+))$/i;
 
 /**
  * A verified gallery viewer fetching that gallery's own images (#1287).

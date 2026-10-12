@@ -2352,6 +2352,8 @@
       "maxVideoSizeHelp": "Separate per-file limit for video uploads, so photos can keep a smaller limit.",
       "videoWebRendition": "Browser-playable copies of videos",
       "videoWebRenditionHelp": "Re-encodes videos a browser cannot play (HEVC, QuickTime, MP4s that are not streamable) into an H.264 MP4 for playback. The original stays the download. Costs CPU per video and a second file; switching it on queues the videos already uploaded.",
+      "videoAdaptiveStreaming": "Adaptive video streaming",
+      "videoAdaptiveStreamingHelp": "Converts each video into a stream in up to three qualities (480p, 720p, 1080p), so playback starts quickly and adapts to the viewer’s connection. The original stays the download. Costs CPU per video and roughly as much storage again; videos longer than 30 minutes keep playing as before.",
       "maxFilesPerUpload": "Max Files per Upload",
       "maxFilesPerUploadHelp": "Maximum number of photos allowed in a single upload batch (1-{{max}}).",
       "maxUploadBatchSize": "Max Upload Batch Size (MB)",

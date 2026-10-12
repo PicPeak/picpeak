@@ -490,6 +490,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
     ? await grantedPhotoIds(event.id, null, undefined, { deliveredOnly: true })
     : new Set();
   const withholdOriginals = !!downloadQuota;
+  // Adaptive streaming (issue 1733): off unless the setting is on.
+  const adaptiveStreaming = await require('./videoHlsService').isEnabled();
   // Only the client (PIN or portal) draws on the quota. A share-link guest
   // downloads preview-size copies instead, so they get no counter they could
   // not use, and no resolution picker: a job would build originals.
@@ -705,6 +707,18 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
         media_type: photo.media_type || null,
         mime_type: photo.mime_type || null,
         duration: photo.duration || null,
+        // Adaptive stream (issue 1733): only when a ladder is published, and
+        // only where playing it costs this viewer nothing. A video that
+        // still takes a download slot is played the way it was (`url`), so
+        // the lightbox's slot handling stays in one place. `v` names the
+        // ladder, so a re-transcode is a new URL and never a cached segment
+        // of the old one; the playlists pass the query on.
+        hls_url: adaptiveStreaming && isVideo && accessLevel !== 'slideshow'
+            && photo.hls_status === 'complete' && photo.hls_path
+            && (!withholdOriginals || deliveredIds.has(Number(photo.id))
+              || (photo.web_path && photo.web_status === 'complete'))
+          ? `/api/gallery/${slug}/hls/${photo.id}/master.m3u8?v=${String(photo.hls_path).slice(-12)}${adminPreview ? '&admin_preview=1' : ''}`
+          : null,
         // Feedback data (hidden when show_feedback_to_guests is disabled)
         has_feedback: showFeedbackToGuests ? (commentMap[photo.id] > 0 || photo.average_rating > 0 || photo.like_count > 0) : false,
         average_rating: showFeedbackToGuests ? (photo.average_rating || 0) : 0,

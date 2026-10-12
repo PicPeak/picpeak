@@ -1746,6 +1746,8 @@
       "route_signatures": [
         "POST /:slug/photo/:photoId/view",
         "GET /:slug/photo/:photoId",
+        "GET /:slug/hls/:photoId/master.m3u8",
+        "GET /:slug/hls/:photoId/:rung/:file",
         "GET /:slug/thumbnail/:photoId",
         "GET /:slug/hero/:photoId",
         "GET /:slug/preview/:photoId"

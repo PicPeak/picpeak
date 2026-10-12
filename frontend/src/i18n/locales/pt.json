@@ -1063,6 +1063,8 @@
       "maxFileSize": "Tamanho Máx. do Arquivo (MB)",
       "videoWebRendition": "Cópias de vídeos reproduzíveis no browser",
       "videoWebRenditionHelp": "Recodifica os vídeos que um browser não consegue reproduzir (HEVC, QuickTime, MP4 não transmissíveis) para um MP4 H.264 para reprodução. O original continua a ser a transferência. Consome CPU por vídeo e um segundo ficheiro; ao ativar, os vídeos já carregados entram na fila.",
+      "videoAdaptiveStreaming": "Streaming de vídeo adaptativo",
+      "videoAdaptiveStreamingHelp": "Converte cada vídeo numa transmissão com até três qualidades (480p, 720p, 1080p), para que a reprodução comece depressa e se adapte à ligação. O original continua a ser a transferência. Consome CPU por vídeo e aproximadamente outro tanto de armazenamento; os vídeos com mais de 30 minutos são reproduzidos como antes.",
       "maxFilesPerUpload": "Máx. de Arquivos por Envio",
       "maxFilesPerUploadHelp": "Número máximo de fotos permitidas em um único lote (1-{{max}}).",
       "allowedFileTypes": "Tipos de Arquivos Permitidos",

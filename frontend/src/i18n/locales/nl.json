@@ -936,6 +936,8 @@
       "maxFileSize": "Max. bestandsgrootte (MB)",
       "videoWebRendition": "In de browser afspeelbare kopieën van video’s",
       "videoWebRenditionHelp": "Codeert video’s die een browser niet kan afspelen (HEVC, QuickTime, niet-streambare MP4’s) om naar een H.264-MP4 voor het afspelen. Het origineel blijft de download. Kost CPU per video en een tweede bestand; bij inschakelen worden de al geüploade video’s in de wachtrij gezet.",
+      "videoAdaptiveStreaming": "Adaptieve videostreaming",
+      "videoAdaptiveStreamingHelp": "Zet elke video om naar een stream in maximaal drie kwaliteiten (480p, 720p, 1080p), zodat het afspelen snel start en zich aanpast aan de verbinding. Het origineel blijft de download. Kost CPU per video en ongeveer nog eens zoveel opslag; video’s langer dan 30 minuten worden afgespeeld zoals voorheen.",
       "maxFilesPerUpload": "Max. bestanden per upload",
       "maxFilesPerUploadHelp": "Maximaal aantal foto's per uploadbatch (1-{{max}}).",
       "allowedFileTypes": "Toegestane bestandstypen",

@@ -2945,6 +2945,8 @@
       "maxVideoSizeHelp": "Eigenes Limit pro Videodatei, damit für Fotos ein kleineres Limit gelten kann.",
       "videoWebRendition": "Browser-abspielbare Kopien von Videos",
       "videoWebRenditionHelp": "Kodiert Videos, die ein Browser nicht abspielen kann (HEVC, QuickTime, nicht streambare MP4s), für die Wiedergabe in ein H.264-MP4 um. Zum Herunterladen bleibt das Original. Kostet CPU pro Video und eine zweite Datei; beim Einschalten werden die bereits hochgeladenen Videos eingereiht.",
+      "videoAdaptiveStreaming": "Adaptives Video-Streaming",
+      "videoAdaptiveStreamingHelp": "Wandelt jedes Video in einen Stream in bis zu drei Qualitäten (480p, 720p, 1080p) um, damit die Wiedergabe schnell startet und sich an die Verbindung anpasst. Zum Herunterladen bleibt das Original. Kostet CPU pro Video und etwa noch einmal so viel Speicherplatz; Videos über 30 Minuten werden wie bisher abgespielt.",
       "maxFilesPerUpload": "Max. Dateien pro Upload",
       "maxFilesPerUploadHelp": "Maximale Anzahl an Fotos pro Upload-Vorgang (1-{{max}}).",
       "maxUploadBatchSize": "Max. Upload-Paketgröße (MB)",

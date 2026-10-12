@@ -2088,6 +2088,8 @@
       "maxVideoSizeHelp": "Ločena omejitev velikosti posamezne datoteke za videe, da lahko fotografije ohranijo manjšo omejitev.",
       "videoWebRendition": "Kopije videov, ki jih brskalnik lahko predvaja",
       "videoWebRenditionHelp": "Videe, ki jih brskalnik ne more predvajati (HEVC, QuickTime, MP4 brez pretakanja), prekodira v MP4 H.264 za predvajanje. Za prenos ostane izvirnik. Porabi CPU za vsak video in drugo datoteko; ob vklopu se že naloženi videi uvrstijo v čakalno vrsto.",
+      "videoAdaptiveStreaming": "Prilagodljivo pretakanje videa",
+      "videoAdaptiveStreamingHelp": "Vsak video pretvori v pretok v največ treh kakovostih (480p, 720p, 1080p), da se predvajanje začne hitro in se prilagaja povezavi. Za prenos ostane izvirnik. Porabi CPU za vsak video in približno še enkrat toliko prostora; videi, daljši od 30 minut, se predvajajo kot doslej.",
       "maxFilesPerUpload": "Največ datotek na nalaganje",
       "maxFilesPerUploadHelp": "Največje dovoljeno število fotografij v enem paketu nalaganja (1-{{max}}).",
       "maxUploadBatchSize": "Največja velikost paketa nalaganja (MB)",

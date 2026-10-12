@@ -312,6 +312,14 @@ async function archiveEvent(event) {
           web_path: null, web_status: null, web_started_at: null, web_error: null,
         });
       }
+      // Adaptive streaming ladder (issue 1733): derived, and not in the zip.
+      // The row starts over, so the queue transcodes it again on a restore.
+      if (photo.hls_status || photo.hls_path) {
+        await require('./videoHlsService').deleteLadder(photo);
+        await db('photos').where({ id: photo.id }).update({
+          hls_path: null, hls_status: null, hls_attempt_id: null, hls_started_at: null, hls_error: null,
+        });
+      }
       // Outside the guard: a tier can exist when the canonical rendition never
       // did, so keying cleanup off preview_path would strand phone-only photos.
       await require('./imageProcessor').deletePreviewTiers(photo);

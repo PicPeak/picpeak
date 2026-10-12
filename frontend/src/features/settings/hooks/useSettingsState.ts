@@ -30,6 +30,8 @@ export interface GeneralSettings {
   max_video_size_mb: number;
   /** Browser-playable H.264 copies of videos (issue 1430). Off by default. */
   video_web_rendition: boolean;
+  /** Adaptive HLS streaming of videos (issue 1733). Off by default. */
+  video_adaptive_streaming: boolean;
   max_files_per_upload: number;
   allowed_file_types: string;
   // #509 — re-added after the main-into-beta merge dropped it.
@@ -182,6 +184,7 @@ export function useSettingsState() {
     max_file_size_mb: 50,
     max_video_size_mb: 500,
     video_web_rendition: false,
+    video_adaptive_streaming: false,
     max_files_per_upload: 500,
     allowed_file_types: 'jpg,jpeg,png,gif,webp',
     max_upload_batch_size_mb: 95,
@@ -330,6 +333,7 @@ export function useSettingsState() {
         max_file_size_mb: toNumber(settings.general_max_file_size_mb, 50),
         max_video_size_mb: toNumber(settings.general_max_video_size_mb, 500),
         video_web_rendition: toBoolean(settings.general_video_web_rendition, false),
+        video_adaptive_streaming: toBoolean(settings.general_video_adaptive_streaming, false),
         max_files_per_upload: Math.min(
           MAX_FILES_PER_UPLOAD_LIMIT,
           Math.max(1, toNumber(settings.general_max_files_per_upload, 500))

@@ -1401,6 +1401,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <div className="w-full h-full flex items-center justify-center">
                 <VideoPlayer
                   src={currentPhoto.url}
+                  hlsSrc={currentPhoto.hls_url}
                   poster={currentPhoto.thumbnail_url}
                   className="max-w-full max-h-full"
                   controls={true}

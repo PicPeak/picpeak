@@ -262,6 +262,8 @@ export interface Photo {
   media_type?: 'photo' | 'video' | 'image';
   mime_type?: string;
   duration?: number; // Duration in seconds for videos
+  /** Adaptive stream (HLS master playlist) when one exists and playing it is free for this viewer. */
+  hls_url?: string | null;
   video_codec?: string;
   audio_codec?: string;
   width?: number;

@@ -108,6 +108,9 @@ A job's time budget starts when the job starts, not while it waits.
 | `MEDIA_THUMBNAIL_TIMEOUT_MS` | 60000 | One poster frame. |
 | `VIDEO_RENDITION_TIMEOUT_MS` | 3600000 | The least a transcode gets. A longer video gets 20 s per second of video, times the thread count in CPU time. |
 | `VIDEO_RENDITION_MAX_TIMEOUT_MS` | 86400000 | The most a transcode gets. |
+| `VIDEO_HLS_CONCURRENCY` | 1 | Adaptive streaming workers. Their transcodes run in the same lane as the web copy, so `VIDEO_RENDITION_CONCURRENCY` bounds both together. |
+| `VIDEO_HLS_MAX_DURATION_SECONDS` | 1800 | A longer video gets no adaptive stream and keeps playing from the original. |
+| `VIDEO_HLS_MAX_SOURCE_MIB` | 4096 | The same for a larger video. |
 | `MEDIA_MAX_SNAPSHOT_MIB` | 1024 (at most half the memory) | Private copies of inputs staged at once. A larger file is read where it is. |
 | `MEDIA_MAX_VIDEO_PIXELS` | 40000000 | Pixels per frame. |
 | `MEDIA_MAX_VIDEO_DIMENSION` | 16384 | Pixels per side. |

@@ -210,6 +210,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     // The browser-playable copy (issue 1430) describes the old bytes.
     const videoRendition = require('./videoRenditionService');
     await videoRendition.deleteWebCopy(existingPhoto);
+    // So does the adaptive streaming ladder (issue 1733).
+    await require('./videoHlsService').deleteLadder(existingPhoto);
     // Responsive tiers, keyed off the OLD row (#1095 / #492). Their key embeds
     // the basename, which the update below replaces — so this is the last
     // moment they can be derived at all. Miss it and a later delete or archive
@@ -270,6 +272,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       web_status: isVideoReplacement && await videoRendition.isEnabled() ? 'pending' : null,
       web_started_at: null,
       web_error: null,
+      // The ladder starts over the same way; the queue picks a video up.
+      hls_path: null,
+      hls_status: null,
+      hls_attempt_id: null,
+      hls_attempts: 0,
+      hls_retry_at: null,
+      hls_started_at: null,
+      hls_error: null,
       // The replacement lives in the managed backend, so the row has to say
       // so. resolvePhotoStorageKey gives photo.source_origin precedence over
       // everything and returns null for 'reference'/'external' — so leaving

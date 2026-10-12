@@ -1840,6 +1840,11 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       const raw = settings.general_video_web_rendition;
       settings.general_video_web_rendition = raw === true || raw === 'true' || raw === 1 || raw === '1';
     }
+    // Adaptive video streaming (issue 1733): a plain boolean too.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+      const raw = settings.general_video_adaptive_streaming;
+      settings.general_video_adaptive_streaming = raw === true || raw === 'true' || raw === 1 || raw === '1';
+    }
 
     // Default download limit for new events (issue 1560). Empty, 0 or null
     // clears it (unlimited); anything else must be a positive integer.
@@ -1984,6 +1989,16 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
         } catch (e) {
           logger.warn('videoRendition: failed to queue existing videos:', e.message);
         }
+      }
+    }
+    // Adaptive streaming: the queue marks the videos nobody has looked at by
+    // itself; switching it on also gives the failed ones another try.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_video_adaptive_streaming')) {
+      const videoHls = require('../services/videoHlsService');
+      videoHls.clearCache();
+      if (settings.general_video_adaptive_streaming) {
+        await videoHls.queuePending({ retryFailed: true })
+          .catch(e => logger.warn('videoHls: failed to queue existing videos:', e.message));
       }
     }
     // The public origin is cached (it now sits in per-request CORS paths and

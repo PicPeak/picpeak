@@ -29,7 +29,7 @@ async function deleteEventCascade(eventId, adminContext) {
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
     .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
-      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path');
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path', 'web_path', 'hls_path', 'hls_status');
 
   // A Set because a photo can carry the same key in two columns (an unresized
   // gallery's hero and preview can resolve to one object) and deleting it
@@ -249,9 +249,12 @@ async function deleteEventCascade(eventId, adminContext) {
   // delete is not.
   try {
     const { deleteThumbnailTiers, deletePreviewTiers } = require('../../services/imageProcessor');
+    const { deleteLadder } = require('../../services/videoHlsService');
     for (const photo of tieredPhotos) {
       await deleteThumbnailTiers(photo);
       await deletePreviewTiers(photo);
+      // Adaptive streaming ladder (issue 1733): its keys derive from the id.
+      await deleteLadder(photo);
     }
   } catch (tierErr) {
     logger.warn('Failed to delete responsive tiers during cascade delete', { eventId, error: tierErr.message });

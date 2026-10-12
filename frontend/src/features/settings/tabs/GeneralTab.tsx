@@ -222,6 +222,23 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               </p>
             </div>
             <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={generalSettings.video_adaptive_streaming}
+                  onChange={(e) => setGeneralSettings(prev => ({ ...prev, video_adaptive_streaming: e.target.checked }))}
+                  className="w-4 h-4 text-accent rounded focus:ring-accent"
+                  data-testid="general-video-adaptive-streaming"
+                />
+                <span className="ml-2 text-sm text-body">
+                  {t('settings.general.videoAdaptiveStreaming', 'Adaptive video streaming')}
+                </span>
+              </label>
+              <p className="text-xs text-muted ml-6 mt-1">
+                {t('settings.general.videoAdaptiveStreamingHelp', 'Converts each video into a stream in up to three qualities (480p, 720p, 1080p), so playback starts quickly and adapts to the viewer’s connection. The original stays the download. Costs CPU per video and roughly as much storage again; videos longer than 30 minutes keep playing as before.')}
+              </p>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-body mb-1">
                 {t('settings.general.maxFilesPerUpload')}
               </label>

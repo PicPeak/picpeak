@@ -254,6 +254,7 @@ async function removePhoto(filePath) {
   await db('photos').where({ path: relativePath }).delete();
 
   if (photo) {
+    await require('./videoHlsService').deleteLadder(photo);
     downloadZipService.invalidate(photo.event_id);
 
     // Webhook (#327) — fire only if the row actually existed.

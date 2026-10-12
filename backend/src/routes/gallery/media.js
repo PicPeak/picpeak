@@ -26,6 +26,7 @@ const {
   currentDownloadLimit, grantedPhotoIds, grantDownloads, checkDownloads,
   drawsOnQuota, clientOnlyError, refuseDownload, downloadLimitError, settleWhenDone, responseDelivered,
 } = require('../../services/downloadQuota');
+const videoHls = require('../../services/videoHlsService');
 
 /**
  * Download limit (issue 1560): a video without a web copy has no preview
@@ -440,6 +441,117 @@ router.get('/:slug/photo/:photoId',
     }
   }
 );
+
+// Adaptive streaming (issue 1733, D4): the HLS ladder videoHlsService wrote
+// for a video, proxied from storage on both backends so there is one auth
+// path. With the setting off none of this is reachable.
+async function requireAdaptiveStreaming(req, res, next) {
+  if (await videoHls.isEnabled()) return next();
+  return res.status(404).json({ error: 'Not found' });
+}
+
+/**
+ * The photo behind an HLS request, through the checks the photo route above
+ * applies to a video; null once it has answered the request itself.
+ */
+async function loadStreamedVideo(req, res) {
+  const photo = /^\d+$/.test(req.params.photoId)
+    ? await db('photos').where({ id: req.params.photoId, event_id: req.event.id }).first()
+    : null;
+  if (!photo) {
+    res.status(404).json({ error: 'Photo not found' });
+    return null;
+  }
+  if (isPhotoOutsideGrant(req, photo) || grantDenial(req, photo)) {
+    res.status(403).json({ error: 'Photo not available' });
+    return null;
+  }
+  return photo;
+}
+
+/**
+ * Download limit (issue 1560) for a stream. The ladder stands in for what
+ * the photo route would play: free where that is the web copy, one slot
+ * where it is the original. Fetching the master playlist is the playback, so
+ * that is what takes the slot, once per video (admitVideoStream). Rung
+ * playlists and segments never take one; they are answered only for a video
+ * that already has its grant, so nobody plays around the master.
+ */
+async function admitStream(req, res, photo, { playback }) {
+  if (photo.web_path && photo.web_status === 'complete') return true;
+  if (playback) return admitVideoStream(req, res, photo);
+  if (req.isAdminPreview || !(await currentDownloadLimit(req.event))) return true;
+  // Pending counts: the grant of a master playlist settles as its response
+  // closes, and the player asks for the first rung right behind it.
+  if ((await grantedPhotoIds(req.event.id, [Number(photo.id)])).has(Number(photo.id))) return true;
+  res.status(403).json(clientOnlyError());
+  return false;
+}
+
+/** What a playlist passes on to the URLs in it: nothing but these two. */
+function streamQuery(req) {
+  const parts = [];
+  if (typeof req.query.v === 'string' && /^[a-z0-9]{1,16}$/i.test(req.query.v)) parts.push(`v=${req.query.v}`);
+  if (req.query.admin_preview === '1') parts.push('admin_preview=1');
+  return parts.join('&');
+}
+
+async function sendPlaylist(req, res, key, kind) {
+  const chunks = [];
+  for await (const chunk of await getStorage().get(key)) chunks.push(chunk);
+  const body = videoHls.rewritePlaylist(Buffer.concat(chunks).toString('utf8'), kind, streamQuery(req));
+  res.set({ 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'private, no-cache' });
+  res.send(body);
+}
+
+const hlsAccess = [requireAdaptiveStreaming, verifyGalleryAccess, denySlideshowToken, blockHiddenGallery];
+
+router.get('/:slug/hls/:photoId/master.m3u8', ...hlsAccess, async (req, res) => {
+  try {
+    const photo = await loadStreamedVideo(req, res);
+    if (!photo) return;
+    const key = videoHls.ladderKey(photo, undefined, 'master.m3u8');
+    if (!key) return res.status(404).json({ error: 'No stream for this video' });
+    if (!(await getStorage().stat(key))) {
+      // The row names a ladder storage does not have (a restore without
+      // hls/, a bucket cleaned by hand). The row starts over, the queue
+      // transcodes again, and this player falls back to the original.
+      await db('photos').where({ id: photo.id, hls_path: photo.hls_path, hls_status: 'complete' })
+        .update({ hls_path: null, hls_status: null, hls_error: 'ladder missing from storage' })
+        .catch((e) => logger.warn(`Could not re-queue the missing ladder of video ${photo.id}: ${e.message}`));
+      return res.status(404).json({ error: 'No stream for this video' });
+    }
+    if (!(await admitStream(req, res, photo, { playback: true }))) return;
+    await sendPlaylist(req, res, key, 'master');
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to serve video stream');
+  }
+});
+
+// One rung's playlist (index.m3u8) or one of its files. The names are
+// checked against the shapes the transcode writes (ladderKey); the photo id
+// comes from the route and the storage prefix from the row.
+router.get('/:slug/hls/:photoId/:rung/:file', ...hlsAccess, async (req, res) => {
+  try {
+    const photo = await loadStreamedVideo(req, res);
+    if (!photo) return;
+    const key = videoHls.ladderKey(photo, req.params.rung, req.params.file);
+    const stat = key ? await getStorage().stat(key) : null;
+    if (!stat) return res.status(404).json({ error: 'No stream for this video' });
+    if (!(await admitStream(req, res, photo, { playback: false }))) return;
+    if (req.params.file === 'index.m3u8') return await sendPlaylist(req, res, key, 'media');
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': req.params.file === 'init.mp4' ? 'video/mp4' : 'video/iso.segment',
+      'Cache-Control': 'private, max-age=1800',
+      'Content-Disposition': 'inline',
+    });
+    if (req.method === 'HEAD') return res.end();
+    pipeStreamToResponse(await getStorage().get(key), res, { context: `video segment for photo ${photo.id}` });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to serve video stream');
+  }
+});
 
 // Serve thumbnail
 router.get('/:slug/thumbnail/:photoId',
