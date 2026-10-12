@@ -299,7 +299,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
             </Button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           {/* Only while deleting goes to the trash, or something is still in it. */}
           {canDelete && ((trash?.retention_days ?? 0) > 0 || trashCount > 0) && (
             <Button

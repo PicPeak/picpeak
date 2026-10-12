@@ -115,7 +115,7 @@ export const PhotoTrashModal: React.FC<PhotoTrashModalProps> = ({ eventId, open,
       onClose={() => { if (!busy) onClose(); }}
       title={t('admin.photos.trash.title')}
       description={data ? t('admin.photos.trash.intro', { count: data.retention_days }) : undefined}
-      size="xl"
+      size="2xl"
       footer={selectedIds.length > 0 ? (
         <>
           <Button

@@ -399,7 +399,10 @@ async function insertRestored(trx, event, row, photoRow, children, columns) {
 
   // What the row pointed at may have been deleted while it was in the trash.
   const exists = async (table, id, extra = {}) => Boolean(id && await trx(table).where({ id, ...extra }).first('id'));
-  if (!(await exists('photo_categories', record.category_id, { event_id: event.id }))) record.category_id = null;
+  // A category is the gallery's own or a global one (event_id NULL).
+  const categoryStands = record.category_id && await trx('photo_categories').where({ id: record.category_id })
+    .where((q) => q.where('event_id', event.id).orWhereNull('event_id')).first('id');
+  if (!categoryStands) record.category_id = null;
   if (!(await exists('photo_categories', record.folder_id, { event_id: event.id }))) record.folder_id = null;
   if (!(await exists('admin_users', record.uploaded_by_admin_id))) record.uploaded_by_admin_id = null;
   if (record.uploader_guest_id && !(await exists('gallery_guests', record.uploader_guest_id))) {

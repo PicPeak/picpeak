@@ -320,6 +320,15 @@ describe('photo trash (issue 1733)', () => {
       expect(webhookFire).toHaveBeenCalledWith('photo.uploaded', expect.objectContaining({ photo: expect.objectContaining({ id: fresh.id }) }));
     });
 
+    it('keeps a global category, which belongs to no gallery', async () => {
+      const event = await mkEvent();
+      const globalId = firstId(await db('photo_categories').insert({ name: 'Global', slug: `global-${seq}`, is_global: 1, event_id: null }).returning('id'));
+      const photo = await mkPhoto(event, { category_id: globalId });
+      expect((await del(event, photo)).status).toBe(200);
+      expect((await restore(event, [(await trashRowOf(photo.id)).id])).status).toBe(200);
+      expect((await db('photos').where({ id: photo.id }).first()).category_id).toBe(globalId);
+    });
+
     it('follows a gallery that was renamed while the photo was in the trash', async () => {
       const event = await mkEvent();
       const photo = await mkPhoto(event);
