@@ -34,6 +34,9 @@ function createRestoreShellRouter({ frontendDir = process.env.FRONTEND_DIR || pa
 
   router.get(SHELL_PATHS, (_req, res) => {
     res.set('Cache-Control', 'no-store');
+    // robots.txt leaves the admin pages crawlable so that their noindex is
+    // read; this shell answers for them during a restore and must say it too.
+    res.set('X-Robots-Tag', 'noindex');
     res.type('html').send(html);
   });
   const files = new Map([['/bootstrap.js', 'bootstrap.js'], ['/favicon.ico', 'favicon-32x32.png'],

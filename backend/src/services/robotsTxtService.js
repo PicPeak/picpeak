@@ -56,18 +56,25 @@ async function generateRobotsTxt() {
 
   const lines = [];
 
-  // Always block admin and API paths for all agents
+  // The API is never crawled. The app pages are deliberately NOT disallowed:
+  // every one answers "X-Robots-Tag: noindex" (frontend/nginx.conf; sendSpa
+  // in server.js), and a crawler only obeys that if it may fetch the page. A
+  // Disallow left bare login and share URLs in search results.
   lines.push('# Protected paths');
   lines.push('User-agent: *');
-  lines.push('Disallow: /admin');
   lines.push('Disallow: /api');
   lines.push('');
 
   if (!allowIndexing) {
-    // Block everything for all agents
-    lines.push('# Indexing disabled - block all crawlers');
+    // Nothing is indexable: the landing page answers noindex as well
+    // (handlePublicSiteRequest). Only what carries no such header is blocked.
+    lines.push('# Indexing disabled. Pages stay crawlable on purpose: each answers');
+    lines.push('# "X-Robots-Tag: noindex", which only takes effect if a crawler may fetch it.');
     lines.push('User-agent: *');
-    lines.push('Disallow: /');
+    lines.push('Disallow: /photos');
+    lines.push('Disallow: /thumbnails');
+    lines.push('Disallow: /uploads');
+    lines.push('Disallow: /og');
     lines.push('');
   }
 

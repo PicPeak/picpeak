@@ -26,6 +26,7 @@ describe('DB-free retained maintenance shell', () => {
   it.each(SHELL_PATHS)('retains only the exact read-only shell %s without branding DB work', async route => {
     const response = await request(app).get(`${route}?tab=backup`).expect(200);
     expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.headers['x-robots-tag']).toBe('noindex');
     expect(response.text).toContain('<title>PicPeak</title>');
     expect(response.text).not.toContain('${BRAND_');
   });
