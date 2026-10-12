@@ -151,11 +151,12 @@ describe('PhotoUpload folder structure', () => {
         firstLook: fd.get('first_look'),
       };
     });
+    // In the order of the pick, which is sorted by name level by level.
     expect(sent).toEqual([
-      { files: ['loose.jpg'], category: '5', folder: null, request: null, firstLook: null },
-      { files: ['f1.jpg', 'f2.jpg'], category: '5', folder: '11', request: null, firstLook: null },
-      { files: ['s1.jpg'], category: '5', folder: '12', request: null, firstLook: null },
       { files: ['fl1.jpg'], category: '5', folder: null, request: null, firstLook: 'true' },
+      { files: ['f1.jpg', 'f2.jpg'], category: '5', folder: '11', request: null, firstLook: null },
+      { files: ['loose.jpg'], category: '5', folder: null, request: null, firstLook: null },
+      { files: ['s1.jpg'], category: '5', folder: '12', request: null, firstLook: null },
     ]);
   });
 

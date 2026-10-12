@@ -73,7 +73,22 @@ export const pickedFromInput = (files: File[]): PickedFile[] =>
     // files on every exFAT card, `.DS_Store`, anything under `.thumbnails/`);
     // skip them as the drop walk does. A plain pick is taken as chosen.
     .filter(({ rel }) => !rel || !rel.split('/').some((part) => part.startsWith('.')))
+    // A folder pick arrives in the file system's order, which is none in
+    // particular; sort it as the drop walk does (by name, level by level), so
+    // the per-upload cap cuts the same tail either way. Plain picks have no
+    // path and stay as chosen.
+    .sort((a, b) => (a.rel && b.rel ? comparePaths(a.rel, b.rel) : 0))
     .map(({ file, rel }) => ({ file, dir: directoryOf(rel) }));
+
+const comparePaths = (a: string, b: string): number => {
+  const as = a.split('/');
+  const bs = b.split('/');
+  for (let i = 0; i < Math.min(as.length, bs.length); i += 1) {
+    const order = as[i].localeCompare(bs[i], undefined, { numeric: true });
+    if (order !== 0) return order;
+  }
+  return as.length - bs.length;
+};
 
 export interface CollectOptions {
   limit?: number;

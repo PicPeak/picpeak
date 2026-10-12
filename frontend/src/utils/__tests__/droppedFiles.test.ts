@@ -260,6 +260,33 @@ describe('relative directories (issue 1786)', () => {
     expect(pickedFromInput([inFolder, plain]).map((p) => p.dir)).toEqual(['Export/Friday', '']);
   });
 
+  it('sorts a folder pick by name level by level, as the drop walk does', () => {
+    const at = (rel: string) => {
+      const file = new File(['x'], rel.split('/').pop()!, { type: 'image/jpeg' });
+      Object.defineProperty(file, 'webkitRelativePath', { value: rel });
+      return file;
+    };
+    const picked = pickedFromInput([
+      at('Export/Reception/IMG_2.jpg'),
+      at('Export/Ceremony/IMG_10.jpg'),
+      at('Export/cover.jpg'),
+      at('Export/Ceremony/IMG_9.jpg'),
+    ]);
+
+    expect(picked.map((p) => `${p.dir}/${p.file.name}`)).toEqual([
+      'Export/Ceremony/IMG_9.jpg',
+      'Export/Ceremony/IMG_10.jpg',
+      'Export/cover.jpg',
+      'Export/Reception/IMG_2.jpg',
+    ]);
+  });
+
+  it('keeps a plain pick in the order it was chosen', () => {
+    const files = ['b.jpg', 'a.jpg'].map((name) => new File(['x'], name, { type: 'image/jpeg' }));
+
+    expect(pickedFromInput(files).map((p) => p.file.name)).toEqual(['b.jpg', 'a.jpg']);
+  });
+
   it('takes the directory part of a relative path', () => {
     expect(directoryOf('a/b/c.jpg')).toBe('a/b');
     expect(directoryOf('c.jpg')).toBe('');
