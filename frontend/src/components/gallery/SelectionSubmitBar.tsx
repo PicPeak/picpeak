@@ -104,7 +104,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
     >
       {selection.counter && (
         <span className="inline-flex items-center gap-2 text-sm font-medium" data-testid="selection-counter">
-          <Heart className="w-4 h-4" aria-hidden="true" />
+          <Heart className="w-4 h-4 shrink-0" aria-hidden="true" />
           {selection.cap !== null
             ? t('gallery.selection.counterCapped', '{{used}} of {{cap}} selected', { used, cap: selection.cap })
             : t('gallery.selection.counter', '{{used}} selected', { used })}
@@ -113,7 +113,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
 
       {selection.can_submit && (selection.submission ? (
         <span className="inline-flex items-center gap-2 text-sm text-muted-theme" data-testid="selection-submitted">
-          <Lock className="w-4 h-4" aria-hidden="true" />
+          <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />
           {t('gallery.selection.finishedOn', 'Selection finished on {{date}}. Your picks are locked.', {
             date: format(selection.submission.submitted_at),
           })}
@@ -126,7 +126,7 @@ export const SelectionSubmitBar: React.FC<SelectionSubmitBarProps> = ({ slug, st
 
       {approval.can_submit && (approval.submission ? (
         <span className="inline-flex items-center gap-2 text-sm text-muted-theme" data-testid="approval-submitted">
-          <CheckCircle className="w-4 h-4" aria-hidden="true" />
+          <CheckCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
           {t('gallery.selection.approvedOn', 'Edited photos approved on {{date}}', {
             date: format(approval.submission.submitted_at),
           })}
