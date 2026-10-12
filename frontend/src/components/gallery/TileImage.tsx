@@ -5,7 +5,7 @@ import { thumbHashToDataUrl } from '../../utils/thumbHash';
 type TileImageProps = React.ComponentProps<typeof AuthenticatedImage> & {
   /** `photo.thumb_hash`; without one this is a plain AuthenticatedImage. */
   thumbHash?: string | null;
-  /** Fade-out duration class, for a card that fades its image in itself. */
+  /** Fade-out duration (and easing) classes, for a card that fades its image in itself. */
   placeholderFadeClassName?: string;
 };
 
@@ -59,9 +59,17 @@ export const TileImage: React.FC<TileImageProps> = ({
         <div
           aria-hidden="true"
           data-testid="tile-placeholder"
-          className={`absolute inset-0 pointer-events-none bg-cover bg-center transition-opacity motion-reduce:transition-none ${placeholderFadeClassName} ${rounding} ${loadedSrc === src ? 'opacity-0' : 'opacity-100'}`}
-          style={{ backgroundImage: `url(${placeholder})` }}
-        />
+          className={`absolute inset-0 overflow-hidden pointer-events-none transition-opacity motion-reduce:transition-none ${placeholderFadeClassName} ${rounding} ${loadedSrc === src ? 'opacity-0' : 'opacity-100'}`}
+        >
+          {/* Drawn a little larger than the tile and clipped by it. Scaling
+              a 32px image up to a tile leaves its outermost pixels blended
+              with nothing, which showed as a dark hairline around every
+              placeholder; this keeps that rim outside the box. */}
+          <div
+            className="absolute -inset-[4%] bg-cover bg-center"
+            style={{ backgroundImage: `url(${placeholder})` }}
+          />
+        </div>
       )}
     </>
   );

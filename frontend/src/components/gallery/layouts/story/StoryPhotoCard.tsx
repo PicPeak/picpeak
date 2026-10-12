@@ -111,9 +111,13 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         <TileImage
           // Blurred placeholder (issue 1733) until the preview is in. Not for
           // a letterboxed card: the placeholder covers the box and the photo
-          // would not. Fades with the image's own 0.7s entrance.
+          // would not. It fades over the image's own 0.7s entrance, and
+          // eases in: the image eases out underneath, so the placeholder
+          // holds while the image is still faint and the card background
+          // never shows through by more than a tenth (a plain ease let a
+          // quarter through mid-fade).
           thumbHash={fit === 'cover' ? photo.thumb_hash : null}
-          placeholderFadeClassName="duration-700"
+          placeholderFadeClassName="duration-700 ease-in"
           // A card tile, and it used to render the full ORIGINAL at
           // object-cover — the one place where the reporter's "hundreds of
           // megabytes for a gallery" was literally true (#1166).

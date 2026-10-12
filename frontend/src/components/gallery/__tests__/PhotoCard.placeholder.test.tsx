@@ -83,7 +83,8 @@ describe('PhotoCard placeholder', () => {
   it('shows the placeholder until the thumbnail has loaded, then fades it', () => {
     render(card());
     const placeholder = screen.getByTestId('tile-placeholder');
-    expect(placeholder.style.backgroundImage).toContain('data:image/png;base64,');
+    const image = placeholder.firstElementChild as HTMLElement;
+    expect(image.style.backgroundImage).toContain('data:image/png;base64,');
     expect(placeholder.className).toContain('opacity-100');
 
     fireEvent.load(screen.getByTestId('tile'));
@@ -103,6 +104,9 @@ describe('PhotoCard placeholder', () => {
     expect(placeholder.getAttribute('aria-hidden')).toBe('true');
     // The image's own rounding, since not every tile clips.
     expect(placeholder.className).toContain('rounded-lg');
+    // The blur is drawn past the box and clipped, so its soft rim never shows.
+    expect(placeholder.className).toContain('overflow-hidden');
+    expect((placeholder.firstElementChild as HTMLElement).className).toContain('-inset-[4%]');
     // After the image, before the badges and the overlay.
     expect(screen.getByTestId('tile').nextElementSibling).toBe(placeholder);
   });
