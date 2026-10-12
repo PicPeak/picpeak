@@ -92,6 +92,27 @@ describe('event settings draft', () => {
     expect(() => eventUpdatePayload({ ...base, require_password: true }, base, t)).toThrow(DraftValidationError);
   });
 
+  it('sends the guest upload edge as a number, and null when emptied (issue 1733)', () => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    expect(base.guest_upload_max_edge).toBe('');
+    expect(eventUpdatePayload({ ...base, guest_upload_max_edge: '2048' }, base, t)).toEqual({ guest_upload_max_edge: 2048 });
+
+    const set = eventFieldsFromEvent({ ...EVENT, guest_upload_max_edge: 2048 } as Event, branding);
+    expect(set.guest_upload_max_edge).toBe('2048');
+    expect(eventUpdatePayload({ ...set, guest_upload_max_edge: '' }, set, t)).toEqual({ guest_upload_max_edge: null });
+  });
+
+  it.each(['1023', '16385', '2048.5', 'abc', '-2048'])('refuses the guest upload edge %s, naming the guests section', (value) => {
+    const base = eventFieldsFromEvent(EVENT, branding);
+    try {
+      eventUpdatePayload({ ...base, guest_upload_max_edge: value }, base, t);
+      throw new Error('expected a validation error');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DraftValidationError);
+      expect((error as DraftValidationError).section).toBe('guests');
+    }
+  });
+
   it('refuses an external source without a folder, naming the section', () => {
     const base = eventFieldsFromEvent(EVENT, branding);
     try {

@@ -12,6 +12,7 @@ import { clearGuestIdentity, getGuestIdentity, getGuestToken, storeGuestIdentity
 import type { GuestNameMode } from '../../types';
 import { useGalleryDialog } from './hooks/useGalleryDialog';
 import { imageLimitMessage, publicUploadErrorKey } from '../../utils/publicUploadErrors';
+import { prepareGuestUpload } from '../../utils/guestUploadDownscale';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -30,6 +31,9 @@ interface UserPhotoUploadProps {
   // The feedback setting "require name and email" applies to the one guest
   // identity, so registering it from here has to ask for the address too.
   requireEmail?: boolean;
+  // Longest edge photos are scaled to before upload (issue 1733); empty sends
+  // originals.
+  maxEdge?: number | null;
 }
 
 // Signing an established identity out re-keys everything under the
@@ -47,6 +51,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   nameMode = 'off',
   creditsVisible = false,
   requireEmail = false,
+  maxEdge = null,
 }) => {
   const { t } = useTranslation();
 
@@ -331,10 +336,15 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         failedCount += files.length - index;
         toast.error(t('upload.photoCapReached', { limit }));
       };
+      // Inside the loop, so only one decoded image is in memory at a time.
+      const prepared = await prepareGuestUpload(file, maxEdge);
       const formData = new FormData();
-      formData.append('photos', file);
+      formData.append('photos', prepared.file);
       if (categoryId) {
         formData.append('category_id', categoryId.toString());
+      }
+      if (prepared.capturedAt) {
+        formData.append('captured_at', prepared.capturedAt);
       }
 
       try {

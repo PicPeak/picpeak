@@ -44,6 +44,7 @@ const {
 const downloadZipService = require('../../services/downloadZipService');
 const { KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { GUEST_NAME_MODES } = require('../../services/photoCredit');
+const { GUEST_UPLOAD_MIN_EDGE, GUEST_UPLOAD_MAX_EDGE, isGuestUploadMaxEdge } = require('../../services/guestUploadDownscale');
 const { validateHeroImageAnchor, getEventFieldRequirements, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade } = require('./helpers');
 
 // Client PIN floor. The PIN guards the client review page and used to accept
@@ -973,6 +974,7 @@ module.exports = (router) => {
         created_by: req.admin.id,
         allow_user_uploads: source.allow_user_uploads,
         upload_category_id: source.upload_category_id,
+        guest_upload_max_edge: source.guest_upload_max_edge || null,
         // Uploader names are part of the gallery's configuration (#1561).
         guest_name_mode: source.guest_name_mode || 'off',
         show_credits_to_guests: formatBoolean(parseBooleanInput(source.show_credits_to_guests, false)),
@@ -1138,6 +1140,11 @@ module.exports = (router) => {
     body('welcome_message').optional({ nullable: true, checkFalsy: true }).trim(),
     body('color_theme').optional({ nullable: true }),
     body('allow_user_uploads').optional().isBoolean(),
+    // Longest edge guest photos are scaled to in the browser (issue 1733).
+    // null uploads originals.
+    body('guest_upload_max_edge').optional({ nullable: true }).custom(isGuestUploadMaxEdge)
+      .withMessage(`guest_upload_max_edge must be a whole number from ${GUEST_UPLOAD_MIN_EDGE} to ${GUEST_UPLOAD_MAX_EDGE}, or null`)
+      .toInt(),
     // Uploader names (#1561).
     body('guest_name_mode').optional().isIn(GUEST_NAME_MODES),
     body('show_credits_to_guests').optional().isBoolean(),

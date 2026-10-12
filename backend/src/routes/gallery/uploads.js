@@ -10,6 +10,7 @@ const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services
 const categoryScope = require('../../utils/categoryScope');
 const { guestNameModeOf, guestCreditFields } = require('../../services/photoCredit');
 const { withPublicUpload } = require('../../middleware/publicUploadStream');
+const { parseClientCaptureDate } = require('../../services/guestUploadDownscale');
 
 router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
   try {
@@ -99,7 +100,8 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
       limits: {
         fileSize: maxFileSizeBytes,
         files: maxFiles,
-        // The only text field this route reads is category_id. Without these
+        // The only text fields this route reads are category_id and
+        // captured_at. Without these
         // caps an unbounded number of ~1 MiB text parts is held in memory
         // before the handler runs (Codex security audit 2026-09-30).
         fields: 5,
@@ -183,6 +185,10 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolve
           uploadedBy: 'guest',
           credit,
           uploadReservation,
+          // The date the browser read before scaling the photo down (issue
+          // 1733). One field, so it only speaks for a one-file request, which
+          // is what the guest UI sends.
+          clientCapturedAt: req.files.length === 1 ? parseClientCaptureDate(req.body.captured_at) : null,
         });
 
         // Every file refused for the cap: say so as a refusal, not a 202.

@@ -93,6 +93,7 @@ interface UpdateEventData {
   reveal_mode?: boolean;
   reveal_at?: string | null;
   upload_category_id?: number | null;
+  guest_upload_max_edge?: number | null;
   hero_photo_id?: number | null;
   source_mode?: 'managed' | 'reference';
   external_path?: string | null;

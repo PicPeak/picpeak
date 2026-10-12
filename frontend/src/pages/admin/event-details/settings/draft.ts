@@ -144,6 +144,7 @@ export function eventFieldsFromEvent(event: Event, branding: ThemeConfig | null 
       ? (() => { const d = new Date(event.reveal_at); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })()
       : '',
     upload_category_id: event.upload_category_id || null,
+    guest_upload_max_edge: event.guest_upload_max_edge ? String(event.guest_upload_max_edge) : '',
     guest_name_mode: event.guest_name_mode || 'off',
     show_credits_to_guests: truthy(event.show_credits_to_guests),
     hero_photo_id: event.hero_photo_id || null,
@@ -240,6 +241,7 @@ export const SECTION_OF_FIELD: Record<keyof EventFields, SettingsSectionKey> = {
   use_canvas_rendering: 'downloads',
   allow_user_uploads: 'guests',
   upload_category_id: 'guests',
+  guest_upload_max_edge: 'guests',
   guest_name_mode: 'guests',
   show_credits_to_guests: 'guests',
   reveal_mode: 'guests',
@@ -340,6 +342,10 @@ export function rebaseDraft(current: EventSettingsDraft, prevBase: EventSettings
   };
 }
 
+// The range the server accepts (services/guestUploadDownscale.js).
+export const GUEST_UPLOAD_MIN_EDGE = 1024;
+export const GUEST_UPLOAD_MAX_EDGE = 16384;
+
 export class DraftValidationError extends Error {
   readonly section: SettingsSectionKey;
 
@@ -376,6 +382,7 @@ function requestFields(f: EventFields): Record<string, unknown> {
     require_password: f.require_password,
     allow_user_uploads: f.allow_user_uploads,
     upload_category_id: f.upload_category_id,
+    guest_upload_max_edge: f.guest_upload_max_edge.trim() === '' ? null : Number(f.guest_upload_max_edge),
     guest_name_mode: f.guest_name_mode,
     show_credits_to_guests: f.show_credits_to_guests,
     reveal_mode: reveal,
@@ -458,6 +465,14 @@ export function eventUpdatePayload(
   const offset = draft.event_reminder_offset_days.trim();
   if (offset !== '' && (!Number.isFinite(Number(offset)) || Number(offset) < 0)) {
     throw new DraftValidationError(t('eventReminderOverride.invalidOffset', 'Offset must be a non-negative integer or blank.'), 'reminder');
+  }
+  const maxEdge = draft.guest_upload_max_edge.trim();
+  if (maxEdge !== '' && (!Number.isInteger(Number(maxEdge))
+    || Number(maxEdge) < GUEST_UPLOAD_MIN_EDGE || Number(maxEdge) > GUEST_UPLOAD_MAX_EDGE)) {
+    throw new DraftValidationError(
+      t('events.guestUploadMaxEdgeInvalid', 'The longest edge must be a whole number from 1024 to 16384, or empty.'),
+      'guests',
+    );
   }
   const expected = draft.delivery_expected_count.trim();
   if (expected !== '' && (!Number.isInteger(Number(expected)) || Number(expected) < 1)) {

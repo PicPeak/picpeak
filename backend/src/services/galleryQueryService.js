@@ -19,6 +19,7 @@ const { heroAnchorQuery } = require('../utils/heroAnchor');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds, drawsOnQuota } = require('./downloadQuota');
 const { guestNameModeOf, creditVisibleToGuest } = require('./photoCredit');
+const { guestUploadMaxEdgeOf } = require('./guestUploadDownscale');
 const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaCustomer = false, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
@@ -527,6 +528,8 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, viaC
       allow_user_uploads: parseBooleanInput(event.allow_user_uploads, false),
       // Upload dialog name step (#1561): off | optional | required.
       guest_name_mode: guestNameModeOf(event),
+      // Longest edge the upload dialog scales photos to; null sends originals.
+      guest_upload_max_edge: guestUploadMaxEdgeOf(event),
       // Whether photos carry credit_name, so the UI can show the "By" filter
       // and the lightbox line.
       credits_visible: creditsVisible,

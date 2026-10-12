@@ -53,6 +53,7 @@ export interface Event {
   reveal_at?: string | null;
   revealed_at?: string | null;
   upload_category_id?: number | null;
+  guest_upload_max_edge?: number | null;
   hero_photo_id?: number | null;
   total_views?: number;
   total_downloads?: number;
@@ -426,6 +427,8 @@ export interface GalleryData {
     // step; credits_visible says whether photos carry credit_name at all.
     guest_name_mode?: GuestNameMode;
     credits_visible?: boolean;
+    // Longest edge guest photos are scaled to before upload (issue 1733).
+    guest_upload_max_edge?: number | null;
   };
   categories?: PhotoCategory[];
   photos: Photo[];

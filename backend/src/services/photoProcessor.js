@@ -420,6 +420,8 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  *   - credit            credit columns resolved by the caller (#1561); for a
  *                       guest upload that is the guest's name, and the
  *                       worker then never reads EXIF for the row
+ *   - clientCapturedAt  Date a guest's browser read before scaling the photo
+ *                       down; stored only for an image with no EXIF date
  *
  * Returns: { uploadId, photos: [{id, filename, size, category_id}], errors: [{filename, error}] }
  */
@@ -428,7 +430,7 @@ async function queueFilesForProcessing(files, options = {}) {
   const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
   const {
     eventId, photoType = 'individual', categoryId = null, folderId = null, uploadId: providedUploadId, photoCap = null,
-    uploadedBy = 'admin', credit = {}, uploadReservation = null,
+    uploadedBy = 'admin', credit = {}, uploadReservation = null, clientCapturedAt = null,
   } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
@@ -492,6 +494,12 @@ async function queueFilesForProcessing(files, options = {}) {
       // or queue insertion, with a message naming the limit.
       if (!isVideo) await imageAdmission.inspect(tempPath, newFilename, uploadReservation?.signal, preparedImages);
 
+      // Read here, while the file is still local: a date in the file always
+      // wins, and the worker reads it as for any other upload.
+      const capturedAt = clientCapturedAt && !isVideo && !(await extractCaptureDate(tempPath))
+        ? clientCapturedAt.toISOString()
+        : null;
+
       if (uploadReservation) {
         uploadCharge = await require('./publicUploadQuota').prepareObject(uploadReservation, finalKey, tempStats.size);
       }
@@ -520,7 +528,7 @@ async function queueFilesForProcessing(files, options = {}) {
         category_id: categoryId,
         folder_id: folderId,
         size_bytes: tempStats.size,
-        captured_at: null,
+        captured_at: capturedAt,
         media_type: isVideo ? 'video' : 'image',
         mime_type: file.mimetype,
         processing_status: 'pending',

@@ -14,6 +14,8 @@ export type EditFormState = {
   reveal_mode: boolean;
   reveal_at: string;
   upload_category_id: number | null;
+  // Longest edge guest photos are scaled to (issue 1733); '' = originals.
+  guest_upload_max_edge: string;
   // Uploader names (#1561)
   guest_name_mode: GuestNameMode;
   show_credits_to_guests: boolean;

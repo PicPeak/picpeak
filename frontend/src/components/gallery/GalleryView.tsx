@@ -375,6 +375,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     nameMode: data?.event?.guest_name_mode ?? 'off',
     creditsVisible: data?.event?.credits_visible === true,
     requireEmail: uploaderRequiresEmail(feedbackSettings),
+    maxEdge: data?.event?.guest_upload_max_edge ?? null,
   } as const;
 
   // People in this gallery (#1074).
