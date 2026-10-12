@@ -181,19 +181,113 @@ describe('AuthenticatedImage retry', () => {
     expect(container.querySelector('img')).not.toBeNull();
   });
 
-  it('leaves the fallbackSrc path alone', async () => {
-    const fetchMock = vi.fn().mockImplementation(loadFailed);
-    vi.stubGlobal('fetch', fetchMock);
+  // Issue 1936: the lightbox passes the thumbnail as fallback. A preview
+  // answered 503 while storage was unreachable used to stay a thumbnail.
+  describe('with a fallbackSrc', () => {
+    const PREVIEW = '/api/gallery/demo/photo/1/preview';
+    const THUMB = '/api/gallery/demo/thumbnail/1';
+    const byUrl = (handlers: Record<string, Array<() => Promise<unknown>>>) => vi.fn((url: string) => {
+      const key = url.includes('/preview') ? 'preview' : 'thumb';
+      const queue = handlers[key];
+      return (queue.length > 1 ? queue.shift()! : queue[0])();
+    });
+    const calls = (mock: ReturnType<typeof vi.fn>, part: string) => mock.mock.calls.filter(([url]) => String(url).includes(part)).length;
+    let serial: number;
+    beforeEach(() => {
+      serial = 0;
+      URL.createObjectURL = vi.fn(() => `blob:mock-${serial += 1}`) as unknown as typeof URL.createObjectURL;
+    });
 
-    const { container } = render(
-      <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" fallbackSrc="/static/fallback.png" alt="t" />,
-    );
-    await flush();
-    // primary + fallback, then the plain <img> takes over — no retry loop.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('img')?.getAttribute('src')).toBe('/static/fallback.png');
-    await advance(60_000); await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    it('asks for src again behind the fallback and swaps it in, keeping the fallback on screen meanwhile', async () => {
+      const fetchMock = byUrl({ preview: [status(503, { 'Retry-After': '5' }), ok], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+
+      // Retry-After (5 s) outlasts the 2 s backoff.
+      await advance(4999);
+      expect(calls(fetchMock, '/preview')).toBe(1);
+      expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+      await advance(1);
+      // The request is out; the stand-in is still what the guest sees.
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      await flush();
+
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-2');
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1');
+      expect(calls(fetchMock, '/thumbnail')).toBe(1);
+      await advance(60_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(2);
+    });
+
+    it('never drops to the loading placeholder while the fallback stands in', async () => {
+      let release: (value: unknown) => void = () => {};
+      const pending = () => new Promise((resolve) => { release = resolve; });
+      const fetchMock = byUrl({ preview: [status(503), pending], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000);
+      expect(calls(fetchMock, '/preview')).toBe(2);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+      await act(async () => { release(await ok()); });
+      await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-2');
+    });
+
+    it('gives up after three retries and keeps the fallback', async () => {
+      const fetchMock = byUrl({ preview: [status(503)], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(2000); await flush();
+      await advance(4000); await flush();
+      await advance(8000); await flush();
+      await advance(60_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(4);
+      expect(calls(fetchMock, '/thumbnail')).toBe(1);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+      expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:mock-1');
+    });
+
+    it('retries when both src and the fallback were refused, showing the plain fallback meanwhile', async () => {
+      const fetchMock = byUrl({ preview: [status(503), ok], thumb: [status(503)] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(THUMB);
+      await advance(2000); await flush();
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+    });
+
+    it('does not retry a final 4xx on src', async () => {
+      const fetchMock = byUrl({ preview: [status(404)], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { container } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      await advance(60_000); await flush();
+      expect(calls(fetchMock, '/preview')).toBe(1);
+      expect(container.querySelector('img')?.getAttribute('src')).toBe('blob:mock-1');
+    });
+
+    it('releases the stand-in when the image changes and on unmount', async () => {
+      const fetchMock = byUrl({ preview: [status(503)], thumb: [ok] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const { rerender, unmount } = render(<AuthenticatedImage src={PREVIEW} fallbackSrc={THUMB} alt="t" />);
+      await flush();
+      rerender(<AuthenticatedImage src="/api/gallery/demo/photo/2/preview" fallbackSrc="/api/gallery/demo/thumbnail/2" alt="t" />);
+      await flush();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-1');
+      unmount();
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-2');
+    });
   });
 
   it('a new src gets a fresh retry budget', async () => {
